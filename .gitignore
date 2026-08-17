@@ -48,3 +48,8 @@ pnpm-debug.log*
 
 # Local Postgres data (docker-compose volume fallback)
 .postgres-data/
+
+# Downloaded reference datasets (M1-01). Third-party, ~17 MB, republished
+# weekly — the checksum in `dataset_version` is what pins a build, not a copy
+# of the CSVs in git.
+.cache/

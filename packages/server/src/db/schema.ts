@@ -1,8 +1,11 @@
 import { sql } from 'drizzle-orm';
 import {
   bigint,
+  boolean,
   check,
+  doublePrecision,
   index,
+  integer,
   numeric,
   pgEnum,
   pgTable,
@@ -276,6 +279,200 @@ export const airline = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Reference data — global, not per world (M1-01).
+//
+// Airports are the same geography in every world. Era worlds (§19.2, App. B.1)
+// filter this set by opening and closing date rather than owning a copy of it,
+// so there is one row per real aerodrome and worlds hold a view over it. A
+// per-world copy of 85,000 airports per world would be the obvious alternative
+// and it would be wrong: the geography does not vary, only which of it counts.
+// ---------------------------------------------------------------------------
+
+/**
+ * Which dataset version is loaded, and when.
+ *
+ * Required by M1-01, and it is the same discipline as `world.aircraft_catalogue_version`
+ * (§22.2, §22.5): a running world must be able to say which data it was built on.
+ * OurAirports publishes no version number, so the SHA-256 of the files *is* the
+ * version — two imports with the same checksum are the same data whatever the
+ * date on them.
+ */
+export const datasetVersion = pgTable(
+  'dataset_version',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    dataset: text('dataset').notNull(),
+    /** Upstream's own label where it has one — here, the HTTP Last-Modified date. */
+    version: text('version').notNull(),
+    sourceUrl: text('source_url').notNull(),
+    /** Hex SHA-256 over the source files, in a fixed order. The real identity. */
+    checksum: text('checksum').notNull(),
+    /** What landed, so a later import can be compared against it without recounting. */
+    rowCounts: text('row_counts').notNull(),
+    importedAt: timestamp('imported_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // The same bytes may only be recorded once per dataset, which is what makes
+    // a re-run a no-op rather than a duplicate history entry.
+    unique('dataset_version_dataset_checksum_key').on(t.dataset, t.checksum),
+    index('dataset_version_dataset_imported_at_idx').on(t.dataset, t.importedAt),
+    check('dataset_version_checksum_is_sha256', sql`length(${t.checksum}) = 64`),
+  ],
+);
+
+/** OurAirports' own `type` column, carried through rather than reinterpreted. */
+export const airportKind = pgEnum('airport_kind', [
+  'large_airport',
+  'medium_airport',
+  'small_airport',
+  'heliport',
+  'seaplane_base',
+  'balloonport',
+  'closed',
+]);
+
+/**
+ * Every aerodrome in the world (App. B.1).
+ *
+ * The key is `ident`, not ICAO: only about 12% of rows carry an official ICAO
+ * code, while `ident` is present and unique on all of them. See the note in
+ * `@tailfin/shared`'s `airport.ts` for the full reconciliation against B.2.
+ *
+ * Tier, slot level, catchment, capacity, fees, curfew and constraints are all
+ * absent on purpose — M1-02 and M1-03 add them. Columns nothing fills yet would
+ * be indistinguishable from columns something failed to fill.
+ */
+export const airport = pgTable(
+  'airport',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    /** OurAirports' row id. Kept so a row can be traced back to the source file. */
+    sourceId: integer('source_id').notNull(),
+
+    ident: text('ident').notNull(),
+    icaoCode: text('icao_code'),
+    iataCode: text('iata_code'),
+
+    name: text('name').notNull(),
+    municipality: text('municipality'),
+    /** ISO 3166-1 alpha-2. */
+    isoCountry: text('iso_country').notNull(),
+    /** ISO 3166-2, e.g. `US-CA`. */
+    isoRegion: text('iso_region'),
+    continent: text('continent'),
+
+    kind: airportKind('kind').notNull(),
+
+    /**
+     * `double precision`, not `numeric`.
+     *
+     * Every great-circle formula (M1-04) consumes doubles, so storing an exact
+     * decimal would mean converting on every read for no gain. This is not the
+     * money case: there is no exact decimal answer being preserved, and a
+     * position is a measurement rather than a quantity that must balance.
+     */
+    latitude: doublePrecision('latitude').notNull(),
+    longitude: doublePrecision('longitude').notNull(),
+
+    /** Null means unknown, never sea level — it feeds takeoff length in B.4. */
+    elevationFt: integer('elevation_ft'),
+
+    /** Upstream's flag for "airline service exists here". ~4,400 of ~86,000. */
+    scheduledService: boolean('scheduled_service').notNull(),
+
+    /**
+     * Whether the source has any runway rows for this airport.
+     *
+     * Explicit rather than derived, because "no runways in the table" and "we
+     * were never told about the runways" mean very different things to a
+     * reachability check — and 308 scheduled-service airports are in the second
+     * case. A count-based derivation cannot tell them apart.
+     */
+    hasRunwayData: boolean('has_runway_data').notNull(),
+
+    importedAt: timestamp('imported_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('airport_ident_key').on(t.ident),
+    unique('airport_source_id_key').on(t.sourceId),
+    // Partial uniqueness: thousands of rows have no code, and NULLs do not
+    // collide in Postgres, so a plain unique index is already correct here.
+    unique('airport_icao_code_key').on(t.icaoCode),
+    unique('airport_iata_code_key').on(t.iataCode),
+    index('airport_iso_country_idx').on(t.isoCountry),
+    index('airport_scheduled_service_idx').on(t.scheduledService),
+    // The route picker's working set is scheduled-service airports by country.
+    index('airport_kind_scheduled_service_idx').on(t.kind, t.scheduledService),
+    check('airport_latitude_range', sql`${t.latitude} >= -90 AND ${t.latitude} <= 90`),
+    check('airport_longitude_range', sql`${t.longitude} >= -180 AND ${t.longitude} <= 180`),
+    // Null Island is the canonical failed-geocode value; no aerodrome is there.
+    check('airport_not_null_island', sql`NOT (${t.latitude} = 0 AND ${t.longitude} = 0)`),
+    check(
+      'airport_elevation_plausible',
+      sql`${t.elevationFt} IS NULL OR (${t.elevationFt} >= -2000 AND ${t.elevationFt} <= 30000)`,
+    ),
+    check(
+      'airport_icao_code_format',
+      sql`${t.icaoCode} IS NULL OR ${t.icaoCode} ~ '^[A-Z0-9]{4}$'`,
+    ),
+    check(
+      'airport_iata_code_format',
+      sql`${t.iataCode} IS NULL OR ${t.iataCode} ~ '^[A-Z0-9]{3}$'`,
+    ),
+    check('airport_iso_country_format', sql`${t.isoCountry} ~ '^[A-Z]{2}$'`),
+  ],
+);
+
+export const runwaySurface = pgEnum('runway_surface', [
+  'asphalt',
+  'concrete',
+  'gravel',
+  'grass',
+  'water',
+  'other',
+]);
+
+export const runway = pgTable(
+  'runway',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sourceId: integer('source_id').notNull(),
+    airportId: uuid('airport_id')
+      .notNull()
+      .references(() => airport.id, { onDelete: 'cascade' }),
+
+    /** Both ends, e.g. `09/27` or `18L/36R`. */
+    identifier: text('identifier').notNull(),
+
+    /** Null where the source has none. 292 rows, plus 6 that claim zero or less. */
+    lengthFt: integer('length_ft'),
+    widthFt: integer('width_ft'),
+
+    /**
+     * The source's own spelling, kept alongside the normalised value.
+     *
+     * There are 664 distinct surface strings upstream, so the mapping in
+     * `normalise.ts` is certainly incomplete. Keeping the raw text means a better
+     * mapping can be applied later with a single UPDATE instead of a re-import.
+     */
+    surfaceRaw: text('surface_raw'),
+    surface: runwaySurface('surface').notNull(),
+
+    lighted: boolean('lighted').notNull(),
+    /** A closed runway is still geography — it just cannot be planned onto. */
+    closed: boolean('closed').notNull(),
+  },
+  (t) => [
+    unique('runway_source_id_key').on(t.sourceId),
+    index('runway_airport_id_idx').on(t.airportId),
+    check('runway_length_positive', sql`${t.lengthFt} IS NULL OR ${t.lengthFt} > 0`),
+    check('runway_width_positive', sql`${t.widthFt} IS NULL OR ${t.widthFt} > 0`),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Inferred types. `packages/shared` gets the zod schemas in M0-07; these are
 // the database's own row shapes.
 // ---------------------------------------------------------------------------
@@ -297,3 +494,12 @@ export type NewSessionRow = typeof session.$inferInsert;
 
 export type AirlineRow = typeof airline.$inferSelect;
 export type NewAirlineRow = typeof airline.$inferInsert;
+
+export type DatasetVersionRow = typeof datasetVersion.$inferSelect;
+export type NewDatasetVersionRow = typeof datasetVersion.$inferInsert;
+
+export type AirportRow = typeof airport.$inferSelect;
+export type NewAirportRow = typeof airport.$inferInsert;
+
+export type RunwayRow = typeof runway.$inferSelect;
+export type NewRunwayRow = typeof runway.$inferInsert;

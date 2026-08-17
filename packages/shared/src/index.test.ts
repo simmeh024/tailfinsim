@@ -5,6 +5,7 @@ import {
   AirlineIataCode,
   Airport,
   AirportIcaoCode,
+  AirportSummary,
   CreateAirlineInput,
   Flight,
   FlightPhase,
@@ -12,6 +13,7 @@ import {
   MinorUnits,
   PublicAirline,
   Reputation,
+  Runway,
   Timestamp,
   World,
 } from './index';
@@ -138,11 +140,45 @@ describe('Airline', () => {
 });
 
 describe('Airport', () => {
-  it('allows a null IATA code but never a null ICAO', () => {
-    // Thousands of airports have no IATA code; App. B.1 loads them all, so ICAO
-    // has to be the key.
+  it('allows both codes to be absent, because most airports have neither', () => {
+    // This test used to assert that ICAO could never be null, on the reasoning
+    // that "thousands of airports have no IATA code, so ICAO has to be the key".
+    // M1-01 imported the dataset and found the opposite: of 85,915 airports,
+    // 10,444 carry an ICAO code and 9,052 carry IATA. Neither is a key.
     expect(Airport.shape.iata.safeParse(null).success).toBe(true);
-    expect(Airport.shape.icao.safeParse(null).success).toBe(false);
+    expect(Airport.shape.icao.safeParse(null).success).toBe(true);
+  });
+
+  it('keys on ident, which every airport has', () => {
+    expect(Airport.shape.ident.safeParse('EHAM').success).toBe(true);
+    expect(Airport.shape.ident.safeParse(null).success).toBe(false);
+    expect(Airport.shape.ident.safeParse('').success).toBe(false);
+  });
+
+  it('still enforces the shape of a code that is present', () => {
+    // Nullable is not "anything goes" — a three-letter ICAO code is still wrong.
+    expect(Airport.shape.icao.safeParse('EHAM').success).toBe(true);
+    expect(Airport.shape.icao.safeParse('EHA').success).toBe(false);
+    expect(Airport.shape.iata.safeParse('AMS').success).toBe(true);
+    expect(Airport.shape.iata.safeParse('AMST').success).toBe(false);
+  });
+
+  it('treats an unknown elevation as unknown rather than as sea level', () => {
+    // 14,905 airports have no elevation, and it feeds the takeoff-length check
+    // in B.4 — a default of 0 would be a plausible-looking lie.
+    expect(Airport.shape.elevationFt.safeParse(null).success).toBe(true);
+    expect(Airport.shape.elevationFt.safeParse(-11).success).toBe(true);
+  });
+
+  it('allows a runway of unknown length', () => {
+    expect(Runway.shape.lengthFt.safeParse(null).success).toBe(true);
+    // But not a nonsensical one.
+    expect(Runway.shape.lengthFt.safeParse(0).success).toBe(false);
+    expect(Runway.shape.lengthFt.safeParse(-1).success).toBe(false);
+  });
+
+  it('carries ident into the summary, so a list row can be identified', () => {
+    expect(Object.keys(AirportSummary.shape)).toContain('ident');
   });
 });
 
