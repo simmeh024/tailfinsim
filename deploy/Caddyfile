@@ -5,28 +5,36 @@
 # Two things here are the way they are because Caddy rejected the alternatives
 # on a real box (verified against Caddy 2.11.4 from the official apt repo):
 #
-#   1. No global `email` directive, and the override below is a **glob**.
-#      `{ email {$ACME_EMAIL} }` fails to parse when the variable is unset —
-#      `email` cannot take an empty argument, and Caddy's packaged systemd unit
-#      does not read /etc/default/caddy. A literal `import` of a single file
-#      also fails when that file is absent ("File to import not found"); only a
-#      glob tolerates matching nothing.
+#   1. No global `email` directive. `{ email {$ACME_EMAIL} }` fails to parse
+#      when the variable is unset — `email` cannot take an empty argument, and
+#      Caddy's packaged systemd unit does not read /etc/default/caddy.
 #
 #   2. Logs go to stdout, not to a file. Caddy's packaged unit runs with
 #      ProtectSystem=full and ReadWritePaths=/var/lib/caddy, so writing to
 #      /var/log/caddy is denied and the service refuses to start. journald
-#      captures stdout, so `journalctl -u caddy -f` is the way to read these.
+#      captures stdout: `journalctl -u caddy -f`.
 #
-# Certificates issue fine with no contact address; you only forgo expiry
-# notification emails. To add one, drop a file in /etc/caddy/conf.d/ ending in
-# .caddyfile containing:
+# ---------------------------------------------------------------------------
+# The two import styles below are different **on purpose**.
 #
-#     { email you@example.com }
+#   glob    (`conf.d/*.caddyfile`)  tolerates matching nothing → fails OPEN.
+#   literal (`dev-auth.caddyfile`)  errors if absent            → fails CLOSED.
 #
-# Keeping it off-repo avoids committing a personal address to a public
-# repository.
+# The optional ACME contact address may safely be missing, so it is a glob. The
+# dev site's credentials may NOT safely be missing — if that file disappeared
+# and the import were a glob, dev would silently serve unauthenticated. Using a
+# literal import means Caddy refuses to start instead, which is the behaviour
+# you want from an auth gate.
+# ---------------------------------------------------------------------------
+
+# Optional. Add /etc/caddy/conf.d/acme.caddyfile containing `{ email you@x }`
+# for certificate expiry notices. Kept off-repo so no personal address is
+# committed to a public repository.
 import /etc/caddy/conf.d/*.caddyfile
 
+# ---------------------------------------------------------------------------
+# Production — the public front door. Currently the holding page.
+# ---------------------------------------------------------------------------
 tailfinsim.com {
 	encode zstd gzip
 
@@ -49,4 +57,37 @@ tailfinsim.com {
 
 www.tailfinsim.com {
 	redir https://tailfinsim.com{uri} permanent
+}
+
+# ---------------------------------------------------------------------------
+# Dev — where work in progress is looked at before it reaches the front door.
+# Separate checkout, separate database, separate port. Password protected, and
+# excluded from search engines.
+# ---------------------------------------------------------------------------
+dev.tailfinsim.com {
+	encode zstd gzip
+
+	# Credentials live off-repo in /etc/caddy/dev-auth.caddyfile:
+	#     basic_auth { <user> <bcrypt-hash> }
+	# Generate a hash with: caddy hash-password
+	# A *literal* import, so a missing file stops Caddy rather than exposing
+	# dev without authentication. See the note at the top of this file.
+	import /etc/caddy/dev-auth.caddyfile
+
+	reverse_proxy 127.0.0.1:3001
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Basic auth already means crawlers get a 401, but this covers the
+		# case where auth is ever relaxed for a demo.
+		X-Robots-Tag "noindex, nofollow, noarchive"
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
 }

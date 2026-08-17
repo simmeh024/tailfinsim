@@ -236,6 +236,67 @@ curl -si https://tailfinsim.com/healthz
 Run the git command **as `tailfin`**. The checkout is owned by `tailfin`, so git's
 dubious-ownership guard rejects it from any other account.
 
+## The dev environment
+
+`dev.tailfinsim.com` is where work in progress gets looked at on a real server before it
+reaches the front door. It shares the box with production and nothing else:
+
+|              | Production                          | Dev                      |
+| ------------ | ----------------------------------- | ------------------------ |
+| Host         | `tailfinsim.com`                    | `dev.tailfinsim.com`     |
+| Checkout     | `/srv/tailfin`                      | `/srv/tailfin-dev`       |
+| Service      | `tailfin`                           | `tailfin-dev`            |
+| Port         | 3000                                | 3001                     |
+| Database     | `tailfin`                           | `tailfin_dev`            |
+| Deploy       | `./deploy/deploy.sh`                | `./deploy/deploy-dev.sh` |
+| Access       | public                              | HTTP basic auth          |
+| Registration | `ALLOW_REGISTRATION` unset → closed | closed                   |
+
+Dev takes any ref, which is the point of it:
+
+```bash
+./deploy/deploy-dev.sh my-branch
+./deploy/deploy-dev.sh origin/main
+```
+
+Production only ever gets `origin/main` or an explicit older SHA for rollback.
+
+### Dev credentials
+
+Basic auth credentials live off-repo in `/etc/caddy/dev-auth.caddyfile`:
+
+```
+basic_auth {
+	someuser $2a$14$…bcrypt hash…
+}
+```
+
+Generate a hash with `caddy hash-password`, then reload Caddy. To change the password:
+
+```bash
+caddy hash-password            # prompts, prints a hash
+sudo nano /etc/caddy/dev-auth.caddyfile
+sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
+```
+
+**That import is deliberately a literal path, not a glob.** If the file goes missing,
+Caddy refuses to start rather than serving dev unauthenticated — an auth gate should fail
+closed. The optional ACME contact snippet uses a glob precisely because it is safe for it
+to be absent.
+
+### Promoting dev to the front door
+
+When the app is ready to be public, the "copy to the front door" step is just pointing
+production at the same commit:
+
+```bash
+./deploy/deploy.sh              # production takes origin/main
+```
+
+The holding page is replaced by whatever the client build serves at that point (M0-09).
+Production and dev run the same code from the same repo — the only differences are the
+database, the port and who is allowed in.
+
 ### `deploy.sh` does not sync anything under /etc
 
 It updates the checkout, builds, migrates and restarts the app. It deliberately cannot

@@ -56,6 +56,32 @@ describe('loadEnv', () => {
     expect(loadEnv().logLevel).toBe('debug');
   });
 
+  it('closes registration by default', () => {
+    vi.stubEnv('DATABASE_URL', VALID_URL);
+    vi.stubEnv('ALLOW_REGISTRATION', '');
+    // The important half of this test is the *default*: forgetting to set the
+    // variable must not open signups.
+    expect(loadEnv().allowRegistration).toBe(false);
+  });
+
+  it('opens registration only on an explicit affirmative', () => {
+    vi.stubEnv('DATABASE_URL', VALID_URL);
+    for (const yes of ['true', 'TRUE', '1']) {
+      vi.stubEnv('ALLOW_REGISTRATION', yes);
+      expect(loadEnv().allowRegistration).toBe(true);
+    }
+    for (const no of ['false', 'FALSE', '0']) {
+      vi.stubEnv('ALLOW_REGISTRATION', no);
+      expect(loadEnv().allowRegistration).toBe(false);
+    }
+  });
+
+  it('rejects a non-boolean registration flag rather than assuming', () => {
+    vi.stubEnv('DATABASE_URL', VALID_URL);
+    vi.stubEnv('ALLOW_REGISTRATION', 'yes');
+    expect(() => loadEnv()).toThrow(/must be true\/false/);
+  });
+
   it('lets an explicit log level win over the default', () => {
     vi.stubEnv('DATABASE_URL', VALID_URL);
     vi.stubEnv('NODE_ENV', 'production');

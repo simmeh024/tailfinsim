@@ -63,6 +63,21 @@ function optionalInt(name: string, fallback: number): number {
   return parsed;
 }
 
+/**
+ * Strict boolean parsing. Anything unrecognised throws rather than being
+ * treated as false — `ALLOW_REGISTRATION=flase` quietly meaning "closed" is
+ * survivable, but the same typo on a flag whose safe default is *open* would
+ * not be, and one parser for both is easier to trust.
+ */
+function optionalBool(name: string, fallback: boolean): boolean {
+  const raw = optional(name, fallback ? 'true' : 'false').toLowerCase();
+  if (raw === 'true' || raw === '1') return true;
+  if (raw === 'false' || raw === '0') return false;
+  throw new Error(
+    `Environment variable ${name} must be true/false (or 1/0), got ${JSON.stringify(raw)}.`,
+  );
+}
+
 export type NodeEnv = 'development' | 'test' | 'production';
 
 export interface ServerEnv {
@@ -70,6 +85,17 @@ export interface ServerEnv {
   databaseUrl: string;
   databasePoolMax: number;
   logLevel: string;
+
+  /**
+   * Whether new players may create accounts.
+   *
+   * **Defaults to `false`** — closed unless explicitly opened. The world is not
+   * open yet, and a signup endpoint that is public by default is the kind of
+   * thing that gets noticed before you are ready. M0-11 must honour this flag
+   * on whatever registration route it adds; until then the real gate is HTTP
+   * basic auth on the dev host (see deploy/Caddyfile).
+   */
+  allowRegistration: boolean;
 }
 
 const NODE_ENVS = new Set<string>(['development', 'test', 'production']);
@@ -88,5 +114,6 @@ export function loadEnv(): ServerEnv {
     databaseUrl: required('DATABASE_URL'),
     databasePoolMax: optionalInt('DATABASE_POOL_MAX', 10),
     logLevel: optional('LOG_LEVEL', nodeEnv === 'production' ? 'info' : 'debug'),
+    allowRegistration: optionalBool('ALLOW_REGISTRATION', false),
   };
 }
