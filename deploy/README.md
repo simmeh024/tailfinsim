@@ -236,6 +236,90 @@ curl -si https://tailfinsim.com/healthz
 Run the git command **as `tailfin`**. The checkout is owned by `tailfin`, so git's
 dubious-ownership guard rejects it from any other account.
 
+## Swap
+
+`lightspeed` has 4 GB of RAM, which is enough to _run_ Tailfin but tight while building it:
+deploys install dev dependencies and bundle on the box (ADR-0003), and two environments now
+share the machine. Without swap, a build that peaks over the limit is killed by the OOM
+reaper rather than merely being slow — and it takes whatever else the kernel picks with it.
+
+2 GB of swap on the root volume, which has ~45 GB free, so it costs nothing:
+
+```bash
+fallocate -l 2G /swapfile
+chmod 600 /swapfile
+mkswap /swapfile
+swapon /swapfile
+echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
+# Use it as a safety net, not as routine memory. Postgres in particular gets
+# slow and hard to diagnose if the kernel starts paging it out eagerly.
+sysctl -w vm.swappiness=10
+echo 'vm.swappiness=10' > /etc/sysctl.d/99-swappiness.conf
+```
+
+Check with `free -h` and `swapon --show`. Sustained swap **use** — as opposed to swap being
+available — is the signal to move up a flavor, not to add more swap.
+
+## Backups
+
+A nightly `pg_dump` of every Tailfin database, at 03:15 UTC.
+
+```bash
+cp /srv/tailfin/deploy/tailfin-backup.{service,timer} /etc/systemd/system/
+install -d -o postgres -g postgres -m 700 /var/backups/tailfin
+systemctl daemon-reload
+systemctl enable --now tailfin-backup.timer
+```
+
+| Task        | Command                                       |
+| ----------- | --------------------------------------------- |
+| Run one now | `sudo systemctl start tailfin-backup.service` |
+| See the log | `journalctl -u tailfin-backup -n 40`          |
+| Next run    | `systemctl list-timers tailfin-backup.timer`  |
+| List dumps  | `sudo ls -lh /var/backups/tailfin`            |
+
+Dumps are custom-format (compressed, selectively restorable), retained **14 days**, with a
+`.sha256` sidecar each. Every dump's table of contents is read back immediately after
+writing — a dump that cannot be listed is renamed `.corrupt` and the run fails, because an
+unreadable archive is worse than no archive: you will believe you are covered.
+
+`Persistent=true` on the timer means a run missed while the box was off happens on next
+boot rather than being skipped.
+
+### Restoring
+
+Practise into a scratch database first — never straight over a live one:
+
+```bash
+sudo -u postgres createdb tailfin_restore_test --locale=C --template=template0
+sudo -u postgres pg_restore --dbname=tailfin_restore_test --no-owner --no-privileges \
+  /var/backups/tailfin/tailfin-<stamp>.dump
+sudo -u postgres psql -d tailfin_restore_test -c '\dt'
+sudo -u postgres dropdb tailfin_restore_test
+```
+
+The dumps use `--no-owner --no-privileges` precisely so they restore into a
+differently-named role without editing.
+
+### This does not yet protect against losing the instance
+
+The dumps sit on the same volume as the database. That covers the likely failures — a bad
+migration, a wrong `DELETE`, a corrupted table — but **not** the loss of the instance or the
+volume itself.
+
+Closing that needs off-instance storage, which needs credentials and so is yours to set up.
+DreamObjects is the natural fit since everything else is DreamHost:
+
+```bash
+# after configuring an S3-compatible client with DreamObjects credentials
+aws --endpoint-url https://objects-us-east-1.dream.io \
+    s3 sync /var/backups/tailfin s3://tailfin-backups/
+```
+
+Add that as a second `ExecStart=` line on `tailfin-backup.service` once it works by hand.
+Until then, treat the current setup as protection against mistakes, not against disasters.
+
 ## The dev environment
 
 `dev.tailfinsim.com` is where work in progress gets looked at on a real server before it

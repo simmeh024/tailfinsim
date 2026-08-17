@@ -1,0 +1,32 @@
+[Unit]
+Description=Nightly Postgres backup for Tailfin
+Documentation=https://github.com/simmeh024/tailfinsim/blob/main/deploy/README.md
+After=postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=oneshot
+
+# Runs as postgres so peer auth on the local socket applies and no password is
+# needed anywhere. The script only reads databases and writes to BACKUP_DIR.
+User=postgres
+Group=postgres
+
+ExecStart=/srv/tailfin/deploy/backup.sh
+
+# A hung dump must not block tomorrow's run.
+TimeoutStartSec=1800
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tailfin-backup
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# The only path it may write to.
+ReadWritePaths=/var/backups/tailfin
+
+[Install]
+WantedBy=multi-user.target

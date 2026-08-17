@@ -1,0 +1,15 @@
+[Unit]
+Description=Run the Tailfin Postgres backup nightly
+Documentation=https://github.com/simmeh024/tailfinsim/blob/main/deploy/README.md
+
+[Timer]
+# 03:15 UTC — after the daily low point in traffic, and offset from the top of
+# the hour so it does not collide with everything else that runs on the hour.
+OnCalendar=*-*-* 03:15:00
+# If the box was off at 03:15, run on the next boot rather than skipping a day.
+Persistent=true
+RandomizedDelaySec=300
+Unit=tailfin-backup.service
+
+[Install]
+WantedBy=timers.target
