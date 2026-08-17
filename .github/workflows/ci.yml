@@ -14,11 +14,33 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # Matches docker-compose.yml and production, including the C collation —
+  # Postgres sorts differently under different locales, and a schema verified
+  # under one collation is not verified under another.
+  DATABASE_URL: postgres://tailfin:tailfin_ci@127.0.0.1:5432/tailfin
+
 jobs:
   verify:
     name: typecheck · lint · test
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tailfin
+          POSTGRES_PASSWORD: tailfin_ci
+          POSTGRES_DB: tailfin
+          POSTGRES_INITDB_ARGS: '--locale=C --encoding=UTF8'
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tailfin -d tailfin"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
 
     steps:
       - name: Checkout
@@ -45,6 +67,12 @@ jobs:
 
       - name: Check formatting
         run: pnpm format:check
+
+      - name: Apply migrations
+        # The schema constraint tests need a migrated database. This also means
+        # every migration is proven to apply cleanly on every PR, which is
+        # M0-05's acceptance criterion turned into a standing check.
+        run: pnpm db:migrate
 
       - name: Test with coverage
         # Coverage thresholds are enforced for packages/sim (M0-04).
