@@ -132,6 +132,7 @@ process should refuse to boot on a missing value rather than guess (M0-08).
 | `DATABASE_CONNECT_TIMEOUT_MS` | `5000`                                        | no       | Defaults to 5000. `pg`'s own default waits forever     |
 | `LOG_LEVEL`                   | `info`                                        | no       | Pino level; defaults to `info` in prod, `debug` in dev |
 | `WEB_SURFACE`                 | `app`                                         | no       | `holding` (default) or `app`. What `/` serves          |
+| `ENVIRONMENT_LABEL`           | `dev`                                         | no       | `local` (default), `dev`, `production`. Build badge    |
 | `PUBLIC_ORIGIN`               | `https://tailfinsim.com`                      | yes      | OAuth redirect base; also decides `Secure` on cookies  |
 | `GOOGLE_CLIENT_ID`            | `….apps.googleusercontent.com`                | no       | M0-11. All three auth vars together, or none           |
 | `GOOGLE_CLIENT_SECRET`        | `GOCSPX-…`                                    | no       | Never logged, never echoed                             |
@@ -139,6 +140,27 @@ process should refuse to boot on a missing value rather than guess (M0-08).
 | `SESSION_TTL_HOURS`           | `720`                                         | no       | Defaults to 30 days                                    |
 | `ALLOW_REGISTRATION`          | `false`                                       | no       | **Defaults to false.** Closed unless explicitly opened |
 | `WORLD_TICK_MS`               | `1000`                                        | no       | Coarse tick for position interpolation (§21)           |
+
+### Build numbers (M0-12)
+
+Every deploy carries a build number: `git rev-list --count HEAD`, stamped into
+`packages/server/dist/build-info.json` by `build.mjs` and served from
+`GET /api/version` alongside the short commit SHA and `ENVIRONMENT_LABEL`. The client
+renders it bottom right on every screen.
+
+Not a semantic version, deliberately. Nothing here is released to anyone, so there is
+no compatibility to promise, and a hand-maintained version drifts the first time someone
+forgets to bump it. This one is derived, so it cannot drift. A build made from a modified
+working tree gets a `+dirty` suffix on the commit — that is the moment you most want to
+know the running code is not the commit it claims to be.
+
+The badge asks the **server**, not the bundle. A cached client reporting its own build
+number would say what the browser last downloaded rather than what it is talking to.
+
+`ENVIRONMENT_LABEL` is separate from `NODE_ENV` because `NODE_ENV=production` on **both**
+boxes — dev runs a production build of the same code, and that is the point of it. It
+defaults to `local`, so a box that forgot to declare itself does not claim to be the live
+one.
 
 ### Auth configuration (M0-11)
 

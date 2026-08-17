@@ -8,9 +8,10 @@ import fastifyStatic from '@fastify/static';
 import { sql } from 'drizzle-orm';
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 
-import { healthResponseJsonSchema } from '@tailfin/shared';
+import { healthResponseJsonSchema, versionResponseJsonSchema } from '@tailfin/shared';
 
 import { registerAuthRoutes } from './auth/routes';
+import { readBuildInfo } from './build-info';
 import { type DatabaseHandle } from './db/client';
 import { type ServerEnv } from './env';
 
@@ -133,6 +134,32 @@ export function buildApp({ env, db }: BuildAppOptions): FastifyInstance {
        */
       return reply.code(dbState === 'up' ? 200 : 503).send(body);
     },
+  );
+
+  /**
+   * Which build is this? (M0-12)
+   *
+   * Answered by the server rather than baked into the client bundle, so the
+   * badge always describes the instance actually being talked to. A stale cached
+   * bundle reporting its own build number would defeat the point.
+   *
+   * Public and unauthenticated: it reveals a commit SHA of a public repository
+   * and nothing else, and a bug report that quotes a build number is worth far
+   * more than one that says "the live site".
+   */
+  const buildInfo = readBuildInfo();
+  const startedAtIso = new Date().toISOString();
+
+  app.get(
+    '/api/version',
+    { schema: { response: { 200: versionResponseJsonSchema } }, logLevel: 'warn' },
+    async (_request, reply) =>
+      reply.code(200).header('cache-control', 'no-store').send({
+        build: buildInfo.build,
+        commit: buildInfo.commit,
+        environment: env.environmentLabel,
+        startedAt: startedAtIso,
+      }),
   );
 
   /**

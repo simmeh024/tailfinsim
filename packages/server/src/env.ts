@@ -91,6 +91,10 @@ export type WebSurface = 'holding' | 'app';
 
 const WEB_SURFACES = new Set<string>(['holding', 'app']);
 
+export type EnvironmentLabel = 'local' | 'dev' | 'production';
+
+const ENVIRONMENT_LABELS = new Set<string>(['local', 'dev', 'production']);
+
 export interface ServerEnv {
   nodeEnv: NodeEnv;
   databaseUrl: string;
@@ -120,6 +124,17 @@ export interface ServerEnv {
    * then a config change, not a different build.
    */
   webSurface: WebSurface;
+
+  /**
+   * Which deployment this is, in human terms (M0-12).
+   *
+   * Deliberately separate from `NODE_ENV`, which is `production` on **both**
+   * boxes — dev runs a production build of the same code, and that is the point.
+   * `NODE_ENV` says how the code was compiled; this says which door you came in,
+   * and it is what the build badge shows so that "dev is ahead of production" is
+   * visible rather than inferred.
+   */
+  environmentLabel: EnvironmentLabel;
 
   /** Absolute origin this instance is reached on. The OAuth redirect URI is derived from it. */
   publicOrigin: string;
@@ -169,6 +184,15 @@ export function loadEnv(): ServerEnv {
     throw new Error(`WEB_SURFACE must be one of holding, app — got ${JSON.stringify(webSurface)}.`);
   }
 
+  // Defaults to `local` rather than to `production`: a box that forgot to say
+  // which it is should not claim to be the live one.
+  const environmentLabel = optional('ENVIRONMENT_LABEL', 'local');
+  if (!ENVIRONMENT_LABELS.has(environmentLabel)) {
+    throw new Error(
+      `ENVIRONMENT_LABEL must be one of local, dev, production — got ${JSON.stringify(environmentLabel)}.`,
+    );
+  }
+
   const googleClientId = optionalUndefined('GOOGLE_CLIENT_ID');
   const googleClientSecret = optionalUndefined('GOOGLE_CLIENT_SECRET');
   const sessionSecret = optionalUndefined('SESSION_SECRET');
@@ -195,6 +219,7 @@ export function loadEnv(): ServerEnv {
     databaseConnectTimeoutMs: optionalInt('DATABASE_CONNECT_TIMEOUT_MS', 5000),
     logLevel: optional('LOG_LEVEL', nodeEnv === 'production' ? 'info' : 'debug'),
     webSurface: webSurface as WebSurface,
+    environmentLabel: environmentLabel as EnvironmentLabel,
     publicOrigin: optional('PUBLIC_ORIGIN', 'http://localhost:3000').replace(/\/+$/, ''),
     googleClientId,
     googleClientSecret,

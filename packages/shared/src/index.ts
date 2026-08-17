@@ -41,6 +41,7 @@ export * from './network';
 export * from './flight';
 export * from './api';
 export * from './auth';
+export * from './version';
 export * from './json-schema';
 
 /** Schema version of the shared contract. Bumped when a breaking change lands. */

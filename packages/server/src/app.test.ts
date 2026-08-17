@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { HealthResponse } from '@tailfin/shared';
+import { HealthResponse, VersionResponse } from '@tailfin/shared';
 
 import { buildApp } from './app';
 import { createDatabase, type DatabaseHandle } from './db/client';
@@ -25,6 +25,7 @@ const testEnv: ServerEnv = {
   logLevel: 'silent',
   // The default surface, and the one production runs.
   webSurface: 'holding',
+  environmentLabel: 'local',
   publicOrigin: 'http://localhost:3000',
   // Auth off, matching production until its own OAuth client exists. The auth
   // surface itself is covered by auth/session-cookie.test.ts.
@@ -139,6 +140,84 @@ describeDb('HTTP surface', () => {
     it('returns 404 for an unsupported method on a known path', async () => {
       const res = await app.inject({ method: 'POST', url: '/healthz' });
       expect(res.statusCode).toBe(404);
+    });
+  });
+});
+
+describe('GET /api/version', () => {
+  /**
+   * No database involved, so this runs everywhere. The handle points at a dead
+   * port and is never queried — if `/api/version` ever starts touching the
+   * database, this test hangs, which is the correct alarm.
+   */
+  async function withApp(
+    label: 'local' | 'dev' | 'production',
+    body: (app: ReturnType<typeof buildApp>) => Promise<void>,
+  ): Promise<void> {
+    const db = createDatabaseAt('postgres://nobody:nothing@127.0.0.1:1/none');
+    const app = buildApp({ env: { ...testEnv, environmentLabel: label }, db });
+    await app.ready();
+    try {
+      await body(app);
+    } finally {
+      await app.close();
+      await db.close().catch(() => undefined);
+    }
+  }
+
+  it('answers with a build number, commit, environment and start time', async () => {
+    await withApp('dev', async (app) => {
+      const res = await app.inject({ method: 'GET', url: '/api/version' });
+      expect(res.statusCode).toBe(200);
+
+      const parsed = VersionResponse.safeParse(res.json());
+      expect(parsed.success).toBe(true);
+      expect(parsed.success && parsed.data.environment).toBe('dev');
+      // Shape, not value. Whether a build stamp exists depends on whether this
+      // package has been built on this machine, which is not something an HTTP
+      // test should assert on — build-info.test.ts covers the values.
+      expect(parsed.success && Number.isInteger(parsed.data.build)).toBe(true);
+      expect(parsed.success && parsed.data.commit.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('reports the environment it was told, not NODE_ENV', async () => {
+    // The whole point: NODE_ENV is `production` on the dev box too, so it cannot
+    // be what the badge reads.
+    await withApp('production', async (app) => {
+      const res = await app.inject({ method: 'GET', url: '/api/version' });
+      expect(res.json()).toMatchObject({ environment: 'production' });
+    });
+  });
+
+  it('is not cached, so a redeployed box does not keep claiming the old build', async () => {
+    await withApp('dev', async (app) => {
+      const res = await app.inject({ method: 'GET', url: '/api/version' });
+      expect(res.headers['cache-control']).toBe('no-store');
+    });
+  });
+
+  it('reports the same start time across requests', async () => {
+    // It is process start, not request time — a value that changed every call
+    // would say nothing about whether the box restarted.
+    await withApp('dev', async (app) => {
+      const a = await app.inject({ method: 'GET', url: '/api/version' });
+      const b = await app.inject({ method: 'GET', url: '/api/version' });
+      expect(a.json<{ startedAt: string }>().startedAt).toBe(
+        b.json<{ startedAt: string }>().startedAt,
+      );
+    });
+  });
+
+  it('exposes nothing beyond the declared fields', async () => {
+    await withApp('dev', async (app) => {
+      const res = await app.inject({ method: 'GET', url: '/api/version' });
+      expect(Object.keys(res.json<Record<string, unknown>>()).sort()).toEqual([
+        'build',
+        'commit',
+        'environment',
+        'startedAt',
+      ]);
     });
   });
 });

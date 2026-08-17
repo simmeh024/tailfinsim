@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router';
 
+import { RequireSession } from './auth/RequireSession';
 import { SessionProvider } from './auth/SessionProvider';
 import {
   BoardPage,
@@ -43,27 +44,34 @@ export function App(): ReactNode {
   return (
     <ThemeProvider>
       <SessionProvider>
-        <Routes>
-          <Route path="/" element={<AppShell />}>
-            <Route index element={<IndexRedirect />} />
-            <Route path="world" element={<WorldPage />} />
-            <Route path="fleet" element={<FleetPage />} />
-            <Route path="network" element={<NetworkPage />} />
-            <Route path="finance" element={<FinancePage />} />
-            <Route path="crew" element={<CrewPage />} />
-            <Route path="design" element={<DesignPage />} />
-            <Route path="board" element={<BoardPage />} />
-            <Route
-              path="*"
-              element={
-                <section className="page">
-                  <h1 className="page__title">Not found</h1>
-                  <p className="page__note">No such view.</p>
-                </section>
-              }
-            />
-          </Route>
-        </Routes>
+        {/*
+          The login wall wraps the whole route table, not individual routes.
+          Gating route by route means every new route is a chance to forget one,
+          and the first forgotten one is the bug nobody notices.
+        */}
+        <RequireSession>
+          <Routes>
+            <Route path="/" element={<AppShell />}>
+              <Route index element={<IndexRedirect />} />
+              <Route path="world" element={<WorldPage />} />
+              <Route path="fleet" element={<FleetPage />} />
+              <Route path="network" element={<NetworkPage />} />
+              <Route path="finance" element={<FinancePage />} />
+              <Route path="crew" element={<CrewPage />} />
+              <Route path="design" element={<DesignPage />} />
+              <Route path="board" element={<BoardPage />} />
+              <Route
+                path="*"
+                element={
+                  <section className="page">
+                    <h1 className="page__title">Not found</h1>
+                    <p className="page__note">No such view.</p>
+                  </section>
+                }
+              />
+            </Route>
+          </Routes>
+        </RequireSession>
       </SessionProvider>
     </ThemeProvider>
   );

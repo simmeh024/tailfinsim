@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { ApiError, HealthResponse } from './api';
 import { LogoutResponse, MeResponse } from './auth';
+import { VersionResponse } from './version';
 
 /**
  * JSON Schema versions of the wire schemas, for consumers that speak JSON
@@ -23,3 +24,4 @@ export const healthResponseJsonSchema = z.toJSONSchema(HealthResponse);
 export const apiErrorJsonSchema = z.toJSONSchema(ApiError);
 export const meResponseJsonSchema = z.toJSONSchema(MeResponse);
 export const logoutResponseJsonSchema = z.toJSONSchema(LogoutResponse);
+export const versionResponseJsonSchema = z.toJSONSchema(VersionResponse);
