@@ -1,5 +1,8 @@
-# Caddy obtains and renews Let's Encrypt certificates automatically. DNS must
-# already resolve to this host or the ACME challenge fails — see docs/deploy.md.
+# Installed at /etc/caddy/Caddyfile. Caddy obtains and renews Let's Encrypt
+# certificates automatically, but DNS must already resolve to this host or the
+# ACME challenge fails — see docs/deploy.md.
+#
+# Set ACME_EMAIL in /etc/default/caddy, or replace the placeholder below.
 
 {
 	email {$ACME_EMAIL}
@@ -10,7 +13,7 @@ tailfinsim.com {
 
 	# Everything is one origin on purpose: same-origin means M0-11's session
 	# cookies work with SameSite=Lax and no CORS. See docs/deploy.md.
-	reverse_proxy server:3000
+	reverse_proxy 127.0.0.1:3000
 
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
@@ -20,7 +23,7 @@ tailfinsim.com {
 	}
 
 	log {
-		output stdout
+		output file /var/log/caddy/tailfinsim.log
 		format json
 	}
 }

@@ -65,20 +65,21 @@ that cycle are free.
 | `semisonic`  | 1    | 512 MB | $0.0075   | $4.50       | Too small — Postgres alone will not be happy. |
 | `subsonic`   | 1    | 1 GB   | $0.01     | $6.00       | Too small.                                    |
 | `supersonic` | 1    | 2 GB   | $0.02     | $12.00      | Fine for **staging**.                         |
-| `lightspeed` | 2    | 4 GB   | $0.04     | $24.00      | Workable production floor.                    |
-| `warpspeed`  | 4    | 8 GB   | **$0.08** | **$48.00**  | **Recommended for production.**               |
+| `lightspeed` | 2    | 4 GB   | **$0.04** | **$24.00**  | **Recommended start.**                        |
+| `warpspeed`  | 4    | 8 GB   | $0.08     | $48.00      | Headroom if builds on the box feel tight.     |
 | `hyperspeed` | 8    | 16 GB  | $0.16     | $96.00      | Only once load testing (M13-04) says so.      |
 
 Postgres wants 2–4 GB before the sim gets any, which is what rules out the bottom two.
+There is no Docker on the server (ADR-0003), so `lightspeed` is enough to start — but note
+that deploys build on the box, so if `pnpm install && build` starts contending with live
+traffic, that is the signal to move up.
 
 All accounts include 100 GB of block storage and free bandwidth.
 
-Start with staging only. Production does not need to exist until there is something to
-deploy.
-
-**DreamCompute must be activated before any of this is available** — the Cloud panel asks
-you to choose a DreamCompute password first. That, instance creation, and the floating IP
-are all account actions.
+**Status (2026-08-17):** DreamCompute is **activated** — region `US-East 2`, tenant
+`7407e2e12e9241fb81e6e083d00eab79`, user `passle`. **No instance exists yet.** Creating one
+via the OpenStack dashboard, generating the SSH keypair and attaching a floating IP are all
+account actions.
 
 ## 3. DNS records to create
 
@@ -134,54 +135,55 @@ Auth-provider variables are added by M0-11 once GitHub OAuth vs. magic-link is d
 Secrets live in the instance's environment or a `.env` file readable only by the service
 user — **never in the repository**. `.env` is gitignored; commit `.env.example` instead.
 
-## 5. Order of operations
+## 5. How deployment works
 
-Each step is blocked by the one above it.
-
-1. **Provision** a DreamCompute instance (Ubuntu LTS), attach a floating IP. _Manual —
-   requires the DreamHost account._
-2. **Point DNS** at the floating IP per the table above. _Manual._
-3. **Harden**: non-root deploy user, SSH keys only, password auth off, `ufw` allowing
-   only 22/80/443, unattended-upgrades on.
-4. **Install** Docker Engine and the Compose plugin.
-5. **Postgres** via Compose, on a named volume, bound to `127.0.0.1` only — never exposed
-   to the public interface.
-6. **Deploy** the server image and the static web build (M0-10).
-7. **Caddy** in front, with the routing above.
-8. **Backups** — `pg_dump` to off-instance storage, with a _restore_ rehearsed before
-   launch, not after. This is M13-11, but a backup that has never been restored is not a
-   backup, and it costs almost nothing to set up on day one.
-
-Steps 3–8 can be scripted and committed once the instance exists.
-
-## 6. The release pipeline
-
-**Decided and built.** Images go to GitHub Container Registry (free for public repos, no
-extra account). Deployment is **pull-based**: CI can only move a registry tag, and the
-server decides when to act on it. There is no SSH key in repository secrets and no inbound
-path from GitHub to the instance.
+**No containers in production, and no CI involvement.** The server holds a git checkout;
+deploying is one command run on the box. See
+[ADR-0003](adr/0003-deployment-approach.md) for the reasoning and the costs.
 
 ```
-merge to main → build image → [YOUR APPROVAL] → retag :production → box rolls forward
+ssh tailfin@<ip> → cd /srv/tailfin → ./deploy/deploy.sh
+                          │
+                          ├─ fetch · checkout the target commit (detached)
+                          ├─ pnpm install --frozen-lockfile
+                          ├─ build      ── fails here? nothing was touched
+                          ├─ migrate    ── fails here? old service still serving
+                          ├─ systemctl restart tailfin
+                          └─ poll /healthz, print the rollback command on failure
 ```
 
-The approval step is a GitHub environment named `production` with `@simmeh024` as a
-required reviewer and deployments restricted to `main`. The `promote` job in
-`.github/workflows/release.yml` declares `environment: production`, so it will not start
-until approved in the Actions tab.
+**Running the command is the approval step.** Nothing automated can push to production,
+and no credential exists that lets GitHub reach the instance.
 
-Server-side setup — instance, DNS, hardening, systemd timer, secrets — is in
-[`deploy/README.md`](../deploy/README.md).
+Rollback is the same command with an older commit: `./deploy/deploy.sh <sha>`. That rolls
+back _code_, not _schema_ — a migration that dropped a column is not undone by checking out
+the old commit.
 
-### What is still open
+Postgres and Caddy are installed from `apt`. Docker is used **only** for local development
+Postgres (root `docker-compose.yml`), which is a developer-machine convenience and has
+nothing to do with how production runs.
 
-- **Static web assets.** The image currently serves the API only. M0-09 decides whether
+Full step-by-step server setup: [`deploy/README.md`](../deploy/README.md).
+
+### The trade-off, stated plainly
+
+Builds run on the production box. A deploy needs dev dependencies and a few hundred MB of
+`node_modules`, and a broken build is found on the server rather than in CI. `deploy.sh`
+orders itself to limit the damage — build, then migrate, then restart, so a failure at any
+step leaves the running service alone — but rollback means rebuilding, which takes minutes
+and can itself fail.
+
+## 6. What is still open
+
+- **Static web assets.** The server currently serves the API only. M0-09 decides whether
   the built client is served from the server's static route or from a CDN; the Caddyfile
   routes everything to the server today, which works either way.
-- **Staging.** The pipeline has one environment. A second (`staging`, no approval
-  required, auto-deploying every merge) is worth adding once there is a reason to.
-- **Backups.** M13-11. A nightly `pg_dump` off-instance is cheap to add now and a backup
+- **Staging.** There is one environment. A second box is worth it once there is a reason.
+- **Backups.** M13-11. A nightly `pg_dump` off-instance is cheap to add now, and a backup
   that has never been restored is not a backup.
 - **Auth provider** (M0-11) — GitHub OAuth is far simpler to stand up but restricts
   players to people with GitHub accounts, which is wrong for a public game. Email
   magic-link needs a sending provider and DNS records. Decide before M0-11, not during.
+- **Region.** DreamCompute is US-only and the instance is in US-East 2 — roughly 90–110 ms
+  from European players. Acceptable for a sim where a flight takes hours, but it is a real
+  cost of staying with DreamHost and worth revisiting if latency becomes a complaint.

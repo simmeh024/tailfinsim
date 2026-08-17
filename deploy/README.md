@@ -1,155 +1,158 @@
-# Production server bootstrap
+# Production server setup
 
-One-time setup for the DreamCompute instance. Every step here needs the DreamHost
-account or root on the box, so it is yours to run — nothing in CI can do it, by design.
+One-time setup for the DreamCompute instance, then one command per deploy.
 
-Read [`docs/deploy.md`](../docs/deploy.md) first for the topology and the reasoning.
+Everything here needs the DreamHost account or root on the box, so it is yours to run.
+Read [`docs/deploy.md`](../docs/deploy.md) for the topology and the reasoning, and
+[ADR-0003](../docs/adr/0003-deployment-approach.md) for why it is this shape and not a
+container pipeline.
 
 ---
 
 ## How a deploy works
 
 ```
-merge to main
-      │
-      ▼
- Release workflow ── builds image ──► ghcr.io/…/server:sha-<commit>
-      │
-      ▼
- ┌─────────────────────────┐
- │  waits for YOUR approval│   GitHub environment `production`
- └───────────┬─────────────┘   required reviewer: @simmeh024
+you:  ssh tailfin@<ip>
+      cd /srv/tailfin && ./deploy/deploy.sh
              │
-             ▼
-   retags that digest as :production
-             │
-             ▼
- systemd timer on the box (every 60s) notices the digest moved
-             │
-             ├─ starts Postgres if needed
-             ├─ runs migrations from the NEW image as a one-off
-             │    └─ on failure: stops here, old version keeps serving
-             └─ restarts the server
+             ├─ git fetch, checkout the target commit (detached)
+             ├─ pnpm install --frozen-lockfile
+             ├─ build            ── fails here? nothing was touched
+             ├─ migrate          ── fails here? old service still serving
+             ├─ systemctl restart tailfin
+             └─ poll /healthz, print the rollback command if it never comes up
 ```
 
-**Why pull-based.** GitHub's only capability is moving a tag in a registry. There is no
-SSH key in repository secrets, and no inbound path from CI to the server. The trade-off
-is that a deploy lands within the poll interval rather than instantly, and the deploy log
-lives in the server's journal rather than in the Actions run.
+**Running the command is the approval step.** There is no CI involvement in deploys, no
+registry, and no credential anywhere that lets GitHub reach this machine.
 
-**Migrations run before the new server starts, never on app boot.** A process that
-migrates on startup races itself the moment there is a second replica, and turns a bad
-migration into a crash loop instead of a failed deploy step that leaves the old version
-serving.
+Rollback is the same command with a commit: `./deploy/deploy.sh <older-sha>`. That rolls
+back _code_, not _schema_ — a migration that dropped a column is not undone by checking
+out the old commit.
 
 ---
 
-## 1. Provision
+## 1. Create the instance
 
-DreamHost panel → **Cloud → DreamCompute**. Activate it (choose a DreamCompute password),
-then create an instance:
+DreamCompute is already activated (region **US-East 2**). In the panel: **Cloud Services →
+DreamCompute → View Dashboard** to reach OpenStack Horizon.
 
-|        | Recommended                                                                  |
-| ------ | ---------------------------------------------------------------------------- |
-| Flavor | `warpspeed` — 4 vCPU / 8 GB, $48/mo max                                      |
-| Image  | Ubuntu LTS                                                                   |
-| Key    | Add your SSH public key at creation — password login should never be enabled |
+|          | Recommended                                                                          |
+| -------- | ------------------------------------------------------------------------------------ |
+| Flavor   | `lightspeed` (2 vCPU / 4 GB, $24/mo) or `warpspeed` (4 vCPU / 8 GB, $48/mo)          |
+| Image    | Ubuntu LTS                                                                           |
+| Key pair | Generate on **your** machine (`ssh-keygen -t ed25519`) and upload the **public** key |
 
-`supersonic` (2 GB, $12/mo) is fine for a staging box but too tight for Postgres plus the
-sim in production. Billing caps at 600 hours/month, so the monthly figure is a ceiling.
+Without Docker the box needs less headroom, so `lightspeed` is a reasonable start —
+Postgres and one Node process fit in 4 GB. Monthly prices are ceilings; billing caps at
+600 hours.
 
-Attach a **floating IP** and note it — DNS needs it.
+Then attach a **floating IP** and note it.
 
 ## 2. DNS
 
-DreamHost panel → **Domains → Manage Domains → DNS** for `tailfinsim.com`:
+Panel → **Domains → Manage Domains → DNS** for `tailfinsim.com`:
 
 | Type | Host          | Value           |
 | ---- | ------------- | --------------- |
 | `A`  | _(blank / @)_ | `<floating IP>` |
 | `A`  | `www`         | `<floating IP>` |
 
-Do this **before** starting Caddy, or the ACME challenge fails and Let's Encrypt
-rate-limits you for repeated failures.
+Do this **before** installing Caddy. Let's Encrypt rate-limits repeated failed challenges,
+so a premature start costs you an hour of waiting.
+
+Confirm it resolves before continuing:
+
+```bash
+dig +short tailfinsim.com
+```
 
 ## 3. Harden
 
 ```bash
 adduser --disabled-password --gecos "" tailfin
-usermod -aG docker tailfin
 # SSH: PasswordAuthentication no, PermitRootLogin no
 systemctl reload ssh
 ufw default deny incoming && ufw allow 22,80,443/tcp && ufw --force enable
-apt install -y unattended-upgrades
+apt update && apt install -y unattended-upgrades
 ```
 
-## 4. Install Docker Engine
+Copy your public key to `/home/tailfin/.ssh/authorized_keys` (owned by `tailfin`, mode
+`600`; the `.ssh` directory `700`).
 
-Docker _Engine_ (Apache-2.0), not Docker Desktop:
+## 4. Install the runtime
 
 ```bash
-curl -fsSL https://get.docker.com | sh
+# Node — match .nvmrc (24.x)
+curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
+apt install -y nodejs git postgresql caddy
+corepack enable pnpm
 ```
 
-## 5. Lay out the stack
+## 5. Database
 
 ```bash
-install -d -o tailfin -g docker /opt/tailfin
+sudo -u postgres createuser tailfin --pwprompt
+sudo -u postgres createdb tailfin --owner=tailfin --locale=C --template=template0
 ```
 
-Copy from this directory into `/opt/tailfin/`:
+`--locale=C` matters and is not cosmetic: Postgres sorts differently under different
+locales, and ordering must not diverge between your machine and this one. `--template0`
+is required for a locale that differs from the cluster default.
 
-| From                      | To                                            |
-| ------------------------- | --------------------------------------------- |
-| `docker-compose.prod.yml` | `/opt/tailfin/docker-compose.yml`             |
-| `Caddyfile`               | `/opt/tailfin/Caddyfile`                      |
-| `tailfin-deploy.sh`       | `/opt/tailfin/tailfin-deploy.sh` (`chmod +x`) |
-| `tailfin-deploy.service`  | `/etc/systemd/system/`                        |
-| `tailfin-deploy.timer`    | `/etc/systemd/system/`                        |
+Postgres listens on localhost only by default. Leave it that way — nothing outside the box
+should reach it.
 
-## 6. Secrets
-
-Create `/opt/tailfin/.env`, owned by `tailfin`, mode `600`. **Never commit this.**
+## 6. Check out the repository
 
 ```bash
-POSTGRES_USER=tailfin
-POSTGRES_PASSWORD=<long random string>
-POSTGRES_DB=tailfin
+install -d -o tailfin -g tailfin /srv/tailfin
+sudo -u tailfin git clone https://github.com/simmeh024/tailfinsim.git /srv/tailfin
+```
+
+## 7. Configuration
+
+Create `/srv/tailfin/.env`, owned by `tailfin`, mode `600`. **Never commit this.**
+
+```bash
+NODE_ENV=production
+PORT=3000
+DATABASE_URL=postgres://tailfin:<password>@127.0.0.1:5432/tailfin
 PUBLIC_ORIGIN=https://tailfinsim.com
-ACME_EMAIL=<your email>
 LOG_LEVEL=info
 ```
 
 Generate the password on the box so it never travels: `openssl rand -base64 36`
 
-## 7. Make the image pullable
+The app resolves this file relative to its own location, which is the same mechanism local
+development uses — there is one way config loads, not two.
 
-The `server` package under the repo's **Packages** settings must be **public**, so the box
-can pull anonymously and needs no registry credentials at all.
-
-If you would rather keep it private, create a token with `read:packages` only and
-`docker login ghcr.io` once as the `tailfin` user. Never reuse the token you push with.
-
-## 8. Start the timer
+## 8. Service and proxy
 
 ```bash
+cp /srv/tailfin/deploy/tailfin.service /etc/systemd/system/
+cp /srv/tailfin/deploy/Caddyfile /etc/caddy/Caddyfile
+echo 'ACME_EMAIL=<your email>' >> /etc/default/caddy
+install -d -o caddy -g caddy /var/log/caddy
 systemctl daemon-reload
-systemctl enable --now tailfin-deploy.timer
+systemctl enable tailfin
+systemctl restart caddy
 ```
 
-Verify:
+`deploy.sh` restarts the service via `sudo`, so allow just that one command:
 
 ```bash
-systemctl list-timers tailfin-deploy.timer
-journalctl -u tailfin-deploy -f
+echo 'tailfin ALL=(root) NOPASSWD: /usr/bin/systemctl restart tailfin' \
+  > /etc/sudoers.d/tailfin-deploy
+chmod 440 /etc/sudoers.d/tailfin-deploy
 ```
+
+Narrow on purpose — the deploy user gets to restart one service, not become root.
 
 ## 9. First deploy
 
-Merge to `main`, then approve the **Promote to production** job in the Actions tab. Within
-about a minute:
-
 ```bash
+sudo -u tailfin bash -c 'cd /srv/tailfin && ./deploy/deploy.sh'
 curl -si https://tailfinsim.com/healthz
 ```
 
@@ -157,23 +160,21 @@ curl -si https://tailfinsim.com/healthz
 
 ## Operating notes
 
-**Deploy a specific version / roll back.** The timer follows the `:production` tag, so
-rolling back means moving that tag, not editing the server. Re-run the Release workflow
-against the older commit and approve it, or move the tag directly:
+| Task             | Command                                 |
+| ---------------- | --------------------------------------- |
+| What is running? | `git -C /srv/tailfin log -1 --oneline`  |
+| Deploy latest    | `./deploy/deploy.sh`                    |
+| Roll back        | `./deploy/deploy.sh <older-sha>`        |
+| Logs             | `journalctl -u tailfin -f`              |
+| Proxy logs       | `tail -f /var/log/caddy/tailfinsim.log` |
+| Restart          | `sudo systemctl restart tailfin`        |
 
-```bash
-docker buildx imagetools create \
-  --tag ghcr.io/simmeh024/tailfinsim/server:production \
-  ghcr.io/simmeh024/tailfinsim/server:sha-<older-commit>
-```
+**Builds happen on this box.** That is the main trade-off of this setup: a deploy needs dev
+dependencies and a few hundred MB of `node_modules`, and a broken build is discovered here
+rather than in CI. `deploy.sh` builds before migrating and before restarting, so a failure
+leaves the running service alone — but the checkout will have moved, so `git log -1` can
+disagree with what is actually serving until you deploy again.
 
-The box picks it up on the next tick. Note this rolls back _code_, not _schema_ — a
-migration that dropped a column is not undone by shipping the old image.
-
-**Force a check now:** `systemctl start tailfin-deploy.service`
-
-**Pause deploys** (during an incident): `systemctl stop tailfin-deploy.timer`
-
-**Back up before you need it.** M13-11 covers this properly, but a nightly `pg_dump` to
+**Back up before you need it.** M13-11 covers this properly. A nightly `pg_dump` to
 off-instance storage costs nothing to set up now, and a backup that has never been
 restored is not a backup.
