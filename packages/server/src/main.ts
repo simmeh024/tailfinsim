@@ -1,29 +1,50 @@
+import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { loadEnv } from './env';
 
 /**
- * Process entry point — the thing the container runs.
+ * Process entry point — the thing systemd runs.
  *
- * **This is a placeholder.** M0-08 replaces the body of this file with the
- * Fastify app, Pino structured logging, request IDs and a `/healthz` that
- * reports real database connectivity. It exists now so the deployment pipeline
- * has something genuine to build, ship and run end to end rather than being
- * wired against a hypothetical.
+ * **Still a placeholder.** M0-08 replaces the routing here with the Fastify
+ * app, Pino structured logging, request IDs and a `/healthz` that reports real
+ * database connectivity. M0-09 replaces the holding page with the built client.
  *
- * What is *not* placeholder and should survive M0-08:
+ * What is deliberate and should survive both:
  *   - env is validated before the listener opens, so a misconfigured process
  *     dies immediately and visibly rather than serving errors
- *   - SIGTERM drains rather than dropping connections, because the deploy
- *     path restarts this container on every release
+ *   - SIGTERM drains rather than dropping connections, because every deploy
+ *     restarts this process
+ *   - there is no general static file handler. Exactly one asset is served,
+ *     read once at boot, so there is no path to traverse.
  */
+
+const here = dirname(fileURLToPath(import.meta.url));
+// Resolves the same from `src` (dev) and `dist` (built), since both sit one
+// level under packages/server.
+const HOLDING_PAGE = resolve(here, '..', '..', 'web', 'public', 'index.html');
 
 const env = loadEnv();
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);
 
+/**
+ * Read the page once at startup. Failing here is correct: a deploy that cannot
+ * find its own assets should not come up and pass a health check.
+ */
+let holdingPage: Buffer;
+try {
+  holdingPage = readFileSync(HOLDING_PAGE);
+} catch (cause) {
+  throw new Error(`Could not read the holding page at ${HOLDING_PAGE}`, { cause });
+}
+
 const server = createServer((req, res) => {
-  if (req.url === '/healthz') {
-    res.writeHead(200, { 'content-type': 'application/json' });
+  const path = (req.url ?? '/').split('?')[0];
+
+  if (path === '/healthz') {
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
     res.end(
       JSON.stringify({
         status: 'ok',
@@ -35,7 +56,20 @@ const server = createServer((req, res) => {
     return;
   }
 
-  res.writeHead(404, { 'content-type': 'application/json' });
+  if (path === '/' || path === '/index.html') {
+    res.writeHead(200, {
+      'content-type': 'text/html; charset=utf-8',
+      // Short, so the page can be changed without waiting out a cache.
+      'cache-control': 'public, max-age=60',
+      'content-length': holdingPage.byteLength,
+      'x-content-type-options': 'nosniff',
+    });
+    // HEAD must not carry a body.
+    res.end(req.method === 'HEAD' ? undefined : holdingPage);
+    return;
+  }
+
+  res.writeHead(404, { 'content-type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify({ error: 'not_found' }));
 });
 
@@ -44,8 +78,8 @@ server.listen(port, () => {
 });
 
 /**
- * Graceful shutdown. The deploy timer stops and recreates this container on
- * every promotion, so this path runs on each release, not just on outages.
+ * Graceful shutdown. `deploy.sh` restarts this process on every release, so
+ * this path runs on each deploy, not just on outages.
  */
 function shutdown(signal: string): void {
   console.warn(`${signal} received, draining`);
