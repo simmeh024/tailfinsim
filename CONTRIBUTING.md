@@ -77,6 +77,36 @@ Node version is pinned in `.nvmrc`; pnpm version in `package.json`'s `packageMan
 
 CI runs typecheck, lint, format check and coverage on every PR.
 
+### Local database
+
+Copy `.env.example` to `.env` (gitignored), then:
+
+```bash
+docker compose up -d
+pnpm db:migrate
+```
+
+The compose file has a healthcheck, so `db:migrate` immediately after `up` works —
+without it Postgres reports running several seconds before it accepts connections.
+
+| Command            | What it does                                     |
+| ------------------ | ------------------------------------------------ |
+| `pnpm db:generate` | Generate a new SQL migration from schema changes |
+| `pnpm db:migrate`  | Apply pending migrations                         |
+| `pnpm db:check`    | Verify migration consistency                     |
+| `pnpm db:studio`   | Browse the database in Drizzle Studio            |
+
+Generated migrations are **committed as SQL** under `packages/server/drizzle/`. Never
+edit an applied migration — add a new one. Name them meaningfully with
+`drizzle-kit generate --name=what_it_does`, since the default is a random word pair.
+
+The database is created with `--locale=C`. Postgres sorts differently under different
+host locales, and ordering must not depend on a developer's OS language settings.
+
+> Any container runtime works — Docker Engine, Rancher Desktop, Podman. Note that
+> Docker **Desktop** requires a paid licence for business use above 250 employees or
+> $10M revenue.
+
 ---
 
 ## How the packages relate
