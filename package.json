@@ -20,7 +20,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "dev": "pnpm --parallel --filter \"./packages/*\" dev"
+    "dev": "pnpm --parallel --filter \"./packages/*\" dev",
+    "db:generate": "pnpm --filter @tailfin/server db:generate",
+    "db:migrate": "pnpm --filter @tailfin/server db:migrate",
+    "db:studio": "pnpm --filter @tailfin/server db:studio",
+    "db:check": "pnpm --filter @tailfin/server db:check"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

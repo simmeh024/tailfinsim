@@ -32,7 +32,9 @@ export default tseslint.config(
         // Lets typescript-eslint find the right tsconfig per file via project
         // references, including root-level config files.
         projectService: {
-          allowDefaultProject: ['*.js', '*.ts'],
+          // Root config files, plus per-package tool configs that sit outside
+          // any package's `rootDir` and so belong to no project.
+          allowDefaultProject: ['*.js', '*.ts', 'packages/*/drizzle.config.ts'],
         },
         tsconfigRootDir: import.meta.dirname,
       },
