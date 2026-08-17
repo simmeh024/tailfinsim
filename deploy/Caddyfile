@@ -1,12 +1,25 @@
 # Installed at /etc/caddy/Caddyfile. Caddy obtains and renews Let's Encrypt
-# certificates automatically, but DNS must already resolve to this host or the
-# ACME challenge fails — see docs/deploy.md.
+# certificates automatically. DNS must already resolve to this host or the ACME
+# challenge fails — see docs/deploy.md.
 #
-# Set ACME_EMAIL in /etc/default/caddy, or replace the placeholder below.
-
-{
-	email {$ACME_EMAIL}
-}
+# There is deliberately no global `email` directive here. An earlier version used
+#
+#     { email {$ACME_EMAIL} }
+#
+# which fails to parse whenever the variable is unset: Caddy's `email` cannot
+# take an empty argument, and Caddy's packaged systemd unit does not read
+# /etc/default/caddy — so it was unset at runtime and broke startup. Verified
+# against Caddy 2.11.4 with `caddy validate`.
+#
+# Certificates issue fine without a contact address; you only forgo expiry
+# notification emails. To add one, create /etc/caddy/local.caddyfile on the
+# server containing:
+#
+#     { email you@example.com }
+#
+# Keeping it off-repo avoids committing a personal address to a public
+# repository. The import below tolerates the file being absent.
+import /etc/caddy/local.caddyfile
 
 tailfinsim.com {
 	encode zstd gzip

@@ -114,11 +114,24 @@ Copy your public key to `/home/tailfin/.ssh/authorized_keys` (owned by `tailfin`
 ## 4. Install the runtime
 
 ```bash
+apt update
+apt install -y ca-certificates curl gnupg git postgresql unattended-upgrades \
+               debian-keyring debian-archive-keyring apt-transport-https
+
 # Node — match .nvmrc (24.x)
 curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
-apt install -y nodejs git postgresql caddy
+apt install -y nodejs
 corepack enable pnpm
+
+# Caddy is NOT in Ubuntu's repositories; it needs its own.
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+  | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+  > /etc/apt/sources.list.d/caddy-stable.list
+apt update && apt install -y caddy
 ```
+
+Verified on Ubuntu 24.04.1: Node 24.19.0, pnpm 11.22.0, Postgres 16.14, Caddy 2.11.4.
 
 ## 5. Database
 
@@ -163,12 +176,27 @@ development uses — there is one way config loads, not two.
 ```bash
 cp /srv/tailfin/deploy/tailfin.service /etc/systemd/system/
 cp /srv/tailfin/deploy/Caddyfile /etc/caddy/Caddyfile
-echo 'ACME_EMAIL=<your email>' >> /etc/default/caddy
 install -d -o caddy -g caddy /var/log/caddy
 systemctl daemon-reload
 systemctl enable tailfin
+caddy validate --config /etc/caddy/Caddyfile   # check before restarting
+```
+
+**Do not start Caddy until DNS resolves to this host.** Let's Encrypt rate-limits
+repeated failed challenges. Once `dig +short tailfinsim.com` returns the instance IP:
+
+```bash
 systemctl restart caddy
 ```
+
+Optional — for certificate expiry emails, create `/etc/caddy/local.caddyfile`:
+
+```
+{ email you@example.com }
+```
+
+The committed Caddyfile imports it and tolerates its absence. It is kept off-repo so a
+personal address is not committed to a public repository.
 
 `deploy.sh` restarts the service via `sudo`, so allow just that one command:
 
@@ -196,9 +224,27 @@ curl -si https://tailfinsim.com/healthz
 | What is running? | `git -C /srv/tailfin log -1 --oneline`  |
 | Deploy latest    | `./deploy/deploy.sh`                    |
 | Roll back        | `./deploy/deploy.sh <older-sha>`        |
+| Rebuild in place | `./deploy/deploy.sh --force`            |
 | Logs             | `journalctl -u tailfin -f`              |
 | Proxy logs       | `tail -f /var/log/caddy/tailfinsim.log` |
 | Restart          | `sudo systemctl restart tailfin`        |
+
+`deploy.sh` exits early only when the checkout is already at the target **and** the
+service is running. If the service is down it rebuilds regardless — that is what makes a
+first-ever deploy and crash recovery work without a flag.
+
+## Two gotchas worth knowing
+
+**Deleting a keypair in OpenStack does not change a running instance.** cloud-init injects
+the public key into `~/.ssh/authorized_keys` on _first boot only_. Replacing the keypair in
+Horizon leaves the old key authorised and the new one unknown, and because the OS lives on
+the boot volume, relaunching from that same volume carries the old key with it. To rotate
+for real: log in with the existing key, replace `authorized_keys`, then confirm the old key
+is refused.
+
+**The `default` security group blocks all inbound traffic.** It permits egress anywhere but
+ingress only from other instances in the same group, so SSH times out rather than refusing.
+Rules must be added explicitly — see step 1.
 
 **Builds happen on this box.** That is the main trade-off of this setup: a deploy needs dev
 dependencies and a few hundred MB of `node_modules`, and a broken build is discovered here
