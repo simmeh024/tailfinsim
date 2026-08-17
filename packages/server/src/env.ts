@@ -80,11 +80,27 @@ function optionalBool(name: string, fallback: boolean): boolean {
 
 export type NodeEnv = 'development' | 'test' | 'production';
 
+export type WebSurface = 'holding' | 'app';
+
+const WEB_SURFACES = new Set<string>(['holding', 'app']);
+
 export interface ServerEnv {
   nodeEnv: NodeEnv;
   databaseUrl: string;
   databasePoolMax: number;
   logLevel: string;
+
+  /**
+   * Which public surface this instance serves at `/`.
+   *
+   * `holding` serves the coming-soon page; `app` serves the built client.
+   *
+   * **Defaults to `holding`** — the safe direction. Production and dev run the
+   * same code from the same repo, and this is what lets a feature be visible on
+   * dev while the front door stays a holding page. Promoting to production is
+   * then a config change, not a different build.
+   */
+  webSurface: WebSurface;
 
   /**
    * Whether new players may create accounts.
@@ -109,11 +125,17 @@ export function loadEnv(): ServerEnv {
     );
   }
 
+  const webSurface = optional('WEB_SURFACE', 'holding');
+  if (!WEB_SURFACES.has(webSurface)) {
+    throw new Error(`WEB_SURFACE must be one of holding, app — got ${JSON.stringify(webSurface)}.`);
+  }
+
   return {
     nodeEnv: nodeEnv as NodeEnv,
     databaseUrl: required('DATABASE_URL'),
     databasePoolMax: optionalInt('DATABASE_POOL_MAX', 10),
     logLevel: optional('LOG_LEVEL', nodeEnv === 'production' ? 'info' : 'debug'),
+    webSurface: webSurface as WebSurface,
     allowRegistration: optionalBool('ALLOW_REGISTRATION', false),
   };
 }

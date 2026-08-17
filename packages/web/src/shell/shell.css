@@ -1,0 +1,414 @@
+/*
+ * App shell layout (App. H.4).
+ *
+ * No colour literals here — every colour is a var(--…) from theme/tokens.css,
+ * enforced by theme/tokens.test.ts.
+ *
+ * The structural idea: the world sits behind everything and is never covered.
+ * The rail, panel and strip float over it, and the panel is translucent and
+ * dismissible so the world stays readable through it.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Figures use tabular mono so columns align and digits do not jitter (H.4). */
+.figure {
+  font-family: var(--font-figures);
+  font-variant-numeric: tabular-nums;
+}
+
+/* H.7: visible focus everywhere, never removed. */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.shell {
+  display: grid;
+  height: 100%;
+  /* rail | world | panel, with the strip spanning the bottom. */
+  grid-template-columns: var(--rail-width) 1fr auto;
+  grid-template-rows: 1fr var(--strip-height);
+  grid-template-areas:
+    'rail world panel'
+    'strip strip strip';
+}
+
+/* ---------------------------------------------------------------- world ---- */
+
+.world {
+  grid-area: world;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-inset);
+}
+
+/* Placeholder until M7-01 brings the deck.gl renderer. */
+.world__placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: var(--space-2);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.world__grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.5;
+  background-image:
+    linear-gradient(var(--border-subtle) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
+  background-size: 4rem 4rem;
+}
+
+/* ----------------------------------------------------------------- rail ---- */
+
+.rail {
+  grid-area: rail;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--bg-raised);
+  border-right: 1px solid var(--border-subtle);
+  overflow-y: auto;
+}
+
+.rail__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-4);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+}
+
+.rail__mark {
+  color: var(--brand);
+  font-size: var(--text-lg);
+  line-height: 1;
+}
+
+.rail__link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: var(--text-sm);
+  transition:
+    background var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease);
+}
+
+.rail__link:hover {
+  background: var(--accent-quiet);
+  color: var(--text-primary);
+}
+
+.rail__link[aria-current='page'] {
+  background: var(--accent-quiet);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.rail__glyph {
+  width: 1.25rem;
+  text-align: center;
+  flex: none;
+}
+
+.rail__spacer {
+  flex: 1;
+}
+
+.rail__theme {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: border-color var(--motion-fast) var(--ease);
+}
+
+.rail__theme:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+/* ---------------------------------------------------------------- panel ---- */
+
+.panel {
+  grid-area: panel;
+  width: var(--panel-width);
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  /* Translucent, so the world remains visible behind it (H.4). */
+  background: var(--bg-panel);
+  backdrop-filter: blur(10px);
+  border-left: 1px solid var(--border-subtle);
+  overflow-y: auto;
+}
+
+.panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.panel__title {
+  margin: 0;
+  font-size: var(--text-sm);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.panel__dismiss {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-lg);
+  line-height: 1;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.panel__dismiss:hover {
+  background: var(--accent-quiet);
+  color: var(--text-primary);
+}
+
+.panel__body {
+  padding: var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+/* When dismissed the panel column collapses entirely, giving the world its space. */
+.panel__reopen {
+  grid-area: panel;
+  align-self: start;
+  margin: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  backdrop-filter: blur(10px);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.panel__reopen:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+/* ---------------------------------------------------------------- strip ---- */
+
+.strip {
+  grid-area: strip;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: 0 var(--space-4);
+  background: var(--bg-raised);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--text-xs);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.strip__item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.strip__label {
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.strip__value {
+  color: var(--text-primary);
+}
+
+/*
+ * Status is never carried by hue alone (H.4, H.7). Each modifier pairs its
+ * colour with a glyph rendered from ::before, so the meaning survives
+ * greyscale, colour blindness and a monochrome print.
+ */
+.status {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+
+.status::before {
+  font-family: var(--font-figures);
+}
+
+.status--ontime {
+  color: var(--status-ontime);
+}
+.status--ontime::before {
+  content: '\2714'; /* check */
+}
+
+.status--delayed {
+  color: var(--status-delayed);
+}
+.status--delayed::before {
+  content: '\25B2'; /* up triangle */
+}
+
+.status--cancelled {
+  color: var(--status-cancelled);
+}
+.status--cancelled::before {
+  content: '\2715'; /* cross */
+}
+
+.status--profit {
+  color: var(--status-profit);
+}
+.status--profit::before {
+  content: '\2191'; /* up arrow */
+}
+
+.status--loss {
+  color: var(--status-loss);
+}
+.status--loss::before {
+  content: '\2193'; /* down arrow */
+}
+
+/* ---------------------------------------------------------------- pages ---- */
+
+.page {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: var(--space-2);
+  text-align: center;
+  padding: var(--space-6);
+}
+
+.page__title {
+  margin: 0;
+  font-size: var(--text-lg);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.page__note {
+  margin: 0;
+  max-width: 34ch;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+/* --------------------------------------------------------------- mobile ---- */
+
+/*
+ * H.6: mobile is a first-class client. The rail becomes a thumb-reachable
+ * bottom bar, the panel becomes a full-width bottom sheet rather than a modal,
+ * and the world keeps the remaining space.
+ */
+@media (max-width: 48rem) {
+  .shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr auto var(--strip-height) auto;
+    grid-template-areas:
+      'world'
+      'panel'
+      'strip'
+      'rail';
+  }
+
+  .rail {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-1);
+    overflow-x: auto;
+    padding: var(--space-2);
+    border-right: none;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .rail__brand,
+  .rail__spacer {
+    display: none;
+  }
+
+  .rail__link {
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-2);
+    font-size: var(--text-xs);
+    flex: 1 0 auto;
+  }
+
+  .rail__theme {
+    width: auto;
+    flex: none;
+  }
+
+  .panel {
+    width: 100%;
+    max-height: 45vh;
+    border-left: none;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .panel__reopen {
+    margin: var(--space-2);
+    justify-self: end;
+  }
+}

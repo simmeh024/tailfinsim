@@ -3,7 +3,14 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    // `vite/client` is what makes `.css` imports resolve. `node` is here only
+    // for the theme-token scan test, which reads files off disk — lint forbids
+    // `node:*` imports from non-test files in this package, so client code
+    // cannot quietly start using them.
+    "types": ["vite/client", "node"],
+    "allowImportingTsExtensions": false
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"],
   "references": [{ "path": "../shared" }]

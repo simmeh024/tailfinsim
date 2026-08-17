@@ -1,0 +1,145 @@
+/*
+ * THE ONLY FILE IN packages/web THAT MAY CONTAIN A COLOUR VALUE.
+ *
+ * M0-09 requires that no colour is hardcoded outside this file, and a test
+ * (src/theme/tokens.test.ts) scans the package and fails if one appears
+ * elsewhere. Everything else references var(--…).
+ *
+ * Palette follows App. H.4:
+ *   - a near-neutral base: deep slate in dark, warm off-white in light
+ *   - ONE accent for interactive elements
+ *   - a fixed semantic set for status
+ *
+ * Two deliberate decisions:
+ *
+ * 1. The interactive accent is blue, not the brand amber. H.4 wants one accent
+ *    for interaction AND a fixed status set in which amber means "delayed".
+ *    Using amber for both would make "this is clickable" and "this is late"
+ *    the same colour. The amber survives as --brand, used only for the mark.
+ *
+ * 2. Status colour is never the only signal. H.4 is explicit: "status colour is
+ *    always paired with a shape or label, never carried by hue alone", and H.7
+ *    requires colour-blind-safe palettes with shape redundancy. Hence the
+ *    --status-*-glyph tokens — every status has a character that carries the
+ *    same meaning with the colour removed.
+ */
+
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* Base — deep slate. */
+  --bg-base: #0b1017;
+  --bg-raised: #131a24;
+  --bg-inset: #080c12;
+  /* Panels are translucent so the world stays visible behind them (H.4). */
+  --bg-panel: rgb(19 26 36 / 88%);
+  --bg-scrim: rgb(8 12 18 / 60%);
+
+  --border-subtle: rgb(148 163 184 / 14%);
+  --border-strong: rgb(148 163 184 / 28%);
+
+  --text-primary: #e9eef6;
+  --text-secondary: #9dabc0;
+  --text-muted: #6d7c93;
+  --text-on-accent: #04121f;
+
+  /* One accent for interactive elements. */
+  --accent: #5eb8ff;
+  --accent-hover: #8ccdff;
+  --accent-quiet: rgb(94 184 255 / 14%);
+
+  /* The tail fin amber. Brand mark only — never interaction, never status. */
+  --brand: #ffb84d;
+
+  /* Fixed semantic status set. */
+  --status-ontime: #4ade80;
+  --status-delayed: #fbbf24;
+  --status-cancelled: #f87171;
+  --status-profit: #4ade80;
+  --status-loss: #f87171;
+
+  --focus-ring: #8ccdff;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  /* Base — warm off-white, not a cold grey. */
+  --bg-base: #f6f4f0;
+  --bg-raised: #fffefc;
+  --bg-inset: #ece8e1;
+  --bg-panel: rgb(255 254 252 / 92%);
+  --bg-scrim: rgb(22 32 46 / 32%);
+
+  --border-subtle: rgb(30 41 59 / 12%);
+  --border-strong: rgb(30 41 59 / 26%);
+
+  --text-primary: #16202e;
+  --text-secondary: #46566d;
+  --text-muted: #6b7a90;
+  --text-on-accent: #ffffff;
+
+  --accent: #0a63b0;
+  --accent-hover: #084d8a;
+  --accent-quiet: rgb(10 99 176 / 10%);
+
+  --brand: #a45d00;
+
+  /* Darkened for AA contrast against a light background. */
+  --status-ontime: #157f3c;
+  --status-delayed: #a2570a;
+  --status-cancelled: #b3261e;
+  --status-profit: #157f3c;
+  --status-loss: #b3261e;
+
+  --focus-ring: #0a63b0;
+}
+
+/*
+ * Non-colour tokens. Kept here so there is one place to look, and because
+ * nothing below can trip the colour-literal check.
+ */
+:root {
+  /* Type — a grotesque for the interface, tabular mono for figures (H.4). */
+  --font-ui:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-figures: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+
+  --text-xs: 0.6875rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-lg: 1.125rem;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+
+  /* Layout. The rail collapses to a bottom bar under --bp-mobile (H.6). */
+  --rail-width: 13rem;
+  --rail-width-collapsed: 3.5rem;
+  --panel-width: 22rem;
+  --strip-height: 2.5rem;
+  --bp-mobile: 48rem;
+
+  /* Motion — purposeful only, 150–200ms (H.4). */
+  --motion-fast: 150ms;
+  --motion-base: 180ms;
+  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+/*
+ * H.7: respect reduced motion. Zeroing the durations here means no component
+ * needs its own media query.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+  }
+}
