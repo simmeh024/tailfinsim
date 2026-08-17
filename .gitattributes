@@ -1,0 +1,30 @@
+# Normalise to LF in the repository. The team is on Windows; the servers and CI
+# are on Linux. Without this, line endings churn every diff and shell scripts
+# copied into the Docker image break with `\r` errors.
+* text=auto eol=lf
+
+# Files that must keep LF even on checkout
+*.sh          text eol=lf
+Dockerfile    text eol=lf
+*.yml         text eol=lf
+*.yaml        text eol=lf
+
+# Windows-only scripts keep CRLF
+*.bat         text eol=crlf
+*.cmd         text eol=crlf
+*.ps1         text eol=crlf
+
+# Binary assets — never diff or normalise
+*.png         binary
+*.jpg         binary
+*.jpeg        binary
+*.webp        binary
+*.gif         binary
+*.ico         binary
+*.woff        binary
+*.woff2       binary
+*.pdf         binary
+*.zip         binary
+
+# Generated — collapse in PR diffs
+pnpm-lock.yaml linguist-generated=true -diff

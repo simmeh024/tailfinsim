@@ -1,0 +1,10 @@
+packages:
+  - 'packages/*'
+
+# Lifecycle scripts are blocked by default (pnpm 10+). Approve deliberately.
+# unrs-resolver ships a native binding used by eslint-plugin-import-x's
+# resolver. We only use import-x's ordering rules, which work on the import
+# specifier itself, so the native build is not needed — keeping it off makes CI
+# hermetic and reduces the postinstall surface.
+allowBuilds:
+  unrs-resolver: false
