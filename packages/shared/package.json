@@ -11,5 +11,8 @@
   },
   "scripts": {
     "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
   }
 }
