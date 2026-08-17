@@ -3,12 +3,14 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import fastifyCookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import { sql } from 'drizzle-orm';
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 
 import { healthResponseJsonSchema } from '@tailfin/shared';
 
+import { registerAuthRoutes } from './auth/routes';
 import { type DatabaseHandle } from './db/client';
 import { type ServerEnv } from './env';
 
@@ -80,6 +82,21 @@ export function buildApp({ env, db }: BuildAppOptions): FastifyInstance {
   app.addHook('onRequest', async (request, reply) => {
     void reply.header('x-request-id', request.id);
   });
+
+  /**
+   * Cookies, then auth (M0-11).
+   *
+   * Registered before the surface routes so that `/api/auth/*` and `/api/me`
+   * exist regardless of which surface `/` serves — the API is the same on the
+   * holding page and in the app.
+   *
+   * The secret is only present when auth is configured. Without it
+   * `@fastify/cookie` still parses and sets plain cookies; only *signed* cookies
+   * need it, and the one signed cookie (the OAuth state) is written solely on a
+   * path guarded by `env.authEnabled`.
+   */
+  app.register(fastifyCookie, env.sessionSecret ? { secret: env.sessionSecret } : {});
+  registerAuthRoutes(app, { env, db });
 
   const startedAt = Date.now();
 

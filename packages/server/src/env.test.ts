@@ -45,6 +45,17 @@ describe('loadEnv', () => {
     expect(loadEnv().databasePoolMax).toBe(10);
   });
 
+  it('bounds the connect timeout rather than inheriting pg’s "wait forever"', () => {
+    // The default matters more than the configurability: an unbounded connect
+    // makes /healthz hang instead of answering 503, and deploy.sh reads /healthz.
+    vi.stubEnv('DATABASE_URL', VALID_URL);
+    vi.stubEnv('DATABASE_CONNECT_TIMEOUT_MS', '');
+    expect(loadEnv().databaseConnectTimeoutMs).toBe(5000);
+
+    vi.stubEnv('DATABASE_CONNECT_TIMEOUT_MS', '250');
+    expect(loadEnv().databaseConnectTimeoutMs).toBe(250);
+  });
+
   it('defaults the log level by environment', () => {
     vi.stubEnv('DATABASE_URL', VALID_URL);
     vi.stubEnv('LOG_LEVEL', '');
@@ -87,5 +98,75 @@ describe('loadEnv', () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('LOG_LEVEL', 'trace');
     expect(loadEnv().logLevel).toBe('trace');
+  });
+});
+
+/**
+ * Auth configuration (M0-11).
+ *
+ * All three variables are stubbed in every case, never left to whatever a local
+ * `.env` happens to hold, so these behave the same on a developer machine as in
+ * CI.
+ */
+describe('loadEnv — auth', () => {
+  const CLIENT_ID = 'x.apps.googleusercontent.com';
+  const CLIENT_SECRET = 'GOCSPX-not-a-real-secret';
+  const SECRET = 'a'.repeat(48);
+
+  function stubAuth(id: string, secret: string, session: string): void {
+    vi.stubEnv('DATABASE_URL', VALID_URL);
+    vi.stubEnv('GOOGLE_CLIENT_ID', id);
+    vi.stubEnv('GOOGLE_CLIENT_SECRET', secret);
+    vi.stubEnv('SESSION_SECRET', session);
+  }
+
+  it('leaves auth disabled when nothing is configured', () => {
+    stubAuth('', '', '');
+    const env = loadEnv();
+    expect(env.authEnabled).toBe(false);
+    expect(env.googleClientId).toBeUndefined();
+  });
+
+  it('enables auth when all three are present', () => {
+    stubAuth(CLIENT_ID, CLIENT_SECRET, SECRET);
+    expect(loadEnv().authEnabled).toBe(true);
+  });
+
+  it('refuses to boot on a half-configured setup', () => {
+    // The trap this exists to prevent: a server that looks signed-in-capable and
+    // only fails at the callback, after the player has already been to Google.
+    stubAuth(CLIENT_ID, '', SECRET);
+    expect(() => loadEnv()).toThrow(/partially configured/);
+
+    stubAuth('', CLIENT_SECRET, SECRET);
+    expect(() => loadEnv()).toThrow(/partially configured/);
+
+    stubAuth(CLIENT_ID, CLIENT_SECRET, '');
+    expect(() => loadEnv()).toThrow(/partially configured/);
+  });
+
+  it('rejects a session secret too short to be worth signing with', () => {
+    stubAuth(CLIENT_ID, CLIENT_SECRET, 'short');
+    expect(() => loadEnv()).toThrow(/at least 32 characters/);
+  });
+
+  it('strips trailing slashes from the public origin', () => {
+    // The redirect URI is built from this and must match Google's registration
+    // character for character, so `//api/auth/...` would break sign-in.
+    stubAuth('', '', '');
+    vi.stubEnv('PUBLIC_ORIGIN', 'https://dev.tailfinsim.com///');
+    expect(loadEnv().publicOrigin).toBe('https://dev.tailfinsim.com');
+  });
+
+  it('defaults the public origin to localhost', () => {
+    stubAuth('', '', '');
+    vi.stubEnv('PUBLIC_ORIGIN', '');
+    expect(loadEnv().publicOrigin).toBe('http://localhost:3000');
+  });
+
+  it('defaults the session lifetime to 30 days', () => {
+    stubAuth('', '', '');
+    vi.stubEnv('SESSION_TTL_HOURS', '');
+    expect(loadEnv().sessionTtlHours).toBe(720);
   });
 });

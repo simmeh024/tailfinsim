@@ -20,10 +20,19 @@ const testEnv: ServerEnv = {
   nodeEnv: 'test',
   databaseUrl: url ?? 'postgres://unused',
   databasePoolMax: 2,
+  databaseConnectTimeoutMs: 500,
   // Quiet: these tests deliberately provoke errors and a 503.
   logLevel: 'silent',
   // The default surface, and the one production runs.
   webSurface: 'holding',
+  publicOrigin: 'http://localhost:3000',
+  // Auth off, matching production until its own OAuth client exists. The auth
+  // surface itself is covered by auth/session-cookie.test.ts.
+  googleClientId: undefined,
+  googleClientSecret: undefined,
+  sessionSecret: undefined,
+  authEnabled: false,
+  sessionTtlHours: 24,
   allowRegistration: false,
 };
 
@@ -155,14 +164,24 @@ describe('health degradation', () => {
   });
 });
 
-/** Builds a handle against an explicit URL, bypassing the environment. */
+/**
+ * Builds a handle against an explicit URL, bypassing the environment.
+ *
+ * Also shortens the connect timeout. The production default is 5s, which is
+ * sensible for a server and useless for a test that exists to observe the
+ * failure — the assertion is about the *response*, not how long it took.
+ */
 function createDatabaseAt(connectionString: string): DatabaseHandle {
-  const previous = process.env.DATABASE_URL;
+  const previousUrl = process.env.DATABASE_URL;
+  const previousTimeout = process.env.DATABASE_CONNECT_TIMEOUT_MS;
   process.env.DATABASE_URL = connectionString;
+  process.env.DATABASE_CONNECT_TIMEOUT_MS = '500';
   try {
     return createDatabase();
   } finally {
-    if (previous === undefined) delete process.env.DATABASE_URL;
-    else process.env.DATABASE_URL = previous;
+    if (previousUrl === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = previousUrl;
+    if (previousTimeout === undefined) delete process.env.DATABASE_CONNECT_TIMEOUT_MS;
+    else process.env.DATABASE_CONNECT_TIMEOUT_MS = previousTimeout;
   }
 }

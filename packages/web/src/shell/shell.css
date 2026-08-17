@@ -170,6 +170,113 @@ body {
   color: var(--text-primary);
 }
 
+/* -------------------------------------------------------------- account ---- */
+
+/*
+ * Sign-in / signed-in state, in the rail above the theme toggle (M0-11).
+ * Deliberately quiet: the account is not what the player came here to look at.
+ */
+
+.account {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+}
+
+.account__note {
+  margin: 0;
+  padding: 0 var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.account__error {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--status-cancelled);
+  font-size: var(--text-xs);
+}
+
+.account__signin {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  text-decoration: none;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  transition: background var(--motion-fast) var(--ease);
+}
+
+.account__signin:hover {
+  background: var(--accent-hover);
+}
+
+.account__glyph {
+  flex: none;
+  width: 1.25rem;
+  text-align: center;
+}
+
+.account__player {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  min-width: 0;
+}
+
+.account__avatar {
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  border: 1px solid var(--border-subtle);
+  object-fit: cover;
+}
+
+/* Initial-in-a-circle, for accounts with no picture. */
+.account__avatar--empty {
+  display: grid;
+  place-content: center;
+  background: var(--accent-quiet);
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.account__name {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  /* Long display names must not widen the rail. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account__signout {
+  padding: var(--space-1) var(--space-3);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.account__signout:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
 /* ---------------------------------------------------------------- panel ---- */
 
 .panel {
@@ -398,6 +505,35 @@ body {
   .rail__theme {
     width: auto;
     flex: none;
+  }
+
+  /*
+   * The rail is a horizontal bar here, so the account block lays out inline.
+   * The display name is dropped — the avatar identifies the account and the name
+   * would push the seven destinations off screen — but the error and status
+   * messages are kept: an alert that only appears on desktop is worse than a
+   * cramped one.
+   */
+  .account {
+    flex-direction: row;
+    align-items: center;
+    flex: none;
+    padding-bottom: 0;
+  }
+
+  .account__error,
+  .account__note {
+    max-width: 16rem;
+    white-space: normal;
+  }
+
+  .account__player,
+  .account__signout {
+    padding-inline: var(--space-1);
+  }
+
+  .account__name {
+    display: none;
   }
 
   .panel {

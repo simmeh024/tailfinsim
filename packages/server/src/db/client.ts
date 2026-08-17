@@ -27,6 +27,9 @@ export function createDatabase(): DatabaseHandle {
   const pool = new pg.Pool({
     connectionString: env.databaseUrl,
     max: env.databasePoolMax,
+    // Bounded on purpose — `pg`'s default is to wait indefinitely. See the field
+    // comment in env.ts for why that breaks the health check.
+    connectionTimeoutMillis: env.databaseConnectTimeoutMs,
   });
 
   return {

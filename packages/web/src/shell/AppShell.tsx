@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
 
+import { AccountBadge } from '../auth/AccountBadge';
 import { useTheme } from '../theme/ThemeProvider';
 
 import type { ReactNode } from 'react';
@@ -57,6 +58,8 @@ function LeftRail(): ReactNode {
       ))}
 
       <div className="rail__spacer" />
+
+      <AccountBadge />
 
       <button
         type="button"

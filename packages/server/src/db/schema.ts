@@ -118,8 +118,48 @@ export const world = pgTable(
 export const player = pgTable('player', {
   id: uuid('id').primaryKey().defaultRandom(),
   displayName: text('display_name').notNull(),
+  /** From the provider's `picture` claim. Nullable — not everyone has one. */
+  avatarUrl: text('avatar_url'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Login sessions (M0-11).
+ *
+ * Sessions live here rather than in memory because every deploy restarts the
+ * process (`deploy.sh`), and in-memory sessions would sign everyone out on each
+ * release.
+ *
+ * **The cookie's token is never stored.** Only its SHA-256 hash is, so a dump of
+ * this table does not hand an attacker a set of live sessions — the same reason
+ * password hashes exist. Lookup is by hash, which is why `token_hash` is unique
+ * rather than the primary key being the token.
+ */
+export const session = pgTable(
+  'session',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    playerId: uuid('player_id')
+      .notNull()
+      .references(() => player.id, { onDelete: 'cascade' }),
+
+    /** Hex SHA-256 of the opaque token held by the client. */
+    tokenHash: text('token_hash').notNull(),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Absolute expiry. Checked on every request; sweeping old rows is separate. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('session_token_hash_key').on(t.tokenHash),
+    index('session_player_id_idx').on(t.playerId),
+    // Sweeping expired sessions is a range scan over this.
+    index('session_expires_at_idx').on(t.expiresAt),
+    check('session_token_hash_is_sha256', sql`length(${t.tokenHash}) = 64`),
+    check('session_expires_after_creation', sql`${t.expiresAt} > ${t.createdAt}`),
+  ],
+);
 
 export const authProvider = pgEnum('auth_provider', ['google']);
 
@@ -251,6 +291,9 @@ export type NewPlayerRow = typeof player.$inferInsert;
 
 export type PlayerIdentityRow = typeof playerIdentity.$inferSelect;
 export type NewPlayerIdentityRow = typeof playerIdentity.$inferInsert;
+
+export type SessionRow = typeof session.$inferSelect;
+export type NewSessionRow = typeof session.$inferInsert;
 
 export type AirlineRow = typeof airline.$inferSelect;
 export type NewAirlineRow = typeof airline.$inferInsert;
