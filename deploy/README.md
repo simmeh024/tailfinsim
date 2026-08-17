@@ -189,14 +189,18 @@ repeated failed challenges. Once `dig +short tailfinsim.com` returns the instanc
 systemctl restart caddy
 ```
 
-Optional — for certificate expiry emails, create `/etc/caddy/local.caddyfile`:
+Optional — for certificate expiry emails:
 
-```
-{ email you@example.com }
+```bash
+install -d -o root -g caddy -m 750 /etc/caddy/conf.d
+printf '{\n\temail you@example.com\n}\n' > /etc/caddy/conf.d/acme.caddyfile
 ```
 
-The committed Caddyfile imports it and tolerates its absence. It is kept off-repo so a
-personal address is not committed to a public repository.
+The committed Caddyfile globs `/etc/caddy/conf.d/*.caddyfile`, which tolerates matching
+nothing. It is kept off-repo so a personal address is not committed to a public repository.
+
+> A **glob** matters here: an `import` of a single literal path fails outright when the
+> file is absent (`File to import not found`).
 
 `deploy.sh` restarts the service via `sudo`, so allow just that one command:
 
@@ -219,15 +223,36 @@ curl -si https://tailfinsim.com/healthz
 
 ## Operating notes
 
-| Task             | Command                                 |
-| ---------------- | --------------------------------------- |
-| What is running? | `git -C /srv/tailfin log -1 --oneline`  |
-| Deploy latest    | `./deploy/deploy.sh`                    |
-| Roll back        | `./deploy/deploy.sh <older-sha>`        |
-| Rebuild in place | `./deploy/deploy.sh --force`            |
-| Logs             | `journalctl -u tailfin -f`              |
-| Proxy logs       | `tail -f /var/log/caddy/tailfinsim.log` |
-| Restart          | `sudo systemctl restart tailfin`        |
+| Task             | Command                                                |
+| ---------------- | ------------------------------------------------------ |
+| What is running? | `sudo -u tailfin git -C /srv/tailfin log -1 --oneline` |
+| Deploy latest    | `./deploy/deploy.sh`                                   |
+| Roll back        | `./deploy/deploy.sh <older-sha>`                       |
+| Rebuild in place | `./deploy/deploy.sh --force`                           |
+| App logs         | `journalctl -u tailfin -f`                             |
+| Proxy logs       | `journalctl -u caddy -f`                               |
+| Restart          | `sudo systemctl restart tailfin`                       |
+
+Run the git command **as `tailfin`**. The checkout is owned by `tailfin`, so git's
+dubious-ownership guard rejects it from any other account.
+
+### `deploy.sh` does not sync anything under /etc
+
+It updates the checkout, builds, migrates and restarts the app. It deliberately cannot
+write to `/etc` — the sudoers grant is exactly one command, `systemctl restart tailfin`.
+So editing `deploy/Caddyfile` or `deploy/tailfin.service` in the repo does **not** reach
+the running system on deploy. Apply those by hand, as root:
+
+```bash
+cp /srv/tailfin/deploy/Caddyfile /etc/caddy/Caddyfile
+caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy
+
+cp /srv/tailfin/deploy/tailfin.service /etc/systemd/system/
+systemctl daemon-reload && systemctl restart tailfin
+```
+
+Widening the grant so deploys could do this automatically would hand the deploy user most
+of root, which is the opposite of the point.
 
 `deploy.sh` exits early only when the checkout is already at the target **and** the
 service is running. If the service is down it rebuilds regardless — that is what makes a

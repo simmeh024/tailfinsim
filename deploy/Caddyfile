@@ -2,24 +2,30 @@
 # certificates automatically. DNS must already resolve to this host or the ACME
 # challenge fails — see docs/deploy.md.
 #
-# There is deliberately no global `email` directive here. An earlier version used
+# Two things here are the way they are because Caddy rejected the alternatives
+# on a real box (verified against Caddy 2.11.4 from the official apt repo):
 #
-#     { email {$ACME_EMAIL} }
+#   1. No global `email` directive, and the override below is a **glob**.
+#      `{ email {$ACME_EMAIL} }` fails to parse when the variable is unset —
+#      `email` cannot take an empty argument, and Caddy's packaged systemd unit
+#      does not read /etc/default/caddy. A literal `import` of a single file
+#      also fails when that file is absent ("File to import not found"); only a
+#      glob tolerates matching nothing.
 #
-# which fails to parse whenever the variable is unset: Caddy's `email` cannot
-# take an empty argument, and Caddy's packaged systemd unit does not read
-# /etc/default/caddy — so it was unset at runtime and broke startup. Verified
-# against Caddy 2.11.4 with `caddy validate`.
+#   2. Logs go to stdout, not to a file. Caddy's packaged unit runs with
+#      ProtectSystem=full and ReadWritePaths=/var/lib/caddy, so writing to
+#      /var/log/caddy is denied and the service refuses to start. journald
+#      captures stdout, so `journalctl -u caddy -f` is the way to read these.
 #
-# Certificates issue fine without a contact address; you only forgo expiry
-# notification emails. To add one, create /etc/caddy/local.caddyfile on the
-# server containing:
+# Certificates issue fine with no contact address; you only forgo expiry
+# notification emails. To add one, drop a file in /etc/caddy/conf.d/ ending in
+# .caddyfile containing:
 #
 #     { email you@example.com }
 #
 # Keeping it off-repo avoids committing a personal address to a public
-# repository. The import below tolerates the file being absent.
-import /etc/caddy/local.caddyfile
+# repository.
+import /etc/caddy/conf.d/*.caddyfile
 
 tailfinsim.com {
 	encode zstd gzip
@@ -36,7 +42,7 @@ tailfinsim.com {
 	}
 
 	log {
-		output file /var/log/caddy/tailfinsim.log
+		output stdout
 		format json
 	}
 }
