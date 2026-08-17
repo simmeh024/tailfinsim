@@ -16,6 +16,20 @@ coverage/
 .env.*
 !.env.example
 
+# Keys and credentials. A private key was once committed here from an
+# OpenStack keypair download landing in the repo root, so this is not
+# hypothetical — keys belong in ~/.ssh, never in a checkout.
+*.pem
+*.key
+*.ppk
+*.p12
+*.pfx
+id_rsa*
+id_ecdsa*
+id_ed25519*
+*.jks
+.ssh/
+
 # Editors
 .vscode/*
 !.vscode/extensions.json

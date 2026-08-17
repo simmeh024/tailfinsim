@@ -37,26 +37,57 @@ out the old commit.
 DreamCompute is already activated (region **US-East 2**). In the panel: **Cloud Services →
 DreamCompute → View Dashboard** to reach OpenStack Horizon.
 
-|          | Recommended                                                                          |
-| -------- | ------------------------------------------------------------------------------------ |
-| Flavor   | `lightspeed` (2 vCPU / 4 GB, $24/mo) or `warpspeed` (4 vCPU / 8 GB, $48/mo)          |
-| Image    | Ubuntu LTS                                                                           |
-| Key pair | Generate on **your** machine (`ssh-keygen -t ed25519`) and upload the **public** key |
+| Wizard step     | Set to                                                                                                            | Why                                                                  |
+| --------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Details         | name `Tailfin`, count 1                                                                                           |                                                                      |
+| Source          | Image **Ubuntu-24.04**, Create New Volume **Yes**, Volume Size **50 GB**, Delete Volume on Instance Delete **No** | see the disk trap below                                              |
+| Flavor          | **`gp1.lightspeed`** (2 vCPU / 4 GB, $24/mo)                                                                      | no Docker on the box, so 4 GB is enough to start                     |
+| Networks        | **`public`**                                                                                                      | gives a routable IP directly — no floating IP needed on DreamCompute |
+| Security Groups | `default`, then add inbound **22, 80, 443**                                                                       | see below                                                            |
+| Key pair        | generate on **your** machine (`ssh-keygen -t ed25519`) and **Import** the public key                              |                                                                      |
 
-Without Docker the box needs less headroom, so `lightspeed` is a reasonable start —
-Postgres and one Node process fit in 4 GB. Monthly prices are ceilings; billing caps at
-600 hours.
+Monthly prices are ceilings; billing caps at 600 hours.
 
-Then attach a **floating IP** and note it.
+### The disk trap
+
+The Flavor step advertises "Total Disk 80 GB", but if you boot from a new volume then the
+**volume** is your root disk and the flavor's disk is not used. The wizard defaults the
+volume to **4 GB**, and the Ubuntu 24.04 image alone is 3.5 GB — so the default leaves
+roughly half a gigabyte for Postgres, `node_modules` and logs. Since deploys build on this
+box, that is nowhere near enough.
+
+**50 GB.** Block storage includes 100 GB, so it costs nothing and leaves room for a
+snapshot.
+
+`Delete Volume on Instance Delete = No` is what lets you destroy and rebuild the instance
+without losing the database. Keep it off.
+
+### Key pair
+
+Prefer **Import Key Pair** with a key you generated locally. If you use _Create Key Pair_,
+the dashboard offers the private key as a one-time download — miss it and you cannot log
+in, and the only fix is deleting the key and starting again.
+
+### Security group rules
+
+The `default` group does not necessarily permit inbound HTTP. After launch:
+**Network → Security Groups → `default` → Manage Rules**, and ensure ingress on **22**
+(SSH), **80** (ACME challenge) and **443**. Without 80, Caddy cannot obtain a certificate.
+
+Rules take effect immediately, so this can be fixed after the instance is running.
 
 ## 2. DNS
 
-Panel → **Domains → Manage Domains → DNS** for `tailfinsim.com`:
+Panel → **Domains → Manage Domains → DNS** for `tailfinsim.com`.
+
+Use the instance's public IPv4 from the Instances list. Because it is attached to the
+`public` network it has a routable address from creation — there is no floating IP to
+allocate or attach.
 
 | Type | Host          | Value           |
 | ---- | ------------- | --------------- |
-| `A`  | _(blank / @)_ | `<floating IP>` |
-| `A`  | `www`         | `<floating IP>` |
+| `A`  | _(blank / @)_ | `<instance IP>` |
+| `A`  | `www`         | `<instance IP>` |
 
 Do this **before** installing Caddy. Let's Encrypt rate-limits repeated failed challenges,
 so a premature start costs you an hour of waiting.

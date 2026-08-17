@@ -76,10 +76,15 @@ traffic, that is the signal to move up.
 
 All accounts include 100 GB of block storage and free bandwidth.
 
-**Status (2026-08-17):** DreamCompute is **activated** — region `US-East 2`, tenant
-`7407e2e12e9241fb81e6e083d00eab79`, user `passle`. **No instance exists yet.** Creating one
-via the OpenStack dashboard, generating the SSH keypair and attaching a floating IP are all
-account actions.
+**Status (2026-08-17):** DreamCompute is **activated** — region `US-East 2` (`iad2`), tenant
+`7407e2e12e9241fb81e6e083d00eab79`, project `dhc2993840`, user `passle`. **No instance
+exists yet**; a launch is configured but not submitted. Creating it and generating the SSH
+keypair are account actions.
+
+Note for the launch wizard: attaching the instance to the **`public`** network gives it a
+routable IPv4 directly, so **no floating IP is involved**. And if booting from a new volume,
+the wizard's default volume size of 4 GB is smaller than the Ubuntu 24.04 image — see
+[`deploy/README.md`](../deploy/README.md) for the full wizard settings and why.
 
 ## 3. DNS records to create
 
@@ -88,13 +93,13 @@ In the DreamHost panel: **Domains → Manage Domains → DNS** for `tailfinsim.c
 Current state (verified 2026-08-17): the domain resolves to DreamHost nameservers
 (`ns1/ns2/ns3.dreamhost.com`) with **no A, MX or TXT records at all**. Clean slate.
 
-Once the DreamCompute instance has a floating IP, add:
+Once the instance exists, take its public IPv4 from the Instances list and add:
 
 | Type | Host          | Value                   | Purpose                      |
 | ---- | ------------- | ----------------------- | ---------------------------- |
-| `A`  | _(blank / @)_ | `<floating IP>`         | Apex → the app               |
-| `A`  | `www`         | `<floating IP>`         | Caddy redirects `www` → apex |
-| `A`  | `staging`     | `<staging floating IP>` | Staging environment          |
+| `A`  | _(blank / @)_ | `<instance IP>`         | Apex → the app               |
+| `A`  | `www`         | `<instance IP>`         | Caddy redirects `www` → apex |
+| `A`  | `staging`     | `<staging instance IP>` | Only if a staging box exists |
 
 Leave everything else empty for now. In particular:
 
