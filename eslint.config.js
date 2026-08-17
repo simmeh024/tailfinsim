@@ -34,7 +34,12 @@ export default tseslint.config(
         projectService: {
           // Root config files, plus per-package tool configs that sit outside
           // any package's `rootDir` and so belong to no project.
-          allowDefaultProject: ['*.js', '*.ts', 'packages/*/drizzle.config.ts'],
+          allowDefaultProject: [
+            '*.js',
+            '*.ts',
+            'packages/*/drizzle.config.ts',
+            'packages/*/vite.config.ts',
+          ],
         },
         tsconfigRootDir: import.meta.dirname,
       },
@@ -110,6 +115,15 @@ export default tseslint.config(
               group: ['@tailfin/sim', '@tailfin/sim/*'],
               message:
                 'The server is authoritative; the client never computes economic outcomes. Call the API instead. See CONTRIBUTING.md.',
+            },
+            {
+              // `node` is in web's tsconfig types for the theme-token scan test,
+              // which reads files off disk. Nothing shipped to a browser may
+              // import a Node builtin; the test-file override below exempts
+              // tests only.
+              group: ['node:*'],
+              message:
+                'packages/web ships to a browser. Node builtins are only permitted in this package’s tests.',
             },
           ],
         },

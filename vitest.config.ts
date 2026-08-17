@@ -1,3 +1,4 @@
+import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 
 /**
@@ -39,10 +40,16 @@ export default defineConfig({
         },
       },
       {
+        // The only project needing a DOM. Kept separate rather than making
+        // jsdom the default, because spinning one up for the sim's pure-function
+        // tests would cost time for nothing.
+        plugins: [react()],
         test: {
           name: 'web',
           include: ['packages/web/src/**/*.{test,spec}.{ts,tsx}'],
-          environment: 'node',
+          environment: 'jsdom',
+          setupFiles: ['packages/web/src/test-setup.ts'],
+          css: true,
         },
       },
     ],

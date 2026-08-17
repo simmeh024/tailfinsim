@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import fastifyStatic from '@fastify/static';
 import { sql } from 'drizzle-orm';
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 
@@ -21,8 +22,9 @@ import { type ServerEnv } from './env';
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
-/** Resolves the same from `src` (dev) and `dist` (built) — both sit one level under packages/server. */
-const HOLDING_PAGE = resolve(here, '..', '..', 'web', 'public', 'index.html');
+/** Both resolve the same from `src` (dev) and `dist` (built) — each sits one level under packages/server. */
+const HOLDING_PAGE = resolve(here, '..', '..', 'web', 'holding', 'index.html');
+const CLIENT_DIR = resolve(here, '..', '..', 'web', 'dist', 'client');
 
 export interface BuildAppOptions {
   env: ServerEnv;
@@ -117,32 +119,72 @@ export function buildApp({ env, db }: BuildAppOptions): FastifyInstance {
   );
 
   /**
-   * The holding page, read once at boot.
+   * The public surface at `/` — one of two, chosen by `WEB_SURFACE`.
    *
-   * Deliberately not a general static handler: exactly one asset is served, so
-   * there is no path to traverse. M0-09 replaces this with the built client and
-   * will need a real static route.
+   * This is what lets dev show a feature while the front door still shows the
+   * holding page, without maintaining two builds or two branches. Promoting to
+   * production is a config change.
    */
-  let holdingPage: Buffer;
-  try {
-    holdingPage = readFileSync(HOLDING_PAGE);
-  } catch (cause) {
-    throw new Error(`Could not read the holding page at ${HOLDING_PAGE}`, { cause });
+  if (env.webSurface === 'holding') {
+    // Exactly one asset, read once at boot, so there is no path to traverse.
+    let holdingPage: Buffer;
+    try {
+      holdingPage = readFileSync(HOLDING_PAGE);
+    } catch (cause) {
+      throw new Error(`Could not read the holding page at ${HOLDING_PAGE}`, { cause });
+    }
+
+    app.get('/', async (_request, reply) =>
+      reply
+        .code(200)
+        .type('text/html; charset=utf-8')
+        // Short, so the page can be changed without waiting out a cache.
+        .header('cache-control', 'public, max-age=60')
+        .header('x-content-type-options', 'nosniff')
+        .send(holdingPage),
+    );
+  } else {
+    // Fail at boot rather than 404ing every asset: a server told to serve the
+    // app but with nothing built is a broken deploy, and deploy.sh should catch
+    // it via the health check rather than shipping a white screen.
+    if (!existsSync(resolve(CLIENT_DIR, 'index.html'))) {
+      throw new Error(
+        `WEB_SURFACE=app but no client build found at ${CLIENT_DIR}. Run: pnpm --filter @tailfin/web build`,
+      );
+    }
+
+    app.register(fastifyStatic, {
+      root: CLIENT_DIR,
+      // The SPA fallback below handles unmatched paths; the plugin's own
+      // wildcard would shadow it.
+      wildcard: false,
+      index: ['index.html'],
+    });
   }
 
-  app.get('/', async (_request, reply) =>
-    reply
-      .code(200)
-      .type('text/html; charset=utf-8')
-      // Short, so the page can be changed without waiting out a cache.
-      .header('cache-control', 'public, max-age=60')
-      .header('x-content-type-options', 'nosniff')
-      .send(holdingPage),
-  );
+  app.setNotFoundHandler(async (request, reply) => {
+    /**
+     * Client-side routing means `/fleet` is a real URL the browser may request
+     * directly, and the server has no such route. Serving index.html lets the
+     * router resolve it.
+     *
+     * Narrowly scoped on purpose: only GETs, only when the client explicitly
+     * accepts HTML, and never under `/api`. Otherwise a mistyped API path would
+     * answer with a page instead of a 404, which is a genuinely confusing bug to
+     * chase.
+     */
+    const wantsHtml = (request.headers.accept ?? '').includes('text/html');
+    if (
+      env.webSurface === 'app' &&
+      request.method === 'GET' &&
+      wantsHtml &&
+      !request.url.startsWith('/api')
+    ) {
+      return reply.type('text/html; charset=utf-8').sendFile('index.html');
+    }
 
-  app.setNotFoundHandler(async (_request, reply) =>
-    reply.code(404).send({ code: 'not_found', message: 'No such route' }),
-  );
+    return reply.code(404).send({ code: 'not_found', message: 'No such route' });
+  });
 
   app.setErrorHandler(async (error: FastifyError, request, reply) => {
     request.log.error({ err: error }, 'unhandled error');

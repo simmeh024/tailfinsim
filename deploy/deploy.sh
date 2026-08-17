@@ -11,6 +11,25 @@
 
 set -euo pipefail
 
+# ---------------------------------------------------------------------------
+# Re-exec from a copy of ourselves.
+#
+# This script runs `git checkout`, which rewrites this very file on disk. Bash
+# reads scripts incrementally rather than all at once, so a script that changes
+# under itself mid-run can execute garbage — the longer the file gets, the more
+# likely that becomes. Copying to a temp file and exec'ing that makes the
+# running code immutable for the duration.
+# ---------------------------------------------------------------------------
+if [ "${TAILFIN_DEPLOY_REEXEC:-}" != '1' ]; then
+  _self="$(mktemp -t tailfin-deploy.XXXXXX)"
+  cat "$0" >"${_self}"
+  chmod +x "${_self}"
+  export TAILFIN_DEPLOY_REEXEC=1
+  exec "${_self}" "$@"
+fi
+# Running from the copy now; clean it up on the way out.
+trap 'rm -f "$0"' EXIT
+
 REPO_DIR="${REPO_DIR:-/srv/tailfin}"
 SERVICE="${SERVICE:-tailfin}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3000/healthz}"
@@ -66,8 +85,9 @@ pnpm install --frozen-lockfile
 
 log "Building"
 # Build before touching the database. A build failure here leaves the running
-# service completely untouched.
-pnpm --filter @tailfin/server build
+# service completely untouched. Builds both the server bundle and the client,
+# since WEB_SURFACE=app serves the client from packages/web/dist/client.
+pnpm build:apps
 
 log "Applying migrations"
 # From packages/server so drizzle finds ./drizzle. If this fails the old

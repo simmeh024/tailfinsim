@@ -22,6 +22,8 @@ const testEnv: ServerEnv = {
   databasePoolMax: 2,
   // Quiet: these tests deliberately provoke errors and a 503.
   logLevel: 'silent',
+  // The default surface, and the one production runs.
+  webSurface: 'holding',
   allowRegistration: false,
 };
 
