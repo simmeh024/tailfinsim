@@ -54,6 +54,13 @@ function optional(name: string, fallback: string): string {
   return value === undefined || value === '' ? fallback : value;
 }
 
+/** Genuinely optional: absent and empty both mean "not set". */
+function optionalUndefined(name: string): string | undefined {
+  loadDotEnvOnce();
+  const value = process.env[name];
+  return value === undefined || value === '' ? undefined : value;
+}
+
 function optionalInt(name: string, fallback: number): number {
   const raw = optional(name, String(fallback));
   const parsed = Number.parseInt(raw, 10);
@@ -88,6 +95,18 @@ export interface ServerEnv {
   nodeEnv: NodeEnv;
   databaseUrl: string;
   databasePoolMax: number;
+
+  /**
+   * How long to wait for a TCP connection to Postgres before giving up.
+   *
+   * `pg` defaults to 0, meaning **wait forever**. That is the wrong default here:
+   * `deploy.sh` polls `/healthz` to decide whether a release came up, and if the
+   * database is unreachable in a way that drops packets rather than refusing them
+   * — a firewall change, a vanished host — the health check never answers at all.
+   * A hung endpoint is worse than an honest 503.
+   */
+  databaseConnectTimeoutMs: number;
+
   logLevel: string;
 
   /**
@@ -101,6 +120,26 @@ export interface ServerEnv {
    * then a config change, not a different build.
    */
   webSurface: WebSurface;
+
+  /** Absolute origin this instance is reached on. The OAuth redirect URI is derived from it. */
+  publicOrigin: string;
+
+  /**
+   * Google OAuth credentials (ADR-0004), and the session signing secret.
+   *
+   * All three are **optional**, and auth is simply switched off when any is
+   * missing. That is deliberate: this code deploys to environments that do not
+   * yet have credentials, and a server that refused to boot without them would
+   * take the whole site down to add a feature nobody can use yet. `authEnabled`
+   * is the single thing routes check.
+   */
+  googleClientId: string | undefined;
+  googleClientSecret: string | undefined;
+  sessionSecret: string | undefined;
+  authEnabled: boolean;
+
+  /** How long a session lasts. Defaults to 30 days. */
+  sessionTtlHours: number;
 
   /**
    * Whether new players may create accounts.
@@ -130,12 +169,38 @@ export function loadEnv(): ServerEnv {
     throw new Error(`WEB_SURFACE must be one of holding, app — got ${JSON.stringify(webSurface)}.`);
   }
 
+  const googleClientId = optionalUndefined('GOOGLE_CLIENT_ID');
+  const googleClientSecret = optionalUndefined('GOOGLE_CLIENT_SECRET');
+  const sessionSecret = optionalUndefined('SESSION_SECRET');
+  const authEnabled = Boolean(googleClientId && googleClientSecret && sessionSecret);
+
+  // A half-configured auth setup is a trap: it looks enabled and fails at the
+  // callback. Say so at boot instead.
+  const supplied = [googleClientId, googleClientSecret, sessionSecret].filter(Boolean).length;
+  if (supplied > 0 && !authEnabled) {
+    throw new Error(
+      'Auth is partially configured. GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and SESSION_SECRET ' +
+        'must all be set, or all be absent. See docs/adr/0004-google-oauth.md.',
+    );
+  }
+
+  if (sessionSecret !== undefined && sessionSecret.length < 32) {
+    throw new Error('SESSION_SECRET must be at least 32 characters. Try: openssl rand -base64 48');
+  }
+
   return {
     nodeEnv: nodeEnv as NodeEnv,
     databaseUrl: required('DATABASE_URL'),
     databasePoolMax: optionalInt('DATABASE_POOL_MAX', 10),
+    databaseConnectTimeoutMs: optionalInt('DATABASE_CONNECT_TIMEOUT_MS', 5000),
     logLevel: optional('LOG_LEVEL', nodeEnv === 'production' ? 'info' : 'debug'),
     webSurface: webSurface as WebSurface,
+    publicOrigin: optional('PUBLIC_ORIGIN', 'http://localhost:3000').replace(/\/+$/, ''),
+    googleClientId,
+    googleClientSecret,
+    sessionSecret,
+    authEnabled,
+    sessionTtlHours: optionalInt('SESSION_TTL_HOURS', 24 * 30),
     allowRegistration: optionalBool('ALLOW_REGISTRATION', false),
   };
 }

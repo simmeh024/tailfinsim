@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 
 import { cleanup } from '@testing-library/react';
-import { afterEach } from 'vitest';
+import { afterEach, beforeEach, vi } from 'vitest';
 
 /**
  * Unmount between tests.
@@ -14,6 +14,29 @@ import { afterEach } from 'vitest';
  */
 afterEach(() => {
   cleanup();
+});
+
+/**
+ * No test may reach the network.
+ *
+ * `SessionProvider` calls `GET /api/me` on mount, so *every* test that renders
+ * the app would otherwise attempt a fetch. The default stub returns a promise
+ * that never settles, which parks the session in its `loading` state: no network,
+ * and no state update arriving after the test body has finished — which is what
+ * produces "an update was not wrapped in act(...)" and, eventually, flake.
+ *
+ * Tests that care about a signed-in or anonymous state stub `fetch` themselves
+ * and await the resulting render through `findBy*`.
+ */
+beforeEach(() => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => new Promise<Response>(() => undefined)),
+  );
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 /**

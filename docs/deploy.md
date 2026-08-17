@@ -123,19 +123,43 @@ fails. Propagation on a fresh domain with no prior records is usually minutes.
 Required by the server. Nothing here has a default that is safe in production; the
 process should refuse to boot on a missing value rather than guess (M0-08).
 
-| Variable            | Example                                       | Required | Notes                                                  |
-| ------------------- | --------------------------------------------- | -------- | ------------------------------------------------------ |
-| `NODE_ENV`          | `production`                                  | yes      | `development` \| `test` \| `production`                |
-| `PORT`              | `3000`                                        | yes      | Caddy proxies to this                                  |
-| `DATABASE_URL`      | `postgres://tailfin:…@localhost:5432/tailfin` | yes      | M0-05. Never hardcoded, never committed                |
-| `DATABASE_POOL_MAX` | `10`                                          | no       | Defaults to 10                                         |
-| `LOG_LEVEL`         | `info`                                        | no       | Pino level; defaults to `info` in prod, `debug` in dev |
-| `SESSION_SECRET`    | _(32+ random bytes, base64)_                  | yes      | M0-11. Rotating it invalidates all sessions            |
-| `SESSION_TTL_HOURS` | `720`                                         | no       | Defaults to 30 days                                    |
-| `PUBLIC_ORIGIN`     | `https://tailfinsim.com`                      | yes      | Cookie domain and OAuth callback base                  |
-| `WORLD_TICK_MS`     | `1000`                                        | no       | Coarse tick for position interpolation (§21)           |
+| Variable                      | Example                                       | Required | Notes                                                  |
+| ----------------------------- | --------------------------------------------- | -------- | ------------------------------------------------------ |
+| `NODE_ENV`                    | `production`                                  | yes      | `development` \| `test` \| `production`                |
+| `PORT`                        | `3000`                                        | yes      | Caddy proxies to this                                  |
+| `DATABASE_URL`                | `postgres://tailfin:…@localhost:5432/tailfin` | yes      | M0-05. Never hardcoded, never committed                |
+| `DATABASE_POOL_MAX`           | `10`                                          | no       | Defaults to 10                                         |
+| `DATABASE_CONNECT_TIMEOUT_MS` | `5000`                                        | no       | Defaults to 5000. `pg`'s own default waits forever     |
+| `LOG_LEVEL`                   | `info`                                        | no       | Pino level; defaults to `info` in prod, `debug` in dev |
+| `WEB_SURFACE`                 | `app`                                         | no       | `holding` (default) or `app`. What `/` serves          |
+| `PUBLIC_ORIGIN`               | `https://tailfinsim.com`                      | yes      | OAuth redirect base; also decides `Secure` on cookies  |
+| `GOOGLE_CLIENT_ID`            | `….apps.googleusercontent.com`                | no       | M0-11. All three auth vars together, or none           |
+| `GOOGLE_CLIENT_SECRET`        | `GOCSPX-…`                                    | no       | Never logged, never echoed                             |
+| `SESSION_SECRET`              | _(32+ random bytes, base64)_                  | no       | Rotating it invalidates every session                  |
+| `SESSION_TTL_HOURS`           | `720`                                         | no       | Defaults to 30 days                                    |
+| `ALLOW_REGISTRATION`          | `false`                                       | no       | **Defaults to false.** Closed unless explicitly opened |
+| `WORLD_TICK_MS`               | `1000`                                        | no       | Coarse tick for position interpolation (§21)           |
 
-Auth-provider variables are added by M0-11 once GitHub OAuth vs. magic-link is decided.
+### Auth configuration (M0-11)
+
+The three auth variables are **optional together**. Set all three and Google sign-in
+works; set none and it is switched off — `/api/me` still answers, and the sign-in routes
+return `503 auth_not_configured` rather than 404, so a client can tell "not configured
+here" from "no such feature". Setting only some of them is refused at boot: a
+half-configured server looks like working sign-in right up to the callback, by which
+point the player has already been sent to Google.
+
+That optionality is what lets production run this build today with no OAuth client of its
+own. Each environment needs its **own** client, because Google matches the redirect URI
+exactly:
+
+    https://tailfinsim.com/api/auth/google/callback
+    https://dev.tailfinsim.com/api/auth/google/callback
+
+`ALLOW_REGISTRATION=false` refuses a Google account that has no player record, redirecting
+to `/?auth_error=registration_closed`. Note the consequence: **the first account on a new
+environment cannot be created while it is false**, because nobody's Google subject is
+known until they have signed in once. Open it, sign in, close it again.
 
 Secrets live in the instance's environment or a `.env` file readable only by the service
 user — **never in the repository**. `.env` is gitignored; commit `.env.example` instead.

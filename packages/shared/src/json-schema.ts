@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { ApiError, HealthResponse } from './api';
+import { LogoutResponse, MeResponse } from './auth';
 
 /**
  * JSON Schema versions of the wire schemas, for consumers that speak JSON
@@ -20,3 +21,5 @@ import { ApiError, HealthResponse } from './api';
 
 export const healthResponseJsonSchema = z.toJSONSchema(HealthResponse);
 export const apiErrorJsonSchema = z.toJSONSchema(ApiError);
+export const meResponseJsonSchema = z.toJSONSchema(MeResponse);
+export const logoutResponseJsonSchema = z.toJSONSchema(LogoutResponse);
