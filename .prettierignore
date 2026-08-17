@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+pnpm-lock.yaml
+
+# Authored prose — keep the original formatting so diffs against the source
+# document stay readable.
+docs/tailfin-design-doc.md

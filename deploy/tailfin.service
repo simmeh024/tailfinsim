@@ -1,0 +1,45 @@
+[Unit]
+Description=Tailfin game server
+Documentation=https://github.com/simmeh024/tailfinsim/blob/main/deploy/README.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=tailfin
+Group=tailfin
+
+# The bundle produced by `pnpm --filter @tailfin/server build`. Configuration
+# comes from /srv/tailfin/.env, which the app resolves relative to its own
+# location — the same mechanism used in local development, so there is one way
+# config is loaded rather than two.
+WorkingDirectory=/srv/tailfin/packages/server
+ExecStart=/usr/bin/node dist/main.js
+
+Restart=always
+RestartSec=5s
+
+# The server drains on SIGTERM (see src/main.ts). Give it room to finish
+# in-flight requests, but not forever.
+KillSignal=SIGTERM
+TimeoutStopSec=15s
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tailfin
+
+# Hardening. The server reads its checkout and talks to Postgres over a local
+# socket; it has no reason to write anywhere on disk.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

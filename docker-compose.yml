@@ -1,0 +1,33 @@
+# Local development dependencies only. Production runs its own compose file on
+# the DreamCompute instance — see docs/deploy.md.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tailfin-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tailfin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tailfin_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-tailfin}
+      # Deterministic collation. Postgres sorts differently under different
+      # locales, and the sim's ordering must not depend on the host's language
+      # settings — see the determinism invariant in CONTRIBUTING.md.
+      POSTGRES_INITDB_ARGS: '--locale=C --encoding=UTF8'
+    ports:
+      # Bound to loopback only. Never expose Postgres on a public interface.
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # `pnpm db:migrate` immediately after `docker compose up` fails without
+      # this: the container reports running well before Postgres accepts
+      # connections.
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-tailfin} -d ${POSTGRES_DB:-tailfin}']
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+
+volumes:
+  postgres-data:
+    name: tailfin-postgres-data
