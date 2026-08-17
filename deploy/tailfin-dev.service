@@ -1,0 +1,39 @@
+[Unit]
+Description=Tailfin game server (dev environment)
+Documentation=https://github.com/simmeh024/tailfinsim/blob/main/deploy/README.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=tailfin
+Group=tailfin
+
+# Separate checkout, separate database, separate port from production. The only
+# thing dev and production share is the box.
+WorkingDirectory=/srv/tailfin-dev/packages/server
+ExecStart=/usr/bin/node dist/main.js
+
+Restart=always
+RestartSec=5s
+
+KillSignal=SIGTERM
+TimeoutStopSec=15s
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tailfin-dev
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
