@@ -41,6 +41,7 @@ const baseEnv: ServerEnv = {
   databaseConnectTimeoutMs: 5000,
   logLevel: 'silent',
   webSurface: 'holding',
+  environmentLabel: 'local',
   // http, not https, so the cookies are not `Secure` and travel under inject().
   publicOrigin: 'http://localhost:3000',
   googleClientId: 'test-client-id.apps.googleusercontent.com',

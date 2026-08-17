@@ -3,6 +3,7 @@ import { NavLink, Outlet } from 'react-router';
 
 import { AccountBadge } from '../auth/AccountBadge';
 import { useTheme } from '../theme/ThemeProvider';
+import { BuildBadge } from '../version/BuildBadge';
 
 import type { ReactNode } from 'react';
 
@@ -148,6 +149,10 @@ function StatusStrip(): ReactNode {
         <span className="strip__label">Alerts</span>
         <span className="strip__value status status--ontime">None</span>
       </div>
+
+      {/* Pushed to the far right of the bottom strip — the corner of the page. */}
+      <div className="strip__spacer" />
+      <BuildBadge />
     </div>
   );
 }

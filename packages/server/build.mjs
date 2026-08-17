@@ -1,3 +1,7 @@
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { build } from 'esbuild';
 
 /**
@@ -33,3 +37,52 @@ await build({
   },
   logLevel: 'info',
 });
+
+/**
+ * Stamp the build (M0-12).
+ *
+ * The build number is `git rev-list --count HEAD` — the number of commits behind
+ * the checked-out revision. Not a semantic version: nothing here is released to
+ * anyone, so there is no compatibility to promise, and a hand-maintained version
+ * would drift the first time somebody forgot to bump it. This one cannot drift,
+ * because it is derived rather than declared.
+ *
+ * It is generated at build time rather than read from git at runtime, because
+ * the running server is a bundle that may sit somewhere git knows nothing about.
+ *
+ * A missing or broken git is not fatal — `pnpm build` has to work in a source
+ * tarball too — so it falls back to build 0, which reads as "not a real build"
+ * rather than as a plausible wrong number.
+ */
+function git(args) {
+  try {
+    return execFileSync('git', args, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return '';
+  }
+}
+
+const count = git(['rev-list', '--count', 'HEAD']);
+const commit = git(['rev-parse', '--short', 'HEAD']);
+const dirty = git(['status', '--porcelain']) !== '';
+
+const buildInfo = {
+  build: Number.parseInt(count, 10) || 0,
+  // The suffix matters: a build made from a modified working tree is not the
+  // commit it claims to be, and that is exactly the moment you want to know.
+  commit: commit === '' ? 'unknown' : dirty ? `${commit}+dirty` : commit,
+};
+
+mkdirSync(resolve(import.meta.dirname, 'dist'), { recursive: true });
+writeFileSync(
+  resolve(import.meta.dirname, 'dist', 'build-info.json'),
+  `${JSON.stringify(buildInfo, null, 2)}\n`,
+);
+
+// Written directly rather than via console.log: this is build output alongside
+// esbuild's own, not application logging, and the lint rule that bans
+// console.log in shipped code has no reason to make an exception for it.
+process.stdout.write(`  build ${String(buildInfo.build)} (${buildInfo.commit})\n`);

@@ -93,6 +93,30 @@ describe('loadEnv', () => {
     expect(() => loadEnv()).toThrow(/must be true\/false/);
   });
 
+  it('defaults the environment label to local, never to production', () => {
+    // A box that forgot to say which it is must not claim to be the live one.
+    vi.stubEnv('DATABASE_URL', VALID_URL);
+    vi.stubEnv('ENVIRONMENT_LABEL', '');
+    vi.stubEnv('NODE_ENV', 'production');
+    expect(loadEnv().environmentLabel).toBe('local');
+  });
+
+  it('reads the environment label independently of NODE_ENV', () => {
+    // The dev box runs NODE_ENV=production too — that is the point of it — so
+    // the badge cannot be derived from NODE_ENV.
+    vi.stubEnv('DATABASE_URL', VALID_URL);
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('ENVIRONMENT_LABEL', 'dev');
+    expect(loadEnv().environmentLabel).toBe('dev');
+    expect(loadEnv().nodeEnv).toBe('production');
+  });
+
+  it('rejects an unrecognised environment label', () => {
+    vi.stubEnv('DATABASE_URL', VALID_URL);
+    vi.stubEnv('ENVIRONMENT_LABEL', 'staging');
+    expect(() => loadEnv()).toThrow(/ENVIRONMENT_LABEL must be one of/);
+  });
+
   it('lets an explicit log level win over the default', () => {
     vi.stubEnv('DATABASE_URL', VALID_URL);
     vi.stubEnv('NODE_ENV', 'production');

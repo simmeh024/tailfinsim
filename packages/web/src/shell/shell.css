@@ -173,7 +173,10 @@ body {
 /* -------------------------------------------------------------- account ---- */
 
 /*
- * Sign-in / signed-in state, in the rail above the theme toggle (M0-11).
+ * Signed-in identity in the rail, above the theme toggle (M0-11).
+ *
+ * Only ever rendered with a session — the login wall (M0-12) handles the
+ * signed-out case, so there is no sign-in button here and no styles for one.
  * Deliberately quiet: the account is not what the player came here to look at.
  */
 
@@ -182,46 +185,6 @@ body {
   flex-direction: column;
   gap: var(--space-2);
   padding-bottom: var(--space-2);
-}
-
-.account__note {
-  margin: 0;
-  padding: 0 var(--space-3);
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-}
-
-.account__error {
-  margin: 0;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  color: var(--status-cancelled);
-  font-size: var(--text-xs);
-}
-
-.account__signin {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
-  background: var(--accent);
-  color: var(--text-on-accent);
-  text-decoration: none;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  transition: background var(--motion-fast) var(--ease);
-}
-
-.account__signin:hover {
-  background: var(--accent-hover);
-}
-
-.account__glyph {
-  flex: none;
-  width: 1.25rem;
-  text-align: center;
 }
 
 .account__player {
@@ -434,6 +397,195 @@ body {
   content: '\2193'; /* down arrow */
 }
 
+/* ------------------------------------------------------- login & gate ---- */
+
+/*
+ * The front door, and the two holding screens either side of it (M0-12).
+ *
+ * Full-viewport rather than a modal over the app: there is no app behind this
+ * yet, and a dimmed-out interface behind a login box implies you could reach it.
+ */
+
+.login,
+.gate {
+  display: grid;
+  place-content: center;
+  min-height: 100%;
+  padding: var(--space-6);
+  background: var(--bg-base);
+}
+
+.login__card {
+  width: min(26rem, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.login__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+}
+
+.login__mark {
+  color: var(--brand);
+  font-size: var(--text-lg);
+  line-height: 1;
+}
+
+.login__title {
+  margin: 0;
+  font-size: var(--text-lg);
+  color: var(--text-primary);
+}
+
+.login__lede {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.login__error {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--status-cancelled);
+  font-size: var(--text-sm);
+}
+
+.login__button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  text-decoration: none;
+  font-size: var(--text-base);
+  font-weight: 600;
+  transition: background var(--motion-fast) var(--ease);
+}
+
+.login__button:hover {
+  background: var(--accent-hover);
+}
+
+.login__glyph {
+  flex: none;
+}
+
+.login__note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.gate__panel {
+  width: min(26rem, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+.gate__title {
+  margin: 0;
+  font-size: var(--text-lg);
+  color: var(--text-primary);
+}
+
+.gate__message {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.gate__retry {
+  align-self: center;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.gate__retry:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* --------------------------------------------------------------- build ---- */
+
+/*
+ * Build badge (M0-12). Bottom right on every surface — in the status strip
+ * inside the app, and pinned to the corner on the login and gate screens.
+ *
+ * Quiet by default: this is a thing you go looking for when filing a bug, not a
+ * thing that should compete with the sim for attention.
+ */
+
+.strip__spacer {
+  flex: 1;
+  /* Without a minimum the spacer collapses when the strip scrolls on mobile,
+     and the badge lands against the alerts item. */
+  min-width: var(--space-4);
+}
+
+.build {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.build__env {
+  padding: 0 var(--space-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/*
+ * A non-production environment stands out. The point of the badge is that "dev
+ * is ahead of production" should be visible at a glance, and that only works if
+ * dev does not look like every other label.
+ */
+.build[data-environment='dev'] .build__env {
+  border-color: var(--status-delayed);
+  color: var(--status-delayed);
+}
+
+/* Pinned to the corner where there is no status strip to sit in. */
+.login .build,
+.gate .build {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+}
+
 /* ---------------------------------------------------------------- pages ---- */
 
 .page {
@@ -509,22 +661,14 @@ body {
 
   /*
    * The rail is a horizontal bar here, so the account block lays out inline.
-   * The display name is dropped — the avatar identifies the account and the name
-   * would push the seven destinations off screen — but the error and status
-   * messages are kept: an alert that only appears on desktop is worse than a
-   * cramped one.
+   * The display name is dropped — the avatar identifies the account, and the
+   * name would push the seven destinations off screen.
    */
   .account {
     flex-direction: row;
     align-items: center;
     flex: none;
     padding-bottom: 0;
-  }
-
-  .account__error,
-  .account__note {
-    max-width: 16rem;
-    white-space: normal;
   }
 
   .account__player,
@@ -534,6 +678,14 @@ body {
 
   .account__name {
     display: none;
+  }
+
+  /* The strip scrolls horizontally on mobile; keep the badge at its far end
+     rather than letting it fall off the scrollable area. */
+  .login .build,
+  .gate .build {
+    right: var(--space-2);
+    bottom: var(--space-2);
   }
 
   .panel {
