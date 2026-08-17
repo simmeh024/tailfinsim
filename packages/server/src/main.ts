@@ -3,6 +3,8 @@ import { createServer } from 'node:http';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { HealthResponse } from '@tailfin/shared';
+
 import { loadEnv } from './env';
 
 /**
@@ -44,15 +46,25 @@ const server = createServer((req, res) => {
   const path = (req.url ?? '/').split('?')[0];
 
   if (path === '/healthz') {
+    // Validated against the shared schema before it goes out, not merely
+    // shaped like it (M0-07). A failure here is a server bug, so it surfaces
+    // as a 500 rather than being quietly serialised anyway.
+    const parsed = HealthResponse.safeParse({
+      status: 'ok',
+      // M0-08: replace with a real `select 1` against the pool.
+      db: 'not_checked',
+      uptime: Math.round(process.uptime()),
+    });
+
+    if (!parsed.success) {
+      console.error('healthz response failed its own schema', parsed.error.issues);
+      res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ code: 'internal_error', message: 'health response invalid' }));
+      return;
+    }
+
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
-    res.end(
-      JSON.stringify({
-        status: 'ok',
-        // M0-08: replace with a real `select 1` against the pool.
-        db: 'not-checked',
-        uptime: Math.round(process.uptime()),
-      }),
-    );
+    res.end(JSON.stringify(parsed.data));
     return;
   }
 
