@@ -1,0 +1,111 @@
+name: Release
+
+# Build on every merge to main. Promotion to production is a separate job,
+# gated behind the `production` environment, which requires manual approval.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}/server
+
+jobs:
+  build:
+    name: Build and publish image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive tags
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          # Deliberately no `latest`. The only tag that means anything
+          # operationally is `production`, and only the promote job sets it.
+          tags: |
+            type=sha,format=long
+            type=raw,value=main
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: Report image size
+        run: |
+          echo "digest: ${{ steps.push.outputs.digest }}"
+          docker buildx imagetools inspect "${IMAGE}@${{ steps.push.outputs.digest }}" \
+            --format '{{ range .Manifest.Manifests }}{{ .Platform.OS }}/{{ .Platform.Architecture }} {{ .Size }}{{ "\n" }}{{ end }}' || true
+
+  promote:
+    name: Promote to production
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # THE APPROVAL GATE. This job does not start until a required reviewer
+    # approves it in the Actions UI. Configured on the repository environment:
+    # required reviewer @simmeh024, deployments restricted to `main`.
+    environment:
+      name: production
+      url: https://tailfinsim.com
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag the approved digest as :production
+        # Retags by digest without pulling the image. The server watches the
+        # :production tag and rolls itself forward when the digest changes —
+        # nothing in CI has access to the server.
+        run: |
+          docker buildx imagetools create \
+            --tag "${IMAGE}:production" \
+            "${IMAGE}@${{ needs.build.outputs.digest }}"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Promoted to production"
+            echo
+            echo '```'
+            echo "image:  ${IMAGE}:production"
+            echo "digest: ${{ needs.build.outputs.digest }}"
+            echo "commit: ${{ github.sha }}"
+            echo '```'
+            echo
+            echo "The server polls this tag and rolls forward within ~60s."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,14 @@
+[Unit]
+Description=Poll for an approved Tailfin production image
+Documentation=https://github.com/simmeh024/tailfinsim/blob/main/deploy/README.md
+
+[Timer]
+# First check shortly after boot, then every minute. The check is a registry
+# manifest lookup and costs almost nothing when the digest has not moved.
+OnBootSec=60s
+OnUnitActiveSec=60s
+AccuracySec=10s
+Unit=tailfin-deploy.service
+
+[Install]
+WantedBy=timers.target

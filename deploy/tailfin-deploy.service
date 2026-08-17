@@ -1,0 +1,22 @@
+[Unit]
+Description=Roll Tailfin production forward to the approved image
+Documentation=https://github.com/simmeh024/tailfinsim/blob/main/deploy/README.md
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=tailfin
+Group=docker
+WorkingDirectory=/opt/tailfin
+ExecStart=/opt/tailfin/tailfin-deploy.sh
+
+# A deploy that hangs must not block the next one forever.
+TimeoutStartSec=600
+
+# Output goes to the journal: `journalctl -u tailfin-deploy -f`
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -126,10 +126,14 @@ export default tseslint.config(
     },
   },
 
-  // Root config files are plain JS and get no type-aware rules.
+  // Plain-JS config and build scripts belong to no TypeScript project, so they
+  // get no type-aware rules. Without this they fail parsing outright.
   {
-    files: ['*.js'],
+    files: ['**/*.js', '**/*.mjs', '**/*.cjs'],
     extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: {
+      globals: { ...globals.node },
+    },
   },
 
   // Must stay last: turns off everything Prettier owns.

@@ -56,13 +56,29 @@ Split them only when there is a reason, and take the cookie complexity on knowin
 
 ### Sizing
 
-| Environment      | Spec             | Rough cost | Notes                                                     |
-| ---------------- | ---------------- | ---------- | --------------------------------------------------------- |
-| Staging          | 2 GB RAM, 1 vCPU | ~$12/mo    | Enough to smoke-test a deploy.                            |
-| Production (MVP) | 8 GB RAM, 4 vCPU | ~$48/mo    | Postgres wants 2–4 GB on its own before the sim gets any. |
+DreamCompute flavours and prices, read from the panel on 2026-08-17. The monthly figure
+is a **ceiling** — billing caps at 600 hours (25 days) per month, and further hours in
+that cycle are free.
+
+| Flavor       | vCPU | RAM    | Hourly    | Max monthly | Verdict for Tailfin                           |
+| ------------ | ---- | ------ | --------- | ----------- | --------------------------------------------- |
+| `semisonic`  | 1    | 512 MB | $0.0075   | $4.50       | Too small — Postgres alone will not be happy. |
+| `subsonic`   | 1    | 1 GB   | $0.01     | $6.00       | Too small.                                    |
+| `supersonic` | 1    | 2 GB   | $0.02     | $12.00      | Fine for **staging**.                         |
+| `lightspeed` | 2    | 4 GB   | $0.04     | $24.00      | Workable production floor.                    |
+| `warpspeed`  | 4    | 8 GB   | **$0.08** | **$48.00**  | **Recommended for production.**               |
+| `hyperspeed` | 8    | 16 GB  | $0.16     | $96.00      | Only once load testing (M13-04) says so.      |
+
+Postgres wants 2–4 GB before the sim gets any, which is what rules out the bottom two.
+
+All accounts include 100 GB of block storage and free bandwidth.
 
 Start with staging only. Production does not need to exist until there is something to
-deploy — the first deployable artefact arrives with M0-10.
+deploy.
+
+**DreamCompute must be activated before any of this is available** — the Cloud panel asks
+you to choose a DreamCompute password first. That, instance creation, and the floating IP
+are all account actions.
 
 ## 3. DNS records to create
 
@@ -138,14 +154,34 @@ Each step is blocked by the one above it.
 
 Steps 3–8 can be scripted and committed once the instance exists.
 
-## 6. What is not decided yet
+## 6. The release pipeline
 
-- **CI → production deployment.** M0-10 builds and pushes images on merge to main. How
-  they reach the instance (pull-based via a watcher, or push-based over SSH from the
-  workflow) is open. Push-based needs a deploy key in GitHub secrets; pull-based avoids
-  giving CI access to the box at all and is the safer default for a solo project.
-- **Where images are stored.** GitHub Container Registry is free for public repos and
-  needs no extra account.
+**Decided and built.** Images go to GitHub Container Registry (free for public repos, no
+extra account). Deployment is **pull-based**: CI can only move a registry tag, and the
+server decides when to act on it. There is no SSH key in repository secrets and no inbound
+path from GitHub to the instance.
+
+```
+merge to main → build image → [YOUR APPROVAL] → retag :production → box rolls forward
+```
+
+The approval step is a GitHub environment named `production` with `@simmeh024` as a
+required reviewer and deployments restricted to `main`. The `promote` job in
+`.github/workflows/release.yml` declares `environment: production`, so it will not start
+until approved in the Actions tab.
+
+Server-side setup — instance, DNS, hardening, systemd timer, secrets — is in
+[`deploy/README.md`](../deploy/README.md).
+
+### What is still open
+
+- **Static web assets.** The image currently serves the API only. M0-09 decides whether
+  the built client is served from the server's static route or from a CDN; the Caddyfile
+  routes everything to the server today, which works either way.
+- **Staging.** The pipeline has one environment. A second (`staging`, no approval
+  required, auto-deploying every merge) is worth adding once there is a reason to.
+- **Backups.** M13-11. A nightly `pg_dump` off-instance is cheap to add now and a backup
+  that has never been restored is not a backup.
 - **Auth provider** (M0-11) — GitHub OAuth is far simpler to stand up but restricts
   players to people with GitHub accounts, which is wrong for a public game. Email
   magic-link needs a sending provider and DNS records. Decide before M0-11, not during.
