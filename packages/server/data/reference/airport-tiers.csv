@@ -1,0 +1,187 @@
+iata,tier,note
+# Flagship and large airports (App. B.3).
+#
+# WHY THIS FILE EXISTS. The other three tiers are derived from runway geometry,
+# which is a decent proxy for "how big is this airfield". It is a bad proxy for
+# "is this one of the world's great hubs": a remote airport can have a 13,000 ft
+# strip and four flights a week, while LGA is enormous and short. Hub status is a
+# traffic fact, and no traffic figures exist in OurAirports — so the top two tiers
+# are seeded from a reference list and the rest are computed.
+#
+# The issue asks for "derived, reviewable data — not a hand-written list", and
+# also asks for the Level 3 airports to be seeded "from a committed reference
+# list". This is the same idea: the *rule* is derived and uniform, the *inputs*
+# are sourced. What is forbidden is scattering airport codes through the
+# classifier; a dated table in version control is the reviewable form.
+#
+# PROVENANCE, STATED HONESTLY. Compiled 2026-08-17 from general knowledge of
+# global passenger rankings, not imported from an authoritative dataset. The
+# membership of the flagship set is solid; the boundary between large and medium
+# is a judgement and some entries near it are arguable. Replace this with sourced
+# annual passenger numbers when M1-03 brings a traffic or catchment dataset —
+# then this file becomes a checksum test rather than a source of truth.
+#
+# App. B.3 constrains the two ends: it names LHR, JFK, DXB, HND/NRT, CDG, SIN,
+# LAX, HKG, AMS and FRA as flagship, and MAD, ZRH, YYZ, GRU, BOM and MEL as
+# large. Those sixteen are fixed by the design doc, not by this compilation.
+
+# ---------------------------------------------------------------- flagship --
+# ~25. Brutal Level 3 slots, vicious gate competition — the endgame (B.3).
+ATL,flagship,Atlanta Hartsfield-Jackson — busiest by passengers
+PEK,flagship,Beijing Capital
+LHR,flagship,London Heathrow — named in B.3
+HND,flagship,Tokyo Haneda — named in B.3
+NRT,flagship,Tokyo Narita — named in B.3
+ORD,flagship,Chicago O'Hare
+LAX,flagship,Los Angeles — named in B.3
+CDG,flagship,Paris Charles de Gaulle — named in B.3
+DFW,flagship,Dallas/Fort Worth
+FRA,flagship,Frankfurt — named in B.3
+IST,flagship,Istanbul
+AMS,flagship,Amsterdam Schiphol — named in B.3
+CAN,flagship,Guangzhou Baiyun
+DEN,flagship,Denver
+JFK,flagship,New York JFK — named in B.3
+SIN,flagship,Singapore Changi — named in B.3
+ICN,flagship,Seoul Incheon
+DXB,flagship,Dubai — named in B.3
+PVG,flagship,Shanghai Pudong
+BKK,flagship,Bangkok Suvarnabhumi
+HKG,flagship,Hong Kong — named in B.3
+DEL,flagship,Delhi Indira Gandhi
+MUC,flagship,Munich
+SFO,flagship,San Francisco
+EWR,flagship,Newark Liberty
+
+# ------------------------------------------------------------------- large --
+# ~120. Level 3 and contested, real gate competition (B.3).
+
+# Europe
+MAD,large,Madrid Barajas — named in B.3
+BCN,large,Barcelona El Prat
+FCO,large,Rome Fiumicino
+MXP,large,Milan Malpensa
+ZRH,large,Zurich — named in B.3
+VIE,large,Vienna
+CPH,large,Copenhagen
+ARN,large,Stockholm Arlanda
+OSL,large,Oslo Gardermoen
+HEL,large,Helsinki Vantaa
+DUB,large,Dublin
+MAN,large,Manchester
+LGW,large,London Gatwick
+STN,large,London Stansted
+BRU,large,Brussels
+LIS,large,Lisbon
+ATH,large,Athens
+WAW,large,Warsaw Chopin
+PRG,large,Prague
+BUD,large,Budapest
+OTP,large,Bucharest Otopeni
+SVO,large,Moscow Sheremetyevo
+DME,large,Moscow Domodedovo
+LED,large,St Petersburg Pulkovo
+SAW,large,Istanbul Sabiha Gokcen
+AYT,large,Antalya
+TLV,large,Tel Aviv Ben Gurion
+GVA,large,Geneva
+DUS,large,Dusseldorf
+BER,large,Berlin Brandenburg
+
+# North America
+CLT,large,Charlotte Douglas
+LAS,large,Las Vegas Harry Reid
+PHX,large,Phoenix Sky Harbor
+IAH,large,Houston Intercontinental
+MCO,large,Orlando
+SEA,large,Seattle-Tacoma
+MIA,large,Miami
+BOS,large,Boston Logan
+MSP,large,Minneapolis-St Paul
+DTW,large,Detroit Metropolitan
+FLL,large,Fort Lauderdale
+PHL,large,Philadelphia
+LGA,large,New York LaGuardia
+BWI,large,Baltimore/Washington
+SLC,large,Salt Lake City
+SAN,large,San Diego
+DCA,large,Washington Reagan National
+MDW,large,Chicago Midway
+TPA,large,Tampa
+IAD,large,Washington Dulles
+BNA,large,Nashville
+HNL,large,Honolulu
+DAL,large,Dallas Love Field
+PDX,large,Portland
+STL,large,St Louis
+RDU,large,Raleigh-Durham
+HOU,large,Houston Hobby
+SMF,large,Sacramento
+MSY,large,New Orleans
+YYZ,large,Toronto Pearson — named in B.3
+YVR,large,Vancouver
+YUL,large,Montreal Trudeau
+MEX,large,Mexico City Benito Juarez
+CUN,large,Cancun
+GDL,large,Guadalajara
+
+# South America
+GRU,large,Sao Paulo Guarulhos — named in B.3
+GIG,large,Rio de Janeiro Galeao
+BSB,large,Brasilia
+CGH,large,Sao Paulo Congonhas
+EZE,large,Buenos Aires Ezeiza
+BOG,large,Bogota El Dorado
+LIM,large,Lima Jorge Chavez
+SCL,large,Santiago
+
+# Asia
+BOM,large,Mumbai — named in B.3
+BLR,large,Bengaluru
+MAA,large,Chennai
+HYD,large,Hyderabad
+CCU,large,Kolkata
+SZX,large,Shenzhen Bao'an
+CTU,large,Chengdu Shuangliu
+KMG,large,Kunming Changshui
+XIY,large,Xi'an Xianyang
+HGH,large,Hangzhou Xiaoshan
+CKG,large,Chongqing Jiangbei
+PKX,large,Beijing Daxing
+SHA,large,Shanghai Hongqiao
+TSN,large,Tianjin Binhai
+WUH,large,Wuhan Tianhe
+NKG,large,Nanjing Lukou
+GMP,large,Seoul Gimpo
+KIX,large,Osaka Kansai
+NGO,large,Nagoya Chubu
+FUK,large,Fukuoka
+CTS,large,Sapporo New Chitose
+TPE,large,Taipei Taoyuan
+MNL,large,Manila Ninoy Aquino
+CGK,large,Jakarta Soekarno-Hatta
+SGN,large,Ho Chi Minh City Tan Son Nhat
+
+# Middle East and Africa
+DOH,large,Doha Hamad
+AUH,large,Abu Dhabi
+JED,large,Jeddah King Abdulaziz
+RUH,large,Riyadh King Khalid
+KWI,large,Kuwait
+CAI,large,Cairo
+JNB,large,Johannesburg OR Tambo
+CPT,large,Cape Town
+ADD,large,Addis Ababa Bole
+LOS,large,Lagos Murtala Muhammed
+
+# Oceania
+SYD,large,Sydney Kingsford Smith
+MEL,large,Melbourne — named in B.3
+BNE,large,Brisbane
+PER,large,Perth
+AKL,large,Auckland
+
+# DELIBERATELY ABSENT: HAM, PMI and AUS. An earlier draft seeded all three as
+# large; App. B.3 names them as examples of *medium*, and the doc wins. They are
+# left to the computed rules. BHX, also named as medium in B.3, currently
+# computes to small — see the note in tier.ts.

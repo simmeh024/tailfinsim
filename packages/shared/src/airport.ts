@@ -13,11 +13,33 @@ import {
 /**
  * An airport, following the record in App. B.2 field for field.
  *
- * **Provisional.** No `airport` table exists yet — M1-01 imports the
- * OurAirports dataset and M1-02/M1-03 add tiers and catchment. This is the wire
- * contract those milestones must satisfy, written from the design doc rather
- * than invented, so the reconciliation is a comparison rather than a
- * negotiation. Where the dataset cannot supply a field, it is nullable here.
+ * **Partly provisional.** M1-01 imported the OurAirports dataset and reconciled
+ * the fields it supplies; M1-02/M1-03 still owe `tier`, `slotLevel`, `catchment`,
+ * `capacity`, `fees`, `curfew` and `constraints`, which no table fills yet.
+ *
+ * ## What M1-01 changed, and why
+ *
+ * Four fields were written non-nullable from the design doc and turned out to be
+ * unfillable. Counts are from the 2026-08-17 dataset, 85,915 airports:
+ *
+ *   - **`icao` is nullable, and is not the key.** The original comment here read
+ *     "IATA is absent for thousands of airports; ICAO is not". The reverse is
+ *     closer to the truth: only **10,444** rows carry an official ICAO code,
+ *     against 9,052 with IATA. The universal identifier is OurAirports' own
+ *     `ident` — present, unique and non-blank on every row — which is an ICAO
+ *     code where one exists and a national or synthetic code otherwise. App. B.1
+ *     says "everything with an ICAO code"; taken literally that would discard 88%
+ *     of the world's aerodromes, so it is read as "everything with an
+ *     identifier".
+ *   - **`elevationFt` is nullable.** 14,905 rows have no elevation. It is an
+ *     input to the takeoff-length check in B.4, so a missing value must read as
+ *     "unknown" rather than as sea level.
+ *   - **`timezone` is nullable.** OurAirports has no timezone column at all.
+ *     Curfews (B.2) and local departure times need it, so it will have to come
+ *     from a lat/lon lookup against the IANA database — a separate piece of work,
+ *     and one nothing depends on yet.
+ *   - **`Runway.lengthFt` is nullable.** 292 runway rows have no length and 6
+ *     are zero or negative. A runway of unknown length cannot be assumed usable.
  */
 
 /** IATA slot designation. Level 3 is the scarce, contested case (§8.1, App. B.3). */
@@ -35,10 +57,12 @@ export const IlsCategory = z.enum(['I', 'II', 'IIIa', 'IIIb', 'IIIc']).nullable(
 export type IlsCategory = z.infer<typeof IlsCategory>;
 
 export const Runway = z.object({
-  identifier: z.string().min(1).max(7),
-  lengthFt: z.number().int().positive(),
+  identifier: z.string().min(1).max(16),
+  /** Null where the source has no length. Unknown is not the same as unusable — but it is not usable either. */
+  lengthFt: z.number().int().positive().nullable(),
   widthFt: z.number().int().positive().nullable(),
   surface: RunwaySurface,
+  /** OurAirports carries no ILS data, so this is null for every imported runway. */
   ilsCategory: IlsCategory,
 });
 export type Runway = z.infer<typeof Runway>;
@@ -92,8 +116,13 @@ export const AirportConstraints = z.object({
 export type AirportConstraints = z.infer<typeof AirportConstraints>;
 
 export const Airport = z.object({
-  /** The stable key. IATA is absent for thousands of airports; ICAO is not. */
-  icao: AirportIcaoCode,
+  /**
+   * The stable key — OurAirports' `ident`. Unique and present on every row,
+   * which is true of neither ICAO nor IATA.
+   */
+  ident: z.string().min(1).max(16),
+  /** Only ~12% of aerodromes have an officially assigned ICAO code. */
+  icao: AirportIcaoCode.nullable(),
   iata: AirportIataCode.nullable(),
 
   name: z.string().min(1),
@@ -103,9 +132,10 @@ export const Airport = z.object({
 
   latitude: Latitude,
   longitude: Longitude,
-  elevationFt: z.number().int(),
-  /** IANA zone, e.g. `Europe/Amsterdam`. Needed for curfews and local departure times. */
-  timezone: z.string().min(1),
+  /** Null means unknown, never sea level — it feeds the takeoff-length check in B.4. */
+  elevationFt: z.number().int().nullable(),
+  /** IANA zone, e.g. `Europe/Amsterdam`. Needed for curfews and local departure times, and not yet sourced. */
+  timezone: z.string().min(1).nullable(),
 
   runways: z.array(Runway),
   tier: AirportTier,
@@ -129,6 +159,7 @@ export type Airport = z.infer<typeof Airport>;
  * full record for each one.
  */
 export const AirportSummary = Airport.pick({
+  ident: true,
   icao: true,
   iata: true,
   name: true,

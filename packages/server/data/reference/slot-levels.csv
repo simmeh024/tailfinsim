@@ -1,0 +1,39 @@
+iata,level,note
+# IATA slot designation overrides (App. B.3).
+#
+# The level is normally DERIVED from tier, exactly as B.3 lays out:
+#
+#   flagship -> 3 (brutal)      large -> 3 (contested)
+#   medium   -> 2 (facilitated) small -> 1 (free)      regional -> none
+#
+# This file exists for the places where that mapping is factually wrong, and
+# there is one large systematic exception: the United States does not run IATA
+# Level 3 coordination at most of its airports. ATL is the busiest airport on
+# earth and is not slot-coordinated; ORD and EWR are schedules-facilitated. Only
+# three US airports carry hard slot controls. Deriving level 3 from "this is a
+# huge airport" would hand the US a scarcity mechanic it does not have, and
+# scarcity is the whole point of the tier (B.3, §8.1).
+#
+# PROVENANCE. Compiled 2026-08-17 from general knowledge of slot coordination,
+# not imported from the IATA Worldwide Airport Slot Guidelines. The US position
+# is well established; elsewhere the derived mapping is used as-is and is
+# certainly wrong in places. Replace with the published Level 3 list when one is
+# available — M11 admin tooling is the natural home for maintaining it.
+#
+# level 0 means "no coordination at all", stored as NULL.
+
+# --- United States: hard slot controls (FAA) -------------------------------
+JFK,3,New York JFK — slot-controlled
+LGA,3,New York LaGuardia — slot-controlled
+DCA,3,Washington Reagan National — slot-controlled
+
+# --- United States: everything else is at most schedules-facilitated -------
+# Listed explicitly rather than left to the country rule so that the exception
+# is visible in the data, not only in code.
+ATL,2,Atlanta — busiest on earth yet not slot-coordinated
+ORD,2,Chicago O'Hare — schedules facilitated
+EWR,2,Newark — schedules facilitated
+LAX,2,Los Angeles — not slot-coordinated
+DFW,2,Dallas/Fort Worth — not slot-coordinated
+DEN,2,Denver — not slot-coordinated
+SFO,2,San Francisco — not slot-coordinated
