@@ -145,6 +145,66 @@ mismatch — which stops two admins overwriting each other silently, but does no
 admin acting alone. There is one administrator today, so the full rule cannot be exercised
 at all; it needs a request/approve flow of its own.
 
+## Addendum, 2026-08-19: what a reset destroys, and the lifecycle around it (M1A-04)
+
+The original decision said a reset is "`launched_at = now()`, leave `epoch` alone, and truncate
+world state". **Truncate what** was left unanswered, and that is the whole of the risk. This
+settles it.
+
+### What a reset does to each thing
+
+|                                                     |                       | Why                                                                                                                                                                                                   |
+| --------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `world.launch_date`                                 | **set to now**        | The calendar returns to the epoch by definition.                                                                                                                                                      |
+| `world.status`                                      | **back to `staging`** | A world that has just lost its airlines is not one people should still be joining. Opening it again is a separate, deliberate act.                                                                    |
+| `airline`                                           | **deleted**           | An airline holds cash it earned and a network it flew on a timeline that no longer happened. Keeping it would be keeping a claim on history that has been erased.                                     |
+| `world_event`                                       | **deleted**           | `fire_at` is a game-time instant on the old timeline. Rescheduling onto the new one would be guessing at intent, and the guess would be invisible when it was wrong.                                  |
+| `player`                                            | **kept**              | An airline is a player's presence in _one world_, not the account. Signing in afterwards works and finds no airline. §22.10's anonymise-not-delete rule is about erasing a person, which this is not. |
+| `admin_audit`                                       | **kept**              | Append-only, enforced by trigger. A reset is a thing that happened and the log of it survives the thing it describes.                                                                                 |
+| `airport`, `runway`, `catchment`, `dataset_version` | **untouched**         | Global reference data (M1-01), not world state. Re-importing 86,000 airports to rewind a clock would be absurd.                                                                                       |
+
+`airline.player_id` is `ON DELETE RESTRICT` precisely so deleting airlines has to be a
+deliberate statement rather than a side effect of deleting something else.
+
+### The transition graph
+
+```
+staging ──→ open ──→ locked ──→ archived
+   │          ↑         │           │
+   │          └─────────┘           ×  (terminal)
+   └────────────────────────────────┘
+```
+
+Two absences are the decisions:
+
+- **`open` cannot go straight to `archived`.** Archiving is permanent and read-only, and doing
+  it to a world with players in flight should be two deliberate acts. Lock it, then archive it.
+- **`archived` goes nowhere, and cannot be reset.** §22.2 keeps archived worlds browsable for
+  ever — "players should never lose their airline's history". A record that can start moving
+  again is not a record.
+
+Locking stops play but **not the clock**. Game time is derived from `launch_date` (above), so
+there is nothing to pause; an aircraft in the air is still in the air when the world reopens,
+further along. Pausing the clock would mean storing accumulated time, which is the model this
+ADR exists to avoid.
+
+### The guard rails, honestly
+
+The original "Guard rails" section listed five requirements for a reset. Three are built, and
+the other two are not:
+
+| Guard rail                                             | Status                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WorldAdmin` role or above                             | **Built** — `requireAdmin` on every route. Finer roles are M11-01.                                                                                                                                                                                                                                                                                                                       |
+| A mandatory reason in the immutable audit log          | **Built** — refused without one.                                                                                                                                                                                                                                                                                                                                                         |
+| The world's name typed to confirm                      | **Built** — checked inside the transaction against the locked row, so a confirmation read against one world cannot be applied to another.                                                                                                                                                                                                                                                |
+| The **two-person rule** on an `open` world             | **Not built.** Deferred by the owner on 2026-08-19: there is one administrator, so one admin requesting and another approving cannot be exercised at all. What stands in for it is the typed name, the mandatory reason, and `expectedStatus` — a world opened to players while the confirmation sat on screen is refused rather than quietly reset. Revisit when a second admin exists. |
+| An automatic pre-reset backup as a precondition        | **Not built.** Nightly off-box backups exist (OPS-03) and the console shows their freshness, but the reset does not take one of its own first.                                                                                                                                                                                                                                           |
+| Refusal if any player is not flagged as a test account | **Not implementable as written.** There is no test-account flag on `player`, and inventing one to satisfy this would be a schema change made for a checklist. The confirmation instead states the exact number of airlines that will be destroyed, and says plainly when the world is open.                                                                                              |
+
+Written down rather than quietly skipped: a guard rail that exists only in an ADR is worse
+than one that was never written, because everyone assumes it is there.
+
 ## Revisit when
 
 Anything persists an in-game timestamp, at which point the piecewise-segment model has to be

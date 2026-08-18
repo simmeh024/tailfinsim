@@ -309,12 +309,17 @@ describe('the audit log page', () => {
   it('names what is not built yet rather than mocking it up', async () => {
     // A disabled "Reset world" button implies a button that will work. Saying it
     // is not built costs nothing and misleads nobody.
+    //
+    // The list shrinks as the milestone lands: the lifecycle controls it used to
+    // name are real as of M1A-04, so this now asserts the *remaining* entry. A
+    // "not built yet" section that still lists something that exists is worse
+    // than no section at all.
     stubApi(ADMIN);
     renderAt('/admin/worlds');
 
     expect(await screen.findByText(/not built yet/i)).toBeInTheDocument();
-    expect(screen.getByText(/Open, lock, archive and reset a world/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /reset/i })).toBeNull();
+    expect(screen.getByText(/World health, tick loop and queue depth/)).toBeInTheDocument();
+    expect(screen.queryByText(/Open, lock, archive and reset a world/)).toBeNull();
   });
 });
 

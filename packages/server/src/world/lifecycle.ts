@@ -124,7 +124,26 @@ export async function resetWorld(
   worldId: string,
   now: Date = new Date(),
 ): Promise<ResetResult> {
-  return db.transaction(async (tx) => {
+  return db.transaction(async (tx) => resetWorldWithin(tx, worldId, now));
+}
+
+/**
+ * The reset itself, on a transaction the caller already has.
+ *
+ * Split out for M1A-04: the console has to write an audit row in the *same*
+ * transaction as the reset, and nesting `db.transaction` inside one would rely
+ * on savepoint semantics to get a guarantee that should not depend on them. The
+ * seed script keeps calling `resetWorld` above and gets its own transaction.
+ *
+ * Locks the world row `FOR UPDATE` before reading anything from it, so two
+ * resets — or a reset and a speed change — cannot interleave.
+ */
+export async function resetWorldWithin(
+  tx: Database,
+  worldId: string,
+  now: Date = new Date(),
+): Promise<ResetResult> {
+  {
     const rows = await tx.select().from(world).where(eq(world.id, worldId)).limit(1).for('update');
     const row = rows[0];
     if (!row) throw new Error(`No world ${worldId}`);
@@ -159,7 +178,7 @@ export async function resetWorld(
       eventsCleared: events.length,
       airlinesCleared: airlines.length,
     };
-  });
+  }
 }
 
 /** The world's current in-game date, read from the row. */
