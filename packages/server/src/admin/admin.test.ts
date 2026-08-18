@@ -84,6 +84,30 @@ describeDb('admin', () => {
     return rows.filter((row) => row.subjectId === subjectId);
   }
 
+  /**
+   * The whole error chain of a statement that must fail.
+   *
+   * Drizzle wraps a driver error in its own `Failed query: …`, so asserting on
+   * the outer message would pass for *any* failure — a missing table, a bad
+   * column, a dropped connection. The trigger's own words are in the cause, and
+   * they are the thing these tests are actually about, so the chain is walked
+   * and matched whole.
+   */
+  async function refusalFor(statement: PromiseLike<unknown>): Promise<string> {
+    try {
+      await statement;
+    } catch (error) {
+      const chain: string[] = [];
+      let current: unknown = error;
+      while (current instanceof Error) {
+        chain.push(current.message);
+        current = current.cause;
+      }
+      return chain.join(' | ');
+    }
+    throw new Error('expected the statement to be refused, but it succeeded');
+  }
+
   describe('the audit log is append-only', () => {
     it('rejects UPDATE', async () => {
       const id = await makePlayer('update-victim');
@@ -95,12 +119,14 @@ describeDb('admin', () => {
         subjectId: id,
       });
 
-      await expect(
+      const refusal = await refusalFor(
         db.db
           .update(adminAudit)
           .set({ actorLabel: 'someone else' })
           .where(eq(adminAudit.subjectId, id)),
-      ).rejects.toThrow(/append-only/);
+      );
+      expect(refusal).toMatch(/append-only/);
+      expect(refusal).toMatch(/UPDATE/);
     });
 
     it('rejects DELETE', async () => {
@@ -113,16 +139,20 @@ describeDb('admin', () => {
         subjectId: id,
       });
 
-      await expect(db.db.delete(adminAudit).where(eq(adminAudit.subjectId, id))).rejects.toThrow(
-        /append-only/,
+      const refusal = await refusalFor(
+        db.db.delete(adminAudit).where(eq(adminAudit.subjectId, id)),
       );
+      expect(refusal).toMatch(/append-only/);
+      expect(refusal).toMatch(/DELETE/);
     });
 
     it('rejects TRUNCATE, which row triggers would not catch', async () => {
       // TRUNCATE bypasses row-level triggers. Without a statement-level one the
       // entire log could be emptied in a single statement while both row
       // triggers looked on.
-      await expect(db.db.execute(sql`truncate table admin_audit`)).rejects.toThrow(/append-only/);
+      const refusal = await refusalFor(db.db.execute(sql`truncate table admin_audit`));
+      expect(refusal).toMatch(/append-only/);
+      expect(refusal).toMatch(/TRUNCATE/);
     });
 
     it('survives the attempt intact', async () => {
@@ -135,7 +165,7 @@ describeDb('admin', () => {
         subjectId: id,
       });
 
-      await expect(db.db.delete(adminAudit).where(eq(adminAudit.subjectId, id))).rejects.toThrow();
+      await refusalFor(db.db.delete(adminAudit).where(eq(adminAudit.subjectId, id)));
       expect(await auditFor(id)).toHaveLength(1);
     });
   });
