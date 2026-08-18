@@ -86,9 +86,7 @@ AYT,large,Antalya
 TLV,large,Tel Aviv Ben Gurion
 GVA,large,Geneva
 DUS,large,Dusseldorf
-HAM,large,Hamburg
 BER,large,Berlin Brandenburg
-PMI,large,Palma de Mallorca
 
 # North America
 CLT,large,Charlotte Douglas
@@ -110,7 +108,6 @@ SAN,large,San Diego
 DCA,large,Washington Reagan National
 MDW,large,Chicago Midway
 TPA,large,Tampa
-AUS,large,Austin-Bergstrom
 IAD,large,Washington Dulles
 BNA,large,Nashville
 HNL,large,Honolulu
@@ -183,3 +180,8 @@ MEL,large,Melbourne — named in B.3
 BNE,large,Brisbane
 PER,large,Perth
 AKL,large,Auckland
+
+# DELIBERATELY ABSENT: HAM, PMI and AUS. An earlier draft seeded all three as
+# large; App. B.3 names them as examples of *medium*, and the doc wins. They are
+# left to the computed rules. BHX, also named as medium in B.3, currently
+# computes to small — see the note in tier.ts.

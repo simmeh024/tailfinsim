@@ -152,3 +152,19 @@ export function classifyAirport(
     basis: { rule, longestRunwayFt, openRunways, kind, seeded: seeded !== undefined, slotRule },
   };
 }
+
+/**
+ * ## Known deviation: BHX
+ *
+ * App. B.3 names LYS, BHX, HAM, PMI and AUS as examples of *medium*. Four of
+ * them land there. Birmingham does not: it has a single 10,013 ft runway, and
+ * the medium rule requires two.
+ *
+ * Widening the rule to admit long single-runway airports — say `>= 10,000 ft`
+ * with one strip — would fix BHX and push medium from 488 to well over 900,
+ * outside B.3's own count for the tier. One named example is a worse thing to
+ * lose than the distribution, so the rule stands and the deviation is recorded
+ * here rather than papered over. Revisit when M1-03 brings catchment, which is
+ * the signal that actually separates a busy single-runway city airport from a
+ * quiet one.
+ */
