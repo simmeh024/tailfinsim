@@ -37,6 +37,10 @@ export default defineConfig({
           name: 'server',
           include: ['packages/server/src/**/*.{test,spec}.{ts,tsx}'],
           environment: 'node',
+          // Refuses to run against a database that is not disposable. A setup
+          // file rather than a call in each test, because the one thing this
+          // must not depend on is every future test file remembering to ask.
+          setupFiles: ['packages/server/src/test-setup.ts'],
         },
       },
       {

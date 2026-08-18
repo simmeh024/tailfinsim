@@ -15,10 +15,15 @@ permissions:
   contents: read
 
 env:
-  # Matches docker-compose.yml and production, including the C collation —
-  # Postgres sorts differently under different locales, and a schema verified
-  # under one collation is not verified under another.
-  DATABASE_URL: postgres://tailfin:tailfin_ci@127.0.0.1:5432/tailfin
+  # Matches docker-compose.yml and production in everything that affects
+  # behaviour, including the C collation — Postgres sorts differently under
+  # different locales, and a schema verified under one collation is not verified
+  # under another.
+  #
+  # The one deliberate difference is the *name*. `packages/server/src/test-setup.ts`
+  # refuses to run the destructive suites against a database whose name does not
+  # end in `_test` or `_ci`, so CI is named to say what it is: disposable.
+  DATABASE_URL: postgres://tailfin:tailfin_ci@127.0.0.1:5432/tailfin_test
 
 jobs:
   verify:
@@ -32,12 +37,12 @@ jobs:
         env:
           POSTGRES_USER: tailfin
           POSTGRES_PASSWORD: tailfin_ci
-          POSTGRES_DB: tailfin
+          POSTGRES_DB: tailfin_test
           POSTGRES_INITDB_ARGS: '--locale=C --encoding=UTF8'
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U tailfin -d tailfin"
+          --health-cmd "pg_isready -U tailfin -d tailfin_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20

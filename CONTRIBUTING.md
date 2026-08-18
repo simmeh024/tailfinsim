@@ -103,6 +103,28 @@ edit an applied migration — add a new one. Name them meaningfully with
 The database is created with `--locale=C`. Postgres sorts differently under different
 host locales, and ordering must not depend on a developer's OS language settings.
 
+### The test database is a different database
+
+The database-backed tests are **destructive**: they create and delete players, and one of
+them arranges for there to be exactly one admin in order to prove the last one cannot be
+revoked. They must never see a database anyone cares about.
+
+`packages/server/src/test-setup.ts` enforces this. If `DATABASE_URL` is set and names a
+database whose name does not end in `_test` or `_ci`, the server suite **throws** rather
+than running — it does not skip, because a silent skip in CI would report success for work
+it never did.
+
+With `DATABASE_URL` unset, the database suites skip themselves and everything else runs.
+That is the ordinary local case and needs no setup. To run them locally:
+
+```bash
+docker compose exec postgres createdb -U tailfin tailfin_test
+DATABASE_URL=postgres://tailfin:tailfin_dev@127.0.0.1:5432/tailfin_test pnpm test
+```
+
+This exists because the suite was once run against the dev server by sourcing that box's
+`.env`, and it revoked a real person's admin access. Nothing was looking; now something is.
+
 > Any container runtime works — Docker Engine, Rancher Desktop, Podman. Note that
 > Docker **Desktop** requires a paid licence for business use above 250 employees or
 > $10M revenue.
