@@ -247,12 +247,37 @@ describeDb('admin', () => {
     it('refuses to remove the last admin', async () => {
       // Nobody could grant another without a shell on the server, so this is the
       // one misclick that must not be possible.
-      await db.db.delete(adminGrant);
+      //
+      // Set up **inside a transaction that always rolls back**. Proving the guard
+      // requires being the only admin, and the first version of this cleared the
+      // grant table to arrange that — which is fine against a throwaway CI
+      // database and destructive against any other. It was run against dev once
+      // and revoked a real person's access. A test must not be able to do that,
+      // whatever it is pointed at.
       const only = await makePlayer('only-admin');
-      await grantAdmin(db.db, only, BOOTSTRAP_ACTOR);
 
-      await expect(revokeAdmin(db.db, only, BOOTSTRAP_ACTOR)).rejects.toThrow(/last admin/);
-      expect(await isAdmin(db.db, only)).toBe(true);
+      await expect(
+        db.db.transaction(async (tx) => {
+          await tx.delete(adminGrant);
+          await grantAdmin(tx, only, BOOTSTRAP_ACTOR);
+          await revokeAdmin(tx, only, BOOTSTRAP_ACTOR);
+        }),
+      ).rejects.toThrow(/last admin/);
+
+      // The rollback took the setup with it, so nothing outside this test moved.
+      expect(await isAdmin(db.db, only)).toBe(false);
+    });
+
+    it('leaves other grants alone when it refuses', async () => {
+      // The guard counts grants; a bug that counted rows of the wrong table, or
+      // deleted before counting, would show up here rather than in production.
+      const keeper = await makePlayer('untouched');
+      await grantAdmin(db.db, keeper, BOOTSTRAP_ACTOR);
+      const second = await makePlayer('second');
+      await grantAdmin(db.db, second, BOOTSTRAP_ACTOR);
+
+      await revokeAdmin(db.db, second, BOOTSTRAP_ACTOR);
+      expect(await isAdmin(db.db, keeper)).toBe(true);
     });
   });
 
