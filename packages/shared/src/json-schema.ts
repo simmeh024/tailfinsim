@@ -5,6 +5,7 @@ import {
   AdminCreateWorldResponse,
   AdminListResponse,
   AdminOverviewResponse,
+  AdminSpeedChangeResponse,
   AdminWorldListResponse,
 } from './admin';
 import { ApiError, HealthResponse } from './api';
@@ -37,3 +38,16 @@ export const adminListResponseJsonSchema = z.toJSONSchema(AdminListResponse);
 export const adminWorldListResponseJsonSchema = z.toJSONSchema(AdminWorldListResponse);
 export const adminCreateWorldResponseJsonSchema = z.toJSONSchema(AdminCreateWorldResponse);
 export const adminOverviewResponseJsonSchema = z.toJSONSchema(AdminOverviewResponse);
+export const adminSpeedChangeResponseJsonSchema = z.toJSONSchema(AdminSpeedChangeResponse);
+
+/*
+ * Responses only, and deliberately.
+ *
+ * `z.toJSONSchema` emits draft 2020-12, which Fastify's serialiser is happy to
+ * consume but its *validator* is not: attaching one of these as a route `body`
+ * schema fails at startup with `no schema with key or ref
+ * "https://json-schema.org/draft/2020-12/schema"`. Request bodies are validated
+ * with the zod schemas directly inside the handlers instead, which also gives
+ * refusals in words an admin can act on rather than "body/speedMultiplier must
+ * be > 0".
+ */

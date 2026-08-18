@@ -2,6 +2,7 @@ import type {
   AdminAuditEntry,
   AdminGrantSummary,
   AdminOverviewResponse,
+  AdminSpeedChangeResponse,
   AdminWorldSummary,
 } from '@tailfin/shared';
 
@@ -99,4 +100,53 @@ export async function createWorld(config: unknown): Promise<CreateWorldResult> {
 export async function fetchOverview(): Promise<AdminOverviewResponse> {
   const body = await getJson('/api/admin/overview');
   return body as AdminOverviewResponse;
+}
+
+export type SpeedChangeResult =
+  { ok: true; change: AdminSpeedChangeResponse } | { ok: false; fields: FieldErrors };
+
+/**
+ * Changes a world's speed (M1A-03).
+ *
+ * `expectedSpeedMultiplier` is the speed the console was showing when the admin
+ * confirmed, and the server refuses a mismatch. That is deliberate rather than
+ * defensive: the admin agreed to a specific sentence — "2.00× → 3.00×" — and if
+ * somebody else has changed it since, carrying on would perform a change nobody
+ * agreed to.
+ *
+ * Refusals are answers, not exceptions, for the same reason as `createWorld`:
+ * "no, because…" is a normal outcome of asking. A 403 or a dead server still
+ * throws.
+ */
+export async function changeWorldSpeed(
+  worldId: string,
+  speedMultiplier: number,
+  expectedSpeedMultiplier: number,
+): Promise<SpeedChangeResult> {
+  const response = await fetch(`/api/admin/worlds/${encodeURIComponent(worldId)}/speed`, {
+    method: 'POST',
+    headers: { accept: 'application/json', 'content-type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ speedMultiplier, expectedSpeedMultiplier }),
+  });
+
+  if (response.status === 200) {
+    const body: unknown = await response.json();
+    return { ok: true, change: body as AdminSpeedChangeResponse };
+  }
+
+  if (response.status === 400 || response.status === 404 || response.status === 409) {
+    const body: unknown = await response.json();
+    const fields = (body as { fields?: unknown }).fields;
+    const message = (body as { message?: unknown }).message;
+    if (typeof fields === 'object' && fields !== null) {
+      return { ok: false, fields: fields as FieldErrors };
+    }
+    return {
+      ok: false,
+      fields: { form: [typeof message === 'string' ? message : 'The change was refused.'] },
+    };
+  }
+
+  throw new Error(`POST /api/admin/worlds/:id/speed failed with ${String(response.status)}`);
 }

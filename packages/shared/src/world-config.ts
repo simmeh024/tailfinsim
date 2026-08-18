@@ -20,6 +20,20 @@ import { z } from 'zod';
  */
 export const FLAGSHIP_WORLD_NAME = 'Flagship';
 
+/**
+ * The largest speed multiplier a world can hold, and it is a storage fact rather
+ * than a game-design one: `world.speed_multiplier` is `numeric(4,2)`, so 99.99 is
+ * the last value that fits.
+ *
+ * This bound read 100 until M1A-03. Nothing had tried it, but a world created at
+ * exactly 100 would have been refused by Postgres with a numeric overflow —
+ * which is not a constraint violation, so it would have escaped the translation
+ * in `admin/worlds.ts` and surfaced as a 500 with no explanation. Two decimal
+ * places, for the same reason: anything finer is silently rounded on the way in.
+ */
+export const MAX_SPEED_MULTIPLIER = 99.99;
+export const SPEED_MULTIPLIER_DECIMALS = 2;
+
 export const WorldConfig = z.object({
   name: z.string().min(1).max(64),
 
@@ -30,7 +44,7 @@ export const WorldConfig = z.object({
   epoch: z.iso.datetime(),
 
   /** 2 for the flagship world. Game time runs at this multiple of wall clock. */
-  speedMultiplier: z.number().positive().max(100),
+  speedMultiplier: z.number().positive().max(MAX_SPEED_MULTIPLIER),
 
   /** Pinned so retuning aircraft or economy does not change a running world (§22.2, §22.5). */
   aircraftCatalogueVersion: z.string().min(1),

@@ -32,14 +32,16 @@ export interface WorldClock {
   speedMultiplier: number;
 }
 
-function assertUsable(clock: WorldClock): void {
-  if (!Number.isFinite(clock.speedMultiplier) || clock.speedMultiplier <= 0) {
+function assertSpeed(speedMultiplier: number): void {
+  if (!Number.isFinite(speedMultiplier) || speedMultiplier <= 0) {
     // A zero or negative multiplier would freeze or reverse the world. §22.2
     // gates changing it at all; this is the floor beneath that gate.
-    throw new Error(
-      `World speed multiplier must be positive, got ${String(clock.speedMultiplier)}`,
-    );
+    throw new Error(`World speed multiplier must be positive, got ${String(speedMultiplier)}`);
   }
+}
+
+function assertUsable(clock: WorldClock): void {
+  assertSpeed(clock.speedMultiplier);
   if (Number.isNaN(clock.epoch.getTime()) || Number.isNaN(clock.launchDate.getTime())) {
     throw new Error('World clock has an invalid epoch or launch date');
   }
@@ -108,6 +110,79 @@ export function convergenceInstant(clock: WorldClock): Date | null {
 
   // Convergence in the past is not convergence ahead of us.
   return t >= launchMs ? new Date(t) : null;
+}
+
+/**
+ * The clock a world should have after a speed change, with the calendar left
+ * standing where it is (M1A-03, §22.2).
+ *
+ * ## Why this is not simply `speedMultiplier = newSpeed`
+ *
+ * Game time is `epoch + speed × (now − launchDate)`, so the multiplier is
+ * applied to *all* the real time that has already elapsed. Changing it alone
+ * makes the world lurch: a world 30 real days old at 2× sits 60 game days past
+ * its epoch, and moving to 3× would jump it to 90 — thirty game days of history
+ * that never happened, arriving in an instant.
+ *
+ * So `launchDate` is re-anchored to whatever instant makes the *current* game
+ * time come out unchanged under the new speed:
+ *
+ *     launchDate′ = at − (gameTime(clock, at) − epoch) / newSpeed
+ *
+ * `epoch` is never touched. It is what the world *is*, and a reset returns to it
+ * (ADR-0005).
+ *
+ * ## What this does not fix
+ *
+ * The calendar is still derived from a single speed, so **the past is rewritten**.
+ * After the change, asking what the in-game date was last Tuesday gives a
+ * different answer than it would have before, because the new multiplier is
+ * applied to that older stretch of real time too. Only the present instant is
+ * preserved, and changing the speed back does not restore the old mapping.
+ *
+ * ADR-0005 names the honest fix — a piecewise table of `(from, to, speed)`
+ * segments — and deliberately does not build it. Nothing stores an in-game
+ * timestamp today (§21 computes them all on read), so nothing is currently
+ * *wrong* as a result; the day something does, that table has to exist.
+ *
+ * ## Millisecond honesty, and which way it leans
+ *
+ * `launchDate′` is a whole number of milliseconds and the division above rarely
+ * lands on one, so the game time that comes back can be a few milliseconds off
+ * the one going in. That residue cannot be removed — `epoch` may not move, and
+ * milliseconds are the resolution — but its **direction can be chosen**, and it
+ * is worth choosing.
+ *
+ * `launchDate′` is rounded **up**, which makes the new game time land at or
+ * fractionally *before* the old one, never after. The gap is under `newSpeed`
+ * milliseconds from this rounding, plus under one more from `gameTime` truncating
+ * its own multiplication — small, bounded, and in one direction only, which is
+ * what makes it safe rather than merely tiny. So changing the speed can never
+ * make a scheduled event fire
+ * early: the queue drains everything with `fire_at <= gameTime(now)` (M1-06), and
+ * a calendar that cannot jump forward cannot sweep an event across that line.
+ * The cost is that an event due at the exact instant of the change may wait one
+ * more drain, which is a few milliseconds in a world whose events are minutes
+ * apart. Early is a violation of what an event *means*; late is a Tuesday.
+ */
+export function reanchorForSpeed(
+  clock: WorldClock,
+  newSpeedMultiplier: number,
+  at: Date,
+): WorldClock {
+  // Validates `clock` on the way past, so a broken clock is refused before it
+  // becomes a broken clock with a new speed.
+  const stayAt = gameTime(clock, at);
+  assertSpeed(newSpeedMultiplier);
+
+  const gameElapsedMs = stayAt.getTime() - clock.epoch.getTime();
+  return {
+    epoch: clock.epoch,
+    // Up, not nearest: a later launch means less elapsed real time, so the
+    // calendar lands at or a hair behind where it was and never ahead of it.
+    launchDate: new Date(Math.ceil(at.getTime() - gameElapsedMs / newSpeedMultiplier)),
+    speedMultiplier: newSpeedMultiplier,
+  };
 }
 
 /** Convenience for the flagship world's parameters (§3.1b). */

@@ -20,7 +20,6 @@ export function WorldsPage(): ReactNode {
       <section className="admin__section">
         <h2 className="admin__heading">Not built yet</h2>
         <ul className="admin__todo">
-          <li>Change the speed multiplier of a running world — M1A-03</li>
           <li>Open, lock, archive and reset a world — M1A-04</li>
           <li>World health, tick loop and queue depth — M1A-06</li>
         </ul>
