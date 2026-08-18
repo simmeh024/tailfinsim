@@ -82,37 +82,27 @@ export interface LegProgress {
   ceilingFt: number;
 }
 
-interface Segment {
-  phase: FlightPhase;
-  fromMs: number;
-  toMs: number;
-  factor: number;
-}
-
 /**
- * The airborne windows of one leg, clipped to it.
+ * The airborne part of one window, clipped to a leg — or null if none of it is.
  *
  * Clipped rather than filtered: a diversion cuts a window in the middle, and the
  * half that belongs to the old leg must not be counted against the new one.
+ *
+ * Returned as two numbers written into the caller's scratch pair rather than an
+ * object, because this runs 65,000 times a sweep at world scale and the objects
+ * were the sweep's largest cost — see `position.test.ts`.
  */
-function segmentsOf(
-  timeline: readonly PhaseWindow[],
-  leg: RouteLeg,
-  factors: AirborneSpeedFactors,
-): Segment[] {
-  const startMs = leg.startedAt.getTime();
-  const endMs = leg.endsAt.getTime();
-  const segments: Segment[] = [];
-
-  for (const window of timeline) {
-    if (!AIRBORNE_PHASES.has(window.phase)) continue;
-    const fromMs = Math.max(window.from.getTime(), startMs);
-    const toMs = Math.min(window.to?.getTime() ?? endMs, endMs);
-    if (toMs <= fromMs) continue;
-    segments.push({ phase: window.phase, fromMs, toMs, factor: factorFor(window.phase, factors) });
-  }
-
-  return segments;
+function clipTo(
+  window: PhaseWindow,
+  startMs: number,
+  endMs: number,
+  out: { fromMs: number; toMs: number },
+): boolean {
+  const from = window.from.getTime();
+  const to = window.to === null ? endMs : window.to.getTime();
+  out.fromMs = from > startMs ? from : startMs;
+  out.toMs = to < endMs ? to : endMs;
+  return out.toMs > out.fromMs;
 }
 
 /**
@@ -131,17 +121,51 @@ export function legProgressAt(
   const leg = flight.legs[legIndex];
   if (!leg) return null;
 
-  const atMs = Math.min(at.getTime(), leg.endsAt.getTime());
-  const segments = segmentsOf(flight.timeline, leg, profile.speedFactors);
+  const startMs = leg.startedAt.getTime();
+  const endMs = leg.endsAt.getTime();
+  const rawAt = at.getTime();
+  const atMs = rawAt < endMs ? rawAt : endMs;
+  const factors = profile.speedFactors;
   const targetNm = leg.distanceNm * leg.flownFraction;
 
-  // Total factor-weighted minutes. The scale that turns those into nautical
-  // miles is whatever makes the leg come out at exactly the right distance.
-  let weighted = 0;
-  for (const segment of segments)
-    weighted += ((segment.toMs - segment.fromMs) / 60_000) * segment.factor;
+  // Two passes over the timeline with no allocation at all, rather than building
+  // an array of segments and walking that. The array was the largest single cost
+  // of a world-scale sweep — 5,000 flights each allocating six objects is 30,000
+  // short-lived objects per sweep, and the garbage collector noticed.
+  const span = { fromMs: 0, toMs: 0 };
 
-  if (segments.length === 0 || weighted <= 0) {
+  // Total factor-weighted minutes, and the climb the leg has had. The scale that
+  // turns weighted minutes into nautical miles is whatever makes the leg come out
+  // at exactly the right distance.
+  let weighted = 0;
+  let airborneWindows = 0;
+  let climbMinutes = 0;
+
+  for (const window of flight.timeline) {
+    if (window.phase === 'climb') {
+      // Every climb minute up to the end of this leg, not only the ones inside
+      // it. A replanned leg has no climb window of its own — the aircraft is
+      // already up — so it inherits the climb that got it there, and a diversion
+      // *during* the climb inherits only the part that had actually happened.
+      const from = window.from.getTime();
+      const to = Math.min(window.to === null ? endMs : window.to.getTime(), endMs);
+      if (to > from) climbMinutes += (to - from) / 60_000;
+    }
+    if (!AIRBORNE_PHASES.has(window.phase)) continue;
+    if (!clipTo(window, startMs, endMs, span)) continue;
+    airborneWindows += 1;
+    weighted += ((span.toMs - span.fromMs) / 60_000) * factorFor(window.phase, factors);
+  }
+
+  const ceilingFt =
+    climbMinutes <= 0
+      ? flight.plan.cruiseAltitudeFt
+      : Math.min(
+          flight.plan.cruiseAltitudeFt,
+          profile.departureAltitudeFt + climbMinutes * profile.climbRateFtPerMin,
+        );
+
+  if (airborneWindows === 0 || weighted <= 0) {
     // A leg with no airborne minutes at all — possible only for a zero-length
     // leg. Treat it as flown out rather than dividing by zero.
     return {
@@ -159,21 +183,27 @@ export function legProgressAt(
   const nmPerWeightedMinute = targetNm / weighted;
 
   let coveredNm = 0;
-  let current: Segment | undefined;
   let phaseFraction = 0;
+  let currentPhase: FlightPhase = 'cruise';
+  let currentFactor = 0;
 
-  for (const segment of segments) {
-    const spanMinutes = (segment.toMs - segment.fromMs) / 60_000;
-    current = segment;
+  for (const window of flight.timeline) {
+    if (!AIRBORNE_PHASES.has(window.phase)) continue;
+    if (!clipTo(window, startMs, endMs, span)) continue;
 
-    if (atMs >= segment.toMs) {
-      coveredNm += spanMinutes * segment.factor * nmPerWeightedMinute;
+    const factor = factorFor(window.phase, factors);
+    const spanMinutes = (span.toMs - span.fromMs) / 60_000;
+    currentPhase = window.phase;
+    currentFactor = factor;
+
+    if (atMs >= span.toMs) {
+      coveredNm += spanMinutes * factor * nmPerWeightedMinute;
       phaseFraction = 1;
       continue;
     }
 
-    const elapsedMinutes = Math.max(0, (atMs - segment.fromMs) / 60_000);
-    coveredNm += elapsedMinutes * segment.factor * nmPerWeightedMinute;
+    const elapsedMinutes = atMs > span.fromMs ? (atMs - span.fromMs) / 60_000 : 0;
+    coveredNm += elapsedMinutes * factor * nmPerWeightedMinute;
     phaseFraction = spanMinutes <= 0 ? 1 : elapsedMinutes / spanMinutes;
     break;
   }
@@ -183,36 +213,9 @@ export function legProgressAt(
     legIndex,
     coveredNm,
     fraction: leg.distanceNm <= 0 ? leg.flownFraction : coveredNm / leg.distanceNm,
-    groundSpeedKt: (current?.factor ?? 0) * nmPerWeightedMinute * 60,
-    phase: current?.phase ?? 'cruise',
+    groundSpeedKt: currentFactor * nmPerWeightedMinute * 60,
+    phase: currentPhase,
     phaseFraction,
-    ceilingFt: ceilingOf(flight, leg, profile),
+    ceilingFt,
   };
-}
-
-/**
- * The altitude a leg tops out at.
- *
- * The aircraft climbs at a rate, so the climb's length decides how high it gets.
- * A 100 nm hop whose climb was scaled to seven minutes reaches about FL140, not
- * the FL350 its catalogue entry claims — and the map should show that, because a
- * player looking at a short hop cruising at FL350 would rightly not believe it.
- */
-function ceilingOf(flight: FlightShape, leg: RouteLeg, profile: FlightProfile): number {
-  // Every climb minute flown up to the end of this leg, not only the ones inside
-  // it. A replanned leg has no climb window of its own — the aircraft is already
-  // up — so it has to inherit the climb that got it there, and a diversion
-  // *during* the climb inherits only the part that had actually happened.
-  let climbMinutes = 0;
-  for (const window of flight.timeline) {
-    if (window.phase !== 'climb') continue;
-    const fromMs = window.from.getTime();
-    const toMs = Math.min(window.to?.getTime() ?? leg.endsAt.getTime(), leg.endsAt.getTime());
-    if (toMs > fromMs) climbMinutes += (toMs - fromMs) / 60_000;
-  }
-
-  if (climbMinutes <= 0) return flight.plan.cruiseAltitudeFt;
-
-  const reachableFt = profile.departureAltitudeFt + climbMinutes * profile.climbRateFtPerMin;
-  return Math.min(flight.plan.cruiseAltitudeFt, reachableFt);
 }
