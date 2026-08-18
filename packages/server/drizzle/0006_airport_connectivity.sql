@@ -1,0 +1,2 @@
+ALTER TABLE "airport" ADD COLUMN "connectivity_index" numeric(6, 4);--> statement-breakpoint
+ALTER TABLE "airport" ADD CONSTRAINT "airport_connectivity_index_range" CHECK ("airport"."connectivity_index" IS NULL OR ("airport"."connectivity_index" >= 1 AND "airport"."connectivity_index" <= 4));

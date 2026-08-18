@@ -3,6 +3,7 @@ import { isNotNull, sql } from 'drizzle-orm';
 import { type Database } from '../../db/client';
 import { airport, datasetVersion } from '../../db/schema';
 
+import { deriveConnectivity } from './connectivity';
 import { deriveCatchment, type CatchmentAirport } from './derive';
 import { type CatchmentSources } from './sources';
 
@@ -32,6 +33,8 @@ export interface CatchmentRunResult {
   populationFloored: number;
   /** Multi-airport metros found — airports sharing at least one city. */
   sharingCatchment: number;
+  /** Airports that gained a proximity boost. */
+  connectivityBoosted: number;
   checksum: string;
   samples: { ident: string; population: number; share: number }[];
 }
@@ -86,6 +89,8 @@ export async function applyCatchment(
 
     log(`Deriving catchment for ${String(airports.length)} airports…`);
 
+    const connectivity = deriveConnectivity(airports);
+
     const results = deriveCatchment({
       airports,
       cities: sources.cities,
@@ -100,7 +105,8 @@ export async function applyCatchment(
           (r) =>
             sql`(${r.airportId}::uuid, ${r.population}::bigint, ${r.wealthIndex.toFixed(4)}::numeric,
                  ${r.tourismIndex.toFixed(4)}::numeric, ${r.businessIndex.toFixed(4)}::numeric,
-                 ${JSON.stringify(r.basis)}::text)`,
+                 ${JSON.stringify({ ...r.basis, connectivity: connectivity.get(r.airportId) })}::text,
+                 ${(connectivity.get(r.airportId)?.index ?? 1).toFixed(4)}::numeric)`,
         ),
         sql`, `,
       );
@@ -111,8 +117,9 @@ export async function applyCatchment(
             tourism_index = v.tourism,
             business_index = v.business,
             catchment_basis = v.basis,
+            connectivity_index = v.connectivity,
             catchment_at = now()
-        from (values ${values}) as v(id, population, wealth, tourism, business, basis)
+        from (values ${values}) as v(id, population, wealth, tourism, business, basis, connectivity)
         where a.id = v.id
       `);
     }
@@ -143,6 +150,7 @@ export async function applyCatchment(
       populationFloored: results.filter((r) => r.basis.fallbacks.some((f) => f.includes('floored')))
         .length,
       sharingCatchment: results.filter((r) => r.basis.competingAirports > 0).length,
+      connectivityBoosted: [...connectivity.values()].filter((c) => c.index > 1).length,
       checksum: sources.checksum,
       samples: results
         .filter((r) => r.basis.competingAirports > 0)
@@ -164,6 +172,7 @@ export function formatCatchmentResult(result: CatchmentRunResult): string {
     `  countries with GDP  ${n(result.countriesWithGdp)}`,
     `  countries w/tourism ${n(result.countriesWithTourism)}`,
     `  sharing a metro     ${n(result.sharingCatchment)} airports split their catchment`,
+    `  proximity boost     ${n(result.connectivityBoosted)} airports have a neighbour within 15 km`,
     `  used a fallback     ${n(result.withFallbacks)} (${n(result.populationFloored)} had no city within radius)`,
     `  checksum            ${result.checksum}`,
   ].join('\n');
