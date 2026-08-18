@@ -15,16 +15,26 @@
 #      captures stdout: `journalctl -u caddy -f`.
 #
 # ---------------------------------------------------------------------------
-# The two import styles below are different **on purpose**.
+# Dev used to sit behind HTTP basic auth, imported from a literal path so that a
+# missing credentials file stopped Caddy rather than serving dev open. That gate
+# was removed once Google sign-in (M0-11) reached dev: two password prompts to
+# look at one page, the first of which the browser re-asked on every refresh.
 #
-#   glob    (`conf.d/*.caddyfile`)  tolerates matching nothing → fails OPEN.
-#   literal (`dev-auth.caddyfile`)  errors if absent            → fails CLOSED.
+# What guards dev now is the application: `RequireSession` in the client and
+# `requireAuth` / `requireAdmin` on the server. The `X-Robots-Tag` below is
+# therefore no longer belt-and-braces — it is the only thing discouraging
+# indexing, so leave it in place.
 #
-# The optional ACME contact address may safely be missing, so it is a glob. The
-# dev site's credentials may NOT safely be missing — if that file disappeared
-# and the import were a glob, dev would silently serve unauthenticated. Using a
-# literal import means Caddy refuses to start instead, which is the behaviour
-# you want from an auth gate.
+# `ALLOW_REGISTRATION=true` on dev is a **deliberate choice**, confirmed
+# 2026-08-18: it is how people get invited to look at work in progress, and the
+# only way to exercise the sign-up path itself. So dev is knowingly an open
+# Google sign-up on a public hostname — the subdomain is discoverable through
+# certificate transparency whatever the robots header says.
+#
+# That is the right trade for a pre-launch preview environment with disposable
+# data. It stops being the right trade the moment dev holds anything that matters,
+# and the front door is a different question entirely: production defaults to
+# `ALLOW_REGISTRATION=false` and stays that way until launch.
 # ---------------------------------------------------------------------------
 
 # Optional. Add /etc/caddy/conf.d/acme.caddyfile containing `{ email you@x }`
@@ -61,18 +71,11 @@ www.tailfinsim.com {
 
 # ---------------------------------------------------------------------------
 # Dev — where work in progress is looked at before it reaches the front door.
-# Separate checkout, separate database, separate port. Password protected, and
-# excluded from search engines.
+# Separate checkout, separate database, separate port. Guarded by Google sign-in
+# rather than a password prompt, and excluded from search engines.
 # ---------------------------------------------------------------------------
 dev.tailfinsim.com {
 	encode zstd gzip
-
-	# Credentials live off-repo in /etc/caddy/dev-auth.caddyfile:
-	#     basic_auth { <user> <bcrypt-hash> }
-	# Generate a hash with: caddy hash-password
-	# A *literal* import, so a missing file stops Caddy rather than exposing
-	# dev without authentication. See the note at the top of this file.
-	import /etc/caddy/dev-auth.caddyfile
 
 	reverse_proxy 127.0.0.1:3001
 
@@ -80,8 +83,8 @@ dev.tailfinsim.com {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
-		# Basic auth already means crawlers get a 401, but this covers the
-		# case where auth is ever relaxed for a demo.
+		# Now the only thing keeping dev out of search results: there is no
+		# longer a 401 in front of it. Do not remove.
 		X-Robots-Tag "noindex, nofollow, noarchive"
 		-Server
 	}
