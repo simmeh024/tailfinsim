@@ -366,6 +366,35 @@ describeDb('admin', () => {
       }
     });
 
+    it('carry the before and after through serialisation intact', async () => {
+      // Fastify serialises through the JSON Schema and strips anything the
+      // schema does not admit. `before` and `after` are open-ended records, which
+      // is exactly the shape a serialiser is most likely to quietly empty — and
+      // an audit entry that says a change happened but not what it changed is
+      // half an audit entry.
+      const id = await makePlayer('payload');
+      await grantAdmin(db.db, id, BOOTSTRAP_ACTOR);
+
+      const app = buildApp({ env, db });
+      try {
+        const reply = await app.inject({
+          method: 'GET',
+          url: '/api/admin/audit',
+          headers: { cookie: await sessionCookie(id) },
+        });
+
+        const body = reply.json<{
+          entries: { subjectId: string | null; before: unknown; after: unknown }[];
+        }>();
+        const entry = body.entries.find((e) => e.subjectId === id);
+        expect(entry).toBeDefined();
+        expect(entry?.before).toEqual({ admin: false });
+        expect(entry?.after).toMatchObject({ admin: true });
+      } finally {
+        await app.close();
+      }
+    });
+
     it('do not leak what the console contains to someone refused', async () => {
       const id = await makePlayer('nosy');
       const app = buildApp({ env, db });
