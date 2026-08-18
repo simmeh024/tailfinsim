@@ -216,6 +216,7 @@ describe('GET /api/version', () => {
         'build',
         'commit',
         'environment',
+        'serverTime',
         'startedAt',
       ]);
     });

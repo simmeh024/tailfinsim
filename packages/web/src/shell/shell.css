@@ -700,3 +700,23 @@ body {
     justify-self: end;
   }
 }
+
+/*
+ * Server clock, to the left of the build label.
+ *
+ * Tabular figures so the seconds do not shove the rest of the badge sideways
+ * once a second, which is exactly the kind of small motion that pulls the eye
+ * away from the sim.
+ */
+.build__clock {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (max-width: 48rem) {
+  /* The strip is already scrolling here; the date is the droppable half. */
+  .build__clock {
+    display: none;
+  }
+}

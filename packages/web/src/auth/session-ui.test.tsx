@@ -37,6 +37,7 @@ const VERSION: VersionResponse = {
   commit: 'abc1234',
   environment: 'dev',
   startedAt: '2026-08-17T20:00:00.000Z',
+  serverTime: '2026-08-17T20:05:00.000Z',
 };
 
 /**
@@ -288,6 +289,44 @@ describe('the build badge', () => {
     const badge = (await screen.findByText('build 137')).closest('.build');
     expect(badge).toHaveAttribute('title', expect.stringContaining('abc1234'));
     expect(badge).not.toHaveTextContent('abc1234');
+  });
+
+  it('shows the server clock to the left of the build label', async () => {
+    stubApi(PLAYER);
+    renderAt('/world');
+
+    await screen.findByText('build 137');
+    const badge = document.querySelector('.build')!;
+    const clock = badge.querySelector('.build__clock');
+    expect(clock).not.toBeNull();
+    // Order matters: date and time first, then environment, then build.
+    expect(badge.firstElementChild).toBe(clock);
+  });
+
+  it('shows the SERVER time, not the browser clock', async () => {
+    // The viewer can already see their own clock. The point of the badge is what
+    // the box thinks the time is, which is what every log line is stamped with.
+    vi.setSystemTime(new Date('2020-01-01T00:00:00.000Z'));
+    try {
+      stubApi(PLAYER);
+      renderAt('/world');
+
+      const clock = await screen.findByText(/UTC$/);
+      // VERSION.serverTime is 2026-08-17T20:05:00Z; the browser is in 2020.
+      expect(clock.textContent).toContain('2026-08-17 20:05');
+      expect(clock.textContent).not.toContain('2020');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('formats as an unambiguous UTC stamp', async () => {
+    stubApi(PLAYER);
+    renderAt('/world');
+    const clock = await screen.findByText(/UTC$/);
+    expect(clock.textContent).toMatch(
+      /^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} UTC$/,
+    );
   });
 
   it('renders nothing at all when the version endpoint says nothing', async () => {
