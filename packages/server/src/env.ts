@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { accessSync, constants, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -25,15 +25,47 @@ let dotEnvLoaded = false;
  * variables and have no `.env` at all, so a missing file is not an error. The
  * path is resolved from this module rather than `process.cwd()` so it works the
  * same whether a script is run from the repo root or from `packages/server`.
+ *
+ * ## Why readability is checked and not existence
+ *
+ * `existsSync` then `loadEnvFile` looks equivalent and is not. Existence needs
+ * only a traversable directory, so the check passes for a file owned by someone
+ * else — and the load then fails. Worse, Node reports that failure as
+ * `ENOENT: no such file or directory`, naming a file that plainly exists.
+ *
+ * That happened on the server: the app was started as `postgres` while `.env`
+ * was `-rw-------` and owned by `tailfin`, and the error sent me looking for a
+ * missing file for several minutes. Asking for read permission asks the question
+ * the caller actually has.
+ *
+ * A present-but-unreadable file **warns and continues** rather than throwing.
+ * The variables may well have been injected anyway, in which case the server is
+ * fine and should boot; and if they were not, `required()` fails immediately
+ * afterwards with the name of what is missing. Throwing here would break a
+ * working configuration to complain about a file it did not need.
  */
 function loadDotEnvOnce(): void {
   if (dotEnvLoaded) return;
   dotEnvLoaded = true;
 
   const envFile = resolve(repoRoot, '.env');
-  if (existsSync(envFile)) {
-    process.loadEnvFile(envFile);
+
+  try {
+    accessSync(envFile, constants.R_OK);
+  } catch {
+    if (existsSync(envFile)) {
+      // Deliberately `console.warn`: this runs before any logger exists, and
+      // silence here is what made the original failure so hard to read.
+      console.warn(
+        `[env] ${envFile} exists but is not readable by this process (uid ${String(process.getuid?.() ?? 'unknown')}). ` +
+          'Ignoring it. The server normally runs as the user that owns its checkout — ' +
+          'if configuration is missing, that is why.',
+      );
+    }
+    return;
   }
+
+  process.loadEnvFile(envFile);
 }
 
 function required(name: string): string {
