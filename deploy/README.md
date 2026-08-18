@@ -263,33 +263,90 @@ available — is the signal to move up a flavor, not to add more swap.
 
 ## Backups
 
-A nightly `pg_dump` of every Tailfin database, at 03:15 UTC.
+A nightly `pg_dump` of every Tailfin database at 03:15 UTC, verified, kept locally for 14
+days, and **copied to DreamObjects** so a lost volume does not take the backups with it.
+
+### Install
+
+The script is installed by hand, like the Caddyfile and the unit files — `deploy.sh` does
+not sync anything outside the checkout, and backups must not stop improving because a
+deploy has not happened.
 
 ```bash
+install -o root -g root -m 0755 /srv/tailfin/deploy/backup.sh /usr/local/sbin/tailfin-backup
 cp /srv/tailfin/deploy/tailfin-backup.{service,timer} /etc/systemd/system/
 install -d -o postgres -g postgres -m 700 /var/backups/tailfin
+install -d -o root -g postgres -m 0750 /etc/tailfin
+apt install -y s3cmd
 systemctl daemon-reload
 systemctl enable --now tailfin-backup.timer
 ```
 
-| Task        | Command                                       |
-| ----------- | --------------------------------------------- |
-| Run one now | `sudo systemctl start tailfin-backup.service` |
-| See the log | `journalctl -u tailfin-backup -n 40`          |
-| Next run    | `systemctl list-timers tailfin-backup.timer`  |
-| List dumps  | `sudo ls -lh /var/backups/tailfin`            |
+### Credentials
 
-Dumps are custom-format (compressed, selectively restorable), retained **14 days**, with a
-`.sha256` sidecar each. Every dump's table of contents is read back immediately after
-writing — a dump that cannot be listed is renamed `.corrupt` and the run fails, because an
-unreadable archive is worse than no archive: you will believe you are covered.
+The DreamObjects access key and secret live in `/etc/tailfin/dreamobjects.s3cfg`, owned
+`root:postgres` and mode `0640`. **That file is not in this repository and must never be.**
+
+Create it with the helper, which reads the secret without echoing it — it never reaches
+the terminal, the shell history, or any log:
+
+```bash
+sudo /usr/local/sbin/tailfin-s3-setup
+```
+
+It prompts for the two values from **Panel → Cloud Services → DreamObjects**, writes the
+config, and verifies it by listing the buckets. To rotate a key, run it again.
+
+If the file is missing the script still takes local dumps and then **fails the run**.
+Degrading silently to local-only backups would rebuild exactly the false confidence this
+setup exists to remove.
+
+### What ends up where
+
+| Where                               | What                         | Kept          |
+| ----------------------------------- | ---------------------------- | ------------- |
+| `/var/backups/tailfin/`             | every dump, for fast restore | 14 days       |
+| `s3://backupstailfin/nightly/<db>/` | one per night                | **7 runs**    |
+| `s3://backupstailfin/monthly/<db>/` | the 1st of each month        | **12 months** |
+
+The monthly copy is a _server-side copy_ of that night's object rather than a second
+upload: same bytes, no second transfer, and it cannot exist unless the nightly upload it
+came from succeeded.
+
+Retention is enforced by the script, not by bucket lifecycle rules — a rule that silently
+stops applying looks exactly like one that is working, whereas an explicit delete says in
+the log what went.
+
+Tunable through the environment: `KEEP_NIGHTLY`, `KEEP_MONTHLY`, `MONTHLY_ON_DAY`,
+`RETAIN_DAYS`, `S3_BUCKET`.
+
+| Task          | Command                                                                                      |
+| ------------- | -------------------------------------------------------------------------------------------- |
+| Run one now   | `sudo systemctl start tailfin-backup.service`                                                |
+| See the log   | `journalctl -u tailfin-backup -n 40`                                                         |
+| Next run      | `systemctl list-timers tailfin-backup.timer`                                                 |
+| Local dumps   | `sudo ls -lh /var/backups/tailfin`                                                           |
+| Remote copies | `sudo -u postgres s3cmd --config=/etc/tailfin/dreamobjects.s3cfg ls -r s3://backupstailfin/` |
+| Last result   | `sudo cat /var/backups/tailfin/last-run.json`                                                |
+
+Dumps are custom-format (compressed, selectively restorable) with a `.sha256` sidecar each.
+Every dump's table of contents is read back immediately after writing — a dump that cannot
+be listed is renamed `.corrupt` and the run fails, because an unreadable archive is worse
+than no archive: you will believe you are covered.
+
+**An upload failure is a backup failure.** A dump that did not leave the box is not a
+backup, and the run exits non-zero to say so.
 
 `Persistent=true` on the timer means a run missed while the box was off happens on next
 boot rather than being skipped.
 
 ### Restoring
 
-Practise into a scratch database first — never straight over a live one:
+Practise into a scratch database — never straight over a live one. The `_test` suffix is
+not decoration: `packages/server/src/test-setup.ts` refuses to let the test suite near a
+database without one.
+
+From the local copy:
 
 ```bash
 sudo -u postgres createdb tailfin_restore_test --locale=C --template=template0
@@ -299,26 +356,28 @@ sudo -u postgres psql -d tailfin_restore_test -c '\dt'
 sudo -u postgres dropdb tailfin_restore_test
 ```
 
+From the off-box copy — which is the one that will exist on the bad day, and therefore the
+one worth practising:
+
+```bash
+sudo -u postgres s3cmd --config=/etc/tailfin/dreamobjects.s3cfg \
+  ls s3://backupstailfin/nightly/tailfin/
+sudo -u postgres s3cmd --config=/etc/tailfin/dreamobjects.s3cfg \
+  get s3://backupstailfin/nightly/tailfin/<object>.dump /tmp/restore.dump
+sudo -u postgres pg_restore --dbname=tailfin_restore_test --no-owner --no-privileges /tmp/restore.dump
+```
+
 The dumps use `--no-owner --no-privileges` precisely so they restore into a
 differently-named role without editing.
 
-### This does not yet protect against losing the instance
+### Still outstanding
 
-The dumps sit on the same volume as the database. That covers the likely failures — a bad
-migration, a wrong `DELETE`, a corrupted table — but **not** the loss of the instance or the
-volume itself.
-
-Closing that needs off-instance storage, which needs credentials and so is yours to set up.
-DreamObjects is the natural fit since everything else is DreamHost:
-
-```bash
-# after configuring an S3-compatible client with DreamObjects credentials
-aws --endpoint-url https://objects-us-east-1.dream.io \
-    s3 sync /var/backups/tailfin s3://tailfin-backups/
-```
-
-Add that as a second `ExecStart=` line on `tailfin-backup.service` once it works by hand.
-Until then, treat the current setup as protection against mistakes, not against disasters.
+- **The restore has not been rehearsed end to end** — [OPS-04] covers doing it properly and
+  writing down how long it takes and how much data a nightly schedule loses (up to ~24h).
+- **A failed backup is only visible in the journal.** `last-run.json` gives something
+  machine-readable to build on, but nothing yet reads it. [OPS-03] carries the alerting
+  decision; with no mail infrastructure until M14, a dead-man's-switch that expects a daily
+  ping is the likely answer.
 
 ## The dev environment
 
@@ -422,6 +481,7 @@ rather than in CI. `deploy.sh` builds before migrating and before restarting, so
 leaves the running service alone — but the checkout will have moved, so `git log -1` can
 disagree with what is actually serving until you deploy again.
 
-**Back up before you need it.** M13-11 covers this properly. A nightly `pg_dump` to
-off-instance storage costs nothing to set up now, and a backup that has never been
-restored is not a backup.
+**Back up before you need it.** Nightly dumps go to DreamObjects as well as to local disk
+(see [Backups](#backups)). M13-11 covers the wider data-protection story. The half that is
+still outstanding is the important half: **a backup that has never been restored is not a
+backup** — [OPS-04] is that rehearsal.

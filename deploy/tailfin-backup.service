@@ -8,11 +8,21 @@ Requires=postgresql.service
 Type=oneshot
 
 # Runs as postgres so peer auth on the local socket applies and no password is
-# needed anywhere. The script only reads databases and writes to BACKUP_DIR.
+# needed anywhere. The script reads databases, writes to BACKUP_DIR, and reads
+# the DreamObjects credentials from /etc/tailfin (read-only under
+# ProtectSystem=strict, which is all it needs).
 User=postgres
 Group=postgres
 
-ExecStart=/srv/tailfin/deploy/backup.sh
+# Installed by hand from deploy/backup.sh, **not** run out of the checkout.
+#
+# It used to be /srv/tailfin/deploy/backup.sh, which quietly tied the backup
+# system to how current the production checkout happened to be: a box sitting on
+# an old commit kept running that commit's backup script. Backups are the one
+# thing that must not stop improving because a deploy has not happened.
+#
+# Install it the same way as this unit and the Caddyfile — see deploy/README.md.
+ExecStart=/usr/local/sbin/tailfin-backup
 
 # A hung dump must not block tomorrow's run.
 TimeoutStartSec=1800
