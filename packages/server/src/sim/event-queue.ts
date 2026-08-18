@@ -212,7 +212,15 @@ export async function queueDepth(
   const rows = await db
     .select({
       due: sql<number>`count(*)::int`,
-      oldest: sql<Date | null>`min(${worldEvent.fireAt})`,
+      // Typed as it actually arrives, not as we would like it.
+      //
+      // `sql<Date>` is an assertion, not a conversion: drizzle applies a column's
+      // type parser to a *column*, and a raw aggregate like `min()` is not one, so
+      // the driver's own decoding is what you get — a string. The first version
+      // of this declared `Date` and typechecked happily, then threw
+      // "getTime is not a function" the moment it met a real Postgres. Caught by
+      // CI, which is the only place these tests run.
+      oldest: sql<string | Date | null>`min(${worldEvent.fireAt})`,
     })
     .from(worldEvent)
     .where(
@@ -223,5 +231,12 @@ export async function queueDepth(
       ),
     );
 
-  return { due: rows[0]?.due ?? 0, oldestDueAt: rows[0]?.oldest ?? null };
+  const oldest = rows[0]?.oldest ?? null;
+  return {
+    due: rows[0]?.due ?? 0,
+    // Normalised here rather than trusting either shape: a different driver or a
+    // drizzle upgrade could return the other one, and callers should not have to
+    // care which.
+    oldestDueAt: oldest === null ? null : oldest instanceof Date ? oldest : new Date(oldest),
+  };
 }

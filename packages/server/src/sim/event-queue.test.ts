@@ -237,6 +237,10 @@ describeDb('event queue', () => {
       await schedule('d2', 15);
       const depth = await queueDepth(db.db, worldId, clock, realAtGameMinutes(20));
       expect(depth.due).toBe(2);
+      // A real Date, not the string the driver hands back for a raw min()
+      // aggregate. Asserting the type and not only the value, because the first
+      // version returned a string that typechecked as a Date.
+      expect(depth.oldestDueAt).toBeInstanceOf(Date);
       expect(depth.oldestDueAt?.getTime()).toBe(gameMinutes(5).getTime());
     });
   });
