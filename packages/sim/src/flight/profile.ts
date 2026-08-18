@@ -53,6 +53,40 @@ export interface FlightProfile {
    * in the air rather than 13.
    */
   manoeuvreMinutes: number;
+
+  /**
+   * Ground speed by airborne phase, relative to one another (M1-08).
+   *
+   * Only the *ratios* matter. The absolute scale is solved for per leg so that
+   * the speeds integrate to exactly the leg's distance — otherwise an aircraft
+   * that climbs slowly would quietly arrive somewhere other than the airport it
+   * was aimed at, and the reported ground speed would be a number that does not
+   * explain the progress bar next to it (CONTRIBUTING invariant 4).
+   */
+  speedFactors: AirborneSpeedFactors;
+
+  /**
+   * Rate of climb and descent, feet per minute.
+   *
+   * Load-bearing for short sectors: it is what stops a 100 nm hop from claiming
+   * to reach FL350 in a seven-minute climb. The altitude a flight actually
+   * reaches is capped by how long it spends climbing.
+   */
+  climbRateFtPerMin: number;
+  /** Altitude at the end of the takeoff roll — the top of the `departure` phase. */
+  departureAltitudeFt: number;
+  /** Altitude on final approach, at the start of the `approach` phase. */
+  approachAltitudeFt: number;
+}
+
+/** Relative ground speed of each airborne phase. Cruise is the reference at 1. */
+export interface AirborneSpeedFactors {
+  departure: number;
+  climb: number;
+  cruise: number;
+  descent: number;
+  approach: number;
+  landing: number;
 }
 
 /**
@@ -82,6 +116,19 @@ export const DEFAULT_FLIGHT_PROFILE: FlightProfile = {
   landingMinutes: 2,
   taxiInMinutes: 8,
   manoeuvreMinutes: 12,
+  speedFactors: {
+    // The takeoff roll and the landing roll average low because both start or
+    // end at zero. Descent beats climb because gravity helps.
+    departure: 0.35,
+    climb: 0.7,
+    cruise: 1,
+    descent: 0.85,
+    approach: 0.45,
+    landing: 0.2,
+  },
+  climbRateFtPerMin: 2_000,
+  departureAltitudeFt: 1_500,
+  approachAltitudeFt: 3_000,
 };
 
 /** Ground servicing after the passengers are off, before the next boarding starts. */

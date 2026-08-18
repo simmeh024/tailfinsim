@@ -62,6 +62,13 @@ export interface FlightPlan {
   distanceNm: number;
   /** The aircraft's cruise speed in knots. M4-01's catalogue is the source. */
   cruiseSpeedKt: number;
+  /**
+   * The aircraft's cruise altitude, feet above sea level. Also M4-01's.
+   *
+   * A ceiling rather than a promise: a sector short enough that the climb is cut
+   * down never reaches it, and `legProgressAt` works out what it actually got to.
+   */
+  cruiseAltitudeFt: number;
   /** Game instant the schedule created this flight. The `scheduled` phase starts here. */
   createdAt: Date;
   /** Game instant the aircraft is due off-blocks. Boarding is sized backwards from it. */
@@ -303,20 +310,11 @@ export function estimatedArrival(timeline: readonly PhaseWindow[]): Date | null 
   return null;
 }
 
-/** Where the aircraft is along the leg it is flying, 0–1 of that leg's track, or null on the ground. */
-export function trackFraction(
-  legs: readonly RouteLeg[],
-  at: Date,
-): { leg: RouteLeg; fraction: number } | null {
+/** The index of the leg being flown at `at`, or -1 on the ground. */
+export function legIndexAt(legs: readonly RouteLeg[], at: Date): number {
   for (let i = legs.length - 1; i >= 0; i -= 1) {
     const leg = legs[i];
-    if (!leg) continue;
-    if (at.getTime() < leg.startedAt.getTime()) continue;
-
-    const span = leg.endsAt.getTime() - leg.startedAt.getTime();
-    const elapsed = at.getTime() - leg.startedAt.getTime();
-    const along = span <= 0 ? 1 : Math.min(1, elapsed / span);
-    return { leg, fraction: along * leg.flownFraction };
+    if (leg && at.getTime() >= leg.startedAt.getTime()) return i;
   }
-  return null;
+  return -1;
 }

@@ -35,6 +35,7 @@ function longHaul(overrides: Partial<FlightPlan> = {}): FlightPlan {
     destinationIcao: 'KJFK',
     distanceNm: 3157,
     cruiseSpeedKt: 480,
+    cruiseAltitudeFt: 35_000,
     createdAt: CREATED,
     scheduledDeparture: OFF_BLOCKS,
     turnaroundMinutes: DEFAULT_TURNAROUND_MINUTES,
@@ -329,6 +330,15 @@ describe('failure branch: cancelled', () => {
     expect(estimatedArrivalOf(cancelled)).toBeNull();
   });
 
+  it('leaves the aircraft at the origin, not at a destination it never left for', () => {
+    // `arrivalIcao` is where it ends up. A cancelled flight ends up on the stand
+    // it was cancelled on, and anything reading this to place the aircraft — the
+    // map, the next rotation — would otherwise put it on the wrong continent.
+    const state = runTo(planFlight(longHaul(), PROFILE), 'boarding');
+    const { state: cancelled } = ok(reduce(state, { type: 'CANCEL', at: midway(state) }, PROFILE));
+    expect(cancelled.arrivalIcao).toBe('EHAM');
+  });
+
   it('keeps what already happened and cuts the rest at the moment it was cancelled', () => {
     const state = runTo(planFlight(longHaul(), PROFILE), 'boarding');
     const at = midway(state);
@@ -380,6 +390,8 @@ describe('failure branch: returned to stand', () => {
     expect(finished.phase).toBe('idle');
     expect(finished.disruption).toBe('returned_to_stand');
     expect(finished.legs).toEqual([]);
+    // On the stand it pushed back from, for the same reason a cancellation is.
+    expect(finished.arrivalIcao).toBe('EHAM');
   });
 });
 
@@ -416,18 +428,40 @@ describe('failure branch: air return', () => {
   it('flies back exactly as far as it has come', () => {
     const state = runTo(planFlight(longHaul(), PROFILE), 'cruise');
     const at = midway(state);
+
+    const { state: returned } = ok(reduce(state, { type: 'AIR_RETURN', at }, PROFILE));
+    const cut = returned.legs[0];
+    const back = returned.legs[1];
+
+    expect(returned.legs).toHaveLength(2);
+    expect(cut?.endsAt.getTime()).toBe(at.getTime());
+    expect(back?.fromIcao).toBeNull();
+    expect(back?.toIcao).toBe('EHAM');
+
+    // The distance home is the distance covered — the same number the map has
+    // been drawing — so the leg back and the fraction flown have to agree.
+    expect(back?.distanceNm).toBeCloseTo(3157 * (cut?.flownFraction ?? 0), 6);
+    expect(cut?.flownFraction).toBeGreaterThan(0);
+    expect(cut?.flownFraction).toBeLessThan(1);
+  });
+
+  it('measures how far it has come by distance, not by elapsed time', () => {
+    // The distinction that matters, made visible where it is largest. Twenty
+    // minutes into a climb the aircraft is nowhere near twenty minutes' worth of
+    // cruise from home, so a time-proportional answer would send it back along a
+    // leg substantially longer than the one it actually flew.
+    const state = runTo(planFlight(longHaul(), PROFILE), 'climb');
+    const at = midway(state);
     const leg = state.legs[0];
-    const flown =
+    const elapsedFraction =
       (at.getTime() - (leg?.startedAt.getTime() ?? 0)) /
       ((leg?.endsAt.getTime() ?? 1) - (leg?.startedAt.getTime() ?? 0));
 
     const { state: returned } = ok(reduce(state, { type: 'AIR_RETURN', at }, PROFILE));
-    expect(returned.legs).toHaveLength(2);
-    expect(returned.legs[0]?.flownFraction).toBeCloseTo(flown, 10);
-    expect(returned.legs[0]?.endsAt.getTime()).toBe(at.getTime());
-    expect(returned.legs[1]?.fromIcao).toBeNull();
-    expect(returned.legs[1]?.toIcao).toBe('EHAM');
-    expect(returned.legs[1]?.distanceNm).toBeCloseTo(3157 * flown, 6);
+    const flownFraction = returned.legs[0]?.flownFraction ?? 0;
+
+    expect(flownFraction).toBeLessThan(elapsedFraction);
+    expect(flownFraction).toBeGreaterThan(0);
   });
 
   it('lands back at the origin, having gone through descent and approach', () => {

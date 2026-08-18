@@ -1,6 +1,7 @@
 import { type FlightDisruption, type FlightPhase } from '@tailfin/shared';
 
 import { type FlightProfile } from './profile';
+import { type LegProgress, legProgressAt } from './progress';
 import {
   appendArrivalGround,
   appendReplannedLeg,
@@ -10,7 +11,6 @@ import {
   type PhaseWindow,
   type RouteLeg,
   shiftFrom,
-  trackFraction,
   truncateAt,
 } from './timeline';
 
@@ -121,7 +121,7 @@ export function planFlight(plan: FlightPlan, profile: FlightProfile): FlightStat
     plan,
     timeline: windows,
     // The leg is known from the start — the aircraft has not flown it yet, and
-    // `trackFraction` returns null until its `startedAt` passes.
+    // `legProgressAt` returns null until its `startedAt` passes.
     legs: [leg],
     index: 0,
     phase: 'scheduled',
@@ -275,6 +275,10 @@ function cancel(state: FlightState, at: Date): FlightTransition {
     // It never got airborne, so there is no track to draw it on.
     legs: [],
     index: index + 1,
+    // The aircraft is on a stand at the origin. Leaving `arrivalIcao` pointing
+    // at a destination it never left for would put it on the wrong side of the
+    // world on the map, and in the wrong place for its next rotation.
+    arrivalIcao: state.plan.originIcao,
     disruption: 'cancelled',
     revision: state.revision + 1,
   });
@@ -301,6 +305,8 @@ function returnToStand(state: FlightState, at: Date, profile: FlightProfile): Fl
     timeline,
     legs: [],
     index,
+    // Back where it started, for the same reason a cancellation is.
+    arrivalIcao: state.plan.originIcao,
     disruption: 'returned_to_stand',
     revision: state.revision + 1,
   });
@@ -324,11 +330,14 @@ function airReturn(state: FlightState, at: Date, profile: FlightProfile): Flight
     );
   }
 
-  const progress = trackFraction(state.legs, at);
+  const progress = legProgressAt(state, at, profile);
   if (!progress) return fail(state, `The flight is not airborne at ${at.toISOString()}`);
 
-  // Back to where it started is exactly as far as it has come.
-  const distanceBack = progress.leg.distanceNm * progress.fraction;
+  // Back to where it started is exactly as far as it has come — the distance
+  // actually covered, not the fraction of the time that has passed. An aircraft
+  // twenty minutes into a climb is nowhere near twenty minutes' worth of cruise
+  // from home, and `coveredNm` is the same number the map has been drawing.
+  const distanceBack = progress.coveredNm;
   return replan(state, at, state.plan.originIcao, distanceBack, 'air_return', progress, profile);
 }
 
@@ -352,7 +361,7 @@ function divert(
     return fail(state, `Diversion distance must be zero or more, got ${String(distanceNm)}`);
   }
 
-  const progress = trackFraction(state.legs, at);
+  const progress = legProgressAt(state, at, profile);
   if (!progress) return fail(state, `The flight is not airborne at ${at.toISOString()}`);
 
   return replan(state, at, toIcao, distanceNm, 'diverted', progress, profile);
@@ -372,7 +381,7 @@ function replan(
   toIcao: string,
   distanceNm: number,
   disruption: FlightDisruption,
-  progress: { leg: RouteLeg; fraction: number },
+  progress: LegProgress,
   profile: FlightProfile,
 ): FlightTransition {
   const timeline = truncateAt(state.timeline, at);
