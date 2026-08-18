@@ -57,6 +57,13 @@
       "when": 1787018827993,
       "tag": "0007_world_event_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787061535057,
+      "tag": "0008_admin_grants_and_audit",
+      "breakpoints": true
     }
   ]
 }

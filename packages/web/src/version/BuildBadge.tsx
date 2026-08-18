@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router';
 
 import type { VersionResponse } from '@tailfin/shared';
+
+import { useSession } from '../auth/SessionProvider';
 
 import type { ReactNode } from 'react';
 
@@ -105,6 +108,7 @@ function formatServerTime(at: Date): string {
 export function BuildBadge(): ReactNode {
   const version = useBuildInfo();
   const serverNow = useServerClock(version?.serverTime);
+  const { isAdmin } = useSession();
   if (!version) return null;
 
   return (
@@ -117,6 +121,18 @@ export function BuildBadge(): ReactNode {
     >
       {serverNow !== null && (
         <span className="build__clock figure">{formatServerTime(serverNow)}</span>
+      )}
+      {/*
+        The way into the admin console (M1A-01), between the clock and the build
+        label. Shown only to admins — but that is *tidiness, not security*. The
+        console's data is protected by `requireAdmin` on every route it calls;
+        hiding the link merely keeps a control nobody else can use out of
+        everybody else's way.
+      */}
+      {isAdmin && (
+        <Link className="build__admin" to="/admin">
+          admin
+        </Link>
       )}
       <span className="build__env">{version.environment}</span>
       <span className="build__number figure">build {version.build}</span>

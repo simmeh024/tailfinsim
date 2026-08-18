@@ -676,3 +676,95 @@ export type NewWorldEventRow = typeof worldEvent.$inferInsert;
 
 export type RunwayRow = typeof runway.$inferSelect;
 export type NewRunwayRow = typeof runway.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Admin console (M1A-01, §22)
+// ---------------------------------------------------------------------------
+
+/**
+ * Who is an admin.
+ *
+ * A **grant table rather than a column on `player`**, for two reasons.
+ *
+ * The first is that a grant has provenance: who gave it and when. A boolean on
+ * `player` records that someone is an admin but not how they came to be one,
+ * and "how did this account get admin?" is the first question asked when
+ * something has gone wrong.
+ *
+ * The second is containment. M1A-05 builds a player browser that selects from
+ * `player`; an `is_admin` column there is one careless `select *` away from
+ * telling every player who the admins are. Authorisation lives in its own table
+ * so it cannot leak out of a query about identity.
+ *
+ * Presence of a row *is* the grant — revoking deletes it. The permanent record
+ * of both lives in `admin_audit`, which cannot be edited.
+ */
+export const adminGrant = pgTable('admin_grant', {
+  playerId: uuid('player_id')
+    .primaryKey()
+    .references(() => player.id, { onDelete: 'cascade' }),
+  /**
+   * Null for the first admin.
+   *
+   * There is no admin to grant the first one, so it comes from the command line
+   * (`admin-cli.ts`). Null is the honest record of that rather than a fiction
+   * about who authorised it, and the audit row says `bootstrap` in as many words.
+   */
+  grantedByPlayerId: uuid('granted_by_player_id').references(() => player.id, {
+    onDelete: 'set null',
+  }),
+  grantedAt: timestamp('granted_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * The audit log. Append-only, enforced by the database.
+ *
+ * "No UPDATE or DELETE path in the application" would be a convention, and a
+ * convention is exactly what fails on the day it matters. Migration 0008 adds a
+ * trigger that raises on either, so an audit row cannot be altered by anything —
+ * an ORM call, a migration, or a psql session — without first dropping a trigger,
+ * which is itself a conspicuous act.
+ *
+ * Every mutating admin action writes one **inside the same transaction as the
+ * change**. An audit row written afterwards is one that goes missing precisely
+ * when the change was the one somebody wanted hidden.
+ */
+export const adminAudit = pgTable(
+  'admin_audit',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    at: timestamp('at', { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Who did it — **deliberately not a foreign key**.
+     *
+     * An audit row is a historical statement, not a live reference. A foreign
+     * key would make the log's integrity depend on the lifecycle of the thing it
+     * describes, and there are only two ways that can go: the log blocks the
+     * deletion, or the deletion rewrites the log. `ON DELETE SET NULL` is the
+     * second one, and it would also be an UPDATE against an append-only table —
+     * the trigger below would refuse it, turning an unrelated deletion into a
+     * baffling error.
+     *
+     * So the id is kept for joining while the account exists, and `actor_label`
+     * carries the meaning for ever.
+     */
+    actorPlayerId: uuid('actor_player_id'),
+    /** Denormalised so the entry stays legible after the account behind it is anonymised (§22.10). */
+    actorLabel: text('actor_label').notNull(),
+    action: text('action').notNull(),
+    subjectType: text('subject_type').notNull(),
+    subjectId: text('subject_id'),
+    /** JSON text rather than jsonb: nothing queries inside these, and text needs no cast. */
+    before: text('before'),
+    after: text('after'),
+    /** Fastify's request id, so a log line and an audit row can be tied together. */
+    requestId: text('request_id'),
+  },
+  (t) => [index('admin_audit_at_idx').on(t.at)],
+);
+
+export type AdminGrantRow = typeof adminGrant.$inferSelect;
+export type NewAdminGrantRow = typeof adminGrant.$inferInsert;
+
+export type AdminAuditRow = typeof adminAudit.$inferSelect;
+export type NewAdminAuditRow = typeof adminAudit.$inferInsert;

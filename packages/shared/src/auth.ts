@@ -37,6 +37,18 @@ export const MeResponse = z.object({
   player: AuthenticatedPlayer.nullable(),
   /** Whether this instance would let a new account be created (`ALLOW_REGISTRATION`). */
   registrationOpen: z.boolean(),
+  /**
+   * Whether this player holds an admin grant (M1A-01).
+   *
+   * Here so the interface can decide whether to *offer* the admin console. It is
+   * not what protects it: `requireAdmin` on the server is, and every admin route
+   * carries it. A client that lies to itself about this reaches a console that
+   * answers 403 to everything, which is the correct outcome.
+   *
+   * Always `false` when `player` is null, so there is no state where an
+   * anonymous visitor is told anything about admin at all.
+   */
+  isAdmin: z.boolean(),
 });
 export type MeResponse = z.infer<typeof MeResponse>;
 

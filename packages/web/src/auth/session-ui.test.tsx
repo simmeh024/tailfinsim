@@ -28,9 +28,10 @@ const PLAYER: MeResponse = {
     createdAt: '2026-08-17T09:00:00.000Z',
   },
   registrationOpen: false,
+  isAdmin: false,
 };
 
-const ANONYMOUS: MeResponse = { player: null, registrationOpen: false };
+const ANONYMOUS: MeResponse = { player: null, registrationOpen: false, isAdmin: false };
 
 const VERSION: VersionResponse = {
   build: 137,
@@ -156,7 +157,7 @@ describe('the login wall', () => {
   });
 
   it('says so when registration is open', async () => {
-    stubApi({ player: null, registrationOpen: true });
+    stubApi({ player: null, registrationOpen: true, isAdmin: false });
     renderAt('/world');
     expect(await screen.findByText(/new accounts are open/i)).toBeInTheDocument();
   });

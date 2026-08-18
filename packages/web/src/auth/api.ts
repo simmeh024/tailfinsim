@@ -36,6 +36,7 @@ function isMeResponse(value: unknown): value is MeResponse {
   if (typeof value !== 'object' || value === null) return false;
   const body = value as Record<string, unknown>;
   if (typeof body.registrationOpen !== 'boolean') return false;
+  if (typeof body.isAdmin !== 'boolean') return false;
   return body.player === null || isPlayer(body.player);
 }
 
