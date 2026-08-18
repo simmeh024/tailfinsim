@@ -27,3 +27,5 @@ export function inGameDate(
 export * from './clock';
 
 export * from './distance';
+
+export * from './flight';
