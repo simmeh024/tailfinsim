@@ -296,7 +296,12 @@ describe('the build badge', () => {
     stubApi(PLAYER);
     renderAt('/world');
 
+    // Waits for the clock itself, not just for the badge. The clock arrives in a
+    // second effect once the server time has been read, so waiting on the build
+    // number races it — a race this won locally every time and lost on CI.
     await screen.findByText('build 137');
+    await screen.findByText(/UTC$/);
+
     const badge = document.querySelector('.build')!;
     const clock = badge.querySelector('.build__clock');
     expect(clock).not.toBeNull();
