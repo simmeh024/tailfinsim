@@ -1,4 +1,9 @@
-import type { AdminAuditEntry, AdminGrantSummary } from '@tailfin/shared';
+import type {
+  AdminAuditEntry,
+  AdminGrantSummary,
+  AdminOverviewResponse,
+  AdminWorldSummary,
+} from '@tailfin/shared';
 
 /**
  * The admin console's half of the client API (M1A-01).
@@ -36,4 +41,62 @@ export async function fetchAdmins(): Promise<AdminGrantSummary[]> {
   if (typeof body !== 'object' || body === null) return [];
   const admins = (body as { admins?: unknown }).admins;
   return Array.isArray(admins) ? (admins as AdminGrantSummary[]) : [];
+}
+
+/** Field name to the reasons it was refused, as `ApiError.fields` carries them. */
+export type FieldErrors = Record<string, string[]>;
+
+export type CreateWorldResult =
+  { ok: true; world: AdminWorldSummary } | { ok: false; fields: FieldErrors };
+
+export async function fetchWorlds(): Promise<AdminWorldSummary[]> {
+  const body = await getJson('/api/admin/worlds');
+  if (typeof body !== 'object' || body === null) return [];
+  const worlds = (body as { worlds?: unknown }).worlds;
+  return Array.isArray(worlds) ? (worlds as AdminWorldSummary[]) : [];
+}
+
+/**
+ * Creates a world, or returns the reasons it was refused.
+ *
+ * A refusal is **not an exception**. 400 and 409 here are the server answering
+ * the question the form asked — "can this world exist?" — and the answer is the
+ * point of submitting. Throwing would make the caller catch its own normal case.
+ * Anything else, including a 403 or a dead server, still throws.
+ */
+export async function createWorld(config: unknown): Promise<CreateWorldResult> {
+  const response = await fetch('/api/admin/worlds', {
+    method: 'POST',
+    headers: { accept: 'application/json', 'content-type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify(config),
+  });
+
+  if (response.status === 201) {
+    const body: unknown = await response.json();
+    const world = (body as { world?: unknown }).world;
+    return { ok: true, world: world as AdminWorldSummary };
+  }
+
+  if (response.status === 400 || response.status === 409) {
+    const body: unknown = await response.json();
+    const fields = (body as { fields?: unknown }).fields;
+    const message = (body as { message?: unknown }).message;
+    if (typeof fields === 'object' && fields !== null) {
+      return { ok: false, fields: fields as FieldErrors };
+    }
+    // A refusal with no field detail still has to say something, or the form
+    // silently does nothing and the admin concludes the button is broken.
+    return {
+      ok: false,
+      fields: { form: [typeof message === 'string' ? message : 'The world was refused.'] },
+    };
+  }
+
+  throw new Error(`POST /api/admin/worlds failed with ${String(response.status)}`);
+}
+
+export async function fetchOverview(): Promise<AdminOverviewResponse> {
+  const body = await getJson('/api/admin/overview');
+  return body as AdminOverviewResponse;
 }

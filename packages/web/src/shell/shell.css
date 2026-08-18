@@ -839,3 +839,268 @@ body {
   padding-left: var(--space-4);
   list-style: disc;
 }
+
+/* Admin forms. Plain and vertical: this is a tool, not a landing page, and a
+   two-column layout would only make the error messages harder to place. */
+.admin__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 32rem;
+}
+
+.admin__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.admin__label {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.admin__input {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.admin__input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.admin__hint {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* Errors sit under the field they belong to, so a refusal points at what to
+   change rather than at the form in general. */
+.admin__errors {
+  font-size: var(--text-xs);
+  color: var(--status-cancelled, var(--status-delayed));
+  list-style: none;
+}
+
+.admin__submit {
+  align-self: flex-start;
+  padding: var(--space-1) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.admin__submit:hover:not(:disabled),
+.admin__submit:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.admin__submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.admin__ok {
+  font-size: var(--text-sm);
+  color: var(--status-ontime, var(--accent));
+}
+
+/* -------------------------------------------------------------- console ---- */
+
+/*
+ * The admin console's own frame (M1A-07).
+ *
+ * A bar across the top rather than the game's left rail: the console is a
+ * different place doing a different job, and borrowing the game's chrome would
+ * blur which one you are in.
+ */
+.console {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.console__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: 0 var(--space-5);
+  height: 3rem;
+  flex: none;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-raised, var(--surface));
+}
+
+/* The mark. Weight and letter-spacing rather than a colour, so it reads as an
+   identity without competing with the active nav item for attention. */
+.console__mark {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.console__mark:hover,
+.console__mark:focus-visible {
+  color: var(--accent);
+}
+
+.console__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  /* Takes the slack, so the exit link is pushed to the far right. */
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.console__link {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+  padding: var(--space-1) 0;
+  /* Reserved whether active or not, so the row does not shift by a pixel when
+     the active item changes. */
+  border-bottom: 2px solid transparent;
+}
+
+.console__link:hover,
+.console__link:focus-visible {
+  color: var(--text);
+}
+
+.console__link--active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.console__exit {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.console__exit:hover,
+.console__exit:focus-visible {
+  color: var(--accent);
+}
+
+.console__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* ---------------------------------------------------------------- stats ---- */
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 7rem;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+/* A count that should never be zero and is. Coloured rather than merely
+   annotated, because the whole reason these tiles exist is that dev's airport
+   count sat at zero for hours without anyone noticing. */
+.stat--warn {
+  border-color: var(--status-delayed);
+}
+
+.stat--warn .stat__value {
+  color: var(--status-delayed);
+}
+
+.stat__value {
+  font-size: var(--text-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat__label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* --------------------------------------------------------------- alerts ---- */
+
+.alerts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  list-style: none;
+  max-width: 60rem;
+}
+
+.alert {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.alert--error {
+  border-left-color: var(--status-cancelled, var(--status-delayed));
+}
+
+.alert--warning {
+  border-left-color: var(--status-delayed);
+}
+
+.alert--info {
+  border-left-color: var(--accent);
+}
+
+.alert__message {
+  font-size: var(--text-sm);
+}
+
+.alert__detail {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+@media (max-width: 48rem) {
+  .console__bar {
+    gap: var(--space-3);
+    padding: 0 var(--space-3);
+  }
+
+  /* First to go: the way out is also the browser's back button. */
+  .console__exit {
+    display: none;
+  }
+}

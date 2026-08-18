@@ -1,6 +1,8 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router';
 
-import { AdminPage } from './admin/AdminPage';
+import { AdminLayout } from './admin/AdminLayout';
+import { OverviewPage } from './admin/OverviewPage';
+import { WorldsPage } from './admin/WorldsPage';
 import { RequireSession } from './auth/RequireSession';
 import { SessionProvider } from './auth/SessionProvider';
 import {
@@ -62,12 +64,16 @@ export function App(): ReactNode {
               <Route path="design" element={<DesignPage />} />
               <Route path="board" element={<BoardPage />} />
               {/*
-                Not wrapped in a client-side admin guard. The page checks the
-                session itself and says so plainly, and every request it makes is
-                refused by the server without a grant — a second gate here would
-                only add a place for the two to disagree.
+                The console is a layout with its own navigation, not a single
+                page. The admin gate lives in that layout rather than on each
+                route — gating route by route means every route added later is a
+                chance to forget one, and it is still a convenience rather than a
+                boundary: `requireAdmin` on the server is what protects the data.
               */}
-              <Route path="admin" element={<AdminPage />} />
+              <Route path="admin" element={<AdminLayout />}>
+                <Route index element={<OverviewPage />} />
+                <Route path="worlds" element={<WorldsPage />} />
+              </Route>
               <Route
                 path="*"
                 element={

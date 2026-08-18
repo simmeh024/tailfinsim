@@ -1,6 +1,12 @@
 import { z } from 'zod';
 
-import { AdminAuditResponse, AdminListResponse } from './admin';
+import {
+  AdminAuditResponse,
+  AdminCreateWorldResponse,
+  AdminListResponse,
+  AdminOverviewResponse,
+  AdminWorldListResponse,
+} from './admin';
 import { ApiError, HealthResponse } from './api';
 import { LogoutResponse, MeResponse } from './auth';
 import { VersionResponse } from './version';
@@ -28,3 +34,6 @@ export const logoutResponseJsonSchema = z.toJSONSchema(LogoutResponse);
 export const versionResponseJsonSchema = z.toJSONSchema(VersionResponse);
 export const adminAuditResponseJsonSchema = z.toJSONSchema(AdminAuditResponse);
 export const adminListResponseJsonSchema = z.toJSONSchema(AdminListResponse);
+export const adminWorldListResponseJsonSchema = z.toJSONSchema(AdminWorldListResponse);
+export const adminCreateWorldResponseJsonSchema = z.toJSONSchema(AdminCreateWorldResponse);
+export const adminOverviewResponseJsonSchema = z.toJSONSchema(AdminOverviewResponse);

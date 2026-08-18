@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -59,6 +59,24 @@ const AUDIT: AdminAuditResponse = {
   ],
 };
 
+const OVERVIEW = {
+  counts: { players: 4, worlds: 1, admins: 1, airports: 85915, auditEntries: 12 },
+  backup: {
+    finishedAt: '2026-08-18T03:18:55.000Z',
+    result: 'ok',
+    uploaded: 2,
+    databases: 'tailfin:ok',
+  },
+  alerts: [
+    {
+      code: 'admin.single',
+      severity: 'info',
+      message: 'There is only one administrator.',
+      detail: 'A second admin removes that.',
+    },
+  ],
+};
+
 const ADMINS: AdminListResponse = {
   admins: [
     {
@@ -94,6 +112,7 @@ function stubApi(me: MeResponse) {
       if (!me.isAdmin) return Promise.resolve(jsonResponse({ code: 'forbidden' }, 403));
       if (url === '/api/admin/audit') return Promise.resolve(jsonResponse(AUDIT));
       if (url === '/api/admin/admins') return Promise.resolve(jsonResponse(ADMINS));
+      if (url === '/api/admin/overview') return Promise.resolve(jsonResponse(OVERVIEW));
     }
     return Promise.reject(new Error(`unexpected fetch: ${url}`));
   });
@@ -160,47 +179,61 @@ describe('the admin link', () => {
   });
 });
 
-describe('the admin console', () => {
-  it('shows the audit log and who holds a grant', async () => {
+describe('the console shell', () => {
+  it('puts the mark on the left and the sections beside it', async () => {
     stubApi(ADMIN);
     renderAt('/admin');
 
-    expect(await screen.findByRole('heading', { name: /admin console/i })).toBeInTheDocument();
-    expect(await screen.findByText('admin.granted')).toBeInTheDocument();
-    expect(await screen.findByText('bootstrap (command line)')).toBeInTheDocument();
+    // The mark is a link as well as an identity — a logo that is not a link is a
+    // dead end in every interface anyone has used.
+    const mark = await screen.findByRole('link', { name: 'Admin console' });
+    expect(mark).toHaveAttribute('href', '/admin');
+
+    const nav = screen.getByRole('navigation', { name: /admin sections/i });
+    expect(nav).toBeInTheDocument();
+    expect(within(nav).getByRole('link', { name: 'Overview' })).toBeInTheDocument();
+    expect(within(nav).getByRole('link', { name: 'Worlds' })).toBeInTheDocument();
   });
 
-  it('says the log cannot be edited, because that is the point of it', async () => {
+  it('marks the section you are actually in', async () => {
+    stubApi(ADMIN);
+    renderAt('/admin/worlds');
+
+    // Awaited: the layout does not mount until the session has resolved, so a
+    // synchronous query here races the very thing being rendered.
+    const nav = await screen.findByRole('navigation', { name: /admin sections/i });
+    await waitFor(() => {
+      expect(within(nav).getByRole('link', { name: 'Worlds' }).className).toContain('--active');
+    });
+    // Overview must not also be active: its route is the index, and without
+    // `end` on that link every child route would light it up too.
+    expect(within(nav).getByRole('link', { name: 'Overview' }).className).not.toContain('--active');
+  });
+
+  it('navigates between sections', async () => {
     stubApi(ADMIN);
     renderAt('/admin');
-    expect(await screen.findByText(/append-only/i)).toBeInTheDocument();
+
+    await screen.findByRole('heading', { name: /at a glance/i });
+    screen.getByRole('link', { name: 'Worlds' }).click();
+
+    expect(await screen.findByRole('heading', { name: /^worlds$/i })).toBeInTheDocument();
   });
 
-  it('names what is not built yet rather than mocking it up', async () => {
-    // A disabled "Reset world" button implies a button that will work. Saying it
-    // is not built costs nothing and misleads nobody.
-    stubApi(ADMIN);
-    renderAt('/admin');
-
-    expect(await screen.findByText(/not built yet/i)).toBeInTheDocument();
-    expect(screen.getByText(/Open, lock, archive and reset a world/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /reset/i })).toBeNull();
-  });
-
-  it('refuses an ordinary player who navigates straight to it', async () => {
+  it('refuses an ordinary player, with no navigation to be seen', async () => {
     stubApi(PLAYER);
     renderAt('/admin');
 
     expect(
       await screen.findByRole('heading', { name: /administrators only/i }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: /audit log/i })).toBeNull();
+    expect(screen.queryByRole('navigation', { name: /admin sections/i })).toBeNull();
   });
 
   it('does not ask the server for admin data when it knows it will be refused', async () => {
-    // The page checks the session before it fetches. Firing two requests it
-    // knows will 403 would put a warning in the server log every time someone
-    // wandered onto the URL.
+    // The gate is in the layout, so it stops the fetch before any page mounts.
+    // Firing requests certain to 403 would write a warning to the server log
+    // every time somebody wandered onto the URL.
     const fetchMock = stubApi(PLAYER);
     renderAt('/admin');
 
@@ -209,5 +242,77 @@ describe('the admin console', () => {
       String(call[0]).startsWith('/api/admin/'),
     );
     expect(adminCalls).toHaveLength(0);
+  });
+});
+
+describe('the overview', () => {
+  it('leads with the counts', async () => {
+    stubApi(ADMIN);
+    renderAt('/admin');
+
+    // Waits for the *number*, not the heading. The section header renders before
+    // the fetch resolves, so waiting on it and then querying synchronously races
+    // the data — passed locally, failed one run in three.
+    expect(await screen.findByText('85,915')).toBeInTheDocument();
+    expect(screen.getByText('Airports')).toBeInTheDocument();
+    expect(screen.getByText('Players')).toBeInTheDocument();
+  });
+
+  it('shows the alerts the server decided on', async () => {
+    // Decided on the server: whether something is worth worrying about is a
+    // judgement about the system, and §21 puts those on the server.
+    stubApi(ADMIN);
+    renderAt('/admin');
+
+    expect(await screen.findByText(/only one administrator/i)).toBeInTheDocument();
+  });
+
+  it('reports the last backup, which is the point of putting it here', async () => {
+    stubApi(ADMIN);
+    renderAt('/admin');
+
+    expect(await screen.findByText(/last backup 2026-08-18 03:18 UTC — ok/i)).toBeInTheDocument();
+  });
+
+  it('lists who holds a grant', async () => {
+    stubApi(ADMIN);
+    renderAt('/admin');
+
+    expect(await screen.findByRole('heading', { name: /administrators/i })).toBeInTheDocument();
+
+    // Scoped to the table. The signed-in player's name is also in the account
+    // badge, so an unscoped query matches two elements and proves nothing about
+    // this particular list.
+    const table = await screen.findByRole('table');
+    expect(within(table).getByText('Amelia Hart')).toBeInTheDocument();
+    expect(within(table).getByText('bootstrap')).toBeInTheDocument();
+  });
+});
+
+describe('the worlds page', () => {
+  it('carries the audit log, next to the control that writes to it', async () => {
+    stubApi(ADMIN);
+    renderAt('/admin/worlds');
+
+    expect(await screen.findByRole('heading', { name: /audit log/i })).toBeInTheDocument();
+    expect(await screen.findByText('admin.granted')).toBeInTheDocument();
+    expect(await screen.findByText('bootstrap (command line)')).toBeInTheDocument();
+  });
+
+  it('says the log cannot be edited, because that is the point of it', async () => {
+    stubApi(ADMIN);
+    renderAt('/admin/worlds');
+    expect(await screen.findByText(/append-only/i)).toBeInTheDocument();
+  });
+
+  it('names what is not built yet rather than mocking it up', async () => {
+    // A disabled "Reset world" button implies a button that will work. Saying it
+    // is not built costs nothing and misleads nobody.
+    stubApi(ADMIN);
+    renderAt('/admin/worlds');
+
+    expect(await screen.findByText(/not built yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/Open, lock, archive and reset a world/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /reset/i })).toBeNull();
   });
 });
