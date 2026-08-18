@@ -68,7 +68,7 @@ checkout, port, database and audience.
 | deploy with       | `./deploy/deploy.sh`     | `./deploy/deploy-dev.sh <ref>` |
 | accepts           | any ref today ([OPS-01]) | **any ref, deliberately**      |
 | `WEB_SURFACE`     | unset → **holding page** | `app` → the real client        |
-| access            | public                   | HTTP basic auth, `noindex`     |
+| access            | public                   | Google sign-in, `noindex`      |
 
 **Dev is the preview environment and is meant to run unmerged branches.** That is a
 standing decision, not an oversight — it is where the user reviews work before merging.

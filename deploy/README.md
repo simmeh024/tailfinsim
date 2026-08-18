@@ -417,16 +417,16 @@ as "the restore worked"; assert the row counts, as the procedure below does.
 `dev.tailfinsim.com` is where work in progress gets looked at on a real server before it
 reaches the front door. It shares the box with production and nothing else:
 
-|              | Production                          | Dev                      |
-| ------------ | ----------------------------------- | ------------------------ |
-| Host         | `tailfinsim.com`                    | `dev.tailfinsim.com`     |
-| Checkout     | `/srv/tailfin`                      | `/srv/tailfin-dev`       |
-| Service      | `tailfin`                           | `tailfin-dev`            |
-| Port         | 3000                                | 3001                     |
-| Database     | `tailfin`                           | `tailfin_dev`            |
-| Deploy       | `./deploy/deploy.sh`                | `./deploy/deploy-dev.sh` |
-| Access       | public                              | HTTP basic auth          |
-| Registration | `ALLOW_REGISTRATION` unset → closed | closed                   |
+|              | Production                          | Dev                              |
+| ------------ | ----------------------------------- | -------------------------------- |
+| Host         | `tailfinsim.com`                    | `dev.tailfinsim.com`             |
+| Checkout     | `/srv/tailfin`                      | `/srv/tailfin-dev`               |
+| Service      | `tailfin`                           | `tailfin-dev`                    |
+| Port         | 3000                                | 3001                             |
+| Database     | `tailfin`                           | `tailfin_dev`                    |
+| Deploy       | `./deploy/deploy.sh`                | `./deploy/deploy-dev.sh`         |
+| Access       | public                              | Google sign-in, `noindex`        |
+| Registration | `ALLOW_REGISTRATION` unset → closed | `ALLOW_REGISTRATION=true` → open |
 
 Dev takes any ref, which is the point of it:
 
@@ -437,28 +437,31 @@ Dev takes any ref, which is the point of it:
 
 Production only ever gets `origin/main` or an explicit older SHA for rollback.
 
-### Dev credentials
+### What guards dev
 
-Basic auth credentials live off-repo in `/etc/caddy/dev-auth.caddyfile`:
+**The application, not the proxy.** `RequireSession` in the client and `requireAuth` /
+`requireAdmin` on the server. There is no password prompt in front of dev.
 
-```
-basic_auth {
-	someuser $2a$14$…bcrypt hash…
-}
-```
+Dev sat behind HTTP basic auth until August 2026, imported from a literal path in the
+Caddyfile so that a missing credentials file stopped Caddy rather than serving dev open.
+That gate came out once Google sign-in (M0-11) reached dev: two prompts to look at one
+page, the first of which the browser re-asked on every refresh. `/etc/caddy/dev-auth.caddyfile`
+no longer exists and the import is gone.
 
-Generate a hash with `caddy hash-password`, then reload Caddy. To change the password:
+Two consequences worth being deliberate about:
 
-```bash
-caddy hash-password            # prompts, prints a hash
-sudo nano /etc/caddy/dev-auth.caddyfile
-sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
-```
+- **`X-Robots-Tag: noindex, nofollow, noarchive` is now the only thing keeping dev out of
+  search results.** It was belt-and-braces when a 401 sat in front of it. Do not remove it.
+- **`ALLOW_REGISTRATION=true` on dev is a deliberate choice**, confirmed 2026-08-18: it is
+  how people are invited to look at work in progress, and the only way to exercise the
+  sign-up path at all. So dev is knowingly an open Google sign-up on a public hostname —
+  and the subdomain is discoverable through certificate transparency whatever the robots
+  header says.
 
-**That import is deliberately a literal path, not a glob.** If the file goes missing,
-Caddy refuses to start rather than serving dev unauthenticated — an auth gate should fail
-closed. The optional ACME contact snippet uses a glob precisely because it is safe for it
-to be absent.
+That is the right trade for a pre-launch preview environment holding disposable data. It
+stops being the right trade the moment dev holds anything that matters. Production is a
+different question: it defaults to `ALLOW_REGISTRATION=false` and stays that way until
+launch.
 
 ### Promoting dev to the front door
 
