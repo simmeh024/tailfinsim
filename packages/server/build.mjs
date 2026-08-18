@@ -12,13 +12,19 @@ import { build } from 'esbuild';
  * (`moduleResolution: bundler` cannot emit runnable Node output) — see
  * ADR-0001. This is the compiler for the server package.
  *
- * Three entry points:
+ * Four entry points:
  *   main.js             the server process
  *   migrate.js          a one-off run by the deploy script before main starts
  *   import-airports.js  a one-off run by hand when the dataset moves (M1-01)
+ *   classify-airports.js  assigns tiers over the imported set (M1-02)
  */
 await build({
-  entryPoints: ['src/main.ts', 'src/migrate.ts', 'src/import-airports.ts'],
+  entryPoints: [
+    'src/main.ts',
+    'src/migrate.ts',
+    'src/import-airports.ts',
+    'src/classify-airports.ts',
+  ],
   outdir: 'dist',
   bundle: true,
   platform: 'node',

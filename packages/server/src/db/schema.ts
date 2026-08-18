@@ -320,6 +320,19 @@ export const datasetVersion = pgTable(
   ],
 );
 
+/**
+ * App. B.3's five tiers. Nullable on `airport`: B.3's counts sum to ~4,045,
+ * which is the scheduled-service subset, not all 86,000 aerodromes. An airstrip
+ * with no airline service has no tier because it has no demand pool to size.
+ */
+export const airportTier = pgEnum('airport_tier', [
+  'flagship',
+  'large',
+  'medium',
+  'small',
+  'regional',
+]);
+
 /** OurAirports' own `type` column, carried through rather than reinterpreted. */
 export const airportKind = pgEnum('airport_kind', [
   'large_airport',
@@ -391,6 +404,30 @@ export const airport = pgTable(
      */
     hasRunwayData: boolean('has_runway_data').notNull(),
 
+    /**
+     * Tier (M1-02). NULL for anything without scheduled service — see the enum.
+     */
+    tier: airportTier('tier'),
+
+    /**
+     * IATA slot designation: 1 free, 2 schedules-facilitated, 3 coordinated.
+     * NULL means no coordination at all, which is where regional airports sit.
+     */
+    slotLevel: integer('slot_level'),
+
+    /**
+     * Why this airport got its tier, as JSON.
+     *
+     * M1-02 requires the classification inputs to be stored "so a human can
+     * audit why an airport got its tier". Storing the *rule that fired* plus the
+     * numbers it fired on means a surprising tier can be explained without
+     * re-deriving it, and means changing the thresholds later produces a visible
+     * diff rather than a silent reshuffle.
+     */
+    tierBasis: text('tier_basis'),
+
+    classifiedAt: timestamp('classified_at', { withTimezone: true }),
+
     importedAt: timestamp('imported_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -422,6 +459,14 @@ export const airport = pgTable(
       sql`${t.iataCode} IS NULL OR ${t.iataCode} ~ '^[A-Z0-9]{3}$'`,
     ),
     check('airport_iso_country_format', sql`${t.isoCountry} ~ '^[A-Z]{2}$'`),
+    // A tier is a statement about a demand pool, and only the scheduled-service
+    // subset has one (App. B.1, B.3).
+    check('airport_tier_needs_service', sql`${t.tier} IS NULL OR ${t.scheduledService}`),
+    check(
+      'airport_slot_level_range',
+      sql`${t.slotLevel} IS NULL OR (${t.slotLevel} >= 1 AND ${t.slotLevel} <= 3)`,
+    ),
+    index('airport_tier_idx').on(t.tier),
   ],
 );
 
