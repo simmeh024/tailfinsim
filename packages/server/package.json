@@ -19,7 +19,8 @@
     "data:airports": "node dist/import-airports.js",
     "data:classify": "node dist/classify-airports.js",
     "data:catchment": "node dist/derive-catchment.js",
-    "data:distances": "node dist/build-distance-matrix.js"
+    "data:distances": "node dist/build-distance-matrix.js",
+    "world:seed": "node dist/seed-world.js"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

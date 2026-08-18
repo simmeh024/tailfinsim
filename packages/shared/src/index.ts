@@ -52,3 +52,4 @@ export const FLAGSHIP_EPOCH_ISO = '2024-10-20T00:00:00.000Z' as const;
 
 /** World time runs at twice wall-clock (design doc §3.1). */
 export const FLAGSHIP_SPEED_MULTIPLIER = 2 as const;
+export * from './world-config';
