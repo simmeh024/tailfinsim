@@ -103,3 +103,53 @@ describe('colour literals', () => {
     expect([...light].filter((n) => !dark.has(n))).toEqual([]);
   });
 });
+
+/**
+ * Every `var(--…)` must resolve to a token that exists.
+ *
+ * Added after a real failure. The console's stylesheet referenced `--space-5`,
+ * `--surface` and `--text` — none of which exist. CSS does not complain about an
+ * undefined custom property; the declaration is simply dropped, so the admin
+ * console shipped with **no gaps, no padding and transparent panels**, and it
+ * looked like a layout bug rather than three typos.
+ *
+ * The colour-literal guard above could not catch it: nothing was hardcoded. The
+ * property that was missing is that a reference resolves at all.
+ *
+ * A fallback is honoured — `var(--maybe, 1rem)` is a deliberate choice and a
+ * working declaration, so it is exempt.
+ */
+describe('token references', () => {
+  const defined = new Set(
+    (readFileSync(TOKEN_FILE, 'utf8').match(/--[a-z0-9-]+(?=\s*:)/g) ?? []).map((name) => name),
+  );
+
+  it('knows about the tokens it is checking against', () => {
+    // Guards the guard: a regex that matched nothing would make every assertion
+    // below pass vacuously.
+    expect(defined.size).toBeGreaterThan(20);
+    expect(defined.has('--space-4')).toBe(true);
+  });
+
+  it('resolves every token referenced without a fallback', () => {
+    const offences: string[] = [];
+    const stylesheets = walk(webSrc).filter((file) => file !== TOKEN_FILE && file.endsWith('.css'));
+    expect(stylesheets.length).toBeGreaterThan(0);
+
+    for (const file of stylesheets) {
+      const source = readFileSync(file, 'utf8');
+      source.split('\n').forEach((line, index) => {
+        // `var(--name)` only — `var(--name, fallback)` is a working declaration
+        // whether or not the token exists, and sometimes deliberately so.
+        for (const match of line.matchAll(/var\(\s*(--[a-z0-9-]+)\s*\)/g)) {
+          const token = match[1];
+          if (token !== undefined && !defined.has(token)) {
+            offences.push(`${relative(webSrc, file)}:${String(index + 1)}  ${token}`);
+          }
+        }
+      });
+    }
+
+    expect(offences, `undefined custom properties:\n${offences.join('\n')}`).toEqual([]);
+  });
+});

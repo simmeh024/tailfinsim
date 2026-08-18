@@ -26,6 +26,7 @@ import type { ReactNode } from 'react';
 const SECTIONS = [
   { to: '/admin', label: 'Overview', end: true },
   { to: '/admin/worlds', label: 'Worlds', end: false },
+  { to: '/admin/audit', label: 'Audit log', end: false },
 ];
 
 export function AdminLayout(): ReactNode {
