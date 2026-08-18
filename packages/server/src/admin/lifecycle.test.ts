@@ -149,17 +149,21 @@ describeDb('the world lifecycle', () => {
    * The codes have to satisfy the schema's format checks — `^[A-Z0-9]{2}$`,
    * `^[A-Z]{3}$`, `^[A-Z]{2}$` — so they are built rather than improvised.
    */
-  async function makeAirline(worldId: string, suffix: string): Promise<void> {
+  async function makeAirline(worldId: string, suffix: string): Promise<string> {
     const code = suffix.slice(0, 2).toUpperCase();
+    const playerId = await makePlayer();
     await db.db.insert(airline).values({
       worldId,
-      playerId: await makePlayer(),
+      playerId,
       name: `Test Air ${suffix}`,
       iataCode: code,
       icaoCode: `T${code}`,
       callsign: `TEST${code}`,
       baseCountry: 'GB',
     });
+    // The owner, so a test can assert about that player rather than counting a
+    // table other test files are inserting into at the same time.
+    return playerId;
   }
 
   async function auditFor(worldId: string) {
@@ -322,23 +326,33 @@ describeDb('the world lifecycle', () => {
       expect(left).toHaveLength(0);
     });
 
-    it('leaves the players themselves alone', async () => {
+    it('leaves the player behind a destroyed airline alone', async () => {
       // An airline is a player's presence in one world, not the account. §22.10's
       // anonymise-not-delete rule is about erasing a person; this is wiping a
       // world, and signing in afterwards should work and simply find no airline.
+      //
+      // Asserted about *this* player rather than by counting the table. CI runs
+      // test files in parallel against one database, so a global count is not a
+      // fact about this test — it failed on a player another file inserted
+      // between the two snapshots.
       const row = await makeWorld('open');
-      await makeAirline(row.id, 'cc');
-      const playersBefore = await db.db.select({ id: player.id }).from(player);
+      const ownerId = await makeAirline(row.id, 'cc');
 
-      await resetWorldAsAdmin(
+      const result = await resetWorldAsAdmin(
         db.db,
         row.id,
         { confirmName: row.name, reason: 'wiping the world', expectedStatus: 'open' },
         ACTOR,
       );
+      if (!result.ok) throw new Error(`refused: ${result.message}`);
+      expect(result.destroyed.airlines).toBe(1);
 
-      const playersAfter = await db.db.select({ id: player.id }).from(player);
-      expect(playersAfter.length).toBe(playersBefore.length);
+      const survivors = await db.db.select().from(player).where(eq(player.id, ownerId));
+      expect(survivors).toHaveLength(1);
+      // And their airline really is gone, so this is not passing because nothing
+      // happened.
+      const airlines = await db.db.select().from(airline).where(eq(airline.playerId, ownerId));
+      expect(airlines).toHaveLength(0);
     });
 
     it('stops pending events from firing against the new timeline', async () => {
