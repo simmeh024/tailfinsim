@@ -41,6 +41,7 @@ export * from './network';
 export * from './flight';
 export * from './api';
 export * from './auth';
+export * from './admin';
 export * from './version';
 export * from './json-schema';
 

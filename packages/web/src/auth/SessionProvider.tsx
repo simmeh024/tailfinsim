@@ -32,6 +32,14 @@ interface SessionContextValue {
   player: AuthenticatedPlayer | null;
   /** Whether this instance would create an account for a new Google user. */
   registrationOpen: boolean;
+  /**
+   * Whether this player may open the admin console.
+   *
+   * Used to decide whether to *offer* it. What protects it is `requireAdmin` on
+   * the server, which every admin route carries — a client that flipped this to
+   * true would reach a console that answers 403 to everything.
+   */
+  isAdmin: boolean;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -42,17 +50,20 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
   const [status, setStatus] = useState<SessionStatus>('loading');
   const [player, setPlayer] = useState<AuthenticatedPlayer | null>(null);
   const [registrationOpen, setRegistrationOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
       const me = await fetchMe();
       setPlayer(me.player);
       setRegistrationOpen(me.registrationOpen);
+      setIsAdmin(me.isAdmin);
       setStatus(me.player ? 'signed-in' : 'anonymous');
     } catch {
       // Not logged to the console: an unreachable API is a normal condition
       // during a deploy, and the UI already says so.
       setPlayer(null);
+      setIsAdmin(false);
       setStatus('unavailable');
     }
   }, []);
@@ -69,13 +80,16 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
       // still be live, and `refresh` will discover that; leaving the UI claiming
       // "signed in" after the user asked to leave is the worse failure.
       setPlayer(null);
+      // Cleared with the player, not left behind. An admin who signs out on a
+      // shared machine must not leave the console door visibly ajar.
+      setIsAdmin(false);
       setStatus('anonymous');
     }
   }, []);
 
   const value = useMemo(
-    () => ({ status, player, registrationOpen, signOut, refresh }),
-    [status, player, registrationOpen, signOut, refresh],
+    () => ({ status, player, registrationOpen, isAdmin, signOut, refresh }),
+    [status, player, registrationOpen, isAdmin, signOut, refresh],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

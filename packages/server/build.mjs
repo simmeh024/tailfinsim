@@ -12,13 +12,15 @@ import { build } from 'esbuild';
  * (`moduleResolution: bundler` cannot emit runnable Node output) — see
  * ADR-0001. This is the compiler for the server package.
  *
- * Seven entry points:
+ * Eight entry points:
  *   main.js             the server process
  *   migrate.js          a one-off run by the deploy script before main starts
  *   import-airports.js  a one-off run by hand when the dataset moves (M1-01)
  *   classify-airports.js  assigns tiers over the imported set (M1-02)
  *   derive-catchment.js   attaches the demand inputs (M1-03)
  *   build-distance-matrix.js  packs the great-circle matrix (M1-04)
+ *   seed-world.js       creates the flagship world from config (M1-09)
+ *   admin-cli.js        grants and revokes admin from a shell (M1A-01)
  */
 await build({
   entryPoints: [
@@ -29,6 +31,7 @@ await build({
     'src/derive-catchment.ts',
     'src/build-distance-matrix.ts',
     'src/seed-world.ts',
+    'src/admin-cli.ts',
   ],
   outdir: 'dist',
   bundle: true,

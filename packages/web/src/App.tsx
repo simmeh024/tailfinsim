@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router';
 
+import { AdminPage } from './admin/AdminPage';
 import { RequireSession } from './auth/RequireSession';
 import { SessionProvider } from './auth/SessionProvider';
 import {
@@ -60,6 +61,13 @@ export function App(): ReactNode {
               <Route path="crew" element={<CrewPage />} />
               <Route path="design" element={<DesignPage />} />
               <Route path="board" element={<BoardPage />} />
+              {/*
+                Not wrapped in a client-side admin guard. The page checks the
+                session itself and says so plainly, and every request it makes is
+                refused by the server without a grant — a second gate here would
+                only add a place for the two to disagree.
+              */}
+              <Route path="admin" element={<AdminPage />} />
               <Route
                 path="*"
                 element={

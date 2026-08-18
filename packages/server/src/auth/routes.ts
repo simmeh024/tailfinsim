@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 
 import { logoutResponseJsonSchema, meResponseJsonSchema } from '@tailfin/shared';
 
+import { isAdmin } from '../admin/grants';
 import { type DatabaseHandle } from '../db/client';
 import { player, playerIdentity } from '../db/schema';
 import { type ServerEnv } from '../env';
@@ -42,10 +43,26 @@ const OAUTH_COOKIE_TTL_SECONDS = 600;
 declare module 'fastify' {
   interface FastifyRequest {
     player?: SessionPlayer;
+    /**
+     * Whether the signed-in player holds an admin grant (M1A-01).
+     *
+     * Resolved once per request alongside the session rather than per route, so
+     * a route cannot forget to look and cannot answer a different question from
+     * the one `requireAdmin` asks.
+     */
+    isAdmin?: boolean;
   }
   interface FastifyInstance {
     /** Rejects with 401 unless a valid session is present. */
     requireAuth: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    /**
+     * Rejects with 401 without a session, 403 without an admin grant.
+     *
+     * Two codes because they mean different things to a client: 401 says "sign
+     * in and try again", 403 says "signing in again will not help". Collapsing
+     * them sends a signed-in non-admin round the login loop for ever.
+     */
+    requireAdmin: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
 }
 
@@ -92,13 +109,33 @@ export function registerAuthRoutes(app: FastifyInstance, { env, db }: AuthRoutes
       const token = request.cookies[SESSION_COOKIE];
       if (!token) return;
       const found = await findSessionPlayer(db.db, token);
-      if (found) request.player = found;
+      if (!found) return;
+
+      request.player = found;
+      // Resolved here, once, rather than in each admin route. A grant checked in
+      // one place cannot drift from the grant checked in another, and there is
+      // no route that can forget to look.
+      request.isAdmin = await isAdmin(db.db, found.id);
     });
   });
 
   app.decorate('requireAuth', async (request: FastifyRequest, reply: FastifyReply) => {
     if (!request.player) {
       await reply.code(401).send({ code: 'unauthorized', message: 'Sign in required' });
+    }
+  });
+
+  app.decorate('requireAdmin', async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!request.player) {
+      await reply.code(401).send({ code: 'unauthorized', message: 'Sign in required' });
+      return;
+    }
+    if (request.isAdmin !== true) {
+      // Deliberately says nothing about what the route does or whether it
+      // exists. A 403 that explains the shape of the console to someone without
+      // access is a map drawn for the wrong person.
+      request.log.warn({ playerId: request.player.id, url: request.url }, 'admin route refused');
+      await reply.code(403).send({ code: 'forbidden', message: 'Administrator access required' });
     }
   });
 
@@ -118,6 +155,10 @@ export function registerAuthRoutes(app: FastifyInstance, { env, db }: AuthRoutes
             }
           : null,
         registrationOpen: env.allowRegistration,
+        // False for anonymous visitors by construction: the flag is only set
+        // alongside a resolved session, so there is no state where a stranger is
+        // told anything about admin at all.
+        isAdmin: request.isAdmin === true,
       }),
   );
 

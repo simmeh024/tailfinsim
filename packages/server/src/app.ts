@@ -10,6 +10,7 @@ import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 
 import { healthResponseJsonSchema, versionResponseJsonSchema } from '@tailfin/shared';
 
+import { registerAdminRoutes } from './admin/routes';
 import { registerAuthRoutes } from './auth/routes';
 import { readBuildInfo } from './build-info';
 import { type DatabaseHandle } from './db/client';
@@ -98,6 +99,9 @@ export function buildApp({ env, db }: BuildAppOptions): FastifyInstance {
    */
   app.register(fastifyCookie, env.sessionSecret ? { secret: env.sessionSecret } : {});
   registerAuthRoutes(app, { env, db });
+  // After the auth routes, which is where `requireAdmin` is decorated. Fastify
+  // resolves decorators at registration time, so the order is not cosmetic.
+  registerAdminRoutes(app, { db });
 
   const startedAt = Date.now();
 

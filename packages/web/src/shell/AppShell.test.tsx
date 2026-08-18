@@ -28,6 +28,7 @@ const SIGNED_IN: MeResponse = {
     createdAt: '2026-08-17T09:00:00.000Z',
   },
   registrationOpen: false,
+  isAdmin: false,
 };
 
 async function renderAt(path: string) {

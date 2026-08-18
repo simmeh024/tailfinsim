@@ -551,12 +551,26 @@ describe('cost at world scale', () => {
     // measure nothing at all.
     for (const flight of flights) interpolatePosition(flight, at, PROFILE, lookup);
 
-    const started = clock.now();
+    // **The fastest of several sweeps, not the average.**
+    //
+    // Every machine this runs on is shared — a CI runner, a two-core cloud box
+    // also serving the app, a laptop with a browser open. On the production box a
+    // single sweep measured anywhere between 9ms and 36ms depending on what else
+    // wanted the core, so one sample tests the neighbours rather than the code.
+    //
+    // Noise only ever *adds* time. The minimum of several runs is therefore the
+    // closest thing to the machine's own answer, and it is stable enough to
+    // assert on where a single sample is not.
+    let elapsedMs = Infinity;
     let found = 0;
-    for (const flight of flights) {
-      if (interpolatePosition(flight, at, PROFILE, lookup)) found += 1;
+    for (let run = 0; run < 7; run += 1) {
+      const started = clock.now();
+      found = 0;
+      for (const flight of flights) {
+        if (interpolatePosition(flight, at, PROFILE, lookup)) found += 1;
+      }
+      elapsedMs = Math.min(elapsedMs, clock.now() - started);
     }
-    const elapsedMs = clock.now() - started;
 
     expect(found).toBe(5_000);
 

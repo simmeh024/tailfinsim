@@ -189,7 +189,7 @@ function endpointsOf(
   legs: readonly RouteLeg[],
   legIndex: number,
   lookup: AirportLookup,
-): { from: Coordinates; to: Coordinates } | null {
+): { from: AirportPoint; to: AirportPoint } | null {
   const leg = legs[legIndex];
   if (!leg) return null;
 
@@ -299,18 +299,18 @@ export function interpolatePosition(
       ? initialBearingDeg(slerp(ends.from, ends.to, 0.999), ends.to)
       : initialBearingDeg(here, ends.to);
 
-  const originPoint = lookup(flight.plan.originIcao);
-  const destinationPoint = lookup(flight.arrivalIcao);
+  // The leg's own ends are the airports whose elevations matter, so they are
+  // reused rather than looked up again. `ends.to` is always the arrival airport —
+  // a replan aims the new leg at it — and `ends.from` is the origin on the only
+  // leg where the `departure` phase can occur. Two fewer lookups per aircraft,
+  // which at five thousand of them is ten thousand fewer.
+  const originFt = ends.from.elevationFt ?? 0;
+  const destinationFt = ends.to.elevationFt ?? 0;
 
   return {
     latitudeDeg: here.latitudeDeg,
     longitudeDeg: here.longitudeDeg,
-    altitudeFt: altitudeFt(
-      progress,
-      profile,
-      originPoint?.elevationFt ?? 0,
-      destinationPoint?.elevationFt ?? 0,
-    ),
+    altitudeFt: altitudeFt(progress, profile, originFt, destinationFt),
     groundSpeedKt: progress.groundSpeedKt,
     headingDeg,
     progress: progress.fraction,
