@@ -4,6 +4,7 @@ import {
   AdminAuditResponse,
   AdminCreateWorldResponse,
   AdminListResponse,
+  AdminOverviewResponse,
   AdminWorldListResponse,
 } from './admin';
 import { ApiError, HealthResponse } from './api';
@@ -35,3 +36,4 @@ export const adminAuditResponseJsonSchema = z.toJSONSchema(AdminAuditResponse);
 export const adminListResponseJsonSchema = z.toJSONSchema(AdminListResponse);
 export const adminWorldListResponseJsonSchema = z.toJSONSchema(AdminWorldListResponse);
 export const adminCreateWorldResponseJsonSchema = z.toJSONSchema(AdminCreateWorldResponse);
+export const adminOverviewResponseJsonSchema = z.toJSONSchema(AdminOverviewResponse);

@@ -63,6 +63,14 @@ function stubApi(createReply: { body: unknown; status: number } = { body: {}, st
     if (url === '/api/me') return Promise.resolve(jsonResponse(ADMIN));
     if (url === '/api/version') return Promise.resolve(jsonResponse(VERSION));
     if (url === '/api/admin/audit') return Promise.resolve(jsonResponse({ entries: [] }));
+    if (url === '/api/admin/overview')
+      return Promise.resolve(
+        jsonResponse({
+          counts: { players: 1, worlds: 1, admins: 1, airports: 85915, auditEntries: 3 },
+          backup: null,
+          alerts: [],
+        }),
+      );
     if (url === '/api/admin/admins') return Promise.resolve(jsonResponse({ admins: [] }));
     if (url === '/api/admin/worlds') {
       if (init?.method === 'POST') {
@@ -79,7 +87,7 @@ function stubApi(createReply: { body: unknown; status: number } = { body: {}, st
 
 function renderConsole() {
   return render(
-    <MemoryRouter initialEntries={['/admin']}>
+    <MemoryRouter initialEntries={['/admin/worlds']}>
       <App />
     </MemoryRouter>,
   );

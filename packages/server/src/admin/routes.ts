@@ -2,6 +2,7 @@ import {
   adminAuditResponseJsonSchema,
   adminCreateWorldResponseJsonSchema,
   adminListResponseJsonSchema,
+  adminOverviewResponseJsonSchema,
   adminWorldListResponseJsonSchema,
   apiErrorJsonSchema,
 } from '@tailfin/shared';
@@ -10,6 +11,7 @@ import { type DatabaseHandle } from '../db/client';
 
 import { parseAuditJson, readAudit } from './audit';
 import { type Actor, listAdmins } from './grants';
+import { buildOverview } from './overview';
 import {
   constraintFailure,
   createWorldAsAdmin,
@@ -54,6 +56,15 @@ function actorOf(request: FastifyRequest): Actor {
 }
 
 export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOptions): void {
+  app.get(
+    '/api/admin/overview',
+    {
+      onRequest: app.requireAdmin,
+      schema: { response: { 200: adminOverviewResponseJsonSchema } },
+    },
+    async (_request, reply) => reply.code(200).send(await buildOverview(db.db)),
+  );
+
   app.get(
     '/api/admin/audit',
     {

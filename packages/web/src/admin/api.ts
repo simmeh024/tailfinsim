@@ -1,4 +1,9 @@
-import type { AdminAuditEntry, AdminGrantSummary, AdminWorldSummary } from '@tailfin/shared';
+import type {
+  AdminAuditEntry,
+  AdminGrantSummary,
+  AdminOverviewResponse,
+  AdminWorldSummary,
+} from '@tailfin/shared';
 
 /**
  * The admin console's half of the client API (M1A-01).
@@ -89,4 +94,9 @@ export async function createWorld(config: unknown): Promise<CreateWorldResult> {
   }
 
   throw new Error(`POST /api/admin/worlds failed with ${String(response.status)}`);
+}
+
+export async function fetchOverview(): Promise<AdminOverviewResponse> {
+  const body = await getJson('/api/admin/overview');
+  return body as AdminOverviewResponse;
 }

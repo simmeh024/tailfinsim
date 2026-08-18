@@ -125,3 +125,53 @@ export const AdminCreateWorldResponse = z.object({
   world: AdminWorldSummary,
 });
 export type AdminCreateWorldResponse = z.infer<typeof AdminCreateWorldResponse>;
+
+/**
+ * One thing that wants attention (M1A-07).
+ *
+ * Computed on the **server**, not the client. Whether a backup is overdue is a
+ * judgement about the state of the system, and §21's rule is that the server
+ * owns those — a browser deciding for itself when to worry would drift from what
+ * the box actually knows.
+ */
+export const AdminAlert = z.object({
+  /** Stable code, so an alert can be recognised without matching on prose. */
+  code: z.string().min(1),
+  severity: z.enum(['info', 'warning', 'error']),
+  /** One line, in words. */
+  message: z.string().min(1),
+  /** The specifics behind it, where there are any. */
+  detail: z.string().nullable(),
+});
+export type AdminAlert = z.infer<typeof AdminAlert>;
+
+/** The last backup run, as the box recorded it. Null when nothing has been recorded. */
+export const AdminBackupStatus = z.object({
+  finishedAt: Timestamp,
+  result: z.enum(['ok', 'failed']),
+  uploaded: z.number().int().nonnegative(),
+  databases: z.string(),
+});
+export type AdminBackupStatus = z.infer<typeof AdminBackupStatus>;
+
+/**
+ * `GET /api/admin/overview` — the console's front page.
+ *
+ * Counts rather than lists: the question this page answers is "is anything
+ * wrong?", and a list of 85,915 airports does not answer it. The airport count is
+ * here for a specific reason — dev silently lost its entire airport dataset to a
+ * misdirected test run in August 2026 and nobody noticed for hours. A tile
+ * reading zero would have.
+ */
+export const AdminOverviewResponse = z.object({
+  counts: z.object({
+    players: z.number().int().nonnegative(),
+    worlds: z.number().int().nonnegative(),
+    admins: z.number().int().nonnegative(),
+    airports: z.number().int().nonnegative(),
+    auditEntries: z.number().int().nonnegative(),
+  }),
+  backup: AdminBackupStatus.nullable(),
+  alerts: z.array(AdminAlert),
+});
+export type AdminOverviewResponse = z.infer<typeof AdminOverviewResponse>;
