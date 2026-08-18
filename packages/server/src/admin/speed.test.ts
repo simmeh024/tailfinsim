@@ -311,6 +311,12 @@ describeDb('changing a world speed', () => {
       row.id,
       { speedMultiplier: 5, expectedSpeedMultiplier: 2 },
       { playerId: actor, label: 'Test Admin' },
+      // The fixed instant, so the division lands on a whole millisecond and the
+      // two in-game dates below are *equal* rather than close. Left to the wall
+      // clock this asserted equality and failed in CI on a 2ms residue — which
+      // is the documented behaviour, not a fault, and belongs in the test that
+      // measures the bound rather than in this one.
+      THIRTY_DAYS_ON,
     );
     if (!result.ok) throw new Error('refused');
 
