@@ -132,7 +132,13 @@ describe('the admin link', () => {
     stubApi(ADMIN);
     renderAt('/world');
 
+    // Both, before looking. The clock arrives in a second effect after the badge
+    // itself renders, so waiting only for the build number races it — locally it
+    // won, in CI it lost.
     await screen.findByText('build 204');
+    await screen.findByText(/UTC$/);
+    await screen.findByRole('link', { name: 'admin' });
+
     const badge = document.querySelector('.build');
     expect(badge).not.toBeNull();
 
