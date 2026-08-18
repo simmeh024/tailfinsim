@@ -34,5 +34,15 @@ export const VersionResponse = z.object({
   environment: EnvironmentLabel,
   /** When this process started, for spotting a box that quietly restarted. */
   startedAt: z.iso.datetime(),
+
+  /**
+   * The server's clock at the moment of the request.
+   *
+   * The *server's*, deliberately — a badge showing the browser's clock would be
+   * showing the viewer's own machine, which is the one thing they can already
+   * see. The point is to know what the box thinks the time is, which is what
+   * every log line and every scheduled event is stamped against.
+   */
+  serverTime: z.iso.datetime(),
 });
 export type VersionResponse = z.infer<typeof VersionResponse>;

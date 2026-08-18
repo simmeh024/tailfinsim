@@ -159,6 +159,8 @@ export function buildApp({ env, db }: BuildAppOptions): FastifyInstance {
         commit: buildInfo.commit,
         environment: env.environmentLabel,
         startedAt: startedAtIso,
+        // Read per request, unlike the rest of this payload.
+        serverTime: new Date().toISOString(),
       }),
   );
 
