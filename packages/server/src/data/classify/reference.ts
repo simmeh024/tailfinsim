@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -25,9 +25,32 @@ import { parseCsv, type CsvRow } from '../csv';
  * See the header of each CSV for its provenance and its known weaknesses.
  */
 
-/** Resolves the same from `src` (dev) and `dist` (built) — each sits one level under packages/server. */
-const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-const referenceDir = resolve(packageRoot, 'data', 'reference');
+/**
+ * Finds `packages/server/data/reference`, whichever layout we are running in.
+ *
+ * A fixed number of `..` hops does not work here. From source this file sits at
+ * `src/data/classify/`, three levels below the package root — but esbuild inlines
+ * it into `dist/classify-airports.js`, one level below. Counting hops is right in
+ * exactly one of the two, and the wrong one fails only on the server.
+ *
+ * So walk up until the directory appears. Caught on the box, not in CI.
+ */
+function findReferenceDir(): string {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let hop = 0; hop < 6; hop += 1) {
+    const candidate = resolve(dir, 'data', 'reference');
+    if (existsSync(resolve(candidate, 'airport-tiers.csv'))) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  throw new Error(
+    'Could not find data/reference — expected it under packages/server. ' +
+      'It is committed data, so a missing directory means an incomplete checkout.',
+  );
+}
+
+const referenceDir = findReferenceDir();
 
 export type SeededTier = 'flagship' | 'large';
 
