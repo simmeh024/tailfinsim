@@ -36,7 +36,7 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 # The only path it may write to.
-ReadWritePaths=/var/backups/tailfin
+ReadWritePaths=/var/backups/tailfin /var/lib/tailfin
 
 [Install]
 WantedBy=multi-user.target
