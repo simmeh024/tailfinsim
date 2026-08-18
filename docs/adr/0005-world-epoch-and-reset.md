@@ -88,7 +88,8 @@ That last one exists because the reset that matters is the one nobody meant to r
 - `speed_multiplier` changing mid-world retroactively rewrites the calendar, since elapsed
   real time is multiplied by whatever the current value is. §22.2 already gates this behind
   a loud warning; the honest fix if it is ever really needed is a piecewise segment table,
-  which is deliberately **not** built now.
+  which is deliberately **not** built now. (M1A-03 built the change itself — see the
+  addendum below for what it does and does not fix.)
 
 ### What we accept
 
@@ -104,7 +105,48 @@ slightly more work at the query layer, in exchange for a clock that cannot drift
 | Reset by moving `epoch` forward                           | Conflates "where the calendar starts" with "when this run began", and breaks era presets.                                  |
 | Delete and recreate the world                             | Loses the world's identity, config version and audit history. §22.2 requires archived worlds stay browsable forever.       |
 
+## Addendum, 2026-08-18: changing the speed of a running world (M1A-03)
+
+The "revisit when" below arrived, and this records what was built rather than leaving the
+decision as it was written.
+
+**What was built.** A speed change re-anchors `launch_date` so that the in-game date at the
+instant of the change is unchanged:
+
+```
+launch_date′ = now − (inGameDate(world, now) − epoch) / new_speed
+```
+
+`epoch` is untouched, so a reset still returns the calendar to it by definition. The
+arithmetic is `reanchorForSpeed` in `packages/sim`, and it is pure like everything else
+there.
+
+**Scheduled events need nothing.** `world_event.fire_at` is a game-time instant (M1-06), so
+an event keeps its in-game moment with no rewrite at all — what changes is how long the wait
+is in real time. The queue drains on `fire_at <= inGameDate(now)`, so preserving the in-game
+date preserves due-ness for every event at once. `launch_date′` is rounded **up**, which
+makes the calendar land at or fractionally behind where it was rather than ahead, so a speed
+change cannot sweep the clock past a pending event and fire it early. The residue is under
+`new_speed` milliseconds, in one direction, and is reported in the API response rather than
+being quietly absorbed.
+
+**What was not built, and is still owed.** The piecewise-segment model. The past calendar is
+still derived from a single speed, so after a change, an older real instant maps to a
+different in-game date than it did before, and changing the speed back does not restore the
+old mapping. Nothing stores an in-game timestamp today — §21 computes them all on read — so
+nothing is currently _wrong_ as a result. The day anything does persist an in-game date, the
+segment table has to exist first. The console's confirmation states this in as many words,
+so it is a known cost rather than a surprise.
+
+**§22.2's two-person rule is also still owed.** The table above says a speed change is gated
+behind one admin requesting and another approving. What exists is a single-admin
+confirmation, plus the request stating the speed it believed and the server refusing a
+mismatch — which stops two admins overwriting each other silently, but does not stop one
+admin acting alone. There is one administrator today, so the full rule cannot be exercised
+at all; it needs a request/approve flow of its own.
+
 ## Revisit when
 
-Someone genuinely needs the speed multiplier to change on a running world, at which point
-the piecewise-segment model has to be built rather than approximated.
+Anything persists an in-game timestamp, at which point the piecewise-segment model has to be
+built rather than approximated — a speed change would otherwise leave stored dates meaning
+something different from the dates computed around them.

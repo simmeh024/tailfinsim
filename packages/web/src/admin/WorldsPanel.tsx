@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { AdminWorldSummary } from '@tailfin/shared';
 
 import { createWorld, fetchWorlds, type FieldErrors } from './api';
+import { WorldSpeed } from './WorldSpeed';
 
 import type { FormEvent, ReactNode } from 'react';
 
@@ -127,6 +128,12 @@ export function WorldsPanel(): ReactNode {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Looked up from the current list rather than held as state, so the control
+  // shows the world as last loaded — including a speed somebody else changed —
+  // instead of a copy taken when the row was clicked.
+  const selected = worlds?.find((entry) => entry.id === selectedId);
 
   const reload = useCallback(async () => {
     try {
@@ -196,6 +203,10 @@ export function WorldsPanel(): ReactNode {
                   <th scope="col">Speed</th>
                   <th scope="col">In-game date</th>
                   <th scope="col">Epoch</th>
+                  <th scope="col">Queue</th>
+                  <th scope="col">
+                    <span className="visually-hidden">Actions</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -206,12 +217,36 @@ export function WorldsPanel(): ReactNode {
                     <td className="figure">{entry.speedMultiplier.toFixed(2)}×</td>
                     <td className="figure">{formatAt(entry.inGameDate)}</td>
                     <td className="figure">{formatAt(entry.epoch)}</td>
+                    <td className="figure">{entry.pendingEvents}</td>
+                    <td>
+                      <button
+                        className="admin__rowaction"
+                        type="button"
+                        // Named for the row it belongs to. Several worlds means
+                        // several identical-looking buttons, and "Change speed"
+                        // five times over is unusable with a screen reader and
+                        // ambiguous in a test.
+                        aria-label={`Change the speed of ${entry.name}`}
+                        aria-pressed={selectedId === entry.id}
+                        onClick={() => {
+                          setSelectedId(selectedId === entry.id ? null : entry.id);
+                        }}
+                      >
+                        Speed
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           ))}
       </section>
+
+      {selected !== undefined && (
+        // Keyed on the world, so picking a different row starts a fresh control
+        // rather than carrying the previous world's half-typed number into it.
+        <WorldSpeed key={selected.id} world={selected} onChanged={reload} />
+      )}
 
       <section className="admin__section">
         <h2 className="admin__heading">Create a world</h2>

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { Timestamp, Uuid } from './primitives';
+import { MAX_SPEED_MULTIPLIER } from './world-config';
 
 /**
  * Admin console wire types (M1A-01, design doc §22).
@@ -104,6 +105,15 @@ export const AdminWorldSummary = z.object({
   createdAt: Timestamp,
   /** The world's current in-game date, derived on the server. */
   inGameDate: Timestamp,
+  /**
+   * Events still waiting in this world's queue (M1A-03).
+   *
+   * Here because a speed change has to be able to say what it does to them, and
+   * "some" is not an answer an admin can weigh. M1A-06 turns this into queue
+   * health proper — depth over time, oldest pending, whether the loop is keeping
+   * up — where a bare count becomes a trend.
+   */
+  pendingEvents: z.number().int().nonnegative(),
 });
 export type AdminWorldSummary = z.infer<typeof AdminWorldSummary>;
 
@@ -125,6 +135,70 @@ export const AdminCreateWorldResponse = z.object({
   world: AdminWorldSummary,
 });
 export type AdminCreateWorldResponse = z.infer<typeof AdminCreateWorldResponse>;
+
+/**
+ * `POST /api/admin/worlds/:worldId/speed` (M1A-03, §22.2).
+ *
+ * ## Why the request states what it thinks the speed is now
+ *
+ * The console shows a confirmation naming the current speed and the new one —
+ * "2.00× → 3.00×" — and the admin agrees to *that* sentence. If someone else
+ * changed the speed while it was on screen, the sentence is no longer true, and
+ * applying it anyway would perform a change nobody agreed to. So the request
+ * carries the speed it believed, and the server refuses a mismatch rather than
+ * resolving it.
+ *
+ * This is the cheap half of §22.2's two-person rule. The full rule — one admin
+ * requests, another approves — needs a request/approve flow that does not exist
+ * yet, and cannot be exercised at all while there is one administrator. This
+ * stops two admins from silently overwriting each other; it does not stop one
+ * admin acting alone.
+ */
+export const AdminSpeedChangeRequest = z.object({
+  speedMultiplier: z.number().positive().max(MAX_SPEED_MULTIPLIER),
+  /** The speed the console was showing when the admin confirmed. */
+  expectedSpeedMultiplier: z.number().positive(),
+});
+export type AdminSpeedChangeRequest = z.infer<typeof AdminSpeedChangeRequest>;
+
+/** The world's clock, on one side of a change. */
+export const AdminClockSnapshot = z.object({
+  speedMultiplier: z.number().positive(),
+  launchDate: Timestamp,
+  /** The in-game date at the instant of the change, as measured on that side of it. */
+  inGameDate: Timestamp,
+});
+export type AdminClockSnapshot = z.infer<typeof AdminClockSnapshot>;
+
+/**
+ * What a speed change did.
+ *
+ * `before` and `after` are the evidence for the criterion that matters: the
+ * in-game date is the same on both sides, and `launchDate` moved instead. They
+ * are the same pair written to the audit log.
+ */
+export const AdminSpeedChangeResponse = z.object({
+  world: AdminWorldSummary,
+  before: AdminClockSnapshot,
+  after: AdminClockSnapshot,
+  /**
+   * Pending events at the moment of the change. Every one keeps its in-game
+   * moment untouched — `world_event.fire_at` is stored in game time (M1-06), so
+   * there is nothing to reschedule. What changes is the real-world wait.
+   */
+  pendingEvents: z.number().int().nonnegative(),
+  /**
+   * How far the calendar actually moved, in milliseconds. Zero or negative, never
+   * positive: `launchDate` is whole milliseconds, so a speed that does not divide
+   * the elapsed game time leaves a residue, and the sim rounds it in the
+   * direction that cannot make a scheduled event fire early.
+   *
+   * Reported rather than hidden. "The in-game date does not change" is a claim,
+   * and this is the measurement behind it.
+   */
+  driftMs: z.number().int().nonpositive(),
+});
+export type AdminSpeedChangeResponse = z.infer<typeof AdminSpeedChangeResponse>;
 
 /**
  * One thing that wants attention (M1A-07).

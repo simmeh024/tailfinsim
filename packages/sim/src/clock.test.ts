@@ -8,6 +8,7 @@ import {
   gameToRealMs,
   realTimeAtGameTime,
   realToGameMs,
+  reanchorForSpeed,
   type WorldClock,
 } from './clock';
 
@@ -168,5 +169,155 @@ describe('there is no time skip', () => {
     for (const name of Object.keys(clockModule)) {
       expect(name).not.toMatch(/advance|skip|setTime|jump/i);
     }
+  });
+});
+
+describe('reanchorForSpeed', () => {
+  // Thirty real days into the flagship world, so there is a substantial stretch
+  // of elapsed real time for a naive change to misapply.
+  const at = new Date(launchDate.getTime() + 30 * DAY);
+
+  it('leaves the in-game date exactly where it was', () => {
+    // M1A-03's first acceptance criterion. At these numbers the division lands
+    // on a whole millisecond, so this is an equality rather than a tolerance.
+    const before = gameTime(flagship, at);
+    const after = reanchorForSpeed(flagship, 3, at);
+    expect(gameTime(after, at).getTime()).toBe(before.getTime());
+  });
+
+  it('is what a bare multiplier change is not', () => {
+    // The failure this function exists to prevent, stated as the difference it
+    // makes: 30 real days at 2× is 60 game days, and simply writing 3 would make
+    // it 90 — thirty game days of history arriving in an instant.
+    const naive = gameTime({ ...flagship, speedMultiplier: 3 }, at);
+    const before = gameTime(flagship, at);
+    expect(naive.getTime() - before.getTime()).toBe(30 * DAY);
+    expect(gameTime(reanchorForSpeed(flagship, 3, at), at).getTime() - before.getTime()).toBe(0);
+  });
+
+  it('runs at the new speed from then on', () => {
+    const after = reanchorForSpeed(flagship, 3, at);
+    const anHourLater = new Date(at.getTime() + HOUR);
+    expect(gameTime(after, anHourLater).getTime() - gameTime(after, at).getTime()).toBe(3 * HOUR);
+  });
+
+  it('never touches the epoch', () => {
+    // `epoch` is what the world is, and where a reset returns to (ADR-0005). A
+    // speed change that moved it would quietly redefine the world.
+    expect(reanchorForSpeed(flagship, 0.5, at).epoch).toEqual(flagship.epoch);
+    expect(reanchorForSpeed(flagship, 50, at).epoch).toEqual(flagship.epoch);
+  });
+
+  it('keeps a scheduled event at the same in-game moment', () => {
+    // M1A-03's second acceptance criterion, at the level the queue works at:
+    // `world_event.fire_at` is a game-time instant (M1-06), so an event does not
+    // move. What changes is how long the wait is in real time — which is the
+    // point of changing the speed.
+    const before = gameTime(flagship, at);
+    const fireAt = new Date(before.getTime() + 6 * HOUR);
+
+    const realBefore = realTimeAtGameTime(flagship, fireAt);
+    const faster = reanchorForSpeed(flagship, 4, at);
+    const realAfter = realTimeAtGameTime(faster, fireAt);
+
+    // Same in-game moment, reached sooner: six game hours at 2× is three real
+    // hours, and at 4× it is ninety real minutes.
+    expect(realBefore.getTime() - at.getTime()).toBe(3 * HOUR);
+    expect(realAfter.getTime() - at.getTime()).toBe(90 * MINUTE);
+  });
+
+  it('cannot make a pending event fire early, at any speed', () => {
+    // What the queue actually asks: it drains everything with
+    // `fire_at <= gameTime(clock, now)`, so the only way a speed change could
+    // wrongly fire something is by sweeping the calendar forwards across an
+    // event. Rounding `launchDate` up makes that impossible rather than
+    // improbable — the new game time is never ahead of the old one, so no event
+    // set has to be walked and none can be caught out.
+    //
+    // Awkward speeds on purpose: these are the ones where the division does not
+    // land on a whole millisecond and the residue actually exists.
+    for (const speed of [7, 1.37, 0.03, 99.99, 3.33]) {
+      const before = gameTime(flagship, at).getTime();
+      const after = gameTime(reanchorForSpeed(flagship, speed, at), at).getTime();
+
+      expect(after).toBeLessThanOrEqual(before);
+      // One millisecond into the future is still the future.
+      expect(before + 1 <= after).toBe(false);
+    }
+  });
+
+  it('keeps an event that was already due, due', () => {
+    // The other half, and the cost of choosing that direction: the calendar can
+    // sit a few milliseconds behind, so an event due at the exact instant of the
+    // change may wait one more drain. Anything meaningfully in the past stays
+    // past.
+    const before = gameTime(flagship, at);
+    const dueASecondAgo = new Date(before.getTime() - 1000);
+
+    for (const speed of [7, 1.37, 0.03, 99.99]) {
+      const after = gameTime(reanchorForSpeed(flagship, speed, at), at);
+      expect(dueASecondAgo.getTime() <= after.getTime()).toBe(true);
+    }
+  });
+
+  it('rewrites the past, and this is the test that says so out loud', () => {
+    // Not a bug being pinned in place — a documented consequence (ADR-0005). The
+    // calendar is derived from one speed, so an older instant maps differently
+    // afterwards. If someone ever builds the piecewise segment table, this test
+    // is the one that should start failing.
+    const yesterday = new Date(at.getTime() - DAY);
+    const before = gameTime(flagship, yesterday);
+    const after = gameTime(reanchorForSpeed(flagship, 3, at), yesterday);
+
+    // A real day back, the calendars disagree by exactly the speed difference
+    // applied to that day: 3 game days versus 2.
+    expect(after.getTime() - before.getTime()).toBe(-DAY);
+  });
+
+  it('holds the present instant across a change and back again', () => {
+    // A round trip through a clean multiplier returns the same game time *and*
+    // the same clock, which is worth knowing: undoing a speed change by hand
+    // restores the world rather than leaving it subtly re-anchored.
+    const before = gameTime(flagship, at);
+    const there = reanchorForSpeed(flagship, 5, at);
+    const back = reanchorForSpeed(there, FLAGSHIP_SPEED, at);
+
+    expect(gameTime(back, at).getTime()).toBe(before.getTime());
+    expect(back.launchDate.getTime()).toBe(flagship.launchDate.getTime());
+  });
+
+  it('keeps the residue below one millisecond per unit of speed, and only ever behind', () => {
+    // The honest limit, stated as a bound rather than assumed away.
+    //
+    // Two roundings, not one: `launchDate` is rounded up here (worth under
+    // `speed` milliseconds of calendar), and `gameTime` truncates its own
+    // multiplication when `speed × elapsed` is fractional (worth under one more).
+    // Hence `speed + 1`, which is arithmetic rather than a fudge factor — at 1.37
+    // the observed loss is 2ms, which no bound of 1.37 could accommodate.
+    //
+    // The direction is the part that must not slip: never negative, so no change
+    // can ever push the calendar forward.
+    let clock = flagship;
+    for (const speed of [1.37, 0.03, 99.99, 7.5, 1.37, 2]) {
+      const before = gameTime(clock, at).getTime();
+      clock = reanchorForSpeed(clock, speed, at);
+      const lost = before - gameTime(clock, at).getTime();
+      expect(lost).toBeGreaterThanOrEqual(0);
+      expect(lost).toBeLessThan(speed + 1);
+    }
+    const totalLost = gameTime(flagship, at).getTime() - gameTime(clock, at).getTime();
+    expect(totalLost).toBeGreaterThanOrEqual(0);
+    expect(totalLost).toBeLessThan(200);
+  });
+
+  it('refuses a speed that would freeze or reverse the world', () => {
+    for (const speed of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => reanchorForSpeed(flagship, speed, at)).toThrow(/must be positive/);
+    }
+  });
+
+  it('refuses to re-anchor a clock that was already broken', () => {
+    const broken: WorldClock = { ...flagship, launchDate: new Date('not a date') };
+    expect(() => reanchorForSpeed(broken, 3, at)).toThrow(/invalid epoch or launch date/);
   });
 });

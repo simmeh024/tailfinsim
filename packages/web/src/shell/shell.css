@@ -1104,3 +1104,98 @@ body {
     display: none;
   }
 }
+
+/* ------------------------------------------------------- world speed ---- */
+
+/*
+ * Changing a world's speed (M1A-03).
+ *
+ * The confirmation is deliberately heavier than the input that leads to it: an
+ * inset block with its own border, so agreeing to it is visibly a second step
+ * rather than a continuation of typing in a box.
+ */
+.admin__rowaction {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.admin__rowaction:hover,
+.admin__rowaction:focus-visible,
+.admin__rowaction[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.admin__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 40rem;
+  padding: var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-inset);
+}
+
+.admin__confirm-lead {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+/* The consequences, as a list rather than a paragraph: each one is a separate
+   thing being agreed to, and a wall of prose is a wall nobody reads. */
+.admin__consequences {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-left: var(--space-4);
+  list-style: disc;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.admin__confirm-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.admin__cancel {
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+.admin__cancel:hover,
+.admin__cancel:focus-visible {
+  color: var(--text-primary);
+}
+
+/*
+ * Available to a screen reader, absent from the page.
+ *
+ * `display: none` would remove it from both, which is the mistake this exists to
+ * avoid — the actions column needs a name announced without a visible heading
+ * over a column of buttons.
+ */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

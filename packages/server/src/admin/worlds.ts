@@ -1,4 +1,4 @@
-import { asc } from 'drizzle-orm';
+import { asc, count, eq } from 'drizzle-orm';
 
 import {
   type AdminWorldSummary,
@@ -8,7 +8,7 @@ import {
 import { gameTime } from '@tailfin/sim';
 
 import { type Database } from '../db/client';
-import { world, type WorldRow } from '../db/schema';
+import { world, worldEvent, type WorldRow } from '../db/schema';
 import { createWorld } from '../world/lifecycle';
 
 import { writeAudit } from './audit';
@@ -182,8 +182,18 @@ export async function createWorldAsAdmin(
   });
 }
 
-/** A world row as the console shows it, with the in-game date worked out. */
-export function summariseWorld(row: WorldRow, now: Date = new Date()): AdminWorldSummary {
+/**
+ * A world row as the console shows it, with the in-game date worked out.
+ *
+ * `pendingEvents` is passed in rather than queried here, so that listing twenty
+ * worlds is two queries rather than twenty-one, and so a caller that already
+ * knows the count inside a transaction can use the one it has.
+ */
+export function summariseWorld(
+  row: WorldRow,
+  now: Date = new Date(),
+  pendingEvents = 0,
+): AdminWorldSummary {
   const speedMultiplier = Number(row.speedMultiplier);
   return {
     id: row.id,
@@ -200,6 +210,7 @@ export function summariseWorld(row: WorldRow, now: Date = new Date()): AdminWorl
       { epoch: row.epoch, launchDate: row.launchDate, speedMultiplier },
       now,
     ).toISOString(),
+    pendingEvents,
   };
 }
 
@@ -208,5 +219,16 @@ export async function listWorlds(
   now: Date = new Date(),
 ): Promise<AdminWorldSummary[]> {
   const rows = await db.select().from(world).orderBy(asc(world.createdAt));
-  return rows.map((row) => summariseWorld(row, now));
+
+  // Grouped in one pass rather than a count per world. A world with nothing
+  // pending has no row here at all, which is why the lookup defaults to zero
+  // instead of treating a missing key as unknown.
+  const pending = await db
+    .select({ worldId: worldEvent.worldId, n: count() })
+    .from(worldEvent)
+    .where(eq(worldEvent.status, 'pending'))
+    .groupBy(worldEvent.worldId);
+  const byWorld = new Map(pending.map((entry) => [entry.worldId, entry.n]));
+
+  return rows.map((row) => summariseWorld(row, now, byWorld.get(row.id) ?? 0));
 }

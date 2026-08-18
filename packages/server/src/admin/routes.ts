@@ -3,8 +3,10 @@ import {
   adminCreateWorldResponseJsonSchema,
   adminListResponseJsonSchema,
   adminOverviewResponseJsonSchema,
+  adminSpeedChangeResponseJsonSchema,
   adminWorldListResponseJsonSchema,
   apiErrorJsonSchema,
+  Uuid,
 } from '@tailfin/shared';
 
 import { type DatabaseHandle } from '../db/client';
@@ -12,6 +14,7 @@ import { type DatabaseHandle } from '../db/client';
 import { parseAuditJson, readAudit } from './audit';
 import { type Actor, listAdmins } from './grants';
 import { buildOverview } from './overview';
+import { changeWorldSpeed, type SpeedRefusalCode, validateSpeedRequest } from './speed';
 import {
   constraintFailure,
   createWorldAsAdmin,
@@ -23,12 +26,13 @@ import {
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 /**
- * The admin API (M1A-01 and M1A-02, §22).
+ * The admin API (M1A-01 to M1A-03, §22).
  *
- * Everything readable, plus one thing that writes: creating a world. Changing a
- * running world's speed and resetting it are M1A-03 and M1A-04, and each needs
- * confirmation semantics of its own — creation is the mild one, because a world
- * in `staging` affects nobody until it is opened.
+ * Everything readable, plus two things that write: creating a world, and
+ * changing the speed of one. Resetting is M1A-04 and needs confirmation
+ * semantics of its own. The three are in ascending order of consequence —
+ * creating a world in `staging` affects nobody until it is opened, changing a
+ * speed alters how fast a live world runs, and a reset destroys it.
  *
  * Every route here carries `requireAdmin`. That is the security boundary; the
  * link the interface shows is not. Every mutating route writes its audit row in
@@ -176,6 +180,92 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
           fields: refusal.fields,
         });
       }
+    },
+  );
+
+  /**
+   * The status each refusal deserves.
+   *
+   * A malformed speed is the request's fault (400). A world that is archived, or
+   * that somebody else has already changed, is a conflict with the world's state
+   * rather than a bad request (409) — the same message sent a minute earlier
+   * would have worked. "Already at that speed" sits with the 400s because the
+   * value submitted is the thing that has to change.
+   */
+  const SPEED_REFUSAL_STATUS: Record<SpeedRefusalCode, number> = {
+    invalid_speed: 400,
+    speed_unchanged: 400,
+    world_not_found: 404,
+    world_archived: 409,
+    speed_stale: 409,
+  };
+
+  app.post<{ Params: { worldId: string } }>(
+    '/api/admin/worlds/:worldId/speed',
+    {
+      onRequest: app.requireAdmin,
+      schema: {
+        response: {
+          200: adminSpeedChangeResponseJsonSchema,
+          400: apiErrorJsonSchema,
+          404: apiErrorJsonSchema,
+          409: apiErrorJsonSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      // Checked here rather than left to Postgres: a non-uuid id makes the
+      // driver raise a type error, which would surface as a 500 for what is
+      // plainly a request for a world that does not exist.
+      if (!Uuid.safeParse(request.params.worldId).success) {
+        return reply.code(404).send({ code: 'world_not_found', message: 'No world with that id.' });
+      }
+
+      const validated = validateSpeedRequest(request.body);
+      if (!validated.ok) {
+        return reply.code(SPEED_REFUSAL_STATUS[validated.code]).send({
+          code: validated.code,
+          message: validated.message,
+          fields: validated.fields,
+        });
+      }
+
+      const outcome = await changeWorldSpeed(
+        db.db,
+        request.params.worldId,
+        validated.request,
+        actorOf(request),
+      );
+
+      if (!outcome.ok) {
+        return reply.code(SPEED_REFUSAL_STATUS[outcome.code]).send({
+          code: outcome.code,
+          message: outcome.message,
+          fields: outcome.fields,
+        });
+      }
+
+      request.log.info(
+        {
+          worldId: outcome.world.id,
+          from: outcome.before.speedMultiplier,
+          to: outcome.after.speedMultiplier,
+          pendingEvents: outcome.pendingEvents,
+          driftMs: outcome.driftMs,
+        },
+        'world speed changed',
+      );
+
+      return reply.code(200).send({
+        // The count is already known from inside the transaction, so it is passed
+        // rather than queried again — and it is the count as of the change, which
+        // is what the response is describing.
+        world: summariseWorld(outcome.world, new Date(), outcome.pendingEvents),
+        before: outcome.before,
+        after: outcome.after,
+        pendingEvents: outcome.pendingEvents,
+        driftMs: outcome.driftMs,
+      });
     },
   );
 }
