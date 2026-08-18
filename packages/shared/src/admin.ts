@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { Timestamp, Uuid } from './primitives';
+import { WorldStatus } from './world';
 import { MAX_SPEED_MULTIPLIER } from './world-config';
 
 /**
@@ -24,6 +25,9 @@ export const AdminAction = z.enum([
   'admin.revoked',
   'world.created',
   'world.opened',
+  'world.locked',
+  'world.unlocked',
+  'world.archived',
   'world.reset',
   'world.speed_changed',
   'player.viewed',
@@ -98,7 +102,7 @@ export const AdminWorldSummary = z.object({
   epoch: Timestamp,
   launchDate: Timestamp,
   speedMultiplier: z.number().positive(),
-  status: z.enum(['staging', 'open', 'locked', 'archived']),
+  status: WorldStatus,
   aircraftCatalogueVersion: z.string().min(1),
   economyConfigVersion: z.string().min(1),
   playerCap: z.number().int().positive().nullable(),
@@ -114,6 +118,14 @@ export const AdminWorldSummary = z.object({
    * up — where a bare count becomes a trend.
    */
   pendingEvents: z.number().int().nonnegative(),
+  /**
+   * Airlines in this world (M1A-04).
+   *
+   * The number a reset destroys. A confirmation that says "this will delete the
+   * airlines" is asking for agreement to an unknown quantity; one that says
+   * "this will delete 14 airlines" is asking a question that can be answered.
+   */
+  airlines: z.number().int().nonnegative(),
 });
 export type AdminWorldSummary = z.infer<typeof AdminWorldSummary>;
 
@@ -199,6 +211,94 @@ export const AdminSpeedChangeResponse = z.object({
   driftMs: z.number().int().nonpositive(),
 });
 export type AdminSpeedChangeResponse = z.infer<typeof AdminSpeedChangeResponse>;
+
+/**
+ * `POST /api/admin/worlds/:worldId/status` (M1A-04, §22.2).
+ *
+ * `expectedStatus` for the same reason the speed change carries the speed it
+ * believed: the console showed a world in a particular state and the admin acted
+ * on that. If it has moved since, the action they chose is not the action that
+ * would happen.
+ *
+ * Not every status is reachable from every other — see `WORLD_TRANSITIONS`. The
+ * request shape does not encode that, because the legal set depends on where the
+ * world is now and the server is what knows.
+ */
+export const AdminWorldStatusRequest = z.object({
+  status: WorldStatus,
+  expectedStatus: WorldStatus,
+});
+export type AdminWorldStatusRequest = z.infer<typeof AdminWorldStatusRequest>;
+
+/**
+ * Which statuses a world can move to from where it is (§22.2).
+ *
+ * Shared rather than server-only so the console can offer exactly the buttons
+ * that will work, instead of offering everything and explaining refusals. The
+ * server checks it again — this is what the interface renders, not what it is
+ * allowed to do.
+ *
+ * The two absences are the decisions:
+ *
+ *   - **`open` cannot go straight to `archived`.** Archiving is permanent and
+ *     read-only, and doing it to a world with players in flight should take two
+ *     deliberate acts rather than one. Lock it, then archive it.
+ *   - **`archived` goes nowhere.** §22.2 keeps archived worlds browsable for
+ *     ever; un-archiving would let a record start moving again, and a record
+ *     that can change is not one.
+ */
+export const WORLD_TRANSITIONS: Readonly<Record<WorldStatus, readonly WorldStatus[]>> = {
+  staging: ['open', 'archived'],
+  open: ['locked'],
+  locked: ['open', 'archived'],
+  archived: [],
+};
+
+export const AdminWorldStatusResponse = z.object({
+  world: AdminWorldSummary,
+  before: WorldStatus,
+  after: WorldStatus,
+});
+export type AdminWorldStatusResponse = z.infer<typeof AdminWorldStatusResponse>;
+
+/**
+ * `POST /api/admin/worlds/:worldId/reset` (M1A-04, ADR-0005).
+ *
+ * The most destructive control in the product, and the request shape is where
+ * that is made real:
+ *
+ *   - **`confirmName`** must be the world's name, typed. Not a checkbox — a
+ *     checkbox is one click from a mis-click, and the name is the one thing that
+ *     cannot be supplied by muscle memory on the wrong row.
+ *   - **`reason`** is mandatory and goes into the audit log. ADR-0005 asks for
+ *     it, and the entry that matters is the one read months later by somebody
+ *     asking why a world went back to zero.
+ *   - **`expectedStatus`** so a world that was opened to players while the
+ *     confirmation sat on screen is refused rather than quietly reset.
+ */
+export const AdminResetWorldRequest = z.object({
+  confirmName: z.string().min(1),
+  reason: z.string().trim().min(4),
+  expectedStatus: WorldStatus,
+});
+export type AdminResetWorldRequest = z.infer<typeof AdminResetWorldRequest>;
+
+/** What a reset destroyed, counted as it happened. */
+export const AdminResetWorldResponse = z.object({
+  world: AdminWorldSummary,
+  destroyed: z.object({
+    airlines: z.number().int().nonnegative(),
+    events: z.number().int().nonnegative(),
+  }),
+  /**
+   * The in-game date immediately after the reset. Equals the world's epoch, and
+   * the server refuses to commit a reset where it does not — the criterion is
+   * checked against the stored row rather than assumed from the arithmetic.
+   */
+  inGameDate: Timestamp,
+  reason: z.string(),
+});
+export type AdminResetWorldResponse = z.infer<typeof AdminResetWorldResponse>;
 
 /**
  * One thing that wants attention (M1A-07).

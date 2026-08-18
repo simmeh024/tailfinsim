@@ -8,7 +8,7 @@ import {
 import { gameTime } from '@tailfin/sim';
 
 import { type Database } from '../db/client';
-import { world, worldEvent, type WorldRow } from '../db/schema';
+import { airline, world, worldEvent, type WorldRow } from '../db/schema';
 import { createWorld } from '../world/lifecycle';
 
 import { writeAudit } from './audit';
@@ -182,17 +182,28 @@ export async function createWorldAsAdmin(
   });
 }
 
+/** What is inside a world, for the summary. Zero is the honest default for a world just created. */
+export interface WorldContents {
+  pendingEvents: number;
+  airlines: number;
+}
+
+const EMPTY: WorldContents = { pendingEvents: 0, airlines: 0 };
+
 /**
  * A world row as the console shows it, with the in-game date worked out.
  *
- * `pendingEvents` is passed in rather than queried here, so that listing twenty
- * worlds is two queries rather than twenty-one, and so a caller that already
- * knows the count inside a transaction can use the one it has.
+ * The counts are passed in rather than queried here, so that listing twenty
+ * worlds is three queries rather than forty-one, and so a caller that already
+ * counted them inside a transaction can use the numbers it has. They are one
+ * object rather than two positional arguments because a reset confirmation
+ * depends on both being right, and `summariseWorld(row, now, 4, 12)` is a
+ * transposition waiting to happen.
  */
 export function summariseWorld(
   row: WorldRow,
   now: Date = new Date(),
-  pendingEvents = 0,
+  contents: WorldContents = EMPTY,
 ): AdminWorldSummary {
   const speedMultiplier = Number(row.speedMultiplier);
   return {
@@ -210,8 +221,41 @@ export function summariseWorld(
       { epoch: row.epoch, launchDate: row.launchDate, speedMultiplier },
       now,
     ).toISOString(),
-    pendingEvents,
+    pendingEvents: contents.pendingEvents,
+    airlines: contents.airlines,
   };
+}
+
+/**
+ * What each world contains, in two grouped queries rather than two per world.
+ *
+ * A world with nothing in it has no row in either result, which is why the
+ * lookups fall back to zero rather than treating a missing key as unknown.
+ */
+export async function countWorldContents(db: Database): Promise<Map<string, WorldContents>> {
+  const pending = await db
+    .select({ worldId: worldEvent.worldId, n: count() })
+    .from(worldEvent)
+    .where(eq(worldEvent.status, 'pending'))
+    .groupBy(worldEvent.worldId);
+
+  const airlines = await db
+    .select({ worldId: airline.worldId, n: count() })
+    .from(airline)
+    .groupBy(airline.worldId);
+
+  const contents = new Map<string, WorldContents>();
+  for (const entry of pending) {
+    contents.set(entry.worldId, { pendingEvents: entry.n, airlines: 0 });
+  }
+  for (const entry of airlines) {
+    const existing = contents.get(entry.worldId);
+    contents.set(entry.worldId, {
+      pendingEvents: existing?.pendingEvents ?? 0,
+      airlines: entry.n,
+    });
+  }
+  return contents;
 }
 
 export async function listWorlds(
@@ -219,16 +263,7 @@ export async function listWorlds(
   now: Date = new Date(),
 ): Promise<AdminWorldSummary[]> {
   const rows = await db.select().from(world).orderBy(asc(world.createdAt));
+  const contents = await countWorldContents(db);
 
-  // Grouped in one pass rather than a count per world. A world with nothing
-  // pending has no row here at all, which is why the lookup defaults to zero
-  // instead of treating a missing key as unknown.
-  const pending = await db
-    .select({ worldId: worldEvent.worldId, n: count() })
-    .from(worldEvent)
-    .where(eq(worldEvent.status, 'pending'))
-    .groupBy(worldEvent.worldId);
-  const byWorld = new Map(pending.map((entry) => [entry.worldId, entry.n]));
-
-  return rows.map((row) => summariseWorld(row, now, byWorld.get(row.id) ?? 0));
+  return rows.map((row) => summariseWorld(row, now, contents.get(row.id) ?? EMPTY));
 }

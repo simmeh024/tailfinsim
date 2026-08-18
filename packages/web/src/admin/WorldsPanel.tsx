@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 
 import type { AdminWorldSummary } from '@tailfin/shared';
 
 import { createWorld, fetchWorlds, type FieldErrors } from './api';
+import { WorldLifecycle } from './WorldLifecycle';
 import { WorldSpeed } from './WorldSpeed';
 
 import type { FormEvent, ReactNode } from 'react';
@@ -204,6 +205,7 @@ export function WorldsPanel(): ReactNode {
                   <th scope="col">In-game date</th>
                   <th scope="col">Epoch</th>
                   <th scope="col">Queue</th>
+                  <th scope="col">Airlines</th>
                   <th scope="col">
                     <span className="visually-hidden">Actions</span>
                   </th>
@@ -218,21 +220,22 @@ export function WorldsPanel(): ReactNode {
                     <td className="figure">{formatAt(entry.inGameDate)}</td>
                     <td className="figure">{formatAt(entry.epoch)}</td>
                     <td className="figure">{entry.pendingEvents}</td>
+                    <td className="figure">{entry.airlines}</td>
                     <td>
                       <button
                         className="admin__rowaction"
                         type="button"
                         // Named for the row it belongs to. Several worlds means
-                        // several identical-looking buttons, and "Change speed"
-                        // five times over is unusable with a screen reader and
+                        // several identical-looking buttons, and "Manage" five
+                        // times over is unusable with a screen reader and
                         // ambiguous in a test.
-                        aria-label={`Change the speed of ${entry.name}`}
+                        aria-label={`Manage ${entry.name}`}
                         aria-pressed={selectedId === entry.id}
                         onClick={() => {
                           setSelectedId(selectedId === entry.id ? null : entry.id);
                         }}
                       >
-                        Speed
+                        Manage
                       </button>
                     </td>
                   </tr>
@@ -243,9 +246,13 @@ export function WorldsPanel(): ReactNode {
       </section>
 
       {selected !== undefined && (
-        // Keyed on the world, so picking a different row starts a fresh control
-        // rather than carrying the previous world's half-typed number into it.
-        <WorldSpeed key={selected.id} world={selected} onChanged={reload} />
+        // Keyed on the world, so picking a different row starts fresh controls
+        // rather than carrying the previous world's half-typed number — or,
+        // worse, its half-typed reset confirmation — into them.
+        <Fragment key={selected.id}>
+          <WorldSpeed world={selected} onChanged={reload} />
+          <WorldLifecycle world={selected} onChanged={reload} />
+        </Fragment>
       )}
 
       <section className="admin__section">

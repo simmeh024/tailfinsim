@@ -3,7 +3,9 @@ import {
   adminCreateWorldResponseJsonSchema,
   adminListResponseJsonSchema,
   adminOverviewResponseJsonSchema,
+  adminResetWorldResponseJsonSchema,
   adminSpeedChangeResponseJsonSchema,
+  adminWorldStatusResponseJsonSchema,
   adminWorldListResponseJsonSchema,
   apiErrorJsonSchema,
   Uuid,
@@ -13,10 +15,18 @@ import { type DatabaseHandle } from '../db/client';
 
 import { parseAuditJson, readAudit } from './audit';
 import { type Actor, listAdmins } from './grants';
+import {
+  changeWorldStatus,
+  type LifecycleRefusalCode,
+  resetWorldAsAdmin,
+  validateResetRequest,
+  validateStatusRequest,
+} from './lifecycle';
 import { buildOverview } from './overview';
 import { changeWorldSpeed, type SpeedRefusalCode, validateSpeedRequest } from './speed';
 import {
   constraintFailure,
+  countWorldContents,
   createWorldAsAdmin,
   listWorlds,
   summariseWorld,
@@ -257,14 +267,164 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
       );
 
       return reply.code(200).send({
-        // The count is already known from inside the transaction, so it is passed
-        // rather than queried again — and it is the count as of the change, which
-        // is what the response is describing.
-        world: summariseWorld(outcome.world, new Date(), outcome.pendingEvents),
+        // The queue count is already known from inside the transaction, so it is
+        // passed rather than queried again — and it is the count as of the
+        // change, which is what the response is describing. A speed change
+        // cannot touch airlines, so that one is read fresh.
+        world: summariseWorld(outcome.world, new Date(), {
+          pendingEvents: outcome.pendingEvents,
+          airlines: (await countWorldContents(db.db)).get(outcome.world.id)?.airlines ?? 0,
+        }),
         before: outcome.before,
         after: outcome.after,
         pendingEvents: outcome.pendingEvents,
         driftMs: outcome.driftMs,
+      });
+    },
+  );
+
+  // ------------------------------------------------------- lifecycle (M1A-04)
+
+  /**
+   * The status each lifecycle refusal deserves.
+   *
+   * The split is the same as the speed route's: a malformed or wrong *value* is
+   * the request's fault, and a world that has moved on, or that cannot go where
+   * it is being sent, is a conflict with the world's state. A mistyped
+   * confirmation name is 400 — the thing to change is what was typed.
+   */
+  const LIFECYCLE_REFUSAL_STATUS: Record<LifecycleRefusalCode, number> = {
+    invalid_request: 400,
+    name_mismatch: 400,
+    world_not_found: 404,
+    status_stale: 409,
+    illegal_transition: 409,
+    status_unchanged: 409,
+    world_archived: 409,
+  };
+
+  /** A world id that is not a uuid is a world that does not exist, not a 500. */
+  function missingWorld(worldId: string): boolean {
+    return !Uuid.safeParse(worldId).success;
+  }
+
+  app.post<{ Params: { worldId: string } }>(
+    '/api/admin/worlds/:worldId/status',
+    {
+      onRequest: app.requireAdmin,
+      schema: {
+        response: {
+          200: adminWorldStatusResponseJsonSchema,
+          400: apiErrorJsonSchema,
+          404: apiErrorJsonSchema,
+          409: apiErrorJsonSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (missingWorld(request.params.worldId)) {
+        return reply.code(404).send({ code: 'world_not_found', message: 'No world with that id.' });
+      }
+
+      const validated = validateStatusRequest(request.body);
+      if (!validated.ok) {
+        return reply.code(LIFECYCLE_REFUSAL_STATUS[validated.code]).send({
+          code: validated.code,
+          message: validated.message,
+          fields: validated.fields,
+        });
+      }
+
+      const outcome = await changeWorldStatus(
+        db.db,
+        request.params.worldId,
+        validated.request,
+        actorOf(request),
+      );
+
+      if (!outcome.ok) {
+        return reply.code(LIFECYCLE_REFUSAL_STATUS[outcome.code]).send({
+          code: outcome.code,
+          message: outcome.message,
+          fields: outcome.fields,
+        });
+      }
+
+      request.log.info(
+        { worldId: outcome.world.id, from: outcome.before, to: outcome.after },
+        'world status changed',
+      );
+
+      const contents = (await countWorldContents(db.db)).get(outcome.world.id);
+      return reply.code(200).send({
+        world: summariseWorld(outcome.world, new Date(), contents),
+        before: outcome.before,
+        after: outcome.after,
+      });
+    },
+  );
+
+  app.post<{ Params: { worldId: string } }>(
+    '/api/admin/worlds/:worldId/reset',
+    {
+      onRequest: app.requireAdmin,
+      schema: {
+        response: {
+          200: adminResetWorldResponseJsonSchema,
+          400: apiErrorJsonSchema,
+          404: apiErrorJsonSchema,
+          409: apiErrorJsonSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (missingWorld(request.params.worldId)) {
+        return reply.code(404).send({ code: 'world_not_found', message: 'No world with that id.' });
+      }
+
+      const validated = validateResetRequest(request.body);
+      if (!validated.ok) {
+        return reply.code(LIFECYCLE_REFUSAL_STATUS[validated.code]).send({
+          code: validated.code,
+          message: validated.message,
+          fields: validated.fields,
+        });
+      }
+
+      const outcome = await resetWorldAsAdmin(
+        db.db,
+        request.params.worldId,
+        validated.request,
+        actorOf(request),
+      );
+
+      if (!outcome.ok) {
+        return reply.code(LIFECYCLE_REFUSAL_STATUS[outcome.code]).send({
+          code: outcome.code,
+          message: outcome.message,
+          fields: outcome.fields,
+        });
+      }
+
+      // `warn`, not `info`. This is the most destructive thing the console can
+      // do, and the server log should carry it at a level somebody greps for.
+      request.log.warn(
+        {
+          worldId: outcome.world.id,
+          airlinesDestroyed: outcome.destroyed.airlines,
+          eventsDestroyed: outcome.destroyed.events,
+          reason: outcome.reason,
+        },
+        'world reset',
+      );
+
+      return reply.code(200).send({
+        // Counted as zero rather than queried: the reset just deleted both, in
+        // the transaction that has already committed.
+        world: summariseWorld(outcome.world, new Date()),
+        destroyed: outcome.destroyed,
+        inGameDate: outcome.inGameDate.toISOString(),
+        reason: outcome.reason,
       });
     },
   );

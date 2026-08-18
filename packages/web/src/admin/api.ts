@@ -2,8 +2,11 @@ import type {
   AdminAuditEntry,
   AdminGrantSummary,
   AdminOverviewResponse,
+  AdminResetWorldResponse,
   AdminSpeedChangeResponse,
+  AdminWorldStatusResponse,
   AdminWorldSummary,
+  WorldStatus,
 } from '@tailfin/shared';
 
 /**
@@ -46,6 +49,47 @@ export async function fetchAdmins(): Promise<AdminGrantSummary[]> {
 
 /** Field name to the reasons it was refused, as `ApiError.fields` carries them. */
 export type FieldErrors = Record<string, string[]>;
+
+/**
+ * A POST whose refusals are answers rather than exceptions.
+ *
+ * Every admin action asks a question the server is entitled to say no to — can
+ * this world exist, can it run at that speed, can it be reset — and 400/404/409
+ * are those answers. Throwing would make each caller catch its own normal case.
+ * Anything else, including a 403 or a dead server, still throws: those are not
+ * answers, they are failures.
+ *
+ * A refusal always carries *something* to show. A form that silently does
+ * nothing is one an admin concludes is broken.
+ */
+async function postJson(
+  path: string,
+  payload: unknown,
+): Promise<{ ok: true; body: unknown } | { ok: false; fields: FieldErrors }> {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { accept: 'application/json', 'content-type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify(payload),
+  });
+
+  if (response.ok) return { ok: true, body: await response.json() };
+
+  if (response.status === 400 || response.status === 404 || response.status === 409) {
+    const body: unknown = await response.json();
+    const fields = (body as { fields?: unknown }).fields;
+    const message = (body as { message?: unknown }).message;
+    if (typeof fields === 'object' && fields !== null) {
+      return { ok: false, fields: fields as FieldErrors };
+    }
+    return {
+      ok: false,
+      fields: { form: [typeof message === 'string' ? message : 'The request was refused.'] },
+    };
+  }
+
+  throw new Error(`POST ${path} failed with ${String(response.status)}`);
+}
 
 export type CreateWorldResult =
   { ok: true; world: AdminWorldSummary } | { ok: false; fields: FieldErrors };
@@ -123,30 +167,61 @@ export async function changeWorldSpeed(
   speedMultiplier: number,
   expectedSpeedMultiplier: number,
 ): Promise<SpeedChangeResult> {
-  const response = await fetch(`/api/admin/worlds/${encodeURIComponent(worldId)}/speed`, {
-    method: 'POST',
-    headers: { accept: 'application/json', 'content-type': 'application/json' },
-    credentials: 'same-origin',
-    body: JSON.stringify({ speedMultiplier, expectedSpeedMultiplier }),
+  const result = await postJson(`/api/admin/worlds/${encodeURIComponent(worldId)}/speed`, {
+    speedMultiplier,
+    expectedSpeedMultiplier,
   });
+  return result.ok
+    ? { ok: true, change: result.body as AdminSpeedChangeResponse }
+    : { ok: false, fields: result.fields };
+}
 
-  if (response.status === 200) {
-    const body: unknown = await response.json();
-    return { ok: true, change: body as AdminSpeedChangeResponse };
-  }
+export type StatusChangeResult =
+  { ok: true; change: AdminWorldStatusResponse } | { ok: false; fields: FieldErrors };
 
-  if (response.status === 400 || response.status === 404 || response.status === 409) {
-    const body: unknown = await response.json();
-    const fields = (body as { fields?: unknown }).fields;
-    const message = (body as { message?: unknown }).message;
-    if (typeof fields === 'object' && fields !== null) {
-      return { ok: false, fields: fields as FieldErrors };
-    }
-    return {
-      ok: false,
-      fields: { form: [typeof message === 'string' ? message : 'The change was refused.'] },
-    };
-  }
+/**
+ * Moves a world through its lifecycle (M1A-04).
+ *
+ * `expectedStatus` is what the console was showing. The server refuses a
+ * mismatch rather than resolving it, because "lock this open world" is not the
+ * same request as "lock this world, whatever state it is in".
+ */
+export async function changeWorldStatus(
+  worldId: string,
+  status: WorldStatus,
+  expectedStatus: WorldStatus,
+): Promise<StatusChangeResult> {
+  const result = await postJson(`/api/admin/worlds/${encodeURIComponent(worldId)}/status`, {
+    status,
+    expectedStatus,
+  });
+  return result.ok
+    ? { ok: true, change: result.body as AdminWorldStatusResponse }
+    : { ok: false, fields: result.fields };
+}
 
-  throw new Error(`POST /api/admin/worlds/:id/speed failed with ${String(response.status)}`);
+export type ResetWorldResult =
+  { ok: true; reset: AdminResetWorldResponse } | { ok: false; fields: FieldErrors };
+
+/**
+ * Resets a world: rewinds its clock and destroys what the rewind invalidates.
+ *
+ * The name is typed by the admin and checked on the server against the world's
+ * own row, so a confirmation read against one world cannot be applied to
+ * another.
+ */
+export async function resetWorld(
+  worldId: string,
+  confirmName: string,
+  reason: string,
+  expectedStatus: WorldStatus,
+): Promise<ResetWorldResult> {
+  const result = await postJson(`/api/admin/worlds/${encodeURIComponent(worldId)}/reset`, {
+    confirmName,
+    reason,
+    expectedStatus,
+  });
+  return result.ok
+    ? { ok: true, reset: result.body as AdminResetWorldResponse }
+    : { ok: false, fields: result.fields };
 }

@@ -46,6 +46,7 @@ const FLAGSHIP: AdminWorldSummary = {
   createdAt: '2026-08-17T00:00:00.000Z',
   inGameDate: '2024-10-23T00:00:00.000Z',
   pendingEvents: 3,
+  airlines: 4,
 };
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -296,7 +297,7 @@ describe('creating a world', () => {
  */
 
 async function openSpeedControl(): Promise<void> {
-  const button = await screen.findByRole('button', { name: 'Change the speed of Flagship' });
+  const button = await screen.findByRole('button', { name: 'Manage Flagship' });
   fireEvent.click(button);
 }
 
