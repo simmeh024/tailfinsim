@@ -309,9 +309,13 @@ setup exists to remove.
 | `s3://backupstailfin/nightly/<db>/` | one per night                | **7 runs**    |
 | `s3://backupstailfin/monthly/<db>/` | the 1st of each month        | **12 months** |
 
-The monthly copy is a _server-side copy_ of that night's object rather than a second
-upload: same bytes, no second transfer, and it cannot exist unless the nightly upload it
-came from succeeded.
+The monthly copy is a **second upload of the same dump**, not a server-side copy.
+`s3cmd cp` against DreamObjects creates the object and _then_ fails: it signs a follow-up
+request with a V2 signature, the endpoint rejects it with `400 InvalidRequest`, and the
+command exits 1 having actually succeeded. An operation that reports failure while working
+is worse than one that plainly does not work, so the copy is paid for in bytes instead. It
+still cannot happen unless the nightly upload succeeded — the control flow guarantees that,
+not the copy source.
 
 Retention is enforced by the script, not by bucket lifecycle rules — a rule that silently
 stops applying looks exactly like one that is working, whereas an explicit delete says in
@@ -370,10 +374,39 @@ sudo -u postgres pg_restore --dbname=tailfin_restore_test --no-owner --no-privil
 The dumps use `--no-owner --no-privileges` precisely so they restore into a
 differently-named role without editing.
 
+### Rehearsed, 2026-08-18
+
+Restoring from the **off-box copy** into a disposable database, with the app booted against
+the result. Measured on the box, not estimated:
+
+| Step                                   | `tailfin_dev` (9.3 MB) |
+| -------------------------------------- | ---------------------- |
+| Download from DreamObjects             | 0.1 s                  |
+| `pg_restore` into a fresh database     | 4 s                    |
+| Server healthy against it (`/healthz`) | 2 s                    |
+| **Total**                              | **~6 s**               |
+
+Verified rather than assumed: the downloaded dump's SHA-256 matched the sidecar written at
+backup time; the restored database held **85,915 airports and 47,926 runways** with all
+4,359 scheduled-service airports still tiered; and the `admin_audit` append-only triggers
+came back with the schema and still refused a `DELETE`.
+
+**Worst-case data loss is up to 24 hours**, because backups are nightly. Reducing it means
+either a second daily run or WAL archiving — a decision, not an oversight.
+
+Two things the rehearsal caught, both now fixed above: `find` fails the whole run if it
+cannot return to its starting directory (hence `cd /`), and `s3cmd cp` creates the object
+and _then_ reports failure.
+
+A caution learned the same day: `/healthz` reports `db: up` against a database with **no
+tables at all** — it proves the connection, not the schema. Do not read a green health check
+as "the restore worked"; assert the row counts, as the procedure below does.
+
 ### Still outstanding
 
-- **The restore has not been rehearsed end to end** — [OPS-04] covers doing it properly and
-  writing down how long it takes and how much data a nightly schedule loses (up to ~24h).
+- **The rehearsal is not yet repeatable on its own** — [OPS-04] asks for a documented,
+  re-runnable procedure rather than a one-off. The commands are below; automating them is
+  the remaining half.
 - **A failed backup is only visible in the journal.** `last-run.json` gives something
   machine-readable to build on, but nothing yet reads it. [OPS-03] carries the alerting
   decision; with no mail infrastructure until M14, a dead-man's-switch that expects a daily

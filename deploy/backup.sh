@@ -158,10 +158,24 @@ for db in "${DATABASES[@]}"; do
 
   if [ "${TODAY}" = "${MONTHLY_ON_DAY}" ]; then
     monthly_key="${S3_BUCKET}/monthly/${db}/${db}-${MONTH}.dump"
-    # Server-side copy of the object just uploaded: same bytes, no second
-    # transfer, and it cannot exist unless the nightly upload succeeded.
-    if s3 cp "${nightly_key}" "${monthly_key}"; then
-      s3 cp "${nightly_key}.sha256" "${monthly_key}.sha256" >/dev/null 2>&1 || true
+    # A second upload, deliberately, rather than a server-side copy.
+    #
+    # `s3cmd cp` looked like the elegant choice — same bytes, no second transfer.
+    # Against DreamObjects it **creates the object and then fails**: it signs a
+    # follow-up request with a V2 signature, the endpoint rejects it with
+    # `400 InvalidRequest`, and the command exits 1 having actually succeeded.
+    # Verified on the box: the copy was there, readable, and pg_restore listed it
+    # happily, while the run was reported as failed.
+    #
+    # An operation that reports failure while working is worse than one that
+    # plainly does not work, because it teaches you to ignore the error. The
+    # dumps are small, so a second transfer is a cheap price for an exit code
+    # that means what it says.
+    #
+    # This still cannot run unless the nightly upload above succeeded — the
+    # control flow, not the copy source, is what guarantees that.
+    if s3 put "${out}" "${monthly_key}"; then
+      s3 put "${out}.sha256" "${monthly_key}.sha256" >/dev/null 2>&1 || true
       log "     kept as monthly/${db}/${db}-${MONTH}.dump"
     else
       log "FAIL ${db} — monthly copy failed"
