@@ -15,7 +15,7 @@ import {
   phaseAt,
   type RouteLeg,
   shiftFrom,
-  trackFraction,
+  legIndexAt,
   truncateAt,
   windowIndexAt,
 } from './timeline';
@@ -31,6 +31,7 @@ function longHaul(overrides: Partial<FlightPlan> = {}): FlightPlan {
     destinationIcao: 'KJFK',
     distanceNm: 3157,
     cruiseSpeedKt: 480,
+    cruiseAltitudeFt: 35_000,
     createdAt: CREATED,
     scheduledDeparture: OFF_BLOCKS,
     turnaroundMinutes: DEFAULT_TURNAROUND_MINUTES,
@@ -301,30 +302,16 @@ describe('estimatedArrival', () => {
   });
 });
 
-describe('trackFraction', () => {
+describe('legIndexAt', () => {
   const { leg } = buildTimeline(longHaul(), PROFILE);
-  const legs: RouteLeg[] = [leg];
 
-  it('is null while the aircraft is still on the ground', () => {
-    expect(trackFraction(legs, CREATED)).toBeNull();
+  it('is -1 while the aircraft is still on the ground', () => {
+    expect(legIndexAt([leg], CREATED)).toBe(-1);
   });
 
-  it('is zero at the start of the takeoff roll and one at touchdown', () => {
-    expect(trackFraction(legs, leg.startedAt)?.fraction).toBe(0);
-    expect(trackFraction(legs, leg.endsAt)?.fraction).toBe(1);
-  });
-
-  it('stays at one after the flight has landed', () => {
-    expect(trackFraction(legs, addMinutes(leg.endsAt, 500))?.fraction).toBe(1);
-  });
-
-  it('scales by how much of the track the leg actually covered', () => {
-    // A leg cut short by a diversion covers only part of its own track, so being
-    // halfway through its time means halfway to where it turned — not halfway
-    // to the airport it never reached.
-    const cut: RouteLeg = { ...leg, flownFraction: 0.4 };
-    const midpoint = new Date((cut.startedAt.getTime() + cut.endsAt.getTime()) / 2);
-    expect(trackFraction([cut], midpoint)?.fraction).toBeCloseTo(0.2, 10);
+  it('finds the leg from the moment the takeoff roll begins', () => {
+    expect(legIndexAt([leg], leg.startedAt)).toBe(0);
+    expect(legIndexAt([leg], addMinutes(leg.endsAt, 500))).toBe(0);
   });
 
   it('reports the latest leg once a replan has started one', () => {
@@ -336,13 +323,12 @@ describe('trackFraction', () => {
       endsAt: addMinutes(leg.startedAt, 120),
       flownFraction: 1,
     };
-    const found = trackFraction([{ ...leg, endsAt: second.startedAt }, second], second.endsAt);
-    expect(found?.leg.toIcao).toBe('EGLL');
-    expect(found?.fraction).toBe(1);
+    const legs = [{ ...leg, endsAt: second.startedAt, flownFraction: 0.2 }, second];
+    expect(legIndexAt(legs, addMinutes(leg.startedAt, 30))).toBe(0);
+    expect(legIndexAt(legs, second.endsAt)).toBe(1);
   });
 
-  it('treats a zero-length leg as flown out rather than dividing by zero', () => {
-    const instant: RouteLeg = { ...leg, endsAt: leg.startedAt };
-    expect(trackFraction([instant], leg.startedAt)?.fraction).toBe(1);
+  it('is -1 for an empty leg list, which is what a cancelled flight has', () => {
+    expect(legIndexAt([], CREATED)).toBe(-1);
   });
 });

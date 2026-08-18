@@ -78,6 +78,13 @@ jobs:
         # Coverage thresholds are enforced for packages/sim (M0-04).
         run: pnpm test:coverage
 
+      - name: Performance budget
+        # Deliberately a separate, uninstrumented run. M1-08's budget is "5,000
+        # flights interpolated in under 16ms", and V8 coverage costs about 5x on
+        # that code path — measuring it under instrumentation would be measuring
+        # the instrumentation. Only the sim project runs, so this costs seconds.
+        run: pnpm test:perf
+
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v7
