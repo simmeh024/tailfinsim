@@ -428,6 +428,30 @@ export const airport = pgTable(
 
     classifiedAt: timestamp('classified_at', { withTimezone: true }),
 
+    /**
+     * Catchment (M1-03) — the four numbers App. A.2's gravity model consumes.
+     *
+     * `D_base = k · (Pop_o · Wealth_o · Pop_d · Wealth_d)^α · f(distance) · Affinity_od`
+     *
+     * Population is people, already split between the airports of a multi-airport
+     * city so a metro is not counted twice. The three indices are **normalised
+     * multipliers with a world median of 1.0**, not raw quantities: A.2 multiplies
+     * them, so a value is only meaningful relative to everywhere else. Storing raw
+     * GDP per capita would make the same formula produce wildly different numbers
+     * the moment the source changed units.
+     *
+     * NULL only where an airport has no scheduled service — the same rule as
+     * `tier`, for the same reason: no service, no demand pool to size.
+     */
+    catchmentPopulation: bigint('catchment_population', { mode: 'number' }),
+    wealthIndex: numeric('wealth_index', { precision: 6, scale: 4 }),
+    tourismIndex: numeric('tourism_index', { precision: 6, scale: 4 }),
+    businessIndex: numeric('business_index', { precision: 6, scale: 4 }),
+
+    /** How the four numbers were arrived at, as JSON. Same audit contract as `tier_basis`. */
+    catchmentBasis: text('catchment_basis'),
+    catchmentAt: timestamp('catchment_at', { withTimezone: true }),
+
     importedAt: timestamp('imported_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -467,6 +491,21 @@ export const airport = pgTable(
       sql`${t.slotLevel} IS NULL OR (${t.slotLevel} >= 1 AND ${t.slotLevel} <= 3)`,
     ),
     index('airport_tier_idx').on(t.tier),
+    check(
+      'airport_catchment_population_nonneg',
+      sql`${t.catchmentPopulation} IS NULL OR ${t.catchmentPopulation} >= 0`,
+    ),
+    // Indices are multipliers around 1.0. A zero would silently annihilate a
+    // whole city pair's demand, and a negative one is meaningless.
+    check('airport_wealth_index_positive', sql`${t.wealthIndex} IS NULL OR ${t.wealthIndex} > 0`),
+    check(
+      'airport_tourism_index_positive',
+      sql`${t.tourismIndex} IS NULL OR ${t.tourismIndex} > 0`,
+    ),
+    check(
+      'airport_business_index_positive',
+      sql`${t.businessIndex} IS NULL OR ${t.businessIndex} > 0`,
+    ),
   ],
 );
 
