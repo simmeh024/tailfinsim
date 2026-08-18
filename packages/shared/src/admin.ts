@@ -80,3 +80,48 @@ export const AdminListResponse = z.object({
   admins: z.array(AdminGrantSummary),
 });
 export type AdminListResponse = z.infer<typeof AdminListResponse>;
+
+/**
+ * A world as the console lists it (M1A-02).
+ *
+ * Carries the derived in-game date alongside the stored fields, because the
+ * question an admin actually has about a world is what day it is in there — and
+ * that is computed from `epoch`, `launchDate` and `speedMultiplier` rather than
+ * stored (ADR-0005). Computing it on the server rather than in the browser keeps
+ * §21's rule intact: a viewer with a skewed clock must not disagree about what
+ * day it is.
+ */
+export const AdminWorldSummary = z.object({
+  id: Uuid,
+  name: z.string().min(1),
+  epoch: Timestamp,
+  launchDate: Timestamp,
+  speedMultiplier: z.number().positive(),
+  status: z.enum(['staging', 'open', 'locked', 'archived']),
+  aircraftCatalogueVersion: z.string().min(1),
+  economyConfigVersion: z.string().min(1),
+  playerCap: z.number().int().positive().nullable(),
+  createdAt: Timestamp,
+  /** The world's current in-game date, derived on the server. */
+  inGameDate: Timestamp,
+});
+export type AdminWorldSummary = z.infer<typeof AdminWorldSummary>;
+
+/** `GET /api/admin/worlds`. */
+export const AdminWorldListResponse = z.object({
+  worlds: z.array(AdminWorldSummary),
+});
+export type AdminWorldListResponse = z.infer<typeof AdminWorldListResponse>;
+
+/**
+ * `POST /api/admin/worlds`.
+ *
+ * Deliberately has no `status` field. A world always starts in `staging`, and
+ * opening one is a separate, deliberate act (M1A-04) — so there is no shape in
+ * which the request can ask for an open world, rather than a rule saying it
+ * must not.
+ */
+export const AdminCreateWorldResponse = z.object({
+  world: AdminWorldSummary,
+});
+export type AdminCreateWorldResponse = z.infer<typeof AdminCreateWorldResponse>;

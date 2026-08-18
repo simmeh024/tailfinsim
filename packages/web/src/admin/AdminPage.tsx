@@ -6,6 +6,7 @@ import type { AdminAuditEntry, AdminGrantSummary } from '@tailfin/shared';
 import { useSession } from '../auth/SessionProvider';
 
 import { fetchAdminAudit, fetchAdmins } from './api';
+import { WorldsPanel } from './WorldsPanel';
 
 import type { ReactNode } from 'react';
 
@@ -121,6 +122,8 @@ export function AdminPage(): ReactNode {
         </Link>
       </header>
 
+      <WorldsPanel />
+
       <section className="admin__section">
         <h2 className="admin__heading">Administrators</h2>
         {admins.state === 'loading' && <p className="admin__note">Loading…</p>}
@@ -187,15 +190,14 @@ export function AdminPage(): ReactNode {
       <section className="admin__section">
         <h2 className="admin__heading">Not built yet</h2>
         <ul className="admin__todo">
-          <li>Create a world from config — M1A-02</li>
-          <li>Set and change the speed multiplier — M1A-03</li>
+          <li>Change the speed multiplier of a running world — M1A-03</li>
           <li>Open, lock, archive and reset a world — M1A-04</li>
           <li>Browse players and airlines — M1A-05</li>
           <li>World health and statistics — M1A-06</li>
         </ul>
         <p className="admin__note">
-          Worlds are created and reset from the command line until M1A-02 and M1A-04 land:{' '}
-          <code className="admin__action">pnpm world:seed</code>.
+          Worlds are reset from the command line until M1A-04 lands:{' '}
+          <code className="admin__action">pnpm world:seed --reset</code>.
         </p>
       </section>
     </section>
