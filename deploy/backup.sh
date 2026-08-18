@@ -19,9 +19,10 @@
 #   nightly/<db>/<db>-<stamp>.dump        the last KEEP_NIGHTLY runs
 #   monthly/<db>/<db>-<YYYY-MM>.dump      one per month, kept KEEP_MONTHLY months
 #
-# The monthly copy is a server-side copy of that night's object rather than a
-# second upload: same bytes, no second transfer, and it cannot exist unless the
-# nightly upload it came from succeeded.
+# The monthly copy is a second upload of the same dump rather than a server-side
+# copy — `s3cmd cp` against DreamObjects creates the object and then fails. It
+# still cannot exist unless the nightly upload succeeded; the control flow is what
+# guarantees that.
 #
 # Retention is enforced here rather than by bucket lifecycle rules, because a
 # rule that silently stops applying looks exactly like one that is working.
@@ -67,6 +68,9 @@ STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 MONTH="$(date -u +%Y-%m)"
 TODAY="$(date -u +%d)"
 STATUS_FILE="${BACKUP_DIR}/last-run.json"
+# Readable by the application, so the admin console can surface a failed or
+# overdue backup (M1A-07). Contains nothing secret.
+PUBLIC_STATUS_FILE="${PUBLIC_STATUS_FILE:-/var/lib/tailfin/backup-status.json}"
 
 log() { printf '%s  %s\n' "$(date -Is)" "$*"; }
 
@@ -197,11 +201,31 @@ find "${BACKUP_DIR}" -maxdepth 1 -name '*.sha256' -mtime "+${RETAIN_DAYS}" -dele
 
 log "backup dir now $(du -sh "${BACKUP_DIR}" | cut -f1) across $(find "${BACKUP_DIR}" -name '*.dump' | wc -l) dump(s); ${uploaded} uploaded"
 
-# A machine-readable record of the last run, so something other than a human
-# reading the journal can notice a backup that stopped happening (OPS-02).
-printf '{"finishedAt":"%s","result":"%s","uploaded":%d,"databases":"%s"}\n' \
-  "$(date -Is)" "$([ "${failed}" -eq 0 ] && echo ok || echo failed)" \
-  "${uploaded}" "${SUMMARY[*]:-none}" >"${STATUS_FILE}"
+# A machine-readable record of the last run, written twice on purpose.
+#
+# `${BACKUP_DIR}` is postgres-only (mode 700), which is right for the dumps and
+# useless for anything else that wants to know. The second copy goes somewhere
+# the application can read, so the admin console can show a failed or overdue
+# backup instead of it living only in the journal (M1A-07).
+#
+# A file rather than a row in the database, because the thing it most needs to be
+# able to report is that the **database was unreachable** — which a row in that
+# database cannot do.
+status_json="$(
+  printf '{"finishedAt":"%s","result":"%s","uploaded":%d,"databases":"%s"}' \
+    "$(date -Is)" "$([ "${failed}" -eq 0 ] && echo ok || echo failed)" \
+    "${uploaded}" "${SUMMARY[*]:-none}"
+)"
+printf '%s\n' "${status_json}" >"${STATUS_FILE}"
+
+if [ -d "$(dirname "${PUBLIC_STATUS_FILE}")" ]; then
+  # World-readable, and it says nothing secret: a timestamp, ok or failed, a
+  # count, and which databases were involved.
+  printf '%s\n' "${status_json}" >"${PUBLIC_STATUS_FILE}"
+  chmod 0644 "${PUBLIC_STATUS_FILE}" 2>/dev/null || true
+else
+  log "note: $(dirname "${PUBLIC_STATUS_FILE}") does not exist — the console cannot see this result"
+fi
 
 if [ "${failed}" -ne 0 ]; then
   log "one or more backups FAILED"
