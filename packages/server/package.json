@@ -18,7 +18,8 @@
     "db:check": "drizzle-kit check",
     "data:airports": "node dist/import-airports.js",
     "data:classify": "node dist/classify-airports.js",
-    "data:catchment": "node dist/derive-catchment.js"
+    "data:catchment": "node dist/derive-catchment.js",
+    "data:distances": "node dist/build-distance-matrix.js"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
