@@ -24,5 +24,6 @@ export function inGameDate(
 ): Date {
   return new Date(Date.parse(epochIso) + speed * realElapsedMs);
 }
+export * from './clock';
 
 export * from './distance';

@@ -449,6 +449,16 @@ export const airport = pgTable(
     businessIndex: numeric('business_index', { precision: 6, scale: 4 }),
 
     /** How the four numbers were arrived at, as JSON. Same audit contract as `tier_basis`. */
+    /**
+     * Proximity connection boost — a multiplier on usage, 1.0 for an isolated
+     * airport and up to ~1.24 for one with several neighbours within 15 km.
+     *
+     * Clamped so a boosted airport can never overtake the tier above it: a
+     * regional field beside two medium airports is a better regional field, not
+     * a medium airport. See data/catchment/connectivity.ts.
+     */
+    connectivityIndex: numeric('connectivity_index', { precision: 6, scale: 4 }),
+
     catchmentBasis: text('catchment_basis'),
     catchmentAt: timestamp('catchment_at', { withTimezone: true }),
 
@@ -506,6 +516,12 @@ export const airport = pgTable(
       'airport_business_index_positive',
       sql`${t.businessIndex} IS NULL OR ${t.businessIndex} > 0`,
     ),
+    // Never below 1: the boost only ever helps, and a value under 1 would mean a
+    // well-connected airport had been penalised for it.
+    check(
+      'airport_connectivity_index_range',
+      sql`${t.connectivityIndex} IS NULL OR (${t.connectivityIndex} >= 1 AND ${t.connectivityIndex} <= 4)`,
+    ),
   ],
 );
 
@@ -557,6 +573,76 @@ export const runway = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// world_event — the scheduled event queue (M1-06, §21)
+// ---------------------------------------------------------------------------
+
+/** The transitions the tick loop drives. More arrive with M2. */
+export const worldEventType = pgEnum('world_event_type', [
+  'FLIGHT_DEPART',
+  'FLIGHT_ARRIVE',
+  'TURNAROUND_COMPLETE',
+]);
+
+export const worldEventStatus = pgEnum('world_event_status', ['pending', 'done', 'failed']);
+
+/**
+ * Scheduled events, in **game time**.
+ *
+ * §21: flight positions are computed rather than stored per tick, and discrete
+ * transitions are driven by this queue rather than by polling every aircraft.
+ * Polling 10,000 aircraft once a second to ask "have you landed yet" is the
+ * design this exists to avoid.
+ *
+ * `fire_at` is a game-time instant, not a real one. That is what lets an event
+ * survive a speed change or an admin reset with its meaning intact: "this flight
+ * lands at 14:05 on 3 November in world time" stays true however the world's
+ * clock is running. Converting to a real instant is `realTimeAtGameTime`'s job,
+ * done at drain time.
+ */
+export const worldEvent = pgTable(
+  'world_event',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+
+    type: worldEventType('type').notNull(),
+    /** Game-time instant this event becomes due. */
+    fireAt: timestamp('fire_at', { withTimezone: true }).notNull(),
+    payload: text('payload').notNull(),
+
+    /**
+     * The exactly-once guarantee.
+     *
+     * Unique per world, so scheduling the same logical event twice — after a
+     * restart, a retry, or two workers racing — is refused by the database rather
+     * than by application logic that has to be right every time. The acceptance
+     * criterion asks for an idempotency key per event; this is it.
+     */
+    idempotencyKey: text('idempotency_key').notNull(),
+
+    status: worldEventStatus('status').notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    lastError: text('last_error'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    processedAt: timestamp('processed_at', { withTimezone: true }),
+  },
+  (t) => [
+    unique('world_event_world_id_idempotency_key').on(t.worldId, t.idempotencyKey),
+    // The drain query is "pending events for this world at or before now, in
+    // game-time order". This index is that query.
+    index('world_event_due_idx').on(t.worldId, t.status, t.fireAt),
+    check('world_event_attempts_nonneg', sql`${t.attempts} >= 0`),
+    check(
+      'world_event_processed_when_finished',
+      sql`(${t.status} = 'pending') = (${t.processedAt} IS NULL)`,
+    ),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Inferred types. `packages/shared` gets the zod schemas in M0-07; these are
 // the database's own row shapes.
 // ---------------------------------------------------------------------------
@@ -584,6 +670,9 @@ export type NewDatasetVersionRow = typeof datasetVersion.$inferInsert;
 
 export type AirportRow = typeof airport.$inferSelect;
 export type NewAirportRow = typeof airport.$inferInsert;
+
+export type WorldEventRow = typeof worldEvent.$inferSelect;
+export type NewWorldEventRow = typeof worldEvent.$inferInsert;
 
 export type RunwayRow = typeof runway.$inferSelect;
 export type NewRunwayRow = typeof runway.$inferInsert;
