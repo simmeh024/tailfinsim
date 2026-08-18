@@ -825,7 +825,7 @@ body {
 }
 
 .admin__action {
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-figures);
   font-size: 0.95em;
 }
 
@@ -864,8 +864,8 @@ body {
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--text);
+  background: var(--bg-panel);
+  color: var(--text-primary);
   font: inherit;
   font-size: var(--text-sm);
 }
@@ -894,7 +894,7 @@ body {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--text);
+  color: var(--text-primary);
   font: inherit;
   font-size: var(--text-sm);
   cursor: pointer;
@@ -935,12 +935,12 @@ body {
 .console__bar {
   display: flex;
   align-items: center;
-  gap: var(--space-5);
-  padding: 0 var(--space-5);
+  gap: var(--space-4);
+  padding: 0 var(--space-4);
   height: 3rem;
   flex: none;
   border-bottom: 1px solid var(--border-subtle);
-  background: var(--surface-raised, var(--surface));
+  background: var(--bg-raised);
 }
 
 /* The mark. Weight and letter-spacing rather than a colour, so it reads as an
@@ -949,7 +949,7 @@ body {
   font-size: var(--text-sm);
   font-weight: 600;
   letter-spacing: 0.02em;
-  color: var(--text);
+  color: var(--text-primary);
   white-space: nowrap;
 }
 
@@ -980,11 +980,11 @@ body {
 
 .console__link:hover,
 .console__link:focus-visible {
-  color: var(--text);
+  color: var(--text-primary);
 }
 
 .console__link--active {
-  color: var(--text);
+  color: var(--text-primary);
   border-bottom-color: var(--accent);
 }
 
@@ -1005,7 +1005,7 @@ body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--space-5);
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
@@ -1069,7 +1069,7 @@ body {
   padding: var(--space-2) var(--space-3);
   border-left: 3px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--bg-panel);
 }
 
 .alert--error {

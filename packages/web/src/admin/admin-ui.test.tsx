@@ -193,6 +193,7 @@ describe('the console shell', () => {
     expect(nav).toBeInTheDocument();
     expect(within(nav).getByRole('link', { name: 'Overview' })).toBeInTheDocument();
     expect(within(nav).getByRole('link', { name: 'Worlds' })).toBeInTheDocument();
+    expect(within(nav).getByRole('link', { name: 'Audit log' })).toBeInTheDocument();
   });
 
   it('marks the section you are actually in', async () => {
@@ -289,10 +290,10 @@ describe('the overview', () => {
   });
 });
 
-describe('the worlds page', () => {
+describe('the audit log page', () => {
   it('carries the audit log, next to the control that writes to it', async () => {
     stubApi(ADMIN);
-    renderAt('/admin/worlds');
+    renderAt('/admin/audit');
 
     expect(await screen.findByRole('heading', { name: /audit log/i })).toBeInTheDocument();
     expect(await screen.findByText('admin.granted')).toBeInTheDocument();
@@ -301,7 +302,7 @@ describe('the worlds page', () => {
 
   it('says the log cannot be edited, because that is the point of it', async () => {
     stubApi(ADMIN);
-    renderAt('/admin/worlds');
+    renderAt('/admin/audit');
     expect(await screen.findByText(/append-only/i)).toBeInTheDocument();
   });
 
@@ -314,5 +315,31 @@ describe('the worlds page', () => {
     expect(await screen.findByText(/not built yet/i)).toBeInTheDocument();
     expect(screen.getByText(/Open, lock, archive and reset a world/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /reset/i })).toBeNull();
+  });
+});
+
+describe('the audit log has its own section', () => {
+  it('is reachable from the nav and is not on the Worlds page', async () => {
+    // It records every admin action, not only the ones about worlds, so burying
+    // it under one section's controls understated what it is.
+    stubApi(ADMIN);
+    renderAt('/admin/worlds');
+
+    await screen.findByRole('heading', { name: /^worlds$/i });
+    expect(screen.queryByRole('heading', { name: /audit log/i })).toBeNull();
+
+    const nav = await screen.findByRole('navigation', { name: /admin sections/i });
+    within(nav).getByRole('link', { name: 'Audit log' }).click();
+
+    expect(await screen.findByRole('heading', { name: /audit log/i })).toBeInTheDocument();
+  });
+
+  it('says the log cannot be edited by anyone, including its author', async () => {
+    stubApi(ADMIN);
+    renderAt('/admin/audit');
+
+    const note = await screen.findByText(/append-only/i);
+    expect(note).toHaveTextContent(/UPDATE, DELETE and TRUNCATE/);
+    expect(note).toHaveTextContent(/including by whoever wrote it/i);
   });
 });

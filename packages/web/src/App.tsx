@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router';
 
 import { AdminLayout } from './admin/AdminLayout';
+import { AuditPage } from './admin/AuditPage';
 import { OverviewPage } from './admin/OverviewPage';
 import { WorldsPage } from './admin/WorldsPage';
 import { RequireSession } from './auth/RequireSession';
@@ -73,6 +74,7 @@ export function App(): ReactNode {
               <Route path="admin" element={<AdminLayout />}>
                 <Route index element={<OverviewPage />} />
                 <Route path="worlds" element={<WorldsPage />} />
+                <Route path="audit" element={<AuditPage />} />
               </Route>
               <Route
                 path="*"
