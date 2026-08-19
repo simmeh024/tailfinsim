@@ -127,3 +127,22 @@ jobs:
           # Posts the advisory table as a PR comment when, and only when, the
           # check fails. A passing PR gets no comment and no annotation.
           comment-summary-in-pr: on-failure
+
+          # Off. It defaults to **on**, and the canary in #315 is what surfaced
+          # that: the failure comment arrived carrying a Scorecard table for
+          # `minimist` — twelve rows of maintenance, review and packaging scores,
+          # none of which had anything to do with why the check failed.
+          #
+          # It is not a gate, only a display, which is exactly the problem. The
+          # reviewer's question at that moment is "what advisory, how bad, what
+          # do I do" and every extra row is something to read past first. Whether
+          # Tailfin wants a supply-chain health signal at all is SEC-HARD-32's
+          # question, and the answer would not belong in a merge blocker's
+          # failure message either way.
+          show-openssf-scorecard: false
+
+          # On. Adds the first patched version to the table, which turns the
+          # failure from a diagnosis into an instruction: the reviewer sees
+          # `1.2.5 → fixed in 1.2.6` and knows the upgrade without going to the
+          # advisory page to find it.
+          show-patched-versions: true
