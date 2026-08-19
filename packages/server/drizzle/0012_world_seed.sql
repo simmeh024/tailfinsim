@@ -1,0 +1,1 @@
+ALTER TABLE "world" ADD COLUMN "seed" text DEFAULT gen_random_uuid()::text NOT NULL;
