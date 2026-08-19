@@ -66,16 +66,62 @@ Node version is pinned in `.nvmrc`; pnpm version in `package.json`'s `packageMan
 
 ### Commands
 
-| Command              | What it does                                     |
-| -------------------- | ------------------------------------------------ |
-| `pnpm typecheck`     | `tsc -b` across all project references           |
-| `pnpm lint`          | ESLint, including the architectural guards above |
-| `pnpm format`        | Prettier write                                   |
-| `pnpm test`          | Vitest across all packages                       |
-| `pnpm test:coverage` | Adds coverage; thresholds enforced for `sim`     |
-| `pnpm clean`         | Removes build info and emitted declarations      |
+| Command              | What it does                                      |
+| -------------------- | ------------------------------------------------- |
+| `pnpm typecheck`     | `tsc -b` across all project references            |
+| `pnpm lint`          | ESLint, including the architectural guards above  |
+| `pnpm lint:fix`      | The same, applying what it can fix                |
+| `pnpm format`        | Prettier write                                    |
+| `pnpm format:check`  | Prettier check — this is the one CI runs          |
+| `pnpm test`          | Vitest across all packages                        |
+| `pnpm test:coverage` | Adds coverage; thresholds enforced for `sim`      |
+| `pnpm test:perf`     | Only the budgeted benchmarks, uninstrumented      |
+| `pnpm ops:status`    | What is deployed where, over public HTTP (OPS-02) |
+| `pnpm clean`         | Removes build info and emitted declarations       |
 
-CI runs typecheck, lint, format check and coverage on every PR.
+CI runs typecheck, lint, format check and coverage on every PR, plus the dependency and
+code scanning described under [Dependencies](#dependencies) below.
+
+**`pnpm test:perf` is a separate, uninstrumented run on purpose.** V8 coverage costs about
+5× on the code paths that carry a budget, so measuring them under it would be measuring
+the instrumentation. The budgets themselves are asserted twice — a loose bound that is
+always on, catching an accidental O(n²) in any mode, and the real one only when coverage
+is off.
+
+> **Performance budgets are stated for the server, not for your laptop.** The production
+> box is a 2-core Xeon E5-2620 v4, roughly five times slower than a development machine.
+> A benchmark that passes here with less than 5× headroom has not been shown to pass
+> there — measure it on the box before believing it.
+
+### The server suite runs one file at a time
+
+`vitest.config.ts` sets `fileParallelism: false` for the `server` project only. It is a
+correctness setting, not a tuning one: those tests share a single database, and several
+of them do table-wide work — the OurAirports importer's `--prune` deletes every airport
+whose source id is absent from the incoming dataset, which is right for the importer and
+lethal for whatever else is mid-test. The other projects keep their parallelism; they
+share nothing.
+
+### One-off jobs
+
+Everything below runs from `packages/server` and needs the package **built** first
+(`pnpm build:apps`), because each is a bundled entry point rather than a source file —
+`tsc` is the typechecker here, not the compiler (ADR-0001).
+
+| Command                | What it does                                              |
+| ---------------------- | --------------------------------------------------------- |
+| `pnpm data:airports`   | Import the OurAirports dataset (M1-01)                    |
+| `pnpm data:classify`   | Assign tiers over the imported set (M1-02)                |
+| `pnpm data:catchment`  | Derive catchment population and the three indices (M1-03) |
+| `pnpm data:distances`  | Pack the great-circle distance matrix (M1-04)             |
+| `pnpm world:seed`      | Create the flagship world from config (M1-09)             |
+| `pnpm demand:generate` | Size every viable city pair's demand pool (M3-01)         |
+| `pnpm admin`           | Grant and revoke admin from a shell (M1A-01)              |
+
+They run in that order for a new world: the demand model reads the catchment the importer
+derived, and the catchment needs the airports. `demand:generate` is the only one that is
+safe and sometimes necessary to re-run — the gravity coefficients are balance numbers, and
+retuning them means `--regenerate`.
 
 ### Local database
 

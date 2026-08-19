@@ -219,6 +219,46 @@ sudo -u tailfin bash -c 'cd /srv/tailfin && ./deploy/deploy.sh'
 curl -si https://tailfinsim.com/healthz
 ```
 
+## 10. Populating a new box
+
+A deploy migrates the schema and starts the service. It does **not** load any data — a
+freshly deployed box has an empty database and a running server that can serve a holding
+page and nothing else.
+
+Each job below is a bundled entry point under `packages/server/dist`, so the deploy above
+has to have run first. **The order matters**: each reads what the previous one wrote.
+
+```bash
+cd /srv/tailfin/packages/server
+
+sudo -u tailfin pnpm data:airports    # ~86,000 aerodromes from OurAirports (M1-01)
+sudo -u tailfin pnpm data:classify    # tiers over the ~4,400 with scheduled service (M1-02)
+sudo -u tailfin pnpm data:catchment   # population and the wealth/tourism/business indices (M1-03)
+sudo -u tailfin pnpm data:distances   # the packed great-circle matrix (M1-04)
+sudo -u tailfin pnpm world:seed       # the flagship world from config (M1-09)
+sudo -u tailfin pnpm demand:generate <worldId>   # App. A.2's demand pools (M3-01)
+```
+
+The first four are global reference data and are shared by every world — geography does
+not vary, and era worlds filter this set by opening and closing date rather than owning a
+copy of it. Only `demand:generate` is per world, because the gravity coefficients are
+economy config and a world pins its version.
+
+`demand:generate` is also the only one worth re-running: retuning `k` or `α` means
+regenerating, and it takes `--regenerate` to clear first. Without that flag a re-run is a
+no-op, which is the safe default — changing a coefficient and re-running without clearing
+would leave a world holding a mixture of two economies.
+
+Grant yourself admin once there is a world and you have signed in at least once:
+
+```bash
+sudo -u tailfin pnpm admin list
+sudo -u tailfin pnpm admin grant --email you@example.com
+```
+
+The grant needs a `player` row, which only exists after that account has signed in through
+Google at least once — so sign in first, then grant.
+
 ---
 
 ## Operating notes

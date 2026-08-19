@@ -92,10 +92,24 @@ function buildAirports(count: number): DemandEndpoint[] {
 }
 
 describe('cost at world scale', () => {
-  it('generates every viable demand pool well inside five minutes', () => {
-    // 1,200 airports is ~719,000 pairs — enough to measure honestly, small
-    // enough to run in a test.
-    const sample = 1_200;
+  /**
+   * A generous timeout, because this is a benchmark on a shared runner.
+   *
+   * The first version used vitest's default five seconds and measured 719,000
+   * pairs across four sweeps. That took 4.2 s on one CI run and 5.6 s on the
+   * next, so it began failing unrelated pull requests — a benchmark that flakes
+   * is worse than no benchmark, because it trains people to re-run CI without
+   * reading it.
+   *
+   * Fixed at both ends: a smaller sample, and a timeout that is not a budget.
+   * The *measurement* is per pair and extrapolated, so a smaller sample costs a
+   * little precision and nothing else — while the five-minute budget being
+   * asserted has nothing to do with how long this test may take to run.
+   */
+  it('generates every viable demand pool well inside five minutes', { timeout: 60_000 }, () => {
+    // 700 airports is ~245,000 pairs. Large enough that the per-pair figure is
+    // stable, small enough that four sweeps take well under a second.
+    const sample = 700;
     const airports = buildAirports(sample) as (DemandEndpoint & {
       latitude: number;
       longitude: number;
