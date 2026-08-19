@@ -59,6 +59,33 @@ NEXT="$(git rev-parse "${TARGET}")"
 echo "current: ${PREVIOUS}"
 echo "target:  ${NEXT}  (${TARGET})"
 
+# ---------------------------------------------------------------------------
+# Production runs code that is on main. Nothing else. (OPS-01)
+#
+# `origin/main` being the default was never a restriction — `git rev-parse`
+# resolves a feature branch, a tag, or a dangling SHA just as happily, so
+# `./deploy.sh origin/feat/anything` would have put it on the front door. The
+# documentation claimed this was already prevented. It was not.
+#
+# `--is-ancestor` and not `= origin/main`, because **rollback has to keep
+# working**: an older commit that is on main is still on main, and rolling back
+# is exactly when you least want the tooling to argue. A commit is its own
+# ancestor, so deploying the tip passes too.
+#
+# Dev sets ALLOW_UNMERGED_REF=1, which is the whole point of dev — see
+# deploy-dev.sh. Setting it by hand for production defeats this deliberately,
+# and if you are doing that you should know you are doing it.
+# ---------------------------------------------------------------------------
+if [ "${ALLOW_UNMERGED_REF:-0}" != '1' ]; then
+  if ! git merge-base --is-ancestor "${NEXT}" origin/main; then
+    printf '\n\033[31mREFUSED: %s\033[0m\n' "${NEXT} (${TARGET}) is not on main" >&2
+    echo "  Production only runs commits that have been merged to main." >&2
+    echo "  Rolling back? An older commit on main is fine — this refuses only what is not on it." >&2
+    echo "  Looking at a branch? That is what dev is for: ./deploy/deploy-dev.sh ${TARGET}" >&2
+    exit 1
+  fi
+fi
+
 # Skip only when there is genuinely nothing to do: same commit AND the service
 # is actually up. Without the service check this exits early on a first-ever
 # deploy (checkout already at origin/main, nothing built, nothing running) and

@@ -435,7 +435,11 @@ Dev takes any ref, which is the point of it:
 ./deploy/deploy-dev.sh origin/main
 ```
 
-Production only ever gets `origin/main` or an explicit older SHA for rollback.
+Production takes `origin/main` by default, and **refuses any commit that is not on main** —
+`deploy.sh` checks `git merge-base --is-ancestor` before it touches the checkout (OPS-01).
+Rolling back to an older commit still works, because an older commit on main is still on
+main. Dev is exempt: `deploy-dev.sh` sets `ALLOW_UNMERGED_REF=1`, which is the whole point
+of dev.
 
 ### What guards dev
 
