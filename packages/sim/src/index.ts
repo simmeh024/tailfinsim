@@ -31,3 +31,5 @@ export * from './distance';
 export * from './flight';
 
 export * from './route';
+
+export * from './aircraft';
