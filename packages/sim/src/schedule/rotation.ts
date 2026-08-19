@@ -109,6 +109,21 @@ export interface Rotation {
    * not a rule this module owns.
    */
   crewLegal: boolean;
+  /**
+   * Where the assigned aircraft actually is, if it is known (M2-07).
+   *
+   * The rotation's legs already have to connect to each other; this is the one
+   * connection they cannot check among themselves — whether the *first* leg
+   * departs from where the aeroplane is standing. An aircraft in Amsterdam
+   * cannot begin a rotation at Heathrow, however well the rest of it closes.
+   *
+   * Optional because it is not always knowable: a rotation can be drafted before
+   * an aircraft is assigned, and M4-04's delivery is what first gives an airframe
+   * a place to be. Undefined means "not known", which is not the same as "fine" —
+   * it means this check does not run, and `@tailfin/sim`'s caller is the one that
+   * knows whether it should have.
+   */
+  aircraftAt?: string;
 }
 
 /**
@@ -217,6 +232,23 @@ export function validateRotation(rotation: Rotation): RotationCheck {
       ok: false,
       problem: 'no_repeat_days',
       detail: 'A rotation repeating on chosen weekdays needs at least one day chosen.',
+    };
+  }
+
+  // 2b. The aircraft is where the rotation starts (M2-07).
+  //
+  //     Before the leg walk, deliberately. A rotation whose aircraft is in the
+  //     wrong country is not improved by being told its third turnaround is two
+  //     minutes short — the same ordering argument the rest of these checks are
+  //     built on. And the fix is different in kind: every other problem here is
+  //     mended by editing the schedule, this one by flying the aeroplane there.
+  if (rotation.aircraftAt !== undefined && rotation.aircraftAt !== first.originIcao) {
+    return {
+      ok: false,
+      problem: 'not_positioned',
+      detail:
+        `The rotation starts at ${first.originIcao}, but the aircraft is at ` +
+        `${rotation.aircraftAt}. Ferry it to ${first.originIcao} first.`,
     };
   }
 

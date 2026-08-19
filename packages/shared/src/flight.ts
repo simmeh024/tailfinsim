@@ -62,6 +62,27 @@ export const FlightDisruption = z.enum([
 ]);
 export type FlightDisruption = z.infer<typeof FlightDisruption>;
 
+/**
+ * Why the aircraft is flying (M2-07).
+ *
+ * `scheduled` is a flight that exists to carry people and earn money. `ferry` is
+ * one that exists only to put the aircraft somewhere else: a delivery arriving
+ * from the factory, a base change, an aircraft stranded by a diversion, or the
+ * repositioning §18 charges for when an event pulls capacity across the network.
+ *
+ * A ferry carries **no passengers and no revenue, and every cost of a real
+ * flight** — fuel, crew, maintenance, landing and handling all fall due. That
+ * asymmetry is the whole point of the type: it is what makes a badly-planned
+ * network expensive rather than merely untidy, and it is why the type exists in
+ * the model rather than being expressed as "a scheduled flight nobody booked".
+ *
+ * §24's gap list names *"aircraft delivery positioning and ferry flights"* among
+ * the areas the design doc does not specify, so this is M2-07 deciding it rather
+ * than implementing a decision already taken.
+ */
+export const FlightKind = z.enum(['scheduled', 'ferry']);
+export type FlightKind = z.infer<typeof FlightKind>;
+
 /** Per-class seats sold and revenue. Partial: a flight has only the classes its cabin has. */
 export const FlightLoad = z.partialRecord(
   CabinClass,
@@ -93,6 +114,7 @@ export const Flight = z.object({
   /** Set only when diverted, and then it is where the aircraft actually went. */
   diversionIcao: AirportIcaoCode.nullable(),
 
+  kind: FlightKind,
   phase: FlightPhase,
   disruption: FlightDisruption.nullable(),
 

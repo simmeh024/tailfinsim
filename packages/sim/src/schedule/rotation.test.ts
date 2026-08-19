@@ -469,3 +469,54 @@ describe('legs that are not times', () => {
     ).toBe('turn_too_short');
   });
 });
+
+describe('where the aircraft actually is (M2-07)', () => {
+  it('accepts a rotation that starts where the aircraft is standing', () => {
+    expect(validateRotation(rotation({ aircraftAt: 'EHAM' })).ok).toBe(true);
+  });
+
+  it('refuses a rotation that starts somewhere the aircraft is not', () => {
+    // M2-07's acceptance criterion. The legs connect perfectly to each other and
+    // the rotation closes — it is only impossible because the aeroplane is in a
+    // different country.
+    const result = validateRotation(rotation({ aircraftAt: 'LFPG' }));
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.problem).toBe('not_positioned');
+  });
+
+  it('names both airports and the fix, because the fix is not an edit', () => {
+    // Every other problem here is mended by changing the schedule. This one is
+    // mended by flying the aeroplane, so the message has to say so.
+    const result = validateRotation(rotation({ aircraftAt: 'LFPG' }));
+
+    expect(result.ok === false && result.detail).toContain('LFPG');
+    expect(result.ok === false && result.detail).toContain('EHAM');
+    expect(result.ok === false && result.detail).toMatch(/[Ff]erry/);
+  });
+
+  it('does not run the check when the position is unknown', () => {
+    // A rotation can be drafted before an aircraft is assigned, and M4-04's
+    // delivery is what first gives an airframe a place to be. Undefined means
+    // "not known", which is not the same as "wrong".
+    expect(validateRotation(rotation({ aircraftAt: undefined })).ok).toBe(true);
+  });
+
+  it('is checked before the leg walk, so the message is the useful one', () => {
+    // A rotation with both a positioning problem and a short turn should report
+    // the position: fixing the turn would leave the player no better off.
+    const stranded = rotation({
+      aircraftAt: 'LFPG',
+      legs: [
+        leg({ originIcao: 'EHAM', destinationIcao: 'EGLL', departureMinute: 420 }),
+        // Departs before the aircraft could possibly be ready.
+        leg({ originIcao: 'EGLL', destinationIcao: 'EHAM', departureMinute: 520 }),
+      ],
+    });
+
+    const result = validateRotation(stranded);
+
+    expect(result.ok === false && result.problem).toBe('not_positioned');
+    expect(result.ok === false && result.detail).toContain('LFPG');
+  });
+});

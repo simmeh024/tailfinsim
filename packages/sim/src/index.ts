@@ -37,3 +37,5 @@ export * from './aircraft';
 export * from './schedule';
 
 export * from './economy';
+
+export * from './fleet';
