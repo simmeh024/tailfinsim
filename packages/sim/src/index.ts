@@ -33,3 +33,5 @@ export * from './flight';
 export * from './route';
 
 export * from './aircraft';
+
+export * from './schedule';
