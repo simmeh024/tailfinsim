@@ -36,6 +36,8 @@
  * M9 — none of them exist, so each arrives as a field rather than as a stub.
  */
 
+import { type EfficiencyBoost, stackEfficiencyBoosts, type StackedBoosts } from '../economy/boosts';
+
 /**
  * Where the aircraft parks.
  *
@@ -109,13 +111,10 @@ export interface GroundVendor {
  * One efficiency boost from §10.4 — a research node, an academy doctrine, a
  * Head of Ground Ops, a Training Captain.
  *
- * Each is a fraction of time removed, before stacking.
+ * The same shape used for fuel burn and block time (M2-05), so a research node
+ * is one type across the whole ladder rather than three that happen to match.
  */
-export interface TurnaroundBoost {
-  id: string;
-  /** 0.05 is five percent off. */
-  fraction: number;
-}
+export type TurnaroundBoost = EfficiencyBoost;
 
 export interface TurnaroundPlan {
   stand: StandType;
@@ -230,37 +229,21 @@ function round(value: number, places = 1): string {
 /**
  * How much time the stacked boosts actually remove.
  *
- * Combined **multiplicatively**, which is diminishing returns by construction:
- * two 10% boosts give 19%, not 20%. §10.4 asks for exactly that —
- * *"diminishing returns before the cap"* — and then for a hard ceiling, which is
- * the clamp.
+ * The rule — multiplicative stacking, then a hard ceiling — is shared with every
+ * other §10.4 boost and lives in {@link stackEfficiencyBoosts}. M2-05 needed the
+ * same thing twice more, for fuel burn and block time, and three copies would be
+ * three chances for one to drift past a ceiling the design doc calls
+ * non-negotiable.
  *
- * An asymptotic curve that approaches the cap without reaching it was the
- * obvious alternative and is worse: it charges the *first* boost most heavily,
- * so a player's first research node in the branch feels broken. Multiplicative
- * stacking keeps a lone boost worth its face value and only bites once several
- * are held, which is the behaviour the section describes.
+ * Kept as its own export because a caller here holds a `TurnaroundConfig` rather
+ * than a bare ceiling, and because the turnaround ceiling is this module's to own.
  */
 export function stackBoosts(
   boosts: readonly TurnaroundBoost[],
   config: TurnaroundConfig = DEFAULT_TURNAROUND,
-): { fraction: number; capped: boolean } {
+): StackedBoosts {
   assertNonNegative(config.maxBoostFraction, 'Maximum boost fraction');
-
-  let remaining = 1;
-  for (const boost of boosts) {
-    assertFinite(boost.fraction, `Boost ${boost.id}`);
-    if (boost.fraction < 0 || boost.fraction >= 1) {
-      throw new Error(
-        `Boost ${boost.id} must remove between 0% and 100% of the time, got ${String(boost.fraction)}`,
-      );
-    }
-    remaining *= 1 - boost.fraction;
-  }
-
-  const combined = 1 - remaining;
-  const capped = combined > config.maxBoostFraction;
-  return { fraction: capped ? config.maxBoostFraction : combined, capped };
+  return stackEfficiencyBoosts(boosts, config.maxBoostFraction);
 }
 
 /**
