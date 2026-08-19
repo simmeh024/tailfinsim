@@ -22,6 +22,7 @@ import { build } from 'esbuild';
  *   seed-world.js       creates the flagship world from config (M1-09)
  *   admin-cli.js        grants and revokes admin from a shell (M1A-01)
  *   ops-status.js       what is deployed where, over public HTTP (OPS-02)
+ *   generate-demand.js  App. A.2's demand pools for a world (M3-01)
  */
 await build({
   entryPoints: [
@@ -34,6 +35,7 @@ await build({
     'src/seed-world.ts',
     'src/admin-cli.ts',
     'src/ops-status.ts',
+    'src/generate-demand.ts',
   ],
   outdir: 'dist',
   bundle: true,
