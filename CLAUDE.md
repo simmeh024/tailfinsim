@@ -32,9 +32,11 @@ than safety. Reverse the edit you made, or commit before you break something on 
 helper, not "just to check it is set". Generate secrets on the box, write them to
 root-only files, and tell the user the command to read them.
 
-**`main` is protected.** Pull request required, `typecheck · lint · test` must pass, force
-pushes and deletions blocked, and it applies to admins. So: branch, push the branch, open a
-PR. A direct push to `main` will be rejected, and that is working as intended.
+**`main` is protected.** Pull request required, `typecheck · lint · test` and
+`dependency review` must pass, force pushes and deletions blocked, and it applies to
+admins. So: branch, push the branch, open a PR. A direct push to `main` will be rejected,
+and that is working as intended. Required approvals are set to **zero** — the PR is the
+gate, not a second person — so you can merge your own once the checks are green.
 
 ---
 
@@ -114,6 +116,45 @@ The four-node dev/production web/worker split is planned in
 [OPS-08 – OPS-16](https://github.com/simmeh024/tailfinsim/issues/195). Read that sequence
 before designing anything infrastructural; it already records the two things that bite —
 the database has no home in the four-node diagram, and builds happen on the box.
+
+---
+
+## What runs on a pull request
+
+Three workflows, and only one of them can stop a merge today.
+
+| Workflow                | Job / check name          | Asks                                                 | Blocks? |
+| ----------------------- | ------------------------- | ---------------------------------------------------- | ------- |
+| `ci.yml`                | `typecheck · lint · test` | Does it build, lint, format and pass its tests?      | **Yes** |
+| `dependency-review.yml` | `dependency review`       | Did this PR add a known-vulnerable dependency?       | **Yes** |
+| `codeql.yml`            | `analyze (…)`             | Does Tailfin's own code contain a dangerous pattern? | No      |
+
+They are separate workflows on purpose. CI needs a Postgres service and takes about two
+minutes; CodeQL takes longer than that again; Dependency Review needs no services, no
+checkout and no install, and finishes in seconds. Merging them would make the fast checks
+wait behind the slow ones.
+
+### Dependency Review (SEC-HARD-03)
+
+Compares the dependency graph of `main` against the graph of the branch and fails on what
+the **diff added**. Runtime _and_ development scopes, direct _and_ transitive.
+
+- **Blocks:** high, critical.
+- **Does not block:** moderate, low — reported in the run summary only.
+- **Comments on the PR only when it fails.** A clean PR gets no comment and no annotation.
+- **Overrides are a code change, not a click** — `allow-ghsas` in the workflow, with the
+  reason written in the same diff. See CONTRIBUTING.md.
+
+Two things it is _not_. It is not an audit of the existing tree — a package that was
+already vulnerable before your branch is invisible to it, by design, because a gate that
+fails on pre-existing findings fails every PR equally. And it is not a code scanner: it
+reads the GitHub Advisory Database, CodeQL reads the source, and neither finds what the
+other finds.
+
+**It works here because the dependency graph parses `pnpm-lock.yaml`.** That was checked
+rather than assumed — the SBOM endpoint returns 458 packages at exact versions, so
+transitives are covered, not just the manifests. Worth re-checking if the package manager
+ever changes.
 
 ---
 
