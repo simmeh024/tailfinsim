@@ -768,3 +768,254 @@ export type NewAdminGrantRow = typeof adminGrant.$inferInsert;
 
 export type AdminAuditRow = typeof adminAudit.$inferSelect;
 export type NewAdminAuditRow = typeof adminAudit.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Schedules and flights (M2-03, §8.2, App. F.3)
+// ---------------------------------------------------------------------------
+
+export const repeatKind = pgEnum('repeat_kind', ['daily', 'weekdays']);
+
+/**
+ * A repeating rotation.
+ *
+ * §8.2: "assign an aircraft to a rotation; the sim runs it continuously." The
+ * legs live in `schedule_leg` because a rotation is an **ordered cycle**, and
+ * order is a property the database should hold rather than one the application
+ * has to remember.
+ *
+ * ## The one column with no foreign key
+ *
+ * `airframe_id` references nothing, because there is no `airframe` table yet —
+ * that is M4-01. Every other reference in this schema is enforced, and this is a
+ * deliberate exception rather than a lapse: a schedule without an aircraft is
+ * meaningless, so the column is `not null`, but nothing can check that it points
+ * at a real aeroplane until the fleet exists. **M4-01 adds
+ * `references(airframe.id, { onDelete: 'cascade' })` here**, and until then the
+ * service layer is the only thing standing behind it.
+ */
+export const schedule = pgTable(
+  'schedule',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+
+    /**
+     * `cascade`, unlike `airline.player_id`. A schedule is an instruction rather
+     * than a record: deleting the airline that issued it leaves nothing worth
+     * keeping, and the flights it produced carry their own airline reference for
+     * the history §22.10 requires to survive.
+     */
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+
+    /** See the note above — no foreign key until M4-01 creates the target. */
+    airframeId: uuid('airframe_id').notNull(),
+
+    /**
+     * The repeat pattern, split across two columns so the database enforces the
+     * discriminated union rather than trusting whatever wrote the row.
+     *
+     * `daily` carries no days at all — not an empty array, which is the
+     * convention this schema deliberately does not use. An empty list meaning
+     * "every day" cannot be told apart from days that were lost on the way in.
+     */
+    repeatKind: repeatKind('repeat_kind').notNull(),
+    repeatDays: integer('repeat_days').array(),
+
+    /** A paused schedule stops producing flights without being deleted. */
+    active: boolean('active').notNull().default(true),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('schedule_world_id_idx').on(t.worldId),
+    index('schedule_airline_id_idx').on(t.airlineId),
+    // The materialisation query is "active schedules in this world".
+    index('schedule_world_id_active_idx').on(t.worldId, t.active),
+    check(
+      'schedule_repeat_days_match_kind',
+      sql`(${t.repeatKind} = 'daily' AND ${t.repeatDays} IS NULL)
+          OR (${t.repeatKind} = 'weekdays'
+              AND array_length(${t.repeatDays}, 1) BETWEEN 1 AND 7
+              AND ${t.repeatDays} <@ ARRAY[1,2,3,4,5,6,7])`,
+    ),
+  ],
+);
+
+/**
+ * One leg of a rotation, in order.
+ *
+ * Endpoints are ICAO codes referencing `airport` rather than a `route_id`,
+ * because there is no `route` table — M2-01 shipped the reachability checks as
+ * pure functions and left the entity to a later milestone. `shared`'s `Flight`
+ * already names its endpoints the same way, so a materialised flight copies them
+ * across without a join. When a `route` table does land, a `route_id` column
+ * joins these rather than replacing them: fares belong to the route, geography
+ * to the leg.
+ *
+ * `block_minutes` is M2-05's to compute and `turnaround_minutes` is M2-04's.
+ * Both are stored rather than derived, so a flight already on the books can
+ * still be explained after those models are retuned (CONTRIBUTING invariant 4).
+ */
+export const scheduleLeg = pgTable(
+  'schedule_leg',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    scheduleId: uuid('schedule_id')
+      .notNull()
+      .references(() => schedule.id, { onDelete: 'cascade' }),
+
+    /** Position in the rotation, from zero. */
+    legIndex: integer('leg_index').notNull(),
+
+    originIcao: text('origin_icao')
+      .notNull()
+      .references(() => airport.icaoCode),
+    destinationIcao: text('destination_icao')
+      .notNull()
+      .references(() => airport.icaoCode),
+
+    /**
+     * Off-blocks, in minutes from the cycle anchor.
+     *
+     * Not a minute of the day. A rotation that lands at 00:15 the next morning
+     * has a leg at minute 1,455, and forcing that back under 1,440 would put it
+     * in a different cycle from the one it belongs to.
+     */
+    departureMinute: integer('departure_minute').notNull(),
+    /** Off-blocks to on-blocks. */
+    blockMinutes: integer('block_minutes').notNull(),
+    /** Ground time required after this leg. */
+    turnaroundMinutes: integer('turnaround_minutes').notNull(),
+  },
+  (t) => [
+    // Order is a database property: two legs cannot share a position.
+    unique('schedule_leg_schedule_id_leg_index_key').on(t.scheduleId, t.legIndex),
+    index('schedule_leg_schedule_id_idx').on(t.scheduleId),
+    check('schedule_leg_index_nonneg', sql`${t.legIndex} >= 0`),
+    check('schedule_leg_departure_nonneg', sql`${t.departureMinute} >= 0`),
+    check('schedule_leg_block_positive', sql`${t.blockMinutes} > 0`),
+    check('schedule_leg_turnaround_nonneg', sql`${t.turnaroundMinutes} >= 0`),
+    check('schedule_leg_not_circular', sql`${t.originIcao} <> ${t.destinationIcao}`),
+  ],
+);
+
+export const flightPhase = pgEnum('flight_phase', [
+  'scheduled',
+  'boarding',
+  'pushback',
+  'taxi_out',
+  'departure',
+  'climb',
+  'cruise',
+  'descent',
+  'approach',
+  'landing',
+  'taxi_in',
+  'turnaround',
+  'idle',
+]);
+
+export const flightDisruption = pgEnum('flight_disruption', [
+  'delayed',
+  'cancelled',
+  'returned_to_stand',
+  'air_return',
+  'diverted',
+]);
+
+/**
+ * A concrete flight, dated and assigned.
+ *
+ * §21 requires flight state to be **computed, not stored per tick**: what is
+ * persisted is the plan and the discrete transitions, and position is
+ * interpolated on read. So there is no latitude here, and there should never be.
+ *
+ * ## `materialisation_key` is the exactly-once guarantee
+ *
+ * Unique per world, and built by `@tailfin/sim` from
+ * `(rotation, cycle date, leg index)` — never from when the roll ran. Rolling
+ * the same horizon twice, after a restart or with two workers racing, is refused
+ * **by this constraint** rather than by application logic that has to be right
+ * every time. Same discipline as `world_event`'s idempotency key, for the same
+ * reason.
+ *
+ * Null for a flight that came from somewhere other than a schedule: a ferry
+ * positioning leg (M2-07) belongs to no cycle.
+ */
+export const flight = pgTable(
+  'flight',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+
+    /**
+     * `set null`, not `cascade`. Deleting a schedule must not delete the flights
+     * it already produced — one of them may have flown and earned money, and
+     * §22.10 wants the operational record to survive. A flight keeps its own
+     * endpoints and times, so it is complete without its parent.
+     */
+    scheduleId: uuid('schedule_id').references(() => schedule.id, { onDelete: 'set null' }),
+
+    /** No foreign key yet, for the same reason as `schedule.airframe_id`. */
+    airframeId: uuid('airframe_id').notNull(),
+
+    originIcao: text('origin_icao')
+      .notNull()
+      .references(() => airport.icaoCode),
+    destinationIcao: text('destination_icao')
+      .notNull()
+      .references(() => airport.icaoCode),
+    /** Set only when diverted, and then it is where the aircraft actually went. */
+    diversionIcao: text('diversion_icao').references(() => airport.icaoCode),
+
+    phase: flightPhase('phase').notNull().default('scheduled'),
+    disruption: flightDisruption('disruption'),
+
+    /** All four are **game-time** instants, like `world_event.fire_at`. */
+    scheduledDeparture: timestamp('scheduled_departure', { withTimezone: true }).notNull(),
+    actualDeparture: timestamp('actual_departure', { withTimezone: true }),
+    estimatedArrival: timestamp('estimated_arrival', { withTimezone: true }).notNull(),
+    actualArrival: timestamp('actual_arrival', { withTimezone: true }),
+
+    /** JSON text, like `world_event.payload`. M2-06 fills it; nothing queries inside it. */
+    load: text('load').notNull().default('{}'),
+    /** Belly cargo in kilograms (§12.1). */
+    cargoKg: integer('cargo_kg').notNull().default(0),
+
+    /** See the note above. Null for a flight that did not come from a schedule. */
+    materialisationKey: text('materialisation_key'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('flight_world_id_materialisation_key').on(t.worldId, t.materialisationKey),
+    index('flight_world_id_scheduled_departure_idx').on(t.worldId, t.scheduledDeparture),
+    index('flight_schedule_id_idx').on(t.scheduleId),
+    index('flight_airline_id_idx').on(t.airlineId),
+    check('flight_cargo_nonneg', sql`${t.cargoKg} >= 0`),
+    check('flight_arrives_after_departure', sql`${t.estimatedArrival} > ${t.scheduledDeparture}`),
+    check('flight_not_circular', sql`${t.originIcao} <> ${t.destinationIcao}`),
+  ],
+);
+
+export type ScheduleRow = typeof schedule.$inferSelect;
+export type NewScheduleRow = typeof schedule.$inferInsert;
+
+export type ScheduleLegRow = typeof scheduleLeg.$inferSelect;
+export type NewScheduleLegRow = typeof scheduleLeg.$inferInsert;
+
+export type FlightRow = typeof flight.$inferSelect;
+export type NewFlightRow = typeof flight.$inferInsert;
