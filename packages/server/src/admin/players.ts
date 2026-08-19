@@ -1,4 +1,4 @@
-import { asc, count, desc, eq, ilike, or, sql } from 'drizzle-orm';
+import { asc, count, desc, eq, ilike, inArray, max, or, sql } from 'drizzle-orm';
 
 import { type AdminPlayerDetail, type AdminPlayerSummary } from '@tailfin/shared';
 
@@ -114,42 +114,93 @@ export async function listPlayers(db: Database, options: PlayerQuery = {}): Prom
       id: player.id,
       displayName: player.displayName,
       createdAt: player.createdAt,
-      // Correlated rather than joined, so neither count multiplies the other —
-      // a join to both sessions and airlines would produce a cartesian product
-      // and count each three times.
-      lastSeenAt: sql<Date | string | null>`(
-        select max(${session.lastSeenAt}) from ${session} where ${session.playerId} = ${player.id}
-      )`,
-      airlines: sql<number>`(
-        select count(*)::int from ${airline} where ${airline.playerId} = ${player.id}
-      )`,
-      isAdmin: sql<boolean>`exists (
-        select 1 from ${adminGrant} where ${adminGrant.playerId} = ${player.id}
-      )`,
     })
     .from(player)
     .where(matches)
+    // Total, not merely sorted: `created_at` ties on rows inserted in the same
+    // millisecond, and a page boundary landing inside a tie would show a row
+    // twice or not at all.
     .orderBy(desc(player.createdAt), asc(player.id))
     .limit(limit)
     .offset(offset);
+
+  const ids = rows.map((row) => row.id);
+  const extras = await countFor(db, ids);
 
   return {
     players: rows.map((row) => ({
       id: row.id,
       displayName: row.displayName,
       createdAt: row.createdAt.toISOString(),
-      // Normalised rather than trusted in either shape: a raw aggregate is not a
-      // typed column, so the driver decides what comes back and it is a string.
-      // `sql<Date>` would be an assertion, not a conversion — the same trap that
-      // reached real Postgres once already in `queueDepth`.
-      lastSeenAt: toIso(row.lastSeenAt),
-      airlines: Number(row.airlines),
-      isAdmin: Boolean(row.isAdmin),
+      lastSeenAt: toIso(extras.lastSeen.get(row.id) ?? null),
+      airlines: extras.airlines.get(row.id) ?? 0,
+      isAdmin: extras.admins.has(row.id),
     })),
     total: totals[0]?.n ?? 0,
     query,
     limit,
     offset,
+  };
+}
+
+/**
+ * What each player on the page holds — three grouped queries, not three
+ * correlated subqueries.
+ *
+ * The first version computed these as correlated scalar subqueries inside the
+ * select list. Against real Postgres they came back as zero and null for players
+ * who demonstrably had airlines and sessions, while the *same* correlated shape
+ * in the `where` clause worked. Rather than debug drizzle's rendering blind — the
+ * database-backed tests only run in CI — this uses the pattern already proven in
+ * `countWorldContents`: group once per table, look up by id.
+ *
+ * Scoped to the ids on the page, so the cost is bounded by page size rather than
+ * by how many players exist. Grouped rather than joined because a join to both
+ * airlines and sessions multiplies them together and counts each several times.
+ */
+async function countFor(
+  db: Database,
+  ids: string[],
+): Promise<{
+  airlines: Map<string, number>;
+  lastSeen: Map<string, Date | string>;
+  admins: Set<string>;
+}> {
+  if (ids.length === 0) {
+    return { airlines: new Map(), lastSeen: new Map(), admins: new Set() };
+  }
+
+  const airlines = await db
+    .select({ playerId: airline.playerId, n: count() })
+    .from(airline)
+    .where(inArray(airline.playerId, ids))
+    .groupBy(airline.playerId);
+
+  const seen = await db
+    .select({ playerId: session.playerId, at: max(session.lastSeenAt) })
+    .from(session)
+    .where(inArray(session.playerId, ids))
+    .groupBy(session.playerId);
+
+  const admins = await db
+    .select({ playerId: adminGrant.playerId })
+    .from(adminGrant)
+    .where(inArray(adminGrant.playerId, ids));
+
+  const lastSeen = new Map<string, Date | string>();
+  for (const row of seen) {
+    // Drizzle types `max()` as the column's type, `Date`. It is not: a column
+    // type parser applies to a *column*, and a raw aggregate is not one, so the
+    // driver's own decoding is what arrives — a string. The same assertion
+    // typechecked happily in `queueDepth` and threw against real Postgres.
+    const at: Date | string | null = row.at;
+    if (at !== null) lastSeen.set(row.playerId, at);
+  }
+
+  return {
+    airlines: new Map(airlines.map((row) => [row.playerId, row.n])),
+    lastSeen,
+    admins: new Set(admins.map((row) => row.playerId)),
   };
 }
 

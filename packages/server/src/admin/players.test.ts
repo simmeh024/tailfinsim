@@ -110,21 +110,34 @@ describeDb('browsing players', () => {
     return created.id;
   }
 
+  /**
+   * The schema's format checks are strict and differ between the two codes:
+   * IATA is `^[A-Z0-9]{2}$` and ICAO is `^[A-Z]{3}$`. Building the ICAO by
+   * prefixing the IATA produced `XM1` for a code containing a digit, which
+   * Postgres refused — so the letters are taken from an alphabet rather than
+   * from the caller's code.
+   */
+  const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let airlineSeq = 0;
+
   async function makeAirline(
     worldId: string,
     playerId: string,
     name: string,
     code: string,
-  ): Promise<void> {
+  ): Promise<string> {
+    const n = airlineSeq++;
+    const icao = `X${LETTERS[n % 26] ?? 'A'}${LETTERS[Math.floor(n / 26) % 26] ?? 'A'}`;
     await db.db.insert(airline).values({
       worldId,
       playerId,
       name,
       iataCode: code.slice(0, 2).toUpperCase(),
-      icaoCode: `X${code.slice(0, 2).toUpperCase()}`,
-      callsign: `CALL${code.toUpperCase()}`,
+      icaoCode: icao,
+      callsign: `CALL${icao}`,
       baseCountry: 'GB',
     });
+    return icao;
   }
 
   describe('the list', () => {
@@ -216,10 +229,14 @@ describeDb('browsing players', () => {
     it('finds a player by the code on the side of the aircraft', async () => {
       const worldId = await makeWorld();
       const id = await makePlayer(`Coded ${tag}`);
-      await makeAirline(worldId, id, `Coded Air ${tag}`, 'zq');
+      const icao = await makeAirline(worldId, id, `Coded Air ${tag}`, 'zq');
 
+      // Both codes, and case-insensitively — support is quoting what they were
+      // told, not what the database stores.
       expect((await listPlayers(db.db, { query: 'ZQ' })).players.map((e) => e.id)).toContain(id);
-      expect((await listPlayers(db.db, { query: 'xzq' })).players.map((e) => e.id)).toContain(id);
+      expect(
+        (await listPlayers(db.db, { query: icao.toLowerCase() })).players.map((e) => e.id),
+      ).toContain(id);
     });
 
     it('returns one row for a player whose several airlines all match', async () => {
