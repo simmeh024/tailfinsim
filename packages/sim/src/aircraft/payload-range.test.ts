@@ -116,6 +116,23 @@ describe('effective spec', () => {
       effectiveSpec(A321NEO, STANDARD_CABIN, [{ id: 'silly', oewDeltaT: -100 }]),
     ).toThrow(/non-positive operating empty weight/);
   });
+
+  it('refuses a spec with a zero or missing figure rather than dividing by it', () => {
+    // A catalogue row with no fuel capacity or no burn would otherwise produce a
+    // silent NaN or an infinite range, which is worse than a crash.
+    expect(() => effectiveSpec({ ...A321NEO, fuelCapacityT: 0 }, STANDARD_CABIN, [])).toThrow(
+      /Fuel capacity must be positive/,
+    );
+    expect(() => effectiveSpec({ ...A321NEO, cruiseBurnTPerNm: 0 }, STANDARD_CABIN, [])).toThrow(
+      /Cruise burn must be positive/,
+    );
+    expect(() => effectiveSpec({ ...A321NEO, takeoffRunAtMtowM: 0 }, STANDARD_CABIN, [])).toThrow(
+      /Takeoff run at MTOW must be positive/,
+    );
+    expect(() => effectiveSpec({ ...A321NEO, maxTakeoffWeightT: 0 }, STANDARD_CABIN, [])).toThrow(
+      /Maximum takeoff weight must be positive/,
+    );
+  });
 });
 
 describe('payload', () => {
@@ -317,6 +334,20 @@ describe('the limit that bound it', () => {
     reached.add(computePayloadRange(A321NEO, STANDARD_CABIN, [], FULL_STANDARD, 1_800).limit);
 
     expect([...reached].sort()).toEqual([...PAYLOAD_RANGE_LIMITS].sort());
+  });
+
+  it('stays quiet about a runner-up that is a rounding error away', () => {
+    // 205 passengers put the zero-fuel weight at 70.6 t, which leaves exactly
+    // the 26.4 t the tanks hold — the two limits tie, give or take a float. The
+    // sentence must not offer "another 0.0 t" as though there were headroom.
+    const tied = computePayloadRange(A321NEO, STANDARD_CABIN, [], {
+      passengers: 205,
+      cargoT: 0,
+    });
+
+    expect(tied.allowances.mtow).toBeCloseTo(tied.allowances.fuel, 6);
+    expect(tied.detail).not.toContain('would have taken another');
+    expect(tied.detail).toMatch(/limited by (tank capacity|maximum takeoff weight)\.$/);
   });
 
   it('says so plainly when the load alone is over the limit', () => {

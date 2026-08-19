@@ -390,6 +390,9 @@ export function computePayloadRange(
   };
 }
 
+/** Half the 0.1 t step the readout rounds to — below this, the gap is not news. */
+const SPARE_FUEL_WORTH_MENTIONING_T = 0.05;
+
 const LIMIT_NAMES: Record<PayloadRangeLimit, string> = {
   mtow: 'maximum takeoff weight',
   fuel: 'tank capacity',
@@ -432,8 +435,11 @@ function explain(
     null,
   );
 
+  // Suppressed below the precision the sentence prints at. Two limits that bind
+  // within a few kilograms of each other are the same limit as far as a decision
+  // goes, and "would have taken another 0.0 t" is worse than saying nothing.
   const spare =
-    runnerUp === null || runnerUp.slack <= 0
+    runnerUp === null || runnerUp.slack < SPARE_FUEL_WORTH_MENTIONING_T
       ? ''
       : ` — ${runnerUp.name} would have taken another ${round(runnerUp.slack, 1)} t`;
 
