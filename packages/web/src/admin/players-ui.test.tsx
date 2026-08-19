@@ -322,8 +322,13 @@ describe('the audit log and views', () => {
     const { requested } = stubApi();
     renderAt('/admin/audit');
 
-    await screen.findByRole('heading', { name: /audit log/i });
-    expect(requested.some((url) => url === '/api/admin/audit')).toBe(true);
+    // Waiting for the heading is not enough, and this flaked in CI because of
+    // it: React renders first and runs effects afterwards, so the heading can be
+    // on screen before the fetch it triggers has been made. Wait for the request
+    // itself — the thing actually being asserted on.
+    await waitFor(() => {
+      expect(requested.some((url) => url === '/api/admin/audit')).toBe(true);
+    });
     expect(requested.some((url) => url.includes('includeViews=true'))).toBe(false);
 
     fireEvent.click(screen.getByLabelText(/include views/i));
