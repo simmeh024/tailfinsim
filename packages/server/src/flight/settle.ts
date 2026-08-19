@@ -181,6 +181,9 @@ export async function settleArrivedFlight(
 
   const settlement = settleFlight(
     {
+      // A ferry settles to all cost and no revenue, and `settleFlight` refuses
+      // one that arrives carrying passengers rather than quietly zeroing it.
+      kind: row.kind,
       load,
       cargoKg: row.cargoKg,
       block,
@@ -207,6 +210,7 @@ export async function settleArrivedFlight(
       revenueMinor: settlement.revenueMinor,
       costMinor: settlement.costMinor,
       netMinor: settlement.netMinor,
+      kind: row.kind,
       seats: settlement.seats,
       passengers: settlement.passengers,
       cargoKg: row.cargoKg,

@@ -8,6 +8,7 @@ import {
   AirportSummary,
   CreateAirlineInput,
   Flight,
+  FlightKind,
   FlightPhase,
   HealthResponse,
   MinorUnits,
@@ -218,6 +219,7 @@ describe('Flight', () => {
       originIcao: 'EHAM',
       destinationIcao: 'EGLL',
       diversionIcao: null,
+      kind: 'scheduled',
       phase: 'cruise',
       disruption: null,
       scheduledDeparture: '2026-08-17T12:00:00.000Z',
@@ -229,6 +231,13 @@ describe('Flight', () => {
       createdAt: '2026-08-17T11:00:00.000Z',
     });
     expect(result.success).toBe(true);
+  });
+
+  it('models why the aircraft is flying separately from how it is going (M2-07)', () => {
+    // A ferry is a *kind* of flight, not a phase and not a disruption. It
+    // progresses through the same lifecycle; it simply earns nothing.
+    expect(Object.keys(Flight.shape)).toContain('kind');
+    expect(FlightKind.options).toEqual(['scheduled', 'ferry']);
   });
 });
 

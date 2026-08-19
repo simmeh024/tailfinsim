@@ -931,6 +931,20 @@ export const flightPhase = pgEnum('flight_phase', [
   'idle',
 ]);
 
+/**
+ * Why the aircraft is flying (M2-07).
+ *
+ * `ferry` is a positioning flight: no passengers, no revenue, and every cost of
+ * a real one. Kept as a column rather than inferred from an empty load, because
+ * "this flight was never meant to earn" and "this flight failed to sell a seat"
+ * are different facts that a cost report has to be able to tell apart.
+ *
+ * More kinds are coming — §11 names charter and ACMI as revenue lines — and
+ * adding one is `ALTER TYPE … ADD VALUE`, which is cheap. Speculating about them
+ * now is not.
+ */
+export const flightKind = pgEnum('flight_kind', ['scheduled', 'ferry']);
+
 export const flightDisruption = pgEnum('flight_disruption', [
   'delayed',
   'cancelled',
@@ -989,6 +1003,13 @@ export const flight = pgTable(
       .references(() => airport.icaoCode),
     /** Set only when diverted, and then it is where the aircraft actually went. */
     diversionIcao: text('diversion_icao').references(() => airport.icaoCode),
+
+    /**
+     * Defaults to `scheduled`, which is what every existing row was. A ferry has
+     * to be asked for explicitly — a positioning flight created by accident is a
+     * flight that earns nothing, and that should never be the default.
+     */
+    kind: flightKind('kind').notNull().default('scheduled'),
 
     phase: flightPhase('phase').notNull().default('scheduled'),
     disruption: flightDisruption('disruption'),
@@ -1104,6 +1125,17 @@ export const flightResult = pgTable(
      */
     netMinor: bigint('net_minor', { mode: 'number' }).notNull(),
 
+    /**
+     * Denormalised from `flight`, like `airline_id` and for the same reason: a
+     * cost report asks "how much did positioning cost us this month" far more
+     * often than it asks about one flight, and a flight never changes its kind.
+     *
+     * It is also what makes M2-07's *"clearly marked as non-revenue"* true of the
+     * money rather than only of the schedule — a ferry's row is legible as a
+     * ferry without joining back to find out why it earned nothing.
+     */
+    kind: flightKind('kind').notNull().default('scheduled'),
+
     seats: integer('seats').notNull(),
     passengers: integer('passengers').notNull(),
     cargoKg: integer('cargo_kg').notNull().default(0),
@@ -1157,6 +1189,16 @@ export const flightResult = pgTable(
     ),
     check('flight_result_cargo_nonneg', sql`${t.cargoKg} >= 0`),
     check('flight_result_block_positive', sql`${t.blockSeconds} > 0`),
+    /**
+     * A ferry earns nothing. Enforced here as well as in the settlement model,
+     * because this is the row that becomes an airline's cash: a bug that books
+     * revenue on a positioning flight must not be able to persist, whatever
+     * path it arrives by.
+     */
+    check(
+      'flight_result_ferry_earns_nothing',
+      sql`${t.kind} <> 'ferry' OR (${t.revenueMinor} = 0 AND ${t.passengers} = 0)`,
+    ),
   ],
 );
 

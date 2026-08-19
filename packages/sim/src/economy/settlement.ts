@@ -47,7 +47,7 @@
  * not representable.
  */
 
-import type { AirportFees, CabinClass, FlightLoad } from '@tailfin/shared';
+import type { AirportFees, CabinClass, FlightKind, FlightLoad } from '@tailfin/shared';
 
 import { minorFromMajor, roundMinor, sumMinor } from './money';
 
@@ -75,6 +75,8 @@ export interface SettlementLine {
 }
 
 export interface FlightSettlement {
+  /** Why the aircraft flew. A `ferry` is all cost and no revenue, by construction. */
+  kind: FlightKind;
   /** Sum of {@link revenue}. */
   revenueMinor: number;
   /** Sum of {@link costs}. */
@@ -210,6 +212,15 @@ export interface SettlementAircraft {
 }
 
 export interface SettlementInputs {
+  /**
+   * Why the aircraft flew (M2-07).
+   *
+   * A `ferry` earns nothing and costs everything. That is enforced here rather
+   * than left to the caller passing an empty load, because "no revenue" is a
+   * property of the *kind of flight*, and a positioning leg that quietly booked
+   * ticket revenue would be a bug worth thousands and invisible in a total.
+   */
+  kind: FlightKind;
   /** Per class: seats offered, passengers carried, revenue taken. M3 fills it. */
   load: FlightLoad;
   /** Belly freight in kilograms, from `flight.cargo_kg`. */
@@ -298,13 +309,24 @@ export function settleFlight(
   inputs: SettlementInputs,
   config: SettlementConfig = DEFAULT_SETTLEMENT,
 ): FlightSettlement {
-  const { load, cargoKg, block, fuelCost, aircraft, originFees, destinationFees } = inputs;
+  const { kind, load, cargoKg, block, fuelCost, aircraft, originFees, destinationFees } = inputs;
 
   assertNonNegative(cargoKg, 'Cargo');
   assertNonNegative(aircraft.maxTakeoffWeightT, 'Maximum takeoff weight');
   assertNonNegative(block.blockMinutes, 'Block minutes');
 
   const { seats, passengers, revenueMinor: ticketsMinor } = summariseLoad(load);
+
+  // A ferry is refused rather than silently zeroed. Zeroing would make a
+  // mis-typed flight settle to a plausible-looking number; refusing makes it a
+  // failed event somebody has to look at, which is the right direction to fail
+  // when the alternative is an airline quietly paid for seats it never sold.
+  if (kind === 'ferry' && (passengers > 0 || ticketsMinor !== 0)) {
+    throw new Error(
+      `A ferry flight carries no revenue passengers, but this one has ` +
+        `${String(passengers)} passengers and ${money(ticketsMinor)} of ticket revenue`,
+    );
+  }
   const blockHours = block.blockMinutes / 60;
   const cargoTonnes = cargoKg / 1000;
 
@@ -315,8 +337,10 @@ export function settleFlight(
     source: 'tickets',
     amountMinor: ticketsMinor,
     detail:
-      `${String(passengers)} passenger${passengers === 1 ? '' : 's'} in ${String(seats)} seats, ` +
-      `priced by the fare model.`,
+      kind === 'ferry'
+        ? 'Positioning flight — no passengers carried and none may be.'
+        : `${String(passengers)} passenger${passengers === 1 ? '' : 's'} in ${String(seats)} seats, ` +
+          `priced by the fare model.`,
   });
 
   const ancillaryMinor = roundMinor(passengers * config.ancillaryPerPassengerMinor);
@@ -394,6 +418,7 @@ export function settleFlight(
   const costMinor = sumMinor(costs.map((l) => l.amountMinor));
 
   return {
+    kind,
     revenueMinor,
     costMinor,
     netMinor: revenueMinor - costMinor,

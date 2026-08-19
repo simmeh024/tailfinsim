@@ -46,6 +46,7 @@ function inputs(overrides: Partial<SettlementInputs> = {}): SettlementInputs {
   const block = computeBlockTime(200, ATR72_CRUISE_KT, DEFAULT_FLIGHT_PROFILE);
   const burn = computeFuelBurn(block, { cruiseBurnTPerNm: ATR72_BURN_T_PER_NM });
   return {
+    kind: 'scheduled',
     load: economyLoad(47, 47 * 7_500),
     cargoKg: 0,
     block,
@@ -239,6 +240,69 @@ describe('settleFlight', () => {
     });
   });
 
+  describe('a ferry flight (M2-07)', () => {
+    it('earns nothing and costs everything', () => {
+      const ferry = settleFlight(inputs({ kind: 'ferry', load: {} }));
+
+      expect(ferry.revenueMinor).toBe(0);
+      expect(ferry.costMinor).toBeGreaterThan(0);
+      expect(ferry.netMinor).toBe(-ferry.costMinor);
+    });
+
+    it('costs exactly what the same sector would as a scheduled flight', () => {
+      // The whole point of the type. Positioning is not cheaper for carrying
+      // nobody — fuel, crew, maintenance and the landing fee all fall due, and
+      // that is what makes a badly-planned network expensive rather than untidy.
+      const ferry = settleFlight(inputs({ kind: 'ferry', load: {} }));
+      const revenueFlight = settleFlight(inputs({ load: economyLoad(0, 0) }));
+
+      const costOf = (r: typeof ferry, source: string) =>
+        r.costs.find((l) => l.source === source)?.amountMinor ?? 0;
+
+      for (const source of ['fuel', 'crew', 'maintenance'] as const) {
+        expect(costOf(ferry, source), source).toBe(costOf(revenueFlight, source));
+      }
+    });
+
+    it('says on the ticket line that it is a positioning flight', () => {
+      // "Clearly marked as non-revenue" — the readout has to say *why* it earned
+      // nothing, or a ferry is indistinguishable from a flight that failed to sell.
+      const ferry = settleFlight(inputs({ kind: 'ferry', load: {} }));
+      const tickets = ferry.revenue.find((l) => l.source === 'tickets');
+
+      expect(tickets?.detail).toMatch(/[Pp]ositioning/);
+      expect(ferry.kind).toBe('ferry');
+    });
+
+    it('refuses one carrying passengers rather than quietly zeroing it', () => {
+      // Zeroing would make a mis-typed flight settle to a plausible number.
+      // Refusing makes it a failed event somebody has to look at.
+      expect(() => settleFlight(inputs({ kind: 'ferry', load: economyLoad(47, 0) }))).toThrow(
+        /ferry/i,
+      );
+    });
+
+    it('refuses one carrying revenue even with no passengers', () => {
+      expect(() =>
+        settleFlight(
+          inputs({
+            kind: 'ferry',
+            load: { economy: { seats: 70, passengers: 0, revenue: 5_000 } },
+          }),
+        ),
+      ).toThrow(/ferry/i);
+    });
+
+    it('still pays for belly freight, which a ferry may legitimately carry', () => {
+      // Repositioning with freight aboard is real, and §12.1's belly cargo is not
+      // ticket revenue. The refusal above is about seats sold, not about the hold.
+      const ferry = settleFlight(inputs({ kind: 'ferry', load: {}, cargoKg: 2_000 }));
+
+      expect(ferry.revenueMinor).toBeGreaterThan(0);
+      expect(ferry.revenue.map((l) => l.source)).toEqual(['tickets', 'cargo']);
+    });
+  });
+
   describe('degenerate flights', () => {
     it('settles a flight that carried nobody — the costs still happened', () => {
       const result = settleFlight(inputs({ load: economyLoad(0, 0) }));
@@ -320,6 +384,7 @@ describe('§13.4’s one-aircraft Amsterdam airline', () => {
     const block = computeBlockTime(distanceNm, ATR72_CRUISE_KT, DEFAULT_FLIGHT_PROFILE);
     const burn = computeFuelBurn(block, { cruiseBurnTPerNm: ATR72_BURN_T_PER_NM });
     return settleFlight({
+      kind: 'scheduled',
       load: economyLoad(Math.round(passengers), Math.round(passengers * FARE_MINOR)),
       cargoKg: 0,
       block,
