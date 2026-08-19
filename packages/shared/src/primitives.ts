@@ -101,5 +101,20 @@ export type IsoWeekday = z.infer<typeof IsoWeekday>;
  * Cabin classes (§6.2). `premium_economy` is spelled out rather than
  * abbreviated so it never collides with `economy` in a prefix match.
  */
+/**
+ * App. A.2's three passenger segments.
+ *
+ * *"The split is what makes different strategies viable."* Each wants something
+ * different and ignores something different — business buys frequency and
+ * ignores price, leisure buys price and ignores everything else, VFR buys price
+ * but is sticky to a familiar carrier — so a route's mix decides which airline
+ * can win it. A.3's utility model runs once per segment for that reason.
+ *
+ * Not to be confused with {@link CabinClass}. A business *traveller* often sits
+ * in economy; the segment is why they are flying, the cabin is what they bought.
+ */
+export const DemandSegment = z.enum(['business', 'leisure', 'vfr']);
+export type DemandSegment = z.infer<typeof DemandSegment>;
+
 export const CabinClass = z.enum(['economy', 'premium_economy', 'business', 'first']);
 export type CabinClass = z.infer<typeof CabinClass>;

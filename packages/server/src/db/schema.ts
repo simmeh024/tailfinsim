@@ -1233,5 +1233,111 @@ export const flightResult = pgTable(
   ],
 );
 
+// ---------------------------------------------------------------------------
+// demand_pool — App. A.2's market size, per city pair (M3-01)
+// ---------------------------------------------------------------------------
+
+/**
+ * How many people want to fly between two cities, before anyone flies it.
+ *
+ * A.2's step one, computed once when a world is created and then modulated live
+ * by M3-02 rather than recomputed. It is the input to every commercial decision
+ * in the game, which is why it is a table rather than a function call: M3-03's
+ * share model runs against it constantly, and re-deriving a gravity model on
+ * every query would be paying for the same arithmetic for ever.
+ *
+ * ## Stored per world, not globally
+ *
+ * The airports are global — geography does not vary — but the pool is not. A.2's
+ * `k` and `α` are economy config, a world pins its `economy_config_version`, and
+ * ADR-0005's reset gives a world a fresh start. A pool computed under one set of
+ * coefficients cannot be shared with a world running another.
+ *
+ * ## One row per unordered pair
+ *
+ * A market is the same market in both directions: the segment split is symmetric
+ * and so is the affinity, so storing AMS→LHR and LHR→AMS separately would be
+ * double-counting rather than thoroughness. The check constraint enforces the
+ * canonical ordering so the application cannot write both.
+ *
+ * That halves nearly ten million pairs to five, and the viability filter cuts it
+ * much further — a pair nobody could fill a turboprop on is not a market
+ * M3-03 should spend time dividing between competitors.
+ */
+export const demandPool = pgTable(
+  'demand_pool',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+
+    /** Alphabetically first, enforced below — a market has no direction. */
+    originIcao: text('origin_icao')
+      .notNull()
+      .references(() => airport.icaoCode),
+    destinationIcao: text('destination_icao')
+      .notNull()
+      .references(() => airport.icaoCode),
+
+    /** Great-circle nautical miles, from M1-04's matrix. */
+    distanceNm: integer('distance_nm').notNull(),
+
+    /**
+     * Passengers a day, both directions, before any live modulation.
+     *
+     * `numeric` rather than an integer: a thin regional market is genuinely 27.4
+     * a day, and rounding every pool to a whole passenger would quantise the
+     * small end of the world into steps a player could see.
+     */
+    dailyPassengers: numeric('daily_passengers', { precision: 12, scale: 2 }).notNull(),
+
+    /**
+     * A.2's three segments. Stored as columns rather than JSON because M3-03
+     * filters and aggregates on them — *"show me the business-heavy routes I am
+     * not serving"* is a query, not a document read.
+     */
+    businessShare: numeric('business_share', { precision: 5, scale: 4 }).notNull(),
+    leisureShare: numeric('leisure_share', { precision: 5, scale: 4 }).notNull(),
+    vfrShare: numeric('vfr_share', { precision: 5, scale: 4 }).notNull(),
+
+    /**
+     * The mass, distance and affinity terms that produced it, as JSON.
+     *
+     * §14.1: a number a player cannot interrogate is a number they will not
+     * trust, and the entire demand model rests on that trust. *"Why is this
+     * route worth so little"* has to be answerable, and the answer is which of
+     * the three terms was small.
+     */
+    basis: text('basis').notNull(),
+
+    /** Which coefficients this ran under, mirroring `world.economy_config_version`. */
+    gravityVersion: text('gravity_version').notNull(),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('demand_pool_world_id_pair_key').on(t.worldId, t.originIcao, t.destinationIcao),
+    // The query M3-03 runs: the biggest markets this airline could serve.
+    index('demand_pool_world_id_daily_passengers_idx').on(t.worldId, t.dailyPassengers),
+    index('demand_pool_world_id_origin_idx').on(t.worldId, t.originIcao),
+    index('demand_pool_world_id_destination_idx').on(t.worldId, t.destinationIcao),
+    // A market has no direction, so only one of the two orderings may be stored.
+    check('demand_pool_canonical_order', sql`${t.originIcao} < ${t.destinationIcao}`),
+    check('demand_pool_distance_positive', sql`${t.distanceNm} > 0`),
+    check('demand_pool_passengers_nonneg', sql`${t.dailyPassengers} >= 0`),
+    // The shares are a split, so they add up. Enforced here as well as in the
+    // model, because this row is what every commercial decision reads.
+    check(
+      'demand_pool_shares_sum_to_one',
+      sql`abs((${t.businessShare} + ${t.leisureShare} + ${t.vfrShare}) - 1) < 0.001`,
+    ),
+  ],
+);
+
+export type DemandPoolRow = typeof demandPool.$inferSelect;
+export type NewDemandPoolRow = typeof demandPool.$inferInsert;
+
 export type FlightResultRow = typeof flightResult.$inferSelect;
 export type NewFlightResultRow = typeof flightResult.$inferInsert;
