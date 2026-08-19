@@ -76,6 +76,37 @@ export const world = pgTable(
     epoch: timestamp('epoch', { withTimezone: true }).notNull(),
 
     /**
+     * The world's randomness (M2-08).
+     *
+     * Every non-deterministic outcome in a world — which flights are disrupted
+     * and why, and in time which airframes break and which used aircraft appear
+     * on the market — is derived from this value together with the identity of
+     * the thing it happens to. Replaying a world with the same seed reproduces
+     * it exactly, which is what M13-01's harness and M13-02's economy regression
+     * suite both rest on.
+     *
+     * A **column rather than a derivation** from something already here, and the
+     * two obvious shortcuts are both wrong. `id` alone would make an admin reset
+     * replay the identical run of bad weather, which is not a fresh world. And
+     * `launch_date` is re-anchored on every speed change (see `admin/speed.ts`),
+     * so folding it in would re-roll every pending disruption the moment somebody
+     * moved the clock — a silent, invisible re-randomisation of the future.
+     *
+     * Re-rolled on reset, alongside `launch_date`, because ADR-0005's reset is a
+     * new world in an old shell and should not know what the last one suffered.
+     *
+     * The database default is what makes this addable to a table that already
+     * has worlds in it: `ADD COLUMN … NOT NULL` with no default fails outright
+     * against existing rows, and there is a flagship world in production. Every
+     * world that predates M2-08 therefore gets its own seed on migration rather
+     * than sharing one — which matters, because a shared seed would correlate
+     * two worlds' disruptions for ever.
+     */
+    seed: text('seed')
+      .notNull()
+      .default(sql`gen_random_uuid()::text`),
+
+    /**
      * The real instant this world's clock started running. In-game time is
      * derived from it and never stored:
      *

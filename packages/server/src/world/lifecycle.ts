@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { eq, sql } from 'drizzle-orm';
 
 import { type WorldConfig } from '@tailfin/shared';
@@ -42,6 +44,9 @@ export async function createWorld(
       name: config.name,
       epoch: new Date(config.epoch),
       launchDate: now,
+      // M2-08: the world's randomness. A uuid is 122 bits of it and is already
+      // guaranteed unique here, so there is no reason to invent a second format.
+      seed: randomUUID(),
       speedMultiplier: config.speedMultiplier.toFixed(2),
       aircraftCatalogueVersion: config.aircraftCatalogueVersion,
       economyConfigVersion: config.economyConfigVersion,
@@ -158,7 +163,12 @@ export async function resetWorldWithin(
       .where(eq(airline.worldId, worldId))
       .returning({ id: airline.id });
 
-    await tx.update(world).set({ launchDate: now, status: 'staging' }).where(eq(world.id, worldId));
+    // A new seed as well as a new clock. ADR-0005's reset is a new world in an
+    // old shell, and it should not replay the last one's weather.
+    await tx
+      .update(world)
+      .set({ launchDate: now, status: 'staging', seed: randomUUID() })
+      .where(eq(world.id, worldId));
 
     // Read back rather than trusting the arithmetic: the point of the reset is
     // that the in-game date *is* the epoch afterwards, so prove it from the row.

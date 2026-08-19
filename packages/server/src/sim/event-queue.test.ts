@@ -54,6 +54,7 @@ describeDb('event queue', () => {
         name: `queue-test-${Math.random().toString(36).slice(2, 10)}`,
         epoch: EPOCH,
         launchDate: LAUNCH,
+        seed: 'queue-test-seed',
         speedMultiplier: '2',
         aircraftCatalogueVersion: 'test',
         economyConfigVersion: 'test',

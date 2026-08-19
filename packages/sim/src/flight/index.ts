@@ -12,6 +12,7 @@
  *   `turnaround` — ground minutes between two flights, and where each one went
  *   `block`      — off-blocks to on-blocks, which is the clock that costs money
  *   `fuel`       — what that block time burns, integrated over the same phases
+ *   `disruption` — whether the flight goes wrong, why, and what it does instead
  */
 export * from './profile';
 export * from './timeline';
@@ -22,3 +23,4 @@ export * from './position';
 export * from './turnaround';
 export * from './block';
 export * from './fuel';
+export * from './disruption';
