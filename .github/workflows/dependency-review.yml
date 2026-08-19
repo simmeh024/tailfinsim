@@ -1,0 +1,129 @@
+name: Dependency Review
+
+# Supply-chain gate (SEC-HARD-03).
+#
+# One question, and only one: **did this pull request introduce a dependency with
+# a known high or critical advisory?** It compares the dependency graph of the
+# base against the head and reports what the diff *added*. It is not an audit of
+# the tree — a package that was already vulnerable yesterday is not this check's
+# problem, because a gate that fails on pre-existing findings fails every PR
+# equally and teaches people to click through it. The whole-tree sweep is
+# SEC-HARD-34's scheduled `pnpm audit`.
+#
+# ---------------------------------------------------------------------------
+# How this differs from CodeQL
+# ---------------------------------------------------------------------------
+#   CodeQL             — does Tailfin's own code contain a dangerous pattern?
+#   Dependency Review  — did this PR add a known-vulnerable dependency?
+#
+# Different sources of truth entirely: CodeQL runs queries over source, this
+# reads the GitHub Advisory Database. Neither finds what the other finds, and
+# neither is a substitute for the other.
+#
+# ---------------------------------------------------------------------------
+# Why a separate workflow rather than a step in ci.yml
+# ---------------------------------------------------------------------------
+# Same reasoning as codeql.yml. `typecheck · lint · test` needs a Postgres
+# service and takes about two minutes; this needs no services, no checkout, no
+# install, and finishes in seconds. Bolting it onto the CI job would make a
+# five-second API call wait behind a database, and would tangle two failures
+# that deserve separate answers.
+#
+# ---------------------------------------------------------------------------
+# The defaults this file deliberately overrides
+# ---------------------------------------------------------------------------
+# Read from src/schemas.ts at the pinned SHA rather than from the README, because
+# two of them are wrong for Tailfin and both fail *open*:
+#
+#   fail-on-severity  default `low`       → every advisory blocks. Alert fatigue,
+#                                           and SEC-HARD-03 names it as the risk.
+#   fail-on-scopes    default `[runtime]` → **development dependencies are not
+#                                           checked at all.** The larger half of
+#                                           this tree is devDependencies, and
+#                                           eslint/vite/vitest all execute in CI
+#                                           with a token. They are in scope.
+#   license-check     default `true`      → off. SEC-HARD-03 is about
+#                                           vulnerabilities; licence policy is a
+#                                           separate decision nobody has taken.
+#
+# ---------------------------------------------------------------------------
+# Why this action is pinned to a SHA when the rest of the repository uses tags
+# ---------------------------------------------------------------------------
+# CodeQL's `actions/unpinned-tag` currently flags exactly one step in this
+# repository — `pnpm/action-setup@v6` in ci.yml — because it only reports
+# *third-party* actions, and `actions/*` and `github/*` publish immutable
+# releases. So this action would not be flagged either way.
+#
+# It is pinned anyway, on the narrow grounds that this is the supply-chain check:
+# a guard that resolves a mutable reference at run time to decide whether your
+# dependencies are trustworthy is arguing against itself. That is not a policy
+# for the repository — pinning the rest is SEC-HARD-24's call, and this file does
+# not pre-empt it.
+
+# Deliberately no `paths:` filter, for the reason codeql.yml already records: a
+# run skipped by a path filter never reports, and a required check that never
+# reports stays pending for ever and blocks the merge. This one *is* intended to
+# be required, so the filter that looks like an obvious optimisation — only run
+# when package.json or pnpm-lock.yaml changed — would be a merge deadlock. It
+# costs seconds to run on a PR that touched no dependencies, and it correctly
+# reports success.
+on:
+  pull_request:
+    branches: [main]
+
+# Same as ci.yml and codeql.yml: a new push supersedes the run it replaced.
+concurrency:
+  group: dependency-review-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: dependency review
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      # Reads the dependency-graph diff for the PR. Nothing else is needed —
+      # there is no checkout, so this is not granting access to source it reads.
+      contents: read
+      # Only so `comment-summary-in-pr: on-failure` can post the advisory table
+      # onto the PR when it blocks. The action treats a failure to comment as a
+      # `core.warning`, not a job failure (src/comment-pr.ts), so a fork PR —
+      # which gets a read-only token — still gets a correct pass/fail verdict and
+      # simply loses the comment.
+      pull-requests: write
+
+    steps:
+      - name: Dependency Review
+        # actions/dependency-review-action v5.0.0
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294
+        with:
+          # Blocks high and critical. Moderate and low are reported in the run
+          # summary and do not fail the job — the severity table in
+          # CONTRIBUTING.md is the authority on what that means for a reviewer.
+          fail-on-severity: high
+
+          # Both scopes. A devDependency is not a lesser dependency here: it runs
+          # on every CI job, on a runner holding a token, against code from a
+          # pull request. `unknown` is deliberately absent — pnpm resolves scope
+          # for everything in this tree, so an `unknown` would mean the graph
+          # failed to classify it, and failing the merge over a classification
+          # gap is not the trade this check is making.
+          fail-on-scopes: runtime, development
+
+          # Vulnerabilities only. No licence policy, no OpenSSF scoring, no
+          # popularity gate, no allowlist — see the header.
+          license-check: false
+          vulnerability-check: true
+
+          # The override path SEC-HARD-03 requires. Left empty on purpose: a
+          # maintainer merging past a block adds the GHSA id here **in the PR
+          # that needs it**, with a comment saying why the advisory does not
+          # reach Tailfin — a devDependency-only path, or a code path never
+          # called. The override is then a reviewable diff on this file rather
+          # than a decision someone made silently in a settings page.
+          allow-ghsas: ''
+
+          # Posts the advisory table as a PR comment when, and only when, the
+          # check fails. A passing PR gets no comment and no annotation.
+          comment-summary-in-pr: on-failure

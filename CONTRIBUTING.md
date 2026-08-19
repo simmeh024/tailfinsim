@@ -151,6 +151,47 @@ matter most.
 
 ---
 
+## Dependencies
+
+Every pull request is checked for **newly introduced** advisories by
+[`.github/workflows/dependency-review.yml`](.github/workflows/dependency-review.yml)
+(SEC-HARD-03). It compares the dependency graph of `main` against the graph of your
+branch and reports what your diff _added_ — runtime and development alike, direct and
+transitive alike.
+
+| Severity     | Direct dependency               | Transitive       |
+| ------------ | ------------------------------- | ---------------- |
+| **Critical** | **Blocks merge**                | **Blocks merge** |
+| **High**     | **Blocks merge**                | **Blocks merge** |
+| Moderate     | Warns — say something in the PR | Warns            |
+| Low          | Recorded in the run summary     | Ignored          |
+
+Moderate and low do not fail the check, on purpose. A gate that fires on every
+low-severity advisory is a gate people learn to click through, and then the high one
+goes through with it.
+
+**What it does not do.** It says nothing about packages that were already in the tree —
+only about what your PR adds. A dependency that has been vulnerable since March is not
+this check's problem; the whole-tree sweep is SEC-HARD-34's scheduled job. It also
+cannot see a vulnerability nobody has published yet, and it is not a code scanner —
+that is CodeQL, which answers an unrelated question about Tailfin's own source.
+
+### Overriding a block
+
+Sometimes the advisory genuinely does not reach us: a devDependency that never runs
+against untrusted input, or a vulnerable code path Tailfin never calls. The override is
+deliberately a **code change, not a click**:
+
+1. Add the GHSA id to `allow-ghsas` in the workflow, **in the PR that needs it**.
+2. In the same diff, write down why the advisory does not apply.
+3. Remove it again when the dependency is upgraded.
+
+That makes every override a reviewable line in a diff with a justification attached to
+it, rather than a decision someone took quietly in a settings page. An override with no
+stated reason should be sent back.
+
+---
+
 ## Working style
 
 - **TypeScript is the typechecker, not the compiler.** `moduleResolution: bundler` means
