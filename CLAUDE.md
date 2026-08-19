@@ -22,6 +22,12 @@ for you. Run them in CI.
 **Never `git add -A`.** Stage files explicitly, by path. A `.pem` was committed this way
 once. `.claude/` and other untracked directories sit in this working tree routinely.
 
+**Never `git checkout --` a file that has uncommitted work in it.** It restores from the
+index, so it does not undo an experiment — it destroys everything not yet committed.
+Reached for once to revert a deliberate mutation-test edit, on a file holding an
+afternoon's unstaged changes; it silently did nothing that time, which was luck rather
+than safety. Reverse the edit you made, or commit before you break something on purpose.
+
 **Never print a secret into the transcript.** Not from `.env`, not from a credential
 helper, not "just to check it is set". Generate secrets on the box, write them to
 root-only files, and tell the user the command to read them.
@@ -83,6 +89,34 @@ health check does **not** roll back; the new code is already serving.
 
 ---
 
+## What is actually running
+
+Two facts that are not visible from the code and cost time to rediscover.
+
+**Nothing runs the simulation.** `createTickLoop` and `drainDueEvents` are built, tested,
+and called by **no process** in any environment. There is no cron, no timer, no loop in
+`main.ts`. So no world advances beyond its derived clock, no event is ever drained, and
+any "ticks: 0, errors: 0" reading means _nothing has run_, not _everything is fine_. The
+admin console's health page infers liveness from the queue instead, precisely so it cannot
+report a stopped engine as healthy.
+
+Where the engine should live is [OPS-08](https://github.com/simmeh024/tailfinsim/issues/187)'s
+decision — a separate worker process, not the web process. Do not wire the loop into
+`main.ts` as a convenience; that prejudges it.
+
+**The admin console is real and is the place to look first.** `/admin`, for accounts
+holding a grant: overview with server-decided alerts, world creation, speed changes, the
+open/lock/archive/reset lifecycle, world health, a read-only player browser, and the audit
+log. Anything it can answer is faster than SSH, and every mutation it performs is audited
+in the same transaction as the change.
+
+The four-node dev/production web/worker split is planned in
+[OPS-08 – OPS-16](https://github.com/simmeh024/tailfinsim/issues/195). Read that sequence
+before designing anything infrastructural; it already records the two things that bite —
+the database has no home in the four-node diagram, and builds happen on the box.
+
+---
+
 ## Conventions
 
 **Branches:** `feat/<issue-key>-<slug>`, `fix/<slug>`, `chore/<slug>`. There is no
@@ -118,8 +152,15 @@ Specific traps met so far:
 - **Drizzle wraps driver errors.** Asserting on the outer `Failed query: …` message passes
   for _any_ failure. Walk `error.cause` for what Postgres actually said.
 - **`sql<Date>` is an assertion, not a conversion.** Column type parsers do not apply to
-  raw aggregates like `min()`; the driver returns a string. This typechecked happily and
-  threw on real Postgres.
+  raw aggregates like `min()` or `max()`; the driver returns a string. This typechecked
+  happily and threw on real Postgres. Drizzle's own `max(column)` helper has the same
+  problem with a friendlier face: it types the result as the column's type, which is a
+  lie for the same reason. Normalise at the boundary.
+- **A correlated subquery in a drizzle `select` list came back empty** against real
+  Postgres — zeros and nulls for rows that demonstrably had data — while the _same_
+  correlated shape in a `where` clause worked. Not diagnosed. If a count looks
+  impossibly low, prefer a grouped query and a lookup, which is the pattern
+  `countWorldContents` and `listPlayers` use.
 - **Performance measured on a laptop is not the criterion.** M1-08's budget says "on the
   server", and the server is a 2-core Xeon E5-2620 v4 — five times slower than the
   development machine. Measure there, and take the fastest of several runs, because a
