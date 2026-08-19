@@ -86,24 +86,62 @@ export const ReachabilityResult = z.object({
 export type ReachabilityResult = z.infer<typeof ReachabilityResult>;
 
 /**
- * A repeating rotation: this airframe flies this route at this local time on
- * these weekdays, and the sim runs it continuously (§8.2).
+ * How often a rotation runs (§8.2).
+ *
+ * A discriminated union rather than the array-with-a-convention this used to be.
+ * "An empty list means every day" reads fine in a schema and is a trap in a
+ * product: a client bug that clears the array silently turns a Saturday-only
+ * rotation into a daily one, and nothing anywhere can tell the difference
+ * between "every day" and "the days were lost". `daily` says what it means.
+ */
+export const RepeatPattern = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('daily') }),
+  z.object({ kind: z.literal('weekdays'), days: z.array(IsoWeekday).min(1).max(7) }),
+]);
+export type RepeatPattern = z.infer<typeof RepeatPattern>;
+
+/**
+ * One leg of a rotation.
+ *
+ * A leg names a `Route` rather than repeating its endpoints, so a fare change
+ * reaches every rotation that flies it and no schedule can drift out of step
+ * with the route it is supposed to serve.
  *
  * `departureMinuteLocal` is local to the origin airport, not UTC, because
- * curfews and passengers' schedule preferences (App. A.3's SchedFit term) are
- * both local concepts. Converting to UTC is the server's job and needs the
- * airport's timezone.
+ * curfews and passengers' schedule preferences (App. A.3's `SchedFit` term) are
+ * both local concepts.
+ *
+ * **The conversion to UTC has no data behind it yet.** It needs the origin
+ * airport's timezone, and `Airport.timezone` is nullable precisely because
+ * OurAirports ships no timezone column — so nothing populates it today. Until
+ * something does, the server can only treat these as UTC. `@tailfin/sim`'s
+ * rotation model works in minutes from the cycle anchor and is unaffected;
+ * this is a boundary problem, not a model one.
+ */
+export const ScheduleLeg = z.object({
+  routeId: Uuid,
+  departureMinuteLocal: MinuteOfDay,
+});
+export type ScheduleLeg = z.infer<typeof ScheduleLeg>;
+
+/**
+ * A repeating rotation: this airframe flies these legs in this order, on these
+ * days, and the sim runs it continuously (§8.2).
+ *
+ * **Ordered legs, not one route.** §8.2's *"assign an aircraft to a rotation"*
+ * and App. F.3's minute-75 beat — add the return leg and a second round trip,
+ * save it as a repeating schedule — are both about a cycle of several legs. A
+ * single-route schedule cannot express one, and cannot express the constraint
+ * that makes a rotation a rotation: the aircraft has to end where it started.
  */
 export const Schedule = z.object({
   id: Uuid,
   worldId: Uuid,
   airlineId: Uuid,
-  routeId: Uuid,
   airframeId: Uuid,
 
-  departureMinuteLocal: MinuteOfDay,
-  /** Empty means every day. */
-  weekdays: z.array(IsoWeekday).max(7),
+  legs: z.array(ScheduleLeg).min(1),
+  repeat: RepeatPattern,
 
   active: z.boolean(),
   createdAt: Timestamp,
@@ -112,9 +150,39 @@ export type Schedule = z.infer<typeof Schedule>;
 
 export const CreateScheduleInput = Schedule.pick({
   worldId: true,
-  routeId: true,
   airframeId: true,
-  departureMinuteLocal: true,
-  weekdays: true,
+  legs: true,
+  repeat: true,
 });
 export type CreateScheduleInput = z.infer<typeof CreateScheduleInput>;
+
+/**
+ * Why a rotation was refused (M2-03).
+ *
+ * Part of the contract for the same reason `ReachabilityCheck` is: a player told
+ * only that their schedule is invalid has nine things to check and no way to
+ * know which. The server's `@tailfin/sim` `RotationProblem` is this list.
+ */
+export const ScheduleProblem = z.enum([
+  'empty',
+  'no_repeat_days',
+  'leg_order',
+  'not_positioned',
+  'does_not_close',
+  'turn_too_short',
+  'cycle_overrun',
+  'no_slot',
+  'crew_illegal',
+]);
+export type ScheduleProblem = z.infer<typeof ScheduleProblem>;
+
+export const ScheduleValidation = z.discriminatedUnion('valid', [
+  z.object({ valid: z.literal(true) }),
+  z.object({
+    valid: z.literal(false),
+    problem: ScheduleProblem,
+    /** Human-readable, and specific: "leg 2 departs LFPG, but leg 1 leaves the aircraft at EGLL". */
+    detail: z.string(),
+  }),
+]);
+export type ScheduleValidation = z.infer<typeof ScheduleValidation>;
