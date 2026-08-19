@@ -29,3 +29,5 @@ export * from './clock';
 export * from './distance';
 
 export * from './flight';
+
+export * from './route';
