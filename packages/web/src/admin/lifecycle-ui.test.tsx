@@ -120,6 +120,16 @@ function stubApi(
           alerts: [],
         }),
       );
+    if (url === '/api/admin/worlds/health')
+      return Promise.resolve(
+        jsonResponse({
+          worlds: [],
+          datasets: [],
+          serverTime: '2026-08-19T12:00:00.000Z',
+          behindAfterMs: 60000,
+        }),
+      );
+
     if (url === '/api/admin/worlds') return Promise.resolve(jsonResponse({ worlds: [world] }));
 
     return Promise.reject(new Error(`unexpected fetch: ${url}`));

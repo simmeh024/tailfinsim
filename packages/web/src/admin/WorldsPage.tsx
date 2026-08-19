@@ -1,5 +1,6 @@
 import { Link } from 'react-router';
 
+import { WorldHealth } from './WorldHealth';
 import { WorldsPanel } from './WorldsPanel';
 
 import type { ReactNode } from 'react';
@@ -15,13 +16,11 @@ import type { ReactNode } from 'react';
 export function WorldsPage(): ReactNode {
   return (
     <>
+      <WorldHealth />
+
       <WorldsPanel />
 
       <section className="admin__section">
-        <h2 className="admin__heading">Not built yet</h2>
-        <ul className="admin__todo">
-          <li>World health, tick loop and queue depth — M1A-06</li>
-        </ul>
         <p className="admin__note">
           Every change made here is recorded in the <Link to="/admin/audit">audit log</Link>, which
           nobody can edit or remove — including whoever made the change.

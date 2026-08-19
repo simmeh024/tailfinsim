@@ -100,6 +100,16 @@ function stubApi(
         }),
       );
     if (url === '/api/admin/admins') return Promise.resolve(jsonResponse({ admins: [] }));
+    if (url === '/api/admin/worlds/health')
+      return Promise.resolve(
+        jsonResponse({
+          worlds: [],
+          datasets: [],
+          serverTime: '2026-08-19T12:00:00.000Z',
+          behindAfterMs: 60000,
+        }),
+      );
+
     if (url === '/api/admin/worlds') {
       if (init?.method === 'POST') {
         posted.push(JSON.parse(init.body ?? '{}'));

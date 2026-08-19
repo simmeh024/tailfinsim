@@ -112,6 +112,15 @@ function stubApi(me: MeResponse) {
       if (!me.isAdmin) return Promise.resolve(jsonResponse({ code: 'forbidden' }, 403));
       if (url === '/api/admin/audit') return Promise.resolve(jsonResponse(AUDIT));
       if (url === '/api/admin/admins') return Promise.resolve(jsonResponse(ADMINS));
+      if (url === '/api/admin/worlds/health')
+        return Promise.resolve(
+          jsonResponse({
+            worlds: [],
+            datasets: [],
+            serverTime: '2026-08-19T12:00:00.000Z',
+            behindAfterMs: 60000,
+          }),
+        );
       if (url === '/api/admin/overview') return Promise.resolve(jsonResponse(OVERVIEW));
     }
     return Promise.reject(new Error(`unexpected fetch: ${url}`));
@@ -311,19 +320,21 @@ describe('the audit log page', () => {
     expect(await screen.findByText(/append-only/i)).toBeInTheDocument();
   });
 
-  it('names what is not built yet rather than mocking it up', async () => {
-    // A disabled "Reset world" button implies a button that will work. Saying it
-    // is not built costs nothing and misleads nobody.
+  it('no longer claims anything on this page is unbuilt', async () => {
+    // This began as "names what is not built yet rather than mocking it up" —
+    // a disabled "Reset world" button implies a button that will work, so the
+    // page listed what was missing instead.
     //
-    // The list shrinks as the milestone lands: the lifecycle controls it used to
-    // name are real as of M1A-04, so this now asserts the *remaining* entry. A
-    // "not built yet" section that still lists something that exists is worse
-    // than no section at all.
+    // The list emptied as the milestone landed: lifecycle in M1A-04, health in
+    // M1A-06. A "not built yet" section that still names something that exists
+    // is worse than no section at all, so the section is gone and this asserts
+    // its absence — which is the same discipline pointing the other way.
     stubApi(ADMIN);
     renderAt('/admin/worlds');
 
-    expect(await screen.findByText(/not built yet/i)).toBeInTheDocument();
-    expect(screen.getByText(/World health, tick loop and queue depth/)).toBeInTheDocument();
+    await screen.findByRole('heading', { name: 'Health' });
+    expect(screen.queryByText(/not built yet/i)).toBeNull();
+    expect(screen.queryByText(/World health, tick loop and queue depth/)).toBeNull();
     expect(screen.queryByText(/Open, lock, archive and reset a world/)).toBeNull();
   });
 });

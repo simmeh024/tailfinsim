@@ -127,6 +127,15 @@ function stubApi(options: { rows?: AdminPlayerSummary[]; detail?: AdminPlayerDet
     if (url === '/api/version') return Promise.resolve(jsonResponse(VERSION));
     if (url.startsWith('/api/admin/audit')) return Promise.resolve(jsonResponse({ entries: [] }));
     if (url === '/api/admin/admins') return Promise.resolve(jsonResponse({ admins: [] }));
+    if (url === '/api/admin/worlds/health')
+      return Promise.resolve(
+        jsonResponse({
+          worlds: [],
+          datasets: [],
+          serverTime: '2026-08-19T12:00:00.000Z',
+          behindAfterMs: 60000,
+        }),
+      );
 
     if (url.startsWith('/api/admin/players/')) {
       const detail = options.detail === undefined ? DETAIL : options.detail;

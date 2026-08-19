@@ -449,3 +449,95 @@ export const AdminPlayerDetailResponse = z.object({
   player: AdminPlayerDetail,
 });
 export type AdminPlayerDetailResponse = z.infer<typeof AdminPlayerDetailResponse>;
+
+/**
+ * What the tick loop looks like from outside (M1A-06).
+ *
+ * Inferred from the queue rather than read from the loop's own counters, and
+ * that is deliberate. `createTickLoop` counts ticks, errors and late ticks in
+ * memory — but **nothing starts it**, in any environment, and when something
+ * does it will be a separate worker process (OPS-08/#187) whose memory the web
+ * node cannot read. Judging liveness from what the queue *shows* works today,
+ * works from another machine, and needs no new table.
+ *
+ * The states, in the order they matter:
+ *
+ *   - `no_events` — nothing pending and nothing ever processed. A quiet world,
+ *     not a broken one. Distinguished from `idle` so a world that has never done
+ *     anything cannot be mistaken for one that is up to date.
+ *   - `idle` — events are scheduled but none is due yet. Nothing to do.
+ *   - `keeping_up` — something is due and has come due only just now.
+ *   - `behind` — the oldest due event has been waiting longer than the budget.
+ *   - `stalled` — work is due and nothing has been processed. This is the one
+ *     the page exists to make visible.
+ */
+export const AdminTickState = z.enum(['no_events', 'idle', 'keeping_up', 'behind', 'stalled']);
+export type AdminTickState = z.infer<typeof AdminTickState>;
+
+/** How far behind a world's event queue is, if at all. */
+export const AdminWorldQueue = z.object({
+  /** Everything still waiting, due or not. The depth. */
+  pending: z.number().int().nonnegative(),
+  /** Game-time instant of the oldest pending event, or null when the queue is empty. */
+  oldestPendingAt: Timestamp.nullable(),
+  /**
+   * How late the oldest due event is, in **real** milliseconds — null when
+   * nothing is due yet.
+   *
+   * Real rather than game time because the question is whether the loop is
+   * keeping up with the wall clock, and a world at 4× is four times less
+   * forgiving of the same delay.
+   */
+  overdueRealMs: z.number().int().nonnegative().nullable(),
+  /** When an event was last actually processed. Null if none ever has been. */
+  lastProcessedAt: Timestamp.nullable(),
+});
+export type AdminWorldQueue = z.infer<typeof AdminWorldQueue>;
+
+/** One world, and whether it is actually running (M1A-06). */
+export const AdminWorldHealth = z.object({
+  worldId: Uuid,
+  name: z.string().min(1),
+  status: WorldStatus,
+  speedMultiplier: z.number().positive(),
+  launchDate: Timestamp,
+  inGameDate: Timestamp,
+  /** Real milliseconds since the clock started. */
+  realAgeMs: z.number().int().nonnegative(),
+  /**
+   * Airlines in this world, which is also the number of players in it: the
+   * schema allows one airline per player per world, so the two counts are the
+   * same number and reporting both would imply a distinction that does not
+   * exist.
+   */
+  airlines: z.number().int().nonnegative(),
+  queue: AdminWorldQueue,
+  tick: AdminTickState,
+  /** One line saying what the state means, decided on the server (§21). */
+  tickDetail: z.string(),
+});
+export type AdminWorldHealth = z.infer<typeof AdminWorldHealth>;
+
+/** A dataset the worlds are built on, as last imported. */
+export const AdminDatasetVersion = z.object({
+  dataset: z.string().min(1),
+  version: z.string(),
+  importedAt: Timestamp,
+});
+export type AdminDatasetVersion = z.infer<typeof AdminDatasetVersion>;
+
+/**
+ * `GET /api/admin/worlds/health` — one request, every statistic.
+ *
+ * `serverTime` anchors the client's local clock: the console ticks the in-game
+ * date forward itself between refreshes rather than polling every second, which
+ * is the build badge's pattern and exists for exactly this reason.
+ */
+export const AdminWorldHealthResponse = z.object({
+  worlds: z.array(AdminWorldHealth),
+  datasets: z.array(AdminDatasetVersion),
+  serverTime: Timestamp,
+  /** The lateness at which a world is called `behind`, so the client can say so. */
+  behindAfterMs: z.number().int().positive(),
+});
+export type AdminWorldHealthResponse = z.infer<typeof AdminWorldHealthResponse>;

@@ -8,6 +8,7 @@ import {
   adminResetWorldResponseJsonSchema,
   adminSpeedChangeResponseJsonSchema,
   adminWorldStatusResponseJsonSchema,
+  adminWorldHealthResponseJsonSchema,
   adminWorldListResponseJsonSchema,
   apiErrorJsonSchema,
   Uuid,
@@ -17,6 +18,7 @@ import { type DatabaseHandle } from '../db/client';
 
 import { parseAuditJson, readAudit } from './audit';
 import { type Actor, listAdmins } from './grants';
+import { BEHIND_AFTER_MS, buildWorldHealth } from './health';
 import {
   changeWorldStatus,
   type LifecycleRefusalCode,
@@ -182,6 +184,28 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
   );
 
   // ------------------------------------------------------------------ worlds
+
+  /**
+   * Declared before `/worlds/:worldId/...` so there is no chance of `health`
+   * being read as a world id. Fastify's router would not confuse them, but the
+   * ordering costs nothing and removes the question.
+   */
+  app.get(
+    '/api/admin/worlds/health',
+    {
+      onRequest: app.requireAdmin,
+      schema: { response: { 200: adminWorldHealthResponseJsonSchema } },
+    },
+    async (_request, reply) => {
+      const report = await buildWorldHealth(db.db);
+      return reply.code(200).send({
+        worlds: report.worlds,
+        datasets: report.datasets,
+        serverTime: report.serverTime.toISOString(),
+        behindAfterMs: BEHIND_AFTER_MS,
+      });
+    },
+  );
 
   app.get(
     '/api/admin/worlds',
