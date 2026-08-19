@@ -269,9 +269,17 @@ answered, because the reasoning is more useful than the fact.
   machine, along with a web/worker split, is [OPS-08 – OPS-16](https://github.com/simmeh024/tailfinsim/issues/195).
 - **Backups** — settled by OPS-03, well ahead of M13-11. Nightly `pg_dump` at 03:15 UTC,
   verified by reading each archive's table of contents back, uploaded to DreamObjects with
-  7 nightly and 12 monthly copies retained. **The restore was rehearsed on 2026-08-18** —
-  which is how a 9.3 MB dump shrinking to 47 KB was noticed, and the dev airport dataset
-  recovered. A backup that has never been restored is still not a backup.
+  7 nightly and 12 monthly copies retained, and **an upload failure is a backup failure** —
+  a dump that did not leave the box is not a backup. **The restore was rehearsed on
+  2026-08-18** — which is how a 9.3 MB dump shrinking to 47 KB was noticed, and the dev
+  airport dataset recovered. A backup that has never been restored is still not a backup.
+
+  Failure reaches a human three ways, because each covers what the others cannot: the
+  script pings a dead-man's-switch on finishing, `OnFailure=` catches a run that died
+  before it could report, and the switch's own grace period catches the run that never
+  happened at all. Nothing on a dead box can report that the box is dead — which is why
+  the third layer is a service _expecting_ a ping rather than an alert on an error.
+
 - **Auth provider** — settled by [ADR-0004](adr/0004-google-oauth.md): Google OAuth, with
   an account model that tolerates more than one identity per player so adding a second
   provider is not a migration over live accounts.

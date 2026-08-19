@@ -1,0 +1,46 @@
+[Unit]
+Description=Report that the Tailfin backup failed
+Documentation=https://github.com/simmeh024/tailfinsim/blob/main/deploy/README.md
+
+# Deliberately no Requires= or After=. This has to be able to run when the thing
+# it is reporting on has just died, and adding dependencies gives it new ways to
+# fail to say so.
+
+[Service]
+Type=oneshot
+
+# The layer that catches what the backup script cannot report itself.
+#
+# `backup.sh` pings the dead-man's-switch on a *handled* failure — a dump that
+# would not verify, an upload that was refused. This unit exists for the
+# unhandled ones: the OOM killer, the 30-minute TimeoutStartSec, a syntax error
+# that stops the script before it reaches its own reporting. In every one of
+# those cases systemd knows the unit failed and the script never got to say so.
+#
+# Runs as root rather than postgres because it needs nothing from the database
+# and everything from being able to read the credentials file whatever state the
+# box is in.
+#
+# `-` on the EnvironmentFile: a box with no alerting configured should still be
+# able to start this unit and log that it could not tell anybody, rather than
+# failing to report a failure — which is the most useless outcome available.
+EnvironmentFile=-/etc/tailfin/backup.env
+
+ExecStart=/bin/sh -c '\
+  if [ -n "$HEARTBEAT_URL" ]; then \
+    curl -fsS --max-time 20 --retry 3 --retry-delay 5 \
+      --data-raw "tailfin-backup unit failed — see: journalctl -u tailfin-backup -n 50" \
+      "$${HEARTBEAT_URL%/}/fail" >/dev/null 2>&1 \
+      || echo "could not reach the heartbeat endpoint"; \
+  else \
+    echo "tailfin-backup failed and HEARTBEAT_URL is not set — nobody has been told"; \
+  fi'
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tailfin-backup-failed
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true

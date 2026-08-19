@@ -339,11 +339,26 @@ deploy has not happened.
 ```bash
 install -o root -g root -m 0755 /srv/tailfin/deploy/backup.sh /usr/local/sbin/tailfin-backup
 cp /srv/tailfin/deploy/tailfin-backup.{service,timer} /etc/systemd/system/
+cp /srv/tailfin/deploy/tailfin-backup-failed.service /etc/systemd/system/
 install -d -o postgres -g postgres -m 700 /var/backups/tailfin
 install -d -o root -g postgres -m 0750 /etc/tailfin
 apt install -y s3cmd
 systemctl daemon-reload
 systemctl enable --now tailfin-backup.timer
+```
+
+`tailfin-backup-failed.service` is the `OnFailure=` target and is **not** enabled or timed
+— systemd starts it when the backup unit fails and at no other time. Copying it is enough;
+enabling it would be meaningless.
+
+Then set up alerting, below. Prove the whole path once rather than assuming it:
+
+```bash
+# A real run, off-box copy included.
+sudo systemctl start tailfin-backup && journalctl -u tailfin-backup -n 30 --no-pager
+
+# And that a failure is actually reported. Expect a "fail" ping to arrive.
+sudo systemctl start tailfin-backup-failed
 ```
 
 ### Credentials
@@ -466,15 +481,57 @@ A caution learned the same day: `/healthz` reports `db: up` against a database w
 tables at all** — it proves the connection, not the schema. Do not read a green health check
 as "the restore worked"; assert the row counts, as the procedure below does.
 
+### Alerting
+
+A backup job that fails silently is worse than none, because it manufactures confidence.
+Three layers, and each covers something the other two cannot:
+
+| Layer                          | Catches                                                                      |
+| ------------------------------ | ---------------------------------------------------------------------------- |
+| `backup.sh` pings on finishing | A handled failure — a dump that would not verify, an upload refused          |
+| `OnFailure=` on the unit       | A run that died before it could report — OOM, the 30-minute timeout, a crash |
+| The switch's own grace period  | A run that **never happened** — timer disabled, box off                      |
+
+The third is the one worth dwelling on: nothing running on a dead machine can report that
+the machine is dead. Only something _expecting_ a ping can notice one that never arrives,
+which is why a dead-man's-switch rather than an alert-on-error.
+
+Set up with any healthchecks.io-style service — a POST to the URL means success, a POST to
+`<url>/fail` means failure. Configure the check for a **1-day period with a 2-hour grace**:
+the timer runs nightly with up to five minutes of jitter, so that tolerates a slow dump
+and still complains inside the day OPS-03 asks for.
+
+```bash
+sudo install -m 0640 -o root -g postgres /dev/null /etc/tailfin/backup.env
+sudo tee /etc/tailfin/backup.env >/dev/null <<'ENV'
+HEARTBEAT_URL=https://hc-ping.com/your-uuid-here
+ENV
+```
+
+Read by both units through `EnvironmentFile=-`, so the leading `-` means a box without it
+still takes backups — and says so on every run:
+
+```
+warning: HEARTBEAT_URL is not set — nothing will notice if this stops running
+```
+
+That line is deliberate. A box with no alerting configured otherwise looks exactly like a
+box whose alerting is working.
+
+**A failed ping never fails a backup.** A network blip while the dump is safely on disk and
+in the bucket is not a backup failure, and treating it as one would make the alerting a
+source of false alarms. Ping failures are logged and ignored — and the grace period
+notices the missing ping anyway.
+
+The admin console reads `last-run.json` too, and treats a result older than 26 hours as an
+alert on its own. That is the passive half; the ping is what reaches somebody who is not
+looking.
+
 ### Still outstanding
 
 - **The rehearsal is not yet repeatable on its own** — [OPS-04] asks for a documented,
   re-runnable procedure rather than a one-off. The commands are below; automating them is
   the remaining half.
-- **A failed backup is only visible in the journal.** `last-run.json` gives something
-  machine-readable to build on, but nothing yet reads it. [OPS-03] carries the alerting
-  decision; with no mail infrastructure until M14, a dead-man's-switch that expects a daily
-  ping is the likely answer.
 
 ## The dev environment
 

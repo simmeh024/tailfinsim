@@ -4,6 +4,11 @@ Documentation=https://github.com/simmeh024/tailfinsim/blob/main/deploy/README.md
 After=postgresql.service
 Requires=postgresql.service
 
+# The layer that catches a run which died before it could report on itself — an
+# OOM kill, the timeout below, a syntax error. `backup.sh` pings the
+# dead-man's-switch for failures it handles; this is for the ones it cannot.
+OnFailure=tailfin-backup-failed.service
+
 [Service]
 Type=oneshot
 
@@ -22,6 +27,11 @@ Group=postgres
 # thing that must not stop improving because a deploy has not happened.
 #
 # Install it the same way as this unit and the Caddyfile — see deploy/README.md.
+# Where HEARTBEAT_URL comes from. The `-` makes it optional: a box without
+# alerting configured still takes backups, and says every run that nothing is
+# watching them.
+EnvironmentFile=-/etc/tailfin/backup.env
+
 ExecStart=/usr/local/sbin/tailfin-backup
 
 # A hung dump must not block tomorrow's run.
