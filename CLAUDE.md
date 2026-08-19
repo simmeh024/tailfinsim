@@ -121,7 +121,9 @@ the database has no home in the four-node diagram, and builds happen on the box.
 
 ## What runs on a pull request
 
-Three workflows, and only one of them can stop a merge today.
+Three workflows. **Two of them can stop a merge**, and the third deliberately cannot —
+see the note in `codeql.yml` about why making an analyser a gate before anyone has read
+what it finds is how a security tab fills with dismissed alerts.
 
 | Workflow                | Job / check name          | Asks                                                 | Blocks? |
 | ----------------------- | ------------------------- | ---------------------------------------------------- | ------- |
