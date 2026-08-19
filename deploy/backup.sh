@@ -29,6 +29,29 @@
 # Deleting explicitly means the log says what went.
 #
 # ---------------------------------------------------------------------------
+# Telling somebody when it goes wrong
+# ---------------------------------------------------------------------------
+# A backup job that fails silently is worse than none, because it manufactures
+# confidence. Three layers, because each covers something the others cannot:
+#
+#   1. **This script pings a dead-man's-switch** — success on success, failure on
+#      a handled failure. Immediate, and says which databases were involved.
+#   2. **`OnFailure=` on the unit** catches the run that died before it could
+#      report at all: a crash, the OOM killer, the 30-minute timeout.
+#   3. **The switch's own grace period** catches the case neither of the above
+#      can see — the run that never happened, because the timer was disabled or
+#      the box was off. Nothing on a dead machine can report that it is dead.
+#
+# `HEARTBEAT_URL` is a healthchecks.io-style endpoint: a POST to the URL means
+# success, and a POST to `<url>/fail` means failure. No mail infrastructure,
+# which matters because M14 is not built.
+#
+# **A ping can never fail a backup.** A network blip while the dump is safely on
+# disk and in the bucket is not a backup failure, and treating it as one would
+# make the alerting itself a source of false alarms. Failures to ping are logged
+# and otherwise ignored.
+#
+# ---------------------------------------------------------------------------
 # Credentials
 # ---------------------------------------------------------------------------
 # `S3_CONFIG` is an s3cmd config file owned by root and readable by the postgres
@@ -59,6 +82,10 @@ MONTHLY_ON_DAY="${MONTHLY_ON_DAY:-01}"
 # scheduled run — the timer must never be pointed at a local-only backup.
 SKIP_UPLOAD="${SKIP_UPLOAD:-0}"
 
+# Dead-man's-switch endpoint. Empty means no alerting is configured, which is
+# reported rather than assumed to be deliberate — see deploy/README.md.
+HEARTBEAT_URL="${HEARTBEAT_URL:-}"
+
 DATABASES=("$@")
 if [ ${#DATABASES[@]} -eq 0 ]; then
   DATABASES=(tailfin tailfin_dev)
@@ -82,6 +109,37 @@ uploaded=0
 declare -a SUMMARY=()
 
 s3() { s3cmd --config="${S3_CONFIG}" --quiet "$@"; }
+
+# Ping the dead-man's-switch. Never fails the run — see the header.
+#
+# `--max-time` rather than trusting the default: this runs at 03:15 with nothing
+# watching, and a hung connection to a monitoring service must not hold a
+# systemd unit open until its timeout kills a backup that had already succeeded.
+heartbeat() {
+  local outcome="$1" body="$2" url
+  [ -n "${HEARTBEAT_URL}" ] || return 0
+
+  # An `if` rather than `[ … ] && url=…`, because this function's exit status is
+  # the script's: the success ping is the last statement in the file, and an
+  # AND-list evaluating to false there would make systemd treat a backup that
+  # worked as a failed unit — and fire OnFailure on it.
+  if [ "${outcome}" = 'fail' ]; then
+    url="${HEARTBEAT_URL%/}/fail"
+  else
+    url="${HEARTBEAT_URL}"
+  fi
+
+  if curl -fsS --max-time 20 --retry 3 --retry-delay 5       --data-raw "${body}" "${url}" >/dev/null 2>&1; then
+    log "heartbeat ${outcome} sent"
+  else
+    # Logged, not fatal. The backup itself is fine; what has failed is the
+    # telling — and the switch's own grace period will notice the missing ping
+    # regardless, which is the whole point of using one.
+    log "warning: could not reach the heartbeat endpoint (${outcome})"
+  fi
+
+  return 0
+}
 
 # Objects under a prefix, oldest first. The stamp sorts lexically in the same
 # order it sorts chronologically, which is the whole reason it is shaped that way.
@@ -227,7 +285,17 @@ else
   log "note: $(dirname "${PUBLIC_STATUS_FILE}") does not exist — the console cannot see this result"
 fi
 
+if [ -z "${HEARTBEAT_URL}" ]; then
+  # Said out loud every run. A box with no alerting configured looks exactly
+  # like a box whose alerting is working, which is the failure this whole
+  # section exists to prevent.
+  log "warning: HEARTBEAT_URL is not set — nothing will notice if this stops running"
+fi
+
 if [ "${failed}" -ne 0 ]; then
   log "one or more backups FAILED"
+  heartbeat fail "backup FAILED: ${SUMMARY[*]:-none}"
   exit 1
 fi
+
+heartbeat ok "backup ok: ${uploaded} uploaded; ${SUMMARY[*]:-none}"
