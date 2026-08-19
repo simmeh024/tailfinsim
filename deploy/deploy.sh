@@ -116,6 +116,27 @@ log "Building"
 # since WEB_SURFACE=app serves the client from packages/web/dist/client.
 pnpm build:apps
 
+# Stamp the deploy (OPS-02).
+#
+# `build.mjs` has just written dist/build-info.json — what this code *is*. This
+# is the other half: how it got here. Only the deploy knows the ref that was
+# asked for, because the checkout above is `--detach` and leaves no branch on
+# disk to read back, and only the deploy knows when the code was put here as
+# distinct from when the process last restarted.
+#
+# After the build because the build creates the directory, and before the
+# restart because the server reads this once at boot.
+#
+# No JSON escaping: git refuses a ref containing a quote, a backslash or a
+# space (git-check-ref-format), so TARGET cannot break out of the string.
+log "Stamping the deploy"
+cat > packages/server/dist/deploy-info.json <<JSON
+{
+  "ref": "${TARGET}",
+  "deployedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+JSON
+
 log "Applying migrations"
 # From packages/server so drizzle finds ./drizzle. If this fails the old
 # service is still serving, and the checkout is the only thing that moved.

@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Tailfin — real-time online airline management sim",
+  "description": "Tailfin \u2014 real-time online airline management sim",
   "packageManager": "pnpm@11.22.0",
   "engines": {
     "node": ">=24.19.0 <25",
@@ -26,7 +26,8 @@
     "db:generate": "pnpm --filter @tailfin/server db:generate",
     "db:migrate": "pnpm --filter @tailfin/server db:migrate",
     "db:studio": "pnpm --filter @tailfin/server db:studio",
-    "db:check": "pnpm --filter @tailfin/server db:check"
+    "db:check": "pnpm --filter @tailfin/server db:check",
+    "ops:status": "pnpm --filter @tailfin/server ops:status"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

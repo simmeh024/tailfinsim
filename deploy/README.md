@@ -223,18 +223,42 @@ curl -si https://tailfinsim.com/healthz
 
 ## Operating notes
 
-| Task             | Command                                                |
-| ---------------- | ------------------------------------------------------ |
-| What is running? | `sudo -u tailfin git -C /srv/tailfin log -1 --oneline` |
-| Deploy latest    | `./deploy/deploy.sh`                                   |
-| Roll back        | `./deploy/deploy.sh <older-sha>`                       |
-| Rebuild in place | `./deploy/deploy.sh --force`                           |
-| App logs         | `journalctl -u tailfin -f`                             |
-| Proxy logs       | `journalctl -u caddy -f`                               |
-| Restart          | `sudo systemctl restart tailfin`                       |
+| Task                        | Command                                                |
+| --------------------------- | ------------------------------------------------------ |
+| **What is deployed where?** | `pnpm ops:status` — **from anywhere, no SSH**          |
+| What is running here?       | `sudo -u tailfin git -C /srv/tailfin log -1 --oneline` |
+| Deploy latest               | `./deploy/deploy.sh`                                   |
+| Roll back                   | `./deploy/deploy.sh <older-sha>`                       |
+| Rebuild in place            | `./deploy/deploy.sh --force`                           |
+| App logs                    | `journalctl -u tailfin -f`                             |
+| Proxy logs                  | `journalctl -u caddy -f`                               |
+| Restart                     | `sudo systemctl restart tailfin`                       |
 
 Run the git command **as `tailfin`**. The checkout is owned by `tailfin`, so git's
 dubious-ownership guard rejects it from any other account.
+
+`pnpm ops:status` (OPS-02) is the one to reach for first, because it needs none of this
+— no SSH, no credentials, no VPN. It reads both boxes' public `/api/version` and asks
+GitHub where `main` is, and prints the three together:
+
+```
+main   abeee40
+
+environment build   commit    behind  ref             deployed
+production  101     ecf90e7   28      origin/main     16h ago
+dev         129     abeee40   0       origin/main     4m ago
+
+!  production is 28 commits behind main
+```
+
+`behind` is commits `main` has that the box does not. A `*` beside it means the box is
+running something **not on `main`** — normal for dev, which exists to preview branches,
+and a klaxon for production, which OPS-01 refuses. An unreachable box says so on its own
+row rather than vanishing from the table.
+
+It always exits zero, including when it reports problems: drift is what it exists to
+show, not a failure of the tool. It needs the server package built (`pnpm build:apps`),
+like every other CLI here.
 
 ## Swap
 

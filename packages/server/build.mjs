@@ -21,6 +21,7 @@ import { build } from 'esbuild';
  *   build-distance-matrix.js  packs the great-circle matrix (M1-04)
  *   seed-world.js       creates the flagship world from config (M1-09)
  *   admin-cli.js        grants and revokes admin from a shell (M1A-01)
+ *   ops-status.js       what is deployed where, over public HTTP (OPS-02)
  */
 await build({
   entryPoints: [
@@ -32,6 +33,7 @@ await build({
     'src/build-distance-matrix.ts',
     'src/seed-world.ts',
     'src/admin-cli.ts',
+    'src/ops-status.ts',
   ],
   outdir: 'dist',
   bundle: true,
