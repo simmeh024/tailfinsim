@@ -13,3 +13,24 @@ packages:
 allowBuilds:
   esbuild: true
   unrs-resolver: false
+
+# Force the abandoned @esbuild-kit chain onto a patched esbuild (GHSA-67mh-4wv8-2f99).
+#
+# drizzle-kit 0.31.10 — the current release — still declares
+# `@esbuild-kit/esm-loader`, which pins `esbuild@0.18.20`. That version is
+# affected by a moderate advisory in esbuild's **development server**: it sets
+# `Access-Control-Allow-Origin: *`, so any page the developer visits can read
+# from a running esbuild dev server.
+#
+# Tailfin never starts one. `@esbuild-kit/core-utils` only calls esbuild's
+# transform API, to compile `drizzle.config.ts` when a `db:*` script runs, and
+# the vulnerable code path is `serve()`. So this is not exploitable here — but
+# the fix costs one line and removes the argument entirely, which is worth more
+# than being right about the reasoning.
+#
+# There is no upgrade to take instead: 0.31.10 is the latest drizzle-kit, and
+# the @esbuild-kit packages are deprecated and unmaintained (their author folded
+# them into `tsx`, which drizzle-kit already depends on directly). Remove this
+# override once drizzle-kit drops the dependency.
+overrides:
+  '@esbuild-kit/core-utils>esbuild': '^0.25.12'
