@@ -292,6 +292,22 @@ describeDb('schedules and their flights', () => {
       ).rejects.toThrow();
     });
 
+    it('will not let a weekday schedule carry null days either', async () => {
+      // The same hole as the empty array, reached from the other side: an
+      // unknown check result passes, so `cardinality(null)` had to be coalesced
+      // too, not just `array_length('{}')`.
+      const { worldId, airlineId } = await makeWorldAndAirline();
+      await expect(
+        db.db.insert(schedule).values({
+          worldId,
+          airlineId,
+          airframeId: crypto.randomUUID(),
+          repeatKind: 'weekdays',
+          repeatDays: null,
+        }),
+      ).rejects.toThrow();
+    });
+
     it('will not let a weekday schedule carry a day that is not one', async () => {
       const { worldId, airlineId } = await makeWorldAndAirline();
       await expect(

@@ -1,5 +1,5 @@
 {
-  "id": "d83d75df-ce1e-4691-91e0-bef96c11723a",
+  "id": "3d492337-5fa6-475e-b6ec-f4b67c895b2a",
   "prevId": "e94ae77c-4ece-4ac5-b4d7-2b21a1bb5043",
   "version": "7",
   "dialect": "postgresql",
@@ -1411,7 +1411,7 @@
       "checkConstraints": {
         "schedule_repeat_days_match_kind": {
           "name": "schedule_repeat_days_match_kind",
-          "value": "(\"schedule\".\"repeat_kind\" = 'daily' AND \"schedule\".\"repeat_days\" IS NULL)\n          OR (\"schedule\".\"repeat_kind\" = 'weekdays'\n              AND array_length(\"schedule\".\"repeat_days\", 1) BETWEEN 1 AND 7\n              AND \"schedule\".\"repeat_days\" <@ ARRAY[1,2,3,4,5,6,7])"
+          "value": "(\"schedule\".\"repeat_kind\" = 'daily' AND \"schedule\".\"repeat_days\" IS NULL)\n          OR (\"schedule\".\"repeat_kind\" = 'weekdays'\n              AND coalesce(cardinality(\"schedule\".\"repeat_days\"), 0) BETWEEN 1 AND 7\n              AND \"schedule\".\"repeat_days\" <@ ARRAY[1,2,3,4,5,6,7])"
         }
       },
       "isRLSEnabled": false

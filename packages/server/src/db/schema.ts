@@ -837,11 +837,20 @@ export const schedule = pgTable(
     index('schedule_airline_id_idx').on(t.airlineId),
     // The materialisation query is "active schedules in this world".
     index('schedule_world_id_active_idx').on(t.worldId, t.active),
+    /**
+     * `coalesce(cardinality(...), 0)`, and both halves of that are load-bearing.
+     *
+     * `array_length('{}', 1)` is **NULL** in Postgres, not 0 — and a check
+     * constraint passes when its result is unknown. Written the obvious way,
+     * this constraint let an empty array through: exactly the "empty means every
+     * day" ambiguity it exists to forbid. `cardinality` gives 0 for an empty
+     * array, and the `coalesce` closes the same hole for a null one.
+     */
     check(
       'schedule_repeat_days_match_kind',
       sql`(${t.repeatKind} = 'daily' AND ${t.repeatDays} IS NULL)
           OR (${t.repeatKind} = 'weekdays'
-              AND array_length(${t.repeatDays}, 1) BETWEEN 1 AND 7
+              AND coalesce(cardinality(${t.repeatDays}), 0) BETWEEN 1 AND 7
               AND ${t.repeatDays} <@ ARRAY[1,2,3,4,5,6,7])`,
     ),
   ],

@@ -38,7 +38,7 @@ CREATE TABLE "schedule" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "schedule_repeat_days_match_kind" CHECK (("schedule"."repeat_kind" = 'daily' AND "schedule"."repeat_days" IS NULL)
           OR ("schedule"."repeat_kind" = 'weekdays'
-              AND array_length("schedule"."repeat_days", 1) BETWEEN 1 AND 7
+              AND coalesce(cardinality("schedule"."repeat_days"), 0) BETWEEN 1 AND 7
               AND "schedule"."repeat_days" <@ ARRAY[1,2,3,4,5,6,7]))
 );
 --> statement-breakpoint
