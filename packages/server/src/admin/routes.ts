@@ -3,6 +3,8 @@ import {
   adminCreateWorldResponseJsonSchema,
   adminListResponseJsonSchema,
   adminOverviewResponseJsonSchema,
+  adminPlayerDetailResponseJsonSchema,
+  adminPlayerListResponseJsonSchema,
   adminResetWorldResponseJsonSchema,
   adminSpeedChangeResponseJsonSchema,
   adminWorldStatusResponseJsonSchema,
@@ -23,6 +25,7 @@ import {
   validateStatusRequest,
 } from './lifecycle';
 import { buildOverview } from './overview';
+import { listPlayers, readPlayer } from './players';
 import { changeWorldSpeed, type SpeedRefusalCode, validateSpeedRequest } from './speed';
 import {
   constraintFailure,
@@ -79,14 +82,18 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
     async (_request, reply) => reply.code(200).send(await buildOverview(db.db)),
   );
 
-  app.get(
+  app.get<{ Querystring: { includeViews?: string } }>(
     '/api/admin/audit',
     {
       onRequest: app.requireAdmin,
       schema: { response: { 200: adminAuditResponseJsonSchema } },
     },
-    async (_request, reply) => {
-      const rows = await readAudit(db.db, 100);
+    async (request, reply) => {
+      // Views are left out unless asked for. Opening a player's account is
+      // recorded (M1A-08), but those rows would outnumber every change and bury
+      // the entries the log is read for.
+      const includeViews = request.query.includeViews === 'true';
+      const rows = await readAudit(db.db, { limit: 100, includeViews });
       return reply.code(200).send({
         entries: rows.map((row) => ({
           id: row.id,
@@ -121,6 +128,56 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
           grantedByLabel: entry.grantedByLabel,
         })),
       });
+    },
+  );
+
+  // ----------------------------------------------------------------- players
+
+  app.get<{ Querystring: { q?: string; limit?: string; offset?: string } }>(
+    '/api/admin/players',
+    {
+      onRequest: app.requireAdmin,
+      schema: { response: { 200: adminPlayerListResponseJsonSchema } },
+    },
+    async (request, reply) => {
+      // Not audited. A search returning a page of names is not a view of a
+      // person's record — the detail route below is, and that one is recorded.
+      const page = await listPlayers(db.db, {
+        query: request.query.q,
+        limit: request.query.limit === undefined ? undefined : Number(request.query.limit),
+        offset: request.query.offset === undefined ? undefined : Number(request.query.offset),
+      });
+      return reply.code(200).send(page);
+    },
+  );
+
+  app.get<{ Params: { playerId: string } }>(
+    '/api/admin/players/:playerId',
+    {
+      onRequest: app.requireAdmin,
+      schema: {
+        response: { 200: adminPlayerDetailResponseJsonSchema, 404: apiErrorJsonSchema },
+      },
+    },
+    async (request, reply) => {
+      if (!Uuid.safeParse(request.params.playerId).success) {
+        return reply
+          .code(404)
+          .send({ code: 'player_not_found', message: 'No player with that id.' });
+      }
+
+      // A GET that writes, deliberately: this discloses somebody's identities,
+      // email address and sessions, and §22.1 asks for a record of every admin
+      // action. The row is written in the same transaction as the read, so the
+      // disclosure and the record cannot come apart.
+      const detail = await readPlayer(db.db, request.params.playerId, actorOf(request));
+      if (!detail) {
+        return reply
+          .code(404)
+          .send({ code: 'player_not_found', message: 'No player with that id.' });
+      }
+
+      return reply.code(200).send({ player: detail });
     },
   );
 

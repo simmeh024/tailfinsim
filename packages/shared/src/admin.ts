@@ -349,3 +349,103 @@ export const AdminOverviewResponse = z.object({
   alerts: z.array(AdminAlert),
 });
 export type AdminOverviewResponse = z.infer<typeof AdminOverviewResponse>;
+
+/**
+ * A player as the console lists them (M1A-08).
+ *
+ * No email address here, deliberately. The list is the wide surface — it is what
+ * a search returns, what a screenshot catches, and what a shoulder reads — and an
+ * address is not needed to *find* someone. It appears on the detail view, where
+ * looking is a deliberate act and is recorded as one.
+ */
+export const AdminPlayerSummary = z.object({
+  id: Uuid,
+  displayName: z.string().min(1),
+  createdAt: Timestamp,
+  /** Newest session activity, or null for an account that has never signed in since sessions existed. */
+  lastSeenAt: Timestamp.nullable(),
+  airlines: z.number().int().nonnegative(),
+  /** True if this player holds an admin grant — worth seeing in a list of accounts. */
+  isAdmin: z.boolean(),
+});
+export type AdminPlayerSummary = z.infer<typeof AdminPlayerSummary>;
+
+/** `GET /api/admin/players?q=&limit=&offset=` */
+export const AdminPlayerListResponse = z.object({
+  players: z.array(AdminPlayerSummary),
+  /** Matches for the query, which may exceed the page returned. */
+  total: z.number().int().nonnegative(),
+  /** Echoed back so a slow response cannot be rendered against a newer query. */
+  query: z.string(),
+  limit: z.number().int().positive(),
+  offset: z.number().int().nonnegative(),
+});
+export type AdminPlayerListResponse = z.infer<typeof AdminPlayerListResponse>;
+
+/**
+ * One external identity.
+ *
+ * `subject` is the provider's stable account key — Google's `sub` — and is safe
+ * to show: it identifies the account to the provider but authenticates nothing.
+ * The email is informational, never used to match an identity to a player
+ * (ADR-0004), and is shown here because support needs it to recognise who they
+ * are talking to.
+ */
+export const AdminPlayerIdentity = z.object({
+  provider: z.string().min(1),
+  subject: z.string().min(1),
+  email: z.string().nullable(),
+  createdAt: Timestamp,
+});
+export type AdminPlayerIdentity = z.infer<typeof AdminPlayerIdentity>;
+
+/**
+ * One session, as metadata only.
+ *
+ * There is no field here that could carry a token, and that is structural rather
+ * than careful: the database stores only a SHA-256 of it, and this shape has
+ * nowhere to put one even if somebody tried.
+ */
+export const AdminPlayerSession = z.object({
+  id: Uuid,
+  createdAt: Timestamp,
+  expiresAt: Timestamp,
+  lastSeenAt: Timestamp,
+  /** Worked out on the server against its own clock, so a skewed browser cannot disagree. */
+  expired: z.boolean(),
+});
+export type AdminPlayerSession = z.infer<typeof AdminPlayerSession>;
+
+/** One airline this player holds, in one world. */
+export const AdminPlayerAirline = z.object({
+  id: Uuid,
+  worldId: Uuid,
+  worldName: z.string().min(1),
+  name: z.string().min(1),
+  iataCode: z.string(),
+  icaoCode: z.string(),
+  callsign: z.string(),
+  /** Integer minor units, as stored. Formatting is the client's problem, not the wire's. */
+  cashMinor: z.number().int(),
+  reputation: z.number(),
+  createdAt: Timestamp,
+});
+export type AdminPlayerAirline = z.infer<typeof AdminPlayerAirline>;
+
+/** `GET /api/admin/players/:playerId` */
+export const AdminPlayerDetail = z.object({
+  id: Uuid,
+  displayName: z.string().min(1),
+  avatarUrl: z.string().nullable(),
+  createdAt: Timestamp,
+  isAdmin: z.boolean(),
+  identities: z.array(AdminPlayerIdentity),
+  sessions: z.array(AdminPlayerSession),
+  airlines: z.array(AdminPlayerAirline),
+});
+export type AdminPlayerDetail = z.infer<typeof AdminPlayerDetail>;
+
+export const AdminPlayerDetailResponse = z.object({
+  player: AdminPlayerDetail,
+});
+export type AdminPlayerDetailResponse = z.infer<typeof AdminPlayerDetailResponse>;

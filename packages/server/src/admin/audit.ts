@@ -1,4 +1,4 @@
-import { desc } from 'drizzle-orm';
+import { desc, notInArray } from 'drizzle-orm';
 
 import { type AdminAction, type AdminSubjectType } from '@tailfin/shared';
 
@@ -57,12 +57,39 @@ export async function writeAudit(tx: Database, entry: AuditEntry): Promise<void>
   });
 }
 
+/**
+ * Actions that record a *look* rather than a change.
+ *
+ * Left out of the log by default (M1A-08). Opening somebody's account is an act
+ * worth recording — §22.1 asks for a log of every admin action, and a support
+ * tool that can read any account without leaving a trace is one nobody can be
+ * held to. But views will outnumber changes by orders of magnitude, and a log
+ * where "who reset the world?" is buried under three hundred page views is a log
+ * that stops being read at exactly the moment it matters.
+ *
+ * So both are true at once: the row is always written, and the default view
+ * leaves it out. Asking for it is one parameter.
+ */
+const VIEW_ACTIONS: readonly AdminAction[] = ['player.viewed'];
+
+export interface AuditQuery {
+  limit?: number;
+  /** Include the read-only actions listed above. Default false. */
+  includeViews?: boolean;
+}
+
 /** Newest first. `limit` is capped so a stray query cannot pull the whole log. */
-export async function readAudit(db: Database, limit = 100): Promise<AdminAuditRow[]> {
-  const capped = Math.min(Math.max(Math.trunc(limit), 1), 500);
+export async function readAudit(db: Database, options: AuditQuery = {}): Promise<AdminAuditRow[]> {
+  const capped = Math.min(Math.max(Math.trunc(options.limit ?? 100), 1), 500);
+
+  // Filtered in the query rather than after it: excluding rows in JavaScript
+  // would mean a page of 100 that arrives as 12 once the views are dropped.
+  const where = options.includeViews ? undefined : notInArray(adminAudit.action, [...VIEW_ACTIONS]);
+
   return db
     .select()
     .from(adminAudit)
+    .where(where)
     .orderBy(desc(adminAudit.at), desc(adminAudit.id))
     .limit(capped);
 }

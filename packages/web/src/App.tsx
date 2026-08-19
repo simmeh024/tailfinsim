@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router';
 import { AdminLayout } from './admin/AdminLayout';
 import { AuditPage } from './admin/AuditPage';
 import { OverviewPage } from './admin/OverviewPage';
+import { PlayersPage } from './admin/PlayersPage';
 import { WorldsPage } from './admin/WorldsPage';
 import { RequireSession } from './auth/RequireSession';
 import { SessionProvider } from './auth/SessionProvider';
@@ -74,6 +75,14 @@ export function App(): ReactNode {
               <Route path="admin" element={<AdminLayout />}>
                 <Route index element={<OverviewPage />} />
                 <Route path="worlds" element={<WorldsPage />} />
+                {/*
+                  One page, two shapes. A player's detail has its own URL so a
+                  support conversation can link to it, and the list is the same
+                  route without an id rather than a separate component that has
+                  to be kept in step.
+                */}
+                <Route path="players" element={<PlayersPage />} />
+                <Route path="players/:playerId" element={<PlayersPage />} />
                 <Route path="audit" element={<AuditPage />} />
               </Route>
               <Route

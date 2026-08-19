@@ -255,8 +255,13 @@ describe('the overview', () => {
     // the fetch resolves, so waiting on it and then querying synchronously races
     // the data — passed locally, failed one run in three.
     expect(await screen.findByText('85,915')).toBeInTheDocument();
-    expect(screen.getByText('Airports')).toBeInTheDocument();
-    expect(screen.getByText('Players')).toBeInTheDocument();
+
+    // Scoped to the tiles. "Players" is also a nav section as of M1A-08, and an
+    // unscoped query matches both — which proves nothing about either.
+    const tiles = document.querySelectorAll('.stat__label');
+    const labels = Array.from(tiles).map((tile) => tile.textContent);
+    expect(labels).toContain('Airports');
+    expect(labels).toContain('Players');
   });
 
   it('shows the alerts the server decided on', async () => {

@@ -167,7 +167,7 @@ describeDb('the world lifecycle', () => {
   }
 
   async function auditFor(worldId: string) {
-    return (await readAudit(db.db, 500)).filter((entry) => entry.subjectId === worldId);
+    return (await readAudit(db.db, { limit: 500 })).filter((entry) => entry.subjectId === worldId);
   }
 
   describe('transitions', () => {
