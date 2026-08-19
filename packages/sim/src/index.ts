@@ -41,3 +41,5 @@ export * from './schedule';
 export * from './economy';
 
 export * from './fleet';
+
+export * from './weather';
