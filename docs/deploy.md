@@ -1,7 +1,10 @@
 # Deployment & connections
 
-Status: **planned, not yet provisioned.** This document is the target topology and the
-exact records to create. Nothing here is live until the DreamCompute instance exists.
+Status: **live.** The DreamCompute instance exists and serves both `tailfinsim.com` (the
+holding page) and `dev.tailfinsim.com` (the application). This document is the reasoning —
+why this hosting, this topology, these records. The step-by-step runbook for building the
+box is [`deploy/README.md`](../deploy/README.md); the operational rules are
+[`CLAUDE.md`](../CLAUDE.md).
 
 ---
 
@@ -42,7 +45,8 @@ A single DreamCompute instance running everything behind one reverse proxy:
           ┌───────────────┼────────────────┐
           ▼               ▼                ▼
      /  → web        /api → server    /ws → server
-     static build     Fastify          WebSocket
+     built client     Fastify          WebSocket —
+     (WEB_SURFACE)                     M12-01, not built
                           │
                           ▼
                     Postgres 16
@@ -76,10 +80,16 @@ traffic, that is the signal to move up.
 
 All accounts include 100 GB of block storage and free bandwidth.
 
-**Status (2026-08-17):** DreamCompute is **activated** — region `US-East 2` (`iad2`), tenant
-`7407e2e12e9241fb81e6e083d00eab79`, project `dhc2993840`, user `passle`. **No instance
-exists yet**; a launch is configured but not submitted. Creating it and generating the SSH
-keypair are account actions.
+**Status (2026-08-19):** running on one `lightspeed` instance in `US-East 2` (`iad2`),
+serving production and dev from the same box — separate checkout, port, database and
+service. 2 GB of swap was added because deploys build on the machine and 4 GB is tight
+while bundling.
+
+Splitting dev from production, and web from worker, is
+[OPS-08 – OPS-16](https://github.com/simmeh024/tailfinsim/issues/195). That plan raises a
+question this section does not answer: **where Postgres lives** once the app is on more
+than one node. Today it is local, reached over a loopback socket, and `backup.sh` depends
+on that through peer authentication.
 
 Note for the launch wizard: attaching the instance to the **`public`** network gives it a
 routable IPv4 directly, so **no floating IP is involved**. And if booting from a new volume,
@@ -90,22 +100,21 @@ the wizard's default volume size of 4 GB is smaller than the Ubuntu 24.04 image 
 
 In the DreamHost panel: **Domains → Manage Domains → DNS** for `tailfinsim.com`.
 
-Current state (verified 2026-08-17): the domain resolves to DreamHost nameservers
-(`ns1/ns2/ns3.dreamhost.com`) with **no A, MX or TXT records at all**. Clean slate.
+These records exist and resolve. Kept here because a rebuild — or the multi-node split —
+means recreating them, and because the omissions below are deliberate rather than forgotten.
 
-Once the instance exists, take its public IPv4 from the Instances list and add:
-
-| Type | Host          | Value                   | Purpose                      |
-| ---- | ------------- | ----------------------- | ---------------------------- |
-| `A`  | _(blank / @)_ | `<instance IP>`         | Apex → the app               |
-| `A`  | `www`         | `<instance IP>`         | Caddy redirects `www` → apex |
-| `A`  | `staging`     | `<staging instance IP>` | Only if a staging box exists |
+| Type | Host          | Value           | Purpose                      |
+| ---- | ------------- | --------------- | ---------------------------- |
+| `A`  | _(blank / @)_ | `<instance IP>` | Apex → the app               |
+| `A`  | `www`         | `<instance IP>` | Caddy redirects `www` → apex |
+| `A`  | `dev`         | `<instance IP>` | Dev — the same box today     |
 
 Leave everything else empty for now. In particular:
 
-- **No MX record yet.** Only needed if M0-11 chooses email magic-link auth over GitHub
-  OAuth, and even then the sending provider (Resend/Postmark/SES) supplies its own
-  SPF/DKIM/DMARC records. Adding mail DNS before choosing the provider means redoing it.
+- **No MX record yet.** M0-11 chose Google OAuth ([ADR-0004](adr/0004-google-oauth.md)), so
+  sign-in needs no mail. Transactional email is **M14**, and its provider will supply its
+  own SPF/DKIM/DMARC records (M14-02) — adding mail DNS before choosing the provider means
+  redoing it.
 - **No CAA record yet**, but consider adding one once TLS is live to restrict which CAs
   may issue for the domain.
 
@@ -120,26 +129,35 @@ fails. Propagation on a fresh domain with no prior records is usually minutes.
 
 ## 4. Environment variables
 
-Required by the server. Nothing here has a default that is safe in production; the
-process should refuse to boot on a missing value rather than guess (M0-08).
+Read by the server at boot from a `.env` beside the bundle.
+
+**Only `DATABASE_URL` is genuinely required** — everything else has a default, and the
+defaults are chosen to be safe rather than convenient: `WEB_SURFACE` serves a holding page,
+`ALLOW_REGISTRATION` is closed, and `ENVIRONMENT_LABEL` is `local` because a box that
+forgot to say which it is should not claim to be the live one. The "required" column below
+reflects that; earlier versions of this table overstated it.
+
+The three auth values are all-or-nothing: set together, or left unset. Setting only some is
+refused at boot, because a half-configured sign-in looks like a working one and fails at
+the callback, after the player has been sent to Google.
 
 | Variable                      | Example                                       | Required | Notes                                                  |
 | ----------------------------- | --------------------------------------------- | -------- | ------------------------------------------------------ |
-| `NODE_ENV`                    | `production`                                  | yes      | `development` \| `test` \| `production`                |
-| `PORT`                        | `3000`                                        | yes      | Caddy proxies to this                                  |
+| `NODE_ENV`                    | `production`                                  | no       | `development` \| `test` \| `production`                |
+| `PORT`                        | `3000`                                        | no       | Caddy proxies to this. Defaults to 3000                |
 | `DATABASE_URL`                | `postgres://tailfin:…@localhost:5432/tailfin` | yes      | M0-05. Never hardcoded, never committed                |
 | `DATABASE_POOL_MAX`           | `10`                                          | no       | Defaults to 10                                         |
 | `DATABASE_CONNECT_TIMEOUT_MS` | `5000`                                        | no       | Defaults to 5000. `pg`'s own default waits forever     |
 | `LOG_LEVEL`                   | `info`                                        | no       | Pino level; defaults to `info` in prod, `debug` in dev |
 | `WEB_SURFACE`                 | `app`                                         | no       | `holding` (default) or `app`. What `/` serves          |
 | `ENVIRONMENT_LABEL`           | `dev`                                         | no       | `local` (default), `dev`, `production`. Build badge    |
-| `PUBLIC_ORIGIN`               | `https://tailfinsim.com`                      | yes      | OAuth redirect base; also decides `Secure` on cookies  |
+| `PUBLIC_ORIGIN`               | `https://tailfinsim.com`                      | no       | OAuth redirect base; also decides `Secure` on cookies  |
 | `GOOGLE_CLIENT_ID`            | `….apps.googleusercontent.com`                | no       | M0-11. All three auth vars together, or none           |
 | `GOOGLE_CLIENT_SECRET`        | `GOCSPX-…`                                    | no       | Never logged, never echoed                             |
 | `SESSION_SECRET`              | _(32+ random bytes, base64)_                  | no       | Rotating it invalidates every session                  |
 | `SESSION_TTL_HOURS`           | `720`                                         | no       | Defaults to 30 days                                    |
 | `ALLOW_REGISTRATION`          | `false`                                       | no       | **Defaults to false.** Closed unless explicitly opened |
-| `WORLD_TICK_MS`               | `1000`                                        | no       | Coarse tick for position interpolation (§21)           |
+| `BACKUP_STATUS_FILE`          | `/var/lib/tailfin/backup-status.json`         | no       | Written by `backup.sh`, read by the admin overview     |
 
 ### Build numbers (M0-12)
 
@@ -224,17 +242,42 @@ orders itself to limit the damage — build, then migrate, then restart, so a fa
 step leaves the running service alone — but rollback means rebuilding, which takes minutes
 and can itself fail.
 
-## 6. What is still open
+## 6. Since settled
 
-- **Static web assets.** The server currently serves the API only. M0-09 decides whether
-  the built client is served from the server's static route or from a CDN; the Caddyfile
-  routes everything to the server today, which works either way.
-- **Staging.** There is one environment. A second box is worth it once there is a reason.
-- **Backups.** M13-11. A nightly `pg_dump` off-instance is cheap to add now, and a backup
-  that has never been restored is not a backup.
-- **Auth provider** (M0-11) — GitHub OAuth is far simpler to stand up but restricts
-  players to people with GitHub accounts, which is wrong for a public game. Email
-  magic-link needs a sending provider and DNS records. Decide before M0-11, not during.
+Four of the five questions this section used to list have answers. They are kept here,
+answered, because the reasoning is more useful than the fact.
+
+- **Static web assets** — settled. The server serves the built client from
+  `packages/web/dist/client` when `WEB_SURFACE=app`, on the same origin as the API. No CDN.
+  Production still has `WEB_SURFACE` unset and serves the holding page; promoting the app
+  is that one variable plus a deploy.
+- **Staging** — settled, though not as a second box. `dev.tailfinsim.com` shares this
+  instance: separate checkout, port, database and service. Splitting it onto its own
+  machine, along with a web/worker split, is [OPS-08 – OPS-16](https://github.com/simmeh024/tailfinsim/issues/195).
+- **Backups** — settled by OPS-03, well ahead of M13-11. Nightly `pg_dump` at 03:15 UTC,
+  verified by reading each archive's table of contents back, uploaded to DreamObjects with
+  7 nightly and 12 monthly copies retained. **The restore was rehearsed on 2026-08-18** —
+  which is how a 9.3 MB dump shrinking to 47 KB was noticed, and the dev airport dataset
+  recovered. A backup that has never been restored is still not a backup.
+- **Auth provider** — settled by [ADR-0004](adr/0004-google-oauth.md): Google OAuth, with
+  an account model that tolerates more than one identity per player so adding a second
+  provider is not a migration over live accounts.
+
+## 7. What is still open
+
 - **Region.** DreamCompute is US-only and the instance is in US-East 2 — roughly 90–110 ms
   from European players. Acceptable for a sim where a flight takes hours, but it is a real
   cost of staying with DreamHost and worth revisiting if latency becomes a complaint.
+- **Where the simulation runs.** Nothing runs the tick loop today — `createTickLoop` and
+  the event queue are built, tested, and called by no process. Where the engine lives is
+  [OPS-08](https://github.com/simmeh024/tailfinsim/issues/187), and it should be a worker
+  rather than the web process.
+- **Where Postgres lives after the split.** The four-node topology in OPS-08 – OPS-16 has
+  no home for the database, which today is local to the box and reached over a loopback
+  socket — including by `backup.sh`, which uses peer authentication.
+  [OPS-11](https://github.com/simmeh024/tailfinsim/issues/190) forces that decision.
+- **Real-money payments.** Settled in principle by [ADR-0006](adr/0006-stripe-for-real-money.md)
+  — Stripe, hosted checkout, no card data on Tailfin's servers. Nothing is integrated: the
+  first product that needs it is the poster shop
+  ([POD milestone](https://github.com/simmeh024/tailfinsim/milestone/21)), which is
+  post-launch. No Stripe environment variables exist yet, and none should until then.
