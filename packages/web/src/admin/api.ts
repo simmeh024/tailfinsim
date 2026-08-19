@@ -6,6 +6,7 @@ import type {
   AdminPlayerListResponse,
   AdminResetWorldResponse,
   AdminSpeedChangeResponse,
+  AdminWorldHealthResponse,
   AdminWorldStatusResponse,
   AdminWorldSummary,
   WorldStatus,
@@ -265,4 +266,9 @@ export async function fetchPlayer(playerId: string): Promise<AdminPlayerDetail |
   if (!response.ok) throw new Error(`GET player failed with ${String(response.status)}`);
   const body: unknown = await response.json();
   return (body as { player: AdminPlayerDetail }).player;
+}
+
+export async function fetchWorldHealth(): Promise<AdminWorldHealthResponse> {
+  const body = await getJson('/api/admin/worlds/health');
+  return body as AdminWorldHealthResponse;
 }
