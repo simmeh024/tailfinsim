@@ -46,6 +46,38 @@ function code(): string {
 /** A 70-seat cabin at 47 passengers — §13.4's airline, near enough. */
 const LOAD = JSON.stringify({ economy: { seats: 70, passengers: 47, revenue: 47 * 7_500 } });
 
+/**
+ * Assert that Postgres refused a write, and refused it for the *stated* reason.
+ *
+ * Drizzle wraps driver errors, so the outer message is always `Failed query: …`
+ * and asserting on that passes for **any** failure — a typo in a column name
+ * would satisfy it just as well as the constraint under test. CLAUDE.md records
+ * this as a trap already met; this walks `error.cause` for the constraint name
+ * Postgres actually reported.
+ */
+async function expectConstraint(promise: Promise<unknown>, constraint: string): Promise<void> {
+  let caught: unknown;
+  try {
+    await promise;
+  } catch (error) {
+    caught = error;
+  }
+
+  expect(caught, 'expected the write to be refused, but it succeeded').toBeDefined();
+
+  const reported: string[] = [];
+  let current: unknown = caught;
+  while (current instanceof Error) {
+    const name = (current as { constraint?: unknown }).constraint;
+    if (typeof name === 'string') reported.push(name);
+    current = current.cause;
+  }
+
+  expect(reported, `Postgres reported ${reported.join(', ') || 'no constraint'}`).toContain(
+    constraint,
+  );
+}
+
 describeDb('settling an arrived flight', () => {
   let db: DatabaseHandle;
   const madeWorlds: string[] = [];
@@ -260,7 +292,7 @@ describeDb('settling an arrived flight', () => {
       const { flightId, worldId, airlineId } = await makeFlight();
       await db.db.transaction((tx) => settleArrivedFlight(tx, flightId, ARRIVES));
 
-      await expect(
+      await expectConstraint(
         db.db.insert(flightResult).values({
           worldId,
           flightId,
@@ -275,7 +307,8 @@ describeDb('settling an arrived flight', () => {
           settlementVersion: 'v1',
           settledAt: ARRIVES,
         }),
-      ).rejects.toThrow();
+        'flight_result_flight_id_unique',
+      );
     });
   });
 
@@ -284,7 +317,7 @@ describeDb('settling an arrived flight', () => {
     // net wrongly must not be able to persist it.
     const { flightId, worldId, airlineId } = await makeFlight();
 
-    await expect(
+    await expectConstraint(
       db.db.insert(flightResult).values({
         worldId,
         flightId,
@@ -299,7 +332,8 @@ describeDb('settling an arrived flight', () => {
         settlementVersion: 'v1',
         settledAt: ARRIVES,
       }),
-    ).rejects.toThrow(/net_reconciles/);
+      'flight_result_net_reconciles',
+    );
   });
 
   it('settles a diversion to where the aircraft actually went', async () => {
