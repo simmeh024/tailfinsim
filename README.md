@@ -15,8 +15,10 @@ wall-clock time, that never pauses.
   rules that are not negotiable.
 - **Architecture decisions:** [`docs/adr/`](docs/adr/)
 - **Deployment & DNS:** [`docs/deploy.md`](docs/deploy.md) · [`deploy/README.md`](deploy/README.md)
-- **Backlog:** 162 issues across 18 milestones — `M0`–`M15` for the game, `M1A` for the
-  admin console core, and `OPS` for delivery and operations.
+- **Backlog:** 273 issues across 23 milestones. `M0`–`M15` are the game, `M1A` the admin
+  console core, and the rest are cross-cutting tracks that deliberately sit outside the
+  feature sequence: `OPS` (delivery and operations), `SEC` and `SEC-HARD` (authorization
+  and hardening), `AUTH`, `E2E` and `POD`.
 
 ## Quick start
 
@@ -54,10 +56,22 @@ not import `server`, `web` or any `node:*` builtin; `packages/web` may not impor
 Both rules exist so the simulation stays deterministic and the server stays authoritative
 — see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
+## What runs on a pull request
+
+| Check                     | Asks                                                 | Blocks? |
+| ------------------------- | ---------------------------------------------------- | ------- |
+| `typecheck · lint · test` | Does it build, lint, format and pass its tests?      | **Yes** |
+| `dependency review`       | Did this PR add a known-vulnerable dependency?       | **Yes** |
+| `analyze (…)`             | Does Tailfin's own code contain a dangerous pattern? | No      |
+
+`main` is protected and required approvals are zero — the pull request is the gate, not a
+second person.
+
 ## Status
 
-Pre-MVP, and pre-launch. **M0 · Foundations** and **M1 · World, Time & Airport Data** are
-complete, as is **M1A · Admin Console Core**. The public site still serves a holding page:
+Pre-MVP, and pre-launch. **M0 · Foundations**, **M1 · World, Time & Airport Data**,
+**M1A · Admin Console Core** and **M2 · Flight Operations** are complete, and
+**M3 · Demand & Commercial** has begun. The public site still serves a holding page:
 promoting the client is one environment variable (`WEB_SURFACE`) plus a deploy, not a
 different build.
 
@@ -68,7 +82,18 @@ different build.
 - **Airport data.** ~86,000 aerodromes imported from OurAirports, tiered, with catchment
   and a packed great-circle distance matrix.
 - **Flight mechanics, as pure functions.** State machine with its failure branches, phase
-  timeline, and position interpolation along a great circle.
+  timeline, position interpolation along a great circle, and reachability and
+  payload/range checks that name the limit that bound them.
+- **A flight's economics.** Block time, phase-integrated fuel burn, a world fuel price
+  curve, turnaround, and settlement into an itemised `flight_result` when the aircraft
+  lands — reconciled to the design doc's own published P&L to within a percent.
+- **Rotations and schedules** that survive a restart and an edit, and refuse the ones that
+  assume an aeroplane can be in two places at once.
+- **Disruption and weather.** Seeded per world and per flight so a replay reproduces them
+  exactly, with climatological weather feeding delays, cancellations, diversions and
+  de-icing.
+- **Demand pools.** Appendix A.2's gravity model, sized for every viable city pair and
+  split into business, leisure and VFR.
 - **Accounts.** Google OAuth, database-backed sessions, admin grants, and an append-only
   audit log the database itself refuses to let anyone edit.
 - **The admin console**, at `/admin` for accounts holding a grant: an overview with
@@ -80,8 +105,13 @@ different build.
 - **Nothing runs the simulation.** The tick loop and the event queue are built and tested,
   and no process calls them — see [#187](https://github.com/simmeh024/tailfinsim/issues/187),
   which decides where the engine lives before it has a home. The console reports this
-  honestly rather than showing a healthy-looking zero.
-- **No flights, aircraft, demand or economy.** Those are M2 onward.
+  honestly rather than showing a healthy-looking zero. Everything above is therefore
+  machinery that works and is not yet being driven.
+- **No fleet, crew or cabin.** Aircraft are a `uuid` with no catalogue behind it (M4),
+  crew and ground handling are inputs the models take rather than systems (M5), and the
+  livery and cabin builders are M6.
+- **No player-facing client.** The admin console is real; the game itself is not built,
+  and the front door still serves a holding page.
 
 ### Where it runs
 
@@ -91,4 +121,12 @@ branches). Splitting those onto dedicated web and worker nodes is planned in
 [OPS-08 – OPS-16](https://github.com/simmeh024/tailfinsim/issues/195).
 
 **Merging does not deploy anything.** Production moves only when somebody runs
-`./deploy/deploy.sh` on the server, which is ADR-0003's deliberate choice.
+`./deploy/deploy.sh` on the server, which is ADR-0003's deliberate choice and was
+re-affirmed by [OPS-06](https://github.com/simmeh024/tailfinsim/issues/174): merge means
+_staged_, and a human promotes.
+
+To see where things actually are, from anywhere and without an SSH session:
+
+```bash
+pnpm ops:status
+```

@@ -2,6 +2,8 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-17
+- **Amended:** 2026-08-19 — revisited under OPS-06 and kept, for a different reason than
+  it was originally taken. See [Revisited](#revisited-august-2026--decision-kept).
 - **Deciders:** @simmeh024
 
 ## Context
@@ -103,3 +105,37 @@ accepted in exchange for a system one person can hold in their head.
   their keep.
 - Latency becomes the complaint: DreamCompute is US-only and the instance is in US-East 2,
   which is roughly 90–110 ms from European players.
+
+## Revisited, August 2026 — decision kept
+
+Two of the conditions above were met: a deploy that a tag move would have avoided was
+missed, and the backlog began being worked by an agent producing frequent merges.
+[OPS-06](https://github.com/simmeh024/tailfinsim/issues/174) proposed reversing this ADR
+so that merging to `main` deployed production automatically. **That proposal was itself
+reversed**, and this decision stands. The reasoning is recorded here because it is a
+different reasoning from the original one.
+
+The original argument was about credentials: push-based deployment needs an SSH key in
+repository secrets, the repository is public, and anything compromising a workflow would
+get a shell on production. That argument is unchanged and still holds.
+
+The argument that kept it in 2026 is about **the database**:
+
+- A deploy runs migrations. Applying a schema change to production with nobody watching is
+  a different risk class from applying code.
+- [OPS-05](https://github.com/simmeh024/tailfinsim/issues/173) is still open, so there is
+  no migration-failure strategy. Automating the thing that runs migrations before deciding
+  what happens when one fails is the wrong order.
+- A failed health check does **not** roll back. `deploy.sh` leaves the new code serving and
+  exits non-zero, so the failure mode of an unattended deploy is a broken site nobody has
+  been told about.
+
+What changed instead is everything either side of the human step. Drift is now visible
+without an SSH session (OPS-02, shipped), dev is to track `main` automatically
+(OPS-17), and the promotion itself is to gain a pre-flight that says which migrations are
+about to run (OPS-18). The workflow this defines is that **merge means _staged_**, and the
+gap between dev's build number and production's is the count of changes tested but not
+released.
+
+Revisit _this_ revision when OPS-05 lands. A migration-failure strategy is the thing
+standing between here and continuous deployment, and it is the only one.

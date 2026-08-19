@@ -53,8 +53,25 @@ Production moves **only** when a human runs `./deploy/deploy.sh` on the server. 
 webhook, no scheduler, no runner. ADR-0003 chose this deliberately: _"running the command
 is the approval step"_, and no credential anywhere lets GitHub reach production.
 
-The consequence is drift nobody sees. In August 2026 production sat 27 commits behind
-`main` for a day, unnoticed. [OPS-02] and [OPS-06] exist to fix both halves of this.
+That was revisited in August 2026 and **kept** — see
+[OPS-06](https://github.com/simmeh024/tailfinsim/issues/174), which had previously proposed
+the opposite. The workflow it settles on is:
+
+```
+merged to main  →  CI green  →  dev deploys automatically   (OPS-17, not built)
+                                        ↓  reviewed on dev
+                            promoted to production, by a human   (OPS-18, not built)
+```
+
+So **merge means _staged_, not released**, and `dev build − prod build` is the count of
+changes tested but not shipped. Three things argued against automating the last step:
+deploys run migrations, OPS-05 has no migration-failure strategy yet, and a failed health
+check does not roll back.
+
+The consequence is drift, and it used to be drift nobody could see — in August 2026
+production sat 27 commits behind `main` for a day, unnoticed. **`pnpm ops:status` answers
+that now** (OPS-02, shipped), from anywhere and without an SSH session. Run it before
+telling the user where anything is.
 
 **Do not say "deployed" when you mean "merged".**
 
@@ -172,13 +189,32 @@ case`. Reference the key in the branch name and the commit subject.
 and a closing keyword in a _comment_ never fires at all. Write `Closes #17` and
 `Closes #18` on separate lines, then check both actually closed.
 
+**One-off jobs run from `dist`, not from source.** `data:airports`, `data:classify`,
+`data:catchment`, `data:distances`, `world:seed`, `demand:generate`, `admin` and
+`ops:status` are all bundled entry points, so `pnpm build:apps` has to have run first.
+The order matters for a new world — airports, then tiers, then catchment, then distances,
+then the world, then its demand pools — because each reads what the last one wrote.
+CONTRIBUTING.md has the table.
+
 **Architectural decisions get an ADR** in [`docs/adr/`](docs/adr/). If you find yourself
 explaining a choice twice, write it down once instead. ADR-0003 (deployment) and ADR-0005
 (world epoch and reset) are the two that constrain operations.
 
-**Milestones:** `M0`–`M15` are the game backlog. `M1A` is the admin console core.
-`OPS · Delivery & Operations` is deployment, backups and infrastructure — deliberately
-outside the feature sequence, since none of it is game behaviour.
+**Milestones:** 273 issues across 23 of them. `M0`–`M15` are the game backlog and `M1A`
+is the admin console core. The rest are cross-cutting tracks that deliberately sit outside
+the feature sequence, because none of them are game behaviour:
+
+| Track      | What it covers                                                        |
+| ---------- | --------------------------------------------------------------------- |
+| `OPS`      | Deployment, backups, infrastructure                                   |
+| `SEC`      | Authorization and ownership                                           |
+| `SEC-HARD` | Security hardening                                                    |
+| `AUTH`     | Multi-method authentication                                           |
+| `E2E`      | Browser and end-to-end testing                                        |
+| `POD`      | The poster shop — post-launch, and the first thing needing real money |
+
+Complete so far: **M0**, **M1**, **M1A** and **M2**. `M3 · Demand & Commercial` has
+started.
 
 ---
 
