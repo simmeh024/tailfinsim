@@ -152,7 +152,7 @@ describeDb('creating worlds', () => {
   }
 
   async function auditFor(worldId: string) {
-    const rows = await readAudit(db.db, 500);
+    const rows = await readAudit(db.db, { limit: 500 });
     return rows.filter((row) => row.subjectId === worldId);
   }
 

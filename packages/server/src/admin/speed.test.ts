@@ -320,7 +320,9 @@ describeDb('changing a world speed', () => {
     );
     if (!result.ok) throw new Error('refused');
 
-    const entries = (await readAudit(db.db, 500)).filter((entry) => entry.subjectId === row.id);
+    const entries = (await readAudit(db.db, { limit: 500 })).filter(
+      (entry) => entry.subjectId === row.id,
+    );
     const changed = entries.find((entry) => entry.action === 'world.speed_changed');
     expect(changed).toBeDefined();
     expect(changed?.actorPlayerId).toBe(actor);
@@ -374,7 +376,9 @@ describeDb('changing a world speed', () => {
     if (result.ok) throw new Error('expected a refusal');
     expect(result.code).toBe('speed_unchanged');
 
-    const entries = (await readAudit(db.db, 500)).filter((entry) => entry.subjectId === row.id);
+    const entries = (await readAudit(db.db, { limit: 500 })).filter(
+      (entry) => entry.subjectId === row.id,
+    );
     expect(entries.filter((entry) => entry.action === 'world.speed_changed')).toHaveLength(0);
   });
 

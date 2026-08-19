@@ -43,12 +43,14 @@ function AuditRow({ entry }: { entry: AdminAuditEntry }): ReactNode {
 
 export function AuditPage(): ReactNode {
   const [audit, setAudit] = useState<Load<AdminAuditEntry[]>>({ state: 'loading' });
+  const [includeViews, setIncludeViews] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    setAudit({ state: 'loading' });
     void (async () => {
       try {
-        const value = await fetchAdminAudit();
+        const value = await fetchAdminAudit(includeViews);
         if (!cancelled) setAudit({ state: 'ready', value });
       } catch {
         if (!cancelled) setAudit({ state: 'failed' });
@@ -57,7 +59,7 @@ export function AuditPage(): ReactNode {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [includeViews]);
 
   return (
     <section className="admin__section">
@@ -66,6 +68,28 @@ export function AuditPage(): ReactNode {
         Every action taken by an administrator, newest first. Append-only, enforced by database
         triggers that refuse UPDATE, DELETE and TRUNCATE — nothing here can be edited or removed,
         including by whoever wrote it.
+      </p>
+
+      {/*
+        Views are recorded and hidden by default (M1A-08). Both halves matter:
+        opening somebody's account is an act worth a record, and a log where
+        "who reset the world?" is buried under three hundred page views is a log
+        nobody reads at the moment it counts.
+      */}
+      <label className="admin__toggle" htmlFor="audit-include-views">
+        <input
+          id="audit-include-views"
+          type="checkbox"
+          checked={includeViews}
+          onChange={(event) => {
+            setIncludeViews(event.target.checked);
+          }}
+        />
+        Include views
+      </label>
+      <p className="admin__hint">
+        Looking at a player’s account is recorded too. Those entries are left out by default so they
+        cannot bury the ones that changed something.
       </p>
 
       {audit.state === 'loading' && <p className="admin__note">Loading…</p>}
@@ -97,8 +121,8 @@ export function AuditPage(): ReactNode {
 
       {audit.state === 'ready' && audit.value.length >= 100 && (
         <p className="admin__note">
-          Showing the most recent 100. Paging and filtering are not built yet — the log is capped
-          server-side so a stray request cannot pull the whole history.
+          Showing the most recent 100. Paging is not built yet, and the only filter is the one above
+          — the log is capped server-side so a stray request cannot pull the whole history.
         </p>
       )}
     </section>

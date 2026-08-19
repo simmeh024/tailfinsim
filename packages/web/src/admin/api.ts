@@ -2,6 +2,8 @@ import type {
   AdminAuditEntry,
   AdminGrantSummary,
   AdminOverviewResponse,
+  AdminPlayerDetail,
+  AdminPlayerListResponse,
   AdminResetWorldResponse,
   AdminSpeedChangeResponse,
   AdminWorldStatusResponse,
@@ -33,8 +35,16 @@ async function getJson(path: string): Promise<unknown> {
   return response.json();
 }
 
-export async function fetchAdminAudit(): Promise<AdminAuditEntry[]> {
-  const body = await getJson('/api/admin/audit');
+/**
+ * The audit log.
+ *
+ * `includeViews` asks for the `player.viewed` rows the server leaves out by
+ * default (M1A-08). Looking at somebody's account is recorded, but those entries
+ * outnumber changes by orders of magnitude, and a log where "who reset the
+ * world?" is buried under three hundred page views stops being read.
+ */
+export async function fetchAdminAudit(includeViews = false): Promise<AdminAuditEntry[]> {
+  const body = await getJson(`/api/admin/audit${includeViews ? '?includeViews=true' : ''}`);
   if (typeof body !== 'object' || body === null) return [];
   const entries = (body as { entries?: unknown }).entries;
   return Array.isArray(entries) ? (entries as AdminAuditEntry[]) : [];
@@ -224,4 +234,35 @@ export async function resetWorld(
   return result.ok
     ? { ok: true, reset: result.body as AdminResetWorldResponse }
     : { ok: false, fields: result.fields };
+}
+
+export async function fetchPlayers(query: string, offset = 0): Promise<AdminPlayerListResponse> {
+  const params = new URLSearchParams();
+  if (query !== '') params.set('q', query);
+  if (offset > 0) params.set('offset', String(offset));
+  const suffix = params.toString();
+  const body = await getJson(`/api/admin/players${suffix === '' ? '' : `?${suffix}`}`);
+  return body as AdminPlayerListResponse;
+}
+
+/**
+ * One player, in full.
+ *
+ * This request is **recorded** — the server writes a `player.viewed` audit row
+ * in the same transaction as the read, because opening somebody's account
+ * discloses their identities, email address and sessions. Worth knowing when
+ * calling it: there is no way to look without leaving a trace, deliberately.
+ *
+ * A 404 is an answer rather than a failure: the player is not there, or the id
+ * is not an id.
+ */
+export async function fetchPlayer(playerId: string): Promise<AdminPlayerDetail | null> {
+  const response = await fetch(`/api/admin/players/${encodeURIComponent(playerId)}`, {
+    headers: { accept: 'application/json' },
+    credentials: 'same-origin',
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`GET player failed with ${String(response.status)}`);
+  const body: unknown = await response.json();
+  return (body as { player: AdminPlayerDetail }).player;
 }

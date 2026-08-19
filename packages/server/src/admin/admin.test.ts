@@ -80,7 +80,7 @@ describeDb('admin', () => {
 
   /** Audit rows written by this test run, newest first. Never deleted — it cannot be. */
   async function auditFor(subjectId: string) {
-    const rows = await readAudit(db.db, 500);
+    const rows = await readAudit(db.db, { limit: 500 });
     return rows.filter((row) => row.subjectId === subjectId);
   }
 

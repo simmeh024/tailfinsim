@@ -5,6 +5,8 @@ import {
   AdminCreateWorldResponse,
   AdminListResponse,
   AdminOverviewResponse,
+  AdminPlayerDetailResponse,
+  AdminPlayerListResponse,
   AdminResetWorldResponse,
   AdminSpeedChangeResponse,
   AdminWorldStatusResponse,
@@ -40,6 +42,8 @@ export const adminListResponseJsonSchema = z.toJSONSchema(AdminListResponse);
 export const adminWorldListResponseJsonSchema = z.toJSONSchema(AdminWorldListResponse);
 export const adminCreateWorldResponseJsonSchema = z.toJSONSchema(AdminCreateWorldResponse);
 export const adminOverviewResponseJsonSchema = z.toJSONSchema(AdminOverviewResponse);
+export const adminPlayerListResponseJsonSchema = z.toJSONSchema(AdminPlayerListResponse);
+export const adminPlayerDetailResponseJsonSchema = z.toJSONSchema(AdminPlayerDetailResponse);
 export const adminSpeedChangeResponseJsonSchema = z.toJSONSchema(AdminSpeedChangeResponse);
 export const adminWorldStatusResponseJsonSchema = z.toJSONSchema(AdminWorldStatusResponse);
 export const adminResetWorldResponseJsonSchema = z.toJSONSchema(AdminResetWorldResponse);
