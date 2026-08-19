@@ -36,6 +36,30 @@ export const VersionResponse = z.object({
   startedAt: z.iso.datetime(),
 
   /**
+   * The ref the deploy was *asked* for — `origin/main`, a branch, a tag, a sha.
+   *
+   * Recorded at deploy time rather than derived, because the box checks out with
+   * `git checkout --detach` deliberately: there is no branch on disk to read
+   * back. Reconstructing one after the fact is guesswork — `git describe --all
+   * --contains` answers confidently and wrongly once the branch is deleted — and
+   * a wrong answer here is worse than none, because the whole point is to say
+   * what somebody meant to put there.
+   *
+   * `null` when the process is not running from a deploy at all: a local `pnpm
+   * dev`, or a build someone ran by hand.
+   */
+  ref: z.string().nullable(),
+
+  /**
+   * When this code was *put here*, as distinct from when the process started.
+   *
+   * `startedAt` resets on any restart — a crash loop, an OOM kill, a systemd
+   * bounce — so it cannot answer "how long has this version been live". That is
+   * the question drift is measured in, and it needs its own field.
+   */
+  deployedAt: z.iso.datetime().nullable(),
+
+  /**
    * The server's clock at the moment of the request.
    *
    * The *server's*, deliberately — a badge showing the browser's clock would be

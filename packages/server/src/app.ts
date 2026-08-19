@@ -14,6 +14,7 @@ import { registerAdminRoutes } from './admin/routes';
 import { registerAuthRoutes } from './auth/routes';
 import { readBuildInfo } from './build-info';
 import { type DatabaseHandle } from './db/client';
+import { readDeployInfo } from './deploy-info';
 import { type ServerEnv } from './env';
 
 /**
@@ -152,20 +153,28 @@ export function buildApp({ env, db }: BuildAppOptions): FastifyInstance {
    * more than one that says "the live site".
    */
   const buildInfo = readBuildInfo();
+  // Read once at boot, like the build stamp. Neither changes while the
+  // process lives — a redeploy restarts it.
+  const deployInfo = readDeployInfo();
   const startedAtIso = new Date().toISOString();
 
   app.get(
     '/api/version',
     { schema: { response: { 200: versionResponseJsonSchema } }, logLevel: 'warn' },
     async (_request, reply) =>
-      reply.code(200).header('cache-control', 'no-store').send({
-        build: buildInfo.build,
-        commit: buildInfo.commit,
-        environment: env.environmentLabel,
-        startedAt: startedAtIso,
-        // Read per request, unlike the rest of this payload.
-        serverTime: new Date().toISOString(),
-      }),
+      reply
+        .code(200)
+        .header('cache-control', 'no-store')
+        .send({
+          build: buildInfo.build,
+          commit: buildInfo.commit,
+          environment: env.environmentLabel,
+          startedAt: startedAtIso,
+          ref: deployInfo?.ref ?? null,
+          deployedAt: deployInfo?.deployedAt ?? null,
+          // Read per request, unlike the rest of this payload.
+          serverTime: new Date().toISOString(),
+        }),
   );
 
   /**

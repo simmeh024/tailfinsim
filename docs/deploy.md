@@ -175,6 +175,19 @@ know the running code is not the commit it claims to be.
 The badge asks the **server**, not the bundle. A cached client reporting its own build
 number would say what the browser last downloaded rather than what it is talking to.
 
+**`/api/version` also reports `ref` and `deployedAt`** (OPS-02), written by `deploy.sh`
+into `packages/server/dist/deploy-info.json` — a second file beside the build stamp,
+because they are different facts. The build knows its commit; only the deploy knows that
+somebody asked for `origin/main`, and when. `startedAt` cannot stand in for the latter:
+it resets on every restart, including a crash loop, so it answers "how long has this
+process been up" and never "how long has this code been live".
+
+The ref is **recorded, not derived**. The box checks out with `--detach` deliberately, so
+there is no branch on disk to read back, and reconstructing one afterwards
+(`git describe --all --contains`) answers confidently and wrongly once a branch is
+deleted. Both fields are `null` outside a deploy — a local `pnpm dev` has never been
+deployed anywhere, and that reads as "not from a deploy" rather than as a wrong answer.
+
 `ENVIRONMENT_LABEL` is separate from `NODE_ENV` because `NODE_ENV=production` on **both**
 boxes — dev runs a production build of the same code, and that is the point of it. It
 defaults to `local`, so a box that forgot to declare itself does not claim to be the live

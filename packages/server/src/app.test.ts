@@ -215,7 +215,9 @@ describe('GET /api/version', () => {
       expect(Object.keys(res.json<Record<string, unknown>>()).sort()).toEqual([
         'build',
         'commit',
+        'deployedAt',
         'environment',
+        'ref',
         'serverTime',
         'startedAt',
       ]);

@@ -21,7 +21,8 @@
     "data:catchment": "node dist/derive-catchment.js",
     "data:distances": "node dist/build-distance-matrix.js",
     "world:seed": "node dist/seed-world.js",
-    "admin": "node dist/admin-cli.js"
+    "admin": "node dist/admin-cli.js",
+    "ops:status": "node dist/ops-status.js"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

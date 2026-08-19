@@ -38,6 +38,8 @@ const VERSION: VersionResponse = {
   commit: 'abc1234',
   environment: 'dev',
   startedAt: '2026-08-17T20:00:00.000Z',
+  ref: 'origin/main',
+  deployedAt: '2026-08-18T19:55:00.000Z',
   serverTime: '2026-08-17T20:05:00.000Z',
 };
 
