@@ -1,0 +1,112 @@
+name: CodeQL
+
+# Static security analysis (SEC-HARD-02).
+#
+# ---------------------------------------------------------------------------
+# Why this is a separate workflow and not a step in ci.yml
+# ---------------------------------------------------------------------------
+# `typecheck · lint · test` is the check branch protection requires, and it
+# finishes in about two minutes. CodeQL takes rather longer. Putting it in the
+# same job would make every merge wait for it, and a slow required check is one
+# people learn to work around.
+#
+# So this runs alongside CI rather than inside it, and is **deliberately not a
+# required check yet**. Making an analyser a merge gate before anyone has read
+# what it finds is how a security tab fills with dismissed alerts. Run it, read
+# it for a couple of weeks, then decide the blocking severity — that decision
+# belongs to SEC-HARD-02 and should be written down when it is made.
+#
+# ---------------------------------------------------------------------------
+# Why `security-extended` and not `security-and-quality`
+# ---------------------------------------------------------------------------
+# The quality half of `security-and-quality` largely duplicates what ESLint
+# already enforces here, and duplicate findings are where the noise comes from.
+# `security-extended` adds the lower-confidence *security* queries to the
+# default set, which is the trade worth making: this repository is public, so
+# the code an attacker would read is the code anyone can read.
+#
+# ---------------------------------------------------------------------------
+# Why `actions` is analysed too
+# ---------------------------------------------------------------------------
+# Workflows are code that runs with a token. CodeQL's `actions` pack catches
+# script injection through untrusted workflow inputs and similar mistakes —
+# cheap to run, and the build happens on the production box (see SEC-HARD-24),
+# so anything touching the pipeline deserves the extra pair of eyes.
+#
+# Deliberately no `paths-ignore`: if this ever becomes a required check, a run
+# skipped by a path filter stays pending for ever and blocks the merge. Free
+# minutes on a public repository are cheaper than that failure mode.
+#
+# Runtime measured on this repository: `actions` about 40 seconds,
+# `javascript-typescript` about two minutes, in parallel with each other and
+# with CI — so the merge-blocking path is unchanged.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    # Weekly, so a new query in an updated ruleset is still found on code that
+    # has not changed. Off the hour on purpose — everything scheduled at
+    # midnight queues together on GitHub's shared runners.
+    - cron: '17 4 * * 1'
+
+# Same reasoning as ci.yml: a new push supersedes the run it replaced.
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      # The only elevated grant here, and the reason the workflow is separate:
+      # ci.yml keeps `contents: read` and has no business writing alerts.
+      security-events: write
+      contents: read
+      actions: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # `build-mode: none` for both, and **no `pnpm install`** — both measured
+        # rather than assumed, using a throwaway branch carrying deliberate
+        # vulnerabilities (PR #286, since deleted).
+        #
+        # What that canary established:
+        #
+        #   - Extraction works. The log shows each source file read, including
+        #     the planted one.
+        #   - Taint tracking works. `eval()` reached from a `node:http` request
+        #     was reported as `js/code-injection`, critical.
+        #   - **CodeQL does not model Fastify's `request.query` as a remote flow
+        #     source.** The same `eval()` reached from a Fastify handler was not
+        #     reported — with dependencies installed *or* without. So installing
+        #     them buys nothing here, and the minute is not worth spending.
+        #
+        # That last point is the one to remember when reading a clean report:
+        # for Tailfin's own routes, CodeQL is currently finding non-taint
+        # defects, not injection from request input. SEC-HARD-11's boundary
+        # validation and SEC-HARD-33's regression suite are what cover that gap,
+        # and #250 tracks revisiting this when Fastify modelling improves.
+        language: [javascript-typescript, actions]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          queries: security-extended
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: '/language:${{ matrix.language }}'
