@@ -1028,3 +1028,137 @@ export type NewScheduleLegRow = typeof scheduleLeg.$inferInsert;
 
 export type FlightRow = typeof flight.$inferSelect;
 export type NewFlightRow = typeof flight.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// flight_result — economic resolution (M2-06, §3.1, §11, §14.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * What a flight earned and what it cost, written once when it arrives.
+ *
+ * §3.1: economic resolution happens **at flight events, not continuously**. This
+ * is the record that event produces, and it is permanent — a settled flight is a
+ * financial fact, and §22.10 wants the operational record to outlive the schedule
+ * that created it.
+ *
+ * ## The unique constraint is the idempotency guarantee
+ *
+ * `flight_id` is unique, so a flight can be settled **once**. Replaying
+ * `FLIGHT_ARRIVE` — after a restart, a retry, or two workers racing — is refused
+ * by the database rather than by application logic that has to be right every
+ * time. Same discipline as `world_event.idempotency_key` and
+ * `flight.materialisation_key`, for the same reason, and it is what makes M2-06's
+ * "replaying a settled flight is a no-op" a property of the schema instead of a
+ * promise.
+ *
+ * That matters more here than anywhere else in the schema: every other duplicate
+ * costs a wasted row, and this one would pay an airline twice.
+ *
+ * ## Why the breakdown is JSON and the totals are columns
+ *
+ * The three totals are money that has to be summed, compared and indexed across
+ * millions of rows — §14.4's *"profit by route, ranked"* is a query over
+ * `net_minor`. The per-line breakdown is read one flight at a time, only ever for
+ * that flight, and its shape belongs to the settlement model rather than to the
+ * database. Splitting it into columns would freeze §11's cost list into DDL and
+ * make adding a line a migration.
+ *
+ * `flight_result_net_reconciles` then keeps the two halves honest at the database
+ * level: the net is the difference, always, and no application bug can write a
+ * row where it is not.
+ */
+export const flightResult = pgTable(
+  'flight_result',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+
+    /**
+     * One result per flight, for ever. See the note above — this constraint is
+     * the idempotency guarantee, not an incidental tidiness.
+     */
+    flightId: uuid('flight_id')
+      .notNull()
+      .unique()
+      .references(() => flight.id, { onDelete: 'cascade' }),
+
+    /**
+     * Denormalised from `flight`, deliberately. A P&L is queried by airline far
+     * more often than by flight, and joining through `flight` to answer "what did
+     * this airline earn last week" would be a join per row for a column that
+     * cannot change: a flight never moves between airlines.
+     */
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+
+    /** Integer minor units, like `airline.cash_minor`. Never a float — see that column. */
+    revenueMinor: bigint('revenue_minor', { mode: 'number' }).notNull(),
+    costMinor: bigint('cost_minor', { mode: 'number' }).notNull(),
+    /**
+     * `revenue_minor − cost_minor`. Contribution rather than profit: period costs
+     * — lease, gate, admin — are not caused by a flight and are not settled here.
+     */
+    netMinor: bigint('net_minor', { mode: 'number' }).notNull(),
+
+    seats: integer('seats').notNull(),
+    passengers: integer('passengers').notNull(),
+    cargoKg: integer('cargo_kg').notNull().default(0),
+
+    /**
+     * Block time in **seconds**, integer.
+     *
+     * Not minutes: block time is fractional (75.6 minutes for AMS–LHR) and this
+     * is a financial record that crew and maintenance costs were charged against,
+     * so it has to reproduce them exactly. `numeric` would do it too and would
+     * come back as a string from the driver — an integer count of seconds is
+     * exact, sorts, and needs no parsing at the boundary.
+     */
+    blockSeconds: integer('block_seconds').notNull(),
+
+    /**
+     * Arrival delay in minutes against the plan; negative for an early arrival.
+     *
+     * A **reputation input**, recorded rather than acted on. §15 owns what
+     * punctuality does to an airline's standing and none of that is decided yet,
+     * so this captures the fact at the moment it is knowable and leaves the
+     * consequence to the system that owns it.
+     */
+    arrivalDelayMinutes: integer('arrival_delay_minutes').notNull().default(0),
+
+    /** The itemised lines, as JSON. See the note above on why this is not columns. */
+    breakdown: text('breakdown').notNull(),
+
+    /**
+     * Which settlement rates this ran under, mirroring `world.economy_config_version`.
+     *
+     * Load-bearing rather than decorative: after the rates are retuned, this is
+     * the only thing that can explain why a flight in October earned what it did
+     * (invariant 4).
+     */
+    settlementVersion: text('settlement_version').notNull(),
+
+    /** Game-time instant the flight was settled — its on-blocks time. */
+    settledAt: timestamp('settled_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('flight_result_airline_id_settled_at_idx').on(t.airlineId, t.settledAt),
+    index('flight_result_world_id_settled_at_idx').on(t.worldId, t.settledAt),
+    // The breakdown and the totals cannot disagree, whatever the application does.
+    check('flight_result_net_reconciles', sql`${t.netMinor} = ${t.revenueMinor} - ${t.costMinor}`),
+    check('flight_result_seats_nonneg', sql`${t.seats} >= 0`),
+    check(
+      'flight_result_passengers_fit',
+      sql`${t.passengers} >= 0 AND ${t.passengers} <= ${t.seats}`,
+    ),
+    check('flight_result_cargo_nonneg', sql`${t.cargoKg} >= 0`),
+    check('flight_result_block_positive', sql`${t.blockSeconds} > 0`),
+  ],
+);
+
+export type FlightResultRow = typeof flightResult.$inferSelect;
+export type NewFlightResultRow = typeof flightResult.$inferInsert;

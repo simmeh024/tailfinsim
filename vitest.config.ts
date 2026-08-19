@@ -41,6 +41,23 @@ export default defineConfig({
           // file rather than a call in each test, because the one thing this
           // must not depend on is every future test file remembering to ask.
           setupFiles: ['packages/server/src/test-setup.ts'],
+          /**
+           * One file at a time. **These tests share a single database.**
+           *
+           * Not a performance choice — a correctness one. Several suites do
+           * table-wide work: the OurAirports importer's `--prune` deletes every
+           * airport whose source id is absent from the incoming dataset, which
+           * is right for the importer and lethal for whatever else is mid-test.
+           * Run in parallel, it silently deletes another file's fixtures, and
+           * when one of those is referenced by a `flight` it fails on a foreign
+           * key that has nothing to do with what either test was proving.
+           *
+           * M2-06 is what surfaced it — settling a flight means holding an
+           * airport reference for the length of a test — but the race predates
+           * it and was only ever a matter of timing. The other projects keep
+           * their parallelism; they share nothing.
+           */
+          fileParallelism: false,
         },
       },
       {
