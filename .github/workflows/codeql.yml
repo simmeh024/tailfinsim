@@ -36,6 +36,10 @@ name: CodeQL
 # Deliberately no `paths-ignore`: if this ever becomes a required check, a run
 # skipped by a path filter stays pending for ever and blocks the merge. Free
 # minutes on a public repository are cheaper than that failure mode.
+#
+# Runtime measured on this repository: `actions` about 40 seconds,
+# `javascript-typescript` about two minutes, in parallel with each other and
+# with CI — so the merge-blocking path is unchanged.
 
 on:
   pull_request:
@@ -69,9 +73,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # `build-mode: none` for both. Nothing needs compiling — CodeQL reads
-        # the TypeScript directly, and `pnpm install` would only add minutes and
-        # a supply-chain surface to a job that does not execute the code.
+        # `build-mode: none` for both, and **no `pnpm install`** — both measured
+        # rather than assumed, using a throwaway branch carrying deliberate
+        # vulnerabilities (PR #286, since deleted).
+        #
+        # What that canary established:
+        #
+        #   - Extraction works. The log shows each source file read, including
+        #     the planted one.
+        #   - Taint tracking works. `eval()` reached from a `node:http` request
+        #     was reported as `js/code-injection`, critical.
+        #   - **CodeQL does not model Fastify's `request.query` as a remote flow
+        #     source.** The same `eval()` reached from a Fastify handler was not
+        #     reported — with dependencies installed *or* without. So installing
+        #     them buys nothing here, and the minute is not worth spending.
+        #
+        # That last point is the one to remember when reading a clean report:
+        # for Tailfin's own routes, CodeQL is currently finding non-taint
+        # defects, not injection from request input. SEC-HARD-11's boundary
+        # validation and SEC-HARD-33's regression suite are what cover that gap,
+        # and #250 tracks revisiting this when Fastify modelling improves.
         language: [javascript-typescript, actions]
 
     steps:
