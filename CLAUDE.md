@@ -63,18 +63,18 @@ The consequence is drift nobody sees. In August 2026 production sat 27 commits b
 Both run on one DreamCompute box, `208.113.129.131`. Same repo, same build, different
 checkout, port, database and audience.
 
-|                   | production               | dev                            |
-| ----------------- | ------------------------ | ------------------------------ |
-| URL               | `tailfinsim.com`         | `dev.tailfinsim.com`           |
-| the user calls it | **front door**           | **back door**                  |
-| checkout          | `/srv/tailfin`           | `/srv/tailfin-dev`             |
-| service           | `tailfin`                | `tailfin-dev`                  |
-| port              | 3000                     | 3001                           |
-| database          | `tailfin`                | `tailfin_dev`                  |
-| deploy with       | `./deploy/deploy.sh`     | `./deploy/deploy-dev.sh <ref>` |
-| accepts           | any ref today ([OPS-01]) | **any ref, deliberately**      |
-| `WEB_SURFACE`     | unset → **holding page** | `app` → the real client        |
-| access            | public                   | Google sign-in, `noindex`      |
+|                   | production                 | dev                            |
+| ----------------- | -------------------------- | ------------------------------ |
+| URL               | `tailfinsim.com`           | `dev.tailfinsim.com`           |
+| the user calls it | **front door**             | **back door**                  |
+| checkout          | `/srv/tailfin`             | `/srv/tailfin-dev`             |
+| service           | `tailfin`                  | `tailfin-dev`                  |
+| port              | 3000                       | 3001                           |
+| database          | `tailfin`                  | `tailfin_dev`                  |
+| deploy with       | `./deploy/deploy.sh`       | `./deploy/deploy-dev.sh <ref>` |
+| accepts           | **only commits on `main`** | **any ref, deliberately**      |
+| `WEB_SURFACE`     | unset → **holding page**   | `app` → the real client        |
+| access            | public                     | Google sign-in, `noindex`      |
 
 **Dev is the preview environment and is meant to run unmerged branches.** That is a
 standing decision, not an oversight — it is where the user reviews work before merging.

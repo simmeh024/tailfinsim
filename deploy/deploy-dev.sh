@@ -16,4 +16,10 @@ export REPO_DIR="${REPO_DIR:-/srv/tailfin-dev}"
 export SERVICE="${SERVICE:-tailfin-dev}"
 export HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3001/healthz}"
 
+# Dev exists to run code that is not on main yet — reviewing work before it is
+# merged is the entire job. deploy.sh refuses a ref that is not on main
+# (OPS-01); this is the exemption, and it is set here rather than defaulted in
+# deploy.sh so that the permissive case is the one that has to be asked for.
+export ALLOW_UNMERGED_REF=1
+
 exec "$(dirname "$(readlink -f "$0")")/deploy.sh" "$@"
