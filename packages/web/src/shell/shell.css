@@ -1391,3 +1391,35 @@ body {
   font-size: var(--text-xs);
   color: var(--text-muted);
 }
+
+/* Freshness and the manual refresh (M1A-09). Quiet: the data is the point, not
+   the machinery that keeps it current. */
+.admin__freshness {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.admin__refresh {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.admin__refresh:hover,
+.admin__refresh:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Stale data is shown, not hidden — but it should not look current. */
+.admin__stale {
+  color: var(--status-delayed);
+}

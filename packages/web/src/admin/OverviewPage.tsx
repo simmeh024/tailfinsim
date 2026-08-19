@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
-import type { AdminAlert, AdminGrantSummary, AdminOverviewResponse } from '@tailfin/shared';
+import type { AdminAlert, AdminGrantSummary } from '@tailfin/shared';
 
 import { fetchAdmins, fetchOverview } from './api';
+import { Ago, usePolledData } from './polling';
 
 import type { ReactNode } from 'react';
 
@@ -42,47 +43,76 @@ function formatAt(iso: string): string {
   return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
 }
 
+/**
+ * Thirty seconds (M1A-09).
+ *
+ * The counts move slowly and the alerts move slower — this is a status page, not
+ * a live dashboard. Short enough that a backup alert appearing is noticed while
+ * somebody is still looking; long enough that it is not a load.
+ */
+const REFRESH_MS = 30_000;
+
 export function OverviewPage(): ReactNode {
-  const [overview, setOverview] = useState<Load<AdminOverviewResponse>>({ state: 'loading' });
+  // The timer refreshes the overview only: one request per refresh, as the
+  // criterion asks. Admin grants change rarely, are audited when they do, and
+  // are re-read by the refresh button rather than every thirty seconds.
+  const overview = usePolledData(fetchOverview, REFRESH_MS);
   const [admins, setAdmins] = useState<Load<AdminGrantSummary[]>>({ state: 'loading' });
 
-  useEffect(() => {
-    let cancelled = false;
-
-    void (async () => {
-      try {
-        const value = await fetchOverview();
-        if (!cancelled) setOverview({ state: 'ready', value });
-      } catch {
-        if (!cancelled) setOverview({ state: 'failed' });
-      }
-    })();
-
-    void (async () => {
-      try {
-        const value = await fetchAdmins();
-        if (!cancelled) setAdmins({ state: 'ready', value });
-      } catch {
-        if (!cancelled) setAdmins({ state: 'failed' });
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+  const loadAdmins = useCallback(async () => {
+    try {
+      setAdmins({ state: 'ready', value: await fetchAdmins() });
+    } catch {
+      setAdmins({ state: 'failed' });
+    }
   }, []);
+
+  useEffect(() => {
+    void loadAdmins();
+  }, [loadAdmins]);
 
   return (
     <>
       <section className="admin__section">
-        <h2 className="admin__heading">At a glance</h2>
-        {overview.state === 'loading' && <p className="admin__note">Loading…</p>}
-        {overview.state === 'failed' && (
+        <div className="admin__header">
+          <h2 className="admin__heading">At a glance</h2>
+          <span className="admin__freshness">
+            {overview.lastLoadedAt !== null && (
+              <>
+                checked <Ago at={overview.lastLoadedAt} />
+              </>
+            )}
+            <button
+              className="admin__refresh"
+              type="button"
+              onClick={() => {
+                overview.refresh();
+                void loadAdmins();
+              }}
+            >
+              Refresh
+            </button>
+          </span>
+        </div>
+
+        {/*
+          A failed refresh keeps the numbers and says so. Blanking the page on a
+          blip would turn a momentary network hiccup into an empty console —
+          which is the failure this issue is mostly about.
+        */}
+        {overview.failed && overview.value !== null && (
+          <p className="admin__note admin__stale" role="alert">
+            The last refresh failed. These figures are from <Ago at={overview.lastLoadedAt} />.
+          </p>
+        )}
+
+        {overview.loading && <p className="admin__note">Loading…</p>}
+        {overview.failed && overview.value === null && (
           <p className="admin__note" role="alert">
             Could not load the overview.
           </p>
         )}
-        {overview.state === 'ready' && (
+        {overview.value !== null && (
           <div className="stats">
             <Stat label="Players" value={overview.value.counts.players} />
             <Stat
@@ -106,7 +136,7 @@ export function OverviewPage(): ReactNode {
 
       <section className="admin__section">
         <h2 className="admin__heading">Alerts</h2>
-        {overview.state === 'ready' &&
+        {overview.value !== null &&
           (overview.value.alerts.length === 0 ? (
             // Silence has to mean silence, or the panel stops being read.
             <p className="admin__note">Nothing wants attention.</p>
@@ -117,7 +147,7 @@ export function OverviewPage(): ReactNode {
               ))}
             </ul>
           ))}
-        {overview.state === 'ready' && (
+        {overview.value !== null && (
           <p className="admin__note">
             {overview.value.backup === null
               ? 'No backup result has been recorded on this instance.'
@@ -161,10 +191,12 @@ export function OverviewPage(): ReactNode {
       <section className="admin__section">
         <h2 className="admin__heading">Not built yet</h2>
         <ul className="admin__todo">
-          <li>Browse players and airlines — M1A-05</li>
-          <li>World health, tick loop and queue depth — M1A-06</li>
-          <li>Deployment and version visibility — OPS-02</li>
+          <li>Deployment and version visibility, per node — OPS-02, OPS-15</li>
         </ul>
+        <p className="admin__note">
+          Players and world health used to be listed here. Both are built — a list that names
+          something already on the page is worse than no list.
+        </p>
       </section>
     </>
   );

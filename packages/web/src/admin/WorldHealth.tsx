@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 
-import type { AdminTickState, AdminWorldHealth, AdminWorldHealthResponse } from '@tailfin/shared';
+import type { AdminTickState, AdminWorldHealth } from '@tailfin/shared';
 
 import { fetchWorldHealth } from './api';
+import { usePolledData } from './polling';
 
 import type { ReactNode } from 'react';
 
@@ -156,46 +157,33 @@ function Row({ world, series }: { world: AdminWorldHealth; series: number[] }): 
 }
 
 export function WorldHealth(): ReactNode {
-  const [report, setReport] = useState<AdminWorldHealthResponse | null>(null);
-  const [failed, setFailed] = useState(false);
-  /** Drift between the server's clock and this browser's, so the local tick is honest. */
-  const [fetchedAt, setFetchedAt] = useState<number | null>(null);
+  // Shares the console's polling behaviour rather than repeating it: keeps the
+  // last good answer on a failed refresh, and does not poll a hidden tab.
+  const health = usePolledData(fetchWorldHealth, REFRESH_MS);
+  const report = health.value;
+  const failed = health.failed;
+  const fetchedAt = health.lastLoadedAt;
+
   const [, setFrame] = useState(0);
   const series = useRef(new Map<string, number[]>());
 
+  // One sample per successful load. `value` is a fresh object each time, so this
+  // fires once per refresh and never on a re-render.
   useEffect(() => {
-    let live = true;
+    if (report === null) return;
+    for (const entry of report.worlds) {
+      const existing = series.current.get(entry.worldId) ?? [];
+      series.current.set(entry.worldId, [...existing, entry.queue.pending].slice(-SERIES_LENGTH));
+    }
+  }, [report]);
 
-    const load = async (): Promise<void> => {
-      try {
-        const value = await fetchWorldHealth();
-        if (!live) return;
-
-        for (const entry of value.worlds) {
-          const existing = series.current.get(entry.worldId) ?? [];
-          const next = [...existing, entry.queue.pending];
-          series.current.set(entry.worldId, next.slice(-SERIES_LENGTH));
-        }
-
-        setReport(value);
-        setFetchedAt(Date.now());
-        setFailed(false);
-      } catch {
-        if (live) setFailed(true);
-      }
-    };
-
-    void load();
-    const refresh = setInterval(() => void load(), REFRESH_MS);
-    // A second, faster timer only re-renders — it makes no request. This is what
-    // lets the in-game clock move without asking the server what time it is.
+  useEffect(() => {
+    // Re-renders only; it makes no request. This is what lets the in-game clock
+    // move without asking the server what time it is.
     const tick = setInterval(() => {
       setFrame((n) => n + 1);
     }, 1000);
-
     return () => {
-      live = false;
-      clearInterval(refresh);
       clearInterval(tick);
     };
   }, []);
