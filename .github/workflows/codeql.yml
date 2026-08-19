@@ -78,6 +78,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # Dependencies, for the JavaScript analysis only.
+      #
+      # This was originally skipped to save a minute, and that was wrong. Without
+      # `node_modules`, CodeQL cannot resolve `fastify`, so it never recognises
+      # `request.query` as attacker-controlled — and every taint-tracking query
+      # silently finds nothing. A scanner that reports zero because it cannot see
+      # the sources is worse than no scanner, because it looks like good news.
+      - name: Set up pnpm
+        if: matrix.language == 'javascript-typescript'
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node
+        if: matrix.language == 'javascript-typescript'
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        if: matrix.language == 'javascript-typescript'
+        run: pnpm install --frozen-lockfile
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
