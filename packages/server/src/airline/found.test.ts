@@ -214,7 +214,22 @@ describeDb('founding an airline', () => {
           for each row execute function test_refuse_founder_hub()
         `);
 
-        await expect(foundAirline(tx, playerId, submitted)).rejects.toThrow(/forced hub failure/);
+        const failure: unknown = await foundAirline(tx, playerId, submitted).then(
+          () => null,
+          (error: unknown) => error,
+        );
+        expect(failure).toBeInstanceOf(Error);
+
+        // Drizzle wraps the Postgres error at the top level. Preserve the
+        // useful assertion by walking the same cause chain production uses
+        // for named constraints instead of depending on the wrapper message.
+        const messages: string[] = [];
+        let current = failure;
+        while (current instanceof Error) {
+          messages.push(current.message);
+          current = current.cause;
+        }
+        expect(messages.join('\n')).toMatch(/forced hub failure/);
 
         const rows = await tx
           .select({ id: airline.id })
