@@ -17,8 +17,10 @@ you:  ssh tailfin@<ip>
              │
              ├─ git fetch, checkout the target commit (detached)
              ├─ pnpm install --frozen-lockfile
-             ├─ build            ── fails here? nothing was touched
-             ├─ migrate          ── fails here? old service still serving
+             ├─ build                 ── fails here? nothing was touched
+             ├─ migration preflight  ── database name, policy, pending count
+             ├─ verified local dump  ── only for a non-empty migration batch
+             ├─ atomic migrate       ── reports rollback / commit / unknown
              ├─ systemctl restart tailfin
              └─ poll /healthz, print the rollback command if it never comes up
 ```
@@ -27,8 +29,165 @@ you:  ssh tailfin@<ip>
 registry, and no credential anywhere that lets GitHub reach this machine.
 
 Rollback is the same command with a commit: `./deploy/deploy.sh <older-sha>`. That rolls
-back _code_, not _schema_ — a migration that dropped a column is not undone by checking
-out the old commit.
+back _code_, not _schema_. Every new migration is therefore required to keep the previously
+deployed release compatible rather than relying on checkout to reverse SQL. The complete
+decision and measured lock cost are in
+[ADR-0016](../docs/adr/0016-migration-failure-strategy.md).
+
+## Migration safety and recovery (OPS-05)
+
+Drizzle ORM 0.45.2's PostgreSQL migrator wraps the **complete pending sequence** in one
+transaction. This was proved with two migration files over 100,000 rows, where the second
+failed deliberately: both files rolled back and no migration journal row remained. The same
+experiment observed the cost—an `AccessExclusiveLock` blocked a reader until the whole batch
+failed 1,078 ms later. The database-backed regression repeats on every pull request.
+
+Future SQL uses expand/contract and declares it at the top of the file:
+
+```sql
+-- tailfin:migration-strategy expand
+-- tailfin:migration-strategy contract-safe-after #123
+```
+
+The previous release has to keep working against either the old or new schema because it is
+the process left serving if migration fails. The migration command and CI reject a missing
+marker, obvious destructive SQL labelled expand, required new columns without a default, and
+operations such as `CREATE INDEX CONCURRENTLY` that cannot run in the transaction. A contract
+marker means an earlier released version already stopped using the object; its issue is the
+evidence. There are no down-migrations.
+
+### What the failure message means
+
+The migration command reads `drizzle.__drizzle_migrations` before and after an error. Trust
+the printed database state, not the process exit alone:
+
+| Message                   | Database state and next action                                                                                  |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `DATABASE ROLLED BACK`    | Pending batch is unapplied. Old service is on the matching schema. Fix forward and deploy again.                |
+| `ALL PENDING ... APPLIED` | PostgreSQL committed before the client failed. Old service is compatible; inspect the cause, then retry deploy. |
+| `UNKNOWN/PARTIAL`         | Journal is between states or unreadable. Do not retry migration or roll code back; use the procedure below.     |
+| `DATABASE NOT TOUCHED`    | Preflight or policy failed before migration SQL. Fix that refusal; no schema recovery is needed.                |
+
+When migrations are pending, deploy first starts
+`tailfin-migration-backup@tailfin.service` (or `@tailfin_dev`). It runs as `postgres`, creates
+a custom-format dump under `/var/backups/tailfin/pre-migration/`, proves the archive can be
+listed, writes its SHA-256 sidecar and records the exact filename in
+`/var/lib/tailfin/migration-backup-<database>.json`. Only the latest eight per database are
+kept, so dev previews cannot evict production's recovery points. A backup failure stops the
+deploy before migration.
+
+This recovery point is local on purpose: it covers a schema failure while PostgreSQL and the
+host still exist. Nightly DreamObjects backups cover volume/host loss. A restore from either
+copy can discard good writes after its snapshot, so never automate it over the failed database.
+
+### Install before the first protected migration
+
+Application deploys cannot write `/usr/local/sbin` or `/etc`. Install the reviewed helper and
+unit manually from a checkout containing OPS-05:
+
+```bash
+install -o root -g root -m 0755 /srv/tailfin/deploy/backup.sh \
+  /usr/local/sbin/tailfin-backup
+install -o root -g root -m 0755 /srv/tailfin/deploy/migration-backup.sh \
+  /usr/local/sbin/tailfin-migration-backup
+cp /srv/tailfin/deploy/tailfin-migration-backup@.service /etc/systemd/system/
+install -d -o postgres -g postgres -m 0700 /var/backups/tailfin/pre-migration
+systemctl daemon-reload
+```
+
+Then install the four exact sudo grants described under [Service and proxy](#8-service-and-proxy)
+and prove both unit instances before allowing a later commit to carry migrations:
+
+```bash
+sudo -u tailfin sudo systemctl start tailfin-migration-backup@tailfin.service
+sudo -u tailfin sudo systemctl start tailfin-migration-backup@tailfin_dev.service
+cat /var/lib/tailfin/migration-backup-tailfin.json
+cat /var/lib/tailfin/migration-backup-tailfin_dev.json
+```
+
+The OPS-05 commit itself has no migration, so deploy it after installing these files. Because
+`deploy.sh` re-executes a copy before checkout, the version already on disk controls that one
+run; the new protection controls the next run, which is why installation comes first.
+
+### Recovery for `UNKNOWN/PARTIAL`
+
+The ordinary rolled-back case does **not** need a restore. Use these commands only after the
+failure explicitly reports unknown/partial state. Examples below show production; substitute
+`tailfin_dev` consistently for dev.
+
+1. Keep the old service running and record the two commits and backup artifact:
+
+   ```bash
+   cd /srv/tailfin
+   git rev-parse HEAD
+   curl -fsS http://127.0.0.1:3000/api/version
+   cat /var/lib/tailfin/migration-backup-tailfin.json
+   sudo -u postgres psql -XAtd tailfin -c \
+     'select id, created_at from drizzle.__drizzle_migrations order by id'
+   ```
+
+2. Preserve the unexpected state before changing anything:
+
+   ```bash
+   stamp=$(date -u +%Y%m%dT%H%M%SZ)
+   sudo -u postgres pg_dump --format=custom --compress=9 --no-owner --no-privileges \
+     --dbname=tailfin --file="/var/backups/tailfin/pre-migration/tailfin-failed-${stamp}.dump"
+   sudo -u postgres pg_restore --list \
+     "/var/backups/tailfin/pre-migration/tailfin-failed-${stamp}.dump" >/dev/null
+   ```
+
+3. Resolve the pre-migration filename from the recorded JSON, then verify it. Do not choose a
+   file by memory:
+
+   ```bash
+   status=/var/lib/tailfin/migration-backup-tailfin.json
+   artifact=$(node -e \
+     'const fs=require("node:fs"); const s=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); const m=s.databases.match(/local-only:([^ ]+\.dump)/); if(!m) process.exit(1); process.stdout.write(m[1]);' \
+     "${status}")
+   dump="/var/backups/tailfin/pre-migration/${artifact}"
+   test "$(sudo -u postgres sha256sum "${dump}" | cut -c1-64)" = \
+     "$(sudo -u postgres cat "${dump}.sha256")"
+   sudo -u postgres pg_restore --list "${dump}" >/dev/null
+   ```
+
+4. Restore into a new scratch database. The `_test` suffix is the destructive safety boundary;
+   refuse an existing target rather than deleting it:
+
+   ```bash
+   recovery_db=tailfin_migration_recovery_test
+   if sudo -u postgres psql -XAtqc \
+     "select 1 from pg_database where datname='${recovery_db}'" | grep -q 1; then
+     echo 'REFUSED: recovery database already exists' >&2
+     exit 1
+   fi
+   sudo -u postgres createdb --owner=tailfin --locale=C --template=template0 "${recovery_db}"
+   sudo -u postgres pg_restore --exit-on-error --single-transaction --role=tailfin \
+     --no-owner --no-privileges --dbname="${recovery_db}" "${dump}"
+   sudo -u postgres psql -Xd "${recovery_db}" -c \
+     'select id, created_at from drizzle.__drizzle_migrations order by id'
+   ```
+
+5. Inspect the failed SQL against this copy and choose explicitly:
+
+   - prefer a reviewed forward repair in one transaction when it preserves writes made after
+     the backup;
+   - otherwise restore and verify a **new non-live database**, stop the service, change only
+     its `DATABASE_URL`, then restart and poll health/domain checks. Never restore over
+     `tailfin` in place, and never mix selected tables without proving their foreign-key
+     closure and preserving a second backup first.
+
+6. After the incident is resolved, stop every process connected to the scratch copy, recheck
+   the suffix beside the destructive command, and remove only that database:
+
+   ```bash
+   [[ "${recovery_db}" =~ ^[A-Za-z0-9_]+_test$ ]] || false
+   sudo -u postgres dropdb "${recovery_db}"
+   ```
+
+This path was rehearsed on 2026-08-20 against disposable PostgreSQL 16. A fake committed table
+simulated the half-applied state; the verified pre-migration dump restored into a new `_test`
+database with all 20 real migration records and `airline`, without the fake table. The scratch
+database and probe table were removed. No dev or production database participated.
 
 ---
 
@@ -269,15 +428,22 @@ nothing. It is kept off-repo so a personal address is not committed to a public 
 > A **glob** matters here: an `import` of a single literal path fails outright when the
 > file is absent (`File to import not found`).
 
-`deploy.sh` restarts the service via `sudo`, so allow just that one command:
+The deploy user may restart the two application services and start only the two exact
+pre-migration backup unit instances. It does not receive a wildcard service grant:
 
 ```bash
-echo 'tailfin ALL=(root) NOPASSWD: /usr/bin/systemctl restart tailfin' \
+printf '%s\n' \
+  'tailfin ALL=(root) NOPASSWD: /usr/bin/systemctl restart tailfin' \
+  'tailfin ALL=(root) NOPASSWD: /usr/bin/systemctl restart tailfin-dev' \
+  'tailfin ALL=(root) NOPASSWD: /usr/bin/systemctl start tailfin-migration-backup@tailfin.service' \
+  'tailfin ALL=(root) NOPASSWD: /usr/bin/systemctl start tailfin-migration-backup@tailfin_dev.service' \
   > /etc/sudoers.d/tailfin-deploy
 chmod 440 /etc/sudoers.d/tailfin-deploy
+visudo -cf /etc/sudoers.d/tailfin-deploy
 ```
 
-Narrow on purpose — the deploy user gets to restart one service, not become root.
+Narrow on purpose — the deploy user can restart its applications and ask root's fixed backup
+service to dump one of two fixed databases; it cannot supply a command, path or arbitrary unit.
 
 ## 9. First deploy
 
@@ -407,9 +573,13 @@ deploy has not happened.
 install -o root -g root -m 0755 /srv/tailfin/deploy/backup.sh /usr/local/sbin/tailfin-backup
 install -o root -g root -m 0755 /srv/tailfin/deploy/restore-rehearsal.sh \
   /usr/local/sbin/tailfin-restore-rehearsal
+install -o root -g root -m 0755 /srv/tailfin/deploy/migration-backup.sh \
+  /usr/local/sbin/tailfin-migration-backup
 cp /srv/tailfin/deploy/tailfin-backup.{service,timer} /etc/systemd/system/
 cp /srv/tailfin/deploy/tailfin-backup-failed.service /etc/systemd/system/
+cp /srv/tailfin/deploy/tailfin-migration-backup@.service /etc/systemd/system/
 install -d -o postgres -g postgres -m 700 /var/backups/tailfin
+install -d -o postgres -g postgres -m 700 /var/backups/tailfin/pre-migration
 install -d -o root -g postgres -m 0750 /etc/tailfin
 apt install -y s3cmd
 systemctl daemon-reload
@@ -731,10 +901,11 @@ database, the port and who is allowed in.
 
 ### `deploy.sh` does not sync anything under /etc
 
-It updates the checkout, builds, migrates and restarts the app. It deliberately cannot
-write to `/etc` — the sudoers grant is exactly one command, `systemctl restart tailfin`.
-So editing `deploy/Caddyfile` or `deploy/tailfin.service` in the repo does **not** reach
-the running system on deploy. Apply those by hand, as root:
+It updates the checkout, builds, takes a migration backup when needed, migrates and restarts
+the app. It deliberately cannot write to `/etc` or `/usr/local/sbin` — its sudoers grants are
+the two application restarts and two fixed backup unit instances above. So editing
+`deploy/Caddyfile`, a unit or an installed helper in the repo does **not** reach the running
+system on deploy. Apply those by hand, as root:
 
 ```bash
 cp /srv/tailfin/deploy/Caddyfile /etc/caddy/Caddyfile

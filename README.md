@@ -110,6 +110,11 @@ different build.
   repeatably into a guarded `_test` database, migrated, booted and checked against real domain
   data and the world clock, with observed recovery time and up-to-24-hour data loss stated in
   the [server runbook](deploy/README.md#restoring).
+- **Known migration failure states.** PostgreSQL applies the complete pending migration batch
+  atomically; future SQL is checked for expand/contract compatibility with the previous
+  release, and a verified local dump gates every non-empty deploy batch. A failure reports
+  rolled back, all applied, or unknown instead of implying that failed code means unchanged
+  schema ([ADR-0016](docs/adr/0016-migration-failure-strategy.md)).
 - **Airline founding.** An authenticated player can found one airline in an open world,
   choosing its identity, base country and first hub. Ownership, config-backed opening
   cash, initial reputation and the free hub commit together or not at all; database

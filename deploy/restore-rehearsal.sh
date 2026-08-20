@@ -241,7 +241,7 @@ log "restore: archive loaded into ${TARGET_DB} as role tailfin"
 RESTORE_URL="postgresql://tailfin@localhost/${TARGET_DB}?host=%2Fvar%2Frun%2Fpostgresql"
 MIGRATE_STARTED="$(now_ms)"
 runuser -u tailfin -- env DATABASE_URL="${RESTORE_URL}" \
-  pnpm --dir "${CHECKOUT}" db:migrate
+  node "${CHECKOUT}/packages/server/dist/migrate.js" --apply
 MIGRATE_FINISHED="$(now_ms)"
 log 'schema: current migrations apply cleanly to the restored archive'
 

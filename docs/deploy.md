@@ -250,8 +250,10 @@ ssh tailfin@<ip> → cd /srv/tailfin → ./deploy/deploy.sh
                           │
                           ├─ fetch · checkout the target commit (detached)
                           ├─ pnpm install --frozen-lockfile
-                          ├─ build      ── fails here? nothing was touched
-                          ├─ migrate    ── fails here? old service still serving
+                          ├─ build               ── fails here? nothing was touched
+                          ├─ migration preflight ── actual database + policy + pending count
+                          ├─ verified local dump ── only when migrations are pending
+                          ├─ atomic migrate      ── classify rollback / commit / unknown
                           ├─ systemctl restart tailfin
                           └─ poll /healthz, print the rollback command on failure
 ```
@@ -260,8 +262,11 @@ ssh tailfin@<ip> → cd /srv/tailfin → ./deploy/deploy.sh
 and no credential exists that lets GitHub reach the instance.
 
 Rollback is the same command with an older commit: `./deploy/deploy.sh <sha>`. That rolls
-back _code_, not _schema_ — a migration that dropped a column is not undone by checking out
-the old commit.
+back _code_, not _schema_. OPS-05 therefore makes every new schema backward-compatible with
+the previously deployed release instead of pretending checkout reverses SQL. Drizzle applies
+the complete pending batch in one PostgreSQL transaction, and the deploy reports whether a
+failed client left it rolled back, fully applied or unknown. See
+[ADR-0016](adr/0016-migration-failure-strategy.md).
 
 Postgres and Caddy are installed from `apt`. Docker is used **only** for local development
 Postgres (root `docker-compose.yml`), which is a developer-machine convenience and has
@@ -273,9 +278,11 @@ Full step-by-step server setup: [`deploy/README.md`](../deploy/README.md).
 
 Builds run on the production box. A deploy needs dev dependencies and a few hundred MB of
 `node_modules`, and a broken build is found on the server rather than in CI. `deploy.sh`
-orders itself to limit the damage — build, then migrate, then restart, so a failure at any
-step leaves the running service alone — but rollback means rebuilding, which takes minutes
-and can itself fail.
+orders itself to limit the damage — build, preflight, verified recovery point, migrate, then
+restart. A database failure leaves the old process serving a schema it is required to support,
+but rollback still means rebuilding, takes minutes and can itself fail. A long migration also
+holds its strongest lock for the whole pending batch; the 100,000-row OPS-05 experiment made
+that cost visible rather than hypothetical.
 
 ## 6. Since settled
 
@@ -310,6 +317,15 @@ answered, because the reasoning is more useful than the fact.
   before it could report, and the switch's own grace period catches the run that never
   happened at all. Nothing on a dead box can report that the box is dead — which is why
   the third layer is a service _expecting_ a ping rather than an alert on an error.
+
+- **Migration failure** — settled by OPS-05 and
+  [ADR-0016](adr/0016-migration-failure-strategy.md). The actual Drizzle/PostgreSQL behavior
+  was tested with a deliberately failing second migration: all pending files rolled back,
+  while an `AccessExclusiveLock` was held across the batch. Future migrations declare expand
+  or a separately staged contract and are checked for obvious incompatibility and
+  non-transactional SQL. A non-empty deploy batch first takes a verified local dump through a
+  root-owned systemd unit. The abnormal half-applied recovery path was rehearsed into a new
+  `_test` database; the runbook has the exact inspection and cutover procedure.
 
 - **Auth provider** — settled by [ADR-0004](adr/0004-google-oauth.md): Google OAuth, with
   an account model that tolerates more than one identity per player so adding a second

@@ -79,4 +79,10 @@ describe('the restore rehearsal command', () => {
     expect(source).toContain('${db}:monthly-checksum-upload-failed');
     expect(source).not.toMatch(/s3 put "\$\{out\}\.sha256"[^\n]*\|\| true/);
   });
+
+  it('applies restored migrations through the policy-aware production command', () => {
+    const source = readFileSync(script, 'utf8');
+    expect(source).toContain('packages/server/dist/migrate.js" --apply');
+    expect(source).not.toContain('pnpm --dir "${CHECKOUT}" db:migrate');
+  });
 });
