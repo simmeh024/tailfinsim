@@ -12,6 +12,7 @@ import { healthResponseJsonSchema, versionResponseJsonSchema } from '@tailfin/sh
 
 import { registerAdminRoutes } from './admin/routes';
 import { type AirlineCodeAllocationPolicy } from './airline/codes';
+import { registerPlayerAirlineContext } from './airline/context';
 import { type AirlineIdentityModerator } from './airline/moderation';
 import { registerAirlineRoutes } from './airline/routes';
 import { registerAuthRoutes } from './auth/routes';
@@ -114,6 +115,10 @@ export function buildApp({
    */
   app.register(fastifyCookie, env.sessionSecret ? { secret: env.sessionSecret } : {});
   registerAuthRoutes(app, { env, db });
+  // Resolves "my airline" from the authenticated session and active world.
+  // Founding itself does not use the guard because having no airline is its
+  // precondition; player-airline operations registered later do (AIR-05).
+  registerPlayerAirlineContext(app, { db });
   // After the auth routes, which is where `requireAdmin` is decorated. Fastify
   // resolves decorators at registration time, so the order is not cosmetic.
   registerAdminRoutes(app, { db });

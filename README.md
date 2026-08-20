@@ -108,6 +108,11 @@ different build.
   through the per-world unique constraints. An advisory checker and constraint refusals
   offer deterministic, name-derived alternatives without leaking unowned reservations
   ([ADR-0009](docs/adr/0009-airline-code-allocation.md)).
+- **One player-airline context boundary.** Player operations resolve ownership from the
+  authenticated session and active world before a handler runs, then query only inside that
+  airline. A world is selected explicitly when several are possible; no-airline and
+  ambiguous-world states have stable responses shared by every guarded endpoint
+  ([ADR-0010](docs/adr/0010-player-airline-context.md)).
 - **Airline identity guardrails.** One shared schema gives Unicode display names and
   operational callsigns/codes explicit rules, with field-level failures. A permissive
   moderation interface sits on both founding and an audited admin force-rename remedy;

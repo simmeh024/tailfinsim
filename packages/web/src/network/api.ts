@@ -85,6 +85,7 @@ export async function saveFares(routeId: string, fares: FareTable): Promise<SetF
 export type OpenRouteFailure =
   | { kind: 'unknown-airport'; icao: string }
   | { kind: 'no-airline' }
+  | { kind: 'active-world-required' }
   | { kind: 'same-airport' }
   | { kind: 'duplicate' }
   | { kind: 'unreachable'; reachability: { reason: string; detail: string } };
@@ -109,7 +110,12 @@ export async function openRoute(
   });
 
   if (status === 201) return body as OpenRouteOutcome;
-  if (status === 409) return { ok: false, kind: 'duplicate' };
+  if (status === 409) {
+    const code = (body as { code?: unknown }).code;
+    if (code === 'duplicate_route') return { ok: false, kind: 'duplicate' };
+    if (code === 'airline_required') return { ok: false, kind: 'no-airline' };
+    if (code === 'active_world_required') return { ok: false, kind: 'active-world-required' };
+  }
   if (status === 422) return body as OpenRouteOutcome;
   throw new Error(`Opening a route failed with ${String(status)}`);
 }

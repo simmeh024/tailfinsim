@@ -163,6 +163,19 @@ export const CreateAirlineResponse = z.object({
 });
 export type CreateAirlineResponse = z.infer<typeof CreateAirlineResponse>;
 
+/**
+ * Expected player-context refusals for endpoints that operate on "my airline".
+ *
+ * These are state responses, not authentication failures: the caller is signed
+ * in, but either has no airline in the selected world or has several possible
+ * worlds and has not selected one. Clients branch on the stable code rather
+ * than matching the message.
+ */
+export const PlayerAirlineContextError = ApiError.extend({
+  code: z.enum(['airline_required', 'active_world_required', 'invalid_active_world']),
+});
+export type PlayerAirlineContextError = z.infer<typeof PlayerAirlineContextError>;
+
 export const AirlineCodeKind = z.enum(['iata', 'icao']);
 export type AirlineCodeKind = z.infer<typeof AirlineCodeKind>;
 
