@@ -205,6 +205,11 @@ than being discovered the next time somebody needs the command.
 explaining a choice twice, write it down once instead. ADR-0003 (deployment) and ADR-0005
 (world epoch and reset) are the two that constrain operations.
 
+**Security work starts from [ADR-0012](docs/adr/0012-tailfin-threat-model.md).** Name the
+asset and attacker or failure mode a control addresses. A new public port, provider,
+privileged role, secret or personal-data class, or deployment node changes the threat model;
+update ADR-0012 and `docs/deploy.md` in the same change.
+
 **Milestones:** 273 issues across 23 of them. `M0`–`M15` are the game backlog and `M1A`
 is the admin console core. The rest are cross-cutting tracks that deliberately sit outside
 the feature sequence, because none of them are game behaviour:

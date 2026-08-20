@@ -52,6 +52,11 @@ A single DreamCompute instance running everything behind one reverse proxy:
                     Postgres 16
 ```
 
+The security trust-boundary view—including dev, SSH, Google OAuth, GitHub and the backup
+path—is in [ADR-0012](adr/0012-tailfin-threat-model.md). This topology and that threat model
+must be updated together when OPS-08 splits web and worker or OPS-11 moves PostgreSQL; a new
+node or provider is a new trust boundary, not just a deployment detail.
+
 **One origin, deliberately.** The client and API share `tailfinsim.com` rather than
 splitting into `app.` and `api.` subdomains. This is not laziness — M0-11 specifies
 session auth with httpOnly secure cookies, and same-origin means `SameSite=Lax` works
