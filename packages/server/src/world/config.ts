@@ -1,5 +1,7 @@
 import { type WorldConfig } from '@tailfin/shared';
 
+import { economyConfigFor } from '../economy/config';
+
 /**
  * Rejects a config that would break the reset contract.
  *
@@ -21,6 +23,12 @@ export function assertUsableConfig(config: WorldConfig, now: Date): void {
       `Epoch ${config.epoch} is not in the past. A world's epoch is where its calendar ` +
         'begins, and a reset returns to it — so an epoch of "now" makes a reset ' +
         'meaningless (ADR-0005).',
+    );
+  }
+  if (!economyConfigFor(config.economyConfigVersion)) {
+    throw new Error(
+      `Economy config ${config.economyConfigVersion} is not registered. ` +
+        'A world must pin a known immutable version when it is created (AIR-03).',
     );
   }
 }

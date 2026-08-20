@@ -35,6 +35,7 @@
 export * from './primitives';
 export * from './world';
 export * from './airline';
+export * from './economy-config';
 export * from './airport';
 export * from './aircraft';
 export * from './network';

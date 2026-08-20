@@ -10,8 +10,8 @@ import {
 
 import { type Database } from '../db/client';
 import { airline, airlineHub, airport, world } from '../db/schema';
+import { economyConfigFor } from '../economy/config';
 
-import { economyConfigFor } from './config';
 import {
   moderateAirlineIdentity,
   type AirlineIdentityModerationDependencies,
@@ -107,9 +107,11 @@ export async function foundAirline(
           `World ${selectedWorld.id} pins unknown economy config ${selectedWorld.economyConfigVersion}`,
         );
       }
-      if (config.airlineStartingPosition.freeHubAllowance < 1) {
+      const { openingCashMinor, freeHubAllowance } = config.airlineStartingPosition;
+      if (freeHubAllowance !== 1) {
         throw new Error(
-          `Economy config ${config.version} grants no founder hub, contrary to App. B.5`,
+          `Economy config ${config.version} grants ${String(freeHubAllowance)} ` +
+            'founder hubs, but the founding flow currently consumes exactly one (AIR-03)',
         );
       }
 
@@ -143,7 +145,7 @@ export async function foundAirline(
           icaoCode: input.icaoCode,
           callsign: input.callsign,
           baseCountry: input.baseCountry,
-          cashMinor: config.airlineStartingPosition.openingCashMinor,
+          cashMinor: openingCashMinor,
           // Fixed by §15 and intentionally not economy config (AIR-03). It is
           // supplied explicitly so founding never depends on an omitted field.
           reputation: String(INITIAL_AIRLINE_REPUTATION),
@@ -157,7 +159,7 @@ export async function foundAirline(
         .values({
           airlineId: createdAirline.id,
           airportId: selectedHub.id,
-          founderGrant: true,
+          founderGrant: freeHubAllowance === 1,
         })
         .returning();
       const createdHub = createdHubs[0];

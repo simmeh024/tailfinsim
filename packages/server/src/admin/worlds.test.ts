@@ -93,6 +93,13 @@ describe('validateWorldConfig', () => {
     expect(result.ok).toBe(false);
   });
 
+  it('refuses an economy version the server cannot pin', () => {
+    const result = validateWorldConfig(config({ economyConfigVersion: 'missing' }), NOW);
+    if (result.ok) throw new Error('expected a refusal');
+    expect(result.fields.economyConfigVersion?.[0]).toMatch(/missing is not registered/);
+    expect(result.fields.economyConfigVersion?.[0]).toMatch(/pinned/);
+  });
+
   it('refuses nonsense rather than throwing on it', () => {
     for (const input of [null, 'a world', 42, [], {}]) {
       expect(validateWorldConfig(input, NOW).ok).toBe(false);
@@ -166,6 +173,7 @@ describeDb('creating worlds', () => {
     expect(at.toISOString()).toBe(c.epoch);
     expect(Number(created.speedMultiplier)).toBe(c.speedMultiplier);
     expect(created.aircraftCatalogueVersion).toBe(c.aircraftCatalogueVersion);
+    expect(created.economyConfigVersion).toBe(c.economyConfigVersion);
   });
 
   it('starts every world in staging', async () => {

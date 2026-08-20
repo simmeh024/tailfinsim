@@ -67,6 +67,7 @@ describeDb('world lifecycle', () => {
       expect(created.epoch.toISOString()).toBe(FLAGSHIP_CONFIG.epoch);
       expect(Number(created.speedMultiplier)).toBe(2);
       expect(created.status).toBe('staging');
+      expect(created.economyConfigVersion).toBe(FLAGSHIP_CONFIG.economyConfigVersion);
     });
 
     it('is idempotent by name, so the seed can be re-run', async () => {
