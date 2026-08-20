@@ -14,15 +14,17 @@
  *                  cabin, on that cabin's own pool, fares and seats
  *   `itinerary`  — A.14's connecting products: the one-stop that competes in
  *                  the logit as a single option, and how its fare splits
+ *   `booking-curve` — A.15's horizon: when the seats actually sell, and why a
+ *                  fare change can only reach the ones not yet taken
  *
  * The first two are A.2's whole of step one — how big the market is, and how
  * big it is *today*. The third is the arbiter that splits it, and the one whose
  * exact decomposability the game's explainability rests on (A.9).
  *
- * What follows is not here yet: the booking curve that loads a specific
- * departure is A.15 (M3-08). `logit` returns demand; `capacity` turns it into
- * bookings.
+ * `logit` returns demand; `capacity` turns it into bookings; `booking-curve`
+ * decides which in-game day each of those bookings happens on.
  */
+export * from './booking-curve';
 export * from './capacity';
 export * from './class-allocation';
 export * from './gravity';
