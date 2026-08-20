@@ -28,6 +28,7 @@ import { FareTable } from '@tailfin/shared';
 import { airline, route } from '../db/schema';
 
 import { parseFares, previewFares, type RouteEconomics, type RouteRow, setFares } from './fares';
+import { openRoute } from './open-route';
 
 import type { Database, DatabaseHandle } from '../db/client';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -108,6 +109,48 @@ export function registerNetworkRoutes(
       return reply.code(200).send({
         routes: rows.map((row) => ({ ...row, fares: parseFares(row.fares) })),
       });
+    },
+  );
+
+  /**
+   * Open a route.
+   *
+   * A refusal names **which** of B.4's seven checks failed. The design doc is
+   * explicit that the UI shows that and *"never a generic unavailable"*, and a
+   * route refused for range needs a different aeroplane while one refused for a
+   * curfew needs a different time — collapsing them throws away the only part
+   * of the answer a player can act on.
+   *
+   * 422 for a rule refusal, 409 for a pair already open: the first is "this
+   * cannot be done", the second is "this is already done", and a client that
+   * cannot tell them apart will offer the wrong remedy.
+   */
+  app.post<{ Body: unknown }>(
+    '/api/routes',
+    { onRequest: app.requireAuth },
+    async (request, reply) => {
+      const playerId = request.player?.id;
+      if (playerId === undefined) return notFound(reply);
+
+      const body = request.body as { originIcao?: unknown; destinationIcao?: unknown } | null;
+      if (typeof body?.originIcao !== 'string' || typeof body.destinationIcao !== 'string') {
+        return reply
+          .code(400)
+          .send({ code: 'invalid_route', message: 'An origin and a destination are required' });
+      }
+
+      const result = await openRoute(db.db, playerId, {
+        originIcao: body.originIcao,
+        destinationIcao: body.destinationIcao,
+      });
+
+      if (result.ok) return reply.code(201).send(result);
+      if (result.kind === 'duplicate') {
+        return reply
+          .code(409)
+          .send({ code: 'duplicate_route', message: 'You already fly that pair' });
+      }
+      return reply.code(422).send(result);
     },
   );
 

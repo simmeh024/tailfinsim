@@ -9,7 +9,14 @@ import type {
   FareTable,
 } from '@tailfin/shared';
 
-import { fetchRoutes, previewFares, type RouteSummary, saveFares } from './api';
+import {
+  fetchRoutes,
+  openRoute,
+  type OpenRouteOutcome,
+  previewFares,
+  type RouteSummary,
+  saveFares,
+} from './api';
 
 import type { ReactNode } from 'react';
 
@@ -102,6 +109,112 @@ function Position({
         {position.projectedShare === null ? '—' : `${(position.projectedShare * 100).toFixed(1)}%`}
       </td>
     </tr>
+  );
+}
+
+/**
+ * Which of B.4's seven checks refused it, in words.
+ *
+ * The reason enum is on the wire precisely so the client does not have to
+ * match on prose — B.4 requires the player to be told which check failed and
+ * "never a generic unavailable", and a route refused for range needs a
+ * different aeroplane while one refused for a curfew needs a different time.
+ */
+const REACHABILITY_LABEL: Record<string, string> = {
+  range: 'Out of range',
+  runway: 'Runway too short',
+  wingspan: 'Aircraft too large for the stand',
+  etops: 'Beyond the diversion limit',
+  curfew: 'Outside operating hours',
+  traffic_rights: 'No traffic rights for that country pair',
+  slots: 'No slot in that band',
+};
+
+function OpenRouteForm({ onOpened }: { onOpened: () => void }): ReactNode {
+  const [origin, setOrigin] = useState('');
+  const [destination, setDestination] = useState('');
+  const [outcome, setOutcome] = useState<OpenRouteOutcome | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    setBusy(true);
+    setOutcome(null);
+    try {
+      const result = await openRoute(origin, destination);
+      setOutcome(result);
+      if (result.ok) {
+        setOrigin('');
+        setDestination('');
+        onOpened();
+      }
+    } catch {
+      setOutcome(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="card">
+      <h2 className="card__heading">Open a route</h2>
+
+      <div className="fares__actions">
+        <label className="fares__field">
+          <span className="visually-hidden">Origin ICAO</span>
+          <input
+            className="fares__input figure"
+            type="text"
+            placeholder="EHAM"
+            maxLength={4}
+            value={origin}
+            onChange={(event) => {
+              setOrigin(event.target.value.toUpperCase());
+            }}
+          />
+        </label>
+
+        <span aria-hidden="true">→</span>
+
+        <label className="fares__field">
+          <span className="visually-hidden">Destination ICAO</span>
+          <input
+            className="fares__input figure"
+            type="text"
+            placeholder="LEBL"
+            maxLength={4}
+            value={destination}
+            onChange={(event) => {
+              setDestination(event.target.value.toUpperCase());
+            }}
+          />
+        </label>
+
+        <button
+          className="admin__submit"
+          type="button"
+          disabled={busy || origin.length < 4 || destination.length < 4}
+          onClick={() => void submit()}
+        >
+          Open
+        </button>
+      </div>
+
+      {outcome !== null && !outcome.ok && (
+        <p className="fares__violation" role="alert">
+          {outcome.kind === 'unreachable' && (
+            <>
+              <strong>
+                {REACHABILITY_LABEL[outcome.reachability.reason] ?? outcome.reachability.reason}
+              </strong>{' '}
+              — {outcome.reachability.detail}
+            </>
+          )}
+          {outcome.kind === 'unknown-airport' && <>No airport with the code {outcome.icao}.</>}
+          {outcome.kind === 'same-airport' && <>A route needs two different airports.</>}
+          {outcome.kind === 'duplicate' && <>You already fly that pair.</>}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -253,15 +366,17 @@ export function NetworkPage(): ReactNode {
   const [routes, setRoutes] = useState<RouteSummary[] | null>(null);
   const [failed, setFailed] = useState(false);
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        setRoutes(await fetchRoutes());
-      } catch {
-        setFailed(true);
-      }
-    })();
+  const load = useCallback(async () => {
+    try {
+      setRoutes(await fetchRoutes());
+    } catch {
+      setFailed(true);
+    }
   }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   return (
     <section className="page">
@@ -273,10 +388,14 @@ export function NetworkPage(): ReactNode {
         </p>
       )}
       {routes === null && !failed && <p className="page__note">Loading…</p>}
+      <OpenRouteForm
+        onOpened={() => {
+          void load();
+        }}
+      />
+
       {routes !== null && routes.length === 0 && (
-        <p className="page__note">
-          No routes yet. Opening one is M2-01&rsquo;s; once it exists, its fares are set here.
-        </p>
+        <p className="page__note">No routes yet. Open one above, and its fares are set here.</p>
       )}
 
       {(routes ?? []).map((route) => (

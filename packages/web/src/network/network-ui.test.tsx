@@ -63,7 +63,12 @@ const REFUSAL: SetFaresResponse = {
   ],
 };
 
-function stub(save: SetFaresResponse = { ok: true, fares: ROUTE.fares }) {
+const OPENED = { ok: true as const, routeId: 'route-2', greatCircleNm: 700 };
+
+function stub(
+  save: SetFaresResponse = { ok: true, fares: ROUTE.fares },
+  opened: { ok: boolean } & Record<string, unknown> = OPENED,
+) {
   const calls: string[] = [];
   vi.stubGlobal(
     'fetch',
@@ -71,6 +76,12 @@ function stub(save: SetFaresResponse = { ok: true, fares: ROUTE.fares }) {
       const url = String(input);
       calls.push(`${init?.method ?? 'GET'} ${url}`);
 
+      if (url === '/api/routes' && init?.method === 'POST') {
+        return Promise.resolve({
+          status: opened.ok ? 201 : 422,
+          json: () => Promise.resolve(opened),
+        });
+      }
       if (url === '/api/routes') {
         return Promise.resolve({ status: 200, json: () => Promise.resolve({ routes: [ROUTE] }) });
       }
@@ -218,7 +229,7 @@ describe('the pricing panel', () => {
     expect(screen.queryByLabelText('First fare')).toBeNull();
   });
 
-  it('says so when there are no routes yet', async () => {
+  it('says so when there are no routes yet, and offers to open one', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => Promise.resolve({ status: 200, json: () => Promise.resolve({ routes: [] }) })),
@@ -226,5 +237,49 @@ describe('the pricing panel', () => {
     render(<NetworkPage />);
 
     expect(await screen.findByText(/No routes yet/)).toBeInTheDocument();
+    // The empty state has to be actionable. Naming a milestone at the player
+    // was honest while nothing could be done about it and is not any more.
+    expect(screen.getByRole('button', { name: /^open$/i })).toBeInTheDocument();
+  });
+
+  it('names the check that refused a route — App. B.4', async () => {
+    // "Never a generic unavailable." A route refused for range needs a
+    // different aeroplane; one refused for a curfew needs a different time.
+    stub(undefined, {
+      ok: false,
+      kind: 'unreachable',
+      reachability: { reason: 'range', detail: '1,850 nm required, 1,500 nm available' },
+    });
+    render(<NetworkPage />);
+    await screen.findByText('EHAM → LEBL');
+
+    fireEvent.change(screen.getByLabelText('Origin ICAO'), { target: { value: 'EHAM' } });
+    fireEvent.change(screen.getByLabelText('Destination ICAO'), { target: { value: 'KJFK' } });
+    fireEvent.click(screen.getByRole('button', { name: /^open$/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/Out of range/);
+    expect(alert).toHaveTextContent(/1,850 nm required/);
+  });
+
+  it('refuses a pair already flown, differently from a rule refusal', async () => {
+    stub(undefined, { ok: false, kind: 'duplicate' });
+    render(<NetworkPage />);
+    await screen.findByText('EHAM → LEBL');
+
+    fireEvent.change(screen.getByLabelText('Origin ICAO'), { target: { value: 'EHAM' } });
+    fireEvent.change(screen.getByLabelText('Destination ICAO'), { target: { value: 'LEBL' } });
+    fireEvent.click(screen.getByRole('button', { name: /^open$/i }));
+
+    expect(await screen.findByText(/already fly that pair/i)).toBeInTheDocument();
+  });
+
+  it('will not submit a code that is not four letters', async () => {
+    stub();
+    render(<NetworkPage />);
+    await screen.findByText('EHAM → LEBL');
+
+    fireEvent.change(screen.getByLabelText('Origin ICAO'), { target: { value: 'EH' } });
+    expect(screen.getByRole('button', { name: /^open$/i })).toBeDisabled();
   });
 });
