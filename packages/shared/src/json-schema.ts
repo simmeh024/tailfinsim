@@ -13,6 +13,7 @@ import {
   AdminWorldStatusResponse,
   AdminWorldListResponse,
 } from './admin';
+import { CreateAirlineResponse } from './airline';
 import { ApiError, HealthResponse } from './api';
 import { LogoutResponse, MeResponse } from './auth';
 import { VersionResponse } from './version';
@@ -38,6 +39,7 @@ export const apiErrorJsonSchema = z.toJSONSchema(ApiError);
 export const meResponseJsonSchema = z.toJSONSchema(MeResponse);
 export const logoutResponseJsonSchema = z.toJSONSchema(LogoutResponse);
 export const versionResponseJsonSchema = z.toJSONSchema(VersionResponse);
+export const createAirlineResponseJsonSchema = z.toJSONSchema(CreateAirlineResponse);
 export const adminAuditResponseJsonSchema = z.toJSONSchema(AdminAuditResponse);
 export const adminListResponseJsonSchema = z.toJSONSchema(AdminListResponse);
 export const adminWorldListResponseJsonSchema = z.toJSONSchema(AdminWorldListResponse);

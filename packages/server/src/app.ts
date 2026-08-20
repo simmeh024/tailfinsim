@@ -11,6 +11,7 @@ import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 import { healthResponseJsonSchema, versionResponseJsonSchema } from '@tailfin/shared';
 
 import { registerAdminRoutes } from './admin/routes';
+import { registerAirlineRoutes } from './airline/routes';
 import { registerAuthRoutes } from './auth/routes';
 import { readBuildInfo } from './build-info';
 import { type DatabaseHandle } from './db/client';
@@ -105,6 +106,10 @@ export function buildApp({ env, db }: BuildAppOptions): FastifyInstance {
   // After the auth routes, which is where `requireAdmin` is decorated. Fastify
   // resolves decorators at registration time, so the order is not cosmetic.
   registerAdminRoutes(app, { db });
+
+  // Founding is the first player operation and the precondition for the
+  // network routes registered below it (AIR-01).
+  registerAirlineRoutes(app, { db });
 
   // The first player-facing API. Economics are injected rather than looked up
   // because the fleet does not exist yet — see `network/economics.ts` for which
