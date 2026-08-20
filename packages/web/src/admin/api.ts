@@ -268,6 +268,24 @@ export async function fetchPlayer(playerId: string): Promise<AdminPlayerDetail |
   return (body as { player: AdminPlayerDetail }).player;
 }
 
+/** Incident-response control: immediately ends every session for one player. */
+export async function revokePlayerSessions(playerId: string): Promise<number> {
+  const response = await fetch(
+    `/api/admin/players/${encodeURIComponent(playerId)}/sessions/revoke`,
+    {
+      method: 'POST',
+      headers: { accept: 'application/json' },
+      credentials: 'same-origin',
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`POST player session revocation failed with ${String(response.status)}`);
+  }
+  const body: unknown = await response.json();
+  const count = (body as { revokedSessions?: unknown }).revokedSessions;
+  return typeof count === 'number' ? count : 0;
+}
+
 export async function fetchWorldHealth(): Promise<AdminWorldHealthResponse> {
   const body = await getJson('/api/admin/worlds/health');
   return body as AdminWorldHealthResponse;

@@ -81,6 +81,12 @@ security-header change, follow the report-only/enforced sequence in `deploy/READ
 `pnpm security:headers` against both live hosts before saying the policy is active. A green
 in-repository Caddy integration test proves the committed config, not the installed one.
 
+**Session authority rotates when privilege changes.** A real admin grant or revocation deletes
+all of the target player's sessions in the same transaction as the grant and audit row. Do not
+change that to preserve a convenient cookie: the pre-change token must receive 401. Normal
+player sessions default to 30 days, admin sessions to 12 hours, and production refuses a
+non-HTTPS `PUBLIC_ORIGIN`; see ADR-0015.
+
 ---
 
 ## The two environments

@@ -184,7 +184,7 @@ describe('the admin link', () => {
     renderAt('/world');
 
     await screen.findByRole('link', { name: 'admin' });
-    screen.getByRole('button', { name: /sign out/i }).click();
+    screen.getByRole('button', { name: 'Sign out' }).click();
 
     await waitFor(() => {
       expect(screen.queryByRole('link', { name: 'admin' })).toBeNull();

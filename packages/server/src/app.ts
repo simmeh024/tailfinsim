@@ -15,7 +15,7 @@ import { type AirlineCodeAllocationPolicy } from './airline/codes';
 import { registerPlayerAirlineContext } from './airline/context';
 import { type AirlineIdentityModerator } from './airline/moderation';
 import { registerAirlineRoutes } from './airline/routes';
-import { registerAuthRoutes } from './auth/routes';
+import { type GoogleAuthOperations, registerAuthRoutes } from './auth/routes';
 import { readBuildInfo } from './build-info';
 import { type DatabaseHandle } from './db/client';
 import { readDeployInfo } from './deploy-info';
@@ -44,6 +44,8 @@ export interface BuildAppOptions {
   identityModerator?: AirlineIdentityModerator;
   /** AIR-04/M11-08 allocation strategy; defaults to per-world availability. */
   airlineCodePolicy?: AirlineCodeAllocationPolicy;
+  /** Test seam at the external OAuth boundary; production uses the real provider. */
+  googleAuth?: GoogleAuthOperations;
 }
 
 export function buildApp({
@@ -51,6 +53,7 @@ export function buildApp({
   db,
   identityModerator,
   airlineCodePolicy,
+  googleAuth,
 }: BuildAppOptions): FastifyInstance {
   const app = Fastify({
     logger: {
@@ -114,7 +117,7 @@ export function buildApp({
    * path guarded by `env.authEnabled`.
    */
   app.register(fastifyCookie, env.sessionSecret ? { secret: env.sessionSecret } : {});
-  registerAuthRoutes(app, { env, db });
+  registerAuthRoutes(app, { env, db, googleAuth });
   // Resolves "my airline" from the authenticated session and active world.
   // Founding itself does not use the guard because having no airline is its
   // precondition; player-airline operations registered later do (AIR-05).

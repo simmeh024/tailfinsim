@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
-import { and, eq, gt, lt } from 'drizzle-orm';
+import { and, eq, gt } from 'drizzle-orm';
 
 import { type Database } from '../db/client';
 import { player, session } from '../db/schema';
@@ -50,6 +50,25 @@ export async function createSession(
 }
 
 /**
+ * Replaces any session presented at login with a fresh token, atomically.
+ *
+ * A browser-controlled pre-login token must not survive authentication: that
+ * would turn it into a session-fixation primitive. Keeping the delete and
+ * insert in one transaction also avoids signing somebody out if issuance fails.
+ */
+export async function replaceSession(
+  db: Database,
+  previousToken: string | undefined,
+  playerId: string,
+  ttlHours: number,
+): Promise<{ token: string; expiresAt: Date }> {
+  return db.transaction(async (tx) => {
+    if (previousToken) await destroySession(tx, previousToken);
+    return createSession(tx, playerId, ttlHours);
+  });
+}
+
+/**
  * Resolves a token to its player, or null.
  *
  * Expiry is enforced in the query rather than after it, so an expired row can
@@ -77,7 +96,7 @@ export async function findSessionPlayer(
   const row = rows[0];
   if (!row) return null;
 
-  // Best-effort recency, for "sessions" UI and stale-session sweeping later.
+  // Best-effort recency for the sessions UI.
   // Deliberately not awaited into the request path's critical section.
   void db
     .update(session)
@@ -99,9 +118,13 @@ export async function destroySession(db: Database, token: string): Promise<void>
   await db.delete(session).where(eq(session.tokenHash, hashToken(token)));
 }
 
-/** Removes expired rows. Nothing calls this on a timer yet; it exists to be called. */
-export async function sweepExpiredSessions(db: Database): Promise<void> {
-  await db.delete(session).where(lt(session.expiresAt, new Date()));
+/** Invalidates every session belonging to a player and returns how many were removed. */
+export async function destroyPlayerSessions(db: Database, playerId: string): Promise<number> {
+  const deleted = await db
+    .delete(session)
+    .where(eq(session.playerId, playerId))
+    .returning({ id: session.id });
+  return deleted.length;
 }
 
 /**

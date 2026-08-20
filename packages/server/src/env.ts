@@ -185,8 +185,11 @@ export interface ServerEnv {
   sessionSecret: string | undefined;
   authEnabled: boolean;
 
-  /** How long a session lasts. Defaults to 30 days. */
+  /** Player sessions last 30 days; see ADR-0015 for the persistent-world trade-off. */
   sessionTtlHours: number;
+
+  /** Privileged sessions last one operator workday and must be shorter than player sessions. */
+  adminSessionTtlHours: number;
 
   /**
    * Whether new players may create accounts.
@@ -244,6 +247,19 @@ export function loadEnv(): ServerEnv {
     throw new Error('SESSION_SECRET must be at least 32 characters. Try: openssl rand -base64 48');
   }
 
+  const publicOrigin = optional('PUBLIC_ORIGIN', 'http://localhost:3000').replace(/\/+$/, '');
+  if (environmentLabel === 'production' && !publicOrigin.startsWith('https://')) {
+    throw new Error(
+      'ENVIRONMENT_LABEL=production requires an https PUBLIC_ORIGIN so session cookies are Secure.',
+    );
+  }
+
+  const sessionTtlHours = optionalInt('SESSION_TTL_HOURS', 24 * 30);
+  const adminSessionTtlHours = optionalInt('ADMIN_SESSION_TTL_HOURS', 12);
+  if (adminSessionTtlHours >= sessionTtlHours) {
+    throw new Error('ADMIN_SESSION_TTL_HOURS must be shorter than SESSION_TTL_HOURS.');
+  }
+
   return {
     nodeEnv: nodeEnv as NodeEnv,
     databaseUrl: required('DATABASE_URL'),
@@ -252,12 +268,13 @@ export function loadEnv(): ServerEnv {
     logLevel: optional('LOG_LEVEL', nodeEnv === 'production' ? 'info' : 'debug'),
     webSurface: webSurface as WebSurface,
     environmentLabel: environmentLabel as EnvironmentLabel,
-    publicOrigin: optional('PUBLIC_ORIGIN', 'http://localhost:3000').replace(/\/+$/, ''),
+    publicOrigin,
     googleClientId,
     googleClientSecret,
     sessionSecret,
     authEnabled,
-    sessionTtlHours: optionalInt('SESSION_TTL_HOURS', 24 * 30),
+    sessionTtlHours,
+    adminSessionTtlHours,
     allowRegistration: optionalBool('ALLOW_REGISTRATION', false),
   };
 }

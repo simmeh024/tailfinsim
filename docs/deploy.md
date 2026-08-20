@@ -159,7 +159,8 @@ reflects that; earlier versions of this table overstated it.
 
 The three auth values are all-or-nothing: set together, or left unset. Setting only some is
 refused at boot, because a half-configured sign-in looks like a working one and fails at
-the callback, after the player has been sent to Google.
+the callback, after the player has been sent to Google. Production also refuses a plain-HTTP
+`PUBLIC_ORIGIN`; otherwise its session cookies would silently lose the `Secure` attribute.
 
 | Variable                      | Example                                       | Required | Notes                                                  |
 | ----------------------------- | --------------------------------------------- | -------- | ------------------------------------------------------ |
@@ -171,11 +172,12 @@ the callback, after the player has been sent to Google.
 | `LOG_LEVEL`                   | `info`                                        | no       | Pino level; defaults to `info` in prod, `debug` in dev |
 | `WEB_SURFACE`                 | `app`                                         | no       | `holding` (default) or `app`. What `/` serves          |
 | `ENVIRONMENT_LABEL`           | `dev`                                         | no       | `local` (default), `dev`, `production`. Build badge    |
-| `PUBLIC_ORIGIN`               | `https://tailfinsim.com`                      | no       | OAuth redirect base; also decides `Secure` on cookies  |
+| `PUBLIC_ORIGIN`               | `https://tailfinsim.com`                      | no       | OAuth base; HTTPS is mandatory on production           |
 | `GOOGLE_CLIENT_ID`            | `….apps.googleusercontent.com`                | no       | M0-11. All three auth vars together, or none           |
 | `GOOGLE_CLIENT_SECRET`        | `GOCSPX-…`                                    | no       | Never logged, never echoed                             |
-| `SESSION_SECRET`              | _(32+ random bytes, base64)_                  | no       | Rotating it invalidates every session                  |
-| `SESSION_TTL_HOURS`           | `720`                                         | no       | Defaults to 30 days                                    |
+| `SESSION_SECRET`              | _(32+ random bytes, base64)_                  | no       | Signs the temporary OAuth state/PKCE cookie            |
+| `SESSION_TTL_HOURS`           | `720`                                         | no       | Player TTL: 30 days for a persistent-world account     |
+| `ADMIN_SESSION_TTL_HOURS`     | `12`                                          | no       | Admin TTL: one shift; must be shorter than player TTL  |
 | `ALLOW_REGISTRATION`          | `false`                                       | no       | **Defaults to false.** Closed unless explicitly opened |
 | `BACKUP_STATUS_FILE`          | `/var/lib/tailfin/backup-status.json`         | no       | Written by `backup.sh`, read by the admin overview     |
 

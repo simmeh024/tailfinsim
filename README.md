@@ -95,8 +95,9 @@ different build.
   de-icing.
 - **Demand pools.** Appendix A.2's gravity model, sized for every viable city pair and
   split into business, leisure and VFR.
-- **Accounts.** Google OAuth, database-backed sessions, admin grants, and an append-only
-  audit log the database itself refuses to let anyone edit.
+- **Accounts.** Google OAuth, database-backed sessions, atomic login rotation, immediate
+  per-player revocation, shorter admin lifetimes, admin grants, and an append-only audit log
+  the database itself refuses to let anyone edit ([ADR-0015](docs/adr/0015-session-lifecycle.md)).
 - **A repository-specific threat model.** Security work prioritises the persistent world's
   integrity, then the identities and control paths that can change it. The model records the
   real single-host boundaries, attackers, ordinary operator mistakes and explicit non-goals

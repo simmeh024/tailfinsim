@@ -58,6 +58,13 @@ export const LogoutResponse = z.object({
 });
 export type LogoutResponse = z.infer<typeof LogoutResponse>;
 
+/** `POST /api/auth/logout-all` and the admin session-revocation action. */
+export const RevokeSessionsResponse = z.object({
+  signedOut: z.literal(true),
+  revokedSessions: z.number().int().nonnegative(),
+});
+export type RevokeSessionsResponse = z.infer<typeof RevokeSessionsResponse>;
+
 /**
  * Reasons a sign-in attempt can fail, as stable machine-readable codes.
  *

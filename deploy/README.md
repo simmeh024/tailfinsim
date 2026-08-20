@@ -164,12 +164,20 @@ PORT=3000
 DATABASE_URL=postgres://tailfin:<password>@127.0.0.1:5432/tailfin
 PUBLIC_ORIGIN=https://tailfinsim.com
 LOG_LEVEL=info
+SESSION_TTL_HOURS=720
+ADMIN_SESSION_TTL_HOURS=12
 ```
 
 Generate the password on the box so it never travels: `openssl rand -base64 36`
 
 The app resolves this file relative to its own location, which is the same mechanism local
 development uses — there is one way config loads, not two.
+
+`ENVIRONMENT_LABEL=production` refuses to boot unless `PUBLIC_ORIGIN` is HTTPS. Player
+sessions default to 30 days because this is a persistent world; admin sessions expire after
+12 hours. Granting or revoking admin deletes the target's existing sessions, so they must
+sign in again under the new authority. Both lifetimes and the revocation controls are
+documented in `docs/adr/0015-session-lifecycle.md`.
 
 ## 8. Service and proxy
 

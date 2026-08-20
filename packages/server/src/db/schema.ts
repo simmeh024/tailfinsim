@@ -181,14 +181,14 @@ export const session = pgTable(
     tokenHash: text('token_hash').notNull(),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    /** Absolute expiry. Checked on every request; sweeping old rows is separate. */
+    /** Absolute expiry. Checked in the lookup query on every request. */
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     unique('session_token_hash_key').on(t.tokenHash),
     index('session_player_id_idx').on(t.playerId),
-    // Sweeping expired sessions is a range scan over this.
+    // Supports expiry/retention inspection without affecting request correctness.
     index('session_expires_at_idx').on(t.expiresAt),
     check('session_token_hash_is_sha256', sql`length(${t.tokenHash}) = 64`),
     check('session_expires_after_creation', sql`${t.expiresAt} > ${t.createdAt}`),
