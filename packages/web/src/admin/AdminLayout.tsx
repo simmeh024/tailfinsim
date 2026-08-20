@@ -1,6 +1,7 @@
 import { Link, NavLink, Outlet } from 'react-router';
 
 import { useSession } from '../auth/SessionProvider';
+import { useBuildInfo } from '../version/BuildBadge';
 
 import type { ReactNode } from 'react';
 
@@ -21,6 +22,19 @@ import type { ReactNode } from 'react';
  * Still a convenience rather than a boundary: `requireAdmin` on the server is
  * what protects the data, and every request these pages make is refused without
  * a grant.
+ *
+ * ## Which box you are on is part of the chrome
+ *
+ * The console can archive a world, reset one, and revoke an admin grant, and
+ * until now it looked identical on `tailfinsim.com` and `dev.tailfinsim.com`.
+ * The repository's most expensive recorded incident was environment confusion —
+ * the destructive suites run against dev because someone sourced that box's
+ * `.env` — so the environment is carried in the frame rather than on a page
+ * somebody might not be looking at.
+ *
+ * It comes from the **server**, through the same `/api/version` the build badge
+ * uses. A bundle that reported its own environment would report what the
+ * browser last downloaded, which is exactly the case where you need the truth.
  */
 
 const SECTIONS = [
@@ -30,8 +44,19 @@ const SECTIONS = [
   { to: '/admin/audit', label: 'Audit log', end: false },
 ];
 
+/** How each environment names itself in the bar. */
+const ENVIRONMENT_LABEL: Record<string, string> = {
+  production: 'Production',
+  dev: 'Dev',
+  local: 'Local',
+};
+
 export function AdminLayout(): ReactNode {
   const { isAdmin } = useSession();
+  const build = useBuildInfo();
+  // Until the server answers, claim nothing. A console that guesses "dev" and is
+  // wrong is worse than one that is briefly silent.
+  const environment = build?.environment ?? null;
 
   if (!isAdmin) {
     return (
@@ -48,13 +73,21 @@ export function AdminLayout(): ReactNode {
   }
 
   return (
-    <div className="console">
+    <div className="console" data-environment={environment ?? 'unknown'}>
       <header className="console__bar">
         {/* The mark, and the way home. Both, because a logo that is not a link is
             a dead end in every interface anyone has used. */}
         <Link className="console__mark" to="/admin">
           Admin console
         </Link>
+
+        {/* Colour says it at a glance; the word says it in greyscale, in a
+            screenshot, and to a screen reader (H.4, H.7). */}
+        {environment !== null && (
+          <span className="console__env" data-environment={environment}>
+            {ENVIRONMENT_LABEL[environment] ?? environment}
+          </span>
+        )}
 
         <nav className="console__nav" aria-label="Admin sections">
           {SECTIONS.map((section) => (

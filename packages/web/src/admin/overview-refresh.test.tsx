@@ -42,9 +42,14 @@ const VERSION: VersionResponse = {
   serverTime: '2026-08-19T12:00:00.000Z',
 };
 
-function overview(players: number, alerts: AdminOverviewResponse['alerts'] = []) {
+function overview(
+  players: number,
+  alerts: AdminOverviewResponse['alerts'] = [],
+): AdminOverviewResponse {
   return {
     counts: { players, worlds: 1, admins: 1, airports: 85_915, auditEntries: 3 },
+    trend: { newPlayers7d: 0, auditEntries24h: 0 },
+    engine: { pendingEvents: 0, oldestPendingAt: null, lastProcessedAt: null },
     backup: null,
     alerts,
   };
