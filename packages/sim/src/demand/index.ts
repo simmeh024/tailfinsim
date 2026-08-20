@@ -6,6 +6,8 @@
  *                  and the fare the market is charging
  *   `logit`      — App. A.3–A.4's share model: who, among the operators
  *                  competing for that pool, actually gets the passengers
+ *   `sched-fit`  — A.3's `SchedFit` term: whether an operator's departures
+ *                  fall at hours the segment actually wants to fly
  *
  * The first two are A.2's whole of step one — how big the market is, and how
  * big it is *today*. The third is the arbiter that splits it, and the one whose
@@ -18,3 +20,4 @@
 export * from './gravity';
 export * from './logit';
 export * from './modulation';
+export * from './sched-fit';
