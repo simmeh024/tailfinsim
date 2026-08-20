@@ -71,18 +71,27 @@ describeDb('database constraints', () => {
     worldId: string,
     playerId: string,
     overrides: Partial<{
+      name: string;
       iata: string;
       icao: string;
+      callsign: string;
       country: string;
       reputation: string;
     }> = {},
   ) {
-    const { iata = 'TF', icao = 'TFN', country = 'NL', reputation = '0.35' } = overrides;
+    const {
+      name = 'Test Air',
+      iata = 'TF',
+      icao = 'TFN',
+      callsign = 'TESTAIR',
+      country = 'NL',
+      reputation = '0.35',
+    } = overrides;
     return client.query(
       `INSERT INTO airline (world_id, player_id, name, iata_code, icao_code, callsign,
                             base_country, reputation)
-       VALUES ($1, $2, 'Test Air', $3, $4, 'TESTAIR', $5, $6)`,
-      [worldId, playerId, iata, icao, country, reputation],
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [worldId, playerId, name, iata, icao, callsign, country, reputation],
     );
   }
 
@@ -208,6 +217,35 @@ describeDb('database constraints', () => {
         const w = await makeWorld();
         const p = await makePlayer();
         await expect(insertAirline(w, p, overrides)).rejects.toThrow(pattern);
+      });
+    });
+  });
+
+  describe('public identity guardrails', () => {
+    it('accepts a Unicode display name with an operational ASCII callsign', async () => {
+      await inTx(async () => {
+        await expect(
+          insertAirline(await makeWorld(), await makePlayer(), {
+            name: '航空会社 Horizon',
+            callsign: 'HORIZON 1',
+          }),
+        ).resolves.toBeDefined();
+      });
+    });
+
+    it.each([
+      ['an empty name', { name: '' }, /airline_name_length/],
+      ['a leading name space', { name: ' Tailfin' }, /airline_name_structure/],
+      ['a doubled name space', { name: 'Tailfin  Air' }, /airline_name_structure/],
+      ['a newline in the name', { name: 'Tailfin\nAir' }, /airline_name_structure/],
+      ['a lowercase callsign', { callsign: 'Tailfin' }, /airline_callsign_format/],
+      ['a doubled callsign space', { callsign: 'TAILFIN  AIR' }, /airline_callsign_format/],
+      ['a numeric-only callsign', { callsign: '1234' }, /airline_callsign_format/],
+    ])('refuses %s', async (_label, overrides, pattern) => {
+      await inTx(async () => {
+        await expect(
+          insertAirline(await makeWorld(), await makePlayer(), overrides),
+        ).rejects.toThrow(pattern);
       });
     });
   });

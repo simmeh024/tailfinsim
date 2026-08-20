@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { AirlineIdentity } from './airline';
 import { Timestamp, Uuid } from './primitives';
 import { WorldStatus } from './world';
 import { MAX_SPEED_MULTIPLIER } from './world-config';
@@ -31,11 +32,12 @@ export const AdminAction = z.enum([
   'world.reset',
   'world.speed_changed',
   'player.viewed',
+  'airline.identity_changed',
 ]);
 export type AdminAction = z.infer<typeof AdminAction>;
 
 /** What an action was done *to*. */
-export const AdminSubjectType = z.enum(['player', 'world', 'instance']);
+export const AdminSubjectType = z.enum(['player', 'world', 'instance', 'airline']);
 export type AdminSubjectType = z.infer<typeof AdminSubjectType>;
 
 /**
@@ -460,10 +462,7 @@ export const AdminPlayerAirline = z.object({
   id: Uuid,
   worldId: Uuid,
   worldName: z.string().min(1),
-  name: z.string().min(1),
-  iataCode: z.string(),
-  icaoCode: z.string(),
-  callsign: z.string(),
+  ...AirlineIdentity.shape,
   /** Integer minor units, as stored. Formatting is the client's problem, not the wire's. */
   cashMinor: z.number().int(),
   reputation: z.number(),

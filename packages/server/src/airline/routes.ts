@@ -1,35 +1,37 @@
 import {
   CreateAirlineInput,
+  ForceRenameAirlineInput,
+  Uuid,
+  apiErrorJsonSchema,
   createAirlineResponseJsonSchema,
+  forceRenameAirlineResponseJsonSchema,
   type ApiError,
 } from '@tailfin/shared';
 
 import { type DatabaseHandle } from '../db/client';
 
 import { foundAirline, type FoundAirlineDependencies, type FoundAirlineResult } from './found';
+import { forceRenameAirline } from './rename';
 
 import type { FastifyInstance, FastifyReply } from 'fastify';
 
-/** Player-facing founding API (AIR-01). The guided screen belongs to AIR-07. */
+/** Founding (AIR-01) and AIR-02's audited moderation remedy. Player UI comes later. */
 
 export interface AirlineRoutesOptions extends FoundAirlineDependencies {
   db: DatabaseHandle;
 }
 
-function fieldsFromValidation(input: unknown): ApiError | null {
-  const parsed = CreateAirlineInput.safeParse(input);
-  if (parsed.success) return null;
-
+function fieldsFromIssues(
+  code: string,
+  message: string,
+  issues: readonly { path: readonly PropertyKey[]; message: string }[],
+): ApiError {
   const fields: Record<string, string[]> = {};
-  for (const issue of parsed.error.issues) {
+  for (const issue of issues) {
     const field = issue.path.length === 0 ? 'form' : String(issue.path[0]);
     (fields[field] ??= []).push(issue.message);
   }
-  return {
-    code: 'invalid_airline',
-    message: 'The airline identity or founder hub is not valid',
-    fields,
-  };
+  return { code, message, fields };
 }
 
 async function sendRefusal(reply: FastifyReply, result: Exclude<FoundAirlineResult, { ok: true }>) {
@@ -58,7 +60,7 @@ async function sendRefusal(reply: FastifyReply, result: Exclude<FoundAirlineResu
       return reply.code(422).send({
         code: 'identity_refused',
         message: result.reason,
-        fields: { name: [result.reason] },
+        fields: { [result.field]: [result.reason] },
       });
     case 'code-taken': {
       const field = result.codeKind === 'iata' ? 'iataCode' : 'icaoCode';
@@ -78,7 +80,7 @@ async function sendRefusal(reply: FastifyReply, result: Exclude<FoundAirlineResu
 
 export function registerAirlineRoutes(
   app: FastifyInstance,
-  { db, moderateIdentity }: AirlineRoutesOptions,
+  { db, identityModerator }: AirlineRoutesOptions,
 ): void {
   app.post<{ Body: unknown }>(
     '/api/airlines',
@@ -90,16 +92,88 @@ export function registerAirlineRoutes(
       const playerId = request.player?.id;
       if (playerId === undefined) return;
 
-      const validation = fieldsFromValidation(request.body);
-      if (validation) return reply.code(400).send(validation);
+      const parsed = CreateAirlineInput.safeParse(request.body);
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send(
+            fieldsFromIssues(
+              'invalid_airline',
+              'The airline identity or founder hub is not valid',
+              parsed.error.issues,
+            ),
+          );
+      }
 
-      // Parse again only after the cheap error projection above. This cannot
-      // fail, and keeps the service boundary typed to the shared wire contract.
-      const input = CreateAirlineInput.parse(request.body);
-      const result = await foundAirline(db.db, playerId, input, { moderateIdentity });
+      const result = await foundAirline(db.db, playerId, parsed.data, { identityModerator });
       if (!result.ok) return sendRefusal(reply, result);
 
       return reply.code(201).send({ airline: result.airline, hub: result.hub });
+    },
+  );
+
+  /**
+   * Audited moderation remedy. AIR-08 owns ordinary player rebrands and their
+   * cost; this path exists so unacceptable public text can be corrected now.
+   */
+  app.patch<{ Params: { airlineId: string }; Body: unknown }>(
+    '/api/admin/airlines/:airlineId/identity',
+    {
+      onRequest: app.requireAdmin,
+      schema: {
+        response: {
+          200: forceRenameAirlineResponseJsonSchema,
+          400: apiErrorJsonSchema,
+          404: apiErrorJsonSchema,
+          422: apiErrorJsonSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!Uuid.safeParse(request.params.airlineId).success) {
+        return reply
+          .code(404)
+          .send({ code: 'airline_not_found', message: 'No airline with that id.' });
+      }
+
+      const parsed = ForceRenameAirlineInput.safeParse(request.body);
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send(
+            fieldsFromIssues(
+              'invalid_airline_identity',
+              'The replacement identity or audit reason is not valid',
+              parsed.error.issues,
+            ),
+          );
+      }
+
+      const result = await forceRenameAirline(
+        db.db,
+        request.params.airlineId,
+        parsed.data,
+        {
+          playerId: request.player?.id ?? null,
+          label: request.player?.displayName ?? 'unknown admin',
+          requestId: request.id,
+        },
+        { identityModerator },
+      );
+      if (!result.ok) {
+        if (result.kind === 'airline-not-found') {
+          return reply
+            .code(404)
+            .send({ code: 'airline_not_found', message: 'No airline with that id.' });
+        }
+        return reply.code(422).send({
+          code: 'identity_refused',
+          message: result.reason,
+          fields: { [result.field]: [result.reason] },
+        });
+      }
+
+      return reply.code(200).send({ airline: result.airline, changed: result.changed });
     },
   );
 }
