@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   Airline,
+  AirlineIdentity,
   AirlineIataCode,
   Airport,
   AirportIcaoCode,
@@ -10,6 +11,7 @@ import {
   Flight,
   FlightKind,
   FlightPhase,
+  ForceRenameAirlineInput,
   HealthResponse,
   MinorUnits,
   PublicAirline,
@@ -130,6 +132,7 @@ describe('Airline', () => {
     // and deriving PublicAirline by picking is what guarantees it.
     expect(Object.keys(PublicAirline.shape)).not.toContain('cash');
     expect(Object.keys(PublicAirline.shape)).not.toContain('playerId');
+    expect(Object.keys(PublicAirline.shape)).toContain('callsign');
     expect(Object.keys(PublicAirline.shape)).toContain('reputation');
   });
 
@@ -152,6 +155,45 @@ describe('Airline', () => {
       }).success,
     ).toBe(true);
     expect(Object.keys(CreateAirlineInput.shape)).not.toContain('founderGrant');
+  });
+
+  it.each(['Air Côte d’Ivoire', '航空会社', 'خطوط الأفق'])(
+    'accepts a deliberately supported Unicode name: %s',
+    (name) => {
+      expect(AirlineIdentity.safeParse({ ...valid, name }).success).toBe(true);
+    },
+  );
+
+  it.each([
+    ['non-NFC text', 'Ame\u0301lie Air', /NFC/],
+    ['emoji', 'Tailfin ✈', /may contain only/],
+    ['an invisible separator', 'Tailfin\u200bAir', /may contain only/],
+    ['only punctuation', '---', /at least one Unicode letter/],
+    ['doubled spaces', 'Tailfin  Air', /single spaces/],
+  ])('rejects %s and names the failed rule', (_label, name, message) => {
+    const parsed = AirlineIdentity.safeParse({ ...valid, name });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success)
+      expect(parsed.error.issues.map((issue) => issue.message).join(' ')).toMatch(message);
+  });
+
+  it('keeps the operational callsign ASCII, uppercase and structurally spoken', () => {
+    expect(AirlineIdentity.safeParse({ ...valid, callsign: 'SPEEDBIRD 1' }).success).toBe(true);
+    for (const callsign of ['Speedbird', 'SPEEDBIRD  1', 'ПОЛЁТ', '1234']) {
+      expect(AirlineIdentity.safeParse({ ...valid, callsign }).success).toBe(false);
+    }
+  });
+
+  it('lets moderation replace display text but not scarce codes', () => {
+    expect(
+      ForceRenameAirlineInput.safeParse({
+        name: 'Tailfin Reformed',
+        callsign: 'TAILFIN NEW',
+        reason: 'moderation correction',
+      }).success,
+    ).toBe(true);
+    expect(Object.keys(ForceRenameAirlineInput.shape)).not.toContain('iataCode');
+    expect(Object.keys(ForceRenameAirlineInput.shape)).not.toContain('icaoCode');
   });
 });
 

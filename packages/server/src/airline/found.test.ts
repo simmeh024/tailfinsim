@@ -296,12 +296,19 @@ describeDb('founding an airline', () => {
     const worldId = await makeWorld();
     const playerId = await makePlayer();
     const result = await foundAirline(db.db, playerId, input(worldId, await makeHub()), {
-      moderateIdentity: () =>
-        Promise.resolve({ accepted: false, reason: 'That name is reserved.' }),
+      identityModerator: {
+        review: () =>
+          Promise.resolve({
+            accepted: false,
+            field: 'name',
+            reason: 'That name is reserved.',
+          }),
+      },
     });
     expect(result).toEqual({
       ok: false,
       kind: 'identity-refused',
+      field: 'name',
       reason: 'That name is reserved.',
     });
     expect(await db.db.select().from(airline).where(eq(airline.playerId, playerId))).toHaveLength(

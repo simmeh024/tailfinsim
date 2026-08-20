@@ -100,6 +100,11 @@ different build.
   choosing its identity, base country and first hub. Ownership, config-backed opening
   cash, initial reputation and the free hub commit together or not at all; database
   constraints arbitrate code collisions and return the submitted code in the refusal.
+- **Airline identity guardrails.** One shared schema gives Unicode display names and
+  operational callsigns/codes explicit rules, with field-level failures. A permissive
+  moderation interface sits on both founding and an audited admin force-rename remedy;
+  the stable airline id keeps its network and history attached through a rename
+  ([ADR-0007](docs/adr/0007-airline-identity-and-history.md)).
 - **The admin console**, at `/admin` for accounts holding a grant: an overview with
   server-decided alerts, world creation, speed changes, the full open/lock/archive/reset
   lifecycle, world health, a read-only player browser, and the audit log.

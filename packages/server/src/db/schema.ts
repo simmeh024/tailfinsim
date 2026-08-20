@@ -252,13 +252,15 @@ export const airline = pgTable(
       .notNull()
       .references(() => player.id, { onDelete: 'restrict' }),
 
+    /** Unicode/category policy lives in the shared AIR-02 schema; checks below defend direct writes. */
     name: text('name').notNull(),
 
     /**
      * IATA is 2 characters, ICAO 3, and both are scarce enough to be worth
      * enforcing per world (§24 flags ~1,300 usable IATA codes against an
      * unbounded player count). Name and callsign are deliberately *not* unique:
-     * §22.6 treats those as a moderation matter, not a constraint violation.
+     * §22.6 treats those as a moderation matter, not a uniqueness constraint.
+     * Their deterministic AIR-02 format checks are still enforced below.
      */
     iataCode: text('iata_code').notNull(),
     icaoCode: text('icao_code').notNull(),
@@ -304,6 +306,15 @@ export const airline = pgTable(
     check('airline_reputation_range', sql`${t.reputation} >= 0 AND ${t.reputation} <= 1`),
     check('airline_iata_code_format', sql`${t.iataCode} ~ '^[A-Z0-9]{2}$'`),
     check('airline_icao_code_format', sql`${t.icaoCode} ~ '^[A-Z]{3}$'`),
+    check('airline_name_length', sql`char_length(${t.name}) BETWEEN 1 AND 120`),
+    check(
+      'airline_name_structure',
+      sql`${t.name} = btrim(${t.name}) AND position('  ' in ${t.name}) = 0 AND ${t.name} !~ '[[:cntrl:]]'`,
+    ),
+    check(
+      'airline_callsign_format',
+      sql`char_length(${t.callsign}) BETWEEN 2 AND 32 AND ${t.callsign} ~ '^[A-Z0-9]+( [A-Z0-9]+)*$' AND ${t.callsign} ~ '[A-Z]'`,
+    ),
     check('airline_base_country_format', sql`${t.baseCountry} ~ '^[A-Z]{2}$'`),
     check('airline_cash_finite', sql`${t.cashMinor} > -9007199254740991`),
   ],

@@ -19,6 +19,71 @@ import {
  */
 export const INITIAL_AIRLINE_REPUTATION = 0.35 as const;
 
+const AIRLINE_NAME_ALLOWED = /^[\p{L}\p{M}\p{N} '&.,()’-]+$/u;
+
+/**
+ * The public display name of an airline (AIR-02).
+ *
+ * Names are Unicode deliberately: players may write in their own script. NFC
+ * is required so visually identical text has one stored representation. The
+ * punctuation set is deliberately small and ordinary spaces are the only
+ * whitespace; emoji, controls and invisible separators belong nowhere in a
+ * leaderboard label.
+ */
+export const AirlineName = z.string().superRefine((value, context) => {
+  const length = [...value].length;
+  if (length < 1 || length > 120) {
+    context.addIssue({
+      code: 'custom',
+      message: 'must be between 1 and 120 Unicode characters',
+    });
+  }
+  if (value !== value.normalize('NFC')) {
+    context.addIssue({ code: 'custom', message: 'must use Unicode NFC normalization' });
+  }
+  if (!AIRLINE_NAME_ALLOWED.test(value)) {
+    context.addIssue({
+      code: 'custom',
+      message:
+        'may contain only Unicode letters, combining marks, numbers, spaces, apostrophes, ampersands, periods, commas, parentheses and hyphens',
+    });
+  }
+  if (!/\p{L}/u.test(value)) {
+    context.addIssue({ code: 'custom', message: 'must contain at least one Unicode letter' });
+  }
+  if (value.startsWith(' ') || value.endsWith(' ')) {
+    context.addIssue({ code: 'custom', message: 'must not start or end with a space' });
+  }
+  if (value.includes('  ')) {
+    context.addIssue({ code: 'custom', message: 'must use single spaces between words' });
+  }
+});
+export type AirlineName = z.infer<typeof AirlineName>;
+
+/**
+ * The spoken operational callsign. Unlike the display name this is ASCII on
+ * purpose, so every player and later voice/ATC surface can reproduce it.
+ */
+export const AirlineCallsign = z
+  .string()
+  .min(2, 'must be at least 2 characters')
+  .max(32, 'must be at most 32 characters')
+  .regex(
+    /^[A-Z0-9]+(?: [A-Z0-9]+)*$/,
+    'must use uppercase Latin letters, numbers and single spaces only',
+  )
+  .refine((value) => /[A-Z]/.test(value), 'must contain at least one uppercase letter');
+export type AirlineCallsign = z.infer<typeof AirlineCallsign>;
+
+/** All player-authored identity fields, with one source of deterministic rules. */
+export const AirlineIdentity = z.object({
+  name: AirlineName,
+  iataCode: AirlineIataCode,
+  icaoCode: AirlineIcaoCode,
+  callsign: AirlineCallsign,
+});
+export type AirlineIdentity = z.infer<typeof AirlineIdentity>;
+
 /**
  * An airline — a player's presence in one world. Mirrors the `airline` table
  * from M0-06.
@@ -28,13 +93,7 @@ export const Airline = z.object({
   worldId: Uuid,
   playerId: Uuid,
 
-  name: z.string().min(1).max(120),
-
-  /** Unique per world, not globally — §24 notes ~1,300 usable IATA codes. */
-  iataCode: AirlineIataCode,
-  icaoCode: AirlineIcaoCode,
-
-  callsign: z.string().min(1).max(60),
+  ...AirlineIdentity.shape,
   baseCountry: CountryCode,
 
   cash: MinorUnits,
@@ -58,6 +117,7 @@ export const PublicAirline = Airline.pick({
   name: true,
   iataCode: true,
   icaoCode: true,
+  callsign: true,
   baseCountry: true,
   reputation: true,
   createdAt: true,
@@ -101,3 +161,13 @@ export const CreateAirlineResponse = z.object({
   hub: AirlineHub,
 });
 export type CreateAirlineResponse = z.infer<typeof CreateAirlineResponse>;
+
+/** The fields a moderation remedy may replace; scarce codes are not renamed here. */
+export const ForceRenameAirlineInput = AirlineIdentity.pick({ name: true, callsign: true }).extend({
+  /** Why the intervention happened, retained in the append-only admin audit log. */
+  reason: z.string().trim().min(1, 'is required for the audit log').max(500),
+});
+export type ForceRenameAirlineInput = z.infer<typeof ForceRenameAirlineInput>;
+
+export const ForceRenameAirlineResponse = z.object({ airline: Airline, changed: z.boolean() });
+export type ForceRenameAirlineResponse = z.infer<typeof ForceRenameAirlineResponse>;

@@ -9,25 +9,17 @@ import {
 } from '@tailfin/shared';
 
 import { type Database } from '../db/client';
-import { airline, airlineHub, airport, world, type AirlineRow } from '../db/schema';
+import { airline, airlineHub, airport, world } from '../db/schema';
 
 import { economyConfigFor } from './config';
+import {
+  moderateAirlineIdentity,
+  type AirlineIdentityModerationDependencies,
+  type ModeratedAirlineIdentityField,
+} from './moderation';
+import { wireAirline } from './wire';
 
-/**
- * AIR-02 supplies policy behind this seam. The default is deliberately
- * permissive: deterministic shape validation has already happened through the
- * shared schema, while moderation policy is not AIR-01's decision to invent.
- */
-export type ModerateAirlineIdentity = (identity: {
-  name: string;
-  callsign: string;
-}) => Promise<{ accepted: true } | { accepted: false; reason: string }>;
-
-const permitIdentity: ModerateAirlineIdentity = () => Promise.resolve({ accepted: true });
-
-export interface FoundAirlineDependencies {
-  moderateIdentity?: ModerateAirlineIdentity;
-}
+export type FoundAirlineDependencies = AirlineIdentityModerationDependencies;
 
 export type FoundAirlineResult =
   | { ok: true; airline: AirlineContract; hub: AirlineHubContract }
@@ -35,27 +27,14 @@ export type FoundAirlineResult =
   | { ok: false; kind: 'world-not-open'; status: WorldStatus }
   | { ok: false; kind: 'world-full'; playerCap: number }
   | { ok: false; kind: 'unknown-hub'; ident: string }
-  | { ok: false; kind: 'identity-refused'; reason: string }
+  | {
+      ok: false;
+      kind: 'identity-refused';
+      field: ModeratedAirlineIdentityField;
+      reason: string;
+    }
   | { ok: false; kind: 'code-taken'; codeKind: 'iata' | 'icao'; code: string }
   | { ok: false; kind: 'already-founded'; worldId: string };
-
-function wireAirline(row: AirlineRow): AirlineContract {
-  return {
-    id: row.id,
-    worldId: row.worldId,
-    playerId: row.playerId,
-    name: row.name,
-    iataCode: row.iataCode,
-    icaoCode: row.icaoCode,
-    callsign: row.callsign,
-    baseCountry: row.baseCountry,
-    cash: row.cashMinor,
-    // `numeric(3,2)` is a string at the database boundary. The shared wire
-    // schema is deliberately a number, so normalise once here.
-    reputation: Number(row.reputation),
-    createdAt: row.createdAt.toISOString(),
-  };
-}
 
 /** Walk through Drizzle's wrapper to the Postgres constraint that actually fired. */
 function constraintName(error: unknown): string | null {
@@ -85,12 +64,20 @@ export async function foundAirline(
   input: CreateAirlineInput,
   dependencies: FoundAirlineDependencies = {},
 ): Promise<FoundAirlineResult> {
-  const moderation = await (dependencies.moderateIdentity ?? permitIdentity)({
-    name: input.name,
-    callsign: input.callsign,
-  });
+  const moderation = await moderateAirlineIdentity(
+    {
+      name: input.name,
+      callsign: input.callsign,
+    },
+    dependencies,
+  );
   if (!moderation.accepted) {
-    return { ok: false, kind: 'identity-refused', reason: moderation.reason };
+    return {
+      ok: false,
+      kind: 'identity-refused',
+      field: moderation.field,
+      reason: moderation.reason,
+    };
   }
 
   try {

@@ -11,6 +11,7 @@ import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 import { healthResponseJsonSchema, versionResponseJsonSchema } from '@tailfin/shared';
 
 import { registerAdminRoutes } from './admin/routes';
+import { type AirlineIdentityModerator } from './airline/moderation';
 import { registerAirlineRoutes } from './airline/routes';
 import { registerAuthRoutes } from './auth/routes';
 import { readBuildInfo } from './build-info';
@@ -37,9 +38,11 @@ const CLIENT_DIR = resolve(here, '..', '..', 'web', 'dist', 'client');
 export interface BuildAppOptions {
   env: ServerEnv;
   db: DatabaseHandle;
+  /** AIR-02 policy plug-in; omitted until M13-10 supplies one. */
+  identityModerator?: AirlineIdentityModerator;
 }
 
-export function buildApp({ env, db }: BuildAppOptions): FastifyInstance {
+export function buildApp({ env, db, identityModerator }: BuildAppOptions): FastifyInstance {
   const app = Fastify({
     logger: {
       level: env.logLevel,
@@ -109,7 +112,7 @@ export function buildApp({ env, db }: BuildAppOptions): FastifyInstance {
 
   // Founding is the first player operation and the precondition for the
   // network routes registered below it (AIR-01).
-  registerAirlineRoutes(app, { db });
+  registerAirlineRoutes(app, { db, identityModerator });
 
   // The first player-facing API. Economics are injected rather than looked up
   // because the fleet does not exist yet — see `network/economics.ts` for which
