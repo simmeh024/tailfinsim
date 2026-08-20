@@ -2,6 +2,8 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import {
+  AirlineCodeAvailabilityResponse,
+  AirlineCodeUnavailableError,
   CreateAirlineResponse,
   FLAGSHIP_CONFIG,
   INITIAL_AIRLINE_REPUTATION,
@@ -270,12 +272,49 @@ describeDb('founding an airline', () => {
       codeKind: kind,
       code: kind === 'iata' ? 'ZZ' : 'ZZZ',
     });
+    if (refused.ok || refused.kind !== 'code-taken') throw new Error('expected code refusal');
+    expect(refused.alternatives).toHaveLength(3);
+    expect(refused.alternatives).not.toContain(refused.code);
+    expect(refused.advisory).toMatchObject({
+      scope: 'world',
+      reservation: 'none',
+      realWorldCodes: 'allowed-if-free',
+    });
 
     const partial = await db.db
       .select()
       .from(airline)
       .where(and(eq(airline.worldId, worldId), eq(airline.playerId, secondPlayer)));
     expect(partial).toHaveLength(0);
+  });
+
+  it('turns a concurrent allocation race into one success and one fresh refusal', async () => {
+    const worldId = await makeWorld();
+    const hubIdent = await makeHub();
+    const firstPlayer = await makePlayer();
+    const secondPlayer = await makePlayer();
+    const [first, second] = await Promise.all([
+      foundAirline(
+        db.db,
+        firstPlayer,
+        input(worldId, hubIdent, { name: 'Race Horizon', iataCode: 'R1', icaoCode: 'RAA' }),
+      ),
+      foundAirline(
+        db.db,
+        secondPlayer,
+        input(worldId, hubIdent, { name: 'Race Horizon', iataCode: 'R1', icaoCode: 'RAB' }),
+      ),
+    ]);
+
+    const results = [first, second];
+    expect(results.filter((result) => result.ok)).toHaveLength(1);
+    const refused = results.find((result) => !result.ok);
+    expect(refused).toMatchObject({ ok: false, kind: 'code-taken', codeKind: 'iata', code: 'R1' });
+    if (!refused || refused.ok || refused.kind !== 'code-taken') {
+      throw new Error('expected one constraint refusal');
+    }
+    expect(refused.alternatives).toHaveLength(3);
+    expect(refused.alternatives).not.toContain('R1');
   });
 
   it('refuses a second airline in the same world through the ownership constraint', async () => {
@@ -324,6 +363,35 @@ describeDb('founding an airline', () => {
     );
   });
 
+  it('enforces an injected reserved-code policy inside the founding transaction', async () => {
+    const worldId = await makeWorld();
+    const playerId = await makePlayer();
+    const result = await foundAirline(
+      db.db,
+      playerId,
+      input(worldId, await makeHub(), { name: 'Tailfin Air', iataCode: 'TA' }),
+      {
+        codePolicy: {
+          realWorldCodes: 'reserved',
+          isReserved: (kind, code) => kind === 'iata' && code === 'TA',
+        },
+      },
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      kind: 'code-reserved',
+      codeKind: 'iata',
+      code: 'TA',
+      advisory: { realWorldCodes: 'reserved' },
+    });
+    if (result.ok || result.kind !== 'code-reserved') throw new Error('expected reservation');
+    expect(result.alternatives).toHaveLength(3);
+    expect(result.alternatives).not.toContain('TA');
+    expect(await db.db.select().from(airline).where(eq(airline.playerId, playerId))).toHaveLength(
+      0,
+    );
+  });
+
   it('honours the world player cap while holding the world lock', async () => {
     const worldId = await makeWorld('open', { playerCap: 1 });
     const hubIdent = await makeHub();
@@ -358,6 +426,48 @@ describeDb('founding an airline', () => {
     }
   });
 
+  it('offers explicitly advisory availability and name-derived alternatives over HTTP', async () => {
+    const worldId = await makeWorld();
+    const hubIdent = await makeHub();
+    const owner = await makePlayer();
+    const viewer = await makePlayer();
+    expect(
+      (
+        await foundAirline(
+          db.db,
+          owner,
+          input(worldId, hubIdent, { iataCode: 'TA', icaoCode: 'TAI' }),
+        )
+      ).ok,
+    ).toBe(true);
+
+    const app = buildApp({ env, db });
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/airlines/code-availability',
+        headers: { cookie: await cookieFor(viewer) },
+        payload: { worldId, name: 'Tailfin Air', iataCode: 'TA', icaoCode: 'TAI' },
+      });
+      expect(response.statusCode).toBe(200);
+      const parsed = AirlineCodeAvailabilityResponse.parse(response.json());
+      expect(parsed.advisory).toMatchObject({
+        scope: 'world',
+        reservation: 'none',
+        realWorldCodes: 'allowed-if-free',
+      });
+      expect(parsed.advisory.message).toMatch(/not reserved until airline founding succeeds/);
+      expect(parsed.iataCode).toMatchObject({ requested: 'TA', status: 'assigned' });
+      expect(parsed.iataCode.alternatives).toHaveLength(3);
+      expect(parsed.iataCode.alternatives).not.toContain('TA');
+      expect(parsed.icaoCode).toMatchObject({ requested: 'TAI', status: 'assigned' });
+      expect(parsed.icaoCode.alternatives).toHaveLength(3);
+      expect(parsed.icaoCode.alternatives).not.toContain('TAI');
+    } finally {
+      await app.close();
+    }
+  });
+
   it('returns a field-level, code-naming HTTP refusal instead of a 500', async () => {
     const worldId = await makeWorld();
     const hubIdent = await makeHub();
@@ -376,10 +486,16 @@ describeDb('founding an airline', () => {
         payload: input(worldId, hubIdent, { iataCode: 'Q1' }),
       });
       expect(response.statusCode).toBe(409);
-      expect(response.json()).toMatchObject({
+      const refusal = AirlineCodeUnavailableError.parse(response.json());
+      expect(refusal).toMatchObject({
         code: 'iata_code_taken',
         fields: { iataCode: ['Q1 is already taken in this world.'] },
+        codeKind: 'iata',
+        submittedCode: 'Q1',
       });
+      expect(refusal.alternatives).toHaveLength(3);
+      expect(refusal.alternatives).not.toContain('Q1');
+      expect(refusal.advisory.message).toMatch(/not reserved until airline founding succeeds/);
       expect(response.body).toContain('Q1');
     } finally {
       await app.close();

@@ -3,6 +3,8 @@ import { count, eq } from 'drizzle-orm';
 import {
   INITIAL_AIRLINE_REPUTATION,
   type Airline as AirlineContract,
+  type AirlineCodeAvailabilityAdvisory,
+  type AirlineCodeKind,
   type AirlineHub as AirlineHubContract,
   type CreateAirlineInput,
   type WorldStatus,
@@ -13,13 +15,21 @@ import { airline, airlineHub, airport, world } from '../db/schema';
 import { economyConfigFor } from '../economy/config';
 
 import {
+  airlineCodeAvailabilityAdvisory,
+  availableAirlineCodeAlternatives,
+  tailfinAirlineCodePolicy,
+  type AirlineCodeAllocationPolicy,
+} from './codes';
+import {
   moderateAirlineIdentity,
   type AirlineIdentityModerationDependencies,
   type ModeratedAirlineIdentityField,
 } from './moderation';
 import { wireAirline } from './wire';
 
-export type FoundAirlineDependencies = AirlineIdentityModerationDependencies;
+export interface FoundAirlineDependencies extends AirlineIdentityModerationDependencies {
+  codePolicy?: AirlineCodeAllocationPolicy;
+}
 
 export type FoundAirlineResult =
   | { ok: true; airline: AirlineContract; hub: AirlineHubContract }
@@ -33,7 +43,22 @@ export type FoundAirlineResult =
       field: ModeratedAirlineIdentityField;
       reason: string;
     }
-  | { ok: false; kind: 'code-taken'; codeKind: 'iata' | 'icao'; code: string }
+  | {
+      ok: false;
+      kind: 'code-taken';
+      codeKind: AirlineCodeKind;
+      code: string;
+      alternatives: string[];
+      advisory: AirlineCodeAvailabilityAdvisory;
+    }
+  | {
+      ok: false;
+      kind: 'code-reserved';
+      codeKind: AirlineCodeKind;
+      code: string;
+      alternatives: string[];
+      advisory: AirlineCodeAvailabilityAdvisory;
+    }
   | { ok: false; kind: 'already-founded'; worldId: string };
 
 /** Walk through Drizzle's wrapper to the Postgres constraint that actually fired. */
@@ -64,6 +89,7 @@ export async function foundAirline(
   input: CreateAirlineInput,
   dependencies: FoundAirlineDependencies = {},
 ): Promise<FoundAirlineResult> {
+  const codePolicy = dependencies.codePolicy ?? tailfinAirlineCodePolicy;
   const moderation = await moderateAirlineIdentity(
     {
       name: input.name,
@@ -113,6 +139,29 @@ export async function foundAirline(
           `Economy config ${config.version} grants ${String(freeHubAllowance)} ` +
             'founder hubs, but the founding flow currently consumes exactly one (AIR-03)',
         );
+      }
+
+      for (const [codeKind, code] of [
+        ['iata', input.iataCode],
+        ['icao', input.icaoCode],
+      ] as const) {
+        if (codePolicy.isReserved(codeKind, code)) {
+          return {
+            ok: false,
+            kind: 'code-reserved',
+            codeKind,
+            code,
+            alternatives: await availableAirlineCodeAlternatives(
+              tx,
+              input.worldId,
+              input.name,
+              codeKind,
+              [code],
+              codePolicy,
+            ),
+            advisory: airlineCodeAvailabilityAdvisory(codePolicy),
+          };
+        }
       }
 
       if (selectedWorld.playerCap !== null) {
@@ -178,11 +227,30 @@ export async function foundAirline(
       };
     });
   } catch (error) {
-    switch (constraintName(error)) {
-      case 'airline_world_id_iata_code_key':
-        return { ok: false, kind: 'code-taken', codeKind: 'iata', code: input.iataCode };
-      case 'airline_world_id_icao_code_key':
-        return { ok: false, kind: 'code-taken', codeKind: 'icao', code: input.icaoCode };
+    const constraint = constraintName(error);
+    if (
+      constraint === 'airline_world_id_iata_code_key' ||
+      constraint === 'airline_world_id_icao_code_key'
+    ) {
+      const codeKind = constraint === 'airline_world_id_iata_code_key' ? 'iata' : 'icao';
+      const code = codeKind === 'iata' ? input.iataCode : input.icaoCode;
+      return {
+        ok: false,
+        kind: 'code-taken',
+        codeKind,
+        code,
+        alternatives: await availableAirlineCodeAlternatives(
+          db,
+          input.worldId,
+          input.name,
+          codeKind,
+          [code],
+          codePolicy,
+        ),
+        advisory: airlineCodeAvailabilityAdvisory(codePolicy),
+      };
+    }
+    switch (constraint) {
       case 'airline_world_id_player_id_key':
         return { ok: false, kind: 'already-founded', worldId: input.worldId };
       default:
