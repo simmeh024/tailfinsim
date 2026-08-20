@@ -66,21 +66,24 @@ Node version is pinned in `.nvmrc`; pnpm version in `package.json`'s `packageMan
 
 ### Commands
 
-| Command              | What it does                                      |
-| -------------------- | ------------------------------------------------- |
-| `pnpm typecheck`     | `tsc -b` across all project references            |
-| `pnpm lint`          | ESLint, including the architectural guards above  |
-| `pnpm lint:fix`      | The same, applying what it can fix                |
-| `pnpm format`        | Prettier write                                    |
-| `pnpm format:check`  | Prettier check — this is the one CI runs          |
-| `pnpm test`          | Vitest across all packages                        |
-| `pnpm test:coverage` | Adds coverage; thresholds enforced for `sim`      |
-| `pnpm test:perf`     | Only the budgeted benchmarks, uninstrumented      |
-| `pnpm ops:status`    | What is deployed where, over public HTTP (OPS-02) |
-| `pnpm clean`         | Removes build info and emitted declarations       |
+| Command                                         | What it does                                      |
+| ----------------------------------------------- | ------------------------------------------------- |
+| `pnpm typecheck`                                | `tsc -b` across all project references            |
+| `pnpm lint`                                     | ESLint, including the architectural guards above  |
+| `pnpm lint:fix`                                 | The same, applying what it can fix                |
+| `pnpm format`                                   | Prettier write                                    |
+| `pnpm format:check`                             | Prettier check — this is the one CI runs          |
+| `pnpm test`                                     | Vitest across all packages                        |
+| `pnpm test:coverage`                            | Adds coverage; thresholds enforced for `sim`      |
+| `pnpm test:perf`                                | Only the budgeted benchmarks, uninstrumented      |
+| `pnpm ops:status`                               | What is deployed where, over public HTTP (OPS-02) |
+| `pnpm security:headers --mode enforced <urls…>` | Exact edge policy on running hosts (SEC-HARD-05)  |
+| `pnpm clean`                                    | Removes build info and emitted declarations       |
 
-CI runs typecheck, lint, format check and coverage on every PR, plus the dependency and
-code scanning described under [Dependencies](#dependencies) below.
+CI runs typecheck, lint, format check and coverage on every PR. It also starts the committed
+Caddyfile with a checksum-pinned Caddy 2.11.4 and checks report-only/enforced headers on real
+HTTP responses. Dependency and code scanning are described under
+[Dependencies](#dependencies) below.
 
 **`pnpm test:perf` is a separate, uninstrumented run on purpose.** V8 coverage costs about
 5× on the code paths that carry a budget, so measuring them under it would be measuring

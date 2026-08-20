@@ -42,22 +42,34 @@
 # committed to a public repository.
 import /etc/caddy/conf.d/*.caddyfile
 
-# ---------------------------------------------------------------------------
-# Production — the public front door. Currently the holding page.
-# ---------------------------------------------------------------------------
-tailfinsim.com {
-	encode zstd gzip
-
-	# Everything is one origin on purpose: same-origin means M0-11's session
-	# cookies work with SameSite=Lax and no CORS. See docs/deploy.md.
-	reverse_proxy 127.0.0.1:3000
-
+# Browser-side policy is owned here, once, so static assets, API responses and
+# error responses cannot drift apart. TAILFIN_CSP_HEADER exists solely for the
+# first rollout: set it to Content-Security-Policy-Report-Only in Caddy's
+# systemd environment, exercise the real dev sign-in/avatar journey, then
+# remove the override to return to the enforced default. See deploy/README.md.
+(tailfin_security_headers) {
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+		Permissions-Policy "accelerometer=(), autoplay=(), camera=(), display-capture=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), usb=(), web-share=(), xr-spatial-tracking=()"
+		{$TAILFIN_CSP_HEADER:Content-Security-Policy} "default-src 'self'; script-src 'self'; style-src 'self' 'sha256-ftYZ6VWMqcx4KWcJ2/G2tKyA+X9oEaozaSrupOVb8KM='; img-src 'self' data: https://lh3.googleusercontent.com; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'"
 		-Server
 	}
+}
+
+# ---------------------------------------------------------------------------
+# Production — the public front door. Currently the holding page.
+# ---------------------------------------------------------------------------
+{$TAILFIN_PRODUCTION_SITE:tailfinsim.com} {
+	encode zstd gzip
+
+	# Everything is one origin on purpose: same-origin means M0-11's session
+	# cookies work with SameSite=Lax and no CORS. See docs/deploy.md.
+	reverse_proxy {$TAILFIN_PRODUCTION_UPSTREAM:127.0.0.1:3000}
+
+	import tailfin_security_headers
 
 	log {
 		output stdout
@@ -65,7 +77,7 @@ tailfinsim.com {
 	}
 }
 
-www.tailfinsim.com {
+{$TAILFIN_WWW_SITE:www.tailfinsim.com} {
 	redir https://tailfinsim.com{uri} permanent
 }
 
@@ -74,20 +86,18 @@ www.tailfinsim.com {
 # Separate checkout, separate database, separate port. Guarded by Google sign-in
 # rather than a password prompt, and excluded from search engines.
 # ---------------------------------------------------------------------------
-dev.tailfinsim.com {
+{$TAILFIN_DEV_SITE:dev.tailfinsim.com} {
 	encode zstd gzip
 
-	reverse_proxy 127.0.0.1:3001
+	reverse_proxy {$TAILFIN_DEV_UPSTREAM:127.0.0.1:3001}
 
 	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
-		X-Content-Type-Options "nosniff"
-		Referrer-Policy "strict-origin-when-cross-origin"
 		# Now the only thing keeping dev out of search results: there is no
 		# longer a 401 in front of it. Do not remove.
 		X-Robots-Tag "noindex, nofollow, noarchive"
-		-Server
 	}
+
+	import tailfin_security_headers
 
 	log {
 		output stdout

@@ -75,6 +75,12 @@ telling the user where anything is.
 
 **Do not say "deployed" when you mean "merged".**
 
+**Application deploys do not update Caddy.** `deploy.sh` and `deploy-dev.sh` restart Fastify;
+they do not copy `/srv/tailfin/deploy/Caddyfile` into `/etc/caddy` or reload the edge. For a
+security-header change, follow the report-only/enforced sequence in `deploy/README.md` and run
+`pnpm security:headers` against both live hosts before saying the policy is active. A green
+in-repository Caddy integration test proves the committed config, not the installed one.
+
 ---
 
 ## The two environments
@@ -144,7 +150,7 @@ measured tuning period, baseline decisions and thresholds.
 
 | Workflow                | Job / check name          | Asks                                                 | Blocks?                         |
 | ----------------------- | ------------------------- | ---------------------------------------------------- | ------------------------------- |
-| `ci.yml`                | `typecheck · lint · test` | Does it build, lint, format and pass its tests?      | **Yes**                         |
+| `ci.yml`                | `typecheck · lint · test` | Do builds, tests and the running Caddy policy pass?  | **Yes**                         |
 | `dependency-review.yml` | `dependency review`       | Did this PR add a known-vulnerable dependency?       | **High/critical advisories**    |
 | `codeql.yml`            | `analyze (…)`             | Does Tailfin's own code contain a dangerous pattern? | **Error or high/critical only** |
 
