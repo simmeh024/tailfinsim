@@ -58,14 +58,15 @@ Both rules exist so the simulation stays deterministic and the server stays auth
 
 ## What runs on a pull request
 
-| Check                     | Asks                                                 | Blocks? |
-| ------------------------- | ---------------------------------------------------- | ------- |
-| `typecheck · lint · test` | Does it build, lint, format and pass its tests?      | **Yes** |
-| `dependency review`       | Did this PR add a known-vulnerable dependency?       | **Yes** |
-| `analyze (…)`             | Does Tailfin's own code contain a dangerous pattern? | No      |
+| Check                     | Asks                                                 | Blocks?                         |
+| ------------------------- | ---------------------------------------------------- | ------------------------------- |
+| `typecheck · lint · test` | Does it build, lint, format and pass its tests?      | **Yes**                         |
+| `dependency review`       | Did this PR add a known-vulnerable dependency?       | **High/critical advisories**    |
+| CodeQL `analyze (…)`      | Does Tailfin's own code contain a dangerous pattern? | **Error or high/critical only** |
 
 `main` is protected and required approvals are zero — the pull request is the gate, not a
-second person.
+second person. CodeQL's measured thresholds and baseline decisions are recorded in
+[ADR-0013](docs/adr/0013-codeql-merge-policy.md).
 
 ## Status
 

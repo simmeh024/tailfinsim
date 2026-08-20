@@ -32,11 +32,11 @@ than safety. Reverse the edit you made, or commit before you break something on 
 helper, not "just to check it is set". Generate secrets on the box, write them to
 root-only files, and tell the user the command to read them.
 
-**`main` is protected.** Pull request required, `typecheck · lint · test` and
-`dependency review` must pass, force pushes and deletions blocked, and it applies to
-admins. So: branch, push the branch, open a PR. A direct push to `main` will be rejected,
-and that is working as intended. Required approvals are set to **zero** — the PR is the
-gate, not a second person — so you can merge your own once the checks are green.
+**`main` is protected.** Pull request required, `typecheck · lint · test`, dependency review
+and CodeQL at ADR-0013's thresholds must pass, force pushes and deletions are blocked, and
+it applies to admins. So: branch, push the branch, open a PR. A direct push to `main` will
+be rejected, and that is working as intended. Required approvals are set to **zero** — the
+PR is the gate, not a second person — so you can merge your own once the checks are green.
 
 ---
 
@@ -138,20 +138,20 @@ the database has no home in the four-node diagram, and builds happen on the box.
 
 ## What runs on a pull request
 
-Three workflows. **Two of them can stop a merge**, and the third deliberately cannot —
-see the note in `codeql.yml` about why making an analyser a gate before anyone has read
-what it finds is how a security tab fills with dismissed alerts.
+Three workflows, all merge gates for the failures they own. CodeQL is enforced through a
+code-scanning ruleset rather than by treating every finding as equal; ADR-0013 records the
+measured tuning period, baseline decisions and thresholds.
 
-| Workflow                | Job / check name          | Asks                                                 | Blocks? |
-| ----------------------- | ------------------------- | ---------------------------------------------------- | ------- |
-| `ci.yml`                | `typecheck · lint · test` | Does it build, lint, format and pass its tests?      | **Yes** |
-| `dependency-review.yml` | `dependency review`       | Did this PR add a known-vulnerable dependency?       | **Yes** |
-| `codeql.yml`            | `analyze (…)`             | Does Tailfin's own code contain a dangerous pattern? | No      |
+| Workflow                | Job / check name          | Asks                                                 | Blocks?                         |
+| ----------------------- | ------------------------- | ---------------------------------------------------- | ------------------------------- |
+| `ci.yml`                | `typecheck · lint · test` | Does it build, lint, format and pass its tests?      | **Yes**                         |
+| `dependency-review.yml` | `dependency review`       | Did this PR add a known-vulnerable dependency?       | **High/critical advisories**    |
+| `codeql.yml`            | `analyze (…)`             | Does Tailfin's own code contain a dangerous pattern? | **Error or high/critical only** |
 
 They are separate workflows on purpose. CI needs a Postgres service and takes about two
-minutes; CodeQL takes longer than that again; Dependency Review needs no services, no
-checkout and no install, and finishes in seconds. Merging them would make the fast checks
-wait behind the slow ones.
+minutes; CodeQL's two analyses finish in 1.05–1.77 minutes; Dependency Review needs no
+services, checkout or install and finishes in seconds. Running them in parallel keeps each
+failure independent and the merge path equal to the slowest gate rather than their sum.
 
 ### Dependency Review (SEC-HARD-03)
 
@@ -169,6 +169,22 @@ already vulnerable before your branch is invisible to it, by design, because a g
 fails on pre-existing findings fails every PR equally. And it is not a code scanner: it
 reads the GitHub Advisory Database, CodeQL reads the source, and neither finds what the
 other finds.
+
+### CodeQL (SEC-HARD-02)
+
+Analyses JavaScript/TypeScript and Actions with `security-extended` on every PR, on pushes
+to `main`, and weekly. The active `CodeQL merge protection` ruleset requires its result:
+
+- **Blocks:** standard-severity errors and security findings rated high or critical.
+- **Does not block:** warning/note and medium/low findings — they remain visible and need
+  triage, but do not turn the scanner into noise.
+- **Baseline:** zero open findings after each initial result received an individual reason.
+- **Known gap:** CodeQL's canary did not treat Fastify `request.query` as a remote-flow
+  source. Boundary validation and the security regression suite cover what scanning cannot.
+
+PR #286 proved the analyser with a critical code-injection canary and was deleted without
+merging. Across the tuning window, 47 PR analyses took 1.05–1.77 minutes (median 1.25), in
+parallel with CI. The full decision and deferred baseline items are in ADR-0013.
 
 **It works here because the dependency graph parses `pnpm-lock.yaml`.** That was checked
 rather than assumed — the SBOM endpoint returns 458 packages at exact versions, so

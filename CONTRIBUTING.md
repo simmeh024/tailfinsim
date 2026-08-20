@@ -249,6 +249,31 @@ That makes every override a reviewable line in a diff with a justification attac
 it, rather than a decision someone took quietly in a settings page. An override with no
 stated reason should be sent back.
 
+## Code scanning
+
+Every pull request is analysed by
+[`.github/workflows/codeql.yml`](.github/workflows/codeql.yml) for
+JavaScript/TypeScript and GitHub Actions (SEC-HARD-02). The `CodeQL merge protection`
+ruleset applies these measured thresholds to new results:
+
+| Finding                                | Merge policy |
+| -------------------------------------- | ------------ |
+| Standard severity `error`              | **Blocks**   |
+| Standard severity `warning` or `note`  | Reported     |
+| Security severity `critical` or `high` | **Blocks**   |
+| Security severity `medium` or `low`    | Reported     |
+
+Do not read a clean scan as proof that inputs are safe. The deliberate canary in PR #286
+proved CodeQL catches a `node:http` value flowing to `eval()`, and also proved it did not
+model Fastify's `request.query` as a remote-flow source. Boundary schemas and security
+regression tests remain required.
+
+False positives are dismissed only with evidence in the Security tab. A real finding
+deferred to another issue names that issue and says explicitly that dismissal does not make
+the behavior safe. Do not lower the ruleset threshold to get a PR through. See
+[ADR-0013](docs/adr/0013-codeql-merge-policy.md) for the tuning measurements, baseline
+triage and rationale.
+
 ---
 
 ## Working style
