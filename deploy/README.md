@@ -405,6 +405,8 @@ deploy has not happened.
 
 ```bash
 install -o root -g root -m 0755 /srv/tailfin/deploy/backup.sh /usr/local/sbin/tailfin-backup
+install -o root -g root -m 0755 /srv/tailfin/deploy/restore-rehearsal.sh \
+  /usr/local/sbin/tailfin-restore-rehearsal
 cp /srv/tailfin/deploy/tailfin-backup.{service,timer} /etc/systemd/system/
 cp /srv/tailfin/deploy/tailfin-backup-failed.service /etc/systemd/system/
 install -d -o postgres -g postgres -m 700 /var/backups/tailfin
@@ -480,9 +482,10 @@ Tunable through the environment: `KEEP_NIGHTLY`, `KEEP_MONTHLY`, `MONTHLY_ON_DAY
 | Last result   | `sudo cat /var/backups/tailfin/last-run.json`                                                |
 
 Dumps are custom-format (compressed, selectively restorable) with a `.sha256` sidecar each.
-Every dump's table of contents is read back immediately after writing — a dump that cannot
-be listed is renamed `.corrupt` and the run fails, because an unreadable archive is worse
-than no archive: you will believe you are covered.
+Every dump's table of contents is read back immediately after writing, and both the dump and
+sidecar must reach DreamObjects — a remote archive without its independent checksum is not a
+complete recovery set. A dump that cannot be listed is renamed `.corrupt` and the run fails,
+because an unreadable archive is worse than no archive: you will believe you are covered.
 
 **An upload failure is a backup failure.** A dump that did not leave the box is not a
 backup, and the run exits non-zero to say so.
@@ -492,33 +495,77 @@ boot rather than being skipped.
 
 ### Restoring
 
-Practise into a scratch database — never straight over a live one. The `_test` suffix is
-not decoration: `packages/server/src/test-setup.ts` refuses to let the test suite near a
-database without one.
+Practise into a scratch database — never straight over a live one. The `_test` suffix is a
+hard safety boundary, not decoration: the rehearsal command refuses any other target and
+rechecks the suffix immediately beside its only `dropdb`. It also refuses an existing
+scratch database instead of guessing that it may delete it.
 
-From the local copy:
+The procedure below downloads from DreamObjects. It never accepts a local dump path, because
+the off-box copy is the copy that survives loss of this volume.
 
-```bash
-sudo -u postgres createdb tailfin_restore_test --locale=C --template=template0
-sudo -u postgres pg_restore --dbname=tailfin_restore_test --no-owner --no-privileges \
-  /var/backups/tailfin/tailfin-<stamp>.dump
-sudo -u postgres psql -d tailfin_restore_test -c '\dt'
-sudo -u postgres dropdb tailfin_restore_test
-```
+#### Repeatable rehearsal — exact commands
 
-From the off-box copy — which is the one that will exist on the bad day, and therefore the
-one worth practising:
+1. Make sure the production checkout is built and see which nightly object will be used:
 
-```bash
-sudo -u postgres s3cmd --config=/etc/tailfin/dreamobjects.s3cfg \
-  ls s3://backupstailfin/nightly/tailfin/
-sudo -u postgres s3cmd --config=/etc/tailfin/dreamobjects.s3cfg \
-  get s3://backupstailfin/nightly/tailfin/<object>.dump /tmp/restore.dump
-sudo -u postgres pg_restore --dbname=tailfin_restore_test --no-owner --no-privileges /tmp/restore.dump
-```
+   ```bash
+   sudo -u tailfin git -C /srv/tailfin log -1 --oneline
+   test -s /srv/tailfin/packages/server/dist/main.js
+   sudo -u postgres s3cmd --config=/etc/tailfin/dreamobjects.s3cfg \
+     ls s3://backupstailfin/nightly/tailfin/ | tail -n 4
+   ```
 
-The dumps use `--no-owner --no-privileges` precisely so they restore into a
-differently-named role without editing.
+   Expect a recent `.dump` and its `.dump.sha256`. Stop if either is absent. The `tailfin`
+   in this command is an object prefix; it is never passed to `psql`, `createdb`,
+   `pg_restore` or the application.
+
+2. Install the reviewed command from that checkout. Application deploys do not update
+   `/usr/local/sbin`:
+
+   ```bash
+   sudo install -o root -g root -m 0755 \
+     /srv/tailfin/deploy/restore-rehearsal.sh \
+     /usr/local/sbin/tailfin-restore-rehearsal
+   sudo install -d -o root -g root -m 0755 /var/log/tailfin
+   ```
+
+3. Run it with `pipefail` so `tee` cannot hide a failed rehearsal:
+
+   ```bash
+   set -o pipefail
+   restore_log="/var/log/tailfin/restore-rehearsal-$(date -u +%Y%m%dT%H%M%SZ).log"
+   sudo /usr/local/sbin/tailfin-restore-rehearsal 2>&1 \
+     | sudo tee "${restore_log}"
+   ```
+
+   Expect `RESTORE REHEARSAL PASSED`, followed by the exact object and checksum, domain
+   counts, Flagship in-game date, migration/trigger result, per-step seconds, total observed
+   recovery time (RTO), and the nightly worst-case recovery point (RPO). Keep this log with
+   the operational record; it contains no credential or session secret.
+
+4. Prove cleanup. The query must print nothing:
+
+   ```bash
+   sudo -u postgres psql -XAtqc \
+     "SELECT datname FROM pg_database WHERE datname = 'tailfin_restore_test'"
+   ```
+
+5. If the command failed, read the recorded step, fix the cause, and repeat from step 3.
+   The exit trap stops the isolated server, drops only the database it created and removes
+   the downloaded files. An already-existing `tailfin_restore_test` is left untouched for a
+   human to inspect or remove deliberately.
+
+Under the one command, in order: select the newest remote nightly; download its dump and
+sidecar; compare SHA-256 and list the archive; create `tailfin_restore_test` with `C`
+collation and owner `tailfin`; restore in one transaction; apply every migration from the
+current checkout; boot Fastify on loopback port 3099; require healthy Postgres; verify airport,
+runway and world data; derive the Flagship date with the same
+`epoch + speed × (now − launchDate)` rule as `currentGameDate`; and prove the restored
+`admin_audit` trigger still refuses deletion. A green `/healthz` alone is insufficient — it
+also goes green against an empty database, which is why the domain and schema checks follow.
+
+The dump uses `--no-owner --no-privileges`, and the rehearsal restores as the `tailfin`
+role. The application therefore exercises the same ownership and permissions it would need
+after recovery, rather than merely proving that the `postgres` superuser can read the data.
 
 ### Rehearsed, 2026-08-18
 
@@ -546,7 +593,27 @@ and _then_ reports failure.
 
 A caution learned the same day: `/healthz` reports `db: up` against a database with **no
 tables at all** — it proves the connection, not the schema. Do not read a green health check
-as "the restore worked"; assert the row counts, as the procedure below does.
+as "the restore worked"; the repeatable procedure above asserts domain data, the Flagship
+clock and append-only schema behaviour after applying current migrations.
+
+#### The selective recovery it enabled
+
+The 2026-08-18 rehearsal found a real incident: a destructive test had pruned all **85,915
+airports and 47,926 runways** from `tailfin_dev`. The nightly backup predated the damage, but
+a whole-database replacement would also have erased the admin grant, Flagship world and 133
+audit entries written since that recovery point.
+
+The operator first copied that nightly object to `s3://backupstailfin/preserved/`, outside
+both retention prefixes, then restored **data only** for `airport`, `runway` and
+`dataset_version`. The recovered tier distribution matched M1-02 exactly: 25 flagship, 113
+large, 491 medium, 1,343 small, and 2,387 regional airports.
+
+That is an incident record, not the default command. A selective restore is justified only
+after the full archive has passed the `_test` rehearsal, the damaged relations and foreign-key
+closure are known, the target service is stopped, the affected live tables are proved empty
+or deliberately cleared, and a separate pre-repair backup is preserved outside automatic
+retention. Otherwise restore the whole database into a new database and cut over deliberately;
+mixing one recovery point into a partially live relational graph can be worse than the loss.
 
 ### Alerting
 
@@ -593,12 +660,6 @@ notices the missing ping anyway.
 The admin console reads `last-run.json` too, and treats a result older than 26 hours as an
 alert on its own. That is the passive half; the ping is what reaches somebody who is not
 looking.
-
-### Still outstanding
-
-- **The rehearsal is not yet repeatable on its own** — [OPS-04] asks for a documented,
-  re-runnable procedure rather than a one-off. The commands are below; automating them is
-  the remaining half.
 
 ## The dev environment
 
@@ -710,6 +771,7 @@ leaves the running service alone — but the checkout will have moved, so `git l
 disagree with what is actually serving until you deploy again.
 
 **Back up before you need it.** Nightly dumps go to DreamObjects as well as to local disk
-(see [Backups](#backups)). M13-11 covers the wider data-protection story. The half that is
-still outstanding is the important half: **a backup that has never been restored is not a
-backup** — [OPS-04] is that rehearsal.
+(see [Backups](#backups)). M13-11 covers the wider data-protection story. The off-box copy
+was restored into a disposable database on 2026-08-18, and OPS-04 turned that one-off into
+the repeatable, measured procedure above. Rehearse it after meaningful schema or backup
+changes and at least quarterly; a historic success proves that archive, not every future one.

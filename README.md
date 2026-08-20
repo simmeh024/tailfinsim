@@ -106,6 +106,10 @@ different build.
   powerful unused browser features are denied; Google avatars have one narrow image-source
   exception. The first edge rollout is report-only before enforcement, and HSTS preload is
   deliberately deferred ([ADR-0014](docs/adr/0014-browser-security-policy.md)).
+- **Recoverable off-box backups.** Nightly DreamObjects dumps and their checksums are restored
+  repeatably into a guarded `_test` database, migrated, booted and checked against real domain
+  data and the world clock, with observed recovery time and up-to-24-hour data loss stated in
+  the [server runbook](deploy/README.md#restoring).
 - **Airline founding.** An authenticated player can found one airline in an open world,
   choosing its identity, base country and first hub. Ownership, config-backed opening
   cash, initial reputation and the free hub commit together or not at all; database

@@ -214,7 +214,15 @@ for db in "${DATABASES[@]}"; do
     SUMMARY+=("${db}:upload-failed")
     continue
   fi
-  s3 put "${out}.sha256" "${nightly_key}.sha256" >/dev/null 2>&1 || true
+  if ! s3 put "${out}.sha256" "${nightly_key}.sha256" >/dev/null 2>&1; then
+    # OPS-04 downloads from the remote store and verifies this sidecar before
+    # restore. A dump whose integrity cannot be checked on the bad day is not a
+    # complete off-box recovery set.
+    log "FAIL ${db} — dump uploaded but its SHA-256 sidecar did not"
+    failed=1
+    SUMMARY+=("${db}:checksum-upload-failed")
+    continue
+  fi
   log "     uploaded -> nightly/${db}/"
   uploaded=$((uploaded + 1))
 
@@ -237,7 +245,12 @@ for db in "${DATABASES[@]}"; do
     # This still cannot run unless the nightly upload above succeeded — the
     # control flow, not the copy source, is what guarantees that.
     if s3 put "${out}" "${monthly_key}"; then
-      s3 put "${out}.sha256" "${monthly_key}.sha256" >/dev/null 2>&1 || true
+      if ! s3 put "${out}.sha256" "${monthly_key}.sha256" >/dev/null 2>&1; then
+        log "FAIL ${db} — monthly dump uploaded but its SHA-256 sidecar did not"
+        failed=1
+        SUMMARY+=("${db}:monthly-checksum-upload-failed")
+        continue
+      fi
       log "     kept as monthly/${db}/${db}-${MONTH}.dump"
     else
       log "FAIL ${db} — monthly copy failed"
