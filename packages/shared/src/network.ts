@@ -186,3 +186,86 @@ export const ScheduleValidation = z.discriminatedUnion('valid', [
   }),
 ]);
 export type ScheduleValidation = z.infer<typeof ScheduleValidation>;
+
+/* ------------------------------------------------------- fares (M3-09) ---- */
+
+/**
+ * What the player is asking to charge, per cabin (§8.3).
+ *
+ * Partial, like `FareTable` itself: a route flown by an all-economy aircraft has
+ * no business fare and should not be forced to invent one.
+ */
+export const SetFaresRequest = z.object({
+  fares: FareTable,
+});
+export type SetFaresRequest = z.infer<typeof SetFaresRequest>;
+
+/**
+ * Why a fare was refused, with the number the player needs (App. A.10).
+ *
+ * M3-09's acceptance criterion is that the rejection *"explains the floor
+ * value"*. A refusal that says only "too low" leaves the player guessing at a
+ * limit the server already knows — §14.1's dead-end number in another costume —
+ * so the floor, the shortfall and the cost it was drawn from are all on the
+ * wire.
+ */
+export const FareFloorViolation = z.object({
+  cabin: CabinClass,
+  fareMinor: MinorUnits,
+  /** The lowest fare A.10 permits on this route. */
+  floorMinor: MinorUnits,
+  shortfallMinor: MinorUnits,
+  /** What one seat costs to fly, which is what the floor is a share of. */
+  variableCostPerSeatMinor: MinorUnits,
+  /** A.10's 0.6, on the wire so the client never hardcodes it. */
+  ratio: z.number().positive(),
+});
+export type FareFloorViolation = z.infer<typeof FareFloorViolation>;
+
+export const SetFaresResponse = z.discriminatedUnion('ok', [
+  z.object({ ok: z.literal(true), fares: FareTable }),
+  z.object({ ok: z.literal(false), violations: z.array(FareFloorViolation).min(1) }),
+]);
+export type SetFaresResponse = z.infer<typeof SetFaresResponse>;
+
+/** One operator's standing in a cabin's market, as the pricing panel shows it. */
+export const CabinMarketPosition = z.object({
+  cabin: CabinClass,
+  yourFareMinor: MinorUnits.nullable(),
+  /** The mean across operators — A.3's `PriceRel` denominator. */
+  marketAverageMinor: MinorUnits,
+  /** `yourFare ÷ marketAverage`. 1.0 is charging exactly the market rate. */
+  priceRel: z.number().nonnegative().nullable(),
+  floorMinor: MinorUnits,
+  /**
+   * Projected share of this cabin's demand, 0–1.
+   *
+   * A.4's share — demand **won**, before capacity clears it. Deliberately not
+   * booked ÷ pool: that is a load factor wearing a share's name, and it reads
+   * as 0.14 for a monopolist with a small aeroplane. A pricing panel is asking
+   * "how much of this market do I take at this price", and capacity is a
+   * separate question the spill figures already answer.
+   */
+  projectedShare: z.number().min(0).max(1).nullable(),
+  seats: z.number().int().nonnegative(),
+});
+export type CabinMarketPosition = z.infer<typeof CabinMarketPosition>;
+
+/**
+ * `POST /api/routes/:routeId/fares/preview` — what would happen if you saved.
+ *
+ * Computed on the **server**, running the same `@tailfin/sim` code that resolves
+ * the market for real. Invariant 1 forbids the client computing an economic
+ * outcome, and `packages/web` may not import `@tailfin/sim` at all — so a
+ * preview that agreed with resolution by construction is the only kind
+ * available, which is exactly what M3-09 asks for.
+ */
+export const FarePreviewResponse = z.object({
+  routeId: Uuid,
+  positions: z.array(CabinMarketPosition),
+  /** Projected passengers a day across every cabin, at these fares. */
+  projectedPassengers: z.number().nonnegative(),
+  /** And at the fares currently saved, so the panel can show the delta. */
+  currentPassengers: z.number().nonnegative(),
+});
+export type FarePreviewResponse = z.infer<typeof FarePreviewResponse>;

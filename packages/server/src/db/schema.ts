@@ -851,6 +851,79 @@ export const repeatKind = pgEnum('repeat_kind', ['daily', 'weekdays']);
  * `references(airframe.id, { onDelete: 'cascade' })` here**, and until then the
  * service layer is the only thing standing behind it.
  */
+/**
+ * A route an airline sells, and what it charges (M2-01's deferred entity, M3-09).
+ *
+ * `schedule_leg` has carried a note since M2-03 saying this was coming and what
+ * it would own: *"when a `route` table does land, a `route_id` column joins
+ * these rather than replacing them: fares belong to the route, geography to the
+ * leg."* This is that table, added because M3-09 needs somewhere for a fare to
+ * live and the design had already decided where.
+ *
+ * Deliberately **not** joined to `schedule_leg` yet. Doing that means deciding
+ * what happens to a leg whose route is deleted, and to a schedule that flies a
+ * pair with no route — both real questions, neither of them M3-09's. The
+ * endpoints are stored here the same way the leg stores them, so the join is a
+ * column away when somebody owns that decision.
+ */
+export const route = pgTable(
+  'route',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+
+    /**
+     * `cascade`, like `schedule`. A route is an instruction rather than a
+     * record: deleting the airline that opened it leaves nothing worth keeping,
+     * and the flights it produced carry their own airline reference for the
+     * history §22.10 requires to survive.
+     */
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+
+    originIcao: text('origin_icao')
+      .notNull()
+      .references(() => airport.icaoCode),
+    destinationIcao: text('destination_icao')
+      .notNull()
+      .references(() => airport.icaoCode),
+
+    /** Stored rather than derived, so a fare stays explicable after the matrix is rebuilt. */
+    greatCircleNm: doublePrecision('great_circle_nm').notNull(),
+
+    /**
+     * Per-cabin fares in integer minor units, as JSON.
+     *
+     * A column per cabin would be a migration every time a cabin class is added,
+     * and `FareTable` is already the shared shape — partial, because an
+     * all-economy aircraft has no business fare and should not invent one. Parsed
+     * through the zod schema on the way out rather than cast, for the same reason
+     * `flight.load` is: a malformed fare table must fail loudly rather than
+     * price a seat at a plausible wrong number.
+     */
+    fares: text('fares').notNull().default('{}'),
+
+    active: boolean('active').notNull().default(true),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One route per airline per directional pair. Two rows for the same pair
+    // would give a player two fares for the same seat and no way to say which
+    // one sold it.
+    unique('route_airline_pair_key').on(t.airlineId, t.originIcao, t.destinationIcao),
+    index('route_world_id_idx').on(t.worldId),
+    index('route_airline_id_idx').on(t.airlineId),
+    check('route_endpoints_differ', sql`${t.originIcao} <> ${t.destinationIcao}`),
+    check('route_distance_positive', sql`${t.greatCircleNm} > 0`),
+  ],
+);
+
 export const schedule = pgTable(
   'schedule',
   {

@@ -7,13 +7,13 @@ import { PlayersPage } from './admin/PlayersPage';
 import { WorldsPage } from './admin/WorldsPage';
 import { RequireSession } from './auth/RequireSession';
 import { SessionProvider } from './auth/SessionProvider';
+import { NetworkPage } from './network/NetworkPage';
 import {
   BoardPage,
   CrewPage,
   DesignPage,
   FinancePage,
   FleetPage,
-  NetworkPage,
   WorldPage,
 } from './routes/Placeholder';
 import { AppShell } from './shell/AppShell';
