@@ -12,7 +12,7 @@ import { build } from 'esbuild';
  * (`moduleResolution: bundler` cannot emit runnable Node output) — see
  * ADR-0001. This is the compiler for the server package.
  *
- * Ten entry points, and CI asserts every one of them lands in `dist`:
+ * Eleven entry points, and CI asserts every one of them lands in `dist`:
  *   main.js             the server process
  *   migrate.js          a one-off run by the deploy script before main starts
  *   import-airports.js  a one-off run by hand when the dataset moves (M1-01)
@@ -23,6 +23,7 @@ import { build } from 'esbuild';
  *   admin-cli.js        grants and revokes admin from a shell (M1A-01)
  *   ops-status.js       what is deployed where, over public HTTP (OPS-02)
  *   generate-demand.js  App. A.2's demand pools for a world (M3-01)
+ *   assign-timezones.js what the local clock reads at each airport (M3-04a)
  */
 await build({
   entryPoints: [
@@ -36,6 +37,7 @@ await build({
     'src/admin-cli.ts',
     'src/ops-status.ts',
     'src/generate-demand.ts',
+    'src/assign-timezones.ts',
   ],
   outdir: 'dist',
   bundle: true,

@@ -31,6 +31,9 @@ function city(overrides: Partial<GeoNamesCity> = {}): GeoNamesCity {
     countryCode: 'NL',
     population: 1_000_000,
     featureCode: 'PPL',
+    // Carried on the dump for M3-04a's benefit; the catchment derivation
+    // ignores it entirely.
+    timezone: 'Europe/Amsterdam',
     ...overrides,
   };
 }

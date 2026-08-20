@@ -13,6 +13,8 @@ import {
   DEFAULT_SCHED_FIT,
   departureFit,
   localMinuteOfDay,
+  MAX_UTC_OFFSET_MINUTES,
+  MIN_UTC_OFFSET_MINUTES,
   type SchedFitConfig,
   schedFit,
   schedFitBySegment,
@@ -250,7 +252,38 @@ describe('combining a bank of departures', () => {
   });
 });
 
-describe('local time from longitude', () => {
+describe('local time from a UTC offset', () => {
+  it('converts a UTC instant to the local clock', () => {
+    expect(localMinuteOfDay(new Date('2026-06-01T12:00:00Z'), 60)).toBe(AT(13));
+    expect(localMinuteOfDay(new Date('2026-06-01T12:00:00Z'), -60)).toBe(AT(11));
+    expect(localMinuteOfDay(new Date('2026-06-01T12:00:00Z'), 0)).toBe(AT(12));
+  });
+
+  it('handles the offsets no longitude band could express', () => {
+    // Kolkata +5:30 and Kathmandu +5:45 — the cases that made M3-04a worth
+    // doing. Under longitude ÷ 15 these were unreachable by construction.
+    expect(localMinuteOfDay(new Date('2026-06-01T06:00:00Z'), 330)).toBe(AT(11, 30));
+    expect(localMinuteOfDay(new Date('2026-06-01T06:00:00Z'), 345)).toBe(AT(11, 45));
+  });
+
+  it('wraps across midnight in both directions', () => {
+    expect(localMinuteOfDay(new Date('2026-06-01T23:30:00Z'), 60)).toBe(AT(0, 30));
+    expect(localMinuteOfDay(new Date('2026-06-01T00:30:00Z'), -60)).toBe(AT(23, 30));
+  });
+
+  it('accepts the whole real range and nothing beyond it', () => {
+    // Kiritimati is +14 and Baker Island −12. Anything outside is a bug in
+    // whatever produced the offset, and this is the last place to notice.
+    expect(localMinuteOfDay(new Date('2026-06-01T12:00:00Z'), MAX_UTC_OFFSET_MINUTES)).toBe(AT(2));
+    expect(localMinuteOfDay(new Date('2026-06-01T12:00:00Z'), MIN_UTC_OFFSET_MINUTES)).toBe(AT(0));
+    expect(() => localMinuteOfDay(new Date('2026-06-01T12:00:00Z'), 900)).toThrow(/UTC offset/);
+    expect(() => localMinuteOfDay(new Date('2026-06-01T12:00:00Z'), Number.NaN)).toThrow(
+      /UTC offset/,
+    );
+  });
+});
+
+describe('the longitude fallback', () => {
   it('is UTC at Greenwich and one hour per fifteen degrees', () => {
     expect(approximateUtcOffsetMinutes(0)).toBe(0);
     expect(approximateUtcOffsetMinutes(15)).toBe(60);
@@ -259,22 +292,11 @@ describe('local time from longitude', () => {
     expect(approximateUtcOffsetMinutes(-180)).toBe(-720);
   });
 
-  it('converts a UTC instant to the local clock', () => {
-    expect(localMinuteOfDay(new Date('2026-06-01T12:00:00Z'), 15)).toBe(AT(13));
-    expect(localMinuteOfDay(new Date('2026-06-01T12:00:00Z'), -15)).toBe(AT(11));
-    expect(localMinuteOfDay(new Date('2026-06-01T12:00:00Z'), 0)).toBe(AT(12));
-  });
-
-  it('wraps across midnight in both directions', () => {
-    expect(localMinuteOfDay(new Date('2026-06-01T23:30:00Z'), 15)).toBe(AT(0, 30));
-    expect(localMinuteOfDay(new Date('2026-06-01T00:30:00Z'), -15)).toBe(AT(23, 30));
-  });
-
-  it('is wrong for Amsterdam in exactly the documented way', () => {
-    // AMS sits at 4.76°E, so fifteen-degrees-to-the-hour puts it at UTC+19min
-    // against a real UTC+1 (or +2 in summer). This is pinned rather than
-    // hidden: it is the approximation the module note describes, and the test
-    // is what will fail when a timezone column replaces it.
+  it('is still wrong for Amsterdam, which is why it is only a fallback', () => {
+    // AMS at 4.76°E resolves to UTC+19min against a real UTC+1. M3-04a did not
+    // fix this function — it stopped the model depending on it. The server now
+    // records `timezone_basis = 'longitude'` wherever this was used, so a wrong
+    // figure can be traced here rather than mistaken for a real one.
     expect(approximateUtcOffsetMinutes(4.7639)).toBe(19);
   });
 

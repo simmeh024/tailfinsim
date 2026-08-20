@@ -47,6 +47,15 @@ export interface GeoNamesCity {
   population: number;
   /** GeoNames feature code — `PPLC` is a national capital, `PPLA` a first-order admin seat. */
   featureCode: string;
+  /**
+   * IANA timezone name, or empty when the dump does not give one.
+   *
+   * Not used by the catchment derivation at all — it is here because this dump
+   * is the only public-domain source Tailfin already trusts that carries it,
+   * and M3-04a assigns airports the timezone of the nearest city from it.
+   * OurAirports has no timezone column of its own.
+   */
+  timezone: string;
 }
 
 /**
@@ -90,6 +99,10 @@ export function parseGeoNamesCities(text: string): GeoNamesCity[] {
       countryCode,
       population,
       featureCode: (f[7] ?? '').trim(),
+      // Field 17 in the documented layout. Blank rather than absent for a row
+      // that predates the column, so consumers get a falsy value to test rather
+      // than an undefined to trip over.
+      timezone: (f[17] ?? '').trim(),
     });
   }
 
@@ -181,6 +194,28 @@ function worldBankUrl(indicator: string): string {
   // exactly the coverage problem described above — but it is not honoured by
   // every mirror, so the parser takes the latest year regardless.
   return `https://api.worldbank.org/v2/country/all/indicator/${indicator}?format=json&per_page=20000&mrnev=1`;
+}
+
+/**
+ * Just the city dump, for consumers that do not need the World Bank half.
+ *
+ * M3-04a wants the timezone column and nothing else, and fetching three World
+ * Bank indicators to get it would be three downloads for data it will not read.
+ * Shares the cache directory with {@link fetchCatchmentSources}, so running
+ * both in sequence downloads `cities15000.zip` once.
+ */
+export async function fetchGeoNamesCities(
+  options: { cacheDir?: string; offline?: boolean } = {},
+): Promise<GeoNamesCity[]> {
+  const { cacheDir, offline = false } = options;
+  if (cacheDir) mkdirSync(cacheDir, { recursive: true });
+
+  const zip = await fetchCached(
+    GEONAMES_URL,
+    cacheDir ? join(cacheDir, 'cities15000.zip') : null,
+    offline,
+  );
+  return parseGeoNamesCities(readZipEntry(zip, GEONAMES_ENTRY).toString('utf8'));
 }
 
 export async function fetchCatchmentSources(

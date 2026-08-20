@@ -190,11 +190,16 @@ and a closing keyword in a _comment_ never fires at all. Write `Closes #17` and
 `Closes #18` on separate lines, then check both actually closed.
 
 **One-off jobs run from `dist`, not from source.** `data:airports`, `data:classify`,
-`data:catchment`, `data:distances`, `world:seed`, `demand:generate`, `admin` and
-`ops:status` are all bundled entry points, so `pnpm build:apps` has to have run first.
-The order matters for a new world — airports, then tiers, then catchment, then distances,
-then the world, then its demand pools — because each reads what the last one wrote.
-CONTRIBUTING.md has the table.
+`data:catchment`, `data:timezones`, `data:distances`, `world:seed`, `demand:generate`,
+`admin` and `ops:status` are all bundled entry points, so `pnpm build:apps` has to have
+run first. The order matters for a new world — airports, then tiers, then catchment, then
+distances, then the world, then its demand pools — because each reads what the last one
+wrote. `data:timezones` is the exception and needs only the airports. CONTRIBUTING.md has
+the table.
+
+CI builds the bundles on every pull request and asserts that each of those entry points
+actually lands in `dist`, so an entry point dropped from `build.mjs` fails the run rather
+than being discovered the next time somebody needs the command.
 
 **Architectural decisions get an ADR** in [`docs/adr/`](docs/adr/). If you find yourself
 explaining a choice twice, write it down once instead. ADR-0003 (deployment) and ADR-0005

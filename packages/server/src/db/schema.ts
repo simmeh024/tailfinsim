@@ -460,6 +460,33 @@ export const airport = pgTable(
     classifiedAt: timestamp('classified_at', { withTimezone: true }),
 
     /**
+     * Timezone (M3-04a) — what the local clock reads at this airport.
+     *
+     * A.3's `SchedFit` is a curve over **local** departure time, and until this
+     * existed the only way to get one was longitude ÷ 15, which puts mainland
+     * Spain in the Canaries' zone and cannot express India's half-hour offset.
+     *
+     * `utc_offset_minutes` is **standard time**, deliberately not daylight
+     * saving: `schedule_leg.departure_minute` is fixed in absolute time, so a
+     * DST-aware offset would slide a player's departure an hour along the
+     * SchedFit curve twice a year without them touching anything. See
+     * `data/timezone/offset.ts`.
+     *
+     * Minutes rather than hours because Kolkata is +330, Kathmandu +345 and
+     * Chatham +765. An hours column would have been wrong for a tenth of the
+     * world on the day it was written.
+     *
+     * `timezone` is NULL only where resolution fell through to the longitude
+     * approximation; the offset never is. `timezone_basis` says which happened,
+     * the same discipline as `tier_basis` — an offset decided by a city 8 km
+     * away is a different quality of answer from one decided by a band of
+     * longitude, and §14.1 says a figure has to be able to explain itself.
+     */
+    timezone: text('timezone'),
+    utcOffsetMinutes: integer('utc_offset_minutes'),
+    timezoneBasis: text('timezone_basis'),
+
+    /**
      * Catchment (M1-03) — the four numbers App. A.2's gravity model consumes.
      *
      * `D_base = k · (Pop_o · Wealth_o · Pop_d · Wealth_d)^α · f(distance) · Affinity_od`

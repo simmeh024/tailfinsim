@@ -22,6 +22,7 @@
     "data:distances": "node dist/build-distance-matrix.js",
     "world:seed": "node dist/seed-world.js",
     "demand:generate": "node dist/generate-demand.js",
+    "data:timezones": "node dist/assign-timezones.js",
     "admin": "node dist/admin-cli.js",
     "ops:status": "node dist/ops-status.js"
   },
