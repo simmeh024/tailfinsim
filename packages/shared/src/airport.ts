@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import {
+  AirportIdent,
   AirportIataCode,
   AirportIcaoCode,
   CountryCode,
@@ -120,7 +121,7 @@ export const Airport = z.object({
    * The stable key — OurAirports' `ident`. Unique and present on every row,
    * which is true of neither ICAO nor IATA.
    */
-  ident: z.string().min(1).max(16),
+  ident: AirportIdent,
   /** Only ~12% of aerodromes have an officially assigned ICAO code. */
   icao: AirportIcaoCode.nullable(),
   iata: AirportIataCode.nullable(),

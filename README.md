@@ -96,6 +96,10 @@ different build.
   split into business, leisure and VFR.
 - **Accounts.** Google OAuth, database-backed sessions, admin grants, and an append-only
   audit log the database itself refuses to let anyone edit.
+- **Airline founding.** An authenticated player can found one airline in an open world,
+  choosing its identity, base country and first hub. Ownership, config-backed opening
+  cash, initial reputation and the free hub commit together or not at all; database
+  constraints arbitrate code collisions and return the submitted code in the refusal.
 - **The admin console**, at `/admin` for accounts holding a grant: an overview with
   server-decided alerts, world creation, speed changes, the full open/lock/archive/reset
   lifecycle, world health, a read-only player browser, and the audit log.
@@ -110,8 +114,8 @@ different build.
 - **No fleet, crew or cabin.** Aircraft are a `uuid` with no catalogue behind it (M4),
   crew and ground handling are inputs the models take rather than systems (M5), and the
   livery and cabin builders are M6.
-- **No player-facing client.** The admin console is real; the game itself is not built,
-  and the front door still serves a holding page.
+- **No player-facing client.** The founding API exists, but its guided screen and the
+  rest of the game client are not built; the front door still serves a holding page.
 
 ### Where it runs
 

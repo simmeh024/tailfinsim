@@ -583,6 +583,38 @@ export const airport = pgTable(
   ],
 );
 
+// ---------------------------------------------------------------------------
+// airline_hub — airports at which an airline is based (AIR-01, App. B.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Founding grants the first hub; M7-04 later adds paid hubs and facilities.
+ *
+ * The relationship gets its own row rather than a single hub column on
+ * `airline`, because an airline may own several hubs. The airport foreign key
+ * is restrictive: reference-data refreshes must not erase a player's base.
+ */
+export const airlineHub = pgTable(
+  'airline_hub',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    airportId: uuid('airport_id')
+      .notNull()
+      .references(() => airport.id, { onDelete: 'restrict' }),
+    /** Consumed from the world's starting-position config, so its zero cost is explainable. */
+    founderGrant: boolean('founder_grant').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('airline_hub_airline_id_airport_id_key').on(t.airlineId, t.airportId),
+    index('airline_hub_airline_id_idx').on(t.airlineId),
+    index('airline_hub_airport_id_idx').on(t.airportId),
+  ],
+);
+
 export const runwaySurface = pgEnum('runway_surface', [
   'asphalt',
   'concrete',
@@ -722,6 +754,9 @@ export type NewSessionRow = typeof session.$inferInsert;
 
 export type AirlineRow = typeof airline.$inferSelect;
 export type NewAirlineRow = typeof airline.$inferInsert;
+
+export type AirlineHubRow = typeof airlineHub.$inferSelect;
+export type NewAirlineHubRow = typeof airlineHub.$inferInsert;
 
 export type DatasetVersionRow = typeof datasetVersion.$inferSelect;
 export type NewDatasetVersionRow = typeof datasetVersion.$inferInsert;

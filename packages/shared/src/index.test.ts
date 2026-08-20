@@ -138,6 +138,21 @@ describe('Airline', () => {
     expect(Object.keys(CreateAirlineInput.shape)).not.toContain('reputation');
     expect(Object.keys(CreateAirlineInput.shape)).not.toContain('id');
   });
+
+  it('requires the founder hub but does not let the client call it paid', () => {
+    expect(
+      CreateAirlineInput.safeParse({
+        worldId: valid.worldId,
+        name: valid.name,
+        iataCode: valid.iataCode,
+        icaoCode: valid.icaoCode,
+        callsign: valid.callsign,
+        baseCountry: valid.baseCountry,
+        hubIdent: 'EHAM',
+      }).success,
+    ).toBe(true);
+    expect(Object.keys(CreateAirlineInput.shape)).not.toContain('founderGrant');
+  });
 });
 
 describe('Airport', () => {
