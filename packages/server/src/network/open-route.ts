@@ -70,6 +70,7 @@ const REFERENCE_LIMITS = {
 export type OpenRouteResult =
   | { ok: true; routeId: string; greatCircleNm: number }
   | { ok: false; kind: 'unknown-airport'; icao: string }
+  | { ok: false; kind: 'no-airline' }
   | { ok: false; kind: 'same-airport' }
   | { ok: false; kind: 'duplicate' }
   | { ok: false; kind: 'unreachable'; reachability: Extract<Reachability, { ok: false }> };
@@ -170,7 +171,11 @@ export async function openRoute(
     .limit(1);
 
   const own = airlines[0];
-  if (!own) return { ok: false, kind: 'unknown-airport', icao: originIcao };
+  // Its own answer, not a borrowed one. Reporting this as `unknown-airport`
+  // told a player with no airline that EHAM does not exist, which is both
+  // false and unactionable — the exact failure B.4's "never a generic
+  // unavailable" is arguing against, arrived at from the other direction.
+  if (!own) return { ok: false, kind: 'no-airline' };
 
   const endpoints = await endpointsFor(db, [originIcao, destinationIcao]);
   const from = endpoints.get(originIcao);

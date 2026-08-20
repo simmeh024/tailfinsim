@@ -38,7 +38,17 @@ async function json(path: string, init?: RequestInit): Promise<{ status: number;
 export async function fetchRoutes(): Promise<RouteSummary[]> {
   const { status, body } = await json('/api/routes');
   if (status !== 200) throw new Error(`GET /api/routes failed with ${String(status)}`);
-  return (body as { routes: RouteSummary[] }).routes;
+
+  // Checked rather than cast. A cast turns a malformed response into
+  // `undefined` and hands it to the page as though it were a list, where it
+  // crashes on `.length` — which is a blank screen for what is really "the
+  // server said something unexpected". Failing here reaches the caller's
+  // error state instead.
+  const routes = (body as { routes?: unknown }).routes;
+  if (!Array.isArray(routes)) {
+    throw new Error('GET /api/routes did not return a list of routes');
+  }
+  return routes as RouteSummary[];
 }
 
 export async function previewFares(
@@ -74,6 +84,7 @@ export async function saveFares(routeId: string, fares: FareTable): Promise<SetF
 /** Why a route could not be opened, in the server's own words. */
 export type OpenRouteFailure =
   | { kind: 'unknown-airport'; icao: string }
+  | { kind: 'no-airline' }
   | { kind: 'same-airport' }
   | { kind: 'duplicate' }
   | { kind: 'unreachable'; reachability: { reason: string; detail: string } };

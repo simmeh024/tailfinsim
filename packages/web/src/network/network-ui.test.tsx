@@ -274,6 +274,23 @@ describe('the pricing panel', () => {
     expect(await screen.findByText(/already fly that pair/i)).toBeInTheDocument();
   });
 
+  it('says you have no airline rather than blaming the airport', async () => {
+    // The bug this replaced: a player with no airline was told "No airport
+    // with the code EHAM", which is false and unactionable. Found by checking
+    // dev rather than by a test, which is why there is now a test.
+    stub(undefined, { ok: false, kind: 'no-airline' });
+    render(<NetworkPage />);
+    await screen.findByText('EHAM → LEBL');
+
+    fireEvent.change(screen.getByLabelText('Origin ICAO'), { target: { value: 'EHAM' } });
+    fireEvent.change(screen.getByLabelText('Destination ICAO'), { target: { value: 'LEBL' } });
+    fireEvent.click(screen.getByRole('button', { name: /^open$/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/do not have an airline/i);
+    expect(alert).not.toHaveTextContent(/No airport with the code/i);
+  });
+
   it('will not submit a code that is not four letters', async () => {
     stub();
     render(<NetworkPage />);
