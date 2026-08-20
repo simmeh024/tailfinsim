@@ -74,6 +74,7 @@ export async function saveFares(routeId: string, fares: FareTable): Promise<SetF
 /** Why a route could not be opened, in the server's own words. */
 export type OpenRouteFailure =
   | { kind: 'unknown-airport'; icao: string }
+  | { kind: 'no-airline' }
   | { kind: 'same-airport' }
   | { kind: 'duplicate' }
   | { kind: 'unreachable'; reachability: { reason: string; detail: string } };
