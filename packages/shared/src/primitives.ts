@@ -118,3 +118,22 @@ export type DemandSegment = z.infer<typeof DemandSegment>;
 
 export const CabinClass = z.enum(['economy', 'premium_economy', 'business', 'first']);
 export type CabinClass = z.infer<typeof CabinClass>;
+
+/**
+ * The cabins from front to back.
+ *
+ * The enum is declared cheapest-first because that is the order a fare table
+ * reads in; this is the order a *cabin* reads in, and several things need it —
+ * summing a load, laying out a breakdown, deciding which cabin demand falls
+ * into when the one above is not sold (App. A.6).
+ *
+ * Here rather than in `@tailfin/sim` because it is a property of the enum
+ * rather than of any model, and two copies of it would eventually disagree
+ * about where premium economy sits.
+ */
+export const CABIN_ORDER: readonly CabinClass[] = [
+  'first',
+  'business',
+  'premium_economy',
+  'economy',
+];
