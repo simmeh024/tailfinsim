@@ -104,6 +104,10 @@ different build.
   economy version that supplies opening cash and the free-hub allowance to founding.
   Unknown versions are refused when a world is created rather than when its first player
   arrives ([ADR-0008](docs/adr/0008-versioned-airline-starting-position.md)).
+- **Explainable airline cash.** Every game-balance change records its amount, cause,
+  reference, game time and resulting balance in the transaction that caused it. Database
+  constraints make cause replay idempotent and refuse any balance that does not equal the
+  movement fold ([ADR-0011](docs/adr/0011-explainable-airline-cash.md)).
 - **Race-safe airline code allocation.** Founding allocates IATA and ICAO designators
   through the per-world unique constraints. An advisory checker and constraint refusals
   offer deterministic, name-derived alternatives without leaking unowned reservations

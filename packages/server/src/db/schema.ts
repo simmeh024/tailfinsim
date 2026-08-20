@@ -316,7 +316,74 @@ export const airline = pgTable(
       sql`char_length(${t.callsign}) BETWEEN 2 AND 32 AND ${t.callsign} ~ '^[A-Z0-9]+( [A-Z0-9]+)*$' AND ${t.callsign} ~ '[A-Z]'`,
     ),
     check('airline_base_country_format', sql`${t.baseCountry} ~ '^[A-Z]{2}$'`),
-    check('airline_cash_finite', sql`${t.cashMinor} > -9007199254740991`),
+    check(
+      'airline_cash_safe_integer',
+      sql`${t.cashMinor} >= -9007199254740991 AND ${t.cashMinor} <= 9007199254740991`,
+    ),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// cash_movement — the authoritative explanation for airline.cash_minor (AIR-06)
+// ---------------------------------------------------------------------------
+
+/**
+ * Deliberately narrow. M8-01 adds P&L categories and entity dimensions; these
+ * are the balance-changing causes that exist now and can therefore be honest.
+ */
+export const cashMovementCause = pgEnum('cash_movement_cause', [
+  'airline_founding',
+  'flight_settlement',
+  'migration_opening_balance',
+]);
+export type CashMovementCause = (typeof cashMovementCause.enumValues)[number];
+
+/**
+ * One immutable row for every change to an airline's game balance.
+ *
+ * `cause + reference` is the logical identity of a movement. A flight id, for
+ * example, can settle once even if an event is replayed or two workers race.
+ * `balance_after_minor` makes the fold checkable against `airline.cash_minor`
+ * rather than leaving drift silent.
+ *
+ * This is in-game currency only. ADR-0006 keeps commerce money in different
+ * tables, types and helpers.
+ */
+export const cashMovement = pgTable(
+  'cash_movement',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+
+    amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+    cause: cashMovementCause('cause').notNull(),
+    /** Stable id of the thing that caused this movement, stored generically for later domains. */
+    reference: text('reference').notNull(),
+    balanceAfterMinor: bigint('balance_after_minor', { mode: 'number' }).notNull(),
+
+    /** Game time for simulation causes; founding time for the opening grant. */
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+    /** Real time the row reached the ledger, useful when delayed processing is diagnosed. */
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('cash_movement_cause_reference_key').on(t.cause, t.reference),
+    index('cash_movement_airline_id_occurred_at_idx').on(t.airlineId, t.occurredAt),
+    check(
+      'cash_movement_amount_safe_integer',
+      sql`${t.amountMinor} >= -9007199254740991 AND ${t.amountMinor} <= 9007199254740991`,
+    ),
+    check(
+      'cash_movement_balance_safe_integer',
+      sql`${t.balanceAfterMinor} >= -9007199254740991 AND ${t.balanceAfterMinor} <= 9007199254740991`,
+    ),
+    check(
+      'cash_movement_reference_not_blank',
+      sql`char_length(${t.reference}) > 0 AND ${t.reference} = btrim(${t.reference})`,
+    ),
   ],
 );
 
@@ -765,6 +832,9 @@ export type NewSessionRow = typeof session.$inferInsert;
 
 export type AirlineRow = typeof airline.$inferSelect;
 export type NewAirlineRow = typeof airline.$inferInsert;
+
+export type CashMovementRow = typeof cashMovement.$inferSelect;
+export type NewCashMovementRow = typeof cashMovement.$inferInsert;
 
 export type AirlineHubRow = typeof airlineHub.$inferSelect;
 export type NewAirlineHubRow = typeof airlineHub.$inferInsert;
