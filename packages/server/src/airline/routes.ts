@@ -2,6 +2,7 @@ import {
   AirlineCodeAvailabilityInput,
   CreateAirlineInput,
   ForceRenameAirlineInput,
+  UpdateOwnAirlineInput,
   Uuid,
   apiErrorJsonSchema,
   airlineFoundingAirportListResponseJsonSchema,
@@ -9,19 +10,23 @@ import {
   airlineCodeAvailabilityResponseJsonSchema,
   createAirlineResponseJsonSchema,
   forceRenameAirlineResponseJsonSchema,
+  ownAirlineResponseJsonSchema,
+  updateOwnAirlineResponseJsonSchema,
   type ApiError,
 } from '@tailfin/shared';
 
 import { type DatabaseHandle } from '../db/client';
 
 import { checkAirlineCodeAvailability } from './codes';
+import { ACTIVE_WORLD_HEADER, parseActiveWorldHeader, resolvedAirlineOf } from './context';
 import { foundAirline, type FoundAirlineDependencies, type FoundAirlineResult } from './found';
 import { listAirlineFoundingOptions, searchAirlineFoundingAirports } from './founding-options';
+import { readOwnAirline, updateOwnAirline } from './own';
 import { forceRenameAirline } from './rename';
 
 import type { FastifyInstance, FastifyReply } from 'fastify';
 
-/** Founding, AIR-07's player read model, and AIR-02's audited moderation remedy. */
+/** Founding, own-airline reads/rebrands, and AIR-02's audited moderation remedy. */
 
 export interface AirlineRoutesOptions extends FoundAirlineDependencies {
   db: DatabaseHandle;
@@ -104,6 +109,100 @@ export function registerAirlineRoutes(
   app: FastifyInstance,
   { db, identityModerator, codePolicy }: AirlineRoutesOptions,
 ): void {
+  /**
+   * Context discovery is the deliberate exception to AIR-05's absence error:
+   * a signed-in player who has not founded receives `{ airline: null }`.
+   */
+  app.get(
+    '/api/airlines/me',
+    {
+      onRequest: app.requireAuth,
+      schema: {
+        response: {
+          200: ownAirlineResponseJsonSchema,
+          400: apiErrorJsonSchema,
+          409: apiErrorJsonSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const playerId = request.player?.id;
+      if (playerId === undefined) return;
+
+      const selected = parseActiveWorldHeader(request.headers[ACTIVE_WORLD_HEADER]);
+      if (!selected.ok) {
+        return reply.code(400).send({
+          code: 'invalid_active_world',
+          message: `${ACTIVE_WORLD_HEADER} must contain one world UUID`,
+        });
+      }
+
+      const result = await readOwnAirline(db.db, playerId, selected.worldId);
+      if (result.kind === 'active-world-required') {
+        return reply.code(409).send({
+          code: 'active_world_required',
+          message: `Choose an active world with ${ACTIVE_WORLD_HEADER} before reading your airline`,
+        });
+      }
+      return reply.code(200).send(result.response);
+    },
+  );
+
+  /**
+   * Ordinary player rebrand. The strict input admits only AIR-08's mutable
+   * fields; cash, reputation and designators cannot be expressed here.
+   */
+  app.patch<{ Body: unknown }>(
+    '/api/airlines/me',
+    {
+      onRequest: app.requireAirline,
+      schema: {
+        response: {
+          200: updateOwnAirlineResponseJsonSchema,
+          400: apiErrorJsonSchema,
+          409: apiErrorJsonSchema,
+          422: apiErrorJsonSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const parsed = UpdateOwnAirlineInput.safeParse(request.body);
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send(
+            fieldsFromIssues(
+              'invalid_airline_identity',
+              'The airline name, callsign or base country is not valid',
+              parsed.error.issues,
+            ),
+          );
+      }
+
+      const result = await updateOwnAirline(
+        db.db,
+        resolvedAirlineOf(request),
+        parsed.data,
+        new Date(),
+        { identityModerator },
+      );
+      if (!result.ok) {
+        return reply.code(422).send({
+          code: 'identity_refused',
+          message: result.reason,
+          fields: { [result.field]: [result.reason] },
+        });
+      }
+
+      return reply.code(200).send({
+        airline: result.airline,
+        changed: result.changed,
+        chargedMinor: result.chargedMinor,
+        identityChangeId: result.identityChangeId,
+      });
+    },
+  );
+
   /** Server-owned world terms used both by the landing redirect and the founding desk. */
   app.get(
     '/api/airlines/founding-options',

@@ -333,6 +333,7 @@ export const airline = pgTable(
  */
 export const cashMovementCause = pgEnum('cash_movement_cause', [
   'airline_founding',
+  'airline_rebrand',
   'flight_settlement',
   'migration_opening_balance',
 ]);
@@ -386,6 +387,52 @@ export const cashMovement = pgTable(
     ),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// airline_identity_change — paid player rebrand events (AIR-08, §15)
+// ---------------------------------------------------------------------------
+
+/**
+ * One ordinary player rebrand, retained independently of the current airline
+ * label. Operational rows keep resolving the stable airline UUID to its current
+ * identity (ADR-0007); this event is the honest history of how that identity
+ * changed and the cash movement references its id.
+ */
+export const airlineIdentityChange = pgTable(
+  'airline_identity_change',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+
+    beforeName: text('before_name').notNull(),
+    afterName: text('after_name').notNull(),
+    beforeCallsign: text('before_callsign').notNull(),
+    afterCallsign: text('after_callsign').notNull(),
+    beforeBaseCountry: text('before_base_country').notNull(),
+    afterBaseCountry: text('after_base_country').notNull(),
+
+    costMinor: bigint('cost_minor', { mode: 'number' }).notNull(),
+    /** Game time when the rebrand took effect. */
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+    /** Real database time, retained for support and delayed-processing diagnosis. */
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('airline_identity_change_airline_id_occurred_at_idx').on(t.airlineId, t.occurredAt),
+    check('airline_identity_change_cost_positive', sql`${t.costMinor} > 0`),
+    check(
+      'airline_identity_change_changes_something',
+      sql`${t.beforeName} <> ${t.afterName}
+          OR ${t.beforeCallsign} <> ${t.afterCallsign}
+          OR ${t.beforeBaseCountry} <> ${t.afterBaseCountry}`,
+    ),
+  ],
+);
+
+export type AirlineIdentityChangeRow = typeof airlineIdentityChange.$inferSelect;
+export type NewAirlineIdentityChangeRow = typeof airlineIdentityChange.$inferInsert;
 
 // ---------------------------------------------------------------------------
 // Reference data — global, not per world (M1-01).

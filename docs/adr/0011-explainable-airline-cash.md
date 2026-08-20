@@ -87,6 +87,9 @@ instead of reporting only that the final total is wrong.
 - **Airline founding** inserts the airline at zero and posts its versioned opening grant as
   `airline_founding`, referenced by the new airline id, before the founder hub transaction
   commits.
+- **Player rebrand** records the identity change and posts its configured price as
+  `airline_rebrand`, referenced by that event id, before the new identity becomes visible
+  (ADR-0017).
 - **Flight settlement** writes `flight_result` and posts its net as `flight_settlement`,
   referenced by the flight id, before marking the flight arrived.
 - **Migration** cannot reconstruct causes that predate the ledger honestly. Each existing

@@ -293,3 +293,49 @@ export type ForceRenameAirlineInput = z.infer<typeof ForceRenameAirlineInput>;
 
 export const ForceRenameAirlineResponse = z.object({ airline: Airline, changed: z.boolean() });
 export type ForceRenameAirlineResponse = z.infer<typeof ForceRenameAirlineResponse>;
+
+/**
+ * The caller's airline and the server-owned terms for changing its identity.
+ *
+ * A missing airline is a normal 200 response on this discovery endpoint. The
+ * mutation itself still uses AIR-05's guarded ownership context.
+ */
+export const OwnAirlineResponse = z.object({
+  airline: Airline.nullable(),
+  rebrand: z
+    .object({
+      costMinor: MinorUnits.positive(),
+      mutableFields: z.tuple([z.literal('name'), z.literal('callsign'), z.literal('baseCountry')]),
+      immutableFields: z.tuple([
+        z.literal('iataCode'),
+        z.literal('icaoCode'),
+        z.literal('cash'),
+        z.literal('reputation'),
+      ]),
+    })
+    .nullable(),
+});
+export type OwnAirlineResponse = z.infer<typeof OwnAirlineResponse>;
+
+/**
+ * The complete player-editable identity replacement.
+ *
+ * Strictness is a security property here: cash, reputation and scarce codes
+ * are rejected rather than silently stripped from a request that tried to set
+ * them. AIR-09 owns whether codes can ever be released or reassigned.
+ */
+export const UpdateOwnAirlineInput = Airline.pick({
+  name: true,
+  callsign: true,
+  baseCountry: true,
+}).strict();
+export type UpdateOwnAirlineInput = z.infer<typeof UpdateOwnAirlineInput>;
+
+/** One paid §15 identity event, or a no-op when the submitted identity is current. */
+export const UpdateOwnAirlineResponse = z.object({
+  airline: Airline,
+  changed: z.boolean(),
+  chargedMinor: MinorUnits.nonnegative(),
+  identityChangeId: Uuid.nullable(),
+});
+export type UpdateOwnAirlineResponse = z.infer<typeof UpdateOwnAirlineResponse>;

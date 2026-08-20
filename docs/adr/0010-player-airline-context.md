@@ -71,6 +71,12 @@ world state; signing in again will not help, while founding an airline will.
 The shared `PlayerAirlineContextError` schema owns the stable context codes. Human messages
 may improve without requiring clients to match prose.
 
+AIR-08's private `GET /api/airlines/me` is the deliberate discovery exception: it uses the
+same authentication and active-world selection, but returns a successful nullable airline
+instead of `airline_required` when none exists. That lets the client decide between founding
+and managing without turning an expected onboarding state into an error. Its mutation still
+uses `requireAirline`; other guarded endpoints keep the table above.
+
 ## Consequences
 
 ### What this makes easier
@@ -93,14 +99,14 @@ may improve without requiring clients to match prose.
 
 ## Alternatives considered
 
-| Option                                   | Why not                                                                                           |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Accept `airlineId` and compare ownership | One forgotten or inconsistent comparison exposes another airline's rows.                          |
-| Resolve independently in every handler   | Recreates the inconsistency and no-airline drift AIR-05 exists to remove.                         |
-| Always choose the newest airline         | Creation recency is not intent and silently changes the active world after later founding.        |
-| Persist one active world on the player   | Two tabs cannot operate independently, and reset/deletion leaves preference state to reconcile.   |
-| Put `worldId` in every request body      | GET has no body, and repeating body parsing gives every handler another chance to implement it.   |
-| Return an empty success for no airline   | Mutations and reads would still disagree, and clients could not distinguish “none yet” from none. |
+| Option                                               | Why not                                                                                                                           |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Accept `airlineId` and compare ownership             | One forgotten or inconsistent comparison exposes another airline's rows.                                                          |
+| Resolve independently in every handler               | Recreates the inconsistency and no-airline drift AIR-05 exists to remove.                                                         |
+| Always choose the newest airline                     | Creation recency is not intent and silently changes the active world after later founding.                                        |
+| Persist one active world on the player               | Two tabs cannot operate independently, and reset/deletion leaves preference state to reconcile.                                   |
+| Put `worldId` in every request body                  | GET has no body, and repeating body parsing gives every handler another chance to implement it.                                   |
+| Return an empty success for every no-airline request | Mutations and operational reads would lose their stable prerequisite refusal; only AIR-08's typed discovery response is nullable. |
 
 ## Revisit when
 

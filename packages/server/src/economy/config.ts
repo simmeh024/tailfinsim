@@ -6,8 +6,9 @@ import {
 
 /** An economy version is immutable once a world can pin it. */
 export type PinnedEconomyConfig = Readonly<
-  Omit<EconomyConfigContract, 'airlineStartingPosition'> & {
+  Omit<EconomyConfigContract, 'airlineStartingPosition' | 'airlineIdentity'> & {
     airlineStartingPosition: Readonly<EconomyConfigContract['airlineStartingPosition']>;
+    airlineIdentity: Readonly<EconomyConfigContract['airlineIdentity']>;
   }
 >;
 
@@ -17,6 +18,7 @@ function defineEconomyConfig(input: unknown): PinnedEconomyConfig {
   return Object.freeze({
     ...parsed,
     airlineStartingPosition: Object.freeze({ ...parsed.airlineStartingPosition }),
+    airlineIdentity: Object.freeze({ ...parsed.airlineIdentity }),
   });
 }
 
@@ -32,6 +34,10 @@ export const ECONOMY_CONFIG_V1 = defineEconomyConfig({
   airlineStartingPosition: {
     openingCashMinor: 50_000_000,
     freeHubAllowance: 1,
+  },
+  airlineIdentity: {
+    // 25,000 major units: meaningful beside the 500,000 opening position without being punitive.
+    rebrandCostMinor: 2_500_000,
   },
 });
 

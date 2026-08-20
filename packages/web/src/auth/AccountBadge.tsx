@@ -1,3 +1,5 @@
+import { NavLink } from 'react-router';
+
 import { useSession } from './SessionProvider';
 
 import type { ReactNode } from 'react';
@@ -10,7 +12,7 @@ import type { ReactNode } from 'react';
  * than staying here as branches that can no longer be reached. One place shows
  * "sign in"; one place shows "who you are".
  */
-export function AccountBadge(): ReactNode {
+export function AccountBadge({ airlineName }: { airlineName: string | null }): ReactNode {
   const { player, signOut, signOutEverywhere } = useSession();
   if (!player) return null;
 
@@ -35,6 +37,13 @@ export function AccountBadge(): ReactNode {
         )}
         <span className="account__name">{player.displayName}</span>
       </div>
+
+      {airlineName && (
+        <NavLink className="account__airline" to="/airline">
+          <span>Manage airline</span>
+          <strong>{airlineName}</strong>
+        </NavLink>
+      )}
 
       <button type="button" className="account__signout" onClick={() => void signOut()}>
         Sign out

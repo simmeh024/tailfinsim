@@ -23,7 +23,7 @@ currency unresolved for M8-02. AIR-03 must store money without settling that que
 
 ## Decision
 
-The shared `EconomyConfig` schema begins with one `airlineStartingPosition` object:
+The shared `EconomyConfig` schema begins with an `airlineStartingPosition` object:
 
 - `openingCashMinor` is a non-negative safe integer;
 - `freeHubAllowance` is a non-negative integer; and
@@ -34,7 +34,10 @@ deliberate: this is the design's 500,000 major units without claiming they are d
 euros or any other currency before M8-02.
 
 Registered payloads are parsed at runtime and frozen. A change creates a new version; it
-never mutates a version a world may already pin. World creation rejects an unknown economy
+never mutates a version a world may already pin. AIR-08 added the first
+`airlineIdentity.rebrandCostMinor` field to `v1` before any player rebrand operation existed;
+ADR-0017 records that narrow compatibility extension and prohibits using it as precedent to
+retune an already-defined field. World creation rejects an unknown economy
 version at both the admin-validation boundary and the lifecycle service boundary. Founding
 locks the world row, resolves its pinned version, and applies that version's opening cash
 and hub grant in the same transaction as the airline. AIR-06 posts the opening cash through
@@ -64,6 +67,8 @@ only establishes the validated payload and pinning semantics they must preserve.
 - Opening cash, ownership and the founder hub either commit with one movement or all roll
   back together.
 - The future database loader already has a shared runtime schema for its initial payload.
+- Paid rebrands resolve their visible and charged price from the same version the world
+  already pins.
 
 ### What this makes harder
 
@@ -71,6 +76,8 @@ only establishes the validated payload and pinning semantics they must preserve.
 - Changing the number of founder hubs also requires extending the founding interaction;
   config alone cannot invent the missing player choices.
 - The stored integer cannot yet be rendered with a currency symbol without resolving M8-02.
+- A new economy field that changes an already-available result cannot be added to `v1`;
+  it needs a new version even when every other value remains equal.
 
 ## Alternatives considered
 

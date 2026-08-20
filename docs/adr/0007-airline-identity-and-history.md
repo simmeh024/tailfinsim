@@ -45,8 +45,10 @@ operations resolve to the **current** public name and callsign. The append-only 
 log preserves the old identity, new identity, actor and mandatory reason. We deliberately
 do not copy an airline name into every operational row.
 
-The force-rename service and admin API are a moderation remedy. AIR-08 owns ordinary player
-editing and must implement §15's rebrand event and cost rather than reusing the admin route.
+The force-rename service and admin API are a moderation remedy. Ordinary player editing is
+the paid rebrand in ADR-0017, not a reuse of the admin route. It changes only the name,
+callsign and base country; IATA and ICAO codes stay allocated until AIR-09 defines their
+lifecycle.
 
 ## Consequences
 
@@ -88,7 +90,7 @@ hidden in an undocumented word list.
 ## Revisit when
 
 - M13-10 selects a moderation provider or policy whose inputs require more context;
-- AIR-08 defines the player rebrand event and cost;
+- ADR-0017's player rebrand boundary needs another identity field;
 - a public history surface requires period-accurate names or liveries rather than current
   identity; or
 - AIR-09 decides that codes can change during an airline's lifetime.
