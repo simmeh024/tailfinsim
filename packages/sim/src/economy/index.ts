@@ -7,9 +7,12 @@
  *   `money`      — the one place an amount is allowed to stop being an integer
  *   `settlement` — what one flight earned and what it cost, line by line
  *   `disruption-cost` — what it costs when the flight goes wrong instead
+ *   `fare-floor` — A.10's guard against pricing to zero, drawn against the
+ *                  same settlement the flight will actually get
  */
 export * from './boosts';
 export * from './fuel-price';
 export * from './money';
 export * from './settlement';
 export * from './disruption-cost';
+export * from './fare-floor';

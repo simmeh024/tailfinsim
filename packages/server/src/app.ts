@@ -16,6 +16,8 @@ import { readBuildInfo } from './build-info';
 import { type DatabaseHandle } from './db/client';
 import { readDeployInfo } from './deploy-info';
 import { type ServerEnv } from './env';
+import { createEconomicsProvider } from './network/economics';
+import { registerNetworkRoutes } from './network/routes';
 
 /**
  * The Fastify application (M0-08).
@@ -103,6 +105,11 @@ export function buildApp({ env, db }: BuildAppOptions): FastifyInstance {
   // After the auth routes, which is where `requireAdmin` is decorated. Fastify
   // resolves decorators at registration time, so the order is not cosmetic.
   registerAdminRoutes(app, { db });
+
+  // The first player-facing API. Economics are injected rather than looked up
+  // because the fleet does not exist yet — see `network/economics.ts` for which
+  // half of it is real.
+  registerNetworkRoutes(app, { db, economicsFor: createEconomicsProvider(db.db) });
 
   const startedAt = Date.now();
 

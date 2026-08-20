@@ -31,12 +31,8 @@ export const FleetPage = (): ReactNode => (
   />
 );
 
-export const NetworkPage = (): ReactNode => (
-  <Placeholder
-    title="Network"
-    note="Routes, schedules and per-class fares, with the seven reachability checks shown by name. M2-01, M3-09."
-  />
-);
+// NetworkPage is no longer a placeholder — M3-09 filled it. Schedules and the
+// seven reachability checks are still M2-01's, and land on the same page.
 
 export const FinancePage = (): ReactNode => (
   <Placeholder
