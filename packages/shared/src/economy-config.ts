@@ -23,6 +23,12 @@ export const EconomyConfig = z
         freeHubAllowance: z.number().int().nonnegative(),
       })
       .strict(),
+    airlineIdentity: z
+      .object({
+        /** Paid §15 rebrand event; currency remains deliberately unnamed until M8-02. */
+        rebrandCostMinor: MinorUnits.positive(),
+      })
+      .strict(),
   })
   .strict();
 export type EconomyConfig = z.infer<typeof EconomyConfig>;

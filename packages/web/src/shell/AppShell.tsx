@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
 
+import type { OwnAirlineResponse } from '@tailfin/shared';
+
+import { fetchOwnAirline, formatMinorUnits } from '../airline/api';
 import { AccountBadge } from '../auth/AccountBadge';
 import { useTheme } from '../theme/ThemeProvider';
 import { BuildBadge } from '../version/BuildBadge';
@@ -37,7 +40,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { to: '/board', label: 'Board', glyph: '▤' },
 ];
 
-function LeftRail(): ReactNode {
+function LeftRail({ ownAirline }: { ownAirline: OwnAirlineResponse | null }): ReactNode {
   const { theme, toggleTheme } = useTheme();
 
   return (
@@ -60,7 +63,7 @@ function LeftRail(): ReactNode {
 
       <div className="rail__spacer" />
 
-      <AccountBadge />
+      <AccountBadge airlineName={ownAirline?.airline?.name ?? null} />
 
       <button
         type="button"
@@ -130,12 +133,14 @@ function ContextPanel({ open, onToggle }: { open: boolean; onToggle: () => void 
  * `.status--*` classes, which pair colour with a glyph so meaning survives
  * without hue (H.4, H.7).
  */
-function StatusStrip(): ReactNode {
+function StatusStrip({ ownAirline }: { ownAirline: OwnAirlineResponse | null }): ReactNode {
   return (
     <div className="strip" aria-label="Status">
       <div className="strip__item">
         <span className="strip__label">Cash</span>
-        <span className="strip__value figure">—</span>
+        <span className="strip__value figure">
+          {ownAirline?.airline ? formatMinorUnits(ownAirline.airline.cash) : '—'}
+        </span>
       </div>
       <div className="strip__item">
         <span className="strip__label">Runway</span>
@@ -159,15 +164,51 @@ function StatusStrip(): ReactNode {
 
 export function AppShell(): ReactNode {
   const [panelOpen, setPanelOpen] = useState(true);
+  const [ownAirline, setOwnAirline] = useState<OwnAirlineResponse | null>(null);
+  const [ownAirlineLoading, setOwnAirlineLoading] = useState(true);
+  const [ownAirlineError, setOwnAirlineError] = useState(false);
+
+  const loadOwnAirline = useCallback(async () => {
+    setOwnAirlineLoading(true);
+    setOwnAirlineError(false);
+    try {
+      setOwnAirline(await fetchOwnAirline());
+    } catch {
+      setOwnAirlineError(true);
+    } finally {
+      setOwnAirlineLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadOwnAirline();
+  }, [loadOwnAirline]);
+
+  const outletContext: OwnAirlineShellContext = {
+    ownAirline,
+    ownAirlineLoading,
+    ownAirlineError,
+    replaceOwnAirline: setOwnAirline,
+    reloadOwnAirline: loadOwnAirline,
+  };
 
   return (
     <div className="shell">
-      <LeftRail />
+      <LeftRail ownAirline={ownAirline} />
       <WorldBackdrop>
-        <Outlet />
+        <Outlet context={outletContext} />
       </WorldBackdrop>
       <ContextPanel open={panelOpen} onToggle={() => setPanelOpen((open) => !open)} />
-      <StatusStrip />
+      <StatusStrip ownAirline={ownAirline} />
     </div>
   );
+}
+
+/** Shared request state for pages rendered inside the player shell. */
+export interface OwnAirlineShellContext {
+  ownAirline: OwnAirlineResponse | null;
+  ownAirlineLoading: boolean;
+  ownAirlineError: boolean;
+  replaceOwnAirline: (value: OwnAirlineResponse) => void;
+  reloadOwnAirline: () => Promise<void>;
 }

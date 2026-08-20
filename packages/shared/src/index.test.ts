@@ -20,11 +20,14 @@ import {
   HealthResponse,
   INITIAL_AIRLINE_REPUTATION,
   MinorUnits,
+  OwnAirlineResponse,
   PlayerAirlineContextError,
   PublicAirline,
   Reputation,
   Runway,
   Timestamp,
+  UpdateOwnAirlineInput,
+  UpdateOwnAirlineResponse,
   World,
 } from './index';
 
@@ -236,6 +239,41 @@ describe('Airline', () => {
     expect(Object.keys(ForceRenameAirlineInput.shape)).not.toContain('iataCode');
     expect(Object.keys(ForceRenameAirlineInput.shape)).not.toContain('icaoCode');
   });
+
+  it('makes absence a normal own-airline response and names the rebrand boundary', () => {
+    expect(OwnAirlineResponse.safeParse({ airline: null, rebrand: null }).success).toBe(true);
+    expect(
+      OwnAirlineResponse.safeParse({
+        airline: valid,
+        rebrand: {
+          costMinor: 2_500_000,
+          mutableFields: ['name', 'callsign', 'baseCountry'],
+          immutableFields: ['iataCode', 'icaoCode', 'cash', 'reputation'],
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects money, reputation and scarce codes from the strict player rebrand input', () => {
+    const identity = { name: valid.name, callsign: valid.callsign, baseCountry: valid.baseCountry };
+    expect(UpdateOwnAirlineInput.safeParse(identity).success).toBe(true);
+    for (const extra of [
+      { cash: 900_000_000 },
+      { reputation: 1 },
+      { iataCode: 'ZZ' },
+      { icaoCode: 'ZZZ' },
+    ]) {
+      expect(UpdateOwnAirlineInput.safeParse({ ...identity, ...extra }).success).toBe(false);
+    }
+    expect(
+      UpdateOwnAirlineResponse.safeParse({
+        airline: { ...valid, cash: 47_500_000 },
+        changed: true,
+        chargedMinor: 2_500_000,
+        identityChangeId: '8a1c7d3e-2b8f-4a6c-9d1e-7f3b5c9a2d4e',
+      }).success,
+    ).toBe(true);
+  });
 });
 
 describe('airline code allocation contracts', () => {
@@ -303,6 +341,7 @@ describe('EconomyConfig', () => {
   const valid = {
     version: 'v1',
     airlineStartingPosition: { openingCashMinor: 50_000_000, freeHubAllowance: 1 },
+    airlineIdentity: { rebrandCostMinor: 2_500_000 },
   };
 
   it('validates the versioned starting position at runtime', () => {
@@ -316,6 +355,14 @@ describe('EconomyConfig', () => {
     ['negative hub allowance', { openingCashMinor: 50_000_000, freeHubAllowance: -1 }],
   ])('refuses %s', (_label, airlineStartingPosition) => {
     expect(EconomyConfig.safeParse({ ...valid, airlineStartingPosition }).success).toBe(false);
+  });
+
+  it('requires a positive configured player rebrand cost', () => {
+    for (const rebrandCostMinor of [0, -1, 2_500_000.5]) {
+      expect(
+        EconomyConfig.safeParse({ ...valid, airlineIdentity: { rebrandCostMinor } }).success,
+      ).toBe(false);
+    }
   });
 
   it('keeps the fixed initial reputation outside tunable economy config', () => {

@@ -6,6 +6,7 @@ import { AuditPage } from './admin/AuditPage';
 import { OverviewPage } from './admin/OverviewPage';
 import { PlayersPage } from './admin/PlayersPage';
 import { WorldsPage } from './admin/WorldsPage';
+import { AirlinePage } from './airline/AirlinePage';
 import { RequireSession } from './auth/RequireSession';
 import { SessionProvider } from './auth/SessionProvider';
 import { fetchFoundingOptions } from './founding/api';
@@ -98,6 +99,7 @@ export function App(): ReactNode {
             <Route path="/found" element={<FoundingPage />} />
             <Route element={<AppShell />}>
               <Route path="world" element={<WorldPage />} />
+              <Route path="airline" element={<AirlinePage />} />
               <Route path="fleet" element={<FleetPage />} />
               <Route path="network" element={<NetworkPage />} />
               <Route path="finance" element={<FinancePage />} />

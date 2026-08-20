@@ -20,6 +20,8 @@ import {
   AirlineCodeUnavailableError,
   CreateAirlineResponse,
   ForceRenameAirlineResponse,
+  OwnAirlineResponse,
+  UpdateOwnAirlineResponse,
 } from './airline';
 import { ApiError, HealthResponse } from './api';
 import { LogoutResponse, MeResponse, RevokeSessionsResponse } from './auth';
@@ -59,6 +61,8 @@ export const airlineCodeAvailabilityResponseJsonSchema = z.toJSONSchema(
 );
 export const airlineCodeUnavailableErrorJsonSchema = z.toJSONSchema(AirlineCodeUnavailableError);
 export const forceRenameAirlineResponseJsonSchema = z.toJSONSchema(ForceRenameAirlineResponse);
+export const ownAirlineResponseJsonSchema = z.toJSONSchema(OwnAirlineResponse);
+export const updateOwnAirlineResponseJsonSchema = z.toJSONSchema(UpdateOwnAirlineResponse);
 export const adminAuditResponseJsonSchema = z.toJSONSchema(AdminAuditResponse);
 export const adminListResponseJsonSchema = z.toJSONSchema(AdminListResponse);
 export const adminWorldListResponseJsonSchema = z.toJSONSchema(AdminWorldListResponse);
