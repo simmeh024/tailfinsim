@@ -245,6 +245,16 @@ user — **never in the repository**. `.env` is gitignored; commit `.env.example
 deploying is one command run on the box. See
 [ADR-0003](adr/0003-deployment-approach.md) for the reasoning and the costs.
 
+OPS-06 defines the release boundary around that command. A green merge stages the next
+release on `main`; OPS-17 will make dev track it automatically, and OPS-18 will make the
+human promotion pre-flight explicit. The normal invariant is **`dev ≥ prod`**. A positive
+`dev build − prod build` gap is tested work waiting for production, zero is alignment, and
+a negative gap is an incident. An explicitly pinned unmerged dev preview is not comparable
+to the `main` release line and is marked with `*` by `pnpm ops:status`.
+
+OPS-17 and OPS-18 remain open, so today neither environment changes merely because a merge
+completed. Production will continue to require a human unless this ADR is changed again.
+
 ```
 ssh tailfin@<ip> → cd /srv/tailfin → ./deploy/deploy.sh
                           │

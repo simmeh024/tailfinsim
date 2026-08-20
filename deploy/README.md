@@ -9,6 +9,27 @@ container pipeline.
 
 ---
 
+## Release flow
+
+```
+PR merged to main  →  CI green  →  dev tracks main automatically   (OPS-17)
+                                           ↓ reviewed on dev
+                              human promotes to production          (OPS-18)
+```
+
+OPS-06 makes the boundary explicit: **merge means staged, not released**. The normal
+release-line invariant is **`dev ≥ prod`**. A positive `dev build − prod build` gap is work
+tested on dev and awaiting promotion; zero means the environments are aligned; a negative
+gap is an operational incident. A deliberate unmerged branch preview is the exception: its
+build is not ordered against `main`, and `pnpm ops:status` marks it with `*`.
+
+OPS-17 and OPS-18 are not built yet. Until they are, dev tracking and production promotion
+are both commands run on the server; production still moves only when a human invokes
+`./deploy/deploy.sh`. The decision and the dated GitHub credential audit are in
+[ADR-0003](../docs/adr/0003-deployment-approach.md).
+
+---
+
 ## How a deploy works
 
 ```

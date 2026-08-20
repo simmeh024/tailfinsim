@@ -298,6 +298,24 @@ triage and rationale.
 
 ---
 
+## Release flow
+
+**Merging to `main` stages a release; it does not release production.** OPS-06 keeps the
+human approval boundary from ADR-0003: dev will track green `main` automatically under
+[OPS-17](https://github.com/simmeh024/tailfinsim/issues/320), and a human will promote that
+reviewed commit under [OPS-18](https://github.com/simmeh024/tailfinsim/issues/321).
+
+The normal release-line invariant is **`dev ≥ prod`**. When both environments run commits
+from `main`, `dev build − prod build` is the number of staged changes tested on dev but not
+yet released. Zero means they are aligned; a negative value is an operational incident.
+Dev may be pinned to an unmerged branch for an explicit preview, in which case the builds
+are not ordered and `pnpm ops:status` marks the dev row with `*`.
+
+Do not describe a merge as a deploy. Check `pnpm ops:status` before reporting what is live;
+[ADR-0003](docs/adr/0003-deployment-approach.md) owns the boundary and its revisit criteria.
+
+---
+
 ## Working style
 
 - **TypeScript is the typechecker, not the compiler.** `moduleResolution: bundler` means
