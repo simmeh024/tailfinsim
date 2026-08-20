@@ -251,6 +251,12 @@ Specific traps met so far:
   single sample on a shared box measures the neighbours.
 - **Effects that arrive in a later React effect race a test that waits for the first
   render.** The build badge's clock has caused this twice.
+- **A documented command is a claim, and it has been wrong twice.** `admin grant <email>`
+  was documented for a CLI that takes `--email`; and every `pnpm data:*`, `world:seed`,
+  `demand:generate` and `admin` row in CONTRIBUTING's table failed from the repo root for
+  months, because only `ops:status` had a proxy script and nobody had typed the others.
+  Run the command before writing it down — including when you are only adding a row to a
+  table that already exists.
 
 ---
 
