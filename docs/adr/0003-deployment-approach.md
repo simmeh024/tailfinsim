@@ -122,6 +122,28 @@ The original argument was about credentials: push-based deployment needs an SSH 
 repository secrets, the repository is public, and anything compromising a workflow would
 get a shell on production. That argument is unchanged and still holds.
 
+### GitHub credential boundary re-verified under OPS-06
+
+This was checked against the repository and GitHub APIs on 2026-08-20 rather than inferred
+from the absence of a deploy workflow:
+
+| GitHub surface                                           | Observed state |
+| -------------------------------------------------------- | -------------- |
+| Actions, Dependabot and Codespaces secrets               | 0 each         |
+| Actions variables and environments                       | 0 each         |
+| Deploy keys, repository webhooks and self-hosted runners | 0 each         |
+| Default workflow token                                   | Read-only      |
+
+All three workflows run on GitHub-hosted `ubuntu-latest`. None requests an OIDC token,
+contains an SSH/deploy step or names the production host. The only job-level token writes
+are CodeQL security results and Dependency Review failure comments on pull requests. The
+production checkout fetches the public repository outbound; GitHub holds no private key,
+secret, environment, webhook or runner connection that can initiate access to the box.
+
+That is the invariant, not just a point-in-time inventory: adding any GitHub environment,
+secret, deploy key, webhook, self-hosted runner or OIDC trust capable of reaching production
+changes this ADR and requires a new explicit decision.
+
 The argument that kept it in 2026 is about **the database**:
 
 - A deploy runs migrations. Applying a schema change to production with nobody watching is
@@ -136,11 +158,14 @@ The argument that kept it in 2026 is about **the database**:
   been told about.
 
 What changed instead is everything either side of the human step. Drift is now visible
-without an SSH session (OPS-02, shipped), dev is to track `main` automatically
-(OPS-17), and the promotion itself is to gain a pre-flight that says which migrations are
-about to run (OPS-18). The workflow this defines is that **merge means _staged_**, and the
-gap between dev's build number and production's is the count of changes tested but not
-released.
+without an SSH session ([OPS-02](https://github.com/simmeh024/tailfinsim/issues/170),
+shipped), dev is to track `main` automatically
+([OPS-17](https://github.com/simmeh024/tailfinsim/issues/320)), and the promotion itself is
+to gain a pre-flight that says which migrations are about to run
+([OPS-18](https://github.com/simmeh024/tailfinsim/issues/321)). The workflow this defines is
+that **merge means _staged_**. On the normal `main` release line, **`dev ≥ prod`** and the
+gap between their build numbers is the count of changes tested but not released. A dev
+checkout pinned to an unmerged preview branch is explicitly outside that ordering.
 
 OPS-05 has now landed, satisfying this revision's revisit signal. That removes one argument
 against continuous deployment; it does not silently reverse the manual-promotion decision.

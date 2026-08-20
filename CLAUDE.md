@@ -53,13 +53,14 @@ PR is the gate, not a second person — so you can merge your own once the check
 
 ---
 
-## Merging does not deploy anything
+## A merge stages a release; a human promotes production
 
 This is the single most misleading thing about the setup, and the easiest thing to tell the
-user wrongly.
+user wrongly. A green merge establishes the next release candidate on `main`; it is not a
+production release.
 
 ```
-merge to main  →  main updates on GitHub  →  CI runs on main  →  nothing else happens
+merge to main  →  main updates on GitHub  →  CI runs on main  →  release is staged
 ```
 
 Production moves **only** when a human runs `./deploy/deploy.sh` on the server. There is no
@@ -81,6 +82,12 @@ changes tested but not shipped. Three things argued against automating the last 
 decision point: deploys run migrations, OPS-05 had no migration-failure strategy yet, and a
 failed health check does not roll back. OPS-05 is now resolved by ADR-0016; production
 promotion remains manual until a separate decision changes ADR-0003.
+
+The normal release-line invariant is **`dev ≥ prod`**: dev is on the same `main` commit as
+production or a later one. A positive gap is staged work awaiting promotion; zero means the
+environments are aligned; a negative gap is an operational incident. An explicitly pinned
+unmerged branch preview is the one exception—its build is not ordered against `main`, and
+`pnpm ops:status` marks it with `*` instead of pretending the numbers are comparable.
 
 The consequence is drift, and it used to be drift nobody could see — in August 2026
 production sat 27 commits behind `main` for a day, unnoticed. **`pnpm ops:status` answers
