@@ -104,6 +104,10 @@ different build.
   economy version that supplies opening cash and the free-hub allowance to founding.
   Unknown versions are refused when a world is created rather than when its first player
   arrives ([ADR-0008](docs/adr/0008-versioned-airline-starting-position.md)).
+- **Race-safe airline code allocation.** Founding allocates IATA and ICAO designators
+  through the per-world unique constraints. An advisory checker and constraint refusals
+  offer deterministic, name-derived alternatives without leaking unowned reservations
+  ([ADR-0009](docs/adr/0009-airline-code-allocation.md)).
 - **Airline identity guardrails.** One shared schema gives Unicode display names and
   operational callsigns/codes explicit rules, with field-level failures. A permissive
   moderation interface sits on both founding and an audited admin force-rename remedy;

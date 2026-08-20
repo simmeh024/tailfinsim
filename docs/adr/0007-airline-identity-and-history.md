@@ -32,8 +32,8 @@ All deterministic identity rules live in `packages/shared/src/airline.ts`:
   and single internal spaces, including at least one letter. This is intentionally narrower
   than the display name so later ATC, voice and search surfaces can reproduce it exactly.
 - **IATA and ICAO codes remain ASCII** under their existing two-character uppercase
-  alphanumeric and three-letter uppercase rules. AIR-04 and AIR-09 own allocation and
-  release; the moderation rename path does not change codes.
+  alphanumeric and three-letter uppercase rules. ADR-0009 owns per-world allocation and
+  AIR-09 owns release; the moderation rename path does not change codes.
 
 Validation and moderation stay separate. The server calls an `AirlineIdentityModerator`
 after shared validation. Its default accepts everything structurally valid; M13-10 supplies
@@ -91,4 +91,4 @@ hidden in an undocumented word list.
 - AIR-08 defines the player rebrand event and cost;
 - a public history surface requires period-accurate names or liveries rather than current
   identity; or
-- AIR-04/AIR-09 decide that codes can change during an airline's lifetime.
+- AIR-09 decides that codes can change during an airline's lifetime.

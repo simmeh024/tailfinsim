@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { ApiError } from './api';
 import {
   AirlineIataCode,
   AirlineIcaoCode,
@@ -161,6 +162,54 @@ export const CreateAirlineResponse = z.object({
   hub: AirlineHub,
 });
 export type CreateAirlineResponse = z.infer<typeof CreateAirlineResponse>;
+
+export const AirlineCodeKind = z.enum(['iata', 'icao']);
+export type AirlineCodeKind = z.infer<typeof AirlineCodeKind>;
+
+/**
+ * What the code checker needs while the founding form is still advisory.
+ * The final allocation remains the airline insert inside AIR-01's transaction.
+ */
+export const AirlineCodeAvailabilityInput = AirlineIdentity.pick({
+  name: true,
+  iataCode: true,
+  icaoCode: true,
+}).extend({ worldId: Uuid });
+export type AirlineCodeAvailabilityInput = z.infer<typeof AirlineCodeAvailabilityInput>;
+
+/** The scope and non-reservation semantics every availability result carries. */
+export const AirlineCodeAvailabilityAdvisory = z.object({
+  scope: z.literal('world'),
+  reservation: z.literal('none'),
+  realWorldCodes: z.enum(['allowed-if-free', 'reserved']),
+  message: z.string().min(1),
+});
+export type AirlineCodeAvailabilityAdvisory = z.infer<typeof AirlineCodeAvailabilityAdvisory>;
+
+export const AirlineCodeAvailabilityResponse = z.object({
+  advisory: AirlineCodeAvailabilityAdvisory,
+  iataCode: z.object({
+    requested: AirlineIataCode,
+    status: z.enum(['available', 'assigned', 'reserved']),
+    alternatives: z.array(AirlineIataCode).max(3),
+  }),
+  icaoCode: z.object({
+    requested: AirlineIcaoCode,
+    status: z.enum(['available', 'assigned', 'reserved']),
+    alternatives: z.array(AirlineIcaoCode).max(3),
+  }),
+});
+export type AirlineCodeAvailabilityResponse = z.infer<typeof AirlineCodeAvailabilityResponse>;
+
+/** A policy or constraint refusal, enriched with current advisory alternatives. */
+export const AirlineCodeUnavailableError = ApiError.extend({
+  code: z.enum(['iata_code_taken', 'icao_code_taken', 'iata_code_reserved', 'icao_code_reserved']),
+  codeKind: AirlineCodeKind,
+  submittedCode: z.union([AirlineIataCode, AirlineIcaoCode]),
+  alternatives: z.array(z.union([AirlineIataCode, AirlineIcaoCode])).max(3),
+  advisory: AirlineCodeAvailabilityAdvisory,
+});
+export type AirlineCodeUnavailableError = z.infer<typeof AirlineCodeUnavailableError>;
 
 /** The fields a moderation remedy may replace; scarce codes are not renamed here. */
 export const ForceRenameAirlineInput = AirlineIdentity.pick({ name: true, callsign: true }).extend({

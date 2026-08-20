@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   Airline,
+  AirlineCodeAvailabilityResponse,
+  AirlineCodeUnavailableError,
   AirlineIdentity,
   AirlineIataCode,
   Airport,
@@ -196,6 +198,48 @@ describe('Airline', () => {
     ).toBe(true);
     expect(Object.keys(ForceRenameAirlineInput.shape)).not.toContain('iataCode');
     expect(Object.keys(ForceRenameAirlineInput.shape)).not.toContain('icaoCode');
+  });
+});
+
+describe('airline code allocation contracts', () => {
+  const advisory = {
+    scope: 'world' as const,
+    reservation: 'none' as const,
+    realWorldCodes: 'allowed-if-free' as const,
+    message: 'Availability is advisory; founding reserves the code.',
+  };
+
+  it('makes the advisory and real-world scope part of the availability wire shape', () => {
+    expect(
+      AirlineCodeAvailabilityResponse.safeParse({
+        advisory,
+        iataCode: { requested: 'TF', status: 'assigned', alternatives: ['TA', 'TN'] },
+        icaoCode: { requested: 'TFN', status: 'available', alternatives: [] },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('requires a taken-code refusal to carry alternatives and non-reservation semantics', () => {
+    expect(
+      AirlineCodeUnavailableError.safeParse({
+        code: 'iata_code_taken',
+        message: 'TF is already assigned',
+        fields: { iataCode: ['TF is already taken in this world.'] },
+        codeKind: 'iata',
+        submittedCode: 'TF',
+        alternatives: ['TA', 'TN', 'TR'],
+        advisory,
+      }).success,
+    ).toBe(true);
+    expect(
+      AirlineCodeUnavailableError.safeParse({
+        code: 'iata_code_taken',
+        message: 'TF is already assigned',
+        codeKind: 'iata',
+        submittedCode: 'TF',
+        alternatives: ['TA'],
+      }).success,
+    ).toBe(false);
   });
 });
 

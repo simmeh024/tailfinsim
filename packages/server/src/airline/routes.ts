@@ -1,8 +1,10 @@
 import {
+  AirlineCodeAvailabilityInput,
   CreateAirlineInput,
   ForceRenameAirlineInput,
   Uuid,
   apiErrorJsonSchema,
+  airlineCodeAvailabilityResponseJsonSchema,
   createAirlineResponseJsonSchema,
   forceRenameAirlineResponseJsonSchema,
   type ApiError,
@@ -10,6 +12,7 @@ import {
 
 import { type DatabaseHandle } from '../db/client';
 
+import { checkAirlineCodeAvailability } from './codes';
 import { foundAirline, type FoundAirlineDependencies, type FoundAirlineResult } from './found';
 import { forceRenameAirline } from './rename';
 
@@ -68,6 +71,22 @@ async function sendRefusal(reply: FastifyReply, result: Exclude<FoundAirlineResu
         code: `${result.codeKind}_code_taken`,
         message: `${result.code} is already assigned to an airline in this world`,
         fields: { [field]: [`${result.code} is already taken in this world.`] },
+        codeKind: result.codeKind,
+        submittedCode: result.code,
+        alternatives: result.alternatives,
+        advisory: result.advisory,
+      });
+    }
+    case 'code-reserved': {
+      const field = result.codeKind === 'iata' ? 'iataCode' : 'icaoCode';
+      return reply.code(409).send({
+        code: `${result.codeKind}_code_reserved`,
+        message: `${result.code} is reserved by this world's airline-code policy`,
+        fields: { [field]: [`${result.code} is reserved and cannot be allocated.`] },
+        codeKind: result.codeKind,
+        submittedCode: result.code,
+        alternatives: result.alternatives,
+        advisory: result.advisory,
       });
     }
     case 'already-founded':
@@ -80,8 +99,48 @@ async function sendRefusal(reply: FastifyReply, result: Exclude<FoundAirlineResu
 
 export function registerAirlineRoutes(
   app: FastifyInstance,
-  { db, identityModerator }: AirlineRoutesOptions,
+  { db, identityModerator, codePolicy }: AirlineRoutesOptions,
 ): void {
+  /**
+   * Founding-form convenience only. The response says explicitly that no code
+   * is reserved; the unique constraints in the founding transaction decide.
+   */
+  app.post<{ Body: unknown }>(
+    '/api/airlines/code-availability',
+    {
+      onRequest: app.requireAuth,
+      schema: {
+        response: {
+          200: airlineCodeAvailabilityResponseJsonSchema,
+          400: apiErrorJsonSchema,
+          404: apiErrorJsonSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const parsed = AirlineCodeAvailabilityInput.safeParse(request.body);
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send(
+            fieldsFromIssues(
+              'invalid_code_availability_check',
+              'The world, airline name or proposed codes are not valid',
+              parsed.error.issues,
+            ),
+          );
+      }
+
+      const result = await checkAirlineCodeAvailability(db.db, parsed.data, codePolicy);
+      if (!result.ok) {
+        return reply
+          .code(404)
+          .send({ code: 'world_not_found', message: `World ${result.worldId} does not exist` });
+      }
+      return reply.code(200).send(result.availability);
+    },
+  );
+
   app.post<{ Body: unknown }>(
     '/api/airlines',
     {
@@ -105,7 +164,10 @@ export function registerAirlineRoutes(
           );
       }
 
-      const result = await foundAirline(db.db, playerId, parsed.data, { identityModerator });
+      const result = await foundAirline(db.db, playerId, parsed.data, {
+        identityModerator,
+        codePolicy,
+      });
       if (!result.ok) return sendRefusal(reply, result);
 
       return reply.code(201).send({ airline: result.airline, hub: result.hub });
