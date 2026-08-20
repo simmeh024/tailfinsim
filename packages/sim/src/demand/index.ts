@@ -12,18 +12,21 @@
  *                  passengers you turn away are a signal worth showing
  *   `class-allocation` — A.6's per-cabin run: the same models again, once per
  *                  cabin, on that cabin's own pool, fares and seats
+ *   `itinerary`  — A.14's connecting products: the one-stop that competes in
+ *                  the logit as a single option, and how its fare splits
  *
  * The first two are A.2's whole of step one — how big the market is, and how
  * big it is *today*. The third is the arbiter that splits it, and the one whose
  * exact decomposability the game's explainability rests on (A.9).
  *
- * What follows is not here yet: connecting itineraries are A.14 (M3-07) and the
- * booking curve that loads a specific departure is A.15 (M3-08). `logit`
- * returns demand; `capacity` turns it into bookings.
+ * What follows is not here yet: the booking curve that loads a specific
+ * departure is A.15 (M3-08). `logit` returns demand; `capacity` turns it into
+ * bookings.
  */
 export * from './capacity';
 export * from './class-allocation';
 export * from './gravity';
+export * from './itinerary';
 export * from './logit';
 export * from './modulation';
 export * from './sched-fit';
