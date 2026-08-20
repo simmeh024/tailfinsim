@@ -4,6 +4,8 @@ import {
   Airline,
   AirlineCodeAvailabilityResponse,
   AirlineCodeUnavailableError,
+  AirlineFoundingAirport,
+  AirlineFoundingOptionsResponse,
   AirlineIdentity,
   AirlineIataCode,
   Airport,
@@ -160,6 +162,40 @@ describe('Airline', () => {
       }).success,
     ).toBe(true);
     expect(Object.keys(CreateAirlineInput.shape)).not.toContain('founderGrant');
+  });
+
+  it('keeps opening terms and hub cost server-authored for the founding screen', () => {
+    expect(
+      AirlineFoundingOptionsResponse.safeParse({
+        memberships: [],
+        worlds: [
+          {
+            id: valid.worldId,
+            name: 'Flagship',
+            openingCashMinor: 50_000_000,
+            freeHubAllowance: 1,
+            playerCap: null,
+            airlines: 0,
+            availability: 'available',
+          },
+        ],
+      }).success,
+    ).toBe(true);
+
+    expect(
+      AirlineFoundingAirport.safeParse({
+        ident: 'EGLL',
+        icao: 'EGLL',
+        iata: 'LHR',
+        name: 'London Heathrow Airport',
+        city: 'London',
+        country: 'GB',
+        tier: 'flagship',
+        slotLevel: 3,
+        foundingCostMinor: 0,
+        feeWarning: 'Flagship fees and coordinated slots make this an ambitious first base.',
+      }).success,
+    ).toBe(true);
   });
 
   it.each(['Air Côte d’Ivoire', '航空会社', 'خطوط الأفق'])(

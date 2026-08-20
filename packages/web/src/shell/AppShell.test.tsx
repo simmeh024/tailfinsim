@@ -49,7 +49,20 @@ beforeEach(() => {
     'fetch',
     vi.fn((input: unknown) => {
       const url = String(input);
-      const body = url === '/api/me' ? SIGNED_IN : {};
+      const body =
+        url === '/api/me'
+          ? SIGNED_IN
+          : url === '/api/airlines/founding-options'
+            ? {
+                memberships: [
+                  {
+                    id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+                    worldId: 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff',
+                  },
+                ],
+                worlds: [],
+              }
+            : {};
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
     }),
   );

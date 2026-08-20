@@ -4,10 +4,13 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   AirlineCodeAvailabilityResponse,
   AirlineCodeUnavailableError,
+  AirlineFoundingAirportListResponse,
+  AirlineFoundingOptionsResponse,
   CreateAirlineResponse,
   FLAGSHIP_CONFIG,
   INITIAL_AIRLINE_REPUTATION,
   type CreateAirlineInput,
+  type AirportTier,
   type WorldConfig,
   type WorldStatus,
 } from '@tailfin/shared';
@@ -118,7 +121,7 @@ describeDb('founding an airline', () => {
     return result.world.id;
   }
 
-  async function makeHub(): Promise<string> {
+  async function makeHub(tier: AirportTier = 'medium'): Promise<string> {
     const n = sequence++;
     // Deliberately not an ICAO code: OurAirports `ident` is the universal key,
     // including for the majority of records that have no official ICAO code.
@@ -129,14 +132,15 @@ describeDb('founding an airline', () => {
         sourceId: 9_000_000 + n,
         ident,
         icaoCode: null,
-        name: `Test Hub ${ident}`,
+        name: `${tier === 'flagship' ? 'Flagship' : 'Test'} Hub ${ident}`,
         isoCountry: 'NL',
         kind: 'medium_airport',
         latitude: 52 + n / 10_000,
         longitude: 4 + n / 10_000,
         scheduledService: true,
         hasRunwayData: false,
-        tier: 'medium',
+        tier,
+        slotLevel: tier === 'flagship' ? 3 : 2,
       })
       .returning({ id: airport.id });
     const id = rows[0]?.id;
@@ -441,6 +445,78 @@ describeDb('founding an airline', () => {
       expect(parsed.airline.reputation).toBe(INITIAL_AIRLINE_REPUTATION);
       expect(parsed.airline.playerId).toBe(playerId);
       expect(parsed.hub.airportIdent).toBe(hubIdent);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('serves open-world terms and searchable founder hubs without the admin API', async () => {
+    const worldId = await makeWorld();
+    const lockedWorldId = await makeWorld('locked');
+    const mediumHub = await makeHub();
+    const flagshipHub = await makeHub('flagship');
+    const playerId = await makePlayer();
+    const app = buildApp({ env, db });
+    try {
+      const cookie = await cookieFor(playerId);
+      const optionsResponse = await app.inject({
+        method: 'GET',
+        url: '/api/airlines/founding-options',
+        headers: { cookie },
+      });
+      expect(optionsResponse.statusCode).toBe(200);
+      const options = AirlineFoundingOptionsResponse.parse(optionsResponse.json());
+      expect(options.memberships).toEqual([]);
+      const openWorld = options.worlds.find((entry) => entry.id === worldId);
+      expect(typeof openWorld?.name).toBe('string');
+      expect(openWorld).toMatchObject({
+        id: worldId,
+        openingCashMinor: ECONOMY_CONFIG_V1.airlineStartingPosition.openingCashMinor,
+        freeHubAllowance: ECONOMY_CONFIG_V1.airlineStartingPosition.freeHubAllowance,
+        playerCap: null,
+        airlines: 0,
+        availability: 'available',
+      });
+      expect(options.worlds.map((entry) => entry.id)).not.toContain(lockedWorldId);
+
+      const recommendedResponse = await app.inject({
+        method: 'GET',
+        url: '/api/airlines/founding-airports',
+        headers: { cookie },
+      });
+      const recommended = AirlineFoundingAirportListResponse.parse(recommendedResponse.json());
+      expect(recommended.query).toBe('');
+      expect(recommended.airports).toContainEqual(
+        expect.objectContaining({ ident: mediumHub, tier: 'medium', foundingCostMinor: 0 }),
+      );
+      expect(recommended.airports.map((entry) => entry.ident)).not.toContain(flagshipHub);
+
+      const searchResponse = await app.inject({
+        method: 'GET',
+        url: `/api/airlines/founding-airports?q=${encodeURIComponent(flagshipHub)}`,
+        headers: { cookie },
+      });
+      const search = AirlineFoundingAirportListResponse.parse(searchResponse.json());
+      expect(search.airports).toHaveLength(1);
+      expect(search.airports[0]).toMatchObject({
+        ident: flagshipHub,
+        tier: 'flagship',
+        slotLevel: 3,
+        foundingCostMinor: 0,
+      });
+      expect(search.airports[0]?.feeWarning).toMatch(/highest ongoing facility fees.*Level 3/i);
+
+      expect((await foundAirline(db.db, playerId, input(worldId, mediumHub))).ok).toBe(true);
+      const joinedResponse = await app.inject({
+        method: 'GET',
+        url: '/api/airlines/founding-options',
+        headers: { cookie },
+      });
+      const joined = AirlineFoundingOptionsResponse.parse(joinedResponse.json());
+      expect(joined.memberships).toEqual([expect.objectContaining({ worldId })]);
+      expect(joined.worlds.find((entry) => entry.id === worldId)?.availability).toBe(
+        'already-founded',
+      );
     } finally {
       await app.close();
     }
