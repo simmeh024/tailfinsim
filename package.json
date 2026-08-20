@@ -27,6 +27,14 @@
     "db:migrate": "pnpm --filter @tailfin/server db:migrate",
     "db:studio": "pnpm --filter @tailfin/server db:studio",
     "db:check": "pnpm --filter @tailfin/server db:check",
+    "data:airports": "pnpm --filter @tailfin/server data:airports",
+    "data:classify": "pnpm --filter @tailfin/server data:classify",
+    "data:catchment": "pnpm --filter @tailfin/server data:catchment",
+    "data:timezones": "pnpm --filter @tailfin/server data:timezones",
+    "data:distances": "pnpm --filter @tailfin/server data:distances",
+    "world:seed": "pnpm --filter @tailfin/server world:seed",
+    "demand:generate": "pnpm --filter @tailfin/server demand:generate",
+    "admin": "pnpm --filter @tailfin/server admin",
     "ops:status": "pnpm --filter @tailfin/server ops:status"
   },
   "devDependencies": {

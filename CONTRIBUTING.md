@@ -104,7 +104,7 @@ share nothing.
 
 ### One-off jobs
 
-Everything below runs from `packages/server` and needs the package **built** first
+Everything below runs from anywhere in the repo and needs the package **built** first
 (`pnpm build:apps`), because each is a bundled entry point rather than a source file —
 `tsc` is the typechecker here, not the compiler (ADR-0001).
 
@@ -128,6 +128,13 @@ retuning them means `--regenerate`.
 run any time after `data:airports`. It sits here because it shares the GeoNames download
 with `data:catchment` — point both at the same `--cache` and `cities15000.zip` is fetched
 once. It is also safe to re-run; it updates in place.
+
+Each of these is a one-line proxy in the **root** `package.json` to the real script in
+`packages/server`, so the commands above work from anywhere in the repo. That is not
+cosmetic: they are documented here as `pnpm <name>`, and for a long time only `ops:status`
+had a proxy — so every other row in this table failed with
+`ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL` when anyone actually typed it. The direct form,
+`pnpm --filter @tailfin/server <name>`, works too.
 
 ### Local database
 
