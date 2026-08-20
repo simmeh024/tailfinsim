@@ -8,11 +8,13 @@ import {
   AirportIcaoCode,
   AirportSummary,
   CreateAirlineInput,
+  EconomyConfig,
   Flight,
   FlightKind,
   FlightPhase,
   ForceRenameAirlineInput,
   HealthResponse,
+  INITIAL_AIRLINE_REPUTATION,
   MinorUnits,
   PublicAirline,
   Reputation,
@@ -194,6 +196,31 @@ describe('Airline', () => {
     ).toBe(true);
     expect(Object.keys(ForceRenameAirlineInput.shape)).not.toContain('iataCode');
     expect(Object.keys(ForceRenameAirlineInput.shape)).not.toContain('icaoCode');
+  });
+});
+
+describe('EconomyConfig', () => {
+  const valid = {
+    version: 'v1',
+    airlineStartingPosition: { openingCashMinor: 50_000_000, freeHubAllowance: 1 },
+  };
+
+  it('validates the versioned starting position at runtime', () => {
+    expect(EconomyConfig.safeParse(valid).success).toBe(true);
+  });
+
+  it.each([
+    ['fractional money', { openingCashMinor: 500_000.5, freeHubAllowance: 1 }],
+    ['negative opening cash', { openingCashMinor: -1, freeHubAllowance: 1 }],
+    ['fractional hub allowance', { openingCashMinor: 50_000_000, freeHubAllowance: 1.5 }],
+    ['negative hub allowance', { openingCashMinor: 50_000_000, freeHubAllowance: -1 }],
+  ])('refuses %s', (_label, airlineStartingPosition) => {
+    expect(EconomyConfig.safeParse({ ...valid, airlineStartingPosition }).success).toBe(false);
+  });
+
+  it('keeps the fixed initial reputation outside tunable economy config', () => {
+    expect(INITIAL_AIRLINE_REPUTATION).toBe(0.35);
+    expect(EconomyConfig.safeParse({ ...valid, initialReputation: 0.5 }).success).toBe(false);
   });
 });
 

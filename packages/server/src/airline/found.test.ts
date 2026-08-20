@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   CreateAirlineResponse,
   FLAGSHIP_CONFIG,
+  INITIAL_AIRLINE_REPUTATION,
   type CreateAirlineInput,
   type WorldConfig,
   type WorldStatus,
@@ -13,6 +14,7 @@ import { buildApp } from '../app';
 import { createSession, SESSION_COOKIE } from '../auth/session';
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { airline, airlineHub, airport, player, world } from '../db/schema';
+import { ECONOMY_CONFIG_V1 } from '../economy/config';
 import { type ServerEnv } from '../env';
 import { createWorld } from '../world/lifecycle';
 
@@ -173,8 +175,8 @@ describeDb('founding an airline', () => {
     expect(result.airline).toMatchObject({
       worldId,
       playerId,
-      cash: 50_000_000,
-      reputation: 0.35,
+      cash: ECONOMY_CONFIG_V1.airlineStartingPosition.openingCashMinor,
+      reputation: INITIAL_AIRLINE_REPUTATION,
     });
     expect(result.hub).toMatchObject({
       airlineId: result.airline.id,
@@ -191,7 +193,13 @@ describeDb('founding an airline', () => {
       .from(airline)
       .innerJoin(airlineHub, eq(airlineHub.airlineId, airline.id))
       .where(and(eq(airline.worldId, worldId), eq(airline.playerId, playerId)));
-    expect(stored).toEqual([{ cash: 50_000_000, reputation: '0.35', founder: true }]);
+    expect(stored).toEqual([
+      {
+        cash: ECONOMY_CONFIG_V1.airlineStartingPosition.openingCashMinor,
+        reputation: '0.35',
+        founder: true,
+      },
+    ]);
   });
 
   it('rolls the airline back when granting its hub fails', async () => {
@@ -341,8 +349,8 @@ describeDb('founding an airline', () => {
       });
       expect(response.statusCode).toBe(201);
       const parsed = CreateAirlineResponse.parse(response.json());
-      expect(parsed.airline.cash).toBe(50_000_000);
-      expect(parsed.airline.reputation).toBe(0.35);
+      expect(parsed.airline.cash).toBe(ECONOMY_CONFIG_V1.airlineStartingPosition.openingCashMinor);
+      expect(parsed.airline.reputation).toBe(INITIAL_AIRLINE_REPUTATION);
       expect(parsed.airline.playerId).toBe(playerId);
       expect(parsed.hub.airportIdent).toBe(hubIdent);
     } finally {

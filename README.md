@@ -100,6 +100,10 @@ different build.
   choosing its identity, base country and first hub. Ownership, config-backed opening
   cash, initial reputation and the free hub commit together or not at all; database
   constraints arbitrate code collisions and return the submitted code in the refusal.
+- **A versioned airline starting position.** Worlds pin an immutable, runtime-validated
+  economy version that supplies opening cash and the free-hub allowance to founding.
+  Unknown versions are refused when a world is created rather than when its first player
+  arrives ([ADR-0008](docs/adr/0008-versioned-airline-starting-position.md)).
 - **Airline identity guardrails.** One shared schema gives Unicode display names and
   operational callsigns/codes explicit rules, with field-level failures. A permissive
   moderation interface sits on both founding and an audited admin force-rename remedy;
