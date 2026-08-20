@@ -60,7 +60,7 @@ Both rules exist so the simulation stays deterministic and the server stays auth
 
 | Check                     | Asks                                                 | Blocks?                         |
 | ------------------------- | ---------------------------------------------------- | ------------------------------- |
-| `typecheck · lint · test` | Does it build, lint, format and pass its tests?      | **Yes**                         |
+| `typecheck · lint · test` | Do builds, tests and the running Caddy policy pass?  | **Yes**                         |
 | `dependency review`       | Did this PR add a known-vulnerable dependency?       | **High/critical advisories**    |
 | CodeQL `analyze (…)`      | Does Tailfin's own code contain a dangerous pattern? | **Error or high/critical only** |
 
@@ -101,6 +101,10 @@ different build.
   integrity, then the identities and control paths that can change it. The model records the
   real single-host boundaries, attackers, ordinary operator mistakes and explicit non-goals
   in [ADR-0012](docs/adr/0012-tailfin-threat-model.md).
+- **A browser security boundary at Caddy.** CSP restricts code, connections and framing;
+  powerful unused browser features are denied; Google avatars have one narrow image-source
+  exception. The first edge rollout is report-only before enforcement, and HSTS preload is
+  deliberately deferred ([ADR-0014](docs/adr/0014-browser-security-policy.md)).
 - **Airline founding.** An authenticated player can found one airline in an open world,
   choosing its identity, base country and first hub. Ownership, config-backed opening
   cash, initial reputation and the free hub commit together or not at all; database

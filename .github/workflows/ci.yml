@@ -98,6 +98,20 @@ jobs:
         # and Vite compile from source rather than from `tsc -b` output.
         run: pnpm build:apps
 
+      - name: Test the running Caddy security policy
+        # Exercise the committed Caddyfile itself in report-only and enforced
+        # modes. The release archive is pinned and verified before execution;
+        # this keeps the test on the same Caddy version as the server runbook.
+        run: |
+          set -euo pipefail
+          caddy_archive=caddy_2.11.4_linux_amd64.tar.gz
+          curl -fsSLo "$caddy_archive" \
+            "https://github.com/caddyserver/caddy/releases/download/v2.11.4/$caddy_archive"
+          echo "527fbf917c39189a1e3b31d34fa955601680b2d5c8055d2a87b8b9588dec7bb9  $caddy_archive" \
+            | sha256sum --check
+          tar -xzf "$caddy_archive" caddy
+          pnpm security:headers --integration ./caddy
+
       - name: Verify the build produced what deploy expects
         # A build step on its own only proves the command exited zero. esbuild
         # writing an empty file, or an entry point quietly disappearing, would

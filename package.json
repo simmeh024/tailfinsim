@@ -35,7 +35,8 @@
     "world:seed": "pnpm --filter @tailfin/server world:seed",
     "demand:generate": "pnpm --filter @tailfin/server demand:generate",
     "admin": "pnpm --filter @tailfin/server admin",
-    "ops:status": "pnpm --filter @tailfin/server ops:status"
+    "ops:status": "pnpm --filter @tailfin/server ops:status",
+    "security:headers": "node deploy/verify-security-headers.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

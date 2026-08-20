@@ -189,6 +189,65 @@ repeated failed challenges. Once `dig +short tailfinsim.com` returns the instanc
 systemctl restart caddy
 ```
 
+### First security-policy rollout (SEC-HARD-05)
+
+The committed Caddyfile defaults to an **enforced** Content Security Policy. Do not copy it
+over a running edge for the first time and skip straight to that default. Install it in
+report-only mode first so the real Google redirect and Google-hosted avatar are exercised,
+not merely inferred from the policy text.
+
+The policy contains one SHA-256 style hash for the holding page's inline stylesheet. The
+automated check recomputes it; if the holding page changes, update the hash named by the
+failure instead of adding `unsafe-inline`.
+
+Create one narrowly scoped systemd override before the first reload:
+
+```bash
+install -d -m 755 /etc/systemd/system/caddy.service.d
+printf '%s\n' \
+  '[Service]' \
+  'Environment=TAILFIN_CSP_HEADER=Content-Security-Policy-Report-Only' \
+  > /etc/systemd/system/caddy.service.d/tailfin-csp.conf
+cp /srv/tailfin/deploy/Caddyfile /etc/caddy/Caddyfile
+TAILFIN_CSP_HEADER=Content-Security-Policy-Report-Only \
+  caddy validate --config /etc/caddy/Caddyfile
+systemctl daemon-reload
+systemctl reload caddy
+```
+
+From a checkout containing this change, prove what the running edge is returning:
+
+```bash
+pnpm security:headers --mode report-only \
+  https://tailfinsim.com/ https://dev.tailfinsim.com/
+```
+
+Then use a real browser on dev and check all of these while its console is open:
+
+1. sign out and complete Google sign-in from the login wall;
+2. load the signed-in shell and confirm the Google avatar renders;
+3. navigate between application routes and make a real same-origin API request;
+4. confirm there are no legitimate CSP violations (the holding page must also stay clean).
+
+The browser proof is mandatory even when the automated header check passes. The check proves
+delivery and exact values; it cannot prove that a browser journey needs no additional source.
+Record the observation with SEC-HARD-05, then remove only the temporary override and reload
+the enforced default:
+
+```bash
+rm /etc/systemd/system/caddy.service.d/tailfin-csp.conf
+systemctl daemon-reload
+caddy validate --config /etc/caddy/Caddyfile
+systemctl reload caddy
+pnpm security:headers --mode enforced \
+  https://tailfinsim.com/ https://dev.tailfinsim.com/
+```
+
+Repeat the browser sign-in/avatar journey after enforcement. `deploy.sh` and `deploy-dev.sh`
+do **not** install or reload Caddy configuration, so an application deploy is not evidence
+that this policy reached the edge. The decision, policy rationale and the deliberate choice
+not to add HSTS preload are in [ADR-0014](../docs/adr/0014-browser-security-policy.md).
+
 Optional — for certificate expiry emails:
 
 ```bash

@@ -63,6 +63,21 @@ session auth with httpOnly secure cookies, and same-origin means `SameSite=Lax` 
 with no CORS configuration, no cookie-domain juggling and no preflight on every call.
 Split them only when there is a reason, and take the cookie complexity on knowingly.
 
+**Browser security policy lives at the edge.** Caddy applies the same CSP, frame denial,
+Permissions Policy, HSTS, content-type and referrer controls to the holding page, application,
+API and error responses on both hosts. Google OAuth needs no CSP exception because it is a
+top-level navigation; the one external resource exception is
+`https://lh3.googleusercontent.com` for player avatars. The exact policy, rollout decision
+and rejected HSTS preload option are in
+[ADR-0014](adr/0014-browser-security-policy.md).
+
+The source default is enforced, while the first installation deliberately overrides the
+header name to `Content-Security-Policy-Report-Only`. The operator removes that override
+only after the real dev sign-in/avatar journey is clean, then repeats it with enforcement.
+This is an edge-config rollout, not an application deploy: neither deploy script copies
+`deploy/Caddyfile`. [`deploy/README.md`](../deploy/README.md#first-security-policy-rollout-sec-hard-05)
+has the commands, and `pnpm security:headers` asserts exact values against the running hosts.
+
 ### Sizing
 
 DreamCompute flavours and prices, read from the panel on 2026-08-17. The monthly figure
