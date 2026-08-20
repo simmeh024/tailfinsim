@@ -19,6 +19,12 @@ person's admin access. `packages/server/src/test-setup.ts` now refuses any datab
 name does not end in `_test` or `_ci`, but do not rely on the guard to remember the rule
 for you. Run them in CI.
 
+**Restore rehearsals have one destructive target: a database ending in `_test`.** Use
+`/usr/local/sbin/tailfin-restore-rehearsal`; it refuses every other name, refuses an existing
+target, downloads only from DreamObjects, and repeats the suffix check at `dropdb`. Do not
+turn its source object prefix into a live database connection. Record the measured output as
+the evidence; `/healthz` alone proves only that Postgres answered, not that the restore works.
+
 **Never `git add -A`.** Stage files explicitly, by path. A `.pem` was committed this way
 once. `.claude/` and other untracked directories sit in this working tree routinely.
 

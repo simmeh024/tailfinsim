@@ -292,9 +292,18 @@ answered, because the reasoning is more useful than the fact.
 - **Backups** — settled by OPS-03, well ahead of M13-11. Nightly `pg_dump` at 03:15 UTC,
   verified by reading each archive's table of contents back, uploaded to DreamObjects with
   7 nightly and 12 monthly copies retained, and **an upload failure is a backup failure** —
-  a dump that did not leave the box is not a backup. **The restore was rehearsed on
+  both the dump and its SHA-256 sidecar must leave the box. **The restore was rehearsed on
   2026-08-18** — which is how a 9.3 MB dump shrinking to 47 KB was noticed, and the dev
-  airport dataset recovered. A backup that has never been restored is still not a backup.
+  airport dataset recovered. OPS-04 made that sequence repeatable: the command accepts only
+  a `_test` target, downloads the newest off-box nightly, verifies it, migrates the restored
+  schema, boots an isolated server, checks domain data and the Flagship clock, records RTO/RPO,
+  and cleans up. The command-by-command procedure is in `deploy/README.md`.
+
+  That first rehearsal also enabled a real selective recovery: a destructive test had removed
+  the dev airport/runway dataset, while unrelated admin, world and audit changes continued.
+  The pre-damage object was preserved outside automatic retention and only the empty dataset
+  tables were restored. The runbook records the constraints; selective restore is an incident
+  technique, not the default recovery procedure.
 
   Failure reaches a human three ways, because each covers what the others cannot: the
   script pings a dead-man's-switch on finishing, `OnFailure=` catches a run that died
