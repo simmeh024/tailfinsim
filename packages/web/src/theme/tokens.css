@@ -60,6 +60,32 @@
   --status-loss: #f87171;
 
   --focus-ring: #8ccdff;
+
+  /*
+   * The console's own surfaces.
+   *
+   * The game's panels are translucent so the world stays visible behind them
+   * (H.4). The console has no world behind it and a different job — dense,
+   * opaque, and read for minutes rather than glanced at — so it gets its own
+   * ground rather than borrowing one that was designed to be seen through.
+   */
+  --console-bg: #070b11;
+  --console-bg-far: #0d1420;
+  --console-grid: rgb(148 163 184 / 4%);
+  --console-card: #111823;
+  --console-card-raised: #16202e;
+
+  /*
+   * Which box you are on.
+   *
+   * Not the status set: "production" is not an error, it is a place, and
+   * borrowing the cancelled red would make every production page read as
+   * broken. These are identity colours, and production is the loud one on
+   * purpose — this console can archive a world and revoke the last admin.
+   */
+  --env-production: #ff9f43;
+  --env-dev: #5eb8ff;
+  --env-local: #8b9ab1;
 }
 
 [data-theme='light'] {
@@ -94,6 +120,18 @@
   --status-loss: #b3261e;
 
   --focus-ring: #0a63b0;
+
+  /* See the dark set for why the console has its own ground. */
+  --console-bg: #eeeae3;
+  --console-bg-far: #f8f6f3;
+  --console-grid: rgb(30 41 59 / 5%);
+  --console-card: #fffefc;
+  --console-card-raised: #ffffff;
+
+  /* Darkened for AA contrast against a light background. */
+  --env-production: #a8500a;
+  --env-dev: #0a63b0;
+  --env-local: #5a6b82;
 }
 
 /*

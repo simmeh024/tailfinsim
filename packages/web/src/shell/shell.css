@@ -770,19 +770,26 @@ body {
   font-weight: 600;
 }
 
+/* Matches `.card__heading`, so the pages that still use sections read as the
+   same console rather than as a different era of it. */
 .admin__heading {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   margin-bottom: var(--space-2);
 }
 
+/* Carded like a panel, for the same reason. */
 .admin__section {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--console-card);
 }
 
 .admin__note {
@@ -930,17 +937,74 @@ body {
   inset: 0;
   display: flex;
   flex-direction: column;
+
+  /*
+   * The console's own ground, not the game's.
+   *
+   * Three layers: a faint grid that gives the surface a sense of scale, a soft
+   * radial lift behind the header so the page has a top rather than being a
+   * flat field, and the base colour under both. The grid is 4% of a slate —
+   * enough to read as texture at arm's length, not enough to compete with a
+   * table rule.
+   */
+  background:
+    linear-gradient(to right, var(--console-grid) 1px, transparent 1px) 0 0 / 48px 48px,
+    linear-gradient(to bottom, var(--console-grid) 1px, transparent 1px) 0 0 / 48px 48px,
+    radial-gradient(140% 100% at 50% -20%, var(--console-bg-far), transparent 100%),
+    var(--console-bg);
 }
 
 .console__bar {
   display: flex;
   align-items: center;
   gap: var(--space-4);
-  padding: 0 var(--space-4);
-  height: 3rem;
+  padding: 0 var(--space-6);
+  height: 3.25rem;
   flex: none;
   border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-raised);
+  background: var(--console-card);
+
+  /*
+   * Which box you are on, carried by the frame.
+   *
+   * A hairline rather than a banner: present on every page, impossible to miss
+   * once you know what it means, and not costing a row of vertical space on a
+   * screen that is read for minutes. The word in `.console__env` is what
+   * carries it in greyscale (H.4, H.7).
+   */
+  border-top: 3px solid var(--env-local);
+}
+
+.console[data-environment='production'] .console__bar {
+  border-top-color: var(--env-production);
+}
+
+.console[data-environment='dev'] .console__bar {
+  border-top-color: var(--env-dev);
+}
+
+.console[data-environment='unknown'] .console__bar {
+  border-top-color: var(--border-subtle);
+}
+
+.console__env {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid currentcolor;
+  color: var(--env-local);
+  white-space: nowrap;
+}
+
+.console__env[data-environment='production'] {
+  color: var(--env-production);
+}
+
+.console__env[data-environment='dev'] {
+  color: var(--env-dev);
 }
 
 /* The mark. Weight and letter-spacing rather than a colour, so it reads as an
@@ -1005,10 +1069,98 @@ body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--space-4);
+  padding: var(--space-6);
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--space-4);
+}
+
+/* ---------------------------------------------------- page head & panels ---- */
+
+.admin__pagehead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+/*
+ * Two columns once there is room for them.
+ *
+ * The single narrow ribbon this replaced used about a third of a wide viewport
+ * and left the rest empty, which on a status page means scrolling to see things
+ * that could have been side by side. Alerts and administrators are the reading
+ * column; system status and the backlog are the glancing one.
+ */
+.admin__columns {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.admin__column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+@media (max-width: 68rem) {
+  .admin__columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/*
+ * A card is the console's unit of content.
+ *
+ * NOT `.panel` — that name is taken, by the game's right-hand panel above: a
+ * fixed 22rem grid area with a backdrop filter and a left border. Reusing it
+ * here silently gave every console card a 352px width inside a 793px column,
+ * which typechecked, passed every test, and was only visible on screen.
+ *
+ * Opaque and carded, unlike the game's translucent surfaces — there is no world
+ * behind this and a border that reads clearly matters more than depth.
+ */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--console-card);
+}
+
+.card--quiet {
+  background: none;
+  border-style: dashed;
+}
+
+/* Headings sat below the body text they titled, in muted grey small-caps. A
+   section title has to out-rank its contents or it stops being a title. */
+.card__heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.card__count {
+  font-family: var(--font-figures);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--accent-quiet);
+  color: var(--accent);
 }
 
 /* ---------------------------------------------------------------- stats ---- */
@@ -1016,17 +1168,46 @@ body {
 .stats {
   display: flex;
   flex-wrap: wrap;
+  align-items: stretch;
   gap: var(--space-3);
+}
+
+/* Pushes reference data away from the live figures. Collapses to nothing when
+   the row wraps, so it never leaves a gap at the start of a line. */
+.stats__spacer {
+  flex: 1 1 var(--space-6);
+  min-width: 0;
 }
 
 .stat {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  min-width: 7rem;
+  min-width: 9rem;
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
+  background: var(--console-card);
+}
+
+/* A tile naming a page the nav already reaches should reach it too.
+   `color` and `text-decoration` are reset explicitly: there is no global anchor
+   reset in this file — every link component sets its own — and without these
+   the tile renders in the user agent's link blue, underlined. */
+.stat--link {
+  color: inherit;
+  text-decoration: none;
+  transition: border-color var(--motion-fast) var(--ease);
+}
+
+.stat--link:hover,
+.stat--link:focus-visible {
+  border-color: var(--accent);
+}
+
+.stat--link:hover .stat__value,
+.stat--link:focus-visible .stat__value {
+  color: var(--accent);
 }
 
 /* A count that should never be zero and is. Coloured rather than merely
@@ -1041,15 +1222,93 @@ body {
 }
 
 .stat__value {
-  font-size: var(--text-lg);
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.1;
   font-variant-numeric: tabular-nums;
+  transition: color var(--motion-fast) var(--ease);
 }
 
 .stat__label {
   font-size: var(--text-xs);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+/* The time dimension. Quiet, because it is context for the figure above rather
+   than a figure of its own. */
+.stat__trend {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* --------------------------------------------------------- system status ---- */
+
+.sysrows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sysrow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+/*
+ * Tone is carried by a glyph as well as a colour (H.4, H.7), so the row still
+ * says which way it is going in greyscale or to a colour-blind reader.
+ */
+.sysrow__glyph {
+  font-family: var(--font-figures);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  width: 1rem;
+  flex: none;
+  text-align: center;
+}
+
+.sysrow--ok .sysrow__glyph {
+  color: var(--status-ontime);
+}
+
+.sysrow--warn .sysrow__glyph {
+  color: var(--status-delayed);
+}
+
+.sysrow--bad .sysrow__glyph {
+  color: var(--status-cancelled);
+}
+
+.sysrow--idle .sysrow__glyph {
+  color: var(--text-muted);
+}
+
+.sysrow__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.sysrow__label {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.sysrow__headline {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.sysrow__detail {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
 }
 
 /* --------------------------------------------------------------- alerts ---- */
@@ -1059,38 +1318,87 @@ body {
   flex-direction: column;
   gap: var(--space-2);
   list-style: none;
-  max-width: 60rem;
 }
 
 .alert {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-2) var(--space-3);
-  border-left: 3px solid var(--border-subtle);
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-left-width: 3px;
   border-radius: var(--radius-sm);
-  background: var(--bg-panel);
+  background: var(--console-card-raised);
+}
+
+/* Severity was already on the wire and rendered the same for every level.
+   Colour on the rule, glyph in the gutter — neither alone. */
+.alert__glyph {
+  font-family: var(--font-figures);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  width: 1rem;
+  flex: none;
+  text-align: center;
 }
 
 .alert--error {
-  border-left-color: var(--status-cancelled, var(--status-delayed));
+  border-left-color: var(--status-cancelled);
+}
+
+.alert--error .alert__glyph {
+  color: var(--status-cancelled);
 }
 
 .alert--warning {
   border-left-color: var(--status-delayed);
 }
 
+.alert--warning .alert__glyph {
+  color: var(--status-delayed);
+}
+
 .alert--info {
   border-left-color: var(--accent);
 }
 
+.alert--info .alert__glyph {
+  color: var(--accent);
+}
+
+.alert__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
 .alert__message {
   font-size: var(--text-sm);
+  color: var(--text-primary);
 }
 
 .alert__detail {
   font-size: var(--text-xs);
   color: var(--text-muted);
+}
+
+/* An alert that describes a remedy and offers no route to it makes the reader
+   do the navigation twice. */
+.alert__action {
+  align-self: flex-start;
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.alert__action:hover,
+.alert__action:focus-visible {
+  color: var(--accent-hover);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 
 @media (max-width: 48rem) {

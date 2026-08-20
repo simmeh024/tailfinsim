@@ -89,9 +89,13 @@ export interface OverviewCounts {
   admins: number;
   airports: number;
   auditEntries: number;
+  /** Accounts created in the last seven days — see the trend note on the wire schema. */
+  newPlayers7d: number;
+  /** Audited admin actions in the last twenty-four hours. */
+  auditEntries24h: number;
 }
 
-/** Every count in one round trip. Five separate queries for five numbers is five times the latency. */
+/** Every count in one round trip. Seven separate queries for seven numbers is seven times the latency. */
 export async function countEverything(db: Database): Promise<OverviewCounts> {
   const rows = await db.execute<{
     players: number;
@@ -99,13 +103,19 @@ export async function countEverything(db: Database): Promise<OverviewCounts> {
     admins: number;
     airports: number;
     audit_entries: number;
+    new_players_7d: number;
+    audit_entries_24h: number;
   }>(sql`
     select
       (select count(*)::int from player)       as players,
       (select count(*)::int from world)        as worlds,
       (select count(*)::int from admin_grant)  as admins,
       (select count(*)::int from airport)      as airports,
-      (select count(*)::int from admin_audit)  as audit_entries
+      (select count(*)::int from admin_audit)  as audit_entries,
+      (select count(*)::int from player
+        where created_at > now() - interval '7 days')   as new_players_7d,
+      (select count(*)::int from admin_audit
+        where at > now() - interval '24 hours')         as audit_entries_24h
   `);
 
   const row = rows.rows[0];
@@ -115,6 +125,8 @@ export async function countEverything(db: Database): Promise<OverviewCounts> {
     admins: row?.admins ?? 0,
     airports: row?.airports ?? 0,
     auditEntries: row?.audit_entries ?? 0,
+    newPlayers7d: row?.new_players_7d ?? 0,
+    auditEntries24h: row?.audit_entries_24h ?? 0,
   };
 }
 
@@ -206,10 +218,58 @@ export function alertsFor(
   return alerts;
 }
 
+/**
+ * Whether anything is actually running, read from the queue.
+ *
+ * The same inference `buildWorldHealth` makes per world, collapsed to one row
+ * for the front page. Liveness comes from the queue rather than from the loop
+ * because a loop that reports its own health cannot report that it is not
+ * running — and today nothing runs it at all, which is precisely the state this
+ * has to be able to show.
+ *
+ * `min`/`max` over a timestamp come back as strings from the driver. Column
+ * type parsers do not apply to raw aggregates, and `sql<Date>` would be an
+ * assertion rather than a conversion, so this normalises at the boundary — the
+ * trap CLAUDE.md records.
+ */
+export async function engineStatus(db: Database): Promise<AdminOverviewResponse['engine']> {
+  const rows = await db.execute<{
+    pending: number;
+    oldest_pending: string | null;
+    last_processed: string | null;
+  }>(sql`
+    select
+      (select count(*)::int from world_event where status = 'pending')  as pending,
+      (select min(fire_at) from world_event where status = 'pending')   as oldest_pending,
+      (select max(processed_at) from world_event)                       as last_processed
+  `);
+
+  const row = rows.rows[0];
+  const iso = (value: string | null | undefined): string | null =>
+    value === null || value === undefined ? null : new Date(value).toISOString();
+
+  return {
+    pendingEvents: row?.pending ?? 0,
+    oldestPendingAt: iso(row?.oldest_pending),
+    lastProcessedAt: iso(row?.last_processed),
+  };
+}
+
 export async function buildOverview(
   db: Database,
   now: Date = new Date(),
 ): Promise<AdminOverviewResponse> {
-  const [counts, backup] = await Promise.all([countEverything(db), readBackupStatus()]);
-  return { counts, backup, alerts: alertsFor(counts, backup, now) };
+  const [counts, engine, backup] = await Promise.all([
+    countEverything(db),
+    engineStatus(db),
+    readBackupStatus(),
+  ]);
+
+  return {
+    counts,
+    trend: { newPlayers7d: counts.newPlayers7d, auditEntries24h: counts.auditEntries24h },
+    engine,
+    backup,
+    alerts: alertsFor(counts, backup, now),
+  };
 }

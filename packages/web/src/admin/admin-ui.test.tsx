@@ -63,6 +63,8 @@ const AUDIT: AdminAuditResponse = {
 
 const OVERVIEW = {
   counts: { players: 4, worlds: 1, admins: 1, airports: 85915, auditEntries: 12 },
+  trend: { newPlayers7d: 2, auditEntries24h: 4 },
+  engine: { pendingEvents: 0, oldestPendingAt: null, lastProcessedAt: null },
   backup: {
     finishedAt: '2026-08-18T03:18:55.000Z',
     result: 'ok',
@@ -222,11 +224,31 @@ describe('the console shell', () => {
     expect(within(nav).getByRole('link', { name: 'Overview' }).className).not.toContain('--active');
   });
 
+  it('says which box you are on, in the frame', async () => {
+    // The console can archive a world and revoke the last admin, and until this
+    // existed it looked identical on production and dev. The repository's most
+    // expensive recorded incident was environment confusion.
+    stubApi(ADMIN);
+    renderAt('/admin');
+
+    // The word, not just the colour — H.4 and H.7 both require that status
+    // never rides on hue alone, and a screenshot has no CSS.
+    expect(await screen.findByText('Dev')).toBeInTheDocument();
+  });
+
+  it('carries the environment on the console itself, so every page is marked', async () => {
+    stubApi(ADMIN);
+    renderAt('/admin');
+
+    await screen.findByText('Dev');
+    expect(document.querySelector('.console')?.getAttribute('data-environment')).toBe('dev');
+  });
+
   it('navigates between sections', async () => {
     stubApi(ADMIN);
     renderAt('/admin');
 
-    await screen.findByRole('heading', { name: /at a glance/i });
+    await screen.findByRole('heading', { name: /^overview$/i });
     screen.getByRole('link', { name: 'Worlds' }).click();
 
     expect(await screen.findByRole('heading', { name: /^worlds$/i })).toBeInTheDocument();
@@ -285,10 +307,49 @@ describe('the overview', () => {
   });
 
   it('reports the last backup, which is the point of putting it here', async () => {
+    // Keyed on age rather than on result: a run that succeeded nine days ago
+    // reads as "ok" if you only look at the result field, and it is not ok.
     stubApi(ADMIN);
     renderAt('/admin');
 
-    expect(await screen.findByText(/last backup 2026-08-18 03:18 UTC — ok/i)).toBeInTheDocument();
+    expect(await screen.findByText(/^Backup$/)).toBeInTheDocument();
+    expect(screen.getByText(/2026-08-18 03:18 UTC/)).toBeInTheDocument();
+    expect(screen.getByText(/2 uploaded off-box/)).toBeInTheDocument();
+  });
+
+  it('says when nothing is running, rather than looking healthy', async () => {
+    // The most surprising fact about Tailfin is that nothing drains the event
+    // queue. A console that reports counts and alerts without saying so looks
+    // healthy while the world is stopped.
+    stubApi(ADMIN);
+    renderAt('/admin');
+
+    expect(await screen.findByText(/nothing has run/i)).toBeInTheDocument();
+  });
+
+  it('gives an alert somewhere to go about it', async () => {
+    // "A second admin removes that" describes a remedy. Without a route, the
+    // reader has to do the navigation themselves.
+    stubApi(ADMIN);
+    renderAt('/admin');
+
+    const action = await screen.findByRole('link', { name: /find a second admin/i });
+    expect(action.getAttribute('href')).toBe('/admin/players');
+  });
+
+  it('makes a count a way into the page that lists it', async () => {
+    stubApi(ADMIN);
+    renderAt('/admin');
+
+    const players = await screen.findByRole('link', { name: /4 Players/i });
+    expect(players.getAttribute('href')).toBe('/admin/players');
+    expect(screen.getByRole('link', { name: /12 Audit entries/i }).getAttribute('href')).toBe(
+      '/admin/audit',
+    );
+
+    // Airports has no page of its own, so its tile stays inert rather than
+    // pretending to be clickable. `queryBy` because absence is the assertion.
+    expect(screen.queryByRole('link', { name: /Airports/i })).toBeNull();
   });
 
   it('lists who holds a grant', async () => {

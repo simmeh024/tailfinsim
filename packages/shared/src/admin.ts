@@ -345,6 +345,45 @@ export const AdminOverviewResponse = z.object({
     airports: z.number().int().nonnegative(),
     auditEntries: z.number().int().nonnegative(),
   }),
+  /**
+   * The same figures with a time dimension.
+   *
+   * A count on its own is a level, and a level cannot say whether anything is
+   * happening. "135 audit entries" is the same number on a busy Tuesday and on
+   * a box nobody has touched for a month; "135, 12 of them today" is two
+   * different stories.
+   *
+   * Deliberately only where a rate means something. There is no trend on
+   * airports, because the number moves when somebody runs an import and never
+   * otherwise — a sparkline there would imply a liveness it does not have.
+   */
+  trend: z.object({
+    /** Accounts created in the last seven days. */
+    newPlayers7d: z.number().int().nonnegative(),
+    /** Audited admin actions in the last twenty-four hours. */
+    auditEntries24h: z.number().int().nonnegative(),
+  }),
+  /**
+   * Whether anything is actually running.
+   *
+   * The most surprising fact about Tailfin is that nothing drains the event
+   * queue — `createTickLoop` and `drainDueEvents` are built, tested and called
+   * by no process in any environment. A console that reports counts and alerts
+   * without saying that is a console that looks healthy while the world is
+   * stopped.
+   *
+   * Liveness is inferred from the queue rather than read from the loop, for the
+   * same reason `buildWorldHealth` does it: a loop that reports its own health
+   * cannot report that it is not running. An empty queue and no processing is
+   * indistinguishable from a stopped engine, and that is the honest answer.
+   */
+  engine: z.object({
+    pendingEvents: z.number().int().nonnegative(),
+    /** Oldest unprocessed event, in game time. Null when the queue is empty. */
+    oldestPendingAt: Timestamp.nullable(),
+    /** When anything was last handled. Null means nothing ever has been. */
+    lastProcessedAt: Timestamp.nullable(),
+  }),
   backup: AdminBackupStatus.nullable(),
   alerts: z.array(AdminAlert),
 });

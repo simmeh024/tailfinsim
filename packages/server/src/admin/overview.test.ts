@@ -21,6 +21,8 @@ const HEALTHY: OverviewCounts = {
   admins: 2,
   airports: 85_915,
   auditEntries: 40,
+  newPlayers7d: 3,
+  auditEntries24h: 5,
 };
 
 const NOW = new Date('2026-08-18T18:00:00.000Z');
