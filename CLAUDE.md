@@ -25,6 +25,13 @@ target, downloads only from DreamObjects, and repeats the suffix check at `dropd
 turn its source object prefix into a live database connection. Record the measured output as
 the evidence; `/healthz` alone proves only that Postgres answered, not that the restore works.
 
+**Every new migration declares expand or contract.** After `0019_large_hellfire_club`, the
+first lines need `-- tailfin:migration-strategy expand` or
+`-- tailfin:migration-strategy contract-safe-after #<issue>`. The previous release must keep
+working against the result; the deploy deliberately leaves it serving when migration fails.
+Do not add down-migrations or bypass the policy for `CREATE INDEX CONCURRENTLY`—ADR-0016 owns
+the transaction, lock and recovery trade.
+
 **Never `git add -A`.** Stage files explicitly, by path. A `.pem` was committed this way
 once. `.claude/` and other untracked directories sit in this working tree routinely.
 
@@ -70,9 +77,10 @@ merged to main  →  CI green  →  dev deploys automatically   (OPS-17, not bui
 ```
 
 So **merge means _staged_, not released**, and `dev build − prod build` is the count of
-changes tested but not shipped. Three things argued against automating the last step:
-deploys run migrations, OPS-05 has no migration-failure strategy yet, and a failed health
-check does not roll back.
+changes tested but not shipped. Three things argued against automating the last step at that
+decision point: deploys run migrations, OPS-05 had no migration-failure strategy yet, and a
+failed health check does not roll back. OPS-05 is now resolved by ADR-0016; production
+promotion remains manual until a separate decision changes ADR-0003.
 
 The consequence is drift, and it used to be drift nobody could see — in August 2026
 production sat 27 commits behind `main` for a day, unnoticed. **`pnpm ops:status` answers
@@ -120,9 +128,11 @@ standing decision, not an oversight — it is where the user reviews work before
 holding page, and promoting the app is that one variable plus a deploy — not a different
 build. Never couple deployment to it.
 
-A deploy runs: fetch → `checkout --detach` → install → build → **migrate** → restart →
-health poll. A failure before the restart leaves the running service untouched. A failed
-health check does **not** roll back; the new code is already serving.
+A deploy runs: fetch → `checkout --detach` → install → build → migration preflight → verified
+local backup when files are pending → **atomic migrate** → restart → health poll. A migration
+failure reports whether the batch rolled back, fully committed or is unknown; every allowed
+schema is compatible with the old service left serving. A failed health check does **not** roll
+back; the new code is already serving.
 
 ---
 

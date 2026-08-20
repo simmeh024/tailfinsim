@@ -4,6 +4,8 @@
 - **Date:** 2026-08-17
 - **Amended:** 2026-08-19 — revisited under OPS-06 and kept, for a different reason than
   it was originally taken. See [Revisited](#revisited-august-2026--decision-kept).
+- **Amended:** 2026-08-20 — OPS-05 resolved migration failure under ADR-0016; production
+  promotion remains manual until this ADR is explicitly changed.
 - **Deciders:** @simmeh024
 
 ## Context
@@ -72,8 +74,9 @@ that is a convenience for the developer machine and unrelated to how production 
 
 - **Builds run on the production box.** A deploy needs dev dependencies and a few hundred
   MB of `node_modules`, and a broken build is discovered on the server rather than in CI.
-  Mitigated by ordering: build, then migrate, then restart — a failure at any step leaves
-  the running service untouched.
+  Mitigated by ordering: build, migration preflight, a verified recovery point when files are
+  pending, atomic migrate, then restart. A failure before restart leaves the running service
+  untouched and ADR-0016 requires the resulting schema to remain compatible with it.
 - **Rollback is slower and can itself fail.** Re-checkout plus rebuild takes minutes and
   depends on the build working, where moving an image tag took seconds and pointed at an
   artefact already known to build.
@@ -123,9 +126,11 @@ The argument that kept it in 2026 is about **the database**:
 
 - A deploy runs migrations. Applying a schema change to production with nobody watching is
   a different risk class from applying code.
-- [OPS-05](https://github.com/simmeh024/tailfinsim/issues/173) is still open, so there is
-  no migration-failure strategy. Automating the thing that runs migrations before deciding
-  what happens when one fails is the wrong order.
+- At the time, [OPS-05](https://github.com/simmeh024/tailfinsim/issues/173) was still open, so
+  there was no migration-failure strategy. Automating the thing that runs migrations before
+  deciding what happens when one fails would have been the wrong order. OPS-05 is now resolved
+  by [ADR-0016](0016-migration-failure-strategy.md): atomic batches, expand/contract
+  compatibility, a verified pre-migration dump and an explicit observed failure state.
 - A failed health check does **not** roll back. `deploy.sh` leaves the new code serving and
   exits non-zero, so the failure mode of an unattended deploy is a broken site nobody has
   been told about.
@@ -137,5 +142,7 @@ about to run (OPS-18). The workflow this defines is that **merge means _staged_*
 gap between dev's build number and production's is the count of changes tested but not
 released.
 
-Revisit _this_ revision when OPS-05 lands. A migration-failure strategy is the thing
-standing between here and continuous deployment, and it is the only one.
+OPS-05 has now landed, satisfying this revision's revisit signal. That removes one argument
+against continuous deployment; it does not silently reverse the manual-promotion decision.
+Revisit this ADR explicitly if OPS-17/OPS-18 or a later issue proposes production automation,
+including the still-open fact that a failed post-restart health check does not roll back.

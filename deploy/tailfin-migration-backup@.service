@@ -1,0 +1,26 @@
+[Unit]
+Description=Pre-migration backup for Tailfin database %i
+Documentation=https://github.com/simmeh024/tailfinsim/blob/main/deploy/README.md
+After=postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=oneshot
+User=postgres
+Group=postgres
+
+# The wrapper restricts %i to tailfin or tailfin_dev, then reuses the installed,
+# verified OPS-03 backup command in local-only mode. The deploy user may start
+# only those two exact unit instances through sudoers.
+ExecStart=/usr/local/sbin/tailfin-migration-backup %i
+TimeoutStartSec=1800
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tailfin-migration-backup
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/backups/tailfin /var/lib/tailfin

@@ -162,6 +162,25 @@ Generated migrations are **committed as SQL** under `packages/server/drizzle/`. 
 edit an applied migration — add a new one. Name them meaningfully with
 `drizzle-kit generate --name=what_it_does`, since the default is a random word pair.
 
+Every migration after `0019_large_hellfire_club` also declares its OPS-05 phase at the top:
+
+```sql
+-- tailfin:migration-strategy expand
+-- tailfin:migration-strategy contract-safe-after #123
+```
+
+Use `expand` when the previously deployed application can still read and write the resulting
+schema: new columns are nullable or have a database default, and old names and shapes remain.
+Use `contract-safe-after` only after an earlier released version stopped using the thing being
+removed; the issue named by the marker records that sequencing. The migration command and CI
+reject a missing marker, obvious contractions labelled expand, and SQL that cannot run in the
+atomic batch (`CREATE INDEX CONCURRENTLY`, `VACUUM`, and similar). The check catches syntax,
+not meaning—review still has to consider constraints, triggers and data transforms.
+
+Do not add down-migrations. A reverse migration can destroy data written by the forward one,
+and checking out old code never reverses schema. See
+[`ADR-0016`](docs/adr/0016-migration-failure-strategy.md).
+
 The database is created with `--locale=C`. Postgres sorts differently under different
 host locales, and ordering must not depend on a developer's OS language settings.
 
@@ -285,6 +304,8 @@ triage and rationale.
   runtime artefacts come from Vite (web) and esbuild (server). `tsc -b` emits
   declarations only.
 - **Migrations are committed as SQL**, never generated at runtime (M0-05).
+- **Migrations use atomic expand/contract**, with a verified pre-migration recovery point
+  during deploy (OPS-05 / ADR-0016).
 - **Connection config comes from the environment**, never hardcoded. See
   [`docs/deploy.md`](docs/deploy.md).
 - **One issue per PR** where practical; reference the issue key (`M0-03`) in the branch

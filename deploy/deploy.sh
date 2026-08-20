@@ -33,6 +33,15 @@ trap 'rm -f "$0"' EXIT
 REPO_DIR="${REPO_DIR:-/srv/tailfin}"
 SERVICE="${SERVICE:-tailfin}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3000/healthz}"
+MIGRATION_DATABASE="${MIGRATION_DATABASE:-tailfin}"
+
+case "${MIGRATION_DATABASE}" in
+  tailfin | tailfin_dev) ;;
+  *)
+    echo "REFUSED: MIGRATION_DATABASE must be tailfin or tailfin_dev" >&2
+    exit 2
+    ;;
+esac
 
 FORCE=0
 TARGET=""
@@ -137,11 +146,65 @@ cat > packages/server/dist/deploy-info.json <<JSON
 }
 JSON
 
+log "Checking migration state"
+# The backup unit takes a database name rather than a connection string, so
+# prove the application's actual connection resolves to the expected database.
+# This prints no credentials.
+ACTUAL_DATABASE="$(cd packages/server && node dist/migrate.js --database-name)" ||
+  die "migration preflight failed — database NOT touched; service still running ${PREVIOUS}"
+if [ "${ACTUAL_DATABASE}" != "${MIGRATION_DATABASE}" ]; then
+  die "configured database is ${ACTUAL_DATABASE}, expected ${MIGRATION_DATABASE} — database NOT touched"
+fi
+
+PENDING_MIGRATIONS="$(cd packages/server && node dist/migrate.js --pending-count)" ||
+  die "migration policy/preflight failed — database NOT touched; service still running ${PREVIOUS}"
+if [[ ! "${PENDING_MIGRATIONS}" =~ ^[0-9]+$ ]]; then
+  die "migration preflight returned an invalid pending count — database NOT touched"
+fi
+
+MIGRATION_BACKUP_STATUS="/var/lib/tailfin/migration-backup-${MIGRATION_DATABASE}.json"
+if [ "${PENDING_MIGRATIONS}" -gt 0 ]; then
+  log "Taking pre-migration backup (${PENDING_MIGRATIONS} pending)"
+  BACKUP_UNIT="tailfin-migration-backup@${MIGRATION_DATABASE}.service"
+  if ! sudo systemctl start "${BACKUP_UNIT}"; then
+    die "pre-migration backup failed — database NOT touched; inspect journalctl -u ${BACKUP_UNIT}"
+  fi
+  if [ ! -r "${MIGRATION_BACKUP_STATUS}" ]; then
+    die "pre-migration backup produced no readable status — database NOT touched"
+  fi
+  echo "backup: $(cat "${MIGRATION_BACKUP_STATUS}")"
+else
+  echo "no pending migrations — backup not needed"
+fi
+
 log "Applying migrations"
-# From packages/server so drizzle finds ./drizzle. If this fails the old
-# service is still serving, and the checkout is the only thing that moved.
-(cd packages/server && node dist/migrate.js) ||
-  die "migration failed — service NOT restarted, still running ${PREVIOUS}"
+# Drizzle's PostgreSQL migrator wraps the complete pending batch in one
+# transaction. The CLI reads the journal after a failure and uses distinct exit
+# codes so this message reports what the database actually says, including the
+# rare client-failed-after-commit case.
+set +e
+(cd packages/server && node dist/migrate.js --apply)
+MIGRATION_RESULT=$?
+set -e
+
+case "${MIGRATION_RESULT}" in
+  0) ;;
+  20)
+    die "migration failed — DATABASE ROLLED BACK to its pre-deploy schema; service NOT restarted, still running ${PREVIOUS}; backup ${MIGRATION_BACKUP_STATUS}"
+    ;;
+  21)
+    die "migration client failed — DATABASE REPORTS ALL PENDING MIGRATIONS APPLIED; service NOT restarted and remains compatible by policy; inspect before retrying"
+    ;;
+  22)
+    die "migration failed — DATABASE STATE UNKNOWN/PARTIAL; service NOT restarted; do not retry or roll code back before following the migration recovery runbook"
+    ;;
+  23)
+    die "migration was refused before SQL ran — DATABASE NOT TOUCHED; service NOT restarted, still running ${PREVIOUS}"
+    ;;
+  *)
+    die "migration command exited ${MIGRATION_RESULT} — DATABASE STATE UNKNOWN; service NOT restarted; follow the migration recovery runbook"
+    ;;
+esac
 
 log "Restarting ${SERVICE}"
 sudo systemctl restart "${SERVICE}"
