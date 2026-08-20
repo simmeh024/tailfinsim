@@ -78,13 +78,22 @@
   /*
    * Which box you are on.
    *
-   * Not the status set: "production" is not an error, it is a place, and
-   * borrowing the cancelled red would make every production page read as
-   * broken. These are identity colours, and production is the loud one on
-   * purpose — this console can archive a world and revoke the last admin.
+   * Their own tokens rather than the status set, because "production" is not an
+   * error — it is a place. But they must also be nothing else on the page, and
+   * the first attempt failed that: `--env-dev` was set to the same #5eb8ff as
+   * `--accent`, so the DEV chip was exactly the blue of every link and the
+   * active nav underline, and stopped reading as an environment marker at all.
+   * That is the mistake this file already warns about for the brand amber,
+   * made in the other direction.
+   *
+   * So: red for production, yellow for dev — the convention everyone already
+   * knows from every other console, and two hues that cannot be mistaken for
+   * one another at a glance. Neither is the accent. Both differ from the status
+   * set they sit nearest, and they only ever appear in the top chrome, never
+   * beside an inline status badge.
    */
-  --env-production: #ff9f43;
-  --env-dev: #5eb8ff;
+  --env-production: #ff5f56;
+  --env-dev: #ffd43b;
   --env-local: #8b9ab1;
 }
 
@@ -128,9 +137,11 @@
   --console-card: #fffefc;
   --console-card-raised: #ffffff;
 
-  /* Darkened for AA contrast against a light background. */
-  --env-production: #a8500a;
-  --env-dev: #0a63b0;
+  /* Darkened for AA contrast against a light background — a literal yellow on
+     off-white is unreadable, so dev becomes a deep amber and keeps the hue
+     without losing the text. */
+  --env-production: #b3261e;
+  --env-dev: #8a5a00;
   --env-local: #5a6b82;
 }
 

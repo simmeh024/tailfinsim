@@ -81,6 +81,47 @@ describe('colour literals', () => {
     },
   );
 
+  it('never gives an environment the interaction accent', () => {
+    /*
+     * The bug this exists to stop, which shipped once: `--env-dev` was set to
+     * the same #5eb8ff as `--accent`, so the DEV chip was exactly the blue of
+     * every link and of the active nav underline. It rendered perfectly and
+     * meant nothing — an environment marker indistinguishable from ordinary
+     * chrome is not a marker.
+     *
+     * Environments must also differ from *each other*: telling production from
+     * dev at a glance is the entire job, and this console can archive a world
+     * and revoke the last admin.
+     */
+    const tokens = readFileSync(TOKEN_FILE, 'utf8');
+
+    const valuesIn = (selector: string): Record<string, string> => {
+      const block = tokens.slice(tokens.indexOf(selector));
+      const body = block.slice(block.indexOf('{'), block.indexOf('}'));
+      return Object.fromEntries(
+        [...body.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;]+);/g)].map((m) => [
+          m[1]!,
+          m[2]!.trim().toLowerCase(),
+        ]),
+      );
+    };
+
+    for (const selector of [':root,', "[data-theme='light']"]) {
+      const v = valuesIn(selector);
+      const envs = ['--env-production', '--env-dev', '--env-local'];
+
+      for (const env of envs) {
+        expect(v[env], `${env} is missing in ${selector}`).toBeDefined();
+        expect(v[env], `${env} must not be the interaction accent (${selector})`).not.toBe(
+          v['--accent'],
+        );
+      }
+
+      const distinct = new Set(envs.map((e) => v[e]));
+      expect(distinct.size, `environments must be distinguishable (${selector})`).toBe(envs.length);
+    }
+  });
+
   it('does define colours in the token file', () => {
     const tokens = readFileSync(TOKEN_FILE, 'utf8');
     expect(/#[0-9a-fA-F]{6}\b/.test(tokens)).toBe(true);
