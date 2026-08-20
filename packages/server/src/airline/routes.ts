@@ -4,6 +4,8 @@ import {
   ForceRenameAirlineInput,
   Uuid,
   apiErrorJsonSchema,
+  airlineFoundingAirportListResponseJsonSchema,
+  airlineFoundingOptionsResponseJsonSchema,
   airlineCodeAvailabilityResponseJsonSchema,
   createAirlineResponseJsonSchema,
   forceRenameAirlineResponseJsonSchema,
@@ -14,11 +16,12 @@ import { type DatabaseHandle } from '../db/client';
 
 import { checkAirlineCodeAvailability } from './codes';
 import { foundAirline, type FoundAirlineDependencies, type FoundAirlineResult } from './found';
+import { listAirlineFoundingOptions, searchAirlineFoundingAirports } from './founding-options';
 import { forceRenameAirline } from './rename';
 
 import type { FastifyInstance, FastifyReply } from 'fastify';
 
-/** Founding (AIR-01) and AIR-02's audited moderation remedy. Player UI comes later. */
+/** Founding, AIR-07's player read model, and AIR-02's audited moderation remedy. */
 
 export interface AirlineRoutesOptions extends FoundAirlineDependencies {
   db: DatabaseHandle;
@@ -101,6 +104,31 @@ export function registerAirlineRoutes(
   app: FastifyInstance,
   { db, identityModerator, codePolicy }: AirlineRoutesOptions,
 ): void {
+  /** Server-owned world terms used both by the landing redirect and the founding desk. */
+  app.get(
+    '/api/airlines/founding-options',
+    {
+      onRequest: app.requireAuth,
+      schema: { response: { 200: airlineFoundingOptionsResponseJsonSchema } },
+    },
+    async (request, reply) => {
+      const playerId = request.player?.id;
+      if (playerId === undefined) return;
+      return reply.code(200).send(await listAirlineFoundingOptions(db.db, playerId));
+    },
+  );
+
+  /** Searchable founder-hub list; the empty query is the three recommendations. */
+  app.get<{ Querystring: { q?: string } }>(
+    '/api/airlines/founding-airports',
+    {
+      onRequest: app.requireAuth,
+      schema: { response: { 200: airlineFoundingAirportListResponseJsonSchema } },
+    },
+    async (request, reply) =>
+      reply.code(200).send(await searchAirlineFoundingAirports(db.db, request.query.q)),
+  );
+
   /**
    * Founding-form convenience only. The response says explicitly that no code
    * is reserved; the unique constraints in the founding transaction decide.

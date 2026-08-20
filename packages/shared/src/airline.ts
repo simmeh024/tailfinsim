@@ -1,10 +1,13 @@
 import { z } from 'zod';
 
+import { AirportTier, SlotLevel } from './airport';
 import { ApiError } from './api';
 import {
   AirlineIataCode,
   AirlineIcaoCode,
   AirportIdent,
+  AirportIataCode,
+  AirportIcaoCode,
   CountryCode,
   MinorUnits,
   Reputation,
@@ -162,6 +165,63 @@ export const CreateAirlineResponse = z.object({
   hub: AirlineHub,
 });
 export type CreateAirlineResponse = z.infer<typeof CreateAirlineResponse>;
+
+/** One existing airline used to decide whether `/` opens the game or the founding desk. */
+export const AirlineFoundingMembership = Airline.pick({ id: true, worldId: true });
+export type AirlineFoundingMembership = z.infer<typeof AirlineFoundingMembership>;
+
+/**
+ * An open world's server-owned terms for the founding desk (AIR-07).
+ *
+ * Starting cash is sent rather than duplicated in the client: it is a pinned
+ * economy value, and the balance-in-config invariant applies to display just as
+ * much as it applies to the founding write.
+ */
+export const AirlineFoundingWorld = z.object({
+  id: Uuid,
+  name: z.string().min(1),
+  openingCashMinor: MinorUnits.nonnegative(),
+  freeHubAllowance: z.number().int().nonnegative(),
+  playerCap: z.number().int().positive().nullable(),
+  airlines: z.number().int().nonnegative(),
+  availability: z.enum(['available', 'already-founded', 'full']),
+});
+export type AirlineFoundingWorld = z.infer<typeof AirlineFoundingWorld>;
+
+/** Everything needed to choose a world without exposing the admin world API. */
+export const AirlineFoundingOptionsResponse = z.object({
+  memberships: z.array(AirlineFoundingMembership),
+  worlds: z.array(AirlineFoundingWorld),
+});
+export type AirlineFoundingOptionsResponse = z.infer<typeof AirlineFoundingOptionsResponse>;
+
+/**
+ * A searchable founder-hub candidate.
+ *
+ * Exact airport fee schedules do not exist yet, so the response does not
+ * fabricate one. It states the real acquisition cost (the founder grant makes
+ * it zero) and carries a server-authored warning for high-cost/slot-scarce
+ * tiers. Later airport-fee work can replace the warning with exact figures.
+ */
+export const AirlineFoundingAirport = z.object({
+  ident: AirportIdent,
+  icao: AirportIcaoCode.nullable(),
+  iata: AirportIataCode.nullable(),
+  name: z.string().min(1),
+  city: z.string().min(1).nullable(),
+  country: CountryCode,
+  tier: AirportTier,
+  slotLevel: SlotLevel.nullable(),
+  foundingCostMinor: z.literal(0),
+  feeWarning: z.string().min(1).nullable(),
+});
+export type AirlineFoundingAirport = z.infer<typeof AirlineFoundingAirport>;
+
+export const AirlineFoundingAirportListResponse = z.object({
+  airports: z.array(AirlineFoundingAirport),
+  query: z.string(),
+});
+export type AirlineFoundingAirportListResponse = z.infer<typeof AirlineFoundingAirportListResponse>;
 
 /**
  * Expected player-context refusals for endpoints that operate on "my airline".

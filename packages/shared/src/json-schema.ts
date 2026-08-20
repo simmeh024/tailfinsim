@@ -14,6 +14,8 @@ import {
   AdminWorldListResponse,
 } from './admin';
 import {
+  AirlineFoundingAirportListResponse,
+  AirlineFoundingOptionsResponse,
   AirlineCodeAvailabilityResponse,
   AirlineCodeUnavailableError,
   CreateAirlineResponse,
@@ -46,6 +48,12 @@ export const logoutResponseJsonSchema = z.toJSONSchema(LogoutResponse);
 export const revokeSessionsResponseJsonSchema = z.toJSONSchema(RevokeSessionsResponse);
 export const versionResponseJsonSchema = z.toJSONSchema(VersionResponse);
 export const createAirlineResponseJsonSchema = z.toJSONSchema(CreateAirlineResponse);
+export const airlineFoundingOptionsResponseJsonSchema = z.toJSONSchema(
+  AirlineFoundingOptionsResponse,
+);
+export const airlineFoundingAirportListResponseJsonSchema = z.toJSONSchema(
+  AirlineFoundingAirportListResponse,
+);
 export const airlineCodeAvailabilityResponseJsonSchema = z.toJSONSchema(
   AirlineCodeAvailabilityResponse,
 );

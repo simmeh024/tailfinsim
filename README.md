@@ -118,7 +118,10 @@ different build.
 - **Airline founding.** An authenticated player can found one airline in an open world,
   choosing its identity, base country and first hub. Ownership, config-backed opening
   cash, initial reputation and the free hub commit together or not at all; database
-  constraints arbitrate code collisions and return the submitted code in the refusal.
+  constraints arbitrate code collisions and return the submitted code in the refusal. The
+  no-menu `/found` desk reads those starting terms from the server, searches real tiered
+  airports, warns without blocking an ambitious flagship choice, offers taken-code
+  alternatives inline, and lands a successful founder on the network page.
 - **A versioned airline starting position.** Worlds pin an immutable, runtime-validated
   economy version that supplies opening cash and the free-hub allowance to founding.
   Unknown versions are refused when a world is created rather than when its first player
@@ -155,8 +158,10 @@ different build.
 - **No fleet, crew or cabin.** Aircraft are a `uuid` with no catalogue behind it (M4),
   crew and ground handling are inputs the models take rather than systems (M5), and the
   livery and cabin builders are M6.
-- **No player-facing client.** The founding API exists, but its guided screen and the
-  rest of the game client are not built; the front door still serves a holding page.
+- **Most of the player client.** The standalone founding desk and network/fare page are real;
+  world, fleet, finance, crew, design and board remain labelled placeholders, and the guided
+  ninety-minute onboarding is still M10-01. The production front door still serves a holding
+  page.
 
 ### Where it runs
 
