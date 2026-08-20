@@ -20,7 +20,8 @@ import {
   settleFlight,
 } from '@tailfin/sim';
 
-import { airline, airport, flight, flightResult } from '../db/schema';
+import { moveAirlineCash } from '../airline/cash';
+import { airport, flight, flightResult } from '../db/schema';
 
 import type { Database } from '../db/client';
 import type { EventHandler } from '../sim/event-queue';
@@ -44,11 +45,11 @@ import type { EventHandler } from '../sim/event-queue';
  *
  * ## Replaying is a no-op, by construction
  *
- * `flight_result.flight_id` is unique. A second settlement of the same flight is
- * refused **by the database**, not by a check this code has to remember to do,
- * and the insert uses that: if it reports no row, the cash update never runs.
- * That is what makes M2-06's idempotency criterion a property of the schema
- * rather than a promise — see the note on the table.
+ * `flight_result.flight_id` and AIR-06's cash-movement `(cause, reference)` are
+ * both unique. A second settlement of the same flight is refused **by the
+ * database**, not by a check this code has to remember to do. That is what
+ * makes M2-06's idempotency criterion a property of the schema rather than a
+ * promise — see the notes on both tables.
  *
  * Two workers racing land in the same place. Both take the flight row `FOR
  * UPDATE` first, so the second waits, then finds the row already written and
@@ -232,13 +233,18 @@ export async function settleArrivedFlight(
 
   if (written.length === 0) return { status: 'already-settled' };
 
-  // `cash = cash + net` in SQL, not read-modify-write: two settlements committing
-  // against the same airline must both be reflected, and a value computed in
-  // JavaScript from a row read earlier would silently drop one of them.
-  await tx
-    .update(airline)
-    .set({ cashMinor: sql`${airline.cashMinor} + ${settlement.netMinor}` })
-    .where(eq(airline.id, row.airlineId));
+  const cash = await moveAirlineCash(tx, {
+    airlineId: row.airlineId,
+    amountMinor: settlement.netMinor,
+    cause: 'flight_settlement',
+    reference: row.id,
+    occurredAt: arrivedAt,
+  });
+  if (cash.status !== 'applied') {
+    // A result inserted in this transaction cannot legitimately find a prior
+    // movement. Treat it as ledger drift and roll the whole settlement back.
+    throw new Error(`Flight ${row.id} had a cash movement before its result`);
+  }
 
   // The flight's own arrival. `actualArrival` is only written if it is not
   // already set — a diversion or an air return records its own arrival, and this

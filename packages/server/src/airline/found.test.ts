@@ -15,11 +15,12 @@ import {
 import { buildApp } from '../app';
 import { createSession, SESSION_COOKIE } from '../auth/session';
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { airline, airlineHub, airport, player, world } from '../db/schema';
+import { airline, airlineHub, airport, cashMovement, player, world } from '../db/schema';
 import { ECONOMY_CONFIG_V1 } from '../economy/config';
 import { type ServerEnv } from '../env';
 import { createWorld } from '../world/lifecycle';
 
+import { reconcileAirlineCash } from './cash';
 import { foundAirline } from './found';
 
 /**
@@ -202,6 +203,24 @@ describeDb('founding an airline', () => {
         founder: true,
       },
     ]);
+
+    const movements = await db.db
+      .select()
+      .from(cashMovement)
+      .where(eq(cashMovement.airlineId, result.airline.id));
+    expect(movements).toHaveLength(1);
+    expect(movements[0]).toMatchObject({
+      airlineId: result.airline.id,
+      amountMinor: ECONOMY_CONFIG_V1.airlineStartingPosition.openingCashMinor,
+      cause: 'airline_founding',
+      reference: result.airline.id,
+      balanceAfterMinor: ECONOMY_CONFIG_V1.airlineStartingPosition.openingCashMinor,
+    });
+    expect(await reconcileAirlineCash(db.db, result.airline.id)).toMatchObject({
+      balanceMinor: ECONOMY_CONFIG_V1.airlineStartingPosition.openingCashMinor,
+      movementTotalMinor: ECONOMY_CONFIG_V1.airlineStartingPosition.openingCashMinor,
+      reconciles: true,
+    });
   });
 
   it('rolls the airline back when granting its hub fails', async () => {

@@ -14,6 +14,7 @@ import { type Database } from '../db/client';
 import { airline, airlineHub, airport, world } from '../db/schema';
 import { economyConfigFor } from '../economy/config';
 
+import { moveAirlineCash } from './cash';
 import {
   airlineCodeAvailabilityAdvisory,
   availableAirlineCodeAlternatives,
@@ -194,7 +195,6 @@ export async function foundAirline(
           icaoCode: input.icaoCode,
           callsign: input.callsign,
           baseCountry: input.baseCountry,
-          cashMinor: openingCashMinor,
           // Fixed by §15 and intentionally not economy config (AIR-03). It is
           // supplied explicitly so founding never depends on an omitted field.
           reputation: String(INITIAL_AIRLINE_REPUTATION),
@@ -202,6 +202,17 @@ export async function foundAirline(
         .returning();
       const createdAirline = createdAirlines[0];
       if (!createdAirline) throw new Error('Founding inserted no airline');
+
+      const openingMovement = await moveAirlineCash(tx, {
+        airlineId: createdAirline.id,
+        amountMinor: openingCashMinor,
+        cause: 'airline_founding',
+        reference: createdAirline.id,
+        occurredAt: createdAirline.createdAt,
+      });
+      if (openingMovement.status !== 'applied') {
+        throw new Error(`Founding cash already existed for new airline ${createdAirline.id}`);
+      }
 
       const createdHubs = await tx
         .insert(airlineHub)
@@ -216,7 +227,10 @@ export async function foundAirline(
 
       return {
         ok: true,
-        airline: wireAirline(createdAirline),
+        airline: wireAirline({
+          ...createdAirline,
+          cashMinor: openingMovement.movement.balanceAfterMinor,
+        }),
         hub: {
           id: createdHub.id,
           airlineId: createdHub.airlineId,

@@ -37,7 +37,9 @@ Registered payloads are parsed at runtime and frozen. A change creates a new ver
 never mutates a version a world may already pin. World creation rejects an unknown economy
 version at both the admin-validation boundary and the lifecycle service boundary. Founding
 locks the world row, resolves its pinned version, and applies that version's opening cash
-and hub grant in the same transaction as the airline.
+and hub grant in the same transaction as the airline. AIR-06 posts the opening cash through
+the `airline_founding` movement rather than assigning `cash_minor` directly, so the first
+balance a new airline sees is already explainable (ADR-0011).
 
 The current founding flow selects and grants exactly one hub. A config whose allowance is
 not exactly one fails explicitly instead of silently granting fewer hubs than it promises.
@@ -59,6 +61,8 @@ only establishes the validated payload and pinning semantics they must preserve.
   economy version exists.
 - A misspelled or unavailable version is rejected before players enter the world.
 - Founding has no duplicated opening-cash literal to drift from configuration.
+- Opening cash, ownership and the founder hub either commit with one movement or all roll
+  back together.
 - The future database loader already has a shared runtime schema for its initial payload.
 
 ### What this makes harder
