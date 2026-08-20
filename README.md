@@ -96,6 +96,10 @@ different build.
   split into business, leisure and VFR.
 - **Accounts.** Google OAuth, database-backed sessions, admin grants, and an append-only
   audit log the database itself refuses to let anyone edit.
+- **A repository-specific threat model.** Security work prioritises the persistent world's
+  integrity, then the identities and control paths that can change it. The model records the
+  real single-host boundaries, attackers, ordinary operator mistakes and explicit non-goals
+  in [ADR-0012](docs/adr/0012-tailfin-threat-model.md).
 - **Airline founding.** An authenticated player can found one airline in an open world,
   choosing its identity, base country and first hub. Ownership, config-backed opening
   cash, initial reputation and the free hub commit together or not at all; database
