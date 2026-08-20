@@ -213,6 +213,7 @@ export async function settleArrivedFlight(
       kind: row.kind,
       seats: settlement.seats,
       passengers: settlement.passengers,
+      spilledPassengers: settlement.spilled,
       cargoKg: row.cargoKg,
       blockSeconds: Math.max(1, Math.round(block.blockMinutes * 60)),
       arrivalDelayMinutes: delayMinutes,

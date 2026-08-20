@@ -8,15 +8,18 @@
  *                  competing for that pool, actually gets the passengers
  *   `sched-fit`  — A.3's `SchedFit` term: whether an operator's departures
  *                  fall at hours the segment actually wants to fly
+ *   `capacity`   — A.5's spill and recapture: demand is not bookings, and the
+ *                  passengers you turn away are a signal worth showing
  *
  * The first two are A.2's whole of step one — how big the market is, and how
  * big it is *today*. The third is the arbiter that splits it, and the one whose
  * exact decomposability the game's explainability rests on (A.9).
  *
- * What follows demand is not here yet: spill and recapture are A.5 (M3-05), and
- * connecting itineraries are A.14 (M3-07). `logit` returns demand, which is
- * deliberately not the same thing as bookings.
+ * What follows is not here yet: connecting itineraries are A.14 (M3-07) and the
+ * booking curve that loads a specific departure is A.15 (M3-08). `logit`
+ * returns demand; `capacity` turns it into bookings.
  */
+export * from './capacity';
 export * from './gravity';
 export * from './logit';
 export * from './modulation';

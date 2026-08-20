@@ -91,6 +91,14 @@ export interface FlightSettlement {
   seats: number;
   /** Passengers actually carried. */
   passengers: number;
+  /**
+   * Passengers who wanted this flight and could not get on (A.5, M3-05).
+   *
+   * Carried straight through from the load. A.5 asks the game to be able to
+   * say "you turned away 40 passengers a day", and it is not recoverable from
+   * anything else on a settled flight.
+   */
+  spilled: number;
   /** `passengers / seats`, or 0 for a flight with no seats. The headline operating number. */
   loadFactor: number;
   /** Belly freight carried, in kilograms (§12.1). */
@@ -269,14 +277,24 @@ function round(value: number, places = 1): string {
   });
 }
 
-/** Seats and passengers across every class, in cabin order. */
+/** Seats, passengers and spill across every class, in cabin order. */
 export function summariseLoad(load: FlightLoad): {
   seats: number;
   passengers: number;
   revenueMinor: number;
+  /**
+   * Passengers turned away, summed across cabins (A.5, M3-05).
+   *
+   * Carried through settlement rather than computed from it, because spill
+   * cannot be recovered from a settled flight: a full aircraft looks the same
+   * whether it turned away nobody or two hundred, and that difference is the
+   * whole strategic signal.
+   */
+  spilled: number;
 } {
   let seats = 0;
   let passengers = 0;
+  let spilled = 0;
   const revenues: number[] = [];
 
   for (const cabin of CLASS_ORDER) {
@@ -289,12 +307,22 @@ export function summariseLoad(load: FlightLoad): {
         `${cabin} carried ${String(entry.passengers)} passengers in ${String(entry.seats)} seats`,
       );
     }
+    // Absent means "not recorded" — every load written before M3-05 predates
+    // the field — and that reads as zero here without pretending it was measured.
+    const turnedAway = entry.spilled ?? 0;
+    assertNonNegative(turnedAway, `Spilled passengers in ${cabin}`);
+    if (turnedAway > 0 && entry.passengers < entry.seats) {
+      throw new Error(
+        `${cabin} spilled ${String(turnedAway)} passengers with ${String(entry.seats - entry.passengers)} seats empty`,
+      );
+    }
     seats += entry.seats;
     passengers += entry.passengers;
+    spilled += turnedAway;
     revenues.push(entry.revenue);
   }
 
-  return { seats, passengers, revenueMinor: sumMinor(revenues) };
+  return { seats, passengers, revenueMinor: sumMinor(revenues), spilled };
 }
 
 /**
@@ -315,7 +343,7 @@ export function settleFlight(
   assertNonNegative(aircraft.maxTakeoffWeightT, 'Maximum takeoff weight');
   assertNonNegative(block.blockMinutes, 'Block minutes');
 
-  const { seats, passengers, revenueMinor: ticketsMinor } = summariseLoad(load);
+  const { seats, passengers, revenueMinor: ticketsMinor, spilled } = summariseLoad(load);
 
   // A ferry is refused rather than silently zeroed. Zeroing would make a
   // mis-typed flight settle to a plausible-looking number; refusing makes it a
@@ -426,6 +454,7 @@ export function settleFlight(
     costs,
     seats,
     passengers,
+    spilled,
     loadFactor: seats === 0 ? 0 : passengers / seats,
     cargoKg,
     blockMinutes: block.blockMinutes,

@@ -1196,6 +1196,20 @@ export const flightResult = pgTable(
 
     seats: integer('seats').notNull(),
     passengers: integer('passengers').notNull(),
+    /**
+     * Passengers this flight turned away (App. A.5, M3-05).
+     *
+     * Stored rather than derived, because it cannot be derived: a settled
+     * flight at 100% load factor looks identical whether it spilled nobody or
+     * two hundred, and the difference is the whole strategic signal — A.5 wants
+     * the game to say *"you turned away 40 passengers a day"*, which is what
+     * tells a player to upgauge rather than to celebrate a full aeroplane.
+     *
+     * Defaults to 0 so every result written before M3-05 stays valid; that
+     * reads as "none recorded", and the rows that predate the column are
+     * distinguishable by their settlement version.
+     */
+    spilledPassengers: integer('spilled_passengers').notNull().default(0),
     cargoKg: integer('cargo_kg').notNull().default(0),
 
     /**
@@ -1244,6 +1258,19 @@ export const flightResult = pgTable(
     check(
       'flight_result_passengers_fit',
       sql`${t.passengers} >= 0 AND ${t.passengers} <= ${t.seats}`,
+    ),
+    /**
+     * Spill is only possible on a full aircraft (A.5, M3-05).
+     *
+     * If seats were empty, whoever was turned away could have sat in one — so a
+     * row claiming both is arithmetically impossible rather than merely odd,
+     * and the database is the right place to say so. The same rule is enforced
+     * in `summariseLoad`; this is the copy that a new write path cannot forget.
+     */
+    check(
+      'flight_result_spill_needs_a_full_aircraft',
+      sql`${t.spilledPassengers} >= 0
+          AND (${t.spilledPassengers} = 0 OR ${t.passengers} = ${t.seats})`,
     ),
     check('flight_result_cargo_nonneg', sql`${t.cargoKg} >= 0`),
     check('flight_result_block_positive', sql`${t.blockSeconds} > 0`),
