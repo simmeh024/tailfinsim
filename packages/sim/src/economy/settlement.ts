@@ -47,7 +47,8 @@
  * not representable.
  */
 
-import type { AirportFees, CabinClass, FlightKind, FlightLoad } from '@tailfin/shared';
+import { CABIN_ORDER } from '@tailfin/shared';
+import type { AirportFees, FlightKind, FlightLoad } from '@tailfin/shared';
 
 import { minorFromMajor, roundMinor, sumMinor } from './money';
 
@@ -255,8 +256,6 @@ export const COST_SOURCES: readonly CostSource[] = [
 ];
 
 /** Cabin classes in cabin order, so a breakdown reads front to back. */
-const CLASS_ORDER: readonly CabinClass[] = ['first', 'business', 'premium_economy', 'economy'];
-
 function assertNonNegative(value: number, what: string): void {
   if (!Number.isFinite(value) || value < 0) {
     throw new Error(`${what} must be zero or more, got ${String(value)}`);
@@ -297,7 +296,7 @@ export function summariseLoad(load: FlightLoad): {
   let spilled = 0;
   const revenues: number[] = [];
 
-  for (const cabin of CLASS_ORDER) {
+  for (const cabin of CABIN_ORDER) {
     const entry = load[cabin];
     if (!entry) continue;
     assertNonNegative(entry.seats, `Seats in ${cabin}`);

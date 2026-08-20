@@ -10,6 +10,8 @@
  *                  fall at hours the segment actually wants to fly
  *   `capacity`   — A.5's spill and recapture: demand is not bookings, and the
  *                  passengers you turn away are a signal worth showing
+ *   `class-allocation` — A.6's per-cabin run: the same models again, once per
+ *                  cabin, on that cabin's own pool, fares and seats
  *
  * The first two are A.2's whole of step one — how big the market is, and how
  * big it is *today*. The third is the arbiter that splits it, and the one whose
@@ -20,6 +22,7 @@
  * returns demand; `capacity` turns it into bookings.
  */
 export * from './capacity';
+export * from './class-allocation';
 export * from './gravity';
 export * from './logit';
 export * from './modulation';
