@@ -43,25 +43,25 @@
  * to 07:00 for a step change in share is not a decision anyone should be
  * rewarded for making.
  *
- * ## Local time, approximated from longitude
+ * ## Local time comes in as a number
  *
- * The curve is over **local clock time at the origin**, and Tailfin has no
- * timezone data: `airport` carries latitude and longitude and nothing else, and
- * `ScheduledLeg.departureMinute` is minutes from the cycle anchor rather than a
- * clock reading.
+ * The curve is over **local clock time at the origin**, and this module takes
+ * the airport's UTC offset in minutes rather than working it out. That is
+ * deliberate: resolving a timezone means consulting the IANA database through
+ * `Intl`, ICU carries a snapshot of that database, and the snapshot changes
+ * when Node is upgraded. A world replayed after a Node upgrade would then
+ * produce different departures than the one recorded, which is exactly what
+ * invariant 2 and M13-01's replay harness exist to prevent.
  *
- * So local time is derived from longitude at fifteen degrees to the hour. That
- * is the honest approximation and it is wrong in known ways — it ignores
- * political timezone boundaries (Spain runs an hour ahead of its longitude,
- * China runs one zone across five), ignores daylight saving entirely, and
- * cannot produce the half-hour offsets India and parts of Australia use. The
- * error is under an hour for most of the world and up to about three hours at
- * the extremes.
+ * So `airport.utc_offset_minutes` is resolved once at import and stored (see
+ * `data/timezone/offset.ts` in the server), and everything here reads an
+ * integer. The offset is **standard time**, not daylight saving — Tailfin has
+ * no summer/winter timetable, so a DST-aware offset would slide a player's
+ * departure an hour along this curve twice a year without them acting.
  *
- * What would fix it is a timezone column on `airport`, populated at import
- * (M1-01's territory) — at which point {@link localMinuteOfDay} is the only
- * function that changes. The approximation is deliberately isolated here for
- * that reason.
+ * {@link approximateUtcOffsetMinutes} remains for the handful of airports whose
+ * resolution falls through to longitude, and for callers with nothing better.
+ * It is a fallback now rather than the mechanism.
  */
 
 import type { DemandSegment } from '@tailfin/shared';
@@ -148,11 +148,27 @@ export const DEFAULT_SCHED_FIT: SchedFitConfig = {
 export const SCHED_FIT_CONFIG_VERSION = 'v1' as const;
 
 /**
+ * The furthest east and west any real timezone goes: UTC−12 to UTC+14.
+ *
+ * Kiritimati is +14 and Baker Island is −12, so this is the true range rather
+ * than a generous guess. Offsets outside it are a bug in whatever produced
+ * them, and this is the last place that can notice.
+ */
+export const MIN_UTC_OFFSET_MINUTES = -12 * 60;
+export const MAX_UTC_OFFSET_MINUTES = 14 * 60;
+
+/**
  * UTC offset in minutes, approximated from longitude at 15° to the hour.
  *
- * See the module note for what this gets wrong. It is deliberately the only
- * place that makes the assumption, so a real timezone column replaces one
- * function rather than a scattering of arithmetic.
+ * **A fallback, not the mechanism.** It is wrong wherever a timezone boundary
+ * is political rather than geometric: mainland Spain resolves to the Canaries'
+ * offset, China spans five geometric zones and observes one, and no band can
+ * express Kolkata's +5:30 or Kathmandu's +5:45. Error is under an hour for most
+ * of the world and up to about three at the extremes.
+ *
+ * Kept for the airports whose resolution falls through to it — the server
+ * records that as `timezone_basis = 'longitude'` so a bad figure can be traced
+ * to this function rather than mistaken for a real one.
  */
 export function approximateUtcOffsetMinutes(longitudeDeg: number): number {
   if (!Number.isFinite(longitudeDeg) || longitudeDeg < -180 || longitudeDeg > 180) {
@@ -167,17 +183,27 @@ function onClock(minute: number): number {
 }
 
 /**
- * Local clock minute-of-day at a given longitude, for a UTC instant.
+ * Local clock minute-of-day for a UTC instant at a given offset.
  *
- * This is the bridge between the schedule, which counts minutes from a cycle
- * anchor, and the curves, which are read against a wall clock.
+ * The bridge between the schedule, which counts minutes from a cycle anchor,
+ * and the curves, which are read against a wall clock. Takes the offset as a
+ * number so nothing here consults a timezone database — see the module note.
  */
-export function localMinuteOfDay(at: Date, longitudeDeg: number): number {
+export function localMinuteOfDay(at: Date, utcOffsetMinutes: number): number {
   const utcMinutes = at.getUTCHours() * 60 + at.getUTCMinutes();
   if (!Number.isFinite(utcMinutes)) {
     throw new Error('Departure time is not a date');
   }
-  return onClock(utcMinutes + approximateUtcOffsetMinutes(longitudeDeg));
+  if (
+    !Number.isFinite(utcOffsetMinutes) ||
+    utcOffsetMinutes < MIN_UTC_OFFSET_MINUTES ||
+    utcOffsetMinutes > MAX_UTC_OFFSET_MINUTES
+  ) {
+    throw new Error(
+      `UTC offset must be between ${String(MIN_UTC_OFFSET_MINUTES)} and ${String(MAX_UTC_OFFSET_MINUTES)} minutes, got ${String(utcOffsetMinutes)}`,
+    );
+  }
+  return onClock(utcMinutes + utcOffsetMinutes);
 }
 
 /**

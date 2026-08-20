@@ -113,6 +113,7 @@ Everything below runs from `packages/server` and needs the package **built** fir
 | `pnpm data:airports`   | Import the OurAirports dataset (M1-01)                    |
 | `pnpm data:classify`   | Assign tiers over the imported set (M1-02)                |
 | `pnpm data:catchment`  | Derive catchment population and the three indices (M1-03) |
+| `pnpm data:timezones`  | Give every airport a timezone and an offset (M3-04a)      |
 | `pnpm data:distances`  | Pack the great-circle distance matrix (M1-04)             |
 | `pnpm world:seed`      | Create the flagship world from config (M1-09)             |
 | `pnpm demand:generate` | Size every viable city pair's demand pool (M3-01)         |
@@ -122,6 +123,11 @@ They run in that order for a new world: the demand model reads the catchment the
 derived, and the catchment needs the airports. `demand:generate` is the only one that is
 safe and sometimes necessary to re-run — the gravity coefficients are balance numbers, and
 retuning them means `--regenerate`.
+
+`data:timezones` is the exception to the ordering: it needs only the airports, so it can
+run any time after `data:airports`. It sits here because it shares the GeoNames download
+with `data:catchment` — point both at the same `--cache` and `cities15000.zip` is fetched
+once. It is also safe to re-run; it updates in place.
 
 ### Local database
 

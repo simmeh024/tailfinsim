@@ -86,7 +86,7 @@ jobs:
         #
         # It also guards the one-off jobs. CLAUDE.md's rule that "one-off jobs
         # run from `dist`, not from source" makes `data:airports`,
-        # `data:classify`, `data:catchment`, `data:distances`, `world:seed`,
+        # `data:classify`, `data:catchment`, `data:distances`, `data:timezones`, `world:seed`,
         # `demand:generate`, `admin` and `ops:status` all bundle entry points —
         # and an entry point dropped from `build.mjs` is invisible to every
         # other check in this file.
@@ -125,6 +125,7 @@ jobs:
             packages/server/dist/admin-cli.js \
             packages/server/dist/ops-status.js \
             packages/server/dist/generate-demand.js \
+            packages/server/dist/assign-timezones.js \
             packages/server/dist/build-info.json \
             packages/web/dist/client/index.html
           do
