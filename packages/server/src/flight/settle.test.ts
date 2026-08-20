@@ -382,6 +382,75 @@ describeDb('settling an arrived flight', () => {
     expect(rows).toHaveLength(0);
   });
 
+  describe('spill (A.5, M3-05)', () => {
+    it('records the passengers a full flight turned away', async () => {
+      // A.5 wants the game to be able to say "you turned away 40 passengers a
+      // day". It has to survive settlement to be sayable, and it cannot be
+      // recovered afterwards — a full aircraft looks the same either way.
+      const { flightId } = await makeFlight({
+        load: JSON.stringify({
+          economy: { seats: 70, passengers: 70, revenue: 70 * 7_500, spilled: 40 },
+        }),
+      });
+
+      await db.db.transaction((tx) => settleArrivedFlight(tx, flightId, ARRIVES));
+
+      const [row] = await db.db
+        .select({
+          seats: flightResult.seats,
+          passengers: flightResult.passengers,
+          spilled: flightResult.spilledPassengers,
+        })
+        .from(flightResult)
+        .where(eq(flightResult.flightId, flightId));
+
+      expect(row?.spilled).toBe(40);
+      expect(row?.passengers).toBe(70);
+      expect(row?.seats).toBe(70);
+    });
+
+    it('records zero for a load that predates the field', async () => {
+      // `LOAD` has no `spilled`, which is every load written before M3-05.
+      const { flightId } = await makeFlight({});
+
+      await db.db.transaction((tx) => settleArrivedFlight(tx, flightId, ARRIVES));
+
+      const [row] = await db.db
+        .select({ spilled: flightResult.spilledPassengers })
+        .from(flightResult)
+        .where(eq(flightResult.flightId, flightId));
+
+      expect(row?.spilled).toBe(0);
+    });
+
+    it('is refused by the database when seats were going empty', async () => {
+      // The constraint exists because the model's own guard is one new write
+      // path away from being bypassed. Inserting directly is how that would
+      // look, so that is what this asserts against.
+      const { flightId, worldId, airlineId } = await makeFlight({});
+
+      await expectConstraint(
+        db.db.insert(flightResult).values({
+          worldId,
+          flightId,
+          airlineId,
+          revenueMinor: 0,
+          costMinor: 0,
+          netMinor: 0,
+          kind: 'scheduled',
+          seats: 70,
+          passengers: 40,
+          spilledPassengers: 12,
+          blockSeconds: 3_600,
+          breakdown: '{}',
+          settlementVersion: 'test',
+          settledAt: ARRIVES,
+        }),
+        'flight_result_spill_needs_a_full_aircraft',
+      );
+    });
+  });
+
   it('pays for belly freight when the flight carried some', async () => {
     const empty = await makeFlight({ cargoKg: 0 });
     const laden = await makeFlight({ cargoKg: 2_000 });

@@ -69,7 +69,28 @@ describe('summariseLoad', () => {
       seats: 170,
       passengers: 134,
       revenueMinor: 1_600_000,
+      // Neither class recorded spill, so it sums to zero rather than being
+      // absent — a load written before M3-05 reads as "none recorded".
+      spilled: 0,
     });
+  });
+
+  it('sums spill across classes, and only where the cabin was full', () => {
+    const load: FlightLoad = {
+      economy: { seats: 150, passengers: 150, revenue: 900_000, spilled: 40 },
+      business: { seats: 20, passengers: 20, revenue: 700_000, spilled: 3 },
+    };
+
+    expect(summariseLoad(load).spilled).toBe(43);
+  });
+
+  it('refuses a load that spilled passengers with seats going empty', () => {
+    // Arithmetically impossible rather than merely odd: whoever was turned
+    // away could have sat in one of the empty seats. Enforced here and again
+    // as a check constraint on `flight_result`.
+    expect(() =>
+      summariseLoad({ economy: { seats: 150, passengers: 100, revenue: 500_000, spilled: 10 } }),
+    ).toThrow(/spilled/);
   });
 
   it('treats an absent class as absent, not as zero seats', () => {

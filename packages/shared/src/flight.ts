@@ -90,6 +90,20 @@ export const FlightLoad = z.partialRecord(
     seats: z.number().int().nonnegative(),
     passengers: z.number().int().nonnegative(),
     revenue: MinorUnits,
+    /**
+     * Passengers who wanted this flight and could not get on (App. A.5, M3-05).
+     *
+     * Not a cost and not a loss of revenue — it is the *signal*. A.5 asks the
+     * game to be able to say **"you turned away 40 passengers a day"**, because
+     * a route that consistently spills is a route to upgauge, and a player
+     * cannot see that from a 100% load factor alone: a full aircraft looks
+     * identical whether it turned away nobody or two hundred.
+     *
+     * Optional, so every load written before M3-05 still parses. Absent means
+     * "not recorded", which is honestly different from a recorded zero — and
+     * `?? 0` at the boundary keeps the arithmetic simple either way.
+     */
+    spilled: z.number().int().nonnegative().optional(),
   }),
 );
 export type FlightLoad = z.infer<typeof FlightLoad>;
