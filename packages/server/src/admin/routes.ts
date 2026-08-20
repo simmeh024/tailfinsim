@@ -11,9 +11,11 @@ import {
   adminWorldHealthResponseJsonSchema,
   adminWorldListResponseJsonSchema,
   apiErrorJsonSchema,
+  revokeSessionsResponseJsonSchema,
   Uuid,
 } from '@tailfin/shared';
 
+import { revokePlayerSessions } from '../auth/revocation';
 import { type DatabaseHandle } from '../db/client';
 
 import { parseAuditJson, readAudit } from './audit';
@@ -180,6 +182,35 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
       }
 
       return reply.code(200).send({ player: detail });
+    },
+  );
+
+  app.post<{ Params: { playerId: string } }>(
+    '/api/admin/players/:playerId/sessions/revoke',
+    {
+      onRequest: app.requireAdmin,
+      schema: {
+        response: { 200: revokeSessionsResponseJsonSchema, 404: apiErrorJsonSchema },
+      },
+    },
+    async (request, reply) => {
+      if (!Uuid.safeParse(request.params.playerId).success) {
+        return reply
+          .code(404)
+          .send({ code: 'player_not_found', message: 'No player with that id.' });
+      }
+
+      const revokedSessions = await revokePlayerSessions(
+        db.db,
+        request.params.playerId,
+        actorOf(request),
+      );
+      if (revokedSessions === null) {
+        return reply
+          .code(404)
+          .send({ code: 'player_not_found', message: 'No player with that id.' });
+      }
+      return reply.code(200).send({ signedOut: true, revokedSessions });
     },
   );
 

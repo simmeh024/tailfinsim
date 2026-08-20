@@ -85,3 +85,16 @@ export async function postSignOut(): Promise<void> {
     throw new Error(`POST /api/auth/logout failed with ${String(response.status)}`);
   }
 }
+
+/** Ends every server-side session for the signed-in account. */
+export async function postSignOutEverywhere(): Promise<void> {
+  const response = await fetch('/api/auth/logout-all', {
+    method: 'POST',
+    headers: { accept: 'application/json' },
+    credentials: 'same-origin',
+  });
+
+  if (!response.ok) {
+    throw new Error(`POST /api/auth/logout-all failed with ${String(response.status)}`);
+  }
+}

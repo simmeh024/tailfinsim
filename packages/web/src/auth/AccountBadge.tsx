@@ -11,7 +11,7 @@ import type { ReactNode } from 'react';
  * "sign in"; one place shows "who you are".
  */
 export function AccountBadge(): ReactNode {
-  const { player, signOut } = useSession();
+  const { player, signOut, signOutEverywhere } = useSession();
   if (!player) return null;
 
   return (
@@ -38,6 +38,9 @@ export function AccountBadge(): ReactNode {
 
       <button type="button" className="account__signout" onClick={() => void signOut()}>
         Sign out
+      </button>
+      <button type="button" className="account__signout" onClick={() => void signOutEverywhere()}>
+        Sign out everywhere
       </button>
     </div>
   );

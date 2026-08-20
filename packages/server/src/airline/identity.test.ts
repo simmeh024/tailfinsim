@@ -37,6 +37,7 @@ const env: ServerEnv = {
   sessionSecret: 'a'.repeat(48),
   authEnabled: true,
   sessionTtlHours: 24,
+  adminSessionTtlHours: 12,
   allowRegistration: false,
 };
 

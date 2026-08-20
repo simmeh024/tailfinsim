@@ -5,10 +5,16 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { buildApp } from '../app';
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { player, session } from '../db/schema';
+import { adminAudit, adminGrant, player, playerIdentity, session } from '../db/schema';
 import { type ServerEnv } from '../env';
 
-import { createSession, destroySession, findSessionPlayer, SESSION_COOKIE } from './session';
+import {
+  createSession,
+  destroyPlayerSessions,
+  destroySession,
+  findSessionPlayer,
+  SESSION_COOKIE,
+} from './session';
 
 /**
  * The session round trip, against a real Postgres and a real Fastify instance.
@@ -49,6 +55,7 @@ const baseEnv: ServerEnv = {
   sessionSecret: 'a'.repeat(48),
   authEnabled: true,
   sessionTtlHours: 24,
+  adminSessionTtlHours: 12,
   allowRegistration: false,
 };
 
@@ -74,6 +81,11 @@ function setCookie(headers: Record<string, unknown>, name: string): string | und
       ? [raw]
       : [];
   return all.find((entry) => entry.startsWith(`${name}=`));
+}
+
+function cookieValue(value: string): string {
+  const end = value.indexOf(';');
+  return decodeURIComponent(value.slice(value.indexOf('=') + 1, end === -1 ? undefined : end));
 }
 
 describeDb('sessions over HTTP', () => {
@@ -238,6 +250,38 @@ describeDb('sessions over HTTP', () => {
     });
   });
 
+  describe('POST /api/auth/logout-all', () => {
+    it('revokes every device immediately and records no session secret', async () => {
+      await destroyPlayerSessions(db.db, playerId);
+      const first = await createSession(db.db, playerId, 24);
+      const second = await createSession(db.db, playerId, 24);
+
+      const out = await app.inject({
+        method: 'POST',
+        url: '/api/auth/logout-all',
+        cookies: { [SESSION_COOKIE]: first.token },
+      });
+      expect(out.statusCode).toBe(200);
+      expect(out.json()).toEqual({ signedOut: true, revokedSessions: 2 });
+      expect(await findSessionPlayer(db.db, first.token)).toBeNull();
+      expect(await findSessionPlayer(db.db, second.token)).toBeNull();
+
+      const audits = await db.db
+        .select({ action: adminAudit.action, after: adminAudit.after })
+        .from(adminAudit)
+        .where(eq(adminAudit.subjectId, playerId));
+      const audit = audits.find((entry) => entry.action === 'sessions.revoked');
+      expect(audit?.after).toBe(JSON.stringify({ result: 'success', revokedSessions: 2 }));
+      expect(audit?.after).not.toContain(first.token);
+      expect(audit?.after).not.toContain(second.token);
+    });
+
+    it('requires a live session', async () => {
+      const out = await app.inject({ method: 'POST', url: '/api/auth/logout-all' });
+      expect(out.statusCode).toBe(401);
+    });
+  });
+
   describe('destroySession', () => {
     it('is idempotent', async () => {
       const { token } = await createSession(db.db, playerId, 24);
@@ -328,6 +372,112 @@ describeDb('sessions over HTTP', () => {
     it('refuses a callback carrying no code', async () => {
       const res = await app.inject({ method: 'GET', url: '/api/auth/google/callback?state=xyz' });
       expect(res.headers.location).toBe('/?auth_error=provider_error');
+    });
+
+    it('atomically replaces a pre-login session instead of preserving its id', async () => {
+      const subject = `session-fixation-${Math.random().toString(36).slice(2)}`;
+      await db.db.insert(playerIdentity).values({
+        playerId,
+        provider: 'google',
+        subject,
+        email: 'session-test@example.test',
+      });
+      await destroyPlayerSessions(db.db, playerId);
+      const old = await createSession(db.db, playerId, 24);
+
+      const callbackApp = buildApp({
+        env: baseEnv,
+        db,
+        googleAuth: {
+          exchangeCode: () => Promise.resolve('provider-access-token'),
+          fetchProfile: () =>
+            Promise.resolve({
+              subject,
+              email: 'session-test@example.test',
+              name: 'Session Test Pilot',
+              picture: null,
+            }),
+        },
+      });
+      await callbackApp.ready();
+      try {
+        const start = await callbackApp.inject({ method: 'GET', url: '/api/auth/google' });
+        const state = new URL(start.headers.location!).searchParams.get('state')!;
+        const oauthCookie = cookieValue(setCookie(start.headers, 'tailfin_oauth')!);
+        const signedIn = await callbackApp.inject({
+          method: 'GET',
+          url: `/api/auth/google/callback?code=ok&state=${encodeURIComponent(state)}`,
+          cookies: { tailfin_oauth: oauthCookie, [SESSION_COOKIE]: old.token },
+        });
+
+        expect(signedIn.statusCode).toBe(302);
+        expect(signedIn.headers.location).toBe('/');
+        const fresh = cookieValue(setCookie(signedIn.headers, SESSION_COOKIE)!);
+        expect(fresh).not.toBe(old.token);
+        expect(await findSessionPlayer(db.db, old.token)).toBeNull();
+        expect((await findSessionPlayer(db.db, fresh))?.id).toBe(playerId);
+
+        const stored = await db.db
+          .select({ expiresAt: session.expiresAt })
+          .from(session)
+          .where(eq(session.tokenHash, sha256Hex(fresh)))
+          .limit(1);
+        const remainingHours = (stored[0]!.expiresAt.getTime() - Date.now()) / 3_600_000;
+        expect(remainingHours).toBeGreaterThan(23.9);
+        expect(remainingHours).toBeLessThanOrEqual(24);
+      } finally {
+        await callbackApp.close();
+      }
+    });
+
+    it('issues the shorter configured lifetime to an admin', async () => {
+      const created = await db.db
+        .insert(player)
+        .values({ displayName: 'Short Session Admin' })
+        .returning({ id: player.id });
+      const adminId = created[0]!.id;
+      const subject = `admin-ttl-${Math.random().toString(36).slice(2)}`;
+      await db.db.insert(playerIdentity).values({ playerId: adminId, provider: 'google', subject });
+      await db.db.insert(adminGrant).values({ playerId: adminId });
+
+      const callbackApp = buildApp({
+        env: { ...baseEnv, adminSessionTtlHours: 2 },
+        db,
+        googleAuth: {
+          exchangeCode: () => Promise.resolve('provider-access-token'),
+          fetchProfile: () =>
+            Promise.resolve({
+              subject,
+              email: null,
+              name: 'Short Session Admin',
+              picture: null,
+            }),
+        },
+      });
+      await callbackApp.ready();
+      try {
+        const start = await callbackApp.inject({ method: 'GET', url: '/api/auth/google' });
+        const state = new URL(start.headers.location!).searchParams.get('state')!;
+        const oauthCookie = cookieValue(setCookie(start.headers, 'tailfin_oauth')!);
+        const signedIn = await callbackApp.inject({
+          method: 'GET',
+          url: `/api/auth/google/callback?code=ok&state=${encodeURIComponent(state)}`,
+          cookies: { tailfin_oauth: oauthCookie },
+        });
+        const token = cookieValue(setCookie(signedIn.headers, SESSION_COOKIE)!);
+        const stored = await db.db
+          .select({ expiresAt: session.expiresAt })
+          .from(session)
+          .where(eq(session.tokenHash, sha256Hex(token)))
+          .limit(1);
+        const remainingHours = (stored[0]!.expiresAt.getTime() - Date.now()) / 3_600_000;
+        expect(remainingHours).toBeGreaterThan(1.9);
+        expect(remainingHours).toBeLessThanOrEqual(2);
+      } finally {
+        await callbackApp.close();
+        await db.db.delete(adminGrant).where(eq(adminGrant.playerId, adminId));
+        await db.db.delete(player).where(eq(player.id, adminId));
+      }
     });
   });
 });

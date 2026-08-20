@@ -1,6 +1,10 @@
 import { and, eq } from 'drizzle-orm';
 
-import { logoutResponseJsonSchema, meResponseJsonSchema } from '@tailfin/shared';
+import {
+  logoutResponseJsonSchema,
+  meResponseJsonSchema,
+  revokeSessionsResponseJsonSchema,
+} from '@tailfin/shared';
 
 import { isAdmin } from '../admin/grants';
 import { type DatabaseHandle } from '../db/client';
@@ -16,10 +20,11 @@ import {
   redirectUriFor,
   type GoogleProfile,
 } from './google';
+import { revokePlayerSessions } from './revocation';
 import {
-  createSession,
   destroySession,
   findSessionPlayer,
+  replaceSession,
   safeEqual,
   SESSION_COOKIE,
   type SessionPlayer,
@@ -69,10 +74,21 @@ declare module 'fastify' {
 export interface AuthRoutesOptions {
   env: ServerEnv;
   db: DatabaseHandle;
+  /** Provider boundary injected only by callback integration tests. */
+  googleAuth?: GoogleAuthOperations;
 }
 
-export function registerAuthRoutes(app: FastifyInstance, { env, db }: AuthRoutesOptions): void {
+export interface GoogleAuthOperations {
+  exchangeCode: typeof exchangeCode;
+  fetchProfile: typeof fetchProfile;
+}
+
+export function registerAuthRoutes(
+  app: FastifyInstance,
+  { env, db, googleAuth }: AuthRoutesOptions,
+): void {
   const secureCookies = env.publicOrigin.startsWith('https://');
+  const provider = googleAuth ?? { exchangeCode, fetchProfile };
 
   const sessionCookieOptions = {
     httpOnly: true,
@@ -236,14 +252,14 @@ export function registerAuthRoutes(app: FastifyInstance, { env, db }: AuthRoutes
 
       let profile: GoogleProfile;
       try {
-        const accessToken = await exchangeCode({
+        const accessToken = await provider.exchangeCode({
           code,
           clientId: env.googleClientId,
           clientSecret: env.googleClientSecret,
           redirectUri: redirectUriFor(env.publicOrigin),
           codeVerifier: stored.verifier,
         });
-        profile = await fetchProfile(accessToken);
+        profile = await provider.fetchProfile(accessToken);
       } catch (error) {
         request.log.error({ err: error }, 'google exchange failed');
         return fail('exchange_failed');
@@ -286,7 +302,15 @@ export function registerAuthRoutes(app: FastifyInstance, { env, db }: AuthRoutes
         });
       }
 
-      const { token, expiresAt } = await createSession(db.db, playerId, env.sessionTtlHours);
+      const ttlHours = (await isAdmin(db.db, playerId))
+        ? env.adminSessionTtlHours
+        : env.sessionTtlHours;
+      const { token, expiresAt } = await replaceSession(
+        db.db,
+        request.cookies[SESSION_COOKIE],
+        playerId,
+        ttlHours,
+      );
 
       void reply.clearCookie(OAUTH_COOKIE, { path: '/' });
       void reply.setCookie(SESSION_COOKIE, token, { ...sessionCookieOptions, expires: expiresAt });
@@ -307,6 +331,24 @@ export function registerAuthRoutes(app: FastifyInstance, { env, db }: AuthRoutes
       }
       void reply.clearCookie(SESSION_COOKIE, { path: '/' });
       return reply.code(200).send({ signedOut: true });
+    },
+  );
+
+  app.post(
+    '/api/auth/logout-all',
+    {
+      onRequest: app.requireAuth,
+      schema: { response: { 200: revokeSessionsResponseJsonSchema } },
+    },
+    async (request, reply) => {
+      const revokedSessions =
+        (await revokePlayerSessions(db.db, request.player!.id, {
+          playerId: request.player!.id,
+          label: request.player!.displayName,
+          requestId: request.id,
+        })) ?? 0;
+      void reply.clearCookie(SESSION_COOKIE, { path: '/' });
+      return reply.code(200).send({ signedOut: true, revokedSessions });
     },
   );
 }

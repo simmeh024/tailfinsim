@@ -34,6 +34,7 @@ const testEnv: ServerEnv = {
   sessionSecret: undefined,
   authEnabled: false,
   sessionTtlHours: 24,
+  adminSessionTtlHours: 12,
   allowRegistration: false,
 };
 

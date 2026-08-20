@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 
 import type { AuthenticatedPlayer } from '@tailfin/shared';
 
-import { fetchMe, postSignOut } from './api';
+import { fetchMe, postSignOut, postSignOutEverywhere } from './api';
 
 import type { ReactNode } from 'react';
 
@@ -41,6 +41,7 @@ interface SessionContextValue {
    */
   isAdmin: boolean;
   signOut: () => Promise<void>;
+  signOutEverywhere: () => Promise<void>;
   refresh: () => Promise<void>;
 }
 
@@ -87,9 +88,19 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
     }
   }, []);
 
+  const signOutEverywhere = useCallback(async () => {
+    try {
+      await postSignOutEverywhere();
+    } finally {
+      setPlayer(null);
+      setIsAdmin(false);
+      setStatus('anonymous');
+    }
+  }, []);
+
   const value = useMemo(
-    () => ({ status, player, registrationOpen, isAdmin, signOut, refresh }),
-    [status, player, registrationOpen, isAdmin, signOut, refresh],
+    () => ({ status, player, registrationOpen, isAdmin, signOut, signOutEverywhere, refresh }),
+    [status, player, registrationOpen, isAdmin, signOut, signOutEverywhere, refresh],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

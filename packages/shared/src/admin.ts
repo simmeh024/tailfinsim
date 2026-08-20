@@ -32,6 +32,7 @@ export const AdminAction = z.enum([
   'world.reset',
   'world.speed_changed',
   'player.viewed',
+  'sessions.revoked',
   'airline.identity_changed',
 ]);
 export type AdminAction = z.infer<typeof AdminAction>;

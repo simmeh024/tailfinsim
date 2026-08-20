@@ -193,4 +193,28 @@ describe('loadEnv — auth', () => {
     vi.stubEnv('SESSION_TTL_HOURS', '');
     expect(loadEnv().sessionTtlHours).toBe(720);
   });
+
+  it('defaults privileged sessions to one 12-hour operator shift', () => {
+    stubAuth('', '', '');
+    vi.stubEnv('SESSION_TTL_HOURS', '');
+    vi.stubEnv('ADMIN_SESSION_TTL_HOURS', '');
+    expect(loadEnv().adminSessionTtlHours).toBe(12);
+  });
+
+  it('requires the privileged lifetime to be shorter than the player lifetime', () => {
+    stubAuth('', '', '');
+    vi.stubEnv('SESSION_TTL_HOURS', '12');
+    vi.stubEnv('ADMIN_SESSION_TTL_HOURS', '12');
+    expect(() => loadEnv()).toThrow(/must be shorter/);
+  });
+
+  it('refuses production when the public origin would make cookies insecure', () => {
+    stubAuth('', '', '');
+    vi.stubEnv('ENVIRONMENT_LABEL', 'production');
+    vi.stubEnv('PUBLIC_ORIGIN', 'http://tailfinsim.com');
+    expect(() => loadEnv()).toThrow(/requires an https PUBLIC_ORIGIN/);
+
+    vi.stubEnv('PUBLIC_ORIGIN', 'https://tailfinsim.com');
+    expect(loadEnv().publicOrigin).toBe('https://tailfinsim.com');
+  });
 });

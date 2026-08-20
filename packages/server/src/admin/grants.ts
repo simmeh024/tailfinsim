@@ -1,5 +1,6 @@
 import { eq, sql } from 'drizzle-orm';
 
+import { destroyPlayerSessions } from '../auth/session';
 import { type Database } from '../db/client';
 import { adminGrant, player } from '../db/schema';
 
@@ -75,6 +76,9 @@ export async function grantAdmin(
     if (name === undefined) throw new Error(`No player ${playerId}`);
 
     await tx.insert(adminGrant).values({ playerId, grantedByPlayerId: actor.playerId });
+    // A token minted before elevation must never become an admin token. The
+    // delete shares this transaction with the grant and audit row.
+    const sessionsRevoked = await destroyPlayerSessions(tx, playerId);
 
     await writeAudit(tx, {
       actorPlayerId: actor.playerId,
@@ -83,7 +87,7 @@ export async function grantAdmin(
       subjectType: 'player',
       subjectId: playerId,
       before: { admin: false },
-      after: { admin: true, displayName: name },
+      after: { admin: true, displayName: name, sessionsRevoked },
       requestId: actor.requestId,
     });
 
@@ -120,6 +124,9 @@ export async function revokeAdmin(
     }
 
     await tx.delete(adminGrant).where(eq(adminGrant.playerId, playerId));
+    // Revocation rotates authority too: a privileged cookie copied before this
+    // transaction must stop at the same commit as the grant disappears.
+    const sessionsRevoked = await destroyPlayerSessions(tx, playerId);
 
     await writeAudit(tx, {
       actorPlayerId: actor.playerId,
@@ -128,7 +135,7 @@ export async function revokeAdmin(
       subjectType: 'player',
       subjectId: playerId,
       before: { admin: true },
-      after: { admin: false },
+      after: { admin: false, sessionsRevoked },
       requestId: actor.requestId,
     });
 

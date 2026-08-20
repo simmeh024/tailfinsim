@@ -20,7 +20,7 @@ import {
   ForceRenameAirlineResponse,
 } from './airline';
 import { ApiError, HealthResponse } from './api';
-import { LogoutResponse, MeResponse } from './auth';
+import { LogoutResponse, MeResponse, RevokeSessionsResponse } from './auth';
 import { VersionResponse } from './version';
 
 /**
@@ -43,6 +43,7 @@ export const healthResponseJsonSchema = z.toJSONSchema(HealthResponse);
 export const apiErrorJsonSchema = z.toJSONSchema(ApiError);
 export const meResponseJsonSchema = z.toJSONSchema(MeResponse);
 export const logoutResponseJsonSchema = z.toJSONSchema(LogoutResponse);
+export const revokeSessionsResponseJsonSchema = z.toJSONSchema(RevokeSessionsResponse);
 export const versionResponseJsonSchema = z.toJSONSchema(VersionResponse);
 export const createAirlineResponseJsonSchema = z.toJSONSchema(CreateAirlineResponse);
 export const airlineCodeAvailabilityResponseJsonSchema = z.toJSONSchema(
