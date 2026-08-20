@@ -41,8 +41,9 @@ import { eq, inArray } from 'drizzle-orm';
 import { checkReachability, haversineNm } from '@tailfin/sim';
 import type { AircraftCapability, AirportCapability, Reachability } from '@tailfin/sim';
 
-import { airline, airport, route, runway } from '../db/schema';
+import { airport, route, runway } from '../db/schema';
 
+import type { ResolvedPlayerAirline } from '../airline/context';
 import type { Database } from '../db/client';
 
 /**
@@ -70,7 +71,6 @@ const REFERENCE_LIMITS = {
 export type OpenRouteResult =
   | { ok: true; routeId: string; greatCircleNm: number }
   | { ok: false; kind: 'unknown-airport'; icao: string }
-  | { ok: false; kind: 'no-airline' }
   | { ok: false; kind: 'same-airport' }
   | { ok: false; kind: 'duplicate' }
   | { ok: false; kind: 'unreachable'; reachability: Extract<Reachability, { ok: false }> };
@@ -148,13 +148,13 @@ function capabilityOf(row: AirportRow): AirportCapability {
 /**
  * Open a route for an airline, or say precisely why not.
  *
- * The airline is resolved from the player rather than accepted, so a route
- * cannot be opened against somebody else's — the same shape `routes.ts` uses
- * for every other handler.
+ * The airline has already been resolved from the authenticated request by
+ * AIR-05's context boundary. It is not accepted from the route input, so this
+ * operation cannot target somebody else's airline.
  */
 export async function openRoute(
   db: Database,
-  playerId: string,
+  own: ResolvedPlayerAirline,
   input: { originIcao: string; destinationIcao: string },
 ): Promise<OpenRouteResult> {
   const originIcao = input.originIcao.trim().toUpperCase();
@@ -163,19 +163,6 @@ export async function openRoute(
   if (originIcao === destinationIcao) {
     return { ok: false, kind: 'same-airport' };
   }
-
-  const airlines = await db
-    .select({ id: airline.id, worldId: airline.worldId })
-    .from(airline)
-    .where(eq(airline.playerId, playerId))
-    .limit(1);
-
-  const own = airlines[0];
-  // Its own answer, not a borrowed one. Reporting this as `unknown-airport`
-  // told a player with no airline that EHAM does not exist, which is both
-  // false and unactionable — the exact failure B.4's "never a generic
-  // unavailable" is arguing against, arrived at from the other direction.
-  if (!own) return { ok: false, kind: 'no-airline' };
 
   const endpoints = await endpointsFor(db, [originIcao, destinationIcao]);
   const from = endpoints.get(originIcao);

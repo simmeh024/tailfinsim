@@ -77,6 +77,33 @@ function stub(
       calls.push(`${init?.method ?? 'GET'} ${url}`);
 
       if (url === '/api/routes' && init?.method === 'POST') {
+        if (opened.kind === 'no-airline') {
+          return Promise.resolve({
+            status: 409,
+            json: () =>
+              Promise.resolve({
+                code: 'airline_required',
+                message: 'Found an airline in the active world before using this feature',
+              }),
+          });
+        }
+        if (opened.kind === 'active-world-required') {
+          return Promise.resolve({
+            status: 409,
+            json: () =>
+              Promise.resolve({
+                code: 'active_world_required',
+                message: 'Choose an active world before using this feature',
+              }),
+          });
+        }
+        if (opened.kind === 'duplicate') {
+          return Promise.resolve({
+            status: 409,
+            json: () =>
+              Promise.resolve({ code: 'duplicate_route', message: 'You already fly that pair' }),
+          });
+        }
         return Promise.resolve({
           status: opened.ok ? 201 : 422,
           json: () => Promise.resolve(opened),
@@ -289,6 +316,18 @@ describe('the pricing panel', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(/do not have an airline/i);
     expect(alert).not.toHaveTextContent(/No airport with the code/i);
+  });
+
+  it('asks multi-world players to choose instead of guessing an airline', async () => {
+    stub(undefined, { ok: false, kind: 'active-world-required' });
+    render(<NetworkPage />);
+    await screen.findByText('EHAM → LEBL');
+
+    fireEvent.change(screen.getByLabelText('Origin ICAO'), { target: { value: 'EHAM' } });
+    fireEvent.change(screen.getByLabelText('Destination ICAO'), { target: { value: 'LEBL' } });
+    fireEvent.click(screen.getByRole('button', { name: /^open$/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Choose which world/i);
   });
 
   it('will not submit a code that is not four letters', async () => {

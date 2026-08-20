@@ -18,6 +18,7 @@ import {
   HealthResponse,
   INITIAL_AIRLINE_REPUTATION,
   MinorUnits,
+  PlayerAirlineContextError,
   PublicAirline,
   Reputation,
   Runway,
@@ -240,6 +241,25 @@ describe('airline code allocation contracts', () => {
         alternatives: ['TA'],
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('player airline context contract', () => {
+  it.each(['airline_required', 'active_world_required', 'invalid_active_world'])(
+    'keeps %s machine-readable while allowing the wording to improve',
+    (code) => {
+      expect(
+        PlayerAirlineContextError.safeParse({ code, message: 'A useful explanation.' }).success,
+      ).toBe(true);
+    },
+  );
+
+  it('does not mistake authentication or route lookup errors for context state', () => {
+    for (const code of ['unauthorized', 'not_found', 'duplicate_route']) {
+      expect(
+        PlayerAirlineContextError.safeParse({ code, message: 'A different response.' }).success,
+      ).toBe(false);
+    }
   });
 });
 
