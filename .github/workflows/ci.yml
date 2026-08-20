@@ -73,6 +73,79 @@ jobs:
       - name: Check formatting
         run: pnpm format:check
 
+      - name: Build the production bundles
+        # The step that proves a pull request can actually ship.
+        #
+        # `pnpm typecheck` is `tsc -b`, and ADR-0001 is explicit that TypeScript
+        # is the typechecker here rather than the compiler — `moduleResolution:
+        # bundler` cannot emit runnable Node output. So typecheck never produces
+        # the artefacts that run in production, and until this step existed a PR
+        # could typecheck, lint, format and pass all 1,482 tests while the
+        # esbuild bundle or the Vite build was broken. The first sign of it
+        # would have been `deploy.sh` failing on the box.
+        #
+        # It also guards the one-off jobs. CLAUDE.md's rule that "one-off jobs
+        # run from `dist`, not from source" makes `data:airports`,
+        # `data:classify`, `data:catchment`, `data:distances`, `world:seed`,
+        # `demand:generate`, `admin` and `ops:status` all bundle entry points —
+        # and an entry point dropped from `build.mjs` is invisible to every
+        # other check in this file.
+        #
+        # Placed before the database steps because it needs no Postgres and
+        # takes seconds: a tree that cannot build should not spend two minutes
+        # running tests. It does not depend on the typecheck step either — both
+        # workspace packages resolve to `./src/index.ts` at runtime, so esbuild
+        # and Vite compile from source rather than from `tsc -b` output.
+        run: pnpm build:apps
+
+      - name: Verify the build produced what deploy expects
+        # A build step on its own only proves the command exited zero. esbuild
+        # writing an empty file, or an entry point quietly disappearing, would
+        # both pass the step above — so assert the artefacts rather than trust
+        # the exit code. `-s` catches empty as well as missing.
+        #
+        # The build number is deliberately *not* asserted. `actions/checkout`
+        # clones shallow, so `git rev-list --count HEAD` sees one commit and
+        # every CI build stamps 1. That is harmless — this artefact is
+        # discarded, and `deploy.sh` builds from a full clone on the box — but
+        # it is worth writing down before somebody asserts the number and
+        # cannot work out why it is wrong. The *shape* is checked, because a
+        # malformed stamp would break `/api/version` and OPS-02 at runtime.
+        run: |
+          set -euo pipefail
+          missing=0
+          for f in \
+            packages/server/dist/main.js \
+            packages/server/dist/migrate.js \
+            packages/server/dist/import-airports.js \
+            packages/server/dist/classify-airports.js \
+            packages/server/dist/derive-catchment.js \
+            packages/server/dist/build-distance-matrix.js \
+            packages/server/dist/seed-world.js \
+            packages/server/dist/admin-cli.js \
+            packages/server/dist/ops-status.js \
+            packages/server/dist/generate-demand.js \
+            packages/server/dist/build-info.json \
+            packages/web/dist/client/index.html
+          do
+            if [ ! -s "$f" ]; then
+              echo "::error::build produced no $f"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ]
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const stamp = JSON.parse(
+              readFileSync("packages/server/dist/build-info.json", "utf8"),
+            );
+            if (typeof stamp.build !== "number" || typeof stamp.commit !== "string" || stamp.commit === "") {
+              console.error("::error::build-info.json is malformed:", stamp);
+              process.exit(1);
+            }
+            console.log("build stamp:", stamp.build, stamp.commit);
+          '
+
       - name: Apply migrations
         # The schema constraint tests need a migrated database. This also means
         # every migration is proven to apply cleanly on every PR, which is

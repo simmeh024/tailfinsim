@@ -12,7 +12,7 @@ import { build } from 'esbuild';
  * (`moduleResolution: bundler` cannot emit runnable Node output) — see
  * ADR-0001. This is the compiler for the server package.
  *
- * Eight entry points:
+ * Ten entry points, and CI asserts every one of them lands in `dist`:
  *   main.js             the server process
  *   migrate.js          a one-off run by the deploy script before main starts
  *   import-airports.js  a one-off run by hand when the dataset moves (M1-01)
