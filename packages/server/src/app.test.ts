@@ -268,3 +268,61 @@ function createDatabaseAt(connectionString: string): DatabaseHandle {
     else process.env.DATABASE_CONNECT_TIMEOUT_MS = previousTimeout;
   }
 }
+
+describe('GET /api/routes/:routeId/waterfall is on the surface (M3-10)', () => {
+  /**
+   * Routing only, and deliberately so.
+   *
+   * `waterfall.test.ts` proves the decomposition against App. A.9's published
+   * figures; what it cannot prove is that the handler is reachable at the path
+   * the client asks for. A typo in either would leave both green and the
+   * feature dead, so this asserts the wiring and nothing else.
+   *
+   * No database is touched. With `authEnabled: false` the session hook returns
+   * before its query and `requireAuth` answers 401 — so a 401 here means the
+   * route exists, and a 404 would mean it does not. If this ever hangs, the
+   * handler has started querying before checking auth.
+   */
+  async function withApp(body: (app: ReturnType<typeof buildApp>) => Promise<void>): Promise<void> {
+    const db = createDatabaseAt('postgres://nobody:nothing@127.0.0.1:1/none');
+    const app = buildApp({ env: testEnv, db });
+    await app.ready();
+    try {
+      await body(app);
+    } finally {
+      await app.close();
+      await db.close().catch(() => undefined);
+    }
+  }
+
+  it('is registered, and guarded by auth rather than missing', async () => {
+    await withApp(async (app) => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/routes/00000000-0000-4000-8000-000000000000/waterfall?cabin=economy&rival=a',
+      });
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  it('answers without a cabin, because the common case is one click', async () => {
+    await withApp(async (app) => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/routes/00000000-0000-4000-8000-000000000000/waterfall',
+      });
+      // Still the auth wall, not a 400 — the querystring is optional.
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  it('is a GET and not anything else', async () => {
+    await withApp(async (app) => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/routes/00000000-0000-4000-8000-000000000000/waterfall',
+      });
+      expect(res.statusCode).toBe(404);
+    });
+  });
+});

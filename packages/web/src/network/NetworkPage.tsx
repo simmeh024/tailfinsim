@@ -7,15 +7,19 @@ import type {
   FarePreviewResponse,
   FareFloorViolation,
   FareTable,
+  WaterfallSegment,
 } from '@tailfin/shared';
 
 import {
   fetchRoutes,
+  fetchWaterfall,
   openRoute,
   type OpenRouteOutcome,
   previewFares,
+  rivalsOf,
   type RouteSummary,
   saveFares,
+  type WaterfallOutcome,
 } from './api';
 
 import type { ReactNode } from 'react';
@@ -224,6 +228,237 @@ function OpenRouteForm({ onOpened }: { onOpened: () => void }): ReactNode {
   );
 }
 
+/**
+ * A.9's factor names, in the player's words rather than the model's.
+ *
+ * The model calls it `product`; a player is choosing between a seat pitch and a
+ * lounge. A chart that explains the game in the vocabulary of its own source
+ * code is explaining it to the wrong audience.
+ */
+const FACTOR_LABEL: Record<string, string> = {
+  price: 'Price',
+  frequency: 'Frequency',
+  product: 'Product',
+  reputation: 'Reputation',
+  schedule: 'Schedule fit',
+  // A.3's remaining terms. Loyalty and alliance are post-MVP and read zero
+  // today, so they are filtered out before they reach here — but they are
+  // named anyway, because the alternative when one first goes non-zero is a
+  // raw `connectionPenalty` appearing in front of a player.
+  loyalty: 'Loyalty',
+  alliance: 'Alliance',
+  connectionPenalty: 'Connection',
+};
+
+const SEGMENT_LABEL: Record<string, string> = {
+  business: 'Business',
+  leisure: 'Leisure',
+  vfr: 'VFR',
+};
+
+/**
+ * One segment's decomposition, drawn as bars either side of a zero line.
+ *
+ * Scaled against the largest bar in *this* segment, so the shape of the answer
+ * is readable whether the gap is 0.05 or 2.0. A shared scale would make the
+ * business column — where price matters far less, so every term is smaller —
+ * look like nothing was happening in it.
+ */
+function SegmentWaterfall({ segment }: { segment: WaterfallSegment }): ReactNode {
+  const widest = Math.max(
+    ...segment.factors.map((f) => Math.abs(f.delta)),
+    Math.abs(segment.netDelta),
+  );
+  const width = (value: number) => `${((Math.abs(value) / (widest || 1)) * 100).toFixed(1)}%`;
+
+  return (
+    <div className="waterfall__segment">
+      <h4 className="waterfall__segment-name">
+        {SEGMENT_LABEL[segment.segment] ?? segment.segment}
+      </h4>
+
+      <ul className="waterfall__bars">
+        {segment.factors.map((factor) => (
+          <li key={factor.factor} className="waterfall__bar-row">
+            <span className="waterfall__factor">
+              {FACTOR_LABEL[factor.factor] ?? factor.factor}
+            </span>
+            <span className="waterfall__track">
+              <span
+                className={
+                  factor.delta < 0
+                    ? 'waterfall__bar waterfall__bar--against'
+                    : 'waterfall__bar waterfall__bar--for'
+                }
+                style={{ width: width(factor.delta) }}
+              />
+            </span>
+            {/* Glyph as well as colour, per H.4: the sign has to survive a
+                monochrome screen and a red-green reader. */}
+            <span
+              className={
+                factor.delta < 0
+                  ? 'waterfall__delta figure waterfall__delta--against'
+                  : 'waterfall__delta figure waterfall__delta--for'
+              }
+            >
+              {factor.delta < 0 ? '▼' : '▲'} {factor.delta.toFixed(3)}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      <p className="waterfall__net">
+        {/* No residual line, and there cannot be one: the factors sum to this
+            exactly. That is A.9's claim, and why the chart can be trusted. */}
+        Net{' '}
+        <strong
+          className={
+            segment.netDelta < 0
+              ? 'figure waterfall__delta--against'
+              : 'figure waterfall__delta--for'
+          }
+        >
+          {segment.netDelta.toFixed(3)}
+        </strong>{' '}
+        — you hold <span className="figure">{(segment.yourShare * 100).toFixed(1)}%</span> of this
+        segment against their{' '}
+        <span className="figure">{(segment.theirShare * 100).toFixed(1)}%</span>
+      </p>
+    </div>
+  );
+}
+
+/**
+ * "Why am I losing?" (M3-10, App. A.9).
+ *
+ * One click from the route opens it against whichever rival the server names
+ * first; a second changes the cabin. That is the two-click requirement met with
+ * the common case at one.
+ *
+ * All three segments at once, because the interesting thing about a route is
+ * usually that the answer differs between them.
+ */
+function Waterfall({ route }: { route: RouteSummary }): ReactNode {
+  const [cabin, setCabin] = useState<CabinClass>('economy');
+  const [rival, setRival] = useState<string | undefined>(undefined);
+  const [outcome, setOutcome] = useState<WaterfallOutcome | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    // Guarded because the pickers are not debounced: clicking cabin twice
+    // quickly puts two requests in flight, and without this the slower one
+    // wins and draws a chart for the cabin the player just left.
+    let current = true;
+    void (async () => {
+      try {
+        const answer = await fetchWaterfall(route.id, cabin, rival);
+        if (!current) return;
+        setOutcome(answer);
+        setFailed(false);
+      } catch {
+        if (current) setFailed(true);
+      }
+    })();
+
+    return () => {
+      current = false;
+    };
+  }, [route.id, cabin, rival]);
+
+  if (failed) {
+    return (
+      <p className="admin__note" role="alert">
+        The market would not answer just now.
+      </p>
+    );
+  }
+  if (outcome === null) return <p className="admin__note">Working out why…</p>;
+
+  // The one outcome with no controls to keep: there is nobody to pick between,
+  // and no cabin would change that.
+  if (!outcome.ok && outcome.kind === 'no-rival') {
+    return (
+      <p className="admin__note">
+        Nobody else is selling {route.originIcao} → {route.destinationIcao}, so there is no gap to
+        decompose. You have the route to yourself.
+      </p>
+    );
+  }
+
+  const rivals = rivalsOf(outcome);
+  const against = outcome.ok ? outcome.waterfall.rivalId : rival;
+
+  /*
+   * The pickers render above whatever the outcome turned out to be, refusal
+   * included. Returning early on `cabin-not-contested` used to remove the only
+   * control that could recover from it — the player was told nobody sells
+   * economy here and left with no way to ask about business.
+   */
+  return (
+    <div className="waterfall">
+      <div className="waterfall__controls">
+        <label className="fares__field">
+          <span className="visually-hidden">Cabin</span>
+          <select
+            className="fares__input"
+            value={cabin}
+            onChange={(event) => {
+              setCabin(event.target.value as CabinClass);
+            }}
+          >
+            {CABIN_ORDER.map((c) => (
+              <option key={c} value={c}>
+                {CABIN_LABEL[c]}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {/* A.8's route has two rivals and you lose to them for opposite
+            reasons — the LCC on price, the legacy carrier on product. A fixed
+            comparison would show one of those and hide the other. */}
+        {rivals.length > 1 ? (
+          <label className="fares__field">
+            <span className="visually-hidden">Compare against</span>
+            <select
+              className="fares__input"
+              value={against ?? rivals[0]?.id}
+              onChange={(event) => {
+                setRival(event.target.value);
+              }}
+            >
+              {rivals.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.id}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <p className="waterfall__against">
+            against <strong>{against ?? rivals[0]?.id}</strong>
+          </p>
+        )}
+      </div>
+
+      {outcome.ok ? (
+        <div className="waterfall__segments">
+          {outcome.waterfall.bySegment.map((segment) => (
+            <SegmentWaterfall key={segment.segment} segment={segment} />
+          ))}
+        </div>
+      ) : (
+        <p className="admin__note">
+          {outcome.kind === 'cabin-not-contested'
+            ? `Nobody else sells ${CABIN_LABEL[outcome.cabin].toLowerCase()} on this route.`
+            : 'That airline does not fly this route.'}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function RoutePanel({ route }: { route: RouteSummary }): ReactNode {
   const [draft, setDraft] = useState<Record<string, string>>(() =>
     Object.fromEntries(
@@ -237,6 +472,7 @@ function RoutePanel({ route }: { route: RouteSummary }): ReactNode {
   const [violations, setViolations] = useState<FareFloorViolation[]>([]);
   const [saved, setSaved] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [why, setWhy] = useState(false);
 
   const proposed = useCallback((): FareTable => {
     const fares: FareTable = {};
@@ -362,8 +598,22 @@ function RoutePanel({ route }: { route: RouteSummary }): ReactNode {
         <button className="admin__submit" type="button" onClick={() => void onSave()}>
           Save fares
         </button>
+        {/* One click to the chart. A.9 is the surface the game is learned
+            through, so it is not behind a tab or a second page. */}
+        <button
+          className="waterfall__toggle"
+          type="button"
+          aria-expanded={why}
+          onClick={() => {
+            setWhy(!why);
+          }}
+        >
+          Why am I losing?
+        </button>
         {saved && <span className="fares__saved">Saved.</span>}
       </div>
+
+      {why && <Waterfall route={route} />}
     </section>
   );
 }

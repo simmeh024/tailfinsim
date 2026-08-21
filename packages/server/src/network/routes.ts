@@ -24,13 +24,14 @@
 
 import { and, eq } from 'drizzle-orm';
 
-import { FareTable } from '@tailfin/shared';
+import { CabinClass, FareTable } from '@tailfin/shared';
 
 import { resolvedAirlineOf } from '../airline/context';
 import { route } from '../db/schema';
 
 import { parseFares, previewFares, type RouteEconomics, type RouteRow, setFares } from './fares';
 import { openRoute } from './open-route';
+import { rivalsOn, waterfallFor } from './waterfall';
 
 import type { Database, DatabaseHandle } from '../db/client';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -192,6 +193,45 @@ export function registerNetworkRoutes(
         });
       }
       return reply.code(result.ok ? 200 : 422).send(result);
+    },
+  );
+
+  /**
+   * Why you are losing, decomposed (App. A.9).
+   *
+   * The single most important explainability surface in the product. Because
+   * share is a ratio of exponentials the gap decomposes exactly, so what comes
+   * back is not a summary of the result — it is the result, rearranged.
+   *
+   * A 422 when there is nobody to compare against. That is the honest state of
+   * every route today, with no AI carriers built, and it carries the rival list
+   * so the client can say "you have this route to yourself" rather than drawing
+   * an empty chart.
+   */
+  app.get<{ Params: { routeId: string }; Querystring: { cabin?: string; rival?: string } }>(
+    '/api/routes/:routeId/waterfall',
+    { onRequest: app.requireAuth },
+    async (request, reply) => {
+      const playerId = request.player?.id;
+      if (playerId === undefined) return notFound(reply);
+
+      const cabin = CabinClass.safeParse(request.query.cabin ?? 'economy');
+      if (!cabin.success) {
+        return reply.code(400).send({ code: 'invalid_cabin', message: 'No such cabin' });
+      }
+
+      const row = await ownedRoute(db.db, playerId, request.params.routeId);
+      if (!row) return notFound(reply);
+
+      const economics = await economicsFor(row);
+      const rivals = rivalsOn(economics);
+      // Nobody named: compare against the first rival there is, so the common
+      // case is one click rather than two.
+      const rivalId = request.query.rival ?? rivals[0]?.id ?? '';
+
+      const result = waterfallFor(row, economics, cabin.data, rivalId);
+      if (!result.ok) return reply.code(422).send(result);
+      return reply.code(200).send(result.waterfall);
     },
   );
 

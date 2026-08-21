@@ -199,8 +199,18 @@ export async function setFares(
   return { ok: true, fares };
 }
 
-/** Build the player's own competitor entry at a given fare table. */
-function selfAsOperator(id: string, fares: FareTable, economics: RouteEconomics): ClassOperator {
+/**
+ * Build the player's own competitor entry at a given fare table.
+ *
+ * Exported so M3-10's waterfall competes the *same* airline the preview does.
+ * Two constructions of "you" would eventually disagree, and the chart explains
+ * the market it is drawn from or it explains nothing.
+ */
+export function selfAsOperator(
+  id: string,
+  fares: FareTable,
+  economics: RouteEconomics,
+): ClassOperator {
   const cabins: Partial<Record<CabinClass, CabinOffer>> = {};
 
   for (const cabin of CABIN_ORDER) {
