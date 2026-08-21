@@ -40,6 +40,7 @@ export * from './economy-config';
 export * from './npc';
 export * from './airport';
 export * from './aircraft';
+export * from './aircraft-catalogue';
 export * from './network';
 export * from './flight';
 export * from './api';

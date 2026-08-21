@@ -5,6 +5,7 @@ import { eq, sql } from 'drizzle-orm';
 import { type WorldConfig } from '@tailfin/shared';
 import { gameTime } from '@tailfin/sim';
 
+import { catalogueVersionExists, ensureCatalogueSeeded } from '../aircraft/catalogue';
 import { type Database } from '../db/client';
 import { airline, world, worldEvent, type WorldRow } from '../db/schema';
 import { economyConfigVersionExists } from '../economy/loader';
@@ -44,7 +45,13 @@ export async function createWorld(
   // only, and memoised, so it can never overwrite a retune and costs one query
   // per process.
   await ensureEconomyConfigSeeded(db);
-  await assertUsableConfig(config, now, (version) => economyConfigVersionExists(db, version));
+  // The catalogue is pinned by a world exactly as its economy is, so it has to
+  // be there before one can be created (M4-01, §22.5).
+  await ensureCatalogueSeeded(db);
+  await assertUsableConfig(config, now, {
+    economyVersionExists: (version) => economyConfigVersionExists(db, version),
+    catalogueVersionExists: (version) => catalogueVersionExists(db, version),
+  });
 
   const inserted = await db
     .insert(world)

@@ -4,6 +4,19 @@ import { type WorldConfig } from '@tailfin/shared';
 export type EconomyVersionCheck = (version: string) => Promise<boolean>;
 
 /**
+ * The two pins a world carries, and the checks that say whether they resolve.
+ *
+ * Two, not one, and separately versioned on purpose: §22.5 versions the aircraft
+ * catalogue and §22.3 the economy, and M3-11 records why they must not share a
+ * number — a fare change and an aerodynamics change would become
+ * indistinguishable in a `flight_result`.
+ */
+export interface WorldPinChecks {
+  economyVersionExists: EconomyVersionCheck;
+  catalogueVersionExists: EconomyVersionCheck;
+}
+
+/**
  * Rejects a config that would break the reset contract.
  *
  * The zod schema in `@tailfin/shared` gets the shape; this gets the meaning, and
@@ -23,7 +36,7 @@ export type EconomyVersionCheck = (version: string) => Promise<boolean>;
 export async function assertUsableConfig(
   config: WorldConfig,
   now: Date,
-  versionExists: EconomyVersionCheck,
+  checks: WorldPinChecks,
 ): Promise<void> {
   const epochMs = Date.parse(config.epoch);
   if (Number.isNaN(epochMs)) {
@@ -36,11 +49,18 @@ export async function assertUsableConfig(
         'meaningless (ADR-0005).',
     );
   }
-  if (!(await versionExists(config.economyConfigVersion))) {
+  if (!(await checks.economyVersionExists(config.economyConfigVersion))) {
     throw new Error(
       `Economy config ${config.economyConfigVersion} is not in economy_config. ` +
         'A world must pin a version that exists when it is created (AIR-03, M3-11). ' +
         'The shipped version is seeded at startup; a tuned one is created through the admin API.',
+    );
+  }
+  if (!(await checks.catalogueVersionExists(config.aircraftCatalogueVersion))) {
+    throw new Error(
+      `Aircraft catalogue ${config.aircraftCatalogueVersion} is not in aircraft_type. ` +
+        'A world must pin a catalogue version that exists when it is created (M4-01, §22.5). ' +
+        'The shipped version is seeded at startup.',
     );
   }
 }

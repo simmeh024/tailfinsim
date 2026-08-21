@@ -9,6 +9,7 @@ import {
   numeric,
   pgEnum,
   pgTable,
+  primaryKey,
   serial,
   text,
   timestamp,
@@ -1980,3 +1981,101 @@ export const npcDecision = pgTable(
 
 export type NpcDecisionRow = typeof npcDecision.$inferSelect;
 export type NewNpcDecisionRow = typeof npcDecision.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// aircraft_type — the versioned catalogue (M4-01, App. C.1–C.2, §22.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * One aircraft type, in one version of the catalogue.
+ *
+ * §22.5: *"Catalogue **versioning** — a world is pinned to a version, so
+ * retuning aircraft doesn't retroactively break running worlds."* A world pins
+ * `world.aircraft_catalogue_version`, exactly as it pins its economy — and
+ * deliberately as a *different* version, because a fare change and an
+ * aerodynamics change must not share a number.
+ *
+ * ## Rows, not a payload
+ *
+ * `economy_config` stores one JSON blob per version because the economy is one
+ * object that is always read whole. A catalogue is eighteen independent things
+ * that are looked up by designation, listed, filtered by era and joined to
+ * airframes — so it is rows, and the version is part of the key.
+ *
+ * ## Immutable, for the same reason the economy is
+ *
+ * The triggers below refuse UPDATE, DELETE and TRUNCATE. A world flying a type
+ * has its performance baked into every `flight_result` it ever settled, and a
+ * specification that could change underneath those would make an old flight
+ * inexplicable (invariant 4). Retuning an aircraft is a **new catalogue
+ * version**, and moving a world to it is a deliberate act.
+ *
+ * ## No foreign key from `world.aircraft_catalogue_version`
+ *
+ * Same reasoning as `economy_config`, and the same trade: a foreign key would
+ * force the migration to seed a version, which means writing eighteen aircraft
+ * into SQL. The seed inserts from `AIRCRAFT_CATALOGUE_V1` at startup instead.
+ */
+export const aircraftType = pgTable(
+  'aircraft_type',
+  {
+    catalogueVersion: text('catalogue_version').notNull(),
+    /** `A321neo`, `ATR 72-600`. Unique within a version — the catalogue key. */
+    designation: text('designation').notNull(),
+
+    /** Crew are rated per family, not per type (§9.2) — the commonality mechanic. */
+    family: text('family').notNull(),
+    manufacturer: text('manufacturer').notNull(),
+    class: text('class').notNull(),
+    maintenanceProfile: text('maintenance_profile').notNull(),
+
+    /** `AircraftSpec` as JSON text. Read whole; nothing queries inside it. */
+    baseSpec: text('base_spec').notNull(),
+    /** `AircraftEraDates` as JSON text, including the restriction list. */
+    eraDates: text('era_dates').notNull(),
+
+    /**
+     * The four dates again, as columns.
+     *
+     * Denormalised from `era_dates` on purpose: *"which types can this world
+     * order today?"* is the question the catalogue is asked most, and answering
+     * it by parsing eighteen JSON blobs in the application would make era
+     * gating cost a table scan every time a player opened a list. The JSON
+     * stays the source of truth and these are the index.
+     */
+    firstFlight: timestamp('first_flight', { withTimezone: true }),
+    entryIntoService: timestamp('entry_into_service', { withTimezone: true }),
+    productionEnd: timestamp('production_end', { withTimezone: true }),
+    outOfService: timestamp('out_of_service', { withTimezone: true }),
+
+    /** Null for a used-market-only type — App. C.2 shows those as "—". */
+    listPriceMinor: bigint('list_price_minor', { mode: 'number' }),
+    monthlyLeaseRateMinor: bigint('monthly_lease_rate_minor', { mode: 'number' }),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Which build wrote it, so a mismatch can be traced to a release. */
+    createdByLabel: text('created_by_label').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.catalogueVersion, t.designation] }),
+    // The era-gating query: this version's types, orderable at a given date.
+    index('aircraft_type_version_eis_idx').on(t.catalogueVersion, t.entryIntoService),
+    check(
+      'aircraft_type_era_dates_ordered',
+      sql`(${t.firstFlight} IS NULL OR ${t.entryIntoService} IS NULL
+           OR ${t.firstFlight} <= ${t.entryIntoService})
+          AND (${t.entryIntoService} IS NULL OR ${t.productionEnd} IS NULL
+           OR ${t.entryIntoService} <= ${t.productionEnd})
+          AND (${t.productionEnd} IS NULL OR ${t.outOfService} IS NULL
+           OR ${t.productionEnd} <= ${t.outOfService})`,
+    ),
+    check(
+      'aircraft_type_prices_nonnegative',
+      sql`(${t.listPriceMinor} IS NULL OR ${t.listPriceMinor} >= 0)
+          AND (${t.monthlyLeaseRateMinor} IS NULL OR ${t.monthlyLeaseRateMinor} >= 0)`,
+    ),
+  ],
+);
+
+export type AircraftTypeRow = typeof aircraftType.$inferSelect;
+export type NewAircraftTypeRow = typeof aircraftType.$inferInsert;

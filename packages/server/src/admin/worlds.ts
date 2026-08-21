@@ -9,7 +9,7 @@ import { gameTime } from '@tailfin/sim';
 
 import { type Database } from '../db/client';
 import { airline, world, worldEvent, type WorldRow } from '../db/schema';
-import { type EconomyVersionCheck } from '../world/config';
+import { type WorldPinChecks } from '../world/config';
 import { createWorld } from '../world/lifecycle';
 
 import { writeAudit } from './audit';
@@ -80,7 +80,7 @@ function fieldOf(path: readonly PropertyKey[]): string {
 export async function validateWorldConfig(
   input: unknown,
   now: Date,
-  versionExists: EconomyVersionCheck,
+  checks: WorldPinChecks,
 ): Promise<ValidationResult> {
   const parsed = WorldConfig.safeParse(input);
   if (!parsed.success) {
@@ -109,13 +109,24 @@ export async function validateWorldConfig(
     };
   }
 
-  if (!(await versionExists(config.economyConfigVersion))) {
+  if (!(await checks.economyVersionExists(config.economyConfigVersion))) {
     return {
       ok: false,
       fields: {
         economyConfigVersion: [
           `There is no economy version "${config.economyConfigVersion}". ` +
             'Pick one from the economy list, or create it first.',
+        ],
+      },
+    };
+  }
+
+  if (!(await checks.catalogueVersionExists(config.aircraftCatalogueVersion))) {
+    return {
+      ok: false,
+      fields: {
+        aircraftCatalogueVersion: [
+          `There is no aircraft catalogue version "${config.aircraftCatalogueVersion}".`,
         ],
       },
     };
