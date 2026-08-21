@@ -62,7 +62,15 @@ export const NpcDecisionBasis = z
     dailyPassengers: z.number().nonnegative().optional(),
     /** Operators already selling the pair, the NPC excluded. */
     incumbents: z.number().int().nonnegative().optional(),
-    /** Per-seat variable cost the fare was drawn against (A.10). */
+    /**
+     * Per-seat variable cost the fare was drawn against (A.10), **rounded**.
+     *
+     * The underlying figure is a division — a sector's cost over its seats — so
+     * it is fractional, and `MinorUnits` is integers by definition. Rounded
+     * where it is recorded rather than relaxed here: money on the wire stays
+     * integer minor units everywhere, and a basis is a record of a decision
+     * rather than a ledger entry.
+     */
     variableCostPerSeatMinor: MinorUnits.optional(),
     /** A.10's floor for this route — the fare below which nothing may be sold. */
     floorMinor: MinorUnits.optional(),

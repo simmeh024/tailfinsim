@@ -402,7 +402,7 @@ async function openNetwork(args: OpenNetworkArgs): Promise<number> {
       basis: {
         dailyPassengers: Math.round(market.dailyPassengers),
         incumbents: market.incumbents + already.length - 1,
-        variableCostPerSeatMinor: market.variableCostPerSeatMinor,
+        variableCostPerSeatMinor: Math.round(market.variableCostPerSeatMinor),
         floorMinor: market.floorMinor,
         fareAfterMinor: fare,
         estimatedMargin: verdict.estimatedMargin,
