@@ -979,7 +979,30 @@ is the point: production must not be where the engine's operational behaviour ge
 | Port            | 3001, proxied by Caddy           | 3100, **loopback only, no vhost**                              |
 | Database        | local socket, role `tailfin_dev` | `127.0.0.1:5433` through the tunnel, role `tailfin_worker_dev` |
 | Owns migrations | **yes**                          | no (`RUNS_MIGRATIONS=0`)                                       |
-| Deploy          | `./deploy/deploy-dev.sh`         | `./deploy/deploy-dev-worker.sh`                                |
+| Log in as       | `tailfin@…` directly             | `ubuntu@…`, then `sudo -u tailfin` — see below                 |
+| Deploy          | `./deploy/deploy-dev.sh`         | `./deploy/deploy-dev-worker.sh`, **not as `ubuntu`**           |
+
+### Which user the deploy runs as
+
+The two boxes are reached differently, and this is the easiest thing here to get wrong. On the web host the `tailfin` user has its own `authorized_keys` (step 3), so `ssh tailfin@208.113.129.131` puts you straight into the account that owns `/srv/tailfin-dev`, and `./deploy/deploy-dev.sh` needs nothing further. **This box has no `tailfin` login at all** — `ssh tailfin@208.113.129.83` is refused `Permission denied (publickey)`. You arrive as `ubuntu`, the cloud-init account carrying the `tailfin2` key, while `/srv/tailfin-dev-worker` and the service belong to `tailfin`. So the deploy has to hop:
+
+```bash
+ssh -i ~/.ssh/tailfin2.pem ubuntu@208.113.129.83 \
+  'sudo -n -u tailfin -H bash -lc "cd /srv/tailfin-dev-worker && ./deploy/deploy-dev-worker.sh <ref>"'
+```
+
+`-u tailfin` is the whole point of the line. `-n` is the flag worth keeping: it refuses to prompt, so a sudoers grant that is not there fails immediately instead of hanging on a password prompt that a non-interactive SSH has no terminal to answer. `-H` and `-lc` are belt-and-braces — measured on this box, sudo already sets `HOME=/home/tailfin` without `-H`, and `git`, `node` and `pnpm` are all in `/usr/bin`, so a login shell finds the same toolchain a non-login one does. They cost nothing and stop the command depending on this box's `env_reset` and `secure_path` settings, which is why they stay in the documented form.
+
+Run it as `ubuntu` instead and it dies at the first step, describing what looks like a broken checkout rather than a wrong user:
+
+```
+==> Fetching
+fatal: detected dubious ownership in repository at '/srv/tailfin-dev-worker'
+```
+
+**Do not take git's suggested fix.** It offers `git config --global --add safe.directory /srv/tailfin-dev-worker`, which repairs nothing — it silences the guard by declaring that `ubuntu` may operate a `tailfin`-owned tree. The deploy would then get past `Fetching` and carry on as the wrong user, writing `node_modules` and `dist` into a checkout the service account has to run and the next deploy has to overwrite. The guard is reporting the account, not the repository; change the account.
+
+`ubuntu` is right for the [health checks](#checking-on-it) below, because `curl` against loopback touches nothing `tailfin` owns. It is wrong for anything that writes to the checkout.
 
 ### Why a tunnel and not a Postgres listener
 
@@ -1030,6 +1053,7 @@ Worker-only keys are `WORKER_HEALTH_PORT`, `WORKER_HEALTH_HOST` and `WORKER_TICK
 | `engine.errors` rising                                      | Each tick is throwing                                | `journalctl -u tailfin-dev-worker`; a failing tick does not stop the clock, so this climbs quietly                                                           |
 | `engine.failed` rising                                      | Events drained of a type with no handler             | Check `engine.unhandledEventTypes` — see the warning below                                                                                                   |
 | Deploy says "does not own them — deploy the web node first" | Schema change pending                                | Deploy dev web first. Ordering is enforced, not documented                                                                                                   |
+| `dubious ownership` at `==> Fetching`                       | Deploy run as `ubuntu`; `tailfin` owns the checkout  | Re-run through `sudo -n -u tailfin -H` — see [Which user the deploy runs as](#which-user-the-deploy-runs-as). **Do not add `safe.directory`**                |
 | `Permission denied` running the deploy script               | Checkout is at a commit predating it                 | `git checkout --detach origin/<ref>` once, then deploy normally                                                                                              |
 
 ### The warning that matters before scheduling real work
