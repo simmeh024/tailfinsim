@@ -66,11 +66,29 @@ export function captureLoad(): AdminNodeLoad {
   };
 }
 
+/**
+ * What identifies a node: its hostname **and its role**.
+ *
+ * The hostname alone is not enough, and the first deployment proved it. One host
+ * can run more than one Tailfin process — the web box already runs production
+ * and dev side by side, and OPS-09's original plan was a worker as a second
+ * service on the dev box. Two such processes writing to one database would share
+ * a primary key and overwrite each other's row, and the console would show a
+ * single node flapping between two roles rather than two nodes.
+ *
+ * Environment is deliberately not part of it: a database only ever holds one
+ * environment's nodes, so adding it would pad the name without disambiguating
+ * anything.
+ */
+export function nodeIdentity(role: NodeRole, host: string = hostname()): string {
+  return `${host}/${role}`;
+}
+
 export interface HeartbeatOptions {
   db: Database;
   role: NodeRole;
   environment: EnvironmentLabel;
-  /** Overridden in tests; the hostname is what identifies a node in the estate. */
+  /** Overridden in tests. Defaults to `nodeIdentity(role)`. */
   node?: string;
   startedAt?: Date;
   /** A worker supplies this; a web node has no engine and must not report one. */
@@ -91,7 +109,7 @@ export function createHeartbeat(options: HeartbeatOptions): Heartbeat {
     db,
     role,
     environment,
-    node = hostname(),
+    node = nodeIdentity(role),
     startedAt = new Date(),
     engine,
     now = () => new Date(),
