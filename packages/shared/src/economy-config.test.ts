@@ -69,6 +69,34 @@ describe('the shipped payload', () => {
   });
 });
 
+describe('a payload written before a section existed', () => {
+  it('still loads, taking the shipped default for the missing section', () => {
+    // The failure this prevents is total rather than partial. `economy_config`
+    // rows are immutable and are parsed on the way *out*, so a required new
+    // section makes every earlier payload unparseable — and a world pinned to
+    // one cannot price a flight, found an airline or draw a fare floor.
+    //
+    // M3-12 added `npc` and dev found out on the first economy read after the
+    // deploy. A new section is an expand-shaped change and must arrive with a
+    // default, exactly as `ADD COLUMN … DEFAULT` does for the database.
+    const { npc: _npc, ...beforeNpcExisted } = ECONOMY_CONFIG_V1;
+
+    const parsed = EconomyConfig.parse(beforeNpcExisted);
+    expect(parsed.npc).toEqual(ECONOMY_CONFIG_V1.npc);
+  });
+
+  it('keeps a section the payload does carry, rather than defaulting over it', () => {
+    // A default fills an absence. It must never overwrite a live retune —
+    // which is the property the whole seed-but-never-update design rests on.
+    const retuned = retune((draft) => {
+      draft.npc.behaviour.entryMarginThreshold = 0.21;
+    });
+
+    const parsed = EconomyConfig.parse(JSON.parse(JSON.stringify(retuned)));
+    expect(parsed.npc.behaviour.entryMarginThreshold).toBe(0.21);
+  });
+});
+
 describe('what the schema refuses', () => {
   it('refuses a version name that could not be a URL segment', () => {
     for (const bad of ['', 'v 2', 'V2', 'v2/../v1', 'a'.repeat(65)]) {

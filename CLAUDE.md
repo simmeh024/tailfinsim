@@ -43,6 +43,14 @@ working against the result; the deploy deliberately leaves it serving when migra
 Do not add down-migrations or bypass the policy for `CREATE INDEX CONCURRENTLY`—ADR-0016 owns
 the transaction, lock and recovery trade.
 
+**A new `EconomyConfig` section must arrive with a default.** Rows in
+`economy_config` are immutable and are parsed **on the way out**, against today's schema —
+so a required new section makes every payload written before it unparseable, and the
+failure is total: a world pinned to that version cannot price a flight, found an airline
+or draw a fare floor. M3-12 added `npc` without one and broke dev's economy on the first
+read after the deploy. Treat it exactly as the database's expand rule: a section arrives
+defaulted, or it is a new _version_ created through the admin API and pinned deliberately.
+
 **A world is not populated until `npc:seed` has run.** Since M3-12 the competition is
 real: NPC carriers are rows in `airline` with `kind = 'npc'`, no player, an archetype, and
 routes and fares decided by a weekly review the **worker** runs. They obey the same fare
