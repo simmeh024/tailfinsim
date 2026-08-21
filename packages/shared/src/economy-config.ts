@@ -474,6 +474,148 @@ export const NpcBalance = z
   })
   .strict();
 
+/**
+ * The NPC balance as shipped, named so the schema can default to it.
+ *
+ * ## Why a new section needs a default
+ *
+ * `economy_config` rows are immutable and the loader parses them **on the way
+ * out**, against today's schema. That is deliberate — a payload that validated
+ * against last year's schema is not proof that it validates against this one.
+ * It also means that adding a *required* section makes every payload written
+ * before it unparseable, and the failure is total rather than partial: a world
+ * pinned to that version cannot price a flight, found an airline or draw a fare
+ * floor.
+ *
+ * M3-12 did exactly that, and dev found out. The stored `v1` had been written
+ * by the build before `npc` existed, so the first economy read after the deploy
+ * threw.
+ *
+ * The rule that follows, and it is the same one the database already lives by:
+ * **a new section is an expand-shaped change and must arrive with a default.**
+ * `ADD COLUMN … DEFAULT` for a config payload. A section that genuinely cannot
+ * have a sensible default is not an expand — it is a new *version*, created
+ * through the admin API and pinned deliberately.
+ *
+ * Nothing is reverted by this. A default only fills a section that is absent,
+ * and a section nobody could have retuned yet is exactly the safe case.
+ */
+export const SHIPPED_NPC_BALANCE = {
+  archetypes: {
+    /**
+     * The incumbent a player meets on a major city pair. Expensive, comfortable,
+     * frequent, and the only archetype selling a front cabin — which is what
+     * makes a premium player's first route a fight rather than a walkover.
+     */
+    flag: {
+      fareMarkup: 1.55,
+      productScore: 0.74,
+      reputation: 0.58,
+      seatsByCabin: { first: 0, business: 20, premium_economy: 21, economy: 140 },
+      targetShare: 0.32,
+      maxFrequency: 8,
+      minDailyPassengers: 220,
+      maxRangeNm: 4_200,
+      // Mildly negative: a flag carrier's network is built around business
+      // demand, so a holiday market is not where it wants to be.
+      leisureAffinity: -0.15,
+    },
+    /**
+     * Economy only, dense, cheap and frequent. A.2's *"leisure cares about
+     * price, price, price"* is what this archetype exists to exploit, and the
+     * absence of a business cabin is why a flag carrier still beats it there.
+     */
+    lcc: {
+      fareMarkup: 1.16,
+      productScore: 0.34,
+      reputation: 0.47,
+      seatsByCabin: { first: 0, business: 0, premium_economy: 0, economy: 186 },
+      targetShare: 0.34,
+      maxFrequency: 10,
+      minDailyPassengers: 150,
+      maxRangeNm: 2_000,
+      leisureAffinity: 0.35,
+    },
+    /**
+     * Thin short-haul markets nobody else wants. Small aircraft, modest
+     * frequency, fares that reflect having the market to itself.
+     */
+    regional: {
+      fareMarkup: 1.48,
+      productScore: 0.44,
+      reputation: 0.5,
+      seatsByCabin: { first: 0, business: 0, premium_economy: 0, economy: 72 },
+      targetShare: 0.4,
+      maxFrequency: 5,
+      minDailyPassengers: 45,
+      maxRangeNm: 900,
+      leisureAffinity: 0.05,
+    },
+    /**
+     * Leisure markets, very dense, very cheap, low frequency. The archetype
+     * that makes a Mediterranean route feel contested in August.
+     */
+    charter: {
+      fareMarkup: 1.12,
+      productScore: 0.27,
+      reputation: 0.42,
+      seatsByCabin: { first: 0, business: 0, premium_economy: 0, economy: 220 },
+      targetShare: 0.22,
+      maxFrequency: 3,
+      minDailyPassengers: 180,
+      maxRangeNm: 3_000,
+      leisureAffinity: 0.75,
+    },
+  },
+  seeding: {
+    /**
+     * Sixty carriers, not six hundred.
+     *
+     * The binding constraint is not compute — it is that every NPC spends a
+     * two-letter IATA code, and §24 counts roughly 1,300 usable ones against
+     * an unbounded player count. Sixty populates the major markets while
+     * leaving the namespace overwhelmingly to players.
+     */
+    maxCarriers: 60,
+    routesPerCarrier: 14,
+    minDailyPassengers: 120,
+    maxCountries: 24,
+  },
+  behaviour: {
+    /** Weekly in game time — often enough to react, rare enough to read. */
+    reviewIntervalDays: 7,
+    /**
+     * 8% contribution over variable cost.
+     *
+     * Calibrated against what the archetypes can actually earn rather than
+     * picked: an LCC at a 1.16 markup contributes at most 13.8% even at a
+     * full aircraft, so a threshold in the twenties would mean no low-cost
+     * carrier ever entered anything — which is how this number was first got
+     * wrong. At 8% a fat uncontested market clears comfortably for every
+     * archetype and a contested or badly-suited one does not, which is what
+     * makes entry a market judgement rather than a restatement of the markup.
+     */
+    entryMarginThreshold: 0.08,
+    /** Six incumbents roughly halve the share a newcomer can plan for. */
+    incumbentShareDrag: 0.15,
+    entryCandidates: 40,
+    /**
+     * Two routes per carrier per review.
+     *
+     * Uncapped, a review would let one carrier open its entire remaining
+     * network at once and turn a world's competitive landscape over in a
+     * single tick — a step change no player could price against.
+     */
+    maxEntriesPerReview: 2,
+    /** Four consecutive weekly reviews in the red before a route is dropped. */
+    exitLossReviews: 4,
+    /** A third of the way toward the market average per review. */
+    fareAdjustmentRate: 0.33,
+    /** Within 3% of target is close enough; moving it would only fill the log. */
+    fareDeadband: 0.03,
+  },
+};
+
 // ---------------------------------------------------------------------------
 // The payload
 // ---------------------------------------------------------------------------
@@ -500,7 +642,9 @@ export const EconomyConfig = z
     costs: CostBalance,
     pricing: PricingBalance,
     boosts: BoostBalance,
-    npc: NpcBalance,
+    // Defaulted, not required — see `SHIPPED_NPC_BALANCE` for why a new
+    // section must be, and what to do when it cannot be.
+    npc: NpcBalance.default(SHIPPED_NPC_BALANCE),
   })
   .strict();
 export type EconomyConfig = z.infer<typeof EconomyConfig>;
@@ -765,121 +909,7 @@ export const ECONOMY_CONFIG_V1: EconomyConfig = EconomyConfig.parse({
     },
   },
 
-  npc: {
-    archetypes: {
-      /**
-       * The incumbent a player meets on a major city pair. Expensive, comfortable,
-       * frequent, and the only archetype selling a front cabin — which is what
-       * makes a premium player's first route a fight rather than a walkover.
-       */
-      flag: {
-        fareMarkup: 1.55,
-        productScore: 0.74,
-        reputation: 0.58,
-        seatsByCabin: { first: 0, business: 20, premium_economy: 21, economy: 140 },
-        targetShare: 0.32,
-        maxFrequency: 8,
-        minDailyPassengers: 220,
-        maxRangeNm: 4_200,
-        // Mildly negative: a flag carrier's network is built around business
-        // demand, so a holiday market is not where it wants to be.
-        leisureAffinity: -0.15,
-      },
-      /**
-       * Economy only, dense, cheap and frequent. A.2's *"leisure cares about
-       * price, price, price"* is what this archetype exists to exploit, and the
-       * absence of a business cabin is why a flag carrier still beats it there.
-       */
-      lcc: {
-        fareMarkup: 1.16,
-        productScore: 0.34,
-        reputation: 0.47,
-        seatsByCabin: { first: 0, business: 0, premium_economy: 0, economy: 186 },
-        targetShare: 0.34,
-        maxFrequency: 10,
-        minDailyPassengers: 150,
-        maxRangeNm: 2_000,
-        leisureAffinity: 0.35,
-      },
-      /**
-       * Thin short-haul markets nobody else wants. Small aircraft, modest
-       * frequency, fares that reflect having the market to itself.
-       */
-      regional: {
-        fareMarkup: 1.48,
-        productScore: 0.44,
-        reputation: 0.5,
-        seatsByCabin: { first: 0, business: 0, premium_economy: 0, economy: 72 },
-        targetShare: 0.4,
-        maxFrequency: 5,
-        minDailyPassengers: 45,
-        maxRangeNm: 900,
-        leisureAffinity: 0.05,
-      },
-      /**
-       * Leisure markets, very dense, very cheap, low frequency. The archetype
-       * that makes a Mediterranean route feel contested in August.
-       */
-      charter: {
-        fareMarkup: 1.12,
-        productScore: 0.27,
-        reputation: 0.42,
-        seatsByCabin: { first: 0, business: 0, premium_economy: 0, economy: 220 },
-        targetShare: 0.22,
-        maxFrequency: 3,
-        minDailyPassengers: 180,
-        maxRangeNm: 3_000,
-        leisureAffinity: 0.75,
-      },
-    },
-    seeding: {
-      /**
-       * Sixty carriers, not six hundred.
-       *
-       * The binding constraint is not compute — it is that every NPC spends a
-       * two-letter IATA code, and §24 counts roughly 1,300 usable ones against
-       * an unbounded player count. Sixty populates the major markets while
-       * leaving the namespace overwhelmingly to players.
-       */
-      maxCarriers: 60,
-      routesPerCarrier: 14,
-      minDailyPassengers: 120,
-      maxCountries: 24,
-    },
-    behaviour: {
-      /** Weekly in game time — often enough to react, rare enough to read. */
-      reviewIntervalDays: 7,
-      /**
-       * 8% contribution over variable cost.
-       *
-       * Calibrated against what the archetypes can actually earn rather than
-       * picked: an LCC at a 1.16 markup contributes at most 13.8% even at a
-       * full aircraft, so a threshold in the twenties would mean no low-cost
-       * carrier ever entered anything — which is how this number was first got
-       * wrong. At 8% a fat uncontested market clears comfortably for every
-       * archetype and a contested or badly-suited one does not, which is what
-       * makes entry a market judgement rather than a restatement of the markup.
-       */
-      entryMarginThreshold: 0.08,
-      /** Six incumbents roughly halve the share a newcomer can plan for. */
-      incumbentShareDrag: 0.15,
-      entryCandidates: 40,
-      /**
-       * Two routes per carrier per review.
-       *
-       * Uncapped, a review would let one carrier open its entire remaining
-       * network at once and turn a world's competitive landscape over in a
-       * single tick — a step change no player could price against.
-       */
-      maxEntriesPerReview: 2,
-      /** Four consecutive weekly reviews in the red before a route is dropped. */
-      exitLossReviews: 4,
-      /** A third of the way toward the market average per review. */
-      fareAdjustmentRate: 0.33,
-      /** Within 3% of target is close enough; moving it would only fill the log. */
-      fareDeadband: 0.03,
-    },
-  },
+  npc: SHIPPED_NPC_BALANCE,
 });
 
 // ---------------------------------------------------------------------------

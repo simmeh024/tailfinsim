@@ -6,7 +6,7 @@ import { readBuildInfo } from '../build-info';
 import { type Database } from '../db/client';
 import { economyConfig } from '../db/schema';
 
-import { ECONOMY_CONFIG_V1, economyChecksum } from './config';
+import { defineEconomyConfig, ECONOMY_CONFIG_V1, economyChecksum } from './config';
 
 /**
  * Putting the shipped economy into a database that has never seen it (M3-11).
@@ -86,12 +86,30 @@ export async function seedEconomyConfig(db: Database): Promise<EconomySeedResult
   }
 
   const existing = await db
-    .select({ checksum: economyConfig.checksum })
+    .select({ payload: economyConfig.payload })
     .from(economyConfig)
     .where(eq(economyConfig.version, ECONOMY_CONFIG_V1.version))
     .limit(1);
 
-  const storedChecksum = existing[0]?.checksum ?? '';
+  /**
+   * Compared as *configs*, not as bytes.
+   *
+   * The stored `checksum` column is a fact about the text as written, and a
+   * payload written before a section existed will never match a build that has
+   * one — it would warn on every boot, for ever, about a difference that is
+   * only the passage of time. Re-checksumming the **parsed** payload compares
+   * what the two builds would actually run, with defaults applied, which is the
+   * question this check is asking.
+   *
+   * A real divergence — an admin having retuned v1 — still shows, because a
+   * retuned number survives parsing and changes the checksum.
+   */
+  const storedPayload = existing[0]?.payload;
+  const storedChecksum =
+    storedPayload === undefined
+      ? ''
+      : economyChecksum(defineEconomyConfig(JSON.parse(storedPayload) as unknown));
+
   return {
     version: ECONOMY_CONFIG_V1.version,
     inserted: false,
