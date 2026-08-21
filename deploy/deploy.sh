@@ -6,6 +6,11 @@
 #   ./deploy.sh <sha|tag>       deploy (or roll back to) a specific commit
 #   ./deploy.sh --force         rebuild and restart even if already at target
 #
+# A bare branch name is resolved against `origin` when nothing local matches, so
+# `main` and `origin/main` both work. Production still refuses any commit that
+# is not on main (OPS-01) — that check is on the resolved commit, so a branch
+# name does not get round it.
+#
 # There is no CI involvement by design: running this command *is* the approval
 # step. See ADR-0003 for why, and what it costs.
 
@@ -57,13 +62,59 @@ TARGET="${TARGET:-origin/main}"
 log() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 die() { printf '\n\033[31mFAILED: %s\033[0m\n' "$*" >&2; exit 1; }
 
+# ---------------------------------------------------------------------------
+# Resolve a ref, accepting a bare branch name.
+#
+# These checkouts are detached on purpose (see the checkout further down), and a
+# fetch writes only remote-tracking refs — so there is no local `feat/thing`
+# here for `rev-parse` to find. Asking for one died with git's own
+# `ambiguous argument` while the usage text of both scripts, and the table in
+# deploy/README.md, all promised that a branch name would work:
+#
+#     ./deploy-dev.sh <sha|branch>   deploy any ref — this is the point of dev
+#
+# Tried as given first, so an exact SHA or tag always beats a same-named branch,
+# and only then as `origin/<ref>`. `^{commit}` peels a tag to the commit it
+# points at and refuses anything that is not a commit, which is what the
+# checkout needs.
+# ---------------------------------------------------------------------------
+resolve_ref() {
+  local ref="$1"
+  if git rev-parse --verify --quiet "${ref}^{commit}" >/dev/null; then
+    printf '%s' "${ref}"
+  elif git rev-parse --verify --quiet "origin/${ref}^{commit}" >/dev/null; then
+    printf '%s' "origin/${ref}"
+  else
+    return 1
+  fi
+}
+
 cd "${REPO_DIR}"
 
 log "Fetching"
 git fetch --prune origin
 
+# After the fetch, necessarily: a branch pushed moments ago has no
+# remote-tracking ref here until it has been fetched.
+RESOLVED="$(resolve_ref "${TARGET}")" ||
+  die "no such commit, tag or branch: ${TARGET} (tried ${TARGET} and origin/${TARGET})"
+if [ "${RESOLVED}" != "${TARGET}" ]; then
+  echo "resolved ${TARGET} -> ${RESOLVED}"
+  # Reassigned so the deploy stamp below records the ref that was actually
+  # deployed. `ops:status` reads that field, and "my-branch" there would not say
+  # which remote it came from.
+  TARGET="${RESOLVED}"
+fi
+
 PREVIOUS="$(git rev-parse HEAD)"
-NEXT="$(git rev-parse "${TARGET}")"
+# `^{commit}` because an **annotated** tag resolves to the tag object, not the
+# commit it points at. Everything that acts on NEXT already peels — the
+# ancestor check and the checkout both do — so nothing was unsafe, but the two
+# places that only *report* it were wrong: `Deployed ${NEXT}` printed a sha that
+# was not the commit now running, and `PREVIOUS = NEXT` could never match, so an
+# already-deployed tag always rebuilt. No tags exist in the repo yet, so this
+# had not bitten anyone.
+NEXT="$(git rev-parse "${TARGET}^{commit}")"
 
 echo "current: ${PREVIOUS}"
 echo "target:  ${NEXT}  (${TARGET})"

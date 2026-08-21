@@ -872,8 +872,16 @@ Dev takes any ref, which is the point of it:
 
 ```bash
 ./deploy/deploy-dev.sh my-branch
+./deploy/deploy-dev.sh origin/my-branch
 ./deploy/deploy-dev.sh origin/main
+./deploy/deploy-dev.sh 1822d3c
 ```
+
+The bare branch name is resolved against `origin` when nothing local matches.
+Both checkouts are detached and hold no local branches, so for a long time only
+the `origin/`-qualified form actually worked and a bare name died with git's
+`ambiguous argument` — while this block said otherwise. The ref is tried as
+given first, so a SHA or a tag still beats a branch of the same name.
 
 Production takes `origin/main` by default, and **refuses any commit that is not on main** —
 `deploy.sh` checks `git merge-base --is-ancestor` before it touches the checkout (OPS-01).
