@@ -143,16 +143,32 @@ no longer an unambiguous phrase, and production still has no worker at all.
 
 The third node, alongside dev web:
 
-|             | dev worker                                       |
-| ----------- | ------------------------------------------------ |
-| host        | `208.113.129.83` — its own VM                    |
-| checkout    | `/srv/tailfin-dev-worker`                        |
-| service     | `tailfin-dev-worker` (+ `tailfin-db-tunnel`)     |
-| entry point | `dist/worker.js`                                 |
-| port        | 3100, **loopback only** — no Caddy vhost, ever   |
-| database    | `tailfin_dev` via SSH tunnel on `127.0.0.1:5433` |
-| deploy with | `./deploy/deploy-dev-worker.sh <ref>`            |
-| migrations  | **no** — the web node owns them                  |
+|               | dev worker                                              |
+| ------------- | ------------------------------------------------------- |
+| host          | `208.113.129.83` — its own VM                           |
+| checkout      | `/srv/tailfin-dev-worker`                               |
+| service       | `tailfin-dev-worker` (+ `tailfin-db-tunnel`)            |
+| entry point   | `dist/worker.js`                                        |
+| port          | 3100, **loopback only** — no Caddy vhost, ever          |
+| database      | `tailfin_dev` via SSH tunnel on `127.0.0.1:5433`        |
+| you log in as | `ubuntu`; the checkout is `tailfin`'s — see below       |
+| deploy with   | `./deploy/deploy-dev-worker.sh <ref>`, **as `tailfin`** |
+| migrations    | **no** — the web node owns them                         |
+
+**The dev worker is the one box where the login user is not the deploy user.** You reach
+it as `ubuntu`, but `/srv/tailfin-dev-worker` and the service belong to `tailfin`, and there
+is no `tailfin` login on that box at all. So the deploy has to hop:
+
+```bash
+ssh -i ~/.ssh/tailfin2.pem ubuntu@208.113.129.83 \
+  'sudo -n -u tailfin -H bash -lc "cd /srv/tailfin-dev-worker && ./deploy/deploy-dev-worker.sh <ref>"'
+```
+
+Run it as `ubuntu` and it dies at `==> Fetching` with git's `detected dubious ownership`,
+which reads like a broken checkout rather than a wrong user. **Do not take git's suggested
+`safe.directory` fix** — it silences the guard by letting `ubuntu` write into a
+`tailfin`-owned tree. The web node is not like this: `tailfin` has its own login there, so
+`deploy-dev.sh` needs no `sudo`. `deploy/README.md` has the detail.
 
 **Dev is the preview environment and is meant to run unmerged branches.** That is a
 standing decision, not an oversight — it is where the user reviews work before merging.
