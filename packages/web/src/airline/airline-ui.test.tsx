@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MeResponse, OwnAirlineResponse } from '@tailfin/shared';
 
 import { App } from '../App';
+import { waitForSignInCheck } from '../test-gates';
 
 const PLAYER_ID = '11111111-2222-4333-8444-555555555555';
 const WORLD_ID = '22222222-3333-4444-8555-666666666666';
@@ -90,12 +91,23 @@ function stubApi(settings: StubSettings = {}) {
   return updates;
 }
 
-function renderPage() {
-  return render(
+/**
+ * The airline page, with the sign-in check already behind it.
+ *
+ * `/api/me` and `/api/airlines/me` are two gates in a row — the second cannot even
+ * be sent until the first has mounted the route tree — so waiting for the page's
+ * contents alone made one query's budget cover both, and under full-suite load it
+ * ran out mid-chain and reported a missing heading. The sign-in check is waited
+ * for here; each test's own `findBy*` then covers only the page's own load.
+ */
+async function renderPage() {
+  const result = render(
     <MemoryRouter initialEntries={['/airline']}>
       <App />
     </MemoryRouter>,
   );
+  await waitForSignInCheck();
+  return result;
 }
 
 beforeEach(() => {
@@ -110,7 +122,7 @@ afterEach(() => {
 describe('your airline page', () => {
   it('shows private cash and reputation, stable codes, and live shell identity', async () => {
     stubApi();
-    renderPage();
+    await renderPage();
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Tailfin Air' }),
@@ -129,7 +141,7 @@ describe('your airline page', () => {
 
   it('exposes only AIR-02 identity fields as controls and states why codes stay fixed', async () => {
     stubApi();
-    renderPage();
+    await renderPage();
 
     for (const label of ['Airline name', 'Operational callsign', 'Home country']) {
       expect(await screen.findByLabelText(label)).toBeInTheDocument();
@@ -142,7 +154,7 @@ describe('your airline page', () => {
 
   it('sends only mutable fields, applies the server result, and updates shell cash', async () => {
     const updates = stubApi();
-    renderPage();
+    await renderPage();
 
     fireEvent.change(await screen.findByLabelText('Airline name'), {
       target: { value: 'Air Côte d’Ivoire' },
@@ -181,7 +193,7 @@ describe('your airline page', () => {
         },
       },
     });
-    renderPage();
+    await renderPage();
 
     fireEvent.change(await screen.findByLabelText('Airline name'), { target: { value: '---' } });
     fireEvent.click(screen.getByRole('button', { name: 'Rebrand for 25,000.00' }));
@@ -195,7 +207,7 @@ describe('your airline page', () => {
 
   it('treats no airline as a normal page state with a route to founding', async () => {
     stubApi({ own: { airline: null, rebrand: null } });
-    renderPage();
+    await renderPage();
 
     expect(await screen.findByText(/no airline in the active world yet/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open the founding desk' })).toHaveAttribute(
@@ -216,7 +228,7 @@ describe('your airline page', () => {
         rebrand: null,
       },
     });
-    renderPage();
+    await renderPage();
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Tailfin Air' }),

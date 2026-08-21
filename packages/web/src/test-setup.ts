@@ -1,7 +1,32 @@
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
 import { afterEach, beforeEach, vi } from 'vitest';
+
+/**
+ * How long an async query may wait for the DOM to catch up.
+ *
+ * DOM Testing Library's default is one second, which is a budget sized for a real
+ * browser doing real work. Nothing here does any: every `fetch` is a stub that has
+ * already resolved, so a `findBy*` is not waiting on I/O — it is waiting for
+ * React's scheduler to be given the CPU to commit the next render. A full-suite
+ * run puts a jsdom worker on every core at once, and on a loaded machine a commit
+ * has stayed queued for longer than that second: three tests that take between a
+ * tenth and a third of a second on their own have measured 1.2s, 1.3s and worse,
+ * and failed reporting a missing element rather than a page still loading.
+ *
+ * So this is a bound on a hang, not a delay anybody pays — a query that is going
+ * to pass returns on its first poll and never sees this number. It is the second
+ * half of the fix; `test-gates.ts` is the first, and the one that matters, because
+ * a longer budget for an unnamed wait only moves the coin flip.
+ *
+ * **It has to stay under the project's `testTimeout`**, which `vitest.config.ts`
+ * raises to twenty seconds for exactly this reason. Set to five against Vitest's
+ * own five-second default, a slow query spends the entire test and the failure
+ * arrives as "Test timed out in 5000ms" — which names neither the query nor the
+ * gate, and is a worse report than the one this is here to fix.
+ */
+configure({ asyncUtilTimeout: 5000 });
 
 /**
  * Unmount between tests.

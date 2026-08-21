@@ -71,6 +71,23 @@ export default defineConfig({
           environment: 'jsdom',
           setupFiles: ['packages/web/src/test-setup.ts'],
           css: true,
+          /**
+           * Longer than the default five seconds, and longer **on purpose than
+           * the query budget `test-setup.ts` sets**.
+           *
+           * These two numbers are a pair, and getting them the wrong way round
+           * is its own trap: raising the async-query budget to five seconds
+           * against a five-second test timeout means a slow query eats the whole
+           * test and the failure arrives as "Test timed out in 5000ms", which
+           * names neither the query nor the gate it was waiting on. Measured
+           * that way round first — it turned three legible failures into
+           * illegible ones.
+           *
+           * So the test gets room for several gates at the query budget and the
+           * query still loses first, with something to say. Nothing a passing
+           * test ever spends: the whole project runs in about eighteen seconds.
+           */
+          testTimeout: 20000,
         },
       },
     ],
