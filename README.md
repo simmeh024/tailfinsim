@@ -150,6 +150,13 @@ different build.
   versioned price, while codes, cash and reputation remain immutable inputs. The event,
   identity and reconciling cash movement commit atomically
   ([ADR-0017](docs/adr/0017-player-airline-rebrands.md)).
+- **A retained airline lifecycle.** Active airlines can make new commitments; restricted
+  airlines remain recoverable and may operate what already exists; ceased airlines become
+  read-only history. Cessation deactivates instructions but preserves flights, results and
+  audit readability, releases designators from the live per-world namespace, and excludes
+  the record from live caps and rankings. Player anonymisation removes sign-in authority
+  while keeping that world history intact
+  ([ADR-0018](docs/adr/0018-airline-lifecycle-and-code-release.md)).
 - **The admin console**, at `/admin` for accounts holding a grant: an overview with
   server-decided alerts, world creation, speed changes, the full open/lock/archive/reset
   lifecycle, world health, a read-only player browser, and the audit log.

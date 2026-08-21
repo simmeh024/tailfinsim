@@ -89,6 +89,21 @@ export const AirlineIdentity = z.object({
 export type AirlineIdentity = z.infer<typeof AirlineIdentity>;
 
 /**
+ * The lifecycle of an airline record (AIR-09).
+ *
+ * Restricted airlines remain recoverable and may operate existing commitments,
+ * while ceased airlines are retained as read-only world history.
+ */
+export const AirlineStatus = z.enum(['active', 'restricted', 'ceased']);
+export type AirlineStatus = z.infer<typeof AirlineStatus>;
+
+/** States included by live statistics, leaderboards and world-cap accounting. */
+export const LIVE_AIRLINE_STATUSES = [
+  'active',
+  'restricted',
+] as const satisfies readonly AirlineStatus[];
+
+/**
  * An airline — a player's presence in one world. Mirrors the `airline` table
  * from M0-06.
  */
@@ -102,6 +117,10 @@ export const Airline = z.object({
 
   cash: MinorUnits,
   reputation: Reputation,
+
+  status: AirlineStatus,
+  statusChangedAt: Timestamp,
+  ceasedAt: Timestamp.nullable(),
 
   createdAt: Timestamp,
 });
@@ -124,6 +143,9 @@ export const PublicAirline = Airline.pick({
   callsign: true,
   baseCountry: true,
   reputation: true,
+  status: true,
+  statusChangedAt: true,
+  ceasedAt: true,
   createdAt: true,
 });
 export type PublicAirline = z.infer<typeof PublicAirline>;
@@ -232,7 +254,13 @@ export type AirlineFoundingAirportListResponse = z.infer<typeof AirlineFoundingA
  * than matching the message.
  */
 export const PlayerAirlineContextError = ApiError.extend({
-  code: z.enum(['airline_required', 'active_world_required', 'invalid_active_world']),
+  code: z.enum([
+    'airline_required',
+    'active_world_required',
+    'invalid_active_world',
+    'airline_restricted',
+    'airline_ceased',
+  ]),
 });
 export type PlayerAirlineContextError = z.infer<typeof PlayerAirlineContextError>;
 

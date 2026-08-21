@@ -75,9 +75,11 @@ policy and filters it from both checks and suggestions without changing the tran
 
 ### Release
 
-An airline row keeps its codes for its lifetime. AIR-09 decides what cessation means and
-whether a code can be released without making historical references ambiguous. AIR-04 adds
-no deletion or release path.
+An airline row keeps the codes that identify its historical lifetime. ADR-0018 makes the
+per-world unique indexes apply only to `active` and `restricted` airlines: when an airline
+becomes `ceased`, its row keeps both values but the live namespace may allocate them again
+immediately. Operational records join by stable airline UUID, so reuse does not make a
+flight ambiguous. AIR-04 itself still adds no deletion or release path.
 
 ## Consequences
 
@@ -111,7 +113,7 @@ no deletion or release path.
 
 ## Revisit when
 
-- AIR-09 defines airline cessation and code release;
+- historical profile/search design needs code-use date ranges;
 - product or legal policy supplies an authoritative real-world registry;
 - a transliteration service is selected for player-facing search; or
 - world scale makes loading the assigned namespace measurably expensive.

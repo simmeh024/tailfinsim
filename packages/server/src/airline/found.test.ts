@@ -25,6 +25,7 @@ import { createWorld } from '../world/lifecycle';
 
 import { reconcileAirlineCash } from './cash';
 import { foundAirline } from './found';
+import { transitionAirlineStatus } from './lifecycle';
 
 /**
  * Founding an airline, against real Postgres (AIR-01).
@@ -424,6 +425,26 @@ describeDb('founding an airline', () => {
       ok: false,
       kind: 'world-full',
       playerCap: 1,
+    });
+  });
+
+  it('releases a ceased airline’s player-cap place and codes for a new founder', async () => {
+    const worldId = await makeWorld('open', { playerCap: 1 });
+    const hubIdent = await makeHub();
+    const codes = { iataCode: 'RL', icaoCode: 'RLS' };
+    const first = await foundAirline(db.db, await makePlayer(), input(worldId, hubIdent, codes));
+    if (!first.ok) throw new Error(`first founding refused: ${first.kind}`);
+
+    await transitionAirlineStatus(
+      db.db,
+      first.airline.id,
+      { to: 'ceased', reason: 'test code release' },
+      new Date('2026-08-21T12:00:00.000Z'),
+    );
+    const second = await foundAirline(db.db, await makePlayer(), input(worldId, hubIdent, codes));
+    expect(second).toMatchObject({
+      ok: true,
+      airline: { iataCode: 'RL', icaoCode: 'RLS', status: 'active' },
     });
   });
 

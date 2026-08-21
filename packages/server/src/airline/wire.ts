@@ -17,6 +17,9 @@ export function wireAirline(row: AirlineRow): AirlineContract {
     // `numeric(3,2)` is a string at the database boundary. The shared wire
     // schema is deliberately a number, so normalise once here.
     reputation: Number(row.reputation),
+    status: row.status,
+    statusChangedAt: row.statusChangedAt.toISOString(),
+    ceasedAt: row.ceasedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
   };
 }

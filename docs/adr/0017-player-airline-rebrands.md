@@ -14,7 +14,7 @@ failed operation.
 
 Section 15 also makes rebranding a paid event, while ADR-0007 deliberately left the exact
 player mutation boundary and price to AIR-08. Airline codes are scarce per-world resources
-whose release and replacement lifecycle belongs to AIR-09. Cash and reputation are game
+whose release lifecycle is now defined by ADR-0018. Cash and reputation are game
 state, not identity form inputs.
 
 ## Decision
@@ -29,7 +29,7 @@ onboarding state is not a 404 or an `airline_required` refusal. An omitted activ
 still refused when several owned airlines make the choice ambiguous.
 
 This nullable discovery endpoint is the narrow exception to guarded operational endpoints.
-Mutations continue to use `requireAirline` and its stable context errors.
+Mutations use ADR-0018's active-airline guard and its stable context errors.
 
 ### Rebrands have a deliberately small input
 
@@ -43,8 +43,8 @@ identity fields:
 The shared AIR-02 validation and moderation boundary applies to the submitted identity.
 Unknown properties are rejected, so a client cannot submit `cashMinor`, `reputation`,
 `iataCode` or `icaoCode` and rely on the server to ignore them. IATA and ICAO codes remain
-stable for AIR-08; AIR-09 must decide replacement, release and cooldown semantics before a
-player can change either code.
+stable while an airline is live. ADR-0018 releases them only when the airline becomes
+terminally ceased; the historical row retains the values.
 
 The response names which fields are mutable and immutable so the client does not infer
 permission from the fields it can read.
@@ -94,7 +94,7 @@ copying display metadata into every flight.
 
 ### What this makes harder
 
-- AIR-09 needs an explicit lifecycle before codes can become player-editable.
+- Rebrands are unavailable while an airline is restricted or ceased (ADR-0018).
 - Adding the first consumer of a previously undefined economy field required documenting a
   narrow compatibility exception for existing `v1` worlds.
 - A player with several airlines still needs to supply the active-world header.
@@ -105,14 +105,14 @@ copying display metadata into every flight.
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | Return 404 when the player has no airline | Absence is an expected pre-founding state, not a missing public resource.                         |
 | Reuse the admin force-rename route        | It bypasses the player price and records a moderation action with the wrong actor and reason.     |
-| Allow codes in the same form              | Replacement would release or strand scarce world resources before AIR-09 defines their lifecycle. |
+| Allow codes in the same form              | Replacement would release or strand scarce world resources outside ADR-0018's terminal lifecycle. |
 | Accept cash or reputation and ignore them | Silent over-posting makes an authorization mistake look successful.                               |
 | Charge without a domain event             | The ledger would explain the money but not which identity the payment bought.                     |
 | Make the price a handler literal          | Existing worlds would not pin the terms of an operation available inside them.                    |
 
 ## Revisit when
 
-- AIR-09 defines code replacement, release and cooldown;
+- a later milestone permits a live airline to replace either code;
 - M8-02 defines the accounting and display currency;
 - M3-11 moves economy payloads to live versioned storage; or
 - a public history surface needs to present the identity timeline.

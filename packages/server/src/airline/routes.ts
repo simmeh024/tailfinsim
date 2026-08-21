@@ -155,7 +155,7 @@ export function registerAirlineRoutes(
   app.patch<{ Body: unknown }>(
     '/api/airlines/me',
     {
-      onRequest: app.requireAirline,
+      onRequest: app.requireActiveAirline,
       schema: {
         response: {
           200: updateOwnAirlineResponseJsonSchema,
@@ -187,6 +187,18 @@ export function registerAirlineRoutes(
         { identityModerator },
       );
       if (!result.ok) {
+        if (result.kind === 'airline-restricted') {
+          return reply.code(409).send({
+            code: 'airline_restricted',
+            message: 'This airline is restricted and cannot be rebranded',
+          });
+        }
+        if (result.kind === 'airline-ceased') {
+          return reply.code(409).send({
+            code: 'airline_ceased',
+            message: 'This airline has ceased and its record is read-only',
+          });
+        }
         return reply.code(422).send({
           code: 'identity_refused',
           message: result.reason,

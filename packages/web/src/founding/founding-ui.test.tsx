@@ -127,6 +127,9 @@ function stubApi(settings: StubOptions = {}) {
             baseCountry: 'NL',
             cash: 50_000_000,
             reputation: 0.35,
+            status: 'active',
+            statusChangedAt: '2026-08-20T10:00:00.000Z',
+            ceasedAt: null,
             createdAt: '2026-08-20T10:00:00.000Z',
           },
           hub: {

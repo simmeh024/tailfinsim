@@ -125,7 +125,7 @@ export function registerNetworkRoutes(
    */
   app.post<{ Body: unknown }>(
     '/api/routes',
-    { onRequest: app.requireAirline },
+    { onRequest: app.requireActiveAirline },
     async (request, reply) => {
       const own = resolvedAirlineOf(request);
 
@@ -142,6 +142,15 @@ export function registerNetworkRoutes(
       });
 
       if (result.ok) return reply.code(201).send(result);
+      if (result.kind === 'airline-not-active') {
+        return reply.code(409).send({
+          code: result.status === 'restricted' ? 'airline_restricted' : 'airline_ceased',
+          message:
+            result.status === 'restricted'
+              ? 'This airline is restricted and cannot open new routes'
+              : 'This airline has ceased and its record is read-only',
+        });
+      }
       if (result.kind === 'duplicate') {
         return reply
           .code(409)
@@ -161,7 +170,7 @@ export function registerNetworkRoutes(
    */
   app.put<{ Params: { routeId: string }; Body: unknown }>(
     '/api/routes/:routeId/fares',
-    { onRequest: app.requireAirline },
+    { onRequest: app.requireOperatingAirline },
     async (request, reply) => {
       const own = resolvedAirlineOf(request);
 
@@ -176,6 +185,12 @@ export function registerNetworkRoutes(
       if (!row) return notFound(reply);
 
       const result = await setFares(db.db, row, parsed.data, await economicsFor(row));
+      if (!result.ok && 'kind' in result) {
+        return reply.code(409).send({
+          code: 'airline_ceased',
+          message: 'This airline has ceased and its record is read-only',
+        });
+      }
       return reply.code(result.ok ? 200 : 422).send(result);
     },
   );
@@ -189,7 +204,7 @@ export function registerNetworkRoutes(
    */
   app.post<{ Params: { routeId: string }; Body: unknown }>(
     '/api/routes/:routeId/fares/preview',
-    { onRequest: app.requireAirline },
+    { onRequest: app.requireOperatingAirline },
     async (request, reply) => {
       const own = resolvedAirlineOf(request);
 

@@ -11,6 +11,8 @@ import { type Database } from '../db/client';
 import { airline, airport, world } from '../db/schema';
 import { economyConfigFor } from '../economy/config';
 
+import { liveAirlineWhere } from './lifecycle';
+
 /**
  * The warning is qualitative because exact airport facility fees are not in the
  * database yet. Inventing a price in the client would violate the balance and
@@ -64,6 +66,7 @@ export async function listAirlineFoundingOptions(
     db
       .select({ worldId: airline.worldId, airlines: count(airline.id) })
       .from(airline)
+      .where(liveAirlineWhere())
       .groupBy(airline.worldId),
   ]);
 
