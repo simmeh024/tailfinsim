@@ -170,6 +170,11 @@ async function countFor(
     return { airlines: new Map(), lastSeen: new Map(), admins: new Set() };
   }
 
+  // `inArray` against a list of real player ids already excludes NPC carriers:
+  // SQL's `NULL IN (…)` is never true, so an airline with no player cannot
+  // match. The null is filtered out again when the map is built, because the
+  // column's type is now nullable and a silent `null` key would be a bug that
+  // only showed up as a missing count.
   const airlines = await db
     .select({ playerId: airline.playerId, n: count() })
     .from(airline)
@@ -198,7 +203,11 @@ async function countFor(
   }
 
   return {
-    airlines: new Map(airlines.map((row) => [row.playerId, row.n])),
+    airlines: new Map(
+      airlines
+        .filter((row): row is { playerId: string; n: number } => row.playerId !== null)
+        .map((row) => [row.playerId, row.n]),
+    ),
     lastSeen,
     admins: new Set(admins.map((row) => row.playerId)),
   };

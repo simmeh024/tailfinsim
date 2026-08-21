@@ -167,16 +167,12 @@ describe('diffing two versions', () => {
 
 describe('the canonical form', () => {
   it('produces one byte sequence for two equal payloads', () => {
-    const reordered = EconomyConfig.parse({
-      boosts: ECONOMY_CONFIG_V1.boosts,
-      pricing: ECONOMY_CONFIG_V1.pricing,
-      costs: ECONOMY_CONFIG_V1.costs,
-      fuel: ECONOMY_CONFIG_V1.fuel,
-      demand: ECONOMY_CONFIG_V1.demand,
-      airlineIdentity: ECONOMY_CONFIG_V1.airlineIdentity,
-      airlineStartingPosition: ECONOMY_CONFIG_V1.airlineStartingPosition,
-      version: ECONOMY_CONFIG_V1.version,
-    });
+    // Reversed from the payload's own key order rather than listed section by
+    // section: a hand-written list stops reordering anything the moment a new
+    // section is added, and does so silently.
+    const reordered = EconomyConfig.parse(
+      Object.fromEntries(Object.entries(ECONOMY_CONFIG_V1).reverse()),
+    );
 
     expect(canonicalEconomyJson(reordered)).toBe(canonicalEconomyJson(ECONOMY_CONFIG_V1));
   });

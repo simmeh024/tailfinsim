@@ -237,6 +237,28 @@ export const playerIdentity = pgTable(
 // ---------------------------------------------------------------------------
 
 export const airlineStatus = pgEnum('airline_status', ['active', 'restricted', 'ceased']);
+
+/**
+ * Who runs an airline (M3-12).
+ *
+ * NPC carriers are **the same kind of thing as player airlines**, in the same
+ * table, under the same constraints, resolved by the same demand model. That is
+ * not tidiness — it is the acceptance criterion. A separate `npc_carrier` table
+ * would need its own routes, its own fares and its own settlement, and the
+ * first divergence between the two would be a competitor playing a different
+ * game from the player it is competing with.
+ */
+export const airlineKind = pgEnum('airline_kind', ['player', 'npc']);
+
+/**
+ * What kind of airline an NPC is pretending to be (M3-12, §24).
+ *
+ * Four archetypes, because §24 names four and because they are the ones that
+ * produce visibly different behaviour in App. A.3's logit: a flag carrier and
+ * a low-cost carrier competing on the same pair should lose to each other in
+ * different segments, which is the whole point of the segmented model.
+ */
+export const npcArchetype = pgEnum('npc_archetype', ['flag', 'lcc', 'regional', 'charter']);
 export type AirlineStatus = (typeof airlineStatus.enumValues)[number];
 
 export const airline = pgTable(
@@ -254,9 +276,16 @@ export const airline = pgTable(
      * must survive. Restricting the delete forces that path instead of quietly
      * taking the airline with it.
      */
-    playerId: uuid('player_id')
-      .notNull()
-      .references(() => player.id, { onDelete: 'restrict' }),
+    playerId: uuid('player_id').references(() => player.id, { onDelete: 'restrict' }),
+
+    /**
+     * Player-run or NPC (M3-12). Defaults to `player`, which is what every row
+     * that predates this column is.
+     */
+    kind: airlineKind('kind').notNull().default('player'),
+
+    /** Null for a player airline. Set for every NPC, and the basis of its behaviour. */
+    archetype: npcArchetype('archetype'),
 
     /** Unicode/category policy lives in the shared AIR-02 schema; checks below defend direct writes. */
     name: text('name').notNull(),
@@ -318,7 +347,11 @@ export const airline = pgTable(
     uniqueIndex('airline_world_id_icao_code_key')
       .on(t.worldId, t.icaoCode)
       .where(sql`${t.status} <> 'ceased'`),
-    // One airline per player per world.
+    // One airline per player per world. NPCs are unaffected: Postgres treats
+    // NULLs as distinct in a unique constraint, so any number of NPC rows can
+    // share a null player without colliding — which is the behaviour wanted
+    // here and is worth stating, because it is the opposite of what a reader
+    // expects a unique constraint to do.
     unique('airline_world_id_player_id_key').on(t.worldId, t.playerId),
     index('airline_world_id_idx').on(t.worldId),
     index('airline_player_id_idx').on(t.playerId),
@@ -343,6 +376,21 @@ export const airline = pgTable(
       'airline_ceased_at_matches_status',
       sql`(${t.status} = 'ceased' AND ${t.ceasedAt} IS NOT NULL)
           OR (${t.status} <> 'ceased' AND ${t.ceasedAt} IS NULL)`,
+    ),
+    /**
+     * A player airline has a player and no archetype; an NPC has an archetype
+     * and no player (M3-12).
+     *
+     * Enforced here rather than trusted to the seeding job, because the whole
+     * value of putting NPCs in the `airline` table is that they cannot drift
+     * into being a different kind of object. A player row that lost its player,
+     * or an NPC that acquired one, would break `resolvePlayerAirline` and the
+     * founding player-cap count in ways that are hard to trace back.
+     */
+    check(
+      'airline_kind_matches_operator',
+      sql`(${t.kind} = 'player' AND ${t.playerId} IS NOT NULL AND ${t.archetype} IS NULL)
+          OR (${t.kind} = 'npc' AND ${t.playerId} IS NULL AND ${t.archetype} IS NOT NULL)`,
     ),
   ],
 );
@@ -1131,6 +1179,22 @@ export const route = pgTable(
      */
     fares: text('fares').notNull().default('{}'),
 
+    /**
+     * Consecutive NPC reviews in which this route was judged a loss-maker (M3-12).
+     *
+     * Always 0 for a player's route — nothing reviews those. It lives here
+     * rather than in a table of its own because it is a property *of the route*
+     * with the same lifetime as the route: closing the route ends it, and a
+     * world reset takes it with the row. A side table would need its own
+     * cascade and its own reset, for one integer.
+     *
+     * The alternative was to re-derive it each review, which does not work: a
+     * margin is a snapshot, and "losing now" cannot distinguish a route that has
+     * been failing for a month from one having a bad week. Sustained loss is the
+     * whole point of the rule.
+     */
+    npcLossReviews: integer('npc_loss_reviews').notNull().default(0),
+
     active: boolean('active').notNull().default(true),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1834,3 +1898,85 @@ export const economyConfig = pgTable(
 
 export type EconomyConfigRow = typeof economyConfig.$inferSelect;
 export type NewEconomyConfigRow = typeof economyConfig.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// npc_decision — why an NPC did what it did (M3-12)
+// ---------------------------------------------------------------------------
+
+export const npcDecisionKind = pgEnum('npc_decision_kind', [
+  'route_opened',
+  'route_closed',
+  'fare_changed',
+  'entry_declined',
+]);
+
+/**
+ * Every decision an NPC carrier made, and the numbers it made it on.
+ *
+ * M3-12's third acceptance criterion asks for NPC decisions to be *logged and
+ * inspectable*, and the reason is the same one behind App. A.1's explainability
+ * requirement: a competitor whose behaviour cannot be inspected is one players
+ * will assume is cheating. §22.8 wants the same thing for HHI monitoring — you
+ * cannot reason about market concentration without knowing why it moved.
+ *
+ * `entry_declined` is deliberately recorded. A log that only holds the actions
+ * taken cannot answer "why did nobody enter my fat monopoly route?", which is
+ * exactly the question A.10's monopoly guard invites somebody to ask.
+ *
+ * Not append-only by trigger, unlike `admin_audit` and `economy_config`. This is
+ * simulation telemetry rather than a record of human acts, it grows without
+ * bound, and something will eventually have to prune it — a decision left to
+ * whoever meets the volume, with the index below to make that cheap.
+ */
+export const npcDecision = pgTable(
+  'npc_decision',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+
+    /** **Game time**, not real time — the instant the world thinks this happened. */
+    decidedAt: timestamp('decided_at', { withTimezone: true }).notNull(),
+    /** Real time, so an operator can correlate a decision with a worker log line. */
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
+
+    kind: npcDecisionKind('kind').notNull(),
+
+    /** The market it was about. Null for a decision that is not route-specific. */
+    originIcao: text('origin_icao'),
+    destinationIcao: text('destination_icao'),
+
+    /**
+     * The figures the decision rested on, as JSON text.
+     *
+     * Text rather than jsonb for the same reason `admin_audit.before` is:
+     * nothing queries inside it, and text needs no cast. The shape is
+     * `NpcDecisionBasis` in `@tailfin/shared`.
+     */
+    basis: text('basis').notNull(),
+
+    /** One sentence, server-written, in the player-facing vocabulary. */
+    reason: text('reason').notNull(),
+
+    /** The economy version the decision was judged under (M3-11, invariant 4). */
+    economyConfigVersion: text('economy_config_version').notNull(),
+  },
+  (t) => [
+    // The query the admin console runs: this world's decisions, newest first.
+    index('npc_decision_world_id_decided_at_idx').on(t.worldId, t.decidedAt),
+    index('npc_decision_airline_id_idx').on(t.airlineId),
+    check(
+      'npc_decision_route_pair_complete',
+      sql`(${t.originIcao} IS NULL AND ${t.destinationIcao} IS NULL)
+          OR (${t.originIcao} IS NOT NULL AND ${t.destinationIcao} IS NOT NULL)`,
+    ),
+  ],
+);
+
+export type NpcDecisionRow = typeof npcDecision.$inferSelect;
+export type NewNpcDecisionRow = typeof npcDecision.$inferInsert;

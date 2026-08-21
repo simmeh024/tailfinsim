@@ -1,4 +1,5 @@
 import type {
+  AdminNpcResponse,
   AdminAuditEntry,
   AdminGrantSummary,
   AdminOverviewResponse,
@@ -296,4 +297,10 @@ export async function fetchWorldHealth(): Promise<AdminWorldHealthResponse> {
 export async function fetchSystemHealth(): Promise<AdminSystemHealthResponse> {
   const body = await getJson('/api/admin/system-health');
   return body as AdminSystemHealthResponse;
+}
+
+/** NPC carriers and their decision log for one world (M3-12). */
+export async function fetchNpcCarriers(worldId: string): Promise<AdminNpcResponse> {
+  const body = await getJson(`/api/admin/worlds/${encodeURIComponent(worldId)}/npc`);
+  return body as AdminNpcResponse;
 }

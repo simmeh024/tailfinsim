@@ -36,7 +36,8 @@
     "demand:generate": "pnpm --filter @tailfin/server demand:generate",
     "admin": "pnpm --filter @tailfin/server admin",
     "ops:status": "pnpm --filter @tailfin/server ops:status",
-    "security:headers": "node deploy/verify-security-headers.mjs"
+    "security:headers": "node deploy/verify-security-headers.mjs",
+    "npc:seed": "pnpm --filter @tailfin/server npc:seed"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

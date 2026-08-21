@@ -26,6 +26,8 @@ const OWN: OwnAirlineResponse = {
     id: '33333333-4444-4555-8666-777777777777',
     worldId: WORLD_ID,
     playerId: PLAYER_ID,
+    kind: 'player',
+    archetype: null,
     name: 'Tailfin Air',
     iataCode: 'TF',
     icaoCode: 'TFN',

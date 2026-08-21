@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router';
 
 import { AdminLayout } from './admin/AdminLayout';
 import { AuditPage } from './admin/AuditPage';
+import { CarriersPage } from './admin/CarriersPage';
 import { OverviewPage } from './admin/OverviewPage';
 import { PlayersPage } from './admin/PlayersPage';
 import { SystemHealthPage } from './admin/SystemHealthPage';
@@ -126,6 +127,8 @@ export function App(): ReactNode {
                 <Route path="players" element={<PlayersPage />} />
                 <Route path="players/:playerId" element={<PlayersPage />} />
                 <Route path="audit" element={<AuditPage />} />
+                {/* The competition, and why it did what it did (M3-12). */}
+                <Route path="carriers" element={<CarriersPage />} />
                 {/* The machines, rather than the worlds (OPS-15). */}
                 <Route path="system" element={<SystemHealthPage />} />
               </Route>

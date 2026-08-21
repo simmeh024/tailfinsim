@@ -15,6 +15,7 @@ import {
   DEFAULT_ITINERARY,
   DEFAULT_LOGIT,
   DEFAULT_MODULATION,
+  DEFAULT_NPC,
   DEFAULT_SCHED_FIT,
   DEFAULT_SEGMENTS,
   DEFAULT_SETTLEMENT,
@@ -119,6 +120,7 @@ const BALANCE_EXPORTS = [
     ECONOMY_CONFIG_V1.pricing.fareFloorRatio,
     'economy/fare-floor.ts',
   ],
+  ['DEFAULT_NPC', DEFAULT_NPC, ECONOMY_CONFIG_V1.npc, 'npc/carrier.ts'],
 ] as const;
 
 describe('where the balance numbers come from', () => {

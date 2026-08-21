@@ -8,6 +8,8 @@ export function wireAirline(row: AirlineRow): AirlineContract {
     id: row.id,
     worldId: row.worldId,
     playerId: row.playerId,
+    kind: row.kind,
+    archetype: row.archetype,
     name: row.name,
     iataCode: row.iataCode,
     icaoCode: row.icaoCode,

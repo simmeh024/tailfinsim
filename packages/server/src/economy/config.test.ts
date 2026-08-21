@@ -70,16 +70,11 @@ describe('parsing a payload from an untrusted place', () => {
 
 describe('identifying a version', () => {
   it('is stable across key order', () => {
-    const reordered = defineEconomyConfig({
-      boosts: SHIPPED.boosts,
-      pricing: SHIPPED.pricing,
-      costs: SHIPPED.costs,
-      fuel: SHIPPED.fuel,
-      demand: SHIPPED.demand,
-      airlineIdentity: SHIPPED.airlineIdentity,
-      airlineStartingPosition: SHIPPED.airlineStartingPosition,
-      version: SHIPPED.version,
-    });
+    // Built by reversing the payload's own key order rather than by listing the
+    // sections, so adding a section to `EconomyConfig` cannot silently stop this
+    // test reordering anything — which is exactly what happened when M3-12
+    // added `npc` to a hand-written list.
+    const reordered = defineEconomyConfig(Object.fromEntries(Object.entries(SHIPPED).reverse()));
 
     // Which is the whole point: the seed compares a stored v1 against the
     // shipped v1 on every boot, and a checksum over raw JSON text would cry

@@ -45,3 +45,5 @@ export * from './fleet';
 export * from './weather';
 
 export * from './demand';
+
+export * from './npc';

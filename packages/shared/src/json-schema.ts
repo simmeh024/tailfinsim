@@ -30,6 +30,7 @@ import {
 } from './airline';
 import { ApiError, HealthResponse } from './api';
 import { LogoutResponse, MeResponse, RevokeSessionsResponse } from './auth';
+import { AdminNpcResponse } from './npc';
 import { VersionResponse } from './version';
 
 /**
@@ -105,3 +106,5 @@ export const adminCreateEconomyConfigResponseJsonSchema = z.toJSONSchema(
 export const adminPinEconomyConfigResponseJsonSchema = z.toJSONSchema(
   AdminPinEconomyConfigResponse,
 );
+
+export const adminNpcResponseJsonSchema = z.toJSONSchema(AdminNpcResponse);

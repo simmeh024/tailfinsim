@@ -4,6 +4,7 @@ import {
   adminCreateWorldResponseJsonSchema,
   adminEconomyConfigDetailResponseJsonSchema,
   adminEconomyConfigListResponseJsonSchema,
+  adminNpcResponseJsonSchema,
   adminPinEconomyConfigResponseJsonSchema,
   adminListResponseJsonSchema,
   adminOverviewResponseJsonSchema,
@@ -47,6 +48,7 @@ import {
   validateResetRequest,
   validateStatusRequest,
 } from './lifecycle';
+import { buildNpcReport } from './npc';
 import { buildOverview } from './overview';
 import { listPlayers, readPlayer } from './players';
 import { changeWorldSpeed, type SpeedRefusalCode, validateSpeedRequest } from './speed';
@@ -784,6 +786,29 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
         diff: outcome.diff,
         pendingEvents: outcome.pendingEvents,
       });
+    },
+  );
+
+  /**
+   * NPC carriers and their decisions (M3-12).
+   *
+   * Scoped to one world because NPCs are: a carrier belongs to a world and
+   * competes in that world's markets, and a cross-world listing would be a list
+   * of things that never meet.
+   */
+  app.get<{ Params: { worldId: string } }>(
+    '/api/admin/worlds/:worldId/npc',
+    {
+      onRequest: app.requireAdmin,
+      schema: {
+        response: { 200: adminNpcResponseJsonSchema, 404: apiErrorJsonSchema },
+      },
+    },
+    async (request, reply) => {
+      if (missingWorld(request.params.worldId)) {
+        return reply.code(404).send({ code: 'world_not_found', message: 'No world with that id.' });
+      }
+      return reply.code(200).send(await buildNpcReport(db.db, request.params.worldId));
     },
   );
 }

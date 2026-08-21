@@ -347,6 +347,134 @@ export const PricingBalance = z
   .strict();
 
 // ---------------------------------------------------------------------------
+// NPC carriers — §24's MVP-blocking gap, M3-12
+// ---------------------------------------------------------------------------
+
+/** Every field of this shape is per NPC archetype. */
+function byArchetype<T extends z.ZodType>(value: T) {
+  return z.object({ flag: value, lcc: value, regional: value, charter: value }).strict();
+}
+
+/**
+ * What one archetype flies, charges and looks like to a passenger.
+ *
+ * These are balance numbers in the fullest sense: they decide whether a player
+ * entering a market meets a soft incumbent or a wall, and App. A.12's
+ * *"new entrant viability"* test is measured against them.
+ */
+export const NpcArchetypeBalance = z
+  .object({
+    /**
+     * Fare as a multiple of per-seat variable cost.
+     *
+     * Drawn against cost rather than against a fixed price so an NPC's fares
+     * scale with distance exactly as a player's economics do — and so A.10's
+     * floor, which is also a share of variable cost, is never breached by
+     * construction. Below `1` the airline is selling at a loss, which is a
+     * legitimate short-term strategy for nobody and is refused by the schema.
+     */
+    fareMarkup: z.number().min(1),
+    /** A.3's 0–1 product composite. A dense charter cabin is genuinely worse. */
+    productScore: z.number().min(0).max(1),
+    /** §15's compound reputation. NPCs sit around the world median of 0.50. */
+    reputation: z.number().min(0).max(1),
+    /** Seats offered per cabin. An LCC selling no business cabin is the mechanic. */
+    seatsByCabin: z
+      .object({
+        first: z.number().int().nonnegative(),
+        business: z.number().int().nonnegative(),
+        premium_economy: z.number().int().nonnegative(),
+        economy: z.number().int().nonnegative(),
+      })
+      .strict(),
+    /** The share of a market this archetype sizes its frequency for. */
+    targetShare: z.number().min(0).max(1),
+    /** Frequency is capped, because slots are finite (§8.1) even before they are modelled. */
+    maxFrequency: z.number().int().positive(),
+    /** Markets thinner than this are not worth this archetype's time. */
+    minDailyPassengers: z.number().nonnegative(),
+    /** Sectors longer than this are outside the archetype's reach. */
+    maxRangeNm: z.number().positive(),
+    /**
+     * How much the archetype prefers a leisure-heavy market.
+     *
+     * 0 is indifferent. A charter operator is strongly positive; a flag carrier
+     * mildly negative, because its network is built around business demand.
+     */
+    leisureAffinity: z.number(),
+  })
+  .strict();
+
+export const NpcBalance = z
+  .object({
+    archetypes: byArchetype(NpcArchetypeBalance),
+    seeding: z
+      .object({
+        /** How many NPC carriers a world is seeded with, at most. */
+        maxCarriers: z.number().int().nonnegative(),
+        /** Routes each carrier opens at seeding. */
+        routesPerCarrier: z.number().int().positive(),
+        /** Markets below this are ignored when placing an initial network. */
+        minDailyPassengers: z.number().nonnegative(),
+        /**
+         * How many countries get their own carriers.
+         *
+         * Bounded because IATA codes are scarce — §24 counts roughly 1,300
+         * usable two-letter codes against an unbounded player count, and NPCs
+         * spending them freely would be a real cost to players later.
+         */
+        maxCountries: z.number().int().positive(),
+      })
+      .strict(),
+    behaviour: z
+      .object({
+        /** Game days between one carrier's reviews of its network. */
+        reviewIntervalDays: z.number().positive(),
+        /**
+         * Contribution margin above which a market is worth entering.
+         *
+         * A.10's monopoly guard made concrete: *"fat margins on an uncontested
+         * route visibly attract AI entrants."* Measured over **variable** cost
+         * only — there is no ownership or overhead in the cost model yet — so
+         * the figure is a contribution margin rather than an operating one, and
+         * single digits is the right order.
+         *
+         * Raise it and monopolies last longer; lower it and players are crowded
+         * out of markets before they can establish themselves.
+         */
+        entryMarginThreshold: z.number(),
+        /**
+         * How much each incumbent cuts the share a newcomer can expect.
+         *
+         * The mechanism by which a contested market is less attractive than an
+         * empty one: it lowers the load factor the entrant can plan for, which
+         * is what actually decides whether a route pays. Bounded below by the
+         * clamp in `decideEntry` — an infinite number of incumbents drives the
+         * achievable share toward zero, never negative.
+         */
+        incumbentShareDrag: z.number().nonnegative(),
+        /** Candidate markets one carrier considers per review. Bounds the work. */
+        entryCandidates: z.number().int().positive(),
+        /** Routes one carrier may open per review. Stops a step-change in a world. */
+        maxEntriesPerReview: z.number().int().nonnegative(),
+        /** Consecutive review cycles of estimated loss before a route is dropped. */
+        exitLossReviews: z.number().int().positive(),
+        /**
+         * How far a fare moves toward the market average per review, 0–1.
+         *
+         * Deliberately partial. An NPC that jumped straight to the market mean
+         * would make every market converge on one fare within a review cycle,
+         * which is neither realistic nor interesting to price against.
+         */
+        fareAdjustmentRate: z.number().min(0).max(1),
+        /** A fare within this fraction of target is left alone, so the log stays readable. */
+        fareDeadband: z.number().min(0).max(1),
+      })
+      .strict(),
+  })
+  .strict();
+
+// ---------------------------------------------------------------------------
 // The payload
 // ---------------------------------------------------------------------------
 
@@ -372,6 +500,7 @@ export const EconomyConfig = z
     costs: CostBalance,
     pricing: PricingBalance,
     boosts: BoostBalance,
+    npc: NpcBalance,
   })
   .strict();
 export type EconomyConfig = z.infer<typeof EconomyConfig>;
@@ -633,6 +762,122 @@ export const ECONOMY_CONFIG_V1: EconomyConfig = EconomyConfig.parse({
       maintenanceCost: 0.12,
       incidentRate: 0.3,
       serviceCost: 0.15,
+    },
+  },
+
+  npc: {
+    archetypes: {
+      /**
+       * The incumbent a player meets on a major city pair. Expensive, comfortable,
+       * frequent, and the only archetype selling a front cabin — which is what
+       * makes a premium player's first route a fight rather than a walkover.
+       */
+      flag: {
+        fareMarkup: 1.55,
+        productScore: 0.74,
+        reputation: 0.58,
+        seatsByCabin: { first: 0, business: 20, premium_economy: 21, economy: 140 },
+        targetShare: 0.32,
+        maxFrequency: 8,
+        minDailyPassengers: 220,
+        maxRangeNm: 4_200,
+        // Mildly negative: a flag carrier's network is built around business
+        // demand, so a holiday market is not where it wants to be.
+        leisureAffinity: -0.15,
+      },
+      /**
+       * Economy only, dense, cheap and frequent. A.2's *"leisure cares about
+       * price, price, price"* is what this archetype exists to exploit, and the
+       * absence of a business cabin is why a flag carrier still beats it there.
+       */
+      lcc: {
+        fareMarkup: 1.16,
+        productScore: 0.34,
+        reputation: 0.47,
+        seatsByCabin: { first: 0, business: 0, premium_economy: 0, economy: 186 },
+        targetShare: 0.34,
+        maxFrequency: 10,
+        minDailyPassengers: 150,
+        maxRangeNm: 2_000,
+        leisureAffinity: 0.35,
+      },
+      /**
+       * Thin short-haul markets nobody else wants. Small aircraft, modest
+       * frequency, fares that reflect having the market to itself.
+       */
+      regional: {
+        fareMarkup: 1.48,
+        productScore: 0.44,
+        reputation: 0.5,
+        seatsByCabin: { first: 0, business: 0, premium_economy: 0, economy: 72 },
+        targetShare: 0.4,
+        maxFrequency: 5,
+        minDailyPassengers: 45,
+        maxRangeNm: 900,
+        leisureAffinity: 0.05,
+      },
+      /**
+       * Leisure markets, very dense, very cheap, low frequency. The archetype
+       * that makes a Mediterranean route feel contested in August.
+       */
+      charter: {
+        fareMarkup: 1.12,
+        productScore: 0.27,
+        reputation: 0.42,
+        seatsByCabin: { first: 0, business: 0, premium_economy: 0, economy: 220 },
+        targetShare: 0.22,
+        maxFrequency: 3,
+        minDailyPassengers: 180,
+        maxRangeNm: 3_000,
+        leisureAffinity: 0.75,
+      },
+    },
+    seeding: {
+      /**
+       * Sixty carriers, not six hundred.
+       *
+       * The binding constraint is not compute — it is that every NPC spends a
+       * two-letter IATA code, and §24 counts roughly 1,300 usable ones against
+       * an unbounded player count. Sixty populates the major markets while
+       * leaving the namespace overwhelmingly to players.
+       */
+      maxCarriers: 60,
+      routesPerCarrier: 14,
+      minDailyPassengers: 120,
+      maxCountries: 24,
+    },
+    behaviour: {
+      /** Weekly in game time — often enough to react, rare enough to read. */
+      reviewIntervalDays: 7,
+      /**
+       * 8% contribution over variable cost.
+       *
+       * Calibrated against what the archetypes can actually earn rather than
+       * picked: an LCC at a 1.16 markup contributes at most 13.8% even at a
+       * full aircraft, so a threshold in the twenties would mean no low-cost
+       * carrier ever entered anything — which is how this number was first got
+       * wrong. At 8% a fat uncontested market clears comfortably for every
+       * archetype and a contested or badly-suited one does not, which is what
+       * makes entry a market judgement rather than a restatement of the markup.
+       */
+      entryMarginThreshold: 0.08,
+      /** Six incumbents roughly halve the share a newcomer can plan for. */
+      incumbentShareDrag: 0.15,
+      entryCandidates: 40,
+      /**
+       * Two routes per carrier per review.
+       *
+       * Uncapped, a review would let one carrier open its entire remaining
+       * network at once and turn a world's competitive landscape over in a
+       * single tick — a step change no player could price against.
+       */
+      maxEntriesPerReview: 2,
+      /** Four consecutive weekly reviews in the red before a route is dropped. */
+      exitLossReviews: 4,
+      /** A third of the way toward the market average per review. */
+      fareAdjustmentRate: 0.33,
+      /** Within 3% of target is close enough; moving it would only fill the log. */
+      fareDeadband: 0.03,
     },
   },
 });
