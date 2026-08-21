@@ -32,14 +32,25 @@ describeDb('the worlds the engine drives', () => {
   const created: string[] = [];
   const suffix = Math.random().toString(36).slice(2, 10);
 
+  /**
+   * Unique per call, not per status.
+   *
+   * `world.name` is unique, and two tests here each want an `open` world — so a
+   * name built from the status and one per-file suffix collides on the second
+   * one. It did, in CI, which is the only place these run.
+   */
+  let serial = 0;
+
   async function makeWorld(status: 'staging' | 'open' | 'locked' | 'archived'): Promise<string> {
+    serial += 1;
+    const tag = `${status}-${suffix}-${String(serial)}`;
     const [row] = await db.db
       .insert(world)
       .values({
-        name: `engine-${status}-${suffix}`,
+        name: `engine-${tag}`,
         epoch: EPOCH,
         launchDate: LAUNCH,
-        seed: `engine-seed-${status}-${suffix}`,
+        seed: `engine-seed-${tag}`,
         speedMultiplier: '2',
         aircraftCatalogueVersion: 'test',
         economyConfigVersion: 'test',
