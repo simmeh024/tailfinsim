@@ -218,6 +218,9 @@ function OpenRouteForm({ onOpened }: { onOpened: () => void }): ReactNode {
           {outcome.kind === 'no-airline' && (
             <>You do not have an airline in this world yet, so there is nothing to fly the route.</>
           )}
+          {outcome.kind === 'active-world-required' && (
+            <>Choose which world you want to operate in before opening a route.</>
+          )}
           {outcome.kind === 'duplicate' && <>You already fly that pair.</>}
         </p>
       )}

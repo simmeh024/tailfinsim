@@ -46,6 +46,7 @@ const env: ServerEnv = {
   sessionSecret: 'a'.repeat(48),
   authEnabled: true,
   sessionTtlHours: 24,
+  adminSessionTtlHours: 12,
   allowRegistration: false,
 };
 
@@ -91,6 +92,13 @@ describe('validateWorldConfig', () => {
   it('refuses a negative speed, which would run the world backwards', () => {
     const result = validateWorldConfig(config({ speedMultiplier: -2 }), NOW);
     expect(result.ok).toBe(false);
+  });
+
+  it('refuses an economy version the server cannot pin', () => {
+    const result = validateWorldConfig(config({ economyConfigVersion: 'missing' }), NOW);
+    if (result.ok) throw new Error('expected a refusal');
+    expect(result.fields.economyConfigVersion?.[0]).toMatch(/missing is not registered/);
+    expect(result.fields.economyConfigVersion?.[0]).toMatch(/pinned/);
   });
 
   it('refuses nonsense rather than throwing on it', () => {
@@ -166,6 +174,7 @@ describeDb('creating worlds', () => {
     expect(at.toISOString()).toBe(c.epoch);
     expect(Number(created.speedMultiplier)).toBe(c.speedMultiplier);
     expect(created.aircraftCatalogueVersion).toBe(c.aircraftCatalogueVersion);
+    expect(created.economyConfigVersion).toBe(c.economyConfigVersion);
   });
 
   it('starts every world in staging', async () => {

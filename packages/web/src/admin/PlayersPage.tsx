@@ -3,19 +3,18 @@ import { Link, useParams } from 'react-router';
 
 import type { AdminPlayerDetail, AdminPlayerSummary } from '@tailfin/shared';
 
-import { fetchPlayer, fetchPlayers } from './api';
+import { fetchPlayer, fetchPlayers, revokePlayerSessions } from './api';
 
 import type { ReactNode } from 'react';
 
 /**
  * Players (M1A-08, design doc §22).
  *
- * ## Read-only, and it says so
+ * ## Read-only game state, with one security control
  *
  * There is nothing here that edits, bans, deletes or impersonates. Those are
- * M11-06, and each needs confirmation and audit machinery that looking does not.
- * The page states that rather than leaving an admin hunting for a button that
- * was never built.
+ * M11-06. Revoking sessions is the deliberate exception: it is an immediate,
+ * audited incident-response action and cannot alter game state.
  *
  * ## Looking is an act
  *
@@ -77,8 +76,8 @@ function PlayerList(): ReactNode {
       <section className="admin__section">
         <h2 className="admin__heading">Players</h2>
         <p className="admin__note">
-          Read-only. Editing, suspending and impersonating an account are a separate milestone
-          (M11-06) — they need confirmations and a record per action that looking does not.
+          Game and identity data are read-only. Editing, suspending and impersonating an account are
+          a separate milestone (M11-06). Session revocation is the audited security exception.
         </p>
 
         <form
@@ -171,6 +170,12 @@ function PlayerList(): ReactNode {
 
 function PlayerDetail({ playerId }: { playerId: string }): ReactNode {
   const [detail, setDetail] = useState<Load<AdminPlayerDetail | null>>({ state: 'loading' });
+  const [revocation, setRevocation] = useState<
+    | { state: 'idle' }
+    | { state: 'working' }
+    | { state: 'done'; count: number }
+    | { state: 'failed' }
+  >({ state: 'idle' });
 
   useEffect(() => {
     let live = true;
@@ -215,8 +220,9 @@ function PlayerDetail({ playerId }: { playerId: string }): ReactNode {
         </Link>
         <h2 className="admin__heading">{player.displayName}</h2>
         <p className="admin__note">
-          Signed up {formatAt(player.createdAt)}.{player.isAdmin && ' Holds an admin grant.'} This
-          view is recorded in the audit log.
+          Signed up {formatAt(player.createdAt)}.
+          {player.anonymizedAt && ` Anonymized ${formatAt(player.anonymizedAt)}.`}
+          {player.isAdmin && ' Holds an admin grant.'} This view is recorded in the audit log.
         </p>
       </section>
 
@@ -282,6 +288,34 @@ function PlayerDetail({ playerId }: { playerId: string }): ReactNode {
           Metadata only. The session token is never stored — only a SHA-256 of it — so there is
           nothing here that could sign anybody in.
         </p>
+        <button
+          className="admin__submit"
+          type="button"
+          disabled={revocation.state === 'working' || player.sessions.length === 0}
+          onClick={() => {
+            setRevocation({ state: 'working' });
+            void revokePlayerSessions(player.id)
+              .then((count) => {
+                setDetail({ state: 'ready', value: { ...player, sessions: [] } });
+                setRevocation({ state: 'done', count });
+              })
+              .catch(() => {
+                setRevocation({ state: 'failed' });
+              });
+          }}
+        >
+          Revoke all sessions
+        </button>
+        {revocation.state === 'done' && (
+          <p className="admin__note" role="status">
+            Revoked {revocation.count} {revocation.count === 1 ? 'session' : 'sessions'}.
+          </p>
+        )}
+        {revocation.state === 'failed' && (
+          <p className="admin__note" role="alert">
+            Could not revoke this player’s sessions.
+          </p>
+        )}
       </section>
 
       <section className="admin__section">
@@ -297,6 +331,7 @@ function PlayerDetail({ playerId }: { playerId: string }): ReactNode {
                 <th scope="col">IATA</th>
                 <th scope="col">ICAO</th>
                 <th scope="col">Callsign</th>
+                <th scope="col">State</th>
                 <th scope="col">Cash</th>
                 <th scope="col">Reputation</th>
               </tr>
@@ -309,6 +344,7 @@ function PlayerDetail({ playerId }: { playerId: string }): ReactNode {
                   <td className="figure">{entry.iataCode}</td>
                   <td className="figure">{entry.icaoCode}</td>
                   <td className="figure">{entry.callsign}</td>
+                  <td>{entry.status}</td>
                   <td className="figure">{formatCash(entry.cashMinor)}</td>
                   <td className="figure">{entry.reputation.toFixed(2)}</td>
                 </tr>

@@ -7,9 +7,10 @@
  *
  * ## Ownership is resolved, never verified
  *
- * Every handler derives the airline from the authenticated session and then
- * queries the route **within** that airline. It never accepts an `airlineId`
- * and checks it matches.
+ * AIR-05's `requireAirline` boundary derives the airline once from the
+ * authenticated session and active world. Every handler then queries the
+ * route **within** that resolved airline. It never accepts an `airlineId` and
+ * checks it matches.
  *
  * The difference matters: the second form is one forgotten comparison away from
  * letting somebody price a competitor's route, and the forgotten comparison is
@@ -25,7 +26,8 @@ import { and, eq } from 'drizzle-orm';
 
 import { CabinClass, FareTable } from '@tailfin/shared';
 
-import { airline, route } from '../db/schema';
+import { resolvedAirlineOf } from '../airline/context';
+import { route } from '../db/schema';
 
 import { parseFares, previewFares, type RouteEconomics, type RouteRow, setFares } from './fares';
 import { openRoute } from './open-route';
@@ -47,14 +49,13 @@ export interface NetworkRoutesOptions {
 }
 
 /**
- * Find a route inside the caller's own airline, or nothing.
+ * Find a route inside AIR-05's already-resolved airline, or nothing.
  *
- * One query, joined through the airline the session owns. See the module note
- * on why this is a resolution rather than a check.
+ * See the module note on why this is a resolution rather than a check.
  */
 async function ownedRoute(
   db: Database,
-  playerId: string,
+  airlineId: string,
   routeId: string,
 ): Promise<RouteRow | null> {
   const rows = await db
@@ -68,8 +69,7 @@ async function ownedRoute(
       fares: route.fares,
     })
     .from(route)
-    .innerJoin(airline, eq(airline.id, route.airlineId))
-    .where(and(eq(route.id, routeId), eq(airline.playerId, playerId)))
+    .where(and(eq(route.id, routeId), eq(route.airlineId, airlineId)))
     .limit(1);
 
   const row = rows[0];
@@ -89,10 +89,9 @@ export function registerNetworkRoutes(
   /** The player's own routes, with their fares. */
   app.get(
     '/api/routes',
-    { onRequest: app.requireAuth },
+    { onRequest: app.requireAirline },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const playerId = request.player?.id;
-      if (playerId === undefined) return notFound(reply);
+      const own = resolvedAirlineOf(request);
 
       const rows = await db.db
         .select({
@@ -104,8 +103,7 @@ export function registerNetworkRoutes(
           active: route.active,
         })
         .from(route)
-        .innerJoin(airline, eq(airline.id, route.airlineId))
-        .where(eq(airline.playerId, playerId));
+        .where(eq(route.airlineId, own.id));
 
       return reply.code(200).send({
         routes: rows.map((row) => ({ ...row, fares: parseFares(row.fares) })),
@@ -128,10 +126,9 @@ export function registerNetworkRoutes(
    */
   app.post<{ Body: unknown }>(
     '/api/routes',
-    { onRequest: app.requireAuth },
+    { onRequest: app.requireActiveAirline },
     async (request, reply) => {
-      const playerId = request.player?.id;
-      if (playerId === undefined) return notFound(reply);
+      const own = resolvedAirlineOf(request);
 
       const body = request.body as { originIcao?: unknown; destinationIcao?: unknown } | null;
       if (typeof body?.originIcao !== 'string' || typeof body.destinationIcao !== 'string') {
@@ -140,12 +137,21 @@ export function registerNetworkRoutes(
           .send({ code: 'invalid_route', message: 'An origin and a destination are required' });
       }
 
-      const result = await openRoute(db.db, playerId, {
+      const result = await openRoute(db.db, own, {
         originIcao: body.originIcao,
         destinationIcao: body.destinationIcao,
       });
 
       if (result.ok) return reply.code(201).send(result);
+      if (result.kind === 'airline-not-active') {
+        return reply.code(409).send({
+          code: result.status === 'restricted' ? 'airline_restricted' : 'airline_ceased',
+          message:
+            result.status === 'restricted'
+              ? 'This airline is restricted and cannot open new routes'
+              : 'This airline has ceased and its record is read-only',
+        });
+      }
       if (result.kind === 'duplicate') {
         return reply
           .code(409)
@@ -165,10 +171,9 @@ export function registerNetworkRoutes(
    */
   app.put<{ Params: { routeId: string }; Body: unknown }>(
     '/api/routes/:routeId/fares',
-    { onRequest: app.requireAuth },
+    { onRequest: app.requireOperatingAirline },
     async (request, reply) => {
-      const playerId = request.player?.id;
-      if (playerId === undefined) return notFound(reply);
+      const own = resolvedAirlineOf(request);
 
       const parsed = FareTable.safeParse((request.body as { fares?: unknown })?.fares);
       if (!parsed.success) {
@@ -177,10 +182,16 @@ export function registerNetworkRoutes(
           .send({ code: 'invalid_fares', message: 'Fares must be whole minor units per cabin' });
       }
 
-      const row = await ownedRoute(db.db, playerId, request.params.routeId);
+      const row = await ownedRoute(db.db, own.id, request.params.routeId);
       if (!row) return notFound(reply);
 
       const result = await setFares(db.db, row, parsed.data, await economicsFor(row));
+      if (!result.ok && 'kind' in result) {
+        return reply.code(409).send({
+          code: 'airline_ceased',
+          message: 'This airline has ceased and its record is read-only',
+        });
+      }
       return reply.code(result.ok ? 200 : 422).send(result);
     },
   );
@@ -233,10 +244,9 @@ export function registerNetworkRoutes(
    */
   app.post<{ Params: { routeId: string }; Body: unknown }>(
     '/api/routes/:routeId/fares/preview',
-    { onRequest: app.requireAuth },
+    { onRequest: app.requireOperatingAirline },
     async (request, reply) => {
-      const playerId = request.player?.id;
-      if (playerId === undefined) return notFound(reply);
+      const own = resolvedAirlineOf(request);
 
       const parsed = FareTable.safeParse((request.body as { fares?: unknown })?.fares);
       if (!parsed.success) {
@@ -245,7 +255,7 @@ export function registerNetworkRoutes(
           .send({ code: 'invalid_fares', message: 'Fares must be whole minor units per cabin' });
       }
 
-      const row = await ownedRoute(db.db, playerId, request.params.routeId);
+      const row = await ownedRoute(db.db, own.id, request.params.routeId);
       if (!row) return notFound(reply);
 
       return reply.code(200).send(previewFares(row, parsed.data, await economicsFor(row)));

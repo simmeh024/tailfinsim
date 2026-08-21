@@ -49,7 +49,44 @@ beforeEach(() => {
     'fetch',
     vi.fn((input: unknown) => {
       const url = String(input);
-      const body = url === '/api/me' ? SIGNED_IN : {};
+      const body =
+        url === '/api/me'
+          ? SIGNED_IN
+          : url === '/api/airlines/founding-options'
+            ? {
+                memberships: [
+                  {
+                    id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+                    worldId: 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff',
+                  },
+                ],
+                worlds: [],
+              }
+            : url === '/api/airlines/me'
+              ? {
+                  airline: {
+                    id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+                    worldId: 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff',
+                    playerId: SIGNED_IN.player?.id,
+                    name: 'Shell Air',
+                    iataCode: 'SH',
+                    icaoCode: 'SHL',
+                    callsign: 'SHELL',
+                    baseCountry: 'NL',
+                    cash: 50_000_000,
+                    reputation: 0.35,
+                    status: 'active',
+                    statusChangedAt: '2026-08-17T10:00:00.000Z',
+                    ceasedAt: null,
+                    createdAt: '2026-08-17T10:00:00.000Z',
+                  },
+                  rebrand: {
+                    costMinor: 2_500_000,
+                    mutableFields: ['name', 'callsign', 'baseCountry'],
+                    immutableFields: ['iataCode', 'icaoCode', 'cash', 'reputation'],
+                  },
+                }
+              : {};
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
     }),
   );
@@ -86,6 +123,7 @@ describe('layout', () => {
     for (const label of ['Cash', 'Runway', 'Airborne', 'Alerts']) {
       expect(within(strip).getByText(label)).toBeInTheDocument();
     }
+    expect(await within(strip).findByText('500,000.00')).toBeInTheDocument();
   });
 
   it('marks up figures for tabular numerals so digits do not jitter', async () => {
@@ -112,6 +150,7 @@ describe('context panel is dismissible', () => {
 describe('routing', () => {
   it.each([
     ['/world', 'World'],
+    ['/airline', 'Your airline'],
     ['/fleet', 'Fleet'],
     ['/network', 'Network'],
     ['/finance', 'Finance'],

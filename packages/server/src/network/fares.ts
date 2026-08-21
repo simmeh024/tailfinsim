@@ -58,7 +58,7 @@ import {
   type FuelStation,
 } from '@tailfin/sim';
 
-import { route } from '../db/schema';
+import { airline, route } from '../db/schema';
 
 import type { Database } from '../db/client';
 
@@ -172,16 +172,29 @@ export async function setFares(
   row: RouteRow,
   fares: FareTable,
   economics: RouteEconomics,
-): Promise<SetFaresResponse> {
+): Promise<SetFaresResponse | { ok: false; kind: 'airline-ceased' }> {
   const violations = violationsFor(fares, economics, row.greatCircleNm);
   if (violations.length > 0) {
     return { ok: false, violations };
   }
 
-  await db
-    .update(route)
-    .set({ fares: JSON.stringify(fares), updatedAt: new Date() })
-    .where(and(eq(route.id, row.id), eq(route.airlineId, row.airlineId)));
+  const saved = await db.transaction(async (tx): Promise<boolean> => {
+    const states = await tx
+      .select({ status: airline.status })
+      .from(airline)
+      .where(eq(airline.id, row.airlineId))
+      .limit(1)
+      .for('update');
+    if (states[0]?.status === 'ceased') return false;
+    if (!states[0]) throw new Error(`Airline ${row.airlineId} vanished while setting fares`);
+
+    await tx
+      .update(route)
+      .set({ fares: JSON.stringify(fares), updatedAt: new Date() })
+      .where(and(eq(route.id, row.id), eq(route.airlineId, row.airlineId)));
+    return true;
+  });
+  if (!saved) return { ok: false, kind: 'airline-ceased' };
 
   return { ok: true, fares };
 }

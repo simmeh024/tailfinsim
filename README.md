@@ -58,14 +58,15 @@ Both rules exist so the simulation stays deterministic and the server stays auth
 
 ## What runs on a pull request
 
-| Check                     | Asks                                                 | Blocks? |
-| ------------------------- | ---------------------------------------------------- | ------- |
-| `typecheck · lint · test` | Does it build, lint, format and pass its tests?      | **Yes** |
-| `dependency review`       | Did this PR add a known-vulnerable dependency?       | **Yes** |
-| `analyze (…)`             | Does Tailfin's own code contain a dangerous pattern? | No      |
+| Check                     | Asks                                                 | Blocks?                         |
+| ------------------------- | ---------------------------------------------------- | ------------------------------- |
+| `typecheck · lint · test` | Do builds, tests and the running Caddy policy pass?  | **Yes**                         |
+| `dependency review`       | Did this PR add a known-vulnerable dependency?       | **High/critical advisories**    |
+| CodeQL `analyze (…)`      | Does Tailfin's own code contain a dangerous pattern? | **Error or high/critical only** |
 
 `main` is protected and required approvals are zero — the pull request is the gate, not a
-second person.
+second person. CodeQL's measured thresholds and baseline decisions are recorded in
+[ADR-0013](docs/adr/0013-codeql-merge-policy.md).
 
 ## Status
 
@@ -94,8 +95,68 @@ different build.
   de-icing.
 - **Demand pools.** Appendix A.2's gravity model, sized for every viable city pair and
   split into business, leisure and VFR.
-- **Accounts.** Google OAuth, database-backed sessions, admin grants, and an append-only
-  audit log the database itself refuses to let anyone edit.
+- **Accounts.** Google OAuth, database-backed sessions, atomic login rotation, immediate
+  per-player revocation, shorter admin lifetimes, admin grants, and an append-only audit log
+  the database itself refuses to let anyone edit ([ADR-0015](docs/adr/0015-session-lifecycle.md)).
+- **A repository-specific threat model.** Security work prioritises the persistent world's
+  integrity, then the identities and control paths that can change it. The model records the
+  real single-host boundaries, attackers, ordinary operator mistakes and explicit non-goals
+  in [ADR-0012](docs/adr/0012-tailfin-threat-model.md).
+- **A browser security boundary at Caddy.** CSP restricts code, connections and framing;
+  powerful unused browser features are denied; Google avatars have one narrow image-source
+  exception. The first edge rollout is report-only before enforcement, and HSTS preload is
+  deliberately deferred ([ADR-0014](docs/adr/0014-browser-security-policy.md)).
+- **Recoverable off-box backups.** Nightly DreamObjects dumps and their checksums are restored
+  repeatably into a guarded `_test` database, migrated, booted and checked against real domain
+  data and the world clock, with observed recovery time and up-to-24-hour data loss stated in
+  the [server runbook](deploy/README.md#restoring).
+- **Known migration failure states.** PostgreSQL applies the complete pending migration batch
+  atomically; future SQL is checked for expand/contract compatibility with the previous
+  release, and a verified local dump gates every non-empty deploy batch. A failure reports
+  rolled back, all applied, or unknown instead of implying that failed code means unchanged
+  schema ([ADR-0016](docs/adr/0016-migration-failure-strategy.md)).
+- **Airline founding.** An authenticated player can found one airline in an open world,
+  choosing its identity, base country and first hub. Ownership, config-backed opening
+  cash, initial reputation and the free hub commit together or not at all; database
+  constraints arbitrate code collisions and return the submitted code in the refusal. The
+  no-menu `/found` desk reads those starting terms from the server, searches real tiered
+  airports, warns without blocking an ambitious flagship choice, offers taken-code
+  alternatives inline, and lands a successful founder on the network page.
+- **A versioned airline starting position.** Worlds pin an immutable, runtime-validated
+  economy version that supplies opening cash and the free-hub allowance to founding.
+  Unknown versions are refused when a world is created rather than when its first player
+  arrives ([ADR-0008](docs/adr/0008-versioned-airline-starting-position.md)).
+- **Explainable airline cash.** Every game-balance change records its amount, cause,
+  reference, game time and resulting balance in the transaction that caused it. Database
+  constraints make cause replay idempotent and refuse any balance that does not equal the
+  movement fold ([ADR-0011](docs/adr/0011-explainable-airline-cash.md)).
+- **Race-safe airline code allocation.** Founding allocates IATA and ICAO designators
+  through the per-world unique constraints. An advisory checker and constraint refusals
+  offer deterministic, name-derived alternatives without leaking unowned reservations
+  ([ADR-0009](docs/adr/0009-airline-code-allocation.md)).
+- **One player-airline context boundary.** Player operations resolve ownership from the
+  authenticated session and active world before a handler runs, then query only inside that
+  airline. A world is selected explicitly when several are possible; no-airline and
+  ambiguous-world states have stable responses shared by every guarded endpoint
+  ([ADR-0010](docs/adr/0010-player-airline-context.md)).
+- **Airline identity guardrails.** One shared schema gives Unicode display names and
+  operational callsigns/codes explicit rules, with field-level failures. A permissive
+  moderation interface sits on both founding and an audited admin force-rename remedy;
+  the stable airline id keeps its network and history attached through a rename
+  ([ADR-0007](docs/adr/0007-airline-identity-and-history.md)).
+- **A private airline record and paid rebrands.** The owner can read current identity,
+  stable codes, cash and reputation from one typed endpoint; having no airline is a normal
+  discovery result. Players may change the validated name, callsign and base country for a
+  versioned price, while codes, cash and reputation remain immutable inputs. The event,
+  identity and reconciling cash movement commit atomically
+  ([ADR-0017](docs/adr/0017-player-airline-rebrands.md)).
+- **A retained airline lifecycle.** Active airlines can make new commitments; restricted
+  airlines remain recoverable and may operate what already exists; ceased airlines become
+  read-only history. Cessation deactivates instructions but preserves flights, results and
+  audit readability, releases designators from the live per-world namespace, and excludes
+  the record from live caps and rankings. Player anonymisation removes sign-in authority
+  while keeping that world history intact
+  ([ADR-0018](docs/adr/0018-airline-lifecycle-and-code-release.md)).
 - **The admin console**, at `/admin` for accounts holding a grant: an overview with
   server-decided alerts, world creation, speed changes, the full open/lock/archive/reset
   lifecycle, world health, a read-only player browser, and the audit log.
@@ -110,8 +171,10 @@ different build.
 - **No fleet, crew or cabin.** Aircraft are a `uuid` with no catalogue behind it (M4),
   crew and ground handling are inputs the models take rather than systems (M5), and the
   livery and cabin builders are M6.
-- **No player-facing client.** The admin console is real; the game itself is not built,
-  and the front door still serves a holding page.
+- **Most of the player client.** The standalone founding desk, private airline/rebrand desk
+  and network/fare page are real; world, fleet, finance, crew, design and board remain
+  labelled placeholders, and the guided ninety-minute onboarding is still M10-01. The
+  production front door still serves a holding page.
 
 ### Where it runs
 

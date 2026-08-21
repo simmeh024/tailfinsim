@@ -71,6 +71,9 @@ cd /
 
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/tailfin}"
 RETAIN_DAYS="${RETAIN_DAYS:-14}"
+# Optional count-based retention for high-frequency pre-migration dumps. Zero
+# leaves the nightly job's time-based retention unchanged.
+KEEP_LOCAL="${KEEP_LOCAL:-0}"
 
 S3_CONFIG="${S3_CONFIG:-/etc/tailfin/dreamobjects.s3cfg}"
 S3_BUCKET="${S3_BUCKET:-s3://backupstailfin}"
@@ -81,6 +84,10 @@ MONTHLY_ON_DAY="${MONTHLY_ON_DAY:-01}"
 # Set to 1 to take local dumps only. For rehearsals and debugging, never for a
 # scheduled run — the timer must never be pointed at a local-only backup.
 SKIP_UPLOAD="${SKIP_UPLOAD:-0}"
+# A scheduled all-database run may tolerate an environment that has not been
+# created yet. A deploy gate may not: if its named database vanished between
+# preflight and dump, success would mean migrating without a recovery point.
+REQUIRE_DATABASES="${REQUIRE_DATABASES:-0}"
 
 # Dead-man's-switch endpoint. Empty means no alerting is configured, which is
 # reported rather than assumed to be deliberate — see deploy/README.md.
@@ -100,6 +107,18 @@ STATUS_FILE="${BACKUP_DIR}/last-run.json"
 PUBLIC_STATUS_FILE="${PUBLIC_STATUS_FILE:-/var/lib/tailfin/backup-status.json}"
 
 log() { printf '%s  %s\n' "$(date -Is)" "$*"; }
+
+if [[ ! "${KEEP_LOCAL}" =~ ^[0-9]+$ ]]; then
+  log "REFUSED KEEP_LOCAL must be a non-negative integer"
+  exit 2
+fi
+
+for db in "${DATABASES[@]}"; do
+  if [[ ! "${db}" =~ ^[A-Za-z0-9_]+$ ]]; then
+    log "REFUSED unsafe database name: ${db}"
+    exit 2
+  fi
+done
 
 mkdir -p "${BACKUP_DIR}"
 chmod 700 "${BACKUP_DIR}"
@@ -174,6 +193,10 @@ fi
 for db in "${DATABASES[@]}"; do
   if ! psql -qtAc "SELECT 1 FROM pg_database WHERE datname='${db}'" | grep -q 1; then
     log "SKIP ${db} — no such database"
+    if [ "${REQUIRE_DATABASES}" = '1' ]; then
+      failed=1
+      SUMMARY+=("${db}:missing")
+    fi
     continue
   fi
 
@@ -199,10 +222,16 @@ for db in "${DATABASES[@]}"; do
 
   sha256sum "${out}" | awk '{print $1}' >"${out}.sha256"
   size="$(du -h "${out}" | cut -f1)"
-  objects="$(pg_restore --list "${out}" | grep -c '^[0-9]')"
+  # `grep -c` exits 1 when the count is zero, which made a valid empty-database
+  # dump fail under `set -e -o pipefail` before its status was written. An empty
+  # first deploy is exactly when the migration gate may need this backup.
+  objects="$(pg_restore --list "${out}" | awk '/^[0-9]/{count++} END{print count+0}')"
   log "OK   ${db} -> $(basename "${out}") (${size}, ${objects} objects)"
 
-  [ "${SKIP_UPLOAD}" = '1' ] && { SUMMARY+=("${db}:local-only"); continue; }
+  [ "${SKIP_UPLOAD}" = '1' ] && {
+    SUMMARY+=("${db}:local-only:$(basename "${out}")")
+    continue
+  }
   [ -r "${S3_CONFIG}" ] || { SUMMARY+=("${db}:no-credentials"); continue; }
 
   nightly_key="${S3_BUCKET}/nightly/${db}/${db}-${STAMP}.dump"
@@ -214,7 +243,15 @@ for db in "${DATABASES[@]}"; do
     SUMMARY+=("${db}:upload-failed")
     continue
   fi
-  s3 put "${out}.sha256" "${nightly_key}.sha256" >/dev/null 2>&1 || true
+  if ! s3 put "${out}.sha256" "${nightly_key}.sha256" >/dev/null 2>&1; then
+    # OPS-04 downloads from the remote store and verifies this sidecar before
+    # restore. A dump whose integrity cannot be checked on the bad day is not a
+    # complete off-box recovery set.
+    log "FAIL ${db} — dump uploaded but its SHA-256 sidecar did not"
+    failed=1
+    SUMMARY+=("${db}:checksum-upload-failed")
+    continue
+  fi
   log "     uploaded -> nightly/${db}/"
   uploaded=$((uploaded + 1))
 
@@ -237,7 +274,12 @@ for db in "${DATABASES[@]}"; do
     # This still cannot run unless the nightly upload above succeeded — the
     # control flow, not the copy source, is what guarantees that.
     if s3 put "${out}" "${monthly_key}"; then
-      s3 put "${out}.sha256" "${monthly_key}.sha256" >/dev/null 2>&1 || true
+      if ! s3 put "${out}.sha256" "${monthly_key}.sha256" >/dev/null 2>&1; then
+        log "FAIL ${db} — monthly dump uploaded but its SHA-256 sidecar did not"
+        failed=1
+        SUMMARY+=("${db}:monthly-checksum-upload-failed")
+        continue
+      fi
       log "     kept as monthly/${db}/${db}-${MONTH}.dump"
     else
       log "FAIL ${db} — monthly copy failed"
@@ -256,6 +298,29 @@ done
 deleted=$(find "${BACKUP_DIR}" -maxdepth 1 -name '*.dump' -mtime "+${RETAIN_DAYS}" -print -delete | wc -l)
 find "${BACKUP_DIR}" -maxdepth 1 -name '*.sha256' -mtime "+${RETAIN_DAYS}" -delete
 [ "${deleted}" -gt 0 ] && log "pruned ${deleted} local dump(s) older than ${RETAIN_DAYS} days"
+
+if [ "${KEEP_LOCAL}" -gt 0 ]; then
+  # Count per database: frequent dev previews must not evict production's last
+  # recovery points. The numeric stamp pattern also leaves deliberately named
+  # incident-preservation dumps alone.
+  for local_db in "${DATABASES[@]}"; do
+    if ! local_listing="$(find "${BACKUP_DIR}" -maxdepth 1 -name "${local_db}-[0-9]*.dump" -print | sort)"; then
+      log "FAIL could not list ${local_db} dumps for count-based retention"
+      exit 1
+    fi
+    local_dumps=()
+    if [ -n "${local_listing}" ]; then
+      mapfile -t local_dumps <<<"${local_listing}"
+    fi
+    local_excess=$((${#local_dumps[@]} - KEEP_LOCAL))
+    if [ "${local_excess}" -gt 0 ]; then
+      for old_dump in "${local_dumps[@]:0:local_excess}"; do
+        rm -f -- "${old_dump}" "${old_dump}.sha256"
+        log "pruned local $(basename "${old_dump}") by count"
+      done
+    fi
+  done
+fi
 
 log "backup dir now $(du -sh "${BACKUP_DIR}" | cut -f1) across $(find "${BACKUP_DIR}" -name '*.dump' | wc -l) dump(s); ${uploaded} uploaded"
 

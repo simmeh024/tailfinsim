@@ -68,6 +68,8 @@ function stubApi(me: MeResponse | 'error') {
     }
     if (url === '/api/version') return Promise.resolve(jsonResponse(VERSION));
     if (url === '/api/auth/logout') return Promise.resolve(jsonResponse({ signedOut: true }));
+    if (url === '/api/auth/logout-all')
+      return Promise.resolve(jsonResponse({ signedOut: true, revokedSessions: 2 }));
     return Promise.reject(new Error(`unexpected fetch: ${url}`));
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -193,7 +195,7 @@ describe('signed in', () => {
     const { calls } = stubApi(PLAYER);
     renderAt('/world');
 
-    fireEvent.click(await screen.findByRole('button', { name: /sign out/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
 
     // The POST matters: clearing the cookie client-side would leave the session
     // alive on the server.
@@ -202,6 +204,18 @@ describe('signed in', () => {
     });
     expect(await screen.findByRole('link', { name: /sign in with google/i })).toBeInTheDocument();
     expect(screen.queryByRole('navigation', { name: 'Main' })).not.toBeInTheDocument();
+  });
+
+  it('can end every session through the server', async () => {
+    const { calls } = stubApi(PLAYER);
+    renderAt('/world');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign out everywhere' }));
+
+    await waitFor(() => {
+      expect(calls).toContain('/api/auth/logout-all');
+    });
+    expect(await screen.findByRole('link', { name: /sign in with google/i })).toBeInTheDocument();
   });
 });
 

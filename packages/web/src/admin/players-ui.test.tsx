@@ -68,6 +68,7 @@ const DETAIL: AdminPlayerDetail = {
   id: 'aaaaaaaa-1111-2222-3333-444444444444',
   displayName: 'Amelia Hart',
   avatarUrl: null,
+  anonymizedAt: null,
   createdAt: '2026-08-17T09:00:00.000Z',
   isAdmin: true,
   identities: [
@@ -105,6 +106,9 @@ const DETAIL: AdminPlayerDetail = {
       callsign: 'HARTAIR',
       cashMinor: 50_000_000,
       reputation: 0.35,
+      status: 'active',
+      statusChangedAt: '2026-08-17T10:00:00.000Z',
+      ceasedAt: null,
       createdAt: '2026-08-17T10:00:00.000Z',
     },
   ],
@@ -121,7 +125,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 function stubApi(options: { rows?: AdminPlayerSummary[]; detail?: AdminPlayerDetail | null } = {}) {
   const requested: string[] = [];
   const rows = options.rows ?? ROWS;
-  const fetchMock = vi.fn((input: unknown) => {
+  const fetchMock = vi.fn((input: unknown, init?: RequestInit) => {
     const url = String(input);
     requested.push(url);
 
@@ -140,6 +144,9 @@ function stubApi(options: { rows?: AdminPlayerSummary[]; detail?: AdminPlayerDet
       );
 
     if (url.startsWith('/api/admin/players/')) {
+      if (url.endsWith('/sessions/revoke') && init?.method === 'POST') {
+        return Promise.resolve(jsonResponse({ signedOut: true, revokedSessions: 2 }));
+      }
       const detail = options.detail === undefined ? DETAIL : options.detail;
       return Promise.resolve(
         detail === null
@@ -290,6 +297,19 @@ describe('one player in detail', () => {
     // the token hash, and there is nowhere for one to come from.
     expect(/[0-9a-f]{64}/.test(document.body.textContent ?? '')).toBe(false);
     expect(screen.getByText(/never stored/i)).toBeInTheDocument();
+  });
+
+  it('revokes every session as an audited security action', async () => {
+    const { requested } = stubApi();
+    renderAt('/admin/players/aaaaaaaa-1111-2222-3333-444444444444');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Revoke all sessions' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Revoked 2 sessions.');
+    expect(requested).toContain(
+      '/api/admin/players/aaaaaaaa-1111-2222-3333-444444444444/sessions/revoke',
+    );
+    expect(screen.getByText('No sessions.')).toBeInTheDocument();
   });
 
   it('tells the admin the view was recorded', async () => {

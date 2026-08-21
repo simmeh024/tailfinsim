@@ -1,0 +1,3 @@
+ALTER TABLE "airline" ADD CONSTRAINT "airline_name_length" CHECK (char_length("airline"."name") BETWEEN 1 AND 120);--> statement-breakpoint
+ALTER TABLE "airline" ADD CONSTRAINT "airline_name_structure" CHECK ("airline"."name" = btrim("airline"."name") AND position('  ' in "airline"."name") = 0 AND "airline"."name" !~ '[[:cntrl:]]');--> statement-breakpoint
+ALTER TABLE "airline" ADD CONSTRAINT "airline_callsign_format" CHECK (char_length("airline"."callsign") BETWEEN 2 AND 32 AND "airline"."callsign" ~ '^[A-Z0-9]+( [A-Z0-9]+)*$' AND "airline"."callsign" ~ '[A-Z]');

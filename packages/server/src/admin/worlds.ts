@@ -9,6 +9,7 @@ import { gameTime } from '@tailfin/sim';
 
 import { type Database } from '../db/client';
 import { airline, world, worldEvent, type WorldRow } from '../db/schema';
+import { economyConfigFor } from '../economy/config';
 import { createWorld } from '../world/lifecycle';
 
 import { writeAudit } from './audit';
@@ -96,6 +97,18 @@ export function validateWorldConfig(input: unknown, now: Date): ValidationResult
         epoch: [
           'The epoch has to be in the past. It is where the calendar begins and where a reset ' +
             'returns to, so an epoch of today or later would make a reset do nothing (ADR-0005).',
+        ],
+      },
+    };
+  }
+
+  if (!economyConfigFor(config.economyConfigVersion)) {
+    return {
+      ok: false,
+      fields: {
+        economyConfigVersion: [
+          `Economy config ${config.economyConfigVersion} is not registered. ` +
+            'Choose a version that can be pinned before creating the world.',
         ],
       },
     };

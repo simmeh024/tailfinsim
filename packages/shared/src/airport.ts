@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import {
+  AirportIdent,
   AirportIataCode,
   AirportIcaoCode,
   CountryCode,
@@ -13,9 +14,11 @@ import {
 /**
  * An airport, following the record in App. B.2 field for field.
  *
- * **Partly provisional.** M1-01 imported the OurAirports dataset and reconciled
- * the fields it supplies; M1-02/M1-03 still owe `tier`, `slotLevel`, `catchment`,
- * `capacity`, `fees`, `curfew` and `constraints`, which no table fills yet.
+ * **Partly provisional.** M1-01 imported the OurAirports dataset, M1-02 added
+ * `tier`/`slotLevel`, and M1-03 added catchment. `capacity`, exact `fees`,
+ * `curfew` and `constraints` still have no table columns. Consumers that need
+ * the implemented subset use `AirportSummary` or a narrower purpose-built
+ * contract rather than pretending the complete App. B.2 record exists.
  *
  * ## What M1-01 changed, and why
  *
@@ -120,7 +123,7 @@ export const Airport = z.object({
    * The stable key — OurAirports' `ident`. Unique and present on every row,
    * which is true of neither ICAO nor IATA.
    */
-  ident: z.string().min(1).max(16),
+  ident: AirportIdent,
   /** Only ~12% of aerodromes have an officially assigned ICAO code. */
   icao: AirportIcaoCode.nullable(),
   iata: AirportIataCode.nullable(),

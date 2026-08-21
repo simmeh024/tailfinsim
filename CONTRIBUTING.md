@@ -66,21 +66,24 @@ Node version is pinned in `.nvmrc`; pnpm version in `package.json`'s `packageMan
 
 ### Commands
 
-| Command              | What it does                                      |
-| -------------------- | ------------------------------------------------- |
-| `pnpm typecheck`     | `tsc -b` across all project references            |
-| `pnpm lint`          | ESLint, including the architectural guards above  |
-| `pnpm lint:fix`      | The same, applying what it can fix                |
-| `pnpm format`        | Prettier write                                    |
-| `pnpm format:check`  | Prettier check — this is the one CI runs          |
-| `pnpm test`          | Vitest across all packages                        |
-| `pnpm test:coverage` | Adds coverage; thresholds enforced for `sim`      |
-| `pnpm test:perf`     | Only the budgeted benchmarks, uninstrumented      |
-| `pnpm ops:status`    | What is deployed where, over public HTTP (OPS-02) |
-| `pnpm clean`         | Removes build info and emitted declarations       |
+| Command                                         | What it does                                      |
+| ----------------------------------------------- | ------------------------------------------------- |
+| `pnpm typecheck`                                | `tsc -b` across all project references            |
+| `pnpm lint`                                     | ESLint, including the architectural guards above  |
+| `pnpm lint:fix`                                 | The same, applying what it can fix                |
+| `pnpm format`                                   | Prettier write                                    |
+| `pnpm format:check`                             | Prettier check — this is the one CI runs          |
+| `pnpm test`                                     | Vitest across all packages                        |
+| `pnpm test:coverage`                            | Adds coverage; thresholds enforced for `sim`      |
+| `pnpm test:perf`                                | Only the budgeted benchmarks, uninstrumented      |
+| `pnpm ops:status`                               | What is deployed where, over public HTTP (OPS-02) |
+| `pnpm security:headers --mode enforced <urls…>` | Exact edge policy on running hosts (SEC-HARD-05)  |
+| `pnpm clean`                                    | Removes build info and emitted declarations       |
 
-CI runs typecheck, lint, format check and coverage on every PR, plus the dependency and
-code scanning described under [Dependencies](#dependencies) below.
+CI runs typecheck, lint, format check and coverage on every PR. It also starts the committed
+Caddyfile with a checksum-pinned Caddy 2.11.4 and checks report-only/enforced headers on real
+HTTP responses. Dependency and code scanning are described under
+[Dependencies](#dependencies) below.
 
 **`pnpm test:perf` is a separate, uninstrumented run on purpose.** V8 coverage costs about
 5× on the code paths that carry a budget, so measuring them under it would be measuring
@@ -158,6 +161,25 @@ without it Postgres reports running several seconds before it accepts connection
 Generated migrations are **committed as SQL** under `packages/server/drizzle/`. Never
 edit an applied migration — add a new one. Name them meaningfully with
 `drizzle-kit generate --name=what_it_does`, since the default is a random word pair.
+
+Every migration after `0019_large_hellfire_club` also declares its OPS-05 phase at the top:
+
+```sql
+-- tailfin:migration-strategy expand
+-- tailfin:migration-strategy contract-safe-after #123
+```
+
+Use `expand` when the previously deployed application can still read and write the resulting
+schema: new columns are nullable or have a database default, and old names and shapes remain.
+Use `contract-safe-after` only after an earlier released version stopped using the thing being
+removed; the issue named by the marker records that sequencing. The migration command and CI
+reject a missing marker, obvious contractions labelled expand, and SQL that cannot run in the
+atomic batch (`CREATE INDEX CONCURRENTLY`, `VACUUM`, and similar). The check catches syntax,
+not meaning—review still has to consider constraints, triggers and data transforms.
+
+Do not add down-migrations. A reverse migration can destroy data written by the forward one,
+and checking out old code never reverses schema. See
+[`ADR-0016`](docs/adr/0016-migration-failure-strategy.md).
 
 The database is created with `--locale=C`. Postgres sorts differently under different
 host locales, and ordering must not depend on a developer's OS language settings.
@@ -249,6 +271,49 @@ That makes every override a reviewable line in a diff with a justification attac
 it, rather than a decision someone took quietly in a settings page. An override with no
 stated reason should be sent back.
 
+## Code scanning
+
+Every pull request is analysed by
+[`.github/workflows/codeql.yml`](.github/workflows/codeql.yml) for
+JavaScript/TypeScript and GitHub Actions (SEC-HARD-02). The `CodeQL merge protection`
+ruleset applies these measured thresholds to new results:
+
+| Finding                                | Merge policy |
+| -------------------------------------- | ------------ |
+| Standard severity `error`              | **Blocks**   |
+| Standard severity `warning` or `note`  | Reported     |
+| Security severity `critical` or `high` | **Blocks**   |
+| Security severity `medium` or `low`    | Reported     |
+
+Do not read a clean scan as proof that inputs are safe. The deliberate canary in PR #286
+proved CodeQL catches a `node:http` value flowing to `eval()`, and also proved it did not
+model Fastify's `request.query` as a remote-flow source. Boundary schemas and security
+regression tests remain required.
+
+False positives are dismissed only with evidence in the Security tab. A real finding
+deferred to another issue names that issue and says explicitly that dismissal does not make
+the behavior safe. Do not lower the ruleset threshold to get a PR through. See
+[ADR-0013](docs/adr/0013-codeql-merge-policy.md) for the tuning measurements, baseline
+triage and rationale.
+
+---
+
+## Release flow
+
+**Merging to `main` stages a release; it does not release production.** OPS-06 keeps the
+human approval boundary from ADR-0003: dev will track green `main` automatically under
+[OPS-17](https://github.com/simmeh024/tailfinsim/issues/320), and a human will promote that
+reviewed commit under [OPS-18](https://github.com/simmeh024/tailfinsim/issues/321).
+
+The normal release-line invariant is **`dev ≥ prod`**. When both environments run commits
+from `main`, `dev build − prod build` is the number of staged changes tested on dev but not
+yet released. Zero means they are aligned; a negative value is an operational incident.
+Dev may be pinned to an unmerged branch for an explicit preview, in which case the builds
+are not ordered and `pnpm ops:status` marks the dev row with `*`.
+
+Do not describe a merge as a deploy. Check `pnpm ops:status` before reporting what is live;
+[ADR-0003](docs/adr/0003-deployment-approach.md) owns the boundary and its revisit criteria.
+
 ---
 
 ## Working style
@@ -257,6 +322,8 @@ stated reason should be sent back.
   runtime artefacts come from Vite (web) and esbuild (server). `tsc -b` emits
   declarations only.
 - **Migrations are committed as SQL**, never generated at runtime (M0-05).
+- **Migrations use atomic expand/contract**, with a verified pre-migration recovery point
+  during deploy (OPS-05 / ADR-0016).
 - **Connection config comes from the environment**, never hardcoded. See
   [`docs/deploy.md`](docs/deploy.md).
 - **One issue per PR** where practical; reference the issue key (`M0-03`) in the branch

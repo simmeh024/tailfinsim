@@ -2,20 +2,32 @@ import { describe, expect, it } from 'vitest';
 
 import {
   Airline,
+  AirlineCodeAvailabilityResponse,
+  AirlineCodeUnavailableError,
+  AirlineFoundingAirport,
+  AirlineFoundingOptionsResponse,
+  AirlineIdentity,
   AirlineIataCode,
   Airport,
   AirportIcaoCode,
   AirportSummary,
   CreateAirlineInput,
+  EconomyConfig,
   Flight,
   FlightKind,
   FlightPhase,
+  ForceRenameAirlineInput,
   HealthResponse,
+  INITIAL_AIRLINE_REPUTATION,
   MinorUnits,
+  OwnAirlineResponse,
+  PlayerAirlineContextError,
   PublicAirline,
   Reputation,
   Runway,
   Timestamp,
+  UpdateOwnAirlineInput,
+  UpdateOwnAirlineResponse,
   World,
 } from './index';
 
@@ -110,6 +122,9 @@ describe('Airline', () => {
     baseCountry: 'NL',
     cash: 50_000_000,
     reputation: 0.35,
+    status: 'active',
+    statusChangedAt: '2026-08-17T12:00:00.000Z',
+    ceasedAt: null,
     createdAt: '2026-08-17T12:00:00.000Z',
   };
 
@@ -130,13 +145,236 @@ describe('Airline', () => {
     // and deriving PublicAirline by picking is what guarantees it.
     expect(Object.keys(PublicAirline.shape)).not.toContain('cash');
     expect(Object.keys(PublicAirline.shape)).not.toContain('playerId');
+    expect(Object.keys(PublicAirline.shape)).toContain('callsign');
     expect(Object.keys(PublicAirline.shape)).toContain('reputation');
+    expect(Object.keys(PublicAirline.shape)).toContain('status');
   });
 
   it('does not let a client choose its own starting cash', () => {
     expect(Object.keys(CreateAirlineInput.shape)).not.toContain('cash');
     expect(Object.keys(CreateAirlineInput.shape)).not.toContain('reputation');
     expect(Object.keys(CreateAirlineInput.shape)).not.toContain('id');
+  });
+
+  it('requires the founder hub but does not let the client call it paid', () => {
+    expect(
+      CreateAirlineInput.safeParse({
+        worldId: valid.worldId,
+        name: valid.name,
+        iataCode: valid.iataCode,
+        icaoCode: valid.icaoCode,
+        callsign: valid.callsign,
+        baseCountry: valid.baseCountry,
+        hubIdent: 'EHAM',
+      }).success,
+    ).toBe(true);
+    expect(Object.keys(CreateAirlineInput.shape)).not.toContain('founderGrant');
+  });
+
+  it('keeps opening terms and hub cost server-authored for the founding screen', () => {
+    expect(
+      AirlineFoundingOptionsResponse.safeParse({
+        memberships: [],
+        worlds: [
+          {
+            id: valid.worldId,
+            name: 'Flagship',
+            openingCashMinor: 50_000_000,
+            freeHubAllowance: 1,
+            playerCap: null,
+            airlines: 0,
+            availability: 'available',
+          },
+        ],
+      }).success,
+    ).toBe(true);
+
+    expect(
+      AirlineFoundingAirport.safeParse({
+        ident: 'EGLL',
+        icao: 'EGLL',
+        iata: 'LHR',
+        name: 'London Heathrow Airport',
+        city: 'London',
+        country: 'GB',
+        tier: 'flagship',
+        slotLevel: 3,
+        foundingCostMinor: 0,
+        feeWarning: 'Flagship fees and coordinated slots make this an ambitious first base.',
+      }).success,
+    ).toBe(true);
+  });
+
+  it.each(['Air Côte d’Ivoire', '航空会社', 'خطوط الأفق'])(
+    'accepts a deliberately supported Unicode name: %s',
+    (name) => {
+      expect(AirlineIdentity.safeParse({ ...valid, name }).success).toBe(true);
+    },
+  );
+
+  it.each([
+    ['non-NFC text', 'Ame\u0301lie Air', /NFC/],
+    ['emoji', 'Tailfin ✈', /may contain only/],
+    ['an invisible separator', 'Tailfin\u200bAir', /may contain only/],
+    ['only punctuation', '---', /at least one Unicode letter/],
+    ['doubled spaces', 'Tailfin  Air', /single spaces/],
+  ])('rejects %s and names the failed rule', (_label, name, message) => {
+    const parsed = AirlineIdentity.safeParse({ ...valid, name });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success)
+      expect(parsed.error.issues.map((issue) => issue.message).join(' ')).toMatch(message);
+  });
+
+  it('keeps the operational callsign ASCII, uppercase and structurally spoken', () => {
+    expect(AirlineIdentity.safeParse({ ...valid, callsign: 'SPEEDBIRD 1' }).success).toBe(true);
+    for (const callsign of ['Speedbird', 'SPEEDBIRD  1', 'ПОЛЁТ', '1234']) {
+      expect(AirlineIdentity.safeParse({ ...valid, callsign }).success).toBe(false);
+    }
+  });
+
+  it('lets moderation replace display text but not scarce codes', () => {
+    expect(
+      ForceRenameAirlineInput.safeParse({
+        name: 'Tailfin Reformed',
+        callsign: 'TAILFIN NEW',
+        reason: 'moderation correction',
+      }).success,
+    ).toBe(true);
+    expect(Object.keys(ForceRenameAirlineInput.shape)).not.toContain('iataCode');
+    expect(Object.keys(ForceRenameAirlineInput.shape)).not.toContain('icaoCode');
+  });
+
+  it('makes absence a normal own-airline response and names the rebrand boundary', () => {
+    expect(OwnAirlineResponse.safeParse({ airline: null, rebrand: null }).success).toBe(true);
+    expect(
+      OwnAirlineResponse.safeParse({
+        airline: valid,
+        rebrand: {
+          costMinor: 2_500_000,
+          mutableFields: ['name', 'callsign', 'baseCountry'],
+          immutableFields: ['iataCode', 'icaoCode', 'cash', 'reputation'],
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects money, reputation and scarce codes from the strict player rebrand input', () => {
+    const identity = { name: valid.name, callsign: valid.callsign, baseCountry: valid.baseCountry };
+    expect(UpdateOwnAirlineInput.safeParse(identity).success).toBe(true);
+    for (const extra of [
+      { cash: 900_000_000 },
+      { reputation: 1 },
+      { iataCode: 'ZZ' },
+      { icaoCode: 'ZZZ' },
+    ]) {
+      expect(UpdateOwnAirlineInput.safeParse({ ...identity, ...extra }).success).toBe(false);
+    }
+    expect(
+      UpdateOwnAirlineResponse.safeParse({
+        airline: { ...valid, cash: 47_500_000 },
+        changed: true,
+        chargedMinor: 2_500_000,
+        identityChangeId: '8a1c7d3e-2b8f-4a6c-9d1e-7f3b5c9a2d4e',
+      }).success,
+    ).toBe(true);
+  });
+});
+
+describe('airline code allocation contracts', () => {
+  const advisory = {
+    scope: 'world' as const,
+    reservation: 'none' as const,
+    realWorldCodes: 'allowed-if-free' as const,
+    message: 'Availability is advisory; founding reserves the code.',
+  };
+
+  it('makes the advisory and real-world scope part of the availability wire shape', () => {
+    expect(
+      AirlineCodeAvailabilityResponse.safeParse({
+        advisory,
+        iataCode: { requested: 'TF', status: 'assigned', alternatives: ['TA', 'TN'] },
+        icaoCode: { requested: 'TFN', status: 'available', alternatives: [] },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('requires a taken-code refusal to carry alternatives and non-reservation semantics', () => {
+    expect(
+      AirlineCodeUnavailableError.safeParse({
+        code: 'iata_code_taken',
+        message: 'TF is already assigned',
+        fields: { iataCode: ['TF is already taken in this world.'] },
+        codeKind: 'iata',
+        submittedCode: 'TF',
+        alternatives: ['TA', 'TN', 'TR'],
+        advisory,
+      }).success,
+    ).toBe(true);
+    expect(
+      AirlineCodeUnavailableError.safeParse({
+        code: 'iata_code_taken',
+        message: 'TF is already assigned',
+        codeKind: 'iata',
+        submittedCode: 'TF',
+        alternatives: ['TA'],
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('player airline context contract', () => {
+  it.each([
+    'airline_required',
+    'active_world_required',
+    'invalid_active_world',
+    'airline_restricted',
+    'airline_ceased',
+  ])('keeps %s machine-readable while allowing the wording to improve', (code) => {
+    expect(
+      PlayerAirlineContextError.safeParse({ code, message: 'A useful explanation.' }).success,
+    ).toBe(true);
+  });
+
+  it('does not mistake authentication or route lookup errors for context state', () => {
+    for (const code of ['unauthorized', 'not_found', 'duplicate_route']) {
+      expect(
+        PlayerAirlineContextError.safeParse({ code, message: 'A different response.' }).success,
+      ).toBe(false);
+    }
+  });
+});
+
+describe('EconomyConfig', () => {
+  const valid = {
+    version: 'v1',
+    airlineStartingPosition: { openingCashMinor: 50_000_000, freeHubAllowance: 1 },
+    airlineIdentity: { rebrandCostMinor: 2_500_000 },
+  };
+
+  it('validates the versioned starting position at runtime', () => {
+    expect(EconomyConfig.safeParse(valid).success).toBe(true);
+  });
+
+  it.each([
+    ['fractional money', { openingCashMinor: 500_000.5, freeHubAllowance: 1 }],
+    ['negative opening cash', { openingCashMinor: -1, freeHubAllowance: 1 }],
+    ['fractional hub allowance', { openingCashMinor: 50_000_000, freeHubAllowance: 1.5 }],
+    ['negative hub allowance', { openingCashMinor: 50_000_000, freeHubAllowance: -1 }],
+  ])('refuses %s', (_label, airlineStartingPosition) => {
+    expect(EconomyConfig.safeParse({ ...valid, airlineStartingPosition }).success).toBe(false);
+  });
+
+  it('requires a positive configured player rebrand cost', () => {
+    for (const rebrandCostMinor of [0, -1, 2_500_000.5]) {
+      expect(
+        EconomyConfig.safeParse({ ...valid, airlineIdentity: { rebrandCostMinor } }).success,
+      ).toBe(false);
+    }
+  });
+
+  it('keeps the fixed initial reputation outside tunable economy config', () => {
+    expect(INITIAL_AIRLINE_REPUTATION).toBe(0.35);
+    expect(EconomyConfig.safeParse({ ...valid, initialReputation: 0.5 }).success).toBe(false);
   });
 });
 

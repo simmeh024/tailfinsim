@@ -13,6 +13,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 
@@ -154,6 +155,8 @@ export const player = pgTable('player', {
   displayName: text('display_name').notNull(),
   /** From the provider's `picture` claim. Nullable — not everyone has one. */
   avatarUrl: text('avatar_url'),
+  /** Set when personal identity is removed while the world-history anchor remains (§22.10). */
+  anonymizedAt: timestamp('anonymized_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -181,14 +184,14 @@ export const session = pgTable(
     tokenHash: text('token_hash').notNull(),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    /** Absolute expiry. Checked on every request; sweeping old rows is separate. */
+    /** Absolute expiry. Checked in the lookup query on every request. */
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     unique('session_token_hash_key').on(t.tokenHash),
     index('session_player_id_idx').on(t.playerId),
-    // Sweeping expired sessions is a range scan over this.
+    // Supports expiry/retention inspection without affecting request correctness.
     index('session_expires_at_idx').on(t.expiresAt),
     check('session_token_hash_is_sha256', sql`length(${t.tokenHash}) = 64`),
     check('session_expires_after_creation', sql`${t.expiresAt} > ${t.createdAt}`),
@@ -233,6 +236,9 @@ export const playerIdentity = pgTable(
 // airline — a player's presence in one world.
 // ---------------------------------------------------------------------------
 
+export const airlineStatus = pgEnum('airline_status', ['active', 'restricted', 'ceased']);
+export type AirlineStatus = (typeof airlineStatus.enumValues)[number];
+
 export const airline = pgTable(
   'airline',
   {
@@ -252,13 +258,15 @@ export const airline = pgTable(
       .notNull()
       .references(() => player.id, { onDelete: 'restrict' }),
 
+    /** Unicode/category policy lives in the shared AIR-02 schema; checks below defend direct writes. */
     name: text('name').notNull(),
 
     /**
      * IATA is 2 characters, ICAO 3, and both are scarce enough to be worth
      * enforcing per world (§24 flags ~1,300 usable IATA codes against an
      * unbounded player count). Name and callsign are deliberately *not* unique:
-     * §22.6 treats those as a moderation matter, not a constraint violation.
+     * §22.6 treats those as a moderation matter, not a uniqueness constraint.
+     * Their deterministic AIR-02 format checks are still enforced below.
      */
     iataCode: text('iata_code').notNull(),
     icaoCode: text('icao_code').notNull(),
@@ -292,11 +300,24 @@ export const airline = pgTable(
      */
     reputation: numeric('reputation', { precision: 3, scale: 2 }).notNull().default('0.35'),
 
+    /** AIR-09 lifecycle; cessation retains the row as immutable world history. */
+    status: airlineStatus('status').notNull().default('active'),
+    /** Real time at which `status` most recently changed. */
+    statusChangedAt: timestamp('status_changed_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Present only for terminal cessation; codes are reusable from this instant. */
+    ceasedAt: timestamp('ceased_at', { withTimezone: true }),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    unique('airline_world_id_iata_code_key').on(t.worldId, t.iataCode),
-    unique('airline_world_id_icao_code_key').on(t.worldId, t.icaoCode),
+    // Ceased rows retain their historical designators, while the live namespace
+    // can allocate those scarce codes again (ADR-0018).
+    uniqueIndex('airline_world_id_iata_code_key')
+      .on(t.worldId, t.iataCode)
+      .where(sql`${t.status} <> 'ceased'`),
+    uniqueIndex('airline_world_id_icao_code_key')
+      .on(t.worldId, t.icaoCode)
+      .where(sql`${t.status} <> 'ceased'`),
     // One airline per player per world.
     unique('airline_world_id_player_id_key').on(t.worldId, t.playerId),
     index('airline_world_id_idx').on(t.worldId),
@@ -304,10 +325,175 @@ export const airline = pgTable(
     check('airline_reputation_range', sql`${t.reputation} >= 0 AND ${t.reputation} <= 1`),
     check('airline_iata_code_format', sql`${t.iataCode} ~ '^[A-Z0-9]{2}$'`),
     check('airline_icao_code_format', sql`${t.icaoCode} ~ '^[A-Z]{3}$'`),
+    check('airline_name_length', sql`char_length(${t.name}) BETWEEN 1 AND 120`),
+    check(
+      'airline_name_structure',
+      sql`${t.name} = btrim(${t.name}) AND position('  ' in ${t.name}) = 0 AND ${t.name} !~ '[[:cntrl:]]'`,
+    ),
+    check(
+      'airline_callsign_format',
+      sql`char_length(${t.callsign}) BETWEEN 2 AND 32 AND ${t.callsign} ~ '^[A-Z0-9]+( [A-Z0-9]+)*$' AND ${t.callsign} ~ '[A-Z]'`,
+    ),
     check('airline_base_country_format', sql`${t.baseCountry} ~ '^[A-Z]{2}$'`),
-    check('airline_cash_finite', sql`${t.cashMinor} > -9007199254740991`),
+    check(
+      'airline_cash_safe_integer',
+      sql`${t.cashMinor} >= -9007199254740991 AND ${t.cashMinor} <= 9007199254740991`,
+    ),
+    check(
+      'airline_ceased_at_matches_status',
+      sql`(${t.status} = 'ceased' AND ${t.ceasedAt} IS NOT NULL)
+          OR (${t.status} <> 'ceased' AND ${t.ceasedAt} IS NULL)`,
+    ),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// airline_status_transition — immutable lifecycle history (AIR-09)
+// ---------------------------------------------------------------------------
+
+/**
+ * One recorded lifecycle transition. The current status remains on `airline`
+ * for fast permission and leaderboard predicates; this table explains how it
+ * got there and is retained with the airline's operational record.
+ */
+export const airlineStatusTransition = pgTable(
+  'airline_status_transition',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    fromStatus: airlineStatus('from_status').notNull(),
+    toStatus: airlineStatus('to_status').notNull(),
+    reason: text('reason').notNull(),
+    /** Game time at which the transition took effect in this world. */
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+    /** Real time at which the transition committed. */
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('airline_status_transition_airline_id_occurred_at_idx').on(t.airlineId, t.occurredAt),
+    check('airline_status_transition_changes_status', sql`${t.fromStatus} <> ${t.toStatus}`),
+    check(
+      'airline_status_transition_reason_not_blank',
+      sql`char_length(${t.reason}) > 0 AND ${t.reason} = btrim(${t.reason})`,
+    ),
+  ],
+);
+
+export type AirlineStatusTransitionRow = typeof airlineStatusTransition.$inferSelect;
+export type NewAirlineStatusTransitionRow = typeof airlineStatusTransition.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// cash_movement — the authoritative explanation for airline.cash_minor (AIR-06)
+// ---------------------------------------------------------------------------
+
+/**
+ * Deliberately narrow. M8-01 adds P&L categories and entity dimensions; these
+ * are the balance-changing causes that exist now and can therefore be honest.
+ */
+export const cashMovementCause = pgEnum('cash_movement_cause', [
+  'airline_founding',
+  'airline_rebrand',
+  'flight_settlement',
+  'migration_opening_balance',
+]);
+export type CashMovementCause = (typeof cashMovementCause.enumValues)[number];
+
+/**
+ * One immutable row for every change to an airline's game balance.
+ *
+ * `cause + reference` is the logical identity of a movement. A flight id, for
+ * example, can settle once even if an event is replayed or two workers race.
+ * `balance_after_minor` makes the fold checkable against `airline.cash_minor`
+ * rather than leaving drift silent.
+ *
+ * This is in-game currency only. ADR-0006 keeps commerce money in different
+ * tables, types and helpers.
+ */
+export const cashMovement = pgTable(
+  'cash_movement',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+
+    amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+    cause: cashMovementCause('cause').notNull(),
+    /** Stable id of the thing that caused this movement, stored generically for later domains. */
+    reference: text('reference').notNull(),
+    balanceAfterMinor: bigint('balance_after_minor', { mode: 'number' }).notNull(),
+
+    /** Game time for simulation causes; founding time for the opening grant. */
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+    /** Real time the row reached the ledger, useful when delayed processing is diagnosed. */
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('cash_movement_cause_reference_key').on(t.cause, t.reference),
+    index('cash_movement_airline_id_occurred_at_idx').on(t.airlineId, t.occurredAt),
+    check(
+      'cash_movement_amount_safe_integer',
+      sql`${t.amountMinor} >= -9007199254740991 AND ${t.amountMinor} <= 9007199254740991`,
+    ),
+    check(
+      'cash_movement_balance_safe_integer',
+      sql`${t.balanceAfterMinor} >= -9007199254740991 AND ${t.balanceAfterMinor} <= 9007199254740991`,
+    ),
+    check(
+      'cash_movement_reference_not_blank',
+      sql`char_length(${t.reference}) > 0 AND ${t.reference} = btrim(${t.reference})`,
+    ),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// airline_identity_change — paid player rebrand events (AIR-08, §15)
+// ---------------------------------------------------------------------------
+
+/**
+ * One ordinary player rebrand, retained independently of the current airline
+ * label. Operational rows keep resolving the stable airline UUID to its current
+ * identity (ADR-0007); this event is the honest history of how that identity
+ * changed and the cash movement references its id.
+ */
+export const airlineIdentityChange = pgTable(
+  'airline_identity_change',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+
+    beforeName: text('before_name').notNull(),
+    afterName: text('after_name').notNull(),
+    beforeCallsign: text('before_callsign').notNull(),
+    afterCallsign: text('after_callsign').notNull(),
+    beforeBaseCountry: text('before_base_country').notNull(),
+    afterBaseCountry: text('after_base_country').notNull(),
+
+    costMinor: bigint('cost_minor', { mode: 'number' }).notNull(),
+    /** Game time when the rebrand took effect. */
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+    /** Real database time, retained for support and delayed-processing diagnosis. */
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('airline_identity_change_airline_id_occurred_at_idx').on(t.airlineId, t.occurredAt),
+    check('airline_identity_change_cost_positive', sql`${t.costMinor} > 0`),
+    check(
+      'airline_identity_change_changes_something',
+      sql`${t.beforeName} <> ${t.afterName}
+          OR ${t.beforeCallsign} <> ${t.afterCallsign}
+          OR ${t.beforeBaseCountry} <> ${t.afterBaseCountry}`,
+    ),
+  ],
+);
+
+export type AirlineIdentityChangeRow = typeof airlineIdentityChange.$inferSelect;
+export type NewAirlineIdentityChangeRow = typeof airlineIdentityChange.$inferInsert;
 
 // ---------------------------------------------------------------------------
 // Reference data — global, not per world (M1-01).
@@ -583,6 +769,38 @@ export const airport = pgTable(
   ],
 );
 
+// ---------------------------------------------------------------------------
+// airline_hub — airports at which an airline is based (AIR-01, App. B.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Founding grants the first hub; M7-04 later adds paid hubs and facilities.
+ *
+ * The relationship gets its own row rather than a single hub column on
+ * `airline`, because an airline may own several hubs. The airport foreign key
+ * is restrictive: reference-data refreshes must not erase a player's base.
+ */
+export const airlineHub = pgTable(
+  'airline_hub',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    airportId: uuid('airport_id')
+      .notNull()
+      .references(() => airport.id, { onDelete: 'restrict' }),
+    /** Consumed from the world's starting-position config, so its zero cost is explainable. */
+    founderGrant: boolean('founder_grant').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('airline_hub_airline_id_airport_id_key').on(t.airlineId, t.airportId),
+    index('airline_hub_airline_id_idx').on(t.airlineId),
+    index('airline_hub_airport_id_idx').on(t.airportId),
+  ],
+);
+
 export const runwaySurface = pgEnum('runway_surface', [
   'asphalt',
   'concrete',
@@ -722,6 +940,12 @@ export type NewSessionRow = typeof session.$inferInsert;
 
 export type AirlineRow = typeof airline.$inferSelect;
 export type NewAirlineRow = typeof airline.$inferInsert;
+
+export type CashMovementRow = typeof cashMovement.$inferSelect;
+export type NewCashMovementRow = typeof cashMovement.$inferInsert;
+
+export type AirlineHubRow = typeof airlineHub.$inferSelect;
+export type NewAirlineHubRow = typeof airlineHub.$inferInsert;
 
 export type DatasetVersionRow = typeof datasetVersion.$inferSelect;
 export type NewDatasetVersionRow = typeof datasetVersion.$inferInsert;

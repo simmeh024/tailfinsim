@@ -52,11 +52,31 @@ A single DreamCompute instance running everything behind one reverse proxy:
                     Postgres 16
 ```
 
+The security trust-boundary view—including dev, SSH, Google OAuth, GitHub and the backup
+path—is in [ADR-0012](adr/0012-tailfin-threat-model.md). This topology and that threat model
+must be updated together when OPS-08 splits web and worker or OPS-11 moves PostgreSQL; a new
+node or provider is a new trust boundary, not just a deployment detail.
+
 **One origin, deliberately.** The client and API share `tailfinsim.com` rather than
 splitting into `app.` and `api.` subdomains. This is not laziness — M0-11 specifies
 session auth with httpOnly secure cookies, and same-origin means `SameSite=Lax` works
 with no CORS configuration, no cookie-domain juggling and no preflight on every call.
 Split them only when there is a reason, and take the cookie complexity on knowingly.
+
+**Browser security policy lives at the edge.** Caddy applies the same CSP, frame denial,
+Permissions Policy, HSTS, content-type and referrer controls to the holding page, application,
+API and error responses on both hosts. Google OAuth needs no CSP exception because it is a
+top-level navigation; the one external resource exception is
+`https://lh3.googleusercontent.com` for player avatars. The exact policy, rollout decision
+and rejected HSTS preload option are in
+[ADR-0014](adr/0014-browser-security-policy.md).
+
+The source default is enforced, while the first installation deliberately overrides the
+header name to `Content-Security-Policy-Report-Only`. The operator removes that override
+only after the real dev sign-in/avatar journey is clean, then repeats it with enforcement.
+This is an edge-config rollout, not an application deploy: neither deploy script copies
+`deploy/Caddyfile`. [`deploy/README.md`](../deploy/README.md#first-security-policy-rollout-sec-hard-05)
+has the commands, and `pnpm security:headers` asserts exact values against the running hosts.
 
 ### Sizing
 
@@ -139,7 +159,8 @@ reflects that; earlier versions of this table overstated it.
 
 The three auth values are all-or-nothing: set together, or left unset. Setting only some is
 refused at boot, because a half-configured sign-in looks like a working one and fails at
-the callback, after the player has been sent to Google.
+the callback, after the player has been sent to Google. Production also refuses a plain-HTTP
+`PUBLIC_ORIGIN`; otherwise its session cookies would silently lose the `Secure` attribute.
 
 | Variable                      | Example                                       | Required | Notes                                                  |
 | ----------------------------- | --------------------------------------------- | -------- | ------------------------------------------------------ |
@@ -151,11 +172,12 @@ the callback, after the player has been sent to Google.
 | `LOG_LEVEL`                   | `info`                                        | no       | Pino level; defaults to `info` in prod, `debug` in dev |
 | `WEB_SURFACE`                 | `app`                                         | no       | `holding` (default) or `app`. What `/` serves          |
 | `ENVIRONMENT_LABEL`           | `dev`                                         | no       | `local` (default), `dev`, `production`. Build badge    |
-| `PUBLIC_ORIGIN`               | `https://tailfinsim.com`                      | no       | OAuth redirect base; also decides `Secure` on cookies  |
+| `PUBLIC_ORIGIN`               | `https://tailfinsim.com`                      | no       | OAuth base; HTTPS is mandatory on production           |
 | `GOOGLE_CLIENT_ID`            | `….apps.googleusercontent.com`                | no       | M0-11. All three auth vars together, or none           |
 | `GOOGLE_CLIENT_SECRET`        | `GOCSPX-…`                                    | no       | Never logged, never echoed                             |
-| `SESSION_SECRET`              | _(32+ random bytes, base64)_                  | no       | Rotating it invalidates every session                  |
-| `SESSION_TTL_HOURS`           | `720`                                         | no       | Defaults to 30 days                                    |
+| `SESSION_SECRET`              | _(32+ random bytes, base64)_                  | no       | Signs the temporary OAuth state/PKCE cookie            |
+| `SESSION_TTL_HOURS`           | `720`                                         | no       | Player TTL: 30 days for a persistent-world account     |
+| `ADMIN_SESSION_TTL_HOURS`     | `12`                                          | no       | Admin TTL: one shift; must be shorter than player TTL  |
 | `ALLOW_REGISTRATION`          | `false`                                       | no       | **Defaults to false.** Closed unless explicitly opened |
 | `BACKUP_STATUS_FILE`          | `/var/lib/tailfin/backup-status.json`         | no       | Written by `backup.sh`, read by the admin overview     |
 
@@ -223,13 +245,25 @@ user — **never in the repository**. `.env` is gitignored; commit `.env.example
 deploying is one command run on the box. See
 [ADR-0003](adr/0003-deployment-approach.md) for the reasoning and the costs.
 
+OPS-06 defines the release boundary around that command. A green merge stages the next
+release on `main`; OPS-17 will make dev track it automatically, and OPS-18 will make the
+human promotion pre-flight explicit. The normal invariant is **`dev ≥ prod`**. A positive
+`dev build − prod build` gap is tested work waiting for production, zero is alignment, and
+a negative gap is an incident. An explicitly pinned unmerged dev preview is not comparable
+to the `main` release line and is marked with `*` by `pnpm ops:status`.
+
+OPS-17 and OPS-18 remain open, so today neither environment changes merely because a merge
+completed. Production will continue to require a human unless this ADR is changed again.
+
 ```
 ssh tailfin@<ip> → cd /srv/tailfin → ./deploy/deploy.sh
                           │
                           ├─ fetch · checkout the target commit (detached)
                           ├─ pnpm install --frozen-lockfile
-                          ├─ build      ── fails here? nothing was touched
-                          ├─ migrate    ── fails here? old service still serving
+                          ├─ build               ── fails here? nothing was touched
+                          ├─ migration preflight ── actual database + policy + pending count
+                          ├─ verified local dump ── only when migrations are pending
+                          ├─ atomic migrate      ── classify rollback / commit / unknown
                           ├─ systemctl restart tailfin
                           └─ poll /healthz, print the rollback command on failure
 ```
@@ -238,8 +272,11 @@ ssh tailfin@<ip> → cd /srv/tailfin → ./deploy/deploy.sh
 and no credential exists that lets GitHub reach the instance.
 
 Rollback is the same command with an older commit: `./deploy/deploy.sh <sha>`. That rolls
-back _code_, not _schema_ — a migration that dropped a column is not undone by checking out
-the old commit.
+back _code_, not _schema_. OPS-05 therefore makes every new schema backward-compatible with
+the previously deployed release instead of pretending checkout reverses SQL. Drizzle applies
+the complete pending batch in one PostgreSQL transaction, and the deploy reports whether a
+failed client left it rolled back, fully applied or unknown. See
+[ADR-0016](adr/0016-migration-failure-strategy.md).
 
 Postgres and Caddy are installed from `apt`. Docker is used **only** for local development
 Postgres (root `docker-compose.yml`), which is a developer-machine convenience and has
@@ -251,9 +288,11 @@ Full step-by-step server setup: [`deploy/README.md`](../deploy/README.md).
 
 Builds run on the production box. A deploy needs dev dependencies and a few hundred MB of
 `node_modules`, and a broken build is found on the server rather than in CI. `deploy.sh`
-orders itself to limit the damage — build, then migrate, then restart, so a failure at any
-step leaves the running service alone — but rollback means rebuilding, which takes minutes
-and can itself fail.
+orders itself to limit the damage — build, preflight, verified recovery point, migrate, then
+restart. A database failure leaves the old process serving a schema it is required to support,
+but rollback still means rebuilding, takes minutes and can itself fail. A long migration also
+holds its strongest lock for the whole pending batch; the 100,000-row OPS-05 experiment made
+that cost visible rather than hypothetical.
 
 ## 6. Since settled
 
@@ -270,15 +309,33 @@ answered, because the reasoning is more useful than the fact.
 - **Backups** — settled by OPS-03, well ahead of M13-11. Nightly `pg_dump` at 03:15 UTC,
   verified by reading each archive's table of contents back, uploaded to DreamObjects with
   7 nightly and 12 monthly copies retained, and **an upload failure is a backup failure** —
-  a dump that did not leave the box is not a backup. **The restore was rehearsed on
+  both the dump and its SHA-256 sidecar must leave the box. **The restore was rehearsed on
   2026-08-18** — which is how a 9.3 MB dump shrinking to 47 KB was noticed, and the dev
-  airport dataset recovered. A backup that has never been restored is still not a backup.
+  airport dataset recovered. OPS-04 made that sequence repeatable: the command accepts only
+  a `_test` target, downloads the newest off-box nightly, verifies it, migrates the restored
+  schema, boots an isolated server, checks domain data and the Flagship clock, records RTO/RPO,
+  and cleans up. The command-by-command procedure is in `deploy/README.md`.
+
+  That first rehearsal also enabled a real selective recovery: a destructive test had removed
+  the dev airport/runway dataset, while unrelated admin, world and audit changes continued.
+  The pre-damage object was preserved outside automatic retention and only the empty dataset
+  tables were restored. The runbook records the constraints; selective restore is an incident
+  technique, not the default recovery procedure.
 
   Failure reaches a human three ways, because each covers what the others cannot: the
   script pings a dead-man's-switch on finishing, `OnFailure=` catches a run that died
   before it could report, and the switch's own grace period catches the run that never
   happened at all. Nothing on a dead box can report that the box is dead — which is why
   the third layer is a service _expecting_ a ping rather than an alert on an error.
+
+- **Migration failure** — settled by OPS-05 and
+  [ADR-0016](adr/0016-migration-failure-strategy.md). The actual Drizzle/PostgreSQL behavior
+  was tested with a deliberately failing second migration: all pending files rolled back,
+  while an `AccessExclusiveLock` was held across the batch. Future migrations declare expand
+  or a separately staged contract and are checked for obvious incompatibility and
+  non-transactional SQL. A non-empty deploy batch first takes a verified local dump through a
+  root-owned systemd unit. The abnormal half-applied recovery path was rehearsed into a new
+  `_test` database; the runbook has the exact inspection and cutover procedure.
 
 - **Auth provider** — settled by [ADR-0004](adr/0004-google-oauth.md): Google OAuth, with
   an account model that tolerates more than one identity per player so adding a second

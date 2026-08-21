@@ -223,6 +223,35 @@ body {
   white-space: nowrap;
 }
 
+.account__airline {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0 var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: var(--text-xs);
+}
+
+.account__airline span {
+  color: var(--text-muted);
+}
+
+.account__airline strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account__airline:hover,
+.account__airline[aria-current='page'] {
+  border-color: var(--accent);
+  background: var(--accent-quiet);
+}
+
 .account__signout {
   padding: var(--space-1) var(--space-3);
   border: none;
@@ -613,6 +642,232 @@ body {
   font-size: var(--text-sm);
 }
 
+/* ---------------------------------------------------------- own airline ---- */
+
+.airline-page {
+  place-content: initial;
+  display: block;
+  overflow: auto;
+  padding: clamp(var(--space-4), 4vw, 3rem);
+  text-align: left;
+}
+
+.airline-page > * {
+  width: min(64rem, 100%);
+  margin-inline: auto;
+}
+
+.airline-page__heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--space-6);
+  padding-bottom: var(--space-6);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.airline-page__heading .page__title {
+  color: var(--text-primary);
+  font-size: clamp(1.5rem, 4vw, 2.75rem);
+  letter-spacing: -0.02em;
+  text-transform: none;
+}
+
+.airline-page__heading .page__note {
+  margin-top: var(--space-2);
+  max-width: none;
+}
+
+.airline-page__eyebrow {
+  margin: 0 0 var(--space-2);
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.airline-page__designators {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.airline-page__designators span {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 6rem;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+}
+
+.airline-page__designators strong {
+  color: var(--text-primary);
+  font-size: var(--text-lg);
+}
+
+.airline-page__metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-block: var(--space-6);
+}
+
+.airline-page__metrics > div {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+}
+
+.airline-page__metrics dt,
+.airline-page__metrics span {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.airline-page__metrics dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-lg);
+}
+
+.airline-page__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(15rem, 1fr);
+  gap: var(--space-4);
+  padding-bottom: var(--space-6);
+}
+
+.airline-page__editor,
+.airline-page__locked {
+  padding: var(--space-6);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+}
+
+.airline-page__section-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.airline-page__section-heading h2,
+.airline-page__locked h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+.airline-page__cost {
+  display: grid;
+  justify-items: end;
+  gap: var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.airline-page__cost strong {
+  color: var(--text-primary);
+  font-size: var(--text-lg);
+}
+
+.airline-page__explanation,
+.airline-page__locked p {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.airline-page__field {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.airline-page__field-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--space-3);
+}
+
+.airline-page__field label {
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.airline-page__field input {
+  width: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.airline-page__field input[aria-invalid='true'] {
+  border-color: var(--status-cancelled);
+}
+
+.airline-page__field p,
+.airline-page__field-error {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.airline-page__field .airline-page__field-error {
+  color: var(--status-cancelled);
+}
+
+.airline-page__editor > button,
+.airline-page__found {
+  display: inline-flex;
+  justify-content: center;
+  margin-top: var(--space-6);
+  padding: var(--space-3) var(--space-6);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.airline-page__editor > button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.airline-page__error,
+.airline-page__success {
+  display: grid;
+  gap: var(--space-1);
+  margin-block: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--status-cancelled);
+  border-radius: var(--radius-sm);
+  color: var(--status-cancelled);
+}
+
+.airline-page__success {
+  border-color: var(--status-ontime);
+  color: var(--status-ontime);
+}
+
+.airline-page__locked {
+  align-self: start;
+}
+
 /* --------------------------------------------------------------- mobile ---- */
 
 /*
@@ -680,6 +935,10 @@ body {
     display: none;
   }
 
+  .account__airline {
+    display: none;
+  }
+
   /* The strip scrolls horizontally on mobile; keep the badge at its far end
      rather than letting it fall off the scrollable area. */
   .login .build,
@@ -698,6 +957,37 @@ body {
   .panel__reopen {
     margin: var(--space-2);
     justify-self: end;
+  }
+}
+
+@media (max-width: 48rem) {
+  .airline-page {
+    padding: var(--space-4);
+  }
+
+  .airline-page__heading,
+  .airline-page__section-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .airline-page__cost {
+    justify-items: start;
+  }
+
+  .airline-page__metrics,
+  .airline-page__grid,
+  .airline-page__field-row {
+    grid-template-columns: 1fr;
+  }
+
+  .airline-page__editor,
+  .airline-page__locked {
+    padding: var(--space-4);
+  }
+
+  .airline-page__editor > button {
+    width: 100%;
   }
 }
 
@@ -1846,6 +2136,515 @@ body {
 .fares__saved {
   font-size: var(--text-sm);
   color: var(--status-ontime);
+}
+
+/* ------------------------------------------------------------ founding ---- */
+
+/*
+ * AIR-07's cold open. No rail and no context panel: an airline does not exist
+ * yet, so destinations that operate one would be a menu of dead ends. The desk
+ * is still built entirely from the shared theme tokens and native form controls.
+ */
+.founding {
+  position: absolute;
+  inset: 0;
+  min-height: 100%;
+  overflow-y: auto;
+  background-color: var(--console-bg);
+  background-image:
+    linear-gradient(var(--console-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--console-grid) 1px, transparent 1px);
+  background-size: 4rem 4rem;
+}
+
+.founding__masthead {
+  position: sticky;
+  z-index: 5;
+  top: 0;
+  min-height: 4.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) clamp(var(--space-4), 5vw, 4rem);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-panel);
+  backdrop-filter: blur(12px);
+}
+
+.founding__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.founding__mark {
+  color: var(--brand);
+  font-size: var(--text-lg);
+}
+
+.founding__balance {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  gap: 0 var(--space-3);
+  text-align: right;
+}
+
+.founding__balance > span,
+.founding__balance > small {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.founding__balance > strong {
+  grid-row: span 2;
+  font-size: var(--text-lg);
+  color: var(--text-primary);
+}
+
+.founding__desk {
+  width: min(72rem, 100%);
+  margin: 0 auto;
+  padding: clamp(2rem, 6vw, 5rem) clamp(var(--space-4), 4vw, 3rem) 7rem;
+}
+
+.founding__intro {
+  max-width: 46rem;
+  margin-bottom: clamp(2rem, 5vw, 4rem);
+}
+
+.founding__eyebrow {
+  margin: 0 0 var(--space-3);
+  color: var(--brand);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.founding__intro h1 {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 4rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.founding__intro > p:last-child {
+  max-width: 58ch;
+  margin: var(--space-4) 0 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.founding__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.founding__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: clamp(var(--space-4), 4vw, 2.5rem);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--console-card);
+}
+
+.founding__section-heading {
+  display: grid;
+  grid-template-columns: 2.5rem 1fr;
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.founding__section-heading > span {
+  color: var(--brand);
+  font-size: var(--text-xs);
+  padding-top: var(--space-1);
+}
+
+.founding__section-heading h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+.founding__section-heading p {
+  margin: var(--space-1) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.founding__field-grid,
+.founding__code-grid {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.founding__field-grid {
+  grid-template-columns: minmax(10rem, 1fr) minmax(14rem, 2fr);
+}
+
+.founding__code-grid {
+  grid-template-columns: minmax(10rem, 0.8fr) minmax(10rem, 0.8fr) minmax(14rem, 1.4fr);
+}
+
+.founding__field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.founding__field--wide {
+  width: 100%;
+}
+
+.founding__field label,
+.founding__hub-list legend {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.founding__field input,
+.founding__field select {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.founding__field input:focus-visible,
+.founding__field select:focus-visible {
+  border-color: var(--accent);
+}
+
+.founding__field input[aria-invalid='true'],
+.founding__field select[aria-invalid='true'] {
+  border-color: var(--status-cancelled);
+}
+
+.founding__hint,
+.founding__checking {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.founding__field-error {
+  margin: 0;
+  color: var(--status-cancelled);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.founding__available {
+  margin: 0;
+  color: var(--status-ontime);
+  font-size: var(--text-xs);
+}
+
+.founding__alternatives {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  color: var(--status-delayed);
+  font-size: var(--text-xs);
+}
+
+.founding__alternatives button {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--status-delayed);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-family: var(--font-figures);
+  cursor: pointer;
+}
+
+.founding__alternatives button:hover,
+.founding__alternatives button:focus-visible {
+  background: var(--accent-quiet);
+  border-color: var(--accent);
+}
+
+.founding__hub-list {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.founding__hub-list legend {
+  margin-bottom: var(--space-3);
+}
+
+.founding__hub-list > p {
+  margin: 0;
+  padding: var(--space-4);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.hub-option {
+  display: grid;
+  grid-template-columns: auto 4rem minmax(12rem, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease),
+    background var(--motion-fast) var(--ease);
+}
+
+.hub-option:hover,
+.hub-option:focus-within,
+.hub-option--selected {
+  border-color: var(--accent);
+  background: var(--accent-quiet);
+}
+
+.hub-option input {
+  accent-color: var(--accent);
+}
+
+.hub-option__code {
+  font-size: var(--text-lg);
+  font-weight: 700;
+}
+
+.hub-option__identity,
+.hub-option__terms {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.hub-option__identity strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hub-option__identity span,
+.hub-option__terms span {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.hub-option__terms {
+  text-align: right;
+}
+
+.hub-option__tier {
+  color: var(--text-secondary);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hub-option__warning {
+  grid-column: 3 / -1;
+  color: var(--status-delayed);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.founding__hub-summary {
+  display: grid;
+  grid-template-columns: minmax(12rem, 2fr) 1fr 1fr;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--console-card-raised);
+}
+
+.founding__hub-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.founding__hub-summary span,
+.founding__hub-summary small {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.founding__hub-warning {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--status-delayed);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.founding__error-summary,
+.founding__load-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--status-cancelled);
+  border-radius: var(--radius-sm);
+  background: var(--console-card-raised);
+  color: var(--text-secondary);
+}
+
+.founding__error-summary {
+  flex-direction: column;
+  color: var(--status-cancelled);
+}
+
+.founding__load-error p {
+  margin: 0;
+}
+
+.founding__load-error button,
+.founding__load-error a {
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.founding__commit {
+  position: sticky;
+  bottom: var(--space-3);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  backdrop-filter: blur(12px);
+}
+
+.founding__commit > div {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 0 var(--space-3);
+  align-items: baseline;
+}
+
+.founding__commit span,
+.founding__commit small {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.founding__commit strong {
+  grid-row: span 2;
+  font-size: var(--text-lg);
+}
+
+.founding__commit button {
+  min-width: 10rem;
+  padding: var(--space-3) var(--space-6);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.founding__commit button:hover:not(:disabled),
+.founding__commit button:focus-visible {
+  background: var(--accent-hover);
+}
+
+.founding__commit button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.founding .build {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 6;
+}
+
+@media (max-width: 48rem) {
+  .founding__masthead {
+    padding-inline: var(--space-3);
+  }
+
+  .founding__balance > span,
+  .founding__balance > small {
+    display: none;
+  }
+
+  .founding__desk {
+    padding-inline: var(--space-3);
+  }
+
+  .founding__field-grid,
+  .founding__code-grid,
+  .founding__hub-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .hub-option {
+    grid-template-columns: auto 3.5rem 1fr;
+  }
+
+  .hub-option__terms,
+  .hub-option__warning {
+    grid-column: 3;
+    text-align: left;
+  }
+
+  .founding__commit {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .founding__commit button {
+    width: 100%;
+  }
+
+  .founding .build {
+    display: none;
+  }
 }
 
 /* --------------------------------------------------------------------------

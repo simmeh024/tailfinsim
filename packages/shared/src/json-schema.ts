@@ -13,8 +13,18 @@ import {
   AdminWorldStatusResponse,
   AdminWorldListResponse,
 } from './admin';
+import {
+  AirlineFoundingAirportListResponse,
+  AirlineFoundingOptionsResponse,
+  AirlineCodeAvailabilityResponse,
+  AirlineCodeUnavailableError,
+  CreateAirlineResponse,
+  ForceRenameAirlineResponse,
+  OwnAirlineResponse,
+  UpdateOwnAirlineResponse,
+} from './airline';
 import { ApiError, HealthResponse } from './api';
-import { LogoutResponse, MeResponse } from './auth';
+import { LogoutResponse, MeResponse, RevokeSessionsResponse } from './auth';
 import { VersionResponse } from './version';
 
 /**
@@ -37,7 +47,22 @@ export const healthResponseJsonSchema = z.toJSONSchema(HealthResponse);
 export const apiErrorJsonSchema = z.toJSONSchema(ApiError);
 export const meResponseJsonSchema = z.toJSONSchema(MeResponse);
 export const logoutResponseJsonSchema = z.toJSONSchema(LogoutResponse);
+export const revokeSessionsResponseJsonSchema = z.toJSONSchema(RevokeSessionsResponse);
 export const versionResponseJsonSchema = z.toJSONSchema(VersionResponse);
+export const createAirlineResponseJsonSchema = z.toJSONSchema(CreateAirlineResponse);
+export const airlineFoundingOptionsResponseJsonSchema = z.toJSONSchema(
+  AirlineFoundingOptionsResponse,
+);
+export const airlineFoundingAirportListResponseJsonSchema = z.toJSONSchema(
+  AirlineFoundingAirportListResponse,
+);
+export const airlineCodeAvailabilityResponseJsonSchema = z.toJSONSchema(
+  AirlineCodeAvailabilityResponse,
+);
+export const airlineCodeUnavailableErrorJsonSchema = z.toJSONSchema(AirlineCodeUnavailableError);
+export const forceRenameAirlineResponseJsonSchema = z.toJSONSchema(ForceRenameAirlineResponse);
+export const ownAirlineResponseJsonSchema = z.toJSONSchema(OwnAirlineResponse);
+export const updateOwnAirlineResponseJsonSchema = z.toJSONSchema(UpdateOwnAirlineResponse);
 export const adminAuditResponseJsonSchema = z.toJSONSchema(AdminAuditResponse);
 export const adminListResponseJsonSchema = z.toJSONSchema(AdminListResponse);
 export const adminWorldListResponseJsonSchema = z.toJSONSchema(AdminWorldListResponse);

@@ -3,8 +3,9 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { FLAGSHIP_CONFIG, type WorldConfig } from '@tailfin/shared';
 
+import { reconcileAirlineCash } from '../airline/cash';
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { airline, airport, flight, flightResult, player, world } from '../db/schema';
+import { airline, airport, cashMovement, flight, flightResult, player, world } from '../db/schema';
 import { createWorld } from '../world/lifecycle';
 
 import { arrivalKey, createFlightArriveHandler, settleArrivedFlight } from './settle';
@@ -234,6 +235,24 @@ describeDb('settling an arrived flight', () => {
     expect(breakdown.distanceNm).toBeLessThan(205);
 
     expect(await cashOf(airlineId)).toBe(row.netMinor);
+
+    const movements = await db.db
+      .select()
+      .from(cashMovement)
+      .where(eq(cashMovement.airlineId, airlineId));
+    expect(movements).toHaveLength(1);
+    expect(movements[0]).toMatchObject({
+      amountMinor: row.netMinor,
+      cause: 'flight_settlement',
+      reference: flightId,
+      balanceAfterMinor: row.netMinor,
+      occurredAt: ARRIVES,
+    });
+    expect(await reconcileAirlineCash(db.db, airlineId)).toMatchObject({
+      balanceMinor: row.netMinor,
+      movementTotalMinor: row.netMinor,
+      reconciles: true,
+    });
   });
 
   it('marks the flight arrived, in the same commit', async () => {
@@ -284,6 +303,11 @@ describeDb('settling an arrived flight', () => {
         .from(flightResult)
         .where(eq(flightResult.flightId, flightId));
       expect(rows).toHaveLength(1);
+      const movements = await db.db
+        .select()
+        .from(cashMovement)
+        .where(eq(cashMovement.reference, flightId));
+      expect(movements).toHaveLength(1);
     });
 
     it('is refused by the database even if the guard is bypassed', async () => {

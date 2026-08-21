@@ -25,16 +25,18 @@
  *
  * ## What is provisional
  *
- * `world` and `airline` mirror tables that exist (M0-06). `airport`,
- * `aircraft`, `network` and `flight` are written from the design doc **ahead of
- * their tables** — M1-01, M4-01, M2-01, M2-03 and M1-07 respectively. They are
- * the contract those milestones must satisfy, so reconciliation is a comparison
- * against the doc rather than a negotiation. Each file says so at the top.
+ * `world` and `airline` mirror tables that exist (M0-06). `airport` is now a
+ * deliberately mixed contract: import, tier, slots and catchment exist, while
+ * capacity, fees, curfew and constraints remain ahead of storage. `aircraft`,
+ * `network` and `flight` similarly began from the design doc ahead of their
+ * tables. Each file states which part is implemented so clients can use a
+ * purpose-built projection instead of assuming the complete record exists.
  */
 
 export * from './primitives';
 export * from './world';
 export * from './airline';
+export * from './economy-config';
 export * from './airport';
 export * from './aircraft';
 export * from './network';

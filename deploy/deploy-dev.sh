@@ -15,6 +15,7 @@ set -euo pipefail
 export REPO_DIR="${REPO_DIR:-/srv/tailfin-dev}"
 export SERVICE="${SERVICE:-tailfin-dev}"
 export HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3001/healthz}"
+export MIGRATION_DATABASE="${MIGRATION_DATABASE:-tailfin_dev}"
 
 # Dev exists to run code that is not on main yet — reviewing work before it is
 # merged is the entire job. deploy.sh refuses a ref that is not on main

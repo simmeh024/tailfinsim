@@ -45,6 +45,7 @@ const env: ServerEnv = {
   sessionSecret: 'a'.repeat(48),
   authEnabled: true,
   sessionTtlHours: 24,
+  adminSessionTtlHours: 12,
   allowRegistration: false,
 };
 
@@ -220,6 +221,32 @@ describeDb('admin', () => {
       expect(entry?.grantedByPlayerId).toBe(granter);
       expect(entry?.grantedByLabel).not.toBeNull();
     });
+
+    it('rejects a session minted before elevation until the player signs in again', async () => {
+      const id = await makePlayer('rotated-grantee');
+      const { token: beforeGrant } = await createSession(db.db, id, 24);
+      await grantAdmin(db.db, id, BOOTSTRAP_ACTOR);
+
+      const app = buildApp({ env, db });
+      try {
+        const stale = await app.inject({
+          method: 'GET',
+          url: '/api/admin/admins',
+          cookies: { [SESSION_COOKIE]: beforeGrant },
+        });
+        expect(stale.statusCode).toBe(401);
+
+        const { token: afterGrant } = await createSession(db.db, id, env.adminSessionTtlHours);
+        const fresh = await app.inject({
+          method: 'GET',
+          url: '/api/admin/admins',
+          cookies: { [SESSION_COOKIE]: afterGrant },
+        });
+        expect(fresh.statusCode).toBe(200);
+      } finally {
+        await app.close();
+      }
+    });
   });
 
   describe('revoking', () => {
@@ -278,6 +305,28 @@ describeDb('admin', () => {
 
       await revokeAdmin(db.db, second, BOOTSTRAP_ACTOR);
       expect(await isAdmin(db.db, keeper)).toBe(true);
+    });
+
+    it('invalidates privileged sessions at the same commit as revocation', async () => {
+      const keeper = await makePlayer('rotation-keeper');
+      await grantAdmin(db.db, keeper, BOOTSTRAP_ACTOR);
+      const target = await makePlayer('rotation-target');
+      await grantAdmin(db.db, target, BOOTSTRAP_ACTOR);
+      const { token } = await createSession(db.db, target, env.adminSessionTtlHours);
+
+      await revokeAdmin(db.db, target, BOOTSTRAP_ACTOR);
+
+      const app = buildApp({ env, db });
+      try {
+        const reply = await app.inject({
+          method: 'GET',
+          url: '/api/admin/admins',
+          cookies: { [SESSION_COOKIE]: token },
+        });
+        expect(reply.statusCode).toBe(401);
+      } finally {
+        await app.close();
+      }
     });
   });
 
@@ -432,6 +481,41 @@ describeDb('admin', () => {
         expect(reply.statusCode).toBe(403);
         expect(reply.body).not.toContain('entries');
         expect(reply.body).not.toContain('actorLabel');
+      } finally {
+        await app.close();
+      }
+    });
+
+    it('lets an admin immediately revoke every target session and audits only the count', async () => {
+      const operator = await makePlayer('session-operator');
+      await grantAdmin(db.db, operator, BOOTSTRAP_ACTOR);
+      const target = await makePlayer('session-target');
+      const first = await createSession(db.db, target, 24);
+      const second = await createSession(db.db, target, 24);
+
+      const app = buildApp({ env, db });
+      try {
+        const reply = await app.inject({
+          method: 'POST',
+          url: `/api/admin/players/${target}/sessions/revoke`,
+          headers: { cookie: await sessionCookie(operator) },
+        });
+        expect(reply.statusCode).toBe(200);
+        expect(reply.json()).toEqual({ signedOut: true, revokedSessions: 2 });
+
+        for (const token of [first.token, second.token]) {
+          const replay = await app.inject({
+            method: 'GET',
+            url: '/api/me',
+            cookies: { [SESSION_COOKIE]: token },
+          });
+          expect(replay.json()).toMatchObject({ player: null });
+        }
+
+        const audit = (await auditFor(target)).find((row) => row.action === 'sessions.revoked');
+        expect(audit?.after).toBe(JSON.stringify({ result: 'success', revokedSessions: 2 }));
+        expect(audit?.after).not.toContain(first.token);
+        expect(audit?.after).not.toContain(second.token);
       } finally {
         await app.close();
       }

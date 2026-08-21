@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { ECONOMY_CONFIG_V1_VERSION } from './economy-config';
+
 /**
  * A world, as configuration (M1-09, §22.2).
  *
@@ -67,6 +69,6 @@ export const FLAGSHIP_CONFIG: WorldConfig = {
   epoch: '2024-10-20T00:00:00.000Z',
   speedMultiplier: 2,
   aircraftCatalogueVersion: 'v1',
-  economyConfigVersion: 'v1',
+  economyConfigVersion: ECONOMY_CONFIG_V1_VERSION,
   playerCap: null,
 };

@@ -41,7 +41,8 @@ Specifically:
   ignored, not validated.
 - **Real money and in-game currency stay structurally separate** — different tables,
   different types, no shared helper. `airline.cash_minor` is a game score; a Stripe charge
-  is money.
+  is money. AIR-06's `cash_movement` and `moveAirlineCash` remain entirely on the game side
+  of this boundary and must not be reused by commerce (ADR-0011).
 
 ### Why Stripe rather than the alternatives
 

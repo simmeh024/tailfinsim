@@ -40,9 +40,16 @@ export type AirlineIcaoCode = z.infer<typeof AirlineIcaoCode>;
 export const AirportIataCode = z.string().regex(/^[A-Z]{3}$/, 'must be 3 uppercase letters');
 export type AirportIataCode = z.infer<typeof AirportIataCode>;
 
-/** Four letters — e.g. `EHAM`, `EGLL`. The stable key for an airport. */
+/** Four letters — e.g. `EHAM`, `EGLL`. Nullable for many real airports. */
 export const AirportIcaoCode = z.string().regex(/^[A-Z]{4}$/, 'must be 4 uppercase letters');
 export type AirportIcaoCode = z.infer<typeof AirportIcaoCode>;
+
+/**
+ * OurAirports' universal airport key. This is an ICAO code where one exists,
+ * otherwise a national or synthetic identifier.
+ */
+export const AirportIdent = z.string().min(1).max(16);
+export type AirportIdent = z.infer<typeof AirportIdent>;
 
 /** ISO 3166-1 alpha-2 — e.g. `NL`, `GB`. */
 export const CountryCode = z.string().regex(/^[A-Z]{2}$/, 'must be an ISO 3166-1 alpha-2 code');

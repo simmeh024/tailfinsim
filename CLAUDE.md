@@ -19,6 +19,19 @@ person's admin access. `packages/server/src/test-setup.ts` now refuses any datab
 name does not end in `_test` or `_ci`, but do not rely on the guard to remember the rule
 for you. Run them in CI.
 
+**Restore rehearsals have one destructive target: a database ending in `_test`.** Use
+`/usr/local/sbin/tailfin-restore-rehearsal`; it refuses every other name, refuses an existing
+target, downloads only from DreamObjects, and repeats the suffix check at `dropdb`. Do not
+turn its source object prefix into a live database connection. Record the measured output as
+the evidence; `/healthz` alone proves only that Postgres answered, not that the restore works.
+
+**Every new migration declares expand or contract.** After `0019_large_hellfire_club`, the
+first lines need `-- tailfin:migration-strategy expand` or
+`-- tailfin:migration-strategy contract-safe-after #<issue>`. The previous release must keep
+working against the result; the deploy deliberately leaves it serving when migration fails.
+Do not add down-migrations or bypass the policy for `CREATE INDEX CONCURRENTLY`—ADR-0016 owns
+the transaction, lock and recovery trade.
+
 **Never `git add -A`.** Stage files explicitly, by path. A `.pem` was committed this way
 once. `.claude/` and other untracked directories sit in this working tree routinely.
 
@@ -32,21 +45,22 @@ than safety. Reverse the edit you made, or commit before you break something on 
 helper, not "just to check it is set". Generate secrets on the box, write them to
 root-only files, and tell the user the command to read them.
 
-**`main` is protected.** Pull request required, `typecheck · lint · test` and
-`dependency review` must pass, force pushes and deletions blocked, and it applies to
-admins. So: branch, push the branch, open a PR. A direct push to `main` will be rejected,
-and that is working as intended. Required approvals are set to **zero** — the PR is the
-gate, not a second person — so you can merge your own once the checks are green.
+**`main` is protected.** Pull request required, `typecheck · lint · test`, dependency review
+and CodeQL at ADR-0013's thresholds must pass, force pushes and deletions are blocked, and
+it applies to admins. So: branch, push the branch, open a PR. A direct push to `main` will
+be rejected, and that is working as intended. Required approvals are set to **zero** — the
+PR is the gate, not a second person — so you can merge your own once the checks are green.
 
 ---
 
-## Merging does not deploy anything
+## A merge stages a release; a human promotes production
 
 This is the single most misleading thing about the setup, and the easiest thing to tell the
-user wrongly.
+user wrongly. A green merge establishes the next release candidate on `main`; it is not a
+production release.
 
 ```
-merge to main  →  main updates on GitHub  →  CI runs on main  →  nothing else happens
+merge to main  →  main updates on GitHub  →  CI runs on main  →  release is staged
 ```
 
 Production moves **only** when a human runs `./deploy/deploy.sh` on the server. There is no
@@ -64,9 +78,16 @@ merged to main  →  CI green  →  dev deploys automatically   (OPS-17, not bui
 ```
 
 So **merge means _staged_, not released**, and `dev build − prod build` is the count of
-changes tested but not shipped. Three things argued against automating the last step:
-deploys run migrations, OPS-05 has no migration-failure strategy yet, and a failed health
-check does not roll back.
+changes tested but not shipped. Three things argued against automating the last step at that
+decision point: deploys run migrations, OPS-05 had no migration-failure strategy yet, and a
+failed health check does not roll back. OPS-05 is now resolved by ADR-0016; production
+promotion remains manual until a separate decision changes ADR-0003.
+
+The normal release-line invariant is **`dev ≥ prod`**: dev is on the same `main` commit as
+production or a later one. A positive gap is staged work awaiting promotion; zero means the
+environments are aligned; a negative gap is an operational incident. An explicitly pinned
+unmerged branch preview is the one exception—its build is not ordered against `main`, and
+`pnpm ops:status` marks it with `*` instead of pretending the numbers are comparable.
 
 The consequence is drift, and it used to be drift nobody could see — in August 2026
 production sat 27 commits behind `main` for a day, unnoticed. **`pnpm ops:status` answers
@@ -74,6 +95,18 @@ that now** (OPS-02, shipped), from anywhere and without an SSH session. Run it b
 telling the user where anything is.
 
 **Do not say "deployed" when you mean "merged".**
+
+**Application deploys do not update Caddy.** `deploy.sh` and `deploy-dev.sh` restart Fastify;
+they do not copy `/srv/tailfin/deploy/Caddyfile` into `/etc/caddy` or reload the edge. For a
+security-header change, follow the report-only/enforced sequence in `deploy/README.md` and run
+`pnpm security:headers` against both live hosts before saying the policy is active. A green
+in-repository Caddy integration test proves the committed config, not the installed one.
+
+**Session authority rotates when privilege changes.** A real admin grant or revocation deletes
+all of the target player's sessions in the same transaction as the grant and audit row. Do not
+change that to preserve a convenient cookie: the pre-change token must receive 401. Normal
+player sessions default to 30 days, admin sessions to 12 hours, and production refuses a
+non-HTTPS `PUBLIC_ORIGIN`; see ADR-0015.
 
 ---
 
@@ -102,9 +135,11 @@ standing decision, not an oversight — it is where the user reviews work before
 holding page, and promoting the app is that one variable plus a deploy — not a different
 build. Never couple deployment to it.
 
-A deploy runs: fetch → `checkout --detach` → install → build → **migrate** → restart →
-health poll. A failure before the restart leaves the running service untouched. A failed
-health check does **not** roll back; the new code is already serving.
+A deploy runs: fetch → `checkout --detach` → install → build → migration preflight → verified
+local backup when files are pending → **atomic migrate** → restart → health poll. A migration
+failure reports whether the batch rolled back, fully committed or is unknown; every allowed
+schema is compatible with the old service left serving. A failed health check does **not** roll
+back; the new code is already serving.
 
 ---
 
@@ -138,20 +173,20 @@ the database has no home in the four-node diagram, and builds happen on the box.
 
 ## What runs on a pull request
 
-Three workflows. **Two of them can stop a merge**, and the third deliberately cannot —
-see the note in `codeql.yml` about why making an analyser a gate before anyone has read
-what it finds is how a security tab fills with dismissed alerts.
+Three workflows, all merge gates for the failures they own. CodeQL is enforced through a
+code-scanning ruleset rather than by treating every finding as equal; ADR-0013 records the
+measured tuning period, baseline decisions and thresholds.
 
-| Workflow                | Job / check name          | Asks                                                 | Blocks? |
-| ----------------------- | ------------------------- | ---------------------------------------------------- | ------- |
-| `ci.yml`                | `typecheck · lint · test` | Does it build, lint, format and pass its tests?      | **Yes** |
-| `dependency-review.yml` | `dependency review`       | Did this PR add a known-vulnerable dependency?       | **Yes** |
-| `codeql.yml`            | `analyze (…)`             | Does Tailfin's own code contain a dangerous pattern? | No      |
+| Workflow                | Job / check name          | Asks                                                 | Blocks?                         |
+| ----------------------- | ------------------------- | ---------------------------------------------------- | ------------------------------- |
+| `ci.yml`                | `typecheck · lint · test` | Do builds, tests and the running Caddy policy pass?  | **Yes**                         |
+| `dependency-review.yml` | `dependency review`       | Did this PR add a known-vulnerable dependency?       | **High/critical advisories**    |
+| `codeql.yml`            | `analyze (…)`             | Does Tailfin's own code contain a dangerous pattern? | **Error or high/critical only** |
 
 They are separate workflows on purpose. CI needs a Postgres service and takes about two
-minutes; CodeQL takes longer than that again; Dependency Review needs no services, no
-checkout and no install, and finishes in seconds. Merging them would make the fast checks
-wait behind the slow ones.
+minutes; CodeQL's two analyses finish in 1.05–1.77 minutes; Dependency Review needs no
+services, checkout or install and finishes in seconds. Running them in parallel keeps each
+failure independent and the merge path equal to the slowest gate rather than their sum.
 
 ### Dependency Review (SEC-HARD-03)
 
@@ -169,6 +204,22 @@ already vulnerable before your branch is invisible to it, by design, because a g
 fails on pre-existing findings fails every PR equally. And it is not a code scanner: it
 reads the GitHub Advisory Database, CodeQL reads the source, and neither finds what the
 other finds.
+
+### CodeQL (SEC-HARD-02)
+
+Analyses JavaScript/TypeScript and Actions with `security-extended` on every PR, on pushes
+to `main`, and weekly. The active `CodeQL merge protection` ruleset requires its result:
+
+- **Blocks:** standard-severity errors and security findings rated high or critical.
+- **Does not block:** warning/note and medium/low findings — they remain visible and need
+  triage, but do not turn the scanner into noise.
+- **Baseline:** zero open findings after each initial result received an individual reason.
+- **Known gap:** CodeQL's canary did not treat Fastify `request.query` as a remote-flow
+  source. Boundary validation and the security regression suite cover what scanning cannot.
+
+PR #286 proved the analyser with a critical code-injection canary and was deleted without
+merging. Across the tuning window, 47 PR analyses took 1.05–1.77 minutes (median 1.25), in
+parallel with CI. The full decision and deferred baseline items are in ADR-0013.
 
 **It works here because the dependency graph parses `pnpm-lock.yaml`.** That was checked
 rather than assumed — the SBOM endpoint returns 458 packages at exact versions, so
@@ -204,6 +255,11 @@ than being discovered the next time somebody needs the command.
 **Architectural decisions get an ADR** in [`docs/adr/`](docs/adr/). If you find yourself
 explaining a choice twice, write it down once instead. ADR-0003 (deployment) and ADR-0005
 (world epoch and reset) are the two that constrain operations.
+
+**Security work starts from [ADR-0012](docs/adr/0012-tailfin-threat-model.md).** Name the
+asset and attacker or failure mode a control addresses. A new public port, provider,
+privileged role, secret or personal-data class, or deployment node changes the threat model;
+update ADR-0012 and `docs/deploy.md` in the same change.
 
 **Milestones:** 273 issues across 23 of them. `M0`–`M15` are the game backlog and `M1A`
 is the admin console core. The rest are cross-cutting tracks that deliberately sit outside

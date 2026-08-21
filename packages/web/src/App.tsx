@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router';
 
 import { AdminLayout } from './admin/AdminLayout';
@@ -5,8 +6,11 @@ import { AuditPage } from './admin/AuditPage';
 import { OverviewPage } from './admin/OverviewPage';
 import { PlayersPage } from './admin/PlayersPage';
 import { WorldsPage } from './admin/WorldsPage';
+import { AirlinePage } from './airline/AirlinePage';
 import { RequireSession } from './auth/RequireSession';
 import { SessionProvider } from './auth/SessionProvider';
+import { fetchFoundingOptions } from './founding/api';
+import { FoundingPage } from './founding/FoundingPage';
 import { NetworkPage } from './network/NetworkPage';
 import {
   BoardPage,
@@ -24,17 +28,16 @@ import type { ReactNode } from 'react';
 /**
  * Route table — the seven destinations from App. H.4.
  *
- * `/` redirects to `/world` rather than being its own route: the world is the
- * default view, and having two paths render the same thing would make "which URL
- * am I on" ambiguous.
+ * `/` resolves the authenticated player's airline state. An established player
+ * lands on the world; a player with no airline lands at the founding desk.
  *
  * The router itself is supplied by the caller (`main.tsx` uses BrowserRouter,
  * tests use MemoryRouter), so route behaviour is testable without a DOM history.
  */
 /**
- * `/` → `/world`, **keeping the query string**.
+ * `/` → the founding desk or world, **keeping the query string**.
  *
- * A bare `<Navigate to="/world">` builds a whole new location and drops the
+ * A bare `<Navigate>` builds a whole new location and drops the
  * search params, and the OAuth callback lands on `/?auth_error=…` — so the plain
  * redirect would silently swallow the reason a sign-in failed and leave the
  * player staring at an unchanged page. Carrying the search through is what lets
@@ -42,7 +45,40 @@ import type { ReactNode } from 'react';
  */
 function IndexRedirect(): ReactNode {
   const { search } = useLocation();
-  return <Navigate to={{ pathname: '/world', search }} replace />;
+  const [destination, setDestination] = useState<'/found' | '/world' | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    void fetchFoundingOptions()
+      .then((options) => {
+        setDestination(options.memberships.length === 0 ? '/found' : '/world');
+      })
+      .catch(() => {
+        setFailed(true);
+      });
+  }, []);
+
+  if (failed) {
+    return (
+      <section className="page">
+        <h1 className="page__title">Cannot choose a landing page</h1>
+        <p className="page__note" role="alert">
+          Tailfin could not read your airline context. Reload to try again.
+        </p>
+      </section>
+    );
+  }
+  if (destination === null) {
+    return (
+      <section className="page">
+        <h1 className="page__title">Opening your desk</h1>
+        <p className="page__note" aria-live="polite">
+          Checking your airline…
+        </p>
+      </section>
+    );
+  }
+  return <Navigate to={{ pathname: destination, search }} replace />;
 }
 
 export function App(): ReactNode {
@@ -56,9 +92,14 @@ export function App(): ReactNode {
         */}
         <RequireSession>
           <Routes>
-            <Route path="/" element={<AppShell />}>
-              <Route index element={<IndexRedirect />} />
+            {/* AIR-07's cold open has no game menu behind it. It is a complete
+                player surface, not a modal laid over destinations that do not
+                make sense until an airline exists. */}
+            <Route index element={<IndexRedirect />} />
+            <Route path="/found" element={<FoundingPage />} />
+            <Route element={<AppShell />}>
               <Route path="world" element={<WorldPage />} />
+              <Route path="airline" element={<AirlinePage />} />
               <Route path="fleet" element={<FleetPage />} />
               <Route path="network" element={<NetworkPage />} />
               <Route path="finance" element={<FinancePage />} />
