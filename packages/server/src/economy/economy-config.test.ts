@@ -23,7 +23,7 @@ import {
   loadEconomyConfig,
   loadWorldEconomyConfig,
 } from './loader';
-import { seedEconomyConfig } from './seed';
+import { ensureEconomyConfigSeeded, resetEconomySeedMemo, seedEconomyConfig } from './seed';
 import {
   createEconomyConfigVersion,
   listEconomyConfigVersions,
@@ -105,6 +105,29 @@ describeDb('the economy in the database', () => {
   // ------------------------------------------------------------------- seed
 
   describe('seeding the shipped payload', () => {
+    it('is what makes a freshly migrated database able to hold a world', async () => {
+      // The bug this exists for: the seed originally ran only in `main.ts`, so
+      // every process that creates a world without booting the web server —
+      // the test suite, `pnpm world:seed`, the admin CLI — met an empty table
+      // and could not create one at all.
+      resetEconomySeedMemo();
+      const result = await ensureEconomyConfigSeeded(db.db);
+      expect(result.version).toBe(ECONOMY_CONFIG_V1_VERSION);
+
+      const created = await makeWorld();
+      expect(created.economyConfigVersion).toBe(ECONOMY_CONFIG_V1_VERSION);
+    });
+
+    it('costs one round trip per process, however often it is asked', async () => {
+      resetEconomySeedMemo();
+      const [first, second] = await Promise.all([
+        ensureEconomyConfigSeeded(db.db),
+        ensureEconomyConfigSeeded(db.db),
+      ]);
+      // The same promise, so two callers racing cannot both insert.
+      expect(first).toBe(second);
+    });
+
     it('is idempotent, and says which run created it', async () => {
       const again = await seedEconomyConfig(db.db);
       expect(again.inserted).toBe(false);

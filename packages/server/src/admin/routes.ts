@@ -25,6 +25,7 @@ import { revokePlayerSessions } from '../auth/revocation';
 import { type DatabaseHandle } from '../db/client';
 import { economyChecksum, ECONOMY_CONFIG_V1 } from '../economy/config';
 import { economyConfigVersionExists } from '../economy/loader';
+import { ensureEconomyConfigSeeded } from '../economy/seed';
 import {
   createEconomyConfigVersion,
   type CreateEconomyRefusalCode,
@@ -305,9 +306,13 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
     },
     async (request, reply) => {
       const now = new Date();
-      const validated = await validateWorldConfig(request.body, now, (version) =>
-        economyConfigVersionExists(db.db, version),
-      );
+      const validated = await validateWorldConfig(request.body, now, async (version) => {
+        // Validation runs before `createWorld`, so the shipped version has to be
+        // there by now or a freshly migrated database refuses its first world
+        // with a field error. Memoised and insert-only; see `economy/seed.ts`.
+        await ensureEconomyConfigSeeded(db.db);
+        return economyConfigVersionExists(db.db, version);
+      });
       if (!validated.ok) {
         return reply.code(400).send({
           code: 'invalid_world',

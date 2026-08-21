@@ -8,6 +8,7 @@ import { gameTime } from '@tailfin/sim';
 import { type Database } from '../db/client';
 import { airline, world, worldEvent, type WorldRow } from '../db/schema';
 import { economyConfigVersionExists } from '../economy/loader';
+import { ensureEconomyConfigSeeded } from '../economy/seed';
 
 import { assertUsableConfig } from './config';
 
@@ -37,6 +38,12 @@ export async function createWorld(
   config: WorldConfig,
   now: Date = new Date(),
 ): Promise<CreateWorldResult> {
+  // A world cannot exist without an economy it can pin, so making sure the
+  // shipped one is in the database is part of creating one — on a database that
+  // has only just been migrated there is otherwise nothing to pin to. Insert
+  // only, and memoised, so it can never overwrite a retune and costs one query
+  // per process.
+  await ensureEconomyConfigSeeded(db);
   await assertUsableConfig(config, now, (version) => economyConfigVersionExists(db, version));
 
   const inserted = await db

@@ -100,3 +100,44 @@ export async function seedEconomyConfig(db: Database): Promise<EconomySeedResult
     storedChecksum,
   };
 }
+
+/**
+ * The shipped economy, guaranteed present — once per process.
+ *
+ * `main.ts` seeds explicitly at boot because it has a logger and something to
+ * say. Everything *else* that needs a pinnable economy reaches this instead:
+ * a world cannot be created without one, and the places that create worlds
+ * include the test suite, `pnpm world:seed` and the admin CLI — none of which
+ * boot the web server. Leaving the seed to startup alone meant a freshly
+ * migrated database could not have a world put in it at all, which is how this
+ * was found.
+ *
+ * Safe to call anywhere for the same reason the seed itself is: it inserts and
+ * never updates, so it cannot overwrite a retune. Memoised per process, so the
+ * cost after the first call is nothing.
+ *
+ * The memo is cleared on failure. Caching a rejected promise would turn one
+ * unlucky moment — the database briefly unreachable — into a process that
+ * believed for ever that it had already seeded.
+ *
+ * One honest caveat: called with a transaction that later rolls back, the memo
+ * records a seed that did not commit. Nothing in the database is inconsistent —
+ * the world being created rolled back too — and the next attempt fails
+ * validation with a clear message rather than doing something quietly wrong.
+ * The admin route seeds through the pool before it validates, so the ordinary
+ * path does not rely on this.
+ */
+let pending: Promise<EconomySeedResult> | null = null;
+
+export function ensureEconomyConfigSeeded(db: Database): Promise<EconomySeedResult> {
+  pending ??= seedEconomyConfig(db).catch((error: unknown) => {
+    pending = null;
+    throw error;
+  });
+  return pending;
+}
+
+/** Forget that this process has seeded. For tests that want a cold start. */
+export function resetEconomySeedMemo(): void {
+  pending = null;
+}
