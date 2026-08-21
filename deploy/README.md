@@ -877,11 +877,25 @@ Dev takes any ref, which is the point of it:
 ./deploy/deploy-dev.sh 1822d3c
 ```
 
-The bare branch name is resolved against `origin` when nothing local matches.
-Both checkouts are detached and hold no local branches, so for a long time only
-the `origin/`-qualified form actually worked and a bare name died with git's
-`ambiguous argument` — while this block said otherwise. The ref is tried as
-given first, so a SHA or a tag still beats a branch of the same name.
+A bare branch name is resolved against `origin`, and that is worth stating
+precisely because it is not the order git would use on its own:
+
+- `origin/<ref>` is tried **first**. The local branches in these checkouts are
+  fossils of the original clone — the checkout went detached on the first deploy
+  and nothing has updated them since. `/srv/tailfin-dev` held a local `main`
+  **188 commits** behind `origin/main` when this was written. Preferring it would
+  have deployed that silently while reporting `main`.
+- A SHA or a tag has no `origin/` counterpart, so it falls through and is used as
+  given. (A tag deliberately named after a remote branch would lose to the
+  branch. Do not do that.)
+- `HEAD` is excluded from the rule and always means this checkout's current
+  commit. `origin/HEAD` exists on both boxes — a clone points it at the remote's
+  default branch — so without the exclusion "what is running here" would silently
+  become "the tip of main".
+- A ref that matches neither is refused by name, saying both forms it tried.
+
+Before this, only the `origin/`-qualified form worked at all: a bare name died
+with git's `ambiguous argument`, while this block said otherwise.
 
 Production takes `origin/main` by default, and **refuses any commit that is not on main** —
 `deploy.sh` checks `git merge-base --is-ancestor` before it touches the checkout (OPS-01).

@@ -6,8 +6,8 @@
 #   ./deploy.sh <sha|tag>       deploy (or roll back to) a specific commit
 #   ./deploy.sh --force         rebuild and restart even if already at target
 #
-# A bare branch name is resolved against `origin` when nothing local matches, so
-# `main` and `origin/main` both work. Production still refuses any commit that
+# A bare branch name is resolved against `origin`, so `main` and `origin/main`
+# both work and both mean the remote. Production still refuses any commit that
 # is not on main (OPS-01) — that check is on the resolved commit, so a branch
 # name does not get round it.
 #
@@ -73,17 +73,35 @@ die() { printf '\n\033[31mFAILED: %s\033[0m\n' "$*" >&2; exit 1; }
 #
 #     ./deploy-dev.sh <sha|branch>   deploy any ref — this is the point of dev
 #
-# Tried as given first, so an exact SHA or tag always beats a same-named branch,
-# and only then as `origin/<ref>`. `^{commit}` peels a tag to the commit it
-# points at and refuses anything that is not a commit, which is what the
-# checkout needs.
+# `origin/<ref>` is tried **first**, which is not the obvious order and is the
+# important part.
+#
+# The local branches in these checkouts are fossils of the original clone. The
+# checkout went detached on the first deploy and nothing has updated them since:
+# when this was written /srv/tailfin-dev still held a `main` **188 commits**
+# behind `origin/main`, and /srv/tailfin likewise. Resolving the local one first
+# would quietly deploy that, while reporting `main` — worse than the error this
+# is fixing, because it succeeds.
+#
+# Nothing else collides. A SHA, a tag and `HEAD` have no `origin/` counterpart,
+# so they fall through to the second branch untouched; only a name that is a
+# branch on the remote can match the first, and for a deploy that is exactly the
+# one you meant.
+#
+# `^{commit}` peels an annotated tag to the commit it points at, and refuses
+# anything that is not a commit — which is what the checkout needs.
 # ---------------------------------------------------------------------------
 resolve_ref() {
   local ref="$1"
-  if git rev-parse --verify --quiet "${ref}^{commit}" >/dev/null; then
-    printf '%s' "${ref}"
-  elif git rev-parse --verify --quiet "origin/${ref}^{commit}" >/dev/null; then
+  # `HEAD` is this checkout's current commit and nothing else. It is excluded
+  # because `origin/HEAD` exists on both boxes — a clone sets it to the remote's
+  # default branch — so the rule above would silently turn "what is running
+  # here" into "the tip of main", which is very much not the same question.
+  if [ "${ref}" != 'HEAD' ] &&
+    git rev-parse --verify --quiet "origin/${ref}^{commit}" >/dev/null; then
     printf '%s' "origin/${ref}"
+  elif git rev-parse --verify --quiet "${ref}^{commit}" >/dev/null; then
+    printf '%s' "${ref}"
   else
     return 1
   fi

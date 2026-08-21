@@ -6,10 +6,11 @@
 #   ./deploy-dev.sh <sha|branch>   deploy any ref — this is the point of dev
 #   ./deploy-dev.sh --force        rebuild in place
 #
-# The branch name may be bare. This checkout is detached and holds no local
-# branches, so `feat/thing` used to die with git's `ambiguous argument` and only
-# `origin/feat/thing` worked — deploy.sh now falls back to `origin/<ref>`, which
-# makes the line above true rather than aspirational.
+# The branch name may be bare. This checkout is detached, so `feat/thing` used to
+# die with git's `ambiguous argument` and only `origin/feat/thing` worked —
+# deploy.sh now resolves a bare name against `origin`, which makes the line above
+# true rather than aspirational. A bare name always means the remote's, never the
+# stale local branch left behind by the original clone.
 #
 # Thin wrapper over deploy.sh, which already takes its paths from the
 # environment. Dev exists so a branch can be looked at on a real server without
