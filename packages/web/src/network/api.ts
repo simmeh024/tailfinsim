@@ -1,4 +1,10 @@
-import type { FarePreviewResponse, FareTable, SetFaresResponse } from '@tailfin/shared';
+import type {
+  CabinClass,
+  FarePreviewResponse,
+  FareTable,
+  FareWaterfallResponse,
+  SetFaresResponse,
+} from '@tailfin/shared';
 
 /**
  * The network pages' half of the client API (M3-09).
@@ -112,4 +118,42 @@ export async function openRoute(
   if (status === 409) return { ok: false, kind: 'duplicate' };
   if (status === 422) return body as OpenRouteOutcome;
   throw new Error(`Opening a route failed with ${String(status)}`);
+}
+
+/** Who else sells this pair, and in which cabins. */
+export interface RouteRival {
+  id: string;
+  cabins: CabinClass[];
+}
+
+/** The rival list arrives on every outcome, so the picker never disappears. */
+export function rivalsOf(outcome: WaterfallOutcome): RouteRival[] {
+  return outcome.ok ? outcome.waterfall.rivals : outcome.rivals;
+}
+
+/**
+ * Why you are losing, or why the question does not apply (M3-10, App. A.9).
+ *
+ * The refusals are answers, not errors. "You have this route to yourself" is
+ * the honest state of every route today — there are no AI carriers until
+ * M3-12 — and a page that reported it as a failure would be lying about a
+ * monopoly.
+ */
+export type WaterfallOutcome =
+  | { ok: true; waterfall: FareWaterfallResponse }
+  | { ok: false; kind: 'no-rival'; rivals: RouteRival[] }
+  | { ok: false; kind: 'unknown-rival'; rivals: RouteRival[] }
+  | { ok: false; kind: 'cabin-not-contested'; cabin: CabinClass; rivals: RouteRival[] };
+
+export async function fetchWaterfall(
+  routeId: string,
+  cabin: CabinClass,
+  rival?: string,
+): Promise<WaterfallOutcome> {
+  const query = new URLSearchParams({ cabin, ...(rival ? { rival } : {}) });
+  const { status, body } = await json(`/api/routes/${routeId}/waterfall?${query.toString()}`);
+
+  if (status === 200) return { ok: true, waterfall: body as FareWaterfallResponse };
+  if (status === 422) return body as WaterfallOutcome;
+  throw new Error(`GET /api/routes/${routeId}/waterfall failed with ${String(status)}`);
 }

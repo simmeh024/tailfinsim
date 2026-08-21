@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { FarePreviewResponse, SetFaresResponse } from '@tailfin/shared';
+import type { FareWaterfallResponse, FarePreviewResponse, SetFaresResponse } from '@tailfin/shared';
 
 import { NetworkPage } from './NetworkPage';
 
@@ -64,6 +64,107 @@ const REFUSAL: SetFaresResponse = {
 };
 
 const OPENED = { ok: true as const, routeId: 'route-2', greatCircleNm: 700 };
+
+/**
+ * App. A.9's published table, as the server would send it (M3-10).
+ *
+ * The doc's own figures: price −0.770, frequency −0.460, product +0.192,
+ * reputation +0.050, netting to the −0.988 that gives 24.3% against 65.4%.
+ * The page has no economics in it, so these are the only numbers it can show.
+ */
+const WATERFALL: FareWaterfallResponse = {
+  routeId: 'route-1',
+  cabin: 'economy',
+  rivalId: 'a',
+  rivals: [
+    { id: 'a', cabins: ['economy'] },
+    { id: 'b', cabins: ['economy'] },
+  ],
+  bySegment: [
+    {
+      segment: 'business',
+      factors: [
+        { factor: 'product', delta: 0.528 },
+        { factor: 'frequency', delta: -0.817 },
+        { factor: 'price', delta: -0.283 },
+        { factor: 'reputation', delta: 0.14 },
+      ],
+      netDelta: -0.432,
+      shareRatio: 0.649,
+      yourShare: 0.233,
+      theirShare: 0.359,
+    },
+    {
+      segment: 'leisure',
+      factors: [
+        { factor: 'price', delta: -0.77 },
+        { factor: 'frequency', delta: -0.46 },
+        { factor: 'product', delta: 0.192 },
+        { factor: 'reputation', delta: 0.05 },
+      ],
+      netDelta: -0.988,
+      shareRatio: 0.372,
+      yourShare: 0.243,
+      theirShare: 0.654,
+    },
+    {
+      segment: 'vfr',
+      factors: [
+        { factor: 'price', delta: -0.616 },
+        { factor: 'frequency', delta: -0.409 },
+        { factor: 'product', delta: 0.144 },
+        { factor: 'reputation', delta: 0.07 },
+      ],
+      netDelta: -0.811,
+      shareRatio: 0.444,
+      yourShare: 0.256,
+      theirShare: 0.576,
+    },
+  ],
+};
+
+/** Serve the waterfall endpoint alongside everything else the page asks for. */
+function stubWaterfall(
+  answer: unknown = WATERFALL,
+  status = 200,
+): { calls: string[]; answered: () => number } {
+  const calls: string[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: unknown, init?: RequestInit) => {
+      const url = String(input);
+      calls.push(`${init?.method ?? 'GET'} ${url}`);
+
+      if (url.includes('/waterfall')) {
+        return Promise.resolve({ status, json: () => Promise.resolve(answer) });
+      }
+      if (url === '/api/routes') {
+        return Promise.resolve({ status: 200, json: () => Promise.resolve({ routes: [ROUTE] }) });
+      }
+      if (url.endsWith('/fares/preview')) {
+        return Promise.resolve({ status: 200, json: () => Promise.resolve(PREVIEW) });
+      }
+      if (url.endsWith('/fares')) {
+        return Promise.resolve({
+          status: 200,
+          json: () => Promise.resolve({ ok: true, fares: ROUTE.fares }),
+        });
+      }
+      return Promise.reject(new Error(`unexpected fetch: ${url}`));
+    }),
+  );
+  return { calls, answered: () => calls.filter((c) => c.includes('/waterfall')).length };
+}
+
+/** Open the panel and click through to the chart. */
+async function openWaterfall(): Promise<void> {
+  render(<NetworkPage />);
+  await screen.findByText('EHAM → LEBL');
+  await vi.advanceTimersByTimeAsync(500);
+
+  const toggle = await screen.findByRole('button', { name: /why am i losing/i });
+  fireEvent.click(toggle);
+}
 
 function stub(
   save: SetFaresResponse = { ok: true, fares: ROUTE.fares },
@@ -298,5 +399,130 @@ describe('the pricing panel', () => {
 
     fireEvent.change(screen.getByLabelText('Origin ICAO'), { target: { value: 'EH' } });
     expect(screen.getByRole('button', { name: /^open$/i })).toBeDisabled();
+  });
+});
+
+describe('the waterfall — “why am I losing?” (M3-10, App. A.9)', () => {
+  it('is one click from the route, not behind a page', async () => {
+    stubWaterfall();
+    render(<NetworkPage />);
+    await screen.findByText('EHAM → LEBL');
+    await vi.advanceTimersByTimeAsync(500);
+
+    // A.9 is the surface the game is learned through, so the chart is not
+    // asked for until it is wanted — and then it is one press away.
+    const toggle = await screen.findByRole('button', { name: /why am i losing/i });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(toggle);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /why am i losing/i })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+    });
+  });
+
+  it('draws A.9’s published factors — the acceptance criterion', async () => {
+    stubWaterfall();
+    await openWaterfall();
+
+    // The doc's leisure row, to the digit. Every one of these is a number the
+    // server sent; the page has no economics to derive them with.
+    await waitFor(() => {
+      expect(screen.getByText(/-0\.770/)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/-0\.460/)).toBeInTheDocument();
+    expect(screen.getByText(/0\.192/)).toBeInTheDocument();
+    expect(screen.getByText(/0\.050/)).toBeInTheDocument();
+  });
+
+  it('shows the net and the two shares it produces', async () => {
+    stubWaterfall();
+    await openWaterfall();
+
+    await waitFor(() => {
+      expect(screen.getByText('-0.988')).toBeInTheDocument();
+    });
+    // A.9's closing line: the gap *is* 24.3% against 65.4%.
+    expect(screen.getByText('24.3%')).toBeInTheDocument();
+    expect(screen.getByText('65.4%')).toBeInTheDocument();
+  });
+
+  it('shows all three segments, because the answer differs between them', async () => {
+    stubWaterfall();
+    await openWaterfall();
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Leisure' })).toBeInTheDocument();
+    });
+    expect(screen.getByRole('heading', { name: 'Business' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'VFR' })).toBeInTheDocument();
+  });
+
+  it('marks the sign with a glyph as well as a colour', async () => {
+    stubWaterfall();
+    await openWaterfall();
+
+    // H.4: the sign has to survive a monochrome screen and a red-green reader,
+    // so colour is never the only carrier of it.
+    await waitFor(() => {
+      expect(screen.getByText(/▼ -0\.770/)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/▲ 0\.192/)).toBeInTheDocument();
+  });
+
+  it('says you have the route to yourself rather than drawing an empty chart', async () => {
+    // The honest state of every route today — no AI carriers until M3-12.
+    stubWaterfall({ ok: false, kind: 'no-rival', rivals: [] }, 422);
+    await openWaterfall();
+
+    expect(await screen.findByText(/route to yourself/i)).toBeInTheDocument();
+  });
+
+  it('keeps the cabin picker when a cabin is not contested', async () => {
+    // The dead end this replaced: the panel returned early on this refusal, so
+    // a player told nobody sells economy here had no control left to ask about
+    // business. §14.1 has no dead ends in it.
+    stubWaterfall(
+      {
+        ok: false,
+        kind: 'cabin-not-contested',
+        cabin: 'economy',
+        rivals: [{ id: 'a', cabins: ['business'] }],
+      },
+      422,
+    );
+    await openWaterfall();
+
+    expect(await screen.findByText(/Nobody else sells economy/i)).toBeInTheDocument();
+    expect(screen.getByLabelText('Cabin')).toBeInTheDocument();
+  });
+
+  it('lets the player choose which rival, and asks the server again', async () => {
+    // A.8's route has two rivals and you lose to them for opposite reasons.
+    const { calls, answered } = stubWaterfall();
+    await openWaterfall();
+
+    const picker = await screen.findByLabelText('Compare against');
+    const before = answered();
+    fireEvent.change(picker, { target: { value: 'b' } });
+
+    await waitFor(() => {
+      expect(answered()).toBeGreaterThan(before);
+    });
+    expect(calls.some((c) => c.includes('rival=b'))).toBe(true);
+  });
+
+  it('asks the server for the decomposition rather than working it out', async () => {
+    // Invariant 1, asserted as a request. ESLint refuses this package an import
+    // of `@tailfin/sim`, so a bar can only appear if the server drew it.
+    const { calls } = stubWaterfall();
+    await openWaterfall();
+
+    await waitFor(() => {
+      expect(calls.some((c) => c.startsWith('GET /api/routes/route-1/waterfall'))).toBe(true);
+    });
+    expect(calls.some((c) => c.includes('cabin=economy'))).toBe(true);
   });
 });

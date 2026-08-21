@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   AirportIcaoCode,
   CabinClass,
+  DemandSegment,
   IsoWeekday,
   MinorUnits,
   MinuteOfDay,
@@ -269,3 +270,69 @@ export const FarePreviewResponse = z.object({
   currentPassengers: z.number().nonnegative(),
 });
 export type FarePreviewResponse = z.infer<typeof FarePreviewResponse>;
+
+/* --------------------------------------------------- the waterfall (M3-10) ---- */
+
+/** One line of App. A.9's table: how much of the utility gap this factor explains. */
+export const WaterfallFactor = z.object({
+  /** `price`, `frequency`, `product`, `reputation`, `schedule`, … */
+  factor: z.string().min(1),
+  /** Your term minus theirs. Negative means they are better on this factor. */
+  delta: z.number(),
+});
+export type WaterfallFactor = z.infer<typeof WaterfallFactor>;
+
+export const WaterfallSegment = z.object({
+  segment: DemandSegment,
+  factors: z.array(WaterfallFactor),
+  /**
+   * The sum of `factors` — **exactly** the utility gap, with no residual.
+   *
+   * A.9's whole claim: *"the waterfall isn't an approximation of the result — it
+   * **is** the result."* Because share is a ratio of exponentials, the gap
+   * decomposes without remainder, which is why there is no "other" line here
+   * and why one would be a bug rather than a rounding allowance.
+   */
+  netDelta: z.number(),
+  /** `exp(netDelta)`, and equal to `yourShare ÷ theirShare` to twelve places. */
+  shareRatio: z.number().nonnegative(),
+  yourShare: z.number().min(0).max(1),
+  theirShare: z.number().min(0).max(1),
+});
+export type WaterfallSegment = z.infer<typeof WaterfallSegment>;
+
+/** Who there is to compare against on a route. */
+export const RouteRival = z.object({
+  id: z.string().min(1),
+  /** Which cabins they sell, so the picker cannot offer a comparison that has no market. */
+  cabins: z.array(CabinClass),
+});
+export type RouteRival = z.infer<typeof RouteRival>;
+
+/**
+ * `GET /api/routes/:routeId/waterfall` — why you are losing, decomposed.
+ *
+ * All three segments in one response. A.9's table is per segment, and the
+ * interesting thing about this route is usually that the answer *differs*
+ * between them — the same three airlines produce almost opposite outcomes in
+ * business and leisure (A.8). Making the reader pay a round trip to discover
+ * that would hide the point.
+ */
+export const FareWaterfallResponse = z.object({
+  routeId: Uuid,
+  cabin: CabinClass,
+  /** Whose utility this one is measured against. */
+  rivalId: z.string().min(1),
+  /**
+   * Everyone there is to compare against, including `rivalId` itself.
+   *
+   * Carried on the *success* path and not only on the refusals, because A.8's
+   * own route has two rivals and the answer differs against each: the LCC beats
+   * you on price, the legacy carrier beats you on product. A response that
+   * named only the operator it happened to pick would let the player see one of
+   * those two and never learn that the other existed.
+   */
+  rivals: z.array(RouteRival),
+  bySegment: z.array(WaterfallSegment),
+});
+export type FareWaterfallResponse = z.infer<typeof FareWaterfallResponse>;

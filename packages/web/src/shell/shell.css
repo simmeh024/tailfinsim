@@ -1847,3 +1847,168 @@ body {
   font-size: var(--text-sm);
   color: var(--status-ontime);
 }
+
+/* --------------------------------------------------------------------------
+   The decomposition waterfall (M3-10, App. A.9)
+
+   A.9 calls this the surface the game is learned through, so it is drawn with
+   bars rather than printed as a table: the point a player has to take from it
+   is which term is *biggest*, and a column of signed decimals does not carry
+   that at a glance.
+
+   Bars grow from a centre line, left for against and right for for. No bar is
+   ever the only signal — every row carries a glyph and a signed figure too,
+   per H.4.
+   -------------------------------------------------------------------------- */
+
+.waterfall {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* A button that opens an explanation, not one that changes anything — so it
+   reads as secondary beside "Save fares" rather than competing with it. */
+.waterfall__toggle {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.waterfall__toggle:hover {
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.waterfall__toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.waterfall__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.waterfall__against {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* Three segments side by side where there is room, stacked where there is not.
+   Seeing business and leisure disagree is most of the value of the chart, and
+   that comparison only works when they are adjacent. */
+.waterfall__segments {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: var(--space-4);
+}
+
+.waterfall__segment {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--console-card-raised);
+}
+
+.waterfall__segment-name {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.waterfall__bars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  list-style: none;
+}
+
+.waterfall__bar-row {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.waterfall__factor {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* The zero line down the middle. Bars start from it in both directions, so a
+   term that helps and a term that hurts are told apart by position as well as
+   by colour. */
+.waterfall__track {
+  position: relative;
+  display: block;
+  height: 0.75rem;
+}
+
+/* The zero line itself, at the middle of the full-width track. Bars are
+   anchored to it from both sides — which only works if the track spans the
+   whole column, so the centre is genuinely the centre. */
+.waterfall__track::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--border-strong);
+}
+
+/* Widths are a percentage of the track, and a bar may reach 100% of the
+   *segment's* widest term — so each half is scaled to half the track and a
+   full-length bar stops at the edge rather than overflowing it. */
+.waterfall__bar {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  max-width: 50%;
+  transform: scaleX(0.5);
+  border-radius: var(--radius-sm);
+}
+
+.waterfall__bar--for {
+  left: 50%;
+  transform-origin: left;
+  background: var(--status-profit);
+}
+
+.waterfall__bar--against {
+  right: 50%;
+  transform-origin: right;
+  background: var(--status-loss);
+}
+
+.waterfall__delta {
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.waterfall__delta--for {
+  color: var(--status-profit);
+}
+
+.waterfall__delta--against {
+  color: var(--status-loss);
+}
+
+.waterfall__net {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
