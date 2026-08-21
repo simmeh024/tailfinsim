@@ -10,6 +10,7 @@ import type {
 } from '@tailfin/shared';
 
 import { App } from '../App';
+import { waitForLandingChoice, waitForSignInCheck } from '../test-gates';
 
 const PLAYER_ID = '11111111-2222-4333-8444-555555555555';
 const WORLD_ID = '22222222-3333-4444-8555-666666666666';
@@ -148,12 +149,27 @@ function stubApi(settings: StubOptions = {}) {
   return creates;
 }
 
-function renderAt(path = '/found') {
-  return render(
+/**
+ * The founding desk, with the gates in front of it already open.
+ *
+ * There are up to three, in sequence: `/api/me` before the route tree mounts,
+ * then — from `/` — the founding options `IndexRedirect` reads to decide where to
+ * send a player, then the desk's own load. Waiting for the desk's heading alone
+ * made one query's budget cover the lot, and under full-suite load it ran out
+ * while `IndexRedirect` was still saying "Checking your airline…".
+ *
+ * Both holding screens are waited for here. `waitForLandingChoice` passes straight
+ * through when the entry point is `/found`, which never renders one.
+ */
+async function renderAt(path = '/found') {
+  const result = render(
     <MemoryRouter initialEntries={[path]}>
       <App />
     </MemoryRouter>,
   );
+  await waitForSignInCheck();
+  await waitForLandingChoice();
+  return result;
 }
 
 async function fillIdentity() {
@@ -180,7 +196,7 @@ afterEach(() => {
 describe('the founding desk', () => {
   it('routes a signed-in player with no airline to the no-menu cold open', async () => {
     stubApi();
-    renderAt('/');
+    await renderAt('/');
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'What’s your airline called?' }),
@@ -191,7 +207,7 @@ describe('the founding desk', () => {
 
   it('labels every critical control and uses native keyboard controls', async () => {
     stubApi();
-    renderAt();
+    await renderAt();
 
     for (const label of [
       'Airline name',
@@ -217,7 +233,7 @@ describe('the founding desk', () => {
         iataCode: { requested: 'TF', status: 'assigned', alternatives: ['TA', 'TN', 'TR'] },
       },
     });
-    renderAt();
+    await renderAt();
     await fillIdentity();
 
     const suggestion = await screen.findByRole('button', { name: 'Use IATA code TA' });
@@ -228,7 +244,7 @@ describe('the founding desk', () => {
 
   it('warns about a costly flagship hub but lets the player found and reach the network', async () => {
     const creates = stubApi();
-    renderAt();
+    await renderAt();
     await fillIdentity();
 
     fireEvent.change(screen.getByLabelText('Search airports'), { target: { value: 'Heathrow' } });
@@ -264,7 +280,7 @@ describe('the founding desk', () => {
         },
       },
     });
-    renderAt();
+    await renderAt();
     await fillIdentity();
     fireEvent.click(await screen.findByRole('radio', { name: /Amsterdam Airport Schiphol/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Found airline' }));

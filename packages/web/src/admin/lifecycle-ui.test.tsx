@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AdminWorldSummary, MeResponse, VersionResponse, WorldStatus } from '@tailfin/shared';
 
 import { App } from '../App';
+import { waitForSignInCheck } from '../test-gates';
 
 /**
  * A world's lifecycle, as an admin meets it (M1A-04).
@@ -140,13 +141,41 @@ function stubApi(
   return { posts };
 }
 
+/**
+ * The world list, once `/api/admin/worlds` has actually answered.
+ *
+ * The only table these stubs produce: `WorldHealth` renders one of its own for
+ * the datasets in use, and the health reply here has none. Queried by role alone
+ * rather than by name, so the poll that runs until it appears does not compute an
+ * accessible name for every element on the page each time round.
+ */
+function findWorldList(): Promise<HTMLElement> {
+  return screen.findByRole('table');
+}
+
+/**
+ * The console, open at Worlds, with one world's controls showing.
+ *
+ * Two gates stand between `render` and a row button, and they are sequential:
+ * `/api/me` has to answer before the route tree mounts at all, and only the route
+ * tree mounts `WorldsPanel`, which then has to wait for `/api/admin/worlds` before
+ * the table has a single row in it. This used to wait straight for
+ * `Manage <name>`, which put both gates and every render between them inside one
+ * button query — see `test-gates.ts` for what that cost.
+ *
+ * Each gate is waited for on its own here. The last step needs no wait at all:
+ * the table and its row buttons are rendered in the same commit, so once the list
+ * is here the button is too, and the lookup can be a plain `getByRole`.
+ */
 async function openWorld(name = 'Flagship'): Promise<void> {
   render(
     <MemoryRouter initialEntries={['/admin/worlds']}>
       <App />
     </MemoryRouter>,
   );
-  fireEvent.click(await screen.findByRole('button', { name: `Manage ${name}` }));
+  await waitForSignInCheck();
+  await findWorldList();
+  fireEvent.click(screen.getByRole('button', { name: `Manage ${name}` }));
 }
 
 function worldIn(status: WorldStatus, overrides: Partial<AdminWorldSummary> = {}) {
@@ -432,7 +461,8 @@ describe('the world list', () => {
       </MemoryRouter>,
     );
 
-    const table = await screen.findByRole('table');
+    await waitForSignInCheck();
+    const table = await findWorldList();
     expect(within(table).getByText('7')).toBeInTheDocument();
     expect(within(table).getByText('4')).toBeInTheDocument();
   });
