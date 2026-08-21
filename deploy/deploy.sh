@@ -6,6 +6,11 @@
 #   ./deploy.sh <sha|tag>       deploy (or roll back to) a specific commit
 #   ./deploy.sh --force         rebuild and restart even if already at target
 #
+# A bare branch name is resolved against `origin`, so `main` and `origin/main`
+# both work and both mean the remote. Production still refuses any commit that
+# is not on main (OPS-01) — that check is on the resolved commit, so a branch
+# name does not get round it.
+#
 # There is no CI involvement by design: running this command *is* the approval
 # step. See ADR-0003 for why, and what it costs.
 
@@ -57,13 +62,77 @@ TARGET="${TARGET:-origin/main}"
 log() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 die() { printf '\n\033[31mFAILED: %s\033[0m\n' "$*" >&2; exit 1; }
 
+# ---------------------------------------------------------------------------
+# Resolve a ref, accepting a bare branch name.
+#
+# These checkouts are detached on purpose (see the checkout further down), and a
+# fetch writes only remote-tracking refs — so there is no local `feat/thing`
+# here for `rev-parse` to find. Asking for one died with git's own
+# `ambiguous argument` while the usage text of both scripts, and the table in
+# deploy/README.md, all promised that a branch name would work:
+#
+#     ./deploy-dev.sh <sha|branch>   deploy any ref — this is the point of dev
+#
+# `origin/<ref>` is tried **first**, which is not the obvious order and is the
+# important part.
+#
+# The local branches in these checkouts are fossils of the original clone. The
+# checkout went detached on the first deploy and nothing has updated them since:
+# when this was written /srv/tailfin-dev still held a `main` **188 commits**
+# behind `origin/main`, and /srv/tailfin likewise. Resolving the local one first
+# would quietly deploy that, while reporting `main` — worse than the error this
+# is fixing, because it succeeds.
+#
+# Nothing else collides. A SHA, a tag and `HEAD` have no `origin/` counterpart,
+# so they fall through to the second branch untouched; only a name that is a
+# branch on the remote can match the first, and for a deploy that is exactly the
+# one you meant.
+#
+# `^{commit}` peels an annotated tag to the commit it points at, and refuses
+# anything that is not a commit — which is what the checkout needs.
+# ---------------------------------------------------------------------------
+resolve_ref() {
+  local ref="$1"
+  # `HEAD` is this checkout's current commit and nothing else. It is excluded
+  # because `origin/HEAD` exists on both boxes — a clone sets it to the remote's
+  # default branch — so the rule above would silently turn "what is running
+  # here" into "the tip of main", which is very much not the same question.
+  if [ "${ref}" != 'HEAD' ] &&
+    git rev-parse --verify --quiet "origin/${ref}^{commit}" >/dev/null; then
+    printf '%s' "origin/${ref}"
+  elif git rev-parse --verify --quiet "${ref}^{commit}" >/dev/null; then
+    printf '%s' "${ref}"
+  else
+    return 1
+  fi
+}
+
 cd "${REPO_DIR}"
 
 log "Fetching"
 git fetch --prune origin
 
+# After the fetch, necessarily: a branch pushed moments ago has no
+# remote-tracking ref here until it has been fetched.
+RESOLVED="$(resolve_ref "${TARGET}")" ||
+  die "no such commit, tag or branch: ${TARGET} (tried ${TARGET} and origin/${TARGET})"
+if [ "${RESOLVED}" != "${TARGET}" ]; then
+  echo "resolved ${TARGET} -> ${RESOLVED}"
+  # Reassigned so the deploy stamp below records the ref that was actually
+  # deployed. `ops:status` reads that field, and "my-branch" there would not say
+  # which remote it came from.
+  TARGET="${RESOLVED}"
+fi
+
 PREVIOUS="$(git rev-parse HEAD)"
-NEXT="$(git rev-parse "${TARGET}")"
+# `^{commit}` because an **annotated** tag resolves to the tag object, not the
+# commit it points at. Everything that acts on NEXT already peels — the
+# ancestor check and the checkout both do — so nothing was unsafe, but the two
+# places that only *report* it were wrong: `Deployed ${NEXT}` printed a sha that
+# was not the commit now running, and `PREVIOUS = NEXT` could never match, so an
+# already-deployed tag always rebuilt. No tags exist in the repo yet, so this
+# had not bitten anyone.
+NEXT="$(git rev-parse "${TARGET}^{commit}")"
 
 echo "current: ${PREVIOUS}"
 echo "target:  ${NEXT}  (${TARGET})"
