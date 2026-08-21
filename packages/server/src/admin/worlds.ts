@@ -9,7 +9,7 @@ import { gameTime } from '@tailfin/sim';
 
 import { type Database } from '../db/client';
 import { airline, world, worldEvent, type WorldRow } from '../db/schema';
-import { economyConfigFor } from '../economy/config';
+import { type EconomyVersionCheck } from '../world/config';
 import { createWorld } from '../world/lifecycle';
 
 import { writeAudit } from './audit';
@@ -69,12 +69,19 @@ function fieldOf(path: readonly PropertyKey[]): string {
 /**
  * Validates a submitted config, in the words an admin needs.
  *
- * Two layers, and both matter. The zod schema is the shape; the epoch rule is
- * the meaning. An epoch at or after now makes `gameTime` start in the future and
+ * Three layers now. The zod schema is the shape; the epoch rule is the meaning;
+ * and since M3-11 the economy version is a fact about the database rather than
+ * about a registry in code, which is what makes this asynchronous. The lookup is
+ * passed in for the same reason `assertUsableConfig` takes one — this file
+ * should not become a second place that knows how `economy_config` is stored. An epoch at or after now makes `gameTime` start in the future and
  * makes a reset a no-op — the exact failure ADR-0005 exists to prevent, and one
  * that would surface weeks later when somebody tried to reset and nothing moved.
  */
-export function validateWorldConfig(input: unknown, now: Date): ValidationResult {
+export async function validateWorldConfig(
+  input: unknown,
+  now: Date,
+  versionExists: EconomyVersionCheck,
+): Promise<ValidationResult> {
   const parsed = WorldConfig.safeParse(input);
   if (!parsed.success) {
     const fields: Record<string, string[]> = {};
@@ -102,13 +109,13 @@ export function validateWorldConfig(input: unknown, now: Date): ValidationResult
     };
   }
 
-  if (!economyConfigFor(config.economyConfigVersion)) {
+  if (!(await versionExists(config.economyConfigVersion))) {
     return {
       ok: false,
       fields: {
         economyConfigVersion: [
-          `Economy config ${config.economyConfigVersion} is not registered. ` +
-            'Choose a version that can be pinned before creating the world.',
+          `There is no economy version "${config.economyConfigVersion}". ` +
+            'Pick one from the economy list, or create it first.',
         ],
       },
     };

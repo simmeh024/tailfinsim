@@ -1764,3 +1764,73 @@ export const nodeHeartbeat = pgTable(
 );
 
 export type NodeHeartbeatRow = typeof nodeHeartbeat.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// Economy configuration (M3-11, §22.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * The economy, as versioned data.
+ *
+ * A.3 says the β coefficients *"belong in a config file that can be tuned live,
+ * never hard-coded"*, and CONTRIBUTING makes that invariant 3. This is the file.
+ * A world pins one row through `world.economy_config_version`, and changing that
+ * pin is an audited admin action.
+ *
+ * ## Rows are immutable, and the triggers enforce it
+ *
+ * Editing a version means creating a new one. Three things depend on that:
+ *
+ *   - **`flight_result` records the version it settled under.** If a payload
+ *     could change under it, an old settlement would stop being explicable,
+ *     which is invariant 4 failing silently months later.
+ *   - **The in-process cache is correct without invalidation logic.** Keyed by
+ *     version, across every web and worker process, with no cross-process
+ *     message needed — because a version cannot mean two things.
+ *   - **Rollback is re-pinning, not editing.** §22.3's *"one-click rollback"*
+ *     becomes an audited pin change to a version that still exists.
+ *
+ * ## No foreign key from `world.economy_config_version`
+ *
+ * It would be a good constraint and it is deliberately absent. Adding one means
+ * the migration must insert a v1 row to satisfy the worlds already pinning it,
+ * which would freeze a copy of every balance number into SQL — the exact
+ * duplication this table exists to remove. The seed inserts v1 from
+ * `ECONOMY_CONFIG_V1` at startup instead, and the loader refuses a world whose
+ * version is missing rather than silently falling back to the shipped one.
+ */
+export const economyConfig = pgTable(
+  'economy_config',
+  {
+    version: text('version').primaryKey(),
+
+    /** The `EconomyConfig` payload as JSON text. Nothing queries inside it. */
+    payload: text('payload').notNull(),
+
+    /**
+     * SHA-256 of `canonicalEconomyJson(payload)`.
+     *
+     * Key order is normalised first, so this identifies the *config* rather than
+     * the text — which is what lets startup notice that a live-retuned v1 no
+     * longer matches the shipped one and say so, instead of overwriting it.
+     */
+    checksum: text('checksum').notNull(),
+
+    /** What this was derived from, so a diff has a natural counterpart. Null for the seed. */
+    parentVersion: text('parent_version'),
+
+    /** Why this version exists, in the author's words. */
+    notes: text('notes'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+
+    /** Not a foreign key, for the same reason as `admin_audit.actor_player_id`. */
+    createdByPlayerId: uuid('created_by_player_id'),
+    /** Denormalised so the row stays legible after the account is anonymised (§22.10). */
+    createdByLabel: text('created_by_label').notNull(),
+  },
+  (t) => [index('economy_config_created_at_idx').on(t.createdAt)],
+);
+
+export type EconomyConfigRow = typeof economyConfig.$inferSelect;
+export type NewEconomyConfigRow = typeof economyConfig.$inferInsert;

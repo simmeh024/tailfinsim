@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { AirlineIdentity, AirlineStatus } from './airline';
+import { EconomyConfigVersion } from './economy-config';
 import { Timestamp, Uuid } from './primitives';
 import { WorldStatus } from './world';
 import { MAX_SPEED_MULTIPLIER } from './world-config';
@@ -34,11 +35,19 @@ export const AdminAction = z.enum([
   'player.viewed',
   'sessions.revoked',
   'airline.identity_changed',
+  'economy.version_created',
+  'world.economy_pinned',
 ]);
 export type AdminAction = z.infer<typeof AdminAction>;
 
 /** What an action was done *to*. */
-export const AdminSubjectType = z.enum(['player', 'world', 'instance', 'airline']);
+export const AdminSubjectType = z.enum([
+  'player',
+  'world',
+  'instance',
+  'airline',
+  'economy_config',
+]);
 export type AdminSubjectType = z.infer<typeof AdminSubjectType>;
 
 /**
@@ -689,3 +698,149 @@ export const AdminSystemHealthResponse = z.object({
   alerts: z.array(z.string()),
 });
 export type AdminSystemHealthResponse = z.infer<typeof AdminSystemHealthResponse>;
+
+// ---------------------------------------------------------------------------
+// Economy configuration (M3-11, §22.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * One version of the economy, without its payload.
+ *
+ * Enough to list versions, see which one a world is on and decide what to
+ * compare against; the payload is a separate read because it is large and
+ * because most screens do not need it.
+ */
+export const AdminEconomyConfigSummary = z.object({
+  version: EconomyConfigVersion,
+  /** SHA-256 over the canonical payload. Lets a client verify what it was given. */
+  checksum: z.string().min(1),
+  /** What this was derived from. Null for the shipped seed. */
+  parentVersion: EconomyConfigVersion.nullable(),
+  notes: z.string().nullable(),
+  createdAt: Timestamp,
+  /** Null once the account has gone, or for a version written by a build. */
+  createdByPlayerId: Uuid.nullable(),
+  createdByLabel: z.string().min(1),
+  /** How many worlds currently pin it. A version on zero worlds is safe to ignore. */
+  worldsPinned: z.number().int().nonnegative(),
+});
+export type AdminEconomyConfigSummary = z.infer<typeof AdminEconomyConfigSummary>;
+
+/** `GET /api/admin/economy-config`. Newest first. */
+export const AdminEconomyConfigListResponse = z.object({
+  versions: z.array(AdminEconomyConfigSummary),
+  /**
+   * The version this build ships, and whether the stored row still matches it.
+   *
+   * False means the database's economy was written by a different build. That is
+   * not an error — the database wins, always — but it is the one thing worth
+   * saying out loud on this screen.
+   */
+  shippedVersion: EconomyConfigVersion,
+  shippedMatchesStored: z.boolean(),
+});
+export type AdminEconomyConfigListResponse = z.infer<typeof AdminEconomyConfigListResponse>;
+
+/**
+ * A scalar that changed between two versions.
+ *
+ * The diff walks into arrays by index, so a leaf is always a scalar — there is
+ * no case where a whole object or array is one side of a change.
+ */
+const AdminEconomyConfigChangeValue = z.union([z.number(), z.string(), z.boolean(), z.null()]);
+
+/**
+ * One field that differs. Absent `before` means the field is new in `after`;
+ * absent `after` means it is gone.
+ */
+export const AdminEconomyConfigChange = z.object({
+  /** Dotted, with array indices in brackets: `demand.logit.beta.leisure.price`. */
+  path: z.string().min(1),
+  before: AdminEconomyConfigChangeValue.optional(),
+  after: AdminEconomyConfigChangeValue.optional(),
+});
+export type AdminEconomyConfigChange = z.infer<typeof AdminEconomyConfigChange>;
+
+/**
+ * `GET /api/admin/economy-config/:version`.
+ *
+ * The payload comes back as **JSON text, not as a nested object**, and that is
+ * deliberate twice over. It is the exact canonical bytes the checksum was taken
+ * over, so a client can verify what it holds; and it cannot be quietly reshaped
+ * by a response serialiser on the way out — a dropped tuple would hand an admin
+ * an incomplete config to edit and they would submit it straight back.
+ *
+ * The client parses it with the same `EconomyConfig` schema the server used.
+ */
+export const AdminEconomyConfigDetailResponse = z.object({
+  summary: AdminEconomyConfigSummary,
+  payloadJson: z.string().min(1),
+  /** What `diff` was computed against. Null when there is no parent to compare to. */
+  comparedWith: EconomyConfigVersion.nullable(),
+  /** Empty when the two versions are identical; null when there was nothing to compare. */
+  diff: z.array(AdminEconomyConfigChange).nullable(),
+});
+export type AdminEconomyConfigDetailResponse = z.infer<typeof AdminEconomyConfigDetailResponse>;
+
+/**
+ * `POST /api/admin/economy-config` — create a version.
+ *
+ * A retune is an insert, never an edit: `economy_config` rows are immutable, so
+ * the old numbers stay readable and an old `flight_result` stays explicable.
+ * Creating a version changes nothing on its own — a world has to be pinned to
+ * it, which is a second, separately audited act.
+ */
+export const AdminCreateEconomyConfigRequest = z.object({
+  version: EconomyConfigVersion,
+  /** The full payload as JSON text, validated against `EconomyConfig` on arrival. */
+  payloadJson: z.string().min(1),
+  /**
+   * The version this was derived from.
+   *
+   * Required, because *"every version is diffable against the previous"* needs a
+   * previous. The seed is the one row without one, and the seed is not created
+   * through this route.
+   */
+  parentVersion: EconomyConfigVersion,
+  notes: z.string().min(1).max(2_000),
+});
+export type AdminCreateEconomyConfigRequest = z.infer<typeof AdminCreateEconomyConfigRequest>;
+
+export const AdminCreateEconomyConfigResponse = z.object({
+  summary: AdminEconomyConfigSummary,
+  /** Against `parentVersion`, so the audit trail and the response say the same thing. */
+  diff: z.array(AdminEconomyConfigChange),
+});
+export type AdminCreateEconomyConfigResponse = z.infer<typeof AdminCreateEconomyConfigResponse>;
+
+/**
+ * `POST /api/admin/worlds/:worldId/economy-config` — point a world at a version.
+ *
+ * `expectedVersion` is the same guard the speed route uses: if the world is no
+ * longer on the version the admin was shown, somebody else moved it and the
+ * sentence they agreed to is not the one that would be carried out.
+ */
+export const AdminPinEconomyConfigRequest = z.object({
+  version: EconomyConfigVersion,
+  expectedVersion: EconomyConfigVersion,
+});
+export type AdminPinEconomyConfigRequest = z.infer<typeof AdminPinEconomyConfigRequest>;
+
+export const AdminPinEconomyConfigResponse = z.object({
+  worldId: Uuid,
+  worldName: z.string().min(1),
+  before: EconomyConfigVersion,
+  after: EconomyConfigVersion,
+  /** From the old version to the new one, so the response says what actually moved. */
+  diff: z.array(AdminEconomyConfigChange),
+  /**
+   * Pending events in the world at the moment of the change.
+   *
+   * A pinned economy applies to work that has not happened yet; anything already
+   * settled keeps the version it settled under. Reported for the same reason the
+   * speed route reports it — an admin changing a live world deserves to know how
+   * much is in flight.
+   */
+  pendingEvents: z.number().int().nonnegative(),
+});
+export type AdminPinEconomyConfigResponse = z.infer<typeof AdminPinEconomyConfigResponse>;

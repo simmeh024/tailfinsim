@@ -26,9 +26,9 @@ import { and, eq } from 'drizzle-orm';
 
 import type { AirportFees, DemandSegment } from '@tailfin/shared';
 import type { FareFloorAircraft, FuelMarket, FuelStation } from '@tailfin/sim';
-import { DEFAULT_FUEL_MARKET } from '@tailfin/sim';
 
 import { demandPool } from '../db/schema';
+import { loadWorldEconomyConfig } from '../economy/loader';
 
 import type { RouteEconomics, RouteRow } from './fares';
 import type { Database } from '../db/client';
@@ -120,22 +120,36 @@ export async function poolsFor(
 /**
  * The economics provider the server registers with.
  *
- * Real demand, reference everything else — see the module note on why that
+ * Real demand, real money, reference aircraft — see the module note on why that
  * split is stated rather than papered over.
+ *
+ * The money became real in M3-11: the fuel price, the cost table and A.10's
+ * floor ratio are read from the route's own world through its pinned economy
+ * version, so a retune moves every fare floor in that world on the next request
+ * and only in that world. The `market` override stays for tests.
  */
 export function createEconomicsProvider(
   db: Database,
-  market: FuelMarket = DEFAULT_FUEL_MARKET,
+  market?: FuelMarket,
 ): (row: RouteRow) => Promise<RouteEconomics> {
-  return async (row) => ({
-    aircraft: REFERENCE_AIRFRAME,
-    market,
-    originStation: { ...REFERENCE_STATION, icao: row.originIcao },
-    originFees: REFERENCE_FEES,
-    destinationFees: REFERENCE_FEES,
-    segmentPools: await poolsFor(db, row),
-    // No AI carriers yet (M3-12) and one player. A monopoly is a market of one.
-    competitors: [],
-    self: REFERENCE_SELF,
-  });
+  return async (row) => {
+    const [economy, segmentPools] = await Promise.all([
+      loadWorldEconomyConfig(db, row.worldId),
+      poolsFor(db, row),
+    ]);
+
+    return {
+      aircraft: REFERENCE_AIRFRAME,
+      market: market ?? { basePricePerTonne: economy.fuel.basePricePerTonne },
+      originStation: { ...REFERENCE_STATION, icao: row.originIcao },
+      originFees: REFERENCE_FEES,
+      destinationFees: REFERENCE_FEES,
+      segmentPools,
+      // No AI carriers yet (M3-12) and one player. A monopoly is a market of one.
+      competitors: [],
+      self: REFERENCE_SELF,
+      settlement: economy.costs.settlement,
+      fareFloorRatio: economy.pricing.fareFloorRatio,
+    };
+  };
 }

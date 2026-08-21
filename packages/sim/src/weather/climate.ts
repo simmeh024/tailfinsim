@@ -44,8 +44,16 @@
  * plausible, the fix is a Köppen zone on the airport row, not a better curve.
  */
 
-/** Months are 1–12, matching how a date is read rather than how JavaScript counts. */
-export type Month = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
+import type { Month } from '@tailfin/shared';
+
+/**
+ * Months are 1–12, matching how a date is read rather than how JavaScript counts.
+ *
+ * Defined in `@tailfin/shared` and re-exported here so that the sim's `Month`
+ * and the one `economy_config` validates `holidayMonths` against are the same
+ * type rather than two that happen to agree.
+ */
+export type { Month };
 
 /**
  * The normals for one place in one month. Everything a day is drawn around.

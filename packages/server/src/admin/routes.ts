@@ -1,11 +1,16 @@
 import {
   adminAuditResponseJsonSchema,
+  adminCreateEconomyConfigResponseJsonSchema,
   adminCreateWorldResponseJsonSchema,
+  adminEconomyConfigDetailResponseJsonSchema,
+  adminEconomyConfigListResponseJsonSchema,
+  adminPinEconomyConfigResponseJsonSchema,
   adminListResponseJsonSchema,
   adminOverviewResponseJsonSchema,
   adminPlayerDetailResponseJsonSchema,
   adminPlayerListResponseJsonSchema,
   adminResetWorldResponseJsonSchema,
+  ECONOMY_CONFIG_V1_VERSION,
   adminSpeedChangeResponseJsonSchema,
   adminWorldStatusResponseJsonSchema,
   adminSystemHealthResponseJsonSchema,
@@ -18,6 +23,18 @@ import {
 
 import { revokePlayerSessions } from '../auth/revocation';
 import { type DatabaseHandle } from '../db/client';
+import { economyChecksum, ECONOMY_CONFIG_V1 } from '../economy/config';
+import { economyConfigVersionExists } from '../economy/loader';
+import {
+  createEconomyConfigVersion,
+  type CreateEconomyRefusalCode,
+  listEconomyConfigVersions,
+  type PinEconomyRefusalCode,
+  pinWorldEconomyConfig,
+  readEconomyConfigVersion,
+  validateCreateRequest,
+  validatePinRequest,
+} from '../economy/versions';
 
 import { parseAuditJson, readAudit } from './audit';
 import { type Actor, listAdmins } from './grants';
@@ -288,7 +305,9 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
     },
     async (request, reply) => {
       const now = new Date();
-      const validated = validateWorldConfig(request.body, now);
+      const validated = await validateWorldConfig(request.body, now, (version) =>
+        economyConfigVersionExists(db.db, version),
+      );
       if (!validated.ok) {
         return reply.code(400).send({
           code: 'invalid_world',
@@ -564,6 +583,201 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
         destroyed: outcome.destroyed,
         inGameDate: outcome.inGameDate.toISOString(),
         reason: outcome.reason,
+      });
+    },
+  );
+
+  // ------------------------------------------------- economy config (M3-11)
+
+  /**
+   * The status each economy refusal deserves.
+   *
+   * Same split as the speed and lifecycle routes. A malformed payload or a name
+   * that is already taken is the request's fault; a world that has moved on
+   * since the admin was shown it is a conflict with the world's state.
+   *
+   * Two tables rather than one, each total over the codes its own route can
+   * actually produce. A single shared table would keep type-checking after a
+   * code moved to the other route, which is exactly when a status goes wrong.
+   */
+  const ECONOMY_CREATE_STATUS: Record<CreateEconomyRefusalCode, 400 | 409> = {
+    invalid_request: 400,
+    invalid_payload: 400,
+    // Not 400: nothing about the request is malformed, the version is simply
+    // already taken — and it can never be overwritten, so this is a conflict.
+    version_exists: 409,
+    unknown_parent: 400,
+  };
+
+  const ECONOMY_PIN_STATUS: Record<PinEconomyRefusalCode, 400 | 404 | 409> = {
+    invalid_request: 400,
+    unknown_version: 400,
+    world_not_found: 404,
+    world_archived: 409,
+    version_stale: 409,
+    version_unchanged: 409,
+  };
+
+  app.get(
+    '/api/admin/economy-config',
+    {
+      onRequest: app.requireAdmin,
+      schema: { response: { 200: adminEconomyConfigListResponseJsonSchema } },
+    },
+    async (_request, reply) => {
+      const versions = await listEconomyConfigVersions(db.db);
+      const shipped = versions.find((v) => v.version === ECONOMY_CONFIG_V1_VERSION);
+
+      return reply.code(200).send({
+        versions,
+        shippedVersion: ECONOMY_CONFIG_V1_VERSION,
+        // Compared by checksum rather than by re-reading the payload: the row is
+        // stored in canonical form, so this is an exact answer to "is the
+        // database's economy still the one this build ships?". A `false` is not
+        // an error — the database wins — but it is worth saying out loud.
+        shippedMatchesStored: shipped?.checksum === economyChecksum(ECONOMY_CONFIG_V1),
+      });
+    },
+  );
+
+  app.get<{ Params: { version: string } }>(
+    '/api/admin/economy-config/:version',
+    {
+      onRequest: app.requireAdmin,
+      schema: {
+        response: {
+          200: adminEconomyConfigDetailResponseJsonSchema,
+          404: apiErrorJsonSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const detail = await readEconomyConfigVersion(db.db, request.params.version);
+      if (!detail) {
+        return reply.code(404).send({
+          code: 'economy_config_not_found',
+          message: 'No economy config version by that name.',
+        });
+      }
+      return reply.code(200).send(detail);
+    },
+  );
+
+  /**
+   * Create a version. Changes nothing on its own.
+   *
+   * A world has to be pinned to it, which is the route below and a separately
+   * audited act. That separation is §22.3's promotion path: a retune can be
+   * written, diffed and reviewed while every world carries on running what it
+   * was already running.
+   */
+  app.post(
+    '/api/admin/economy-config',
+    {
+      onRequest: app.requireAdmin,
+      schema: {
+        response: {
+          201: adminCreateEconomyConfigResponseJsonSchema,
+          400: apiErrorJsonSchema,
+          409: apiErrorJsonSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const validated = validateCreateRequest(request.body);
+      if (!validated.ok) {
+        return reply.code(ECONOMY_CREATE_STATUS[validated.code]).send({
+          code: validated.code,
+          message: validated.message,
+          fields: validated.fields,
+        });
+      }
+
+      const outcome = await createEconomyConfigVersion(db.db, validated, actorOf(request));
+      if (!outcome.ok) {
+        return reply.code(ECONOMY_CREATE_STATUS[outcome.code]).send({
+          code: outcome.code,
+          message: outcome.message,
+          fields: outcome.fields,
+        });
+      }
+
+      request.log.info(
+        {
+          version: outcome.summary.version,
+          parentVersion: outcome.summary.parentVersion,
+          changes: outcome.diff.length,
+        },
+        'economy config version created',
+      );
+
+      return reply.code(201).send({ summary: outcome.summary, diff: outcome.diff });
+    },
+  );
+
+  app.post<{ Params: { worldId: string } }>(
+    '/api/admin/worlds/:worldId/economy-config',
+    {
+      onRequest: app.requireAdmin,
+      schema: {
+        response: {
+          200: adminPinEconomyConfigResponseJsonSchema,
+          400: apiErrorJsonSchema,
+          404: apiErrorJsonSchema,
+          409: apiErrorJsonSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (missingWorld(request.params.worldId)) {
+        return reply.code(404).send({ code: 'world_not_found', message: 'No world with that id.' });
+      }
+
+      const validated = validatePinRequest(request.body);
+      if (!validated.ok) {
+        return reply.code(ECONOMY_PIN_STATUS[validated.code]).send({
+          code: validated.code,
+          message: validated.message,
+          fields: validated.fields,
+        });
+      }
+
+      const outcome = await pinWorldEconomyConfig(
+        db.db,
+        request.params.worldId,
+        validated.request,
+        actorOf(request),
+      );
+
+      if (!outcome.ok) {
+        return reply.code(ECONOMY_PIN_STATUS[outcome.code]).send({
+          code: outcome.code,
+          message: outcome.message,
+          fields: outcome.fields,
+        });
+      }
+
+      // `warn`, not `info`: this changes what every future flight in a live
+      // world is priced with, and the server log should carry it at a level
+      // somebody greps for.
+      request.log.warn(
+        {
+          worldId: outcome.worldId,
+          from: outcome.before,
+          to: outcome.after,
+          changes: outcome.diff.length,
+          pendingEvents: outcome.pendingEvents,
+        },
+        'world economy config pinned',
+      );
+
+      return reply.code(200).send({
+        worldId: outcome.worldId,
+        worldName: outcome.worldName,
+        before: outcome.before,
+        after: outcome.after,
+        diff: outcome.diff,
+        pendingEvents: outcome.pendingEvents,
       });
     },
   );

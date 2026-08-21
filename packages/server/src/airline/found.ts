@@ -12,7 +12,7 @@ import {
 
 import { type Database } from '../db/client';
 import { airline, airlineHub, airport, world } from '../db/schema';
-import { economyConfigFor } from '../economy/config';
+import { loadEconomyConfig } from '../economy/loader';
 
 import { moveAirlineCash } from './cash';
 import {
@@ -129,12 +129,10 @@ export async function foundAirline(
         return { ok: false, kind: 'world-not-open', status: selectedWorld.status };
       }
 
-      const config = economyConfigFor(selectedWorld.economyConfigVersion);
-      if (!config) {
-        throw new Error(
-          `World ${selectedWorld.id} pins unknown economy config ${selectedWorld.economyConfigVersion}`,
-        );
-      }
+      // The world's own economy, read through its pin rather than from a code
+      // constant: an admin can retune the opening position without a deploy,
+      // and a world founded tomorrow gets whatever it is pinned to then.
+      const config = await loadEconomyConfig(tx, selectedWorld.economyConfigVersion);
       const { openingCashMinor, freeHubAllowance } = config.airlineStartingPosition;
       if (freeHubAllowance !== 1) {
         throw new Error(

@@ -1,5 +1,6 @@
 import { buildApp } from './app';
 import { createDatabase } from './db/client';
+import { seedEconomyConfig } from './economy/seed';
 import { loadEnv } from './env';
 import { createHeartbeat } from './ops/heartbeat';
 
@@ -40,7 +41,44 @@ const heartbeat = createHeartbeat({
   },
 });
 
+/**
+ * The shipped economy, into a database that has never seen it (M3-11).
+ *
+ * The **web** node's job, and only the web node's: the same rule that makes the
+ * web node the only one that migrates. It inserts and never updates, so a deploy
+ * cannot move a balance number that an admin has retuned — which is the whole
+ * point of §22.3.
+ *
+ * Before `listen`, because a request that arrives before v1 exists would fail to
+ * found an airline. Fatal if it throws: a server whose economy is not in the
+ * database is one that cannot price anything, and failing to start is a clearer
+ * signal than serving 500s.
+ */
+async function seedEconomy(): Promise<void> {
+  const result = await seedEconomyConfig(db.db);
+  if (result.inserted) {
+    app.log.info({ version: result.version }, 'economy config seeded');
+    return;
+  }
+  if (result.matchesShipped) {
+    app.log.info({ version: result.version }, 'economy config already present and matches');
+    return;
+  }
+  // Not corrected, and not fatal. The database's economy was written by a
+  // different build, and the database wins — a deploy that silently reverted a
+  // live retune would be the failure this design exists to prevent.
+  app.log.warn(
+    {
+      version: result.version,
+      stored: result.storedChecksum,
+      shipped: result.shippedChecksum,
+    },
+    'stored economy config differs from the one this build ships; the stored one is in force',
+  );
+}
+
 try {
+  await seedEconomy();
   // Bound to loopback by default: Caddy is the only thing that should reach
   // this, and binding 0.0.0.0 would expose it directly if ufw ever lapsed.
   await app.listen({ port, host });

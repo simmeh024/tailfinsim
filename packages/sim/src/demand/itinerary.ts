@@ -53,7 +53,7 @@
  * does pair every arrival with every departure inside the connect window.
  */
 
-import type { DemandSegment } from '@tailfin/shared';
+import { type DemandSegment, ECONOMY_CONFIG_V1 } from '@tailfin/shared';
 
 import { haversineNm } from '../distance';
 
@@ -123,16 +123,16 @@ export interface ItineraryConfig {
   defaultMctMinutes: number;
 }
 
-export const DEFAULT_ITINERARY: ItineraryConfig = {
-  // The three numbers A.14 publishes, and the whole mechanic.
-  basePenalty: { business: 0.9, leisure: 0.35, vfr: 0.3 },
-  lambdaPerHour: 0.25,
-  terminalChangePenalty: 0.3,
-  maxConnectMinutes: 6 * 60,
-  maxDetourRatio: 1.35,
-  maxHubs: 10,
-  defaultMctMinutes: 45,
-};
+/**
+ * A.14's connection penalties and limits, as currently tuned.
+ *
+ * The numbers live in `ECONOMY_CONFIG_V1` in `@tailfin/shared` — the same
+ * payload that is seeded into `economy_config` and retuned live (M3-11, §22.3).
+ * This constant is the default parameter for the pure functions below; the
+ * server reads the world's pinned config instead, and lint stops it reaching
+ * for this one.
+ */
+export const DEFAULT_ITINERARY: ItineraryConfig = ECONOMY_CONFIG_V1.demand.itinerary;
 
 /** Version tag. A share has to stay explicable after a retune (invariant 4). */
 export const ITINERARY_CONFIG_VERSION = 'v1' as const;

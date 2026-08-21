@@ -50,7 +50,7 @@
  * rewrite.
  */
 
-import type { DemandSegment } from '@tailfin/shared';
+import { type DemandSegment, ECONOMY_CONFIG_V1, type SegmentBetas } from '@tailfin/shared';
 
 import { DEMAND_SEGMENTS } from './modulation';
 
@@ -59,28 +59,11 @@ import { DEMAND_SEGMENTS } from './modulation';
  *
  * A.3 calls these *"the entire game balance"* and says outright that they
  * belong in a config file that can be tuned live, never hard-coded — which is
- * CONTRIBUTING invariant 3, arrived at independently.
+ * CONTRIBUTING invariant 3, arrived at independently. So the shape is declared
+ * in `@tailfin/shared`, where it is also the schema `economy_config` validates
+ * a payload against, and re-exported here beside the model that consumes it.
  */
-export interface SegmentBetas {
-  /** How much a fare premium hurts. Leisure 3.0, business 1.1 — the master dial (A.11). */
-  price: number;
-  /** How much a better cabin helps. */
-  product: number;
-  /** Applied to `ln(frequency)`, so the fifth daily departure buys less than the fourth. */
-  frequency: number;
-  /** How much matching the segment's preferred departure times helps (M3-04). */
-  schedule: number;
-  /** How much being reliable helps. */
-  reputation: number;
-  /**
-   * Frequent-flyer stickiness (App. E.5). Post-MVP, so zero.
-   *
-   * Present as a coefficient rather than absent so that turning loyalty on is a
-   * config change. A.3's formula has the term; the balance table does not yet
-   * give it a number.
-   */
-  loyalty: number;
-}
+export type { SegmentBetas };
 
 export interface LogitConfig {
   beta: Record<DemandSegment, SegmentBetas>;
@@ -99,28 +82,16 @@ export interface LogitConfig {
  * VFR on the leisure betas instead, and says so; `logit.test.ts` reproduces
  * both and shows the difference is the config rather than the engine.
  */
-export const DEFAULT_LOGIT: LogitConfig = {
-  beta: {
-    //        price  product  freq  sched  rep   loyalty
-    business: {
-      price: 1.1,
-      product: 2.2,
-      frequency: 1.6,
-      schedule: 1.0,
-      reputation: 1.4,
-      loyalty: 0,
-    },
-    leisure: {
-      price: 3.0,
-      product: 0.8,
-      frequency: 0.9,
-      schedule: 0.4,
-      reputation: 0.5,
-      loyalty: 0,
-    },
-    vfr: { price: 2.4, product: 0.6, frequency: 0.8, schedule: 0.4, reputation: 0.7, loyalty: 0 },
-  },
-};
+/**
+ * A.3's starting coefficients, as the world is currently tuned.
+ *
+ * The numbers live in `ECONOMY_CONFIG_V1` in `@tailfin/shared` — the same
+ * payload that is seeded into `economy_config` and retuned live (M3-11, §22.3).
+ * This constant is the default parameter for the pure functions below; the
+ * server reads the world's pinned config instead, and lint stops it reaching
+ * for this one.
+ */
+export const DEFAULT_LOGIT: LogitConfig = ECONOMY_CONFIG_V1.demand.logit;
 
 /** Version tag. A share has to stay explicable after a retune (invariant 4). */
 export const LOGIT_CONFIG_VERSION = 'v1' as const;

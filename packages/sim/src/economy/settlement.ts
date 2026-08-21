@@ -47,7 +47,7 @@
  * not representable.
  */
 
-import { CABIN_ORDER } from '@tailfin/shared';
+import { CABIN_ORDER, ECONOMY_CONFIG_V1 } from '@tailfin/shared';
 import type { AirportFees, FlightKind, FlightLoad } from '@tailfin/shared';
 
 import { minorFromMajor, roundMinor, sumMinor } from './money';
@@ -169,14 +169,16 @@ export interface SettlementConfig {
   groundHandlingPerSeatMinor: number;
 }
 
-export const DEFAULT_SETTLEMENT: SettlementConfig = {
-  ancillaryPerPassengerMinor: 0,
-  cargoRatePerTonneMinor: 30_000,
-  crewCostPerBlockHourMinor: 19_500,
-  maintenanceCostPerBlockHourMinor: 65_000,
-  groundHandlingPerTurnMinor: 15_000,
-  groundHandlingPerSeatMinor: 325,
-};
+/**
+ * The cost table a sector is billed against, as currently tuned.
+ *
+ * The numbers live in `ECONOMY_CONFIG_V1` in `@tailfin/shared` — the same
+ * payload that is seeded into `economy_config` and retuned live (M3-11, §22.3).
+ * This constant is the default parameter for the pure functions below; the
+ * server reads the world's pinned config instead, and lint stops it reaching
+ * for this one.
+ */
+export const DEFAULT_SETTLEMENT: SettlementConfig = ECONOMY_CONFIG_V1.costs.settlement;
 
 /**
  * Version tag, mirroring `FUEL_BURN_CONFIG_VERSION` and `TURNAROUND_CONFIG_VERSION`.
@@ -200,12 +202,7 @@ export const SETTLEMENT_CONFIG_VERSION = 'v1' as const;
  * used here: parking is an overnight cost and a gate lease is a period cost, and
  * neither is caused by a single sector.
  */
-export const DEFAULT_AIRPORT_FEES: AirportFees = {
-  landingPerTonne: 1_200,
-  paxFee: 680,
-  parkingPerHour: 4_500,
-  gateLeaseAnnual: 22_000_000,
-};
+export const DEFAULT_AIRPORT_FEES: AirportFees = ECONOMY_CONFIG_V1.costs.defaultAirportFees;
 
 /** What the airframe brings to the bill. */
 export interface SettlementAircraft {

@@ -7,6 +7,7 @@ import { gameTime } from '@tailfin/sim';
 
 import { type Database } from '../db/client';
 import { airline, world, worldEvent, type WorldRow } from '../db/schema';
+import { economyConfigVersionExists } from '../economy/loader';
 
 import { assertUsableConfig } from './config';
 
@@ -36,7 +37,7 @@ export async function createWorld(
   config: WorldConfig,
   now: Date = new Date(),
 ): Promise<CreateWorldResult> {
-  assertUsableConfig(config, now);
+  await assertUsableConfig(config, now, (version) => economyConfigVersionExists(db, version));
 
   const inserted = await db
     .insert(world)

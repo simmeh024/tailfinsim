@@ -32,6 +32,8 @@
  * station *charges*.
  */
 
+import { ECONOMY_CONFIG_V1 } from '@tailfin/shared';
+
 /**
  * The world fuel curve at a moment in game time (§11).
  *
@@ -63,7 +65,7 @@ export interface FuelMarket {
  * touched $1,400/t in 2022, which is the range §20's oil shock has to move within.
  */
 export const DEFAULT_FUEL_MARKET: FuelMarket = {
-  basePricePerTonne: 1_000,
+  basePricePerTonne: ECONOMY_CONFIG_V1.fuel.basePricePerTonne,
 };
 
 /**

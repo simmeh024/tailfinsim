@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { DemandSegment } from '@tailfin/shared';
+import { ECONOMY_CONFIG_V1 } from '@tailfin/shared';
 import { DEFAULT_FUEL_MARKET } from '@tailfin/sim';
 import type { ClassOperator } from '@tailfin/sim';
 
@@ -76,6 +77,8 @@ function economics(over: Partial<RouteEconomics> = {}): RouteEconomics {
     competitors: [RIVAL_A, RIVAL_B],
     // A.8's "You": product 0.62, reputation 0.55, three times daily.
     self: { ...REFERENCE_SELF, productScore: 0.62, reputation: 0.55, frequency: 3 },
+    settlement: ECONOMY_CONFIG_V1.costs.settlement,
+    fareFloorRatio: ECONOMY_CONFIG_V1.pricing.fareFloorRatio,
     ...over,
   };
 }

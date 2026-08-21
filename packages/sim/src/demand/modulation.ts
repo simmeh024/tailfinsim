@@ -42,7 +42,7 @@
  * pairs flatten out on their own, without a special case.
  */
 
-import type { DemandSegment } from '@tailfin/shared';
+import { type DemandSegment, ECONOMY_CONFIG_V1 } from '@tailfin/shared';
 
 import { type Month, seasonalPhase } from '../weather/climate';
 
@@ -103,29 +103,16 @@ export interface ModulationConfig {
   holidayMonths: readonly Month[];
 }
 
-export const DEFAULT_MODULATION: ModulationConfig = {
-  season: {
-    // Summer holidays and Christmas both, and strongly. This is the segment that
-    // makes a Mediterranean route worth three times as much in August as in
-    // February.
-    leisure: { summerAmplitude: 0.45, holidayBoost: 0.2 },
-    // Counter-cyclical, and less violently so: business travel falls away in
-    // August and over Christmas but never stops.
-    business: { summerAmplitude: -0.2, holidayBoost: -0.25 },
-    // The Christmas segment. People fly home for it far more than they fly
-    // anywhere for the summer.
-    vfr: { summerAmplitude: 0.15, holidayBoost: 0.5 },
-  },
-  dayOfWeek: {
-    //         Mon   Tue   Wed   Thu   Fri   Sat   Sun
-    business: [1.35, 1.15, 1.05, 1.25, 1.2, 0.4, 0.6],
-    leisure: [0.8, 0.75, 0.8, 0.95, 1.3, 1.25, 1.15],
-    vfr: [0.85, 0.8, 0.85, 1.0, 1.35, 1.15, 1.0],
-  },
-  elasticity: { business: 0.35, leisure: 0.9, vfr: 0.7 },
-  referenceFareMinor: 7_500,
-  holidayMonths: [12],
-};
+/**
+ * A.2's live modulation, as the world is currently tuned.
+ *
+ * The numbers live in `ECONOMY_CONFIG_V1` in `@tailfin/shared` — the same
+ * payload that is seeded into `economy_config` and retuned live (M3-11, §22.3).
+ * This constant is the default parameter for the pure functions below; the
+ * server reads the world's pinned config instead, and lint stops it reaching
+ * for this one.
+ */
+export const DEFAULT_MODULATION: ModulationConfig = ECONOMY_CONFIG_V1.demand.modulation;
 
 /** Version tag. A demand figure has to stay explicable after a retune (invariant 4). */
 export const MODULATION_CONFIG_VERSION = 'v1' as const;

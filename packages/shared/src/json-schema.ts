@@ -2,10 +2,14 @@ import { z } from 'zod';
 
 import {
   AdminAuditResponse,
+  AdminCreateEconomyConfigResponse,
   AdminCreateWorldResponse,
+  AdminEconomyConfigDetailResponse,
+  AdminEconomyConfigListResponse,
   AdminListResponse,
   AdminOverviewResponse,
   AdminPlayerDetailResponse,
+  AdminPinEconomyConfigResponse,
   AdminPlayerListResponse,
   AdminWorldHealthResponse,
   AdminSystemHealthResponse,
@@ -88,3 +92,16 @@ export const adminResetWorldResponseJsonSchema = z.toJSONSchema(AdminResetWorldR
  * refusals in words an admin can act on rather than "body/speedMultiplier must
  * be > 0".
  */
+
+export const adminEconomyConfigListResponseJsonSchema = z.toJSONSchema(
+  AdminEconomyConfigListResponse,
+);
+export const adminEconomyConfigDetailResponseJsonSchema = z.toJSONSchema(
+  AdminEconomyConfigDetailResponse,
+);
+export const adminCreateEconomyConfigResponseJsonSchema = z.toJSONSchema(
+  AdminCreateEconomyConfigResponse,
+);
+export const adminPinEconomyConfigResponseJsonSchema = z.toJSONSchema(
+  AdminPinEconomyConfigResponse,
+);

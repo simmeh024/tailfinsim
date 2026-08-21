@@ -6,22 +6,20 @@ import {
   computeBlockTime,
   computeFuelBurn,
   computeFuelCost,
-  DEFAULT_AIRPORT_FEES,
   DEFAULT_FLIGHT_PROFILE,
-  DEFAULT_FUEL_MARKET,
-  DEFAULT_SETTLEMENT,
   type FlightProfile,
   type FlightSettlement,
   type FuelMarket,
   type FuelStation,
   haversineNm,
   type SettlementConfig,
-  SETTLEMENT_CONFIG_VERSION,
   settleFlight,
 } from '@tailfin/sim';
 
 import { moveAirlineCash } from '../airline/cash';
 import { airport, flight, flightResult } from '../db/schema';
+import { type PinnedEconomyConfig } from '../economy/config';
+import { loadWorldEconomyConfig } from '../economy/loader';
 
 import type { Database } from '../db/client';
 import type { EventHandler } from '../sim/event-queue';
@@ -92,6 +90,16 @@ export const PLACEHOLDER_AIRFRAME: SettlementAirframe = {
 };
 
 export interface SettlementDeps {
+  /**
+   * The economy to bill against.
+   *
+   * Left out in production, where it is resolved from the flight's own world
+   * through `world.economy_config_version` — so a retune reaches the next
+   * arrival without a deploy (M3-11, §22.3). Supplied only by tests that want to
+   * price a flight under coefficients of their own.
+   */
+  economy?: PinnedEconomyConfig;
+
   /** Airframe id to its performance. M4 replaces the default. */
   resolveAirframe?: (airframeId: string) => SettlementAirframe;
   /** Per-station charges. App. B.2 specifies them; no column holds them yet. */
@@ -114,10 +122,6 @@ export function arrivalKey(flightId: string): string {
   return `flight:${flightId}:arrive`;
 }
 
-function defaultStation(icao: string): FuelStation {
-  return { icao, regionFactor: 1.03, intoPlaneFeePerTonne: 35 };
-}
-
 /**
  * Price an arrived flight, write its result, and move the airline's cash.
  *
@@ -133,11 +137,9 @@ export async function settleArrivedFlight(
   deps: SettlementDeps = {},
 ): Promise<SettleOutcome> {
   const resolveAirframe = deps.resolveAirframe ?? (() => PLACEHOLDER_AIRFRAME);
-  const resolveFees = deps.resolveFees ?? (() => DEFAULT_AIRPORT_FEES);
-  const resolveStation = deps.resolveStation ?? defaultStation;
-  const market = deps.market ?? DEFAULT_FUEL_MARKET;
+  // Aircraft performance rather than economy: taxi and climb times are physics
+  // and the §22.5 catalogue, versioned separately from the money (M3-11).
   const profile = deps.profile ?? DEFAULT_FLIGHT_PROFILE;
-  const config = deps.config ?? DEFAULT_SETTLEMENT;
 
   // `FOR UPDATE` before anything else: it serialises two workers handling the
   // same arrival, so the loser waits here rather than racing to the insert.
@@ -150,6 +152,19 @@ export async function settleArrivedFlight(
     .from(flightResult)
     .where(eq(flightResult.flightId, flightId));
   if (existing.length > 0) return { status: 'already-settled' };
+
+  // The world's own economy, read after the row because it is the *flight's*
+  // world that decides the rates — resolved through the pin every time, so an
+  // admin re-pinning a world moves the next arrival and not this one, which is
+  // already inside a transaction.
+  const economy = deps.economy ?? (await loadWorldEconomyConfig(tx, row.worldId));
+  const resolveFees = deps.resolveFees ?? (() => economy.costs.defaultAirportFees);
+  const resolveStation =
+    deps.resolveStation ?? ((icao: string) => ({ icao, ...economy.fuel.defaultStation }));
+  const market: FuelMarket = deps.market ?? {
+    basePricePerTonne: economy.fuel.basePricePerTonne,
+  };
+  const config: SettlementConfig = deps.config ?? economy.costs.settlement;
 
   // Distance from the airports' own coordinates — the one input that is real.
   // A diversion is settled to where the aircraft actually went, not where it was
@@ -225,7 +240,11 @@ export async function settleArrivedFlight(
         fuelTonnes: burn.tonnes,
         loadFactor: settlement.loadFactor,
       }),
-      settlementVersion: SETTLEMENT_CONFIG_VERSION,
+      // The world's own economy version, not a constant from the code. This is
+      // the column that makes an old settlement explicable after a retune
+      // (invariant 4): without it, "why was this flight billed that much?" has
+      // no answer once the coefficients have moved.
+      settlementVersion: economy.version,
       settledAt: arrivedAt,
     })
     .onConflictDoNothing({ target: flightResult.flightId })

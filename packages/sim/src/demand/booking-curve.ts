@@ -59,7 +59,7 @@
  * 15/45/40 would have had to delete it.
  */
 
-import type { DemandSegment } from '@tailfin/shared';
+import { type DemandSegment, ECONOMY_CONFIG_V1 } from '@tailfin/shared';
 
 import { DEMAND_SEGMENTS } from './modulation';
 
@@ -85,32 +85,16 @@ export interface BookingCurveConfig {
   bands: readonly BookingBand[];
 }
 
-export const DEFAULT_BOOKING_CURVE: BookingCurveConfig = {
-  bands: [
-    {
-      // "early leisure, price-led" — the holidaymaker who booked in March.
-      fromDaysOut: 14,
-      toDaysOut: 8,
-      share: 0.15,
-      tilt: { business: 0.35, leisure: 1.35, vfr: 1.25 },
-    },
-    {
-      fromDaysOut: 7,
-      toDaysOut: 3,
-      share: 0.45,
-      tilt: { business: 0.9, leisure: 1.05, vfr: 1.05 },
-    },
-    {
-      // "late business, price-tolerant" — the trip that was arranged on
-      // Tuesday for Thursday, and which is why a full-fare cabin can be worth
-      // holding seats back for.
-      fromDaysOut: 2,
-      toDaysOut: 1,
-      share: 0.4,
-      tilt: { business: 2.0, leisure: 0.6, vfr: 0.7 },
-    },
-  ],
-};
+/**
+ * A.15's booking horizon, as currently tuned.
+ *
+ * The numbers live in `ECONOMY_CONFIG_V1` in `@tailfin/shared` — the same
+ * payload that is seeded into `economy_config` and retuned live (M3-11, §22.3).
+ * This constant is the default parameter for the pure functions below; the
+ * server reads the world's pinned config instead, and lint stops it reaching
+ * for this one.
+ */
+export const DEFAULT_BOOKING_CURVE: BookingCurveConfig = ECONOMY_CONFIG_V1.demand.bookingCurve;
 
 /** Version tag. A booking has to stay explicable after a retune (invariant 4). */
 export const BOOKING_CURVE_CONFIG_VERSION = 'v1' as const;

@@ -9,7 +9,7 @@ import type {
 
 import { type Database } from '../db/client';
 import { airline, airport, world } from '../db/schema';
-import { economyConfigFor } from '../economy/config';
+import { loadEconomyConfigs } from '../economy/loader';
 
 import { liveAirlineWhere } from './lifecycle';
 
@@ -73,10 +73,17 @@ export async function listAirlineFoundingOptions(
   const ownedWorlds = new Set(memberships.map((membership) => membership.worldId));
   const airlinesByWorld = new Map(totals.map((total) => [total.worldId, total.airlines]));
 
+  // One round trip for every version on the list, rather than a query per
+  // world. Almost always a single cache hit, since almost always one version.
+  const configs = await loadEconomyConfigs(
+    db,
+    openWorlds.map((row) => row.economyConfigVersion),
+  );
+
   return {
     memberships,
     worlds: openWorlds.map((row) => {
-      const config = economyConfigFor(row.economyConfigVersion);
+      const config = configs.get(row.economyConfigVersion);
       if (!config) {
         throw new Error(`World ${row.id} pins unknown economy config ${row.economyConfigVersion}`);
       }

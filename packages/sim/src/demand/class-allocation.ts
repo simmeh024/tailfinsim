@@ -49,7 +49,12 @@
  *   passenger into an economy booking and flatter the cabin that failed.
  */
 
-import { CABIN_ORDER, type CabinClass, type DemandSegment } from '@tailfin/shared';
+import {
+  CABIN_ORDER,
+  type CabinClass,
+  type DemandSegment,
+  ECONOMY_CONFIG_V1,
+} from '@tailfin/shared';
 
 import { allocateCapacity, type CapacityResult } from './capacity';
 import { computeShares, type LogitConfig, type Operator, type ShareResult } from './logit';
@@ -65,29 +70,16 @@ export interface ClassMixConfig {
   propensity: Record<DemandSegment, Record<CabinClass, number>>;
 }
 
-export const DEFAULT_CLASS_MIX: ClassMixConfig = {
-  propensity: {
-    /**
-     * The segment that buys the front of the aircraft — and still mostly does
-     * not. Even on business travel most tickets are economy, because most
-     * companies do not pay for anything else on a short sector. The 18% in
-     * business class is what makes a premium cabin viable at all, and it is
-     * concentrated on exactly the routes where the business *segment* is deep.
-     */
-    business: { first: 0.02, business: 0.18, premium_economy: 0.2, economy: 0.6 },
-    /**
-     * A.2: leisure *"cares about price, price, price"*. The premium propensity
-     * is a rounding error, and that is the whole mechanic behind A.6's warning
-     * — a big business cabin on a holiday route has almost nobody to sell to.
-     */
-    leisure: { first: 0.001, business: 0.019, premium_economy: 0.06, economy: 0.92 },
-    /**
-     * Flying home to see family, and paying for it themselves. Even more
-     * economy-bound than leisure, and nobody flies first to visit their mother.
-     */
-    vfr: { first: 0, business: 0.01, premium_economy: 0.04, economy: 0.95 },
-  },
-};
+/**
+ * A.6's cabin propensities, as currently tuned.
+ *
+ * The numbers live in `ECONOMY_CONFIG_V1` in `@tailfin/shared` — the same
+ * payload that is seeded into `economy_config` and retuned live (M3-11, §22.3).
+ * This constant is the default parameter for the pure functions below; the
+ * server reads the world's pinned config instead, and lint stops it reaching
+ * for this one.
+ */
+export const DEFAULT_CLASS_MIX: ClassMixConfig = ECONOMY_CONFIG_V1.demand.classMix;
 
 /** Version tag. A load has to stay explicable after a retune (invariant 4). */
 export const CLASS_MIX_CONFIG_VERSION = 'v1' as const;

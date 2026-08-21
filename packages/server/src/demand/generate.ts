@@ -2,18 +2,15 @@ import { and, eq, isNotNull } from 'drizzle-orm';
 
 import {
   type DemandEndpoint,
-  DEFAULT_GRAVITY,
-  DEFAULT_SEGMENTS,
   demandPool as sizePool,
-  GRAVITY_CONFIG_VERSION,
   type GravityConfig,
   haversineNm,
   isViablePair,
   type SegmentConfig,
-  VIABLE_DAILY_PASSENGERS,
 } from '@tailfin/sim';
 
 import { airport, demandPool, world } from '../db/schema';
+import { loadEconomyConfig } from '../economy/loader';
 
 import type { Database } from '../db/client';
 
@@ -155,14 +152,25 @@ export async function generateDemandPools(
   worldId: string,
   options: GenerateOptions = {},
 ): Promise<GenerateResult> {
-  const gravity = options.gravity ?? DEFAULT_GRAVITY;
-  const segments = options.segments ?? DEFAULT_SEGMENTS;
-  const minimum = options.minimumDailyPassengers ?? VIABLE_DAILY_PASSENGERS;
   const batchSize = options.batchSize ?? 2_000;
   const log = options.log ?? (() => undefined);
 
-  const worlds = await db.select({ id: world.id }).from(world).where(eq(world.id, worldId));
-  if (worlds.length === 0) throw new Error(`No world ${worldId}`);
+  const worlds = await db
+    .select({ id: world.id, economyConfigVersion: world.economyConfigVersion })
+    .from(world)
+    .where(eq(world.id, worldId));
+  const target = worlds[0];
+  if (!target) throw new Error(`No world ${worldId}`);
+
+  // The world's own coefficients, through its pin (M3-11). This is the one
+  // economy read that is not live: pools are sized once and stored, so moving a
+  // world to a version with a different `k` does not resize what already exists
+  // — re-running this job is what does, which is why it is a job at all.
+  const economy = await loadEconomyConfig(db, target.economyConfigVersion);
+  const gravity = options.gravity ?? economy.demand.gravity;
+  const segments = options.segments ?? economy.demand.segments;
+  const minimum = options.minimumDailyPassengers ?? economy.demand.viableDailyPassengers;
+  log(`  economy ${economy.version}: k=${String(gravity.k)}, alpha=${String(gravity.alpha)}`);
 
   const started = Date.now();
   const airports = await loadAirports(db);
@@ -211,7 +219,9 @@ export async function generateDemandPools(
         leisureShare: pool.segments.leisure.toFixed(4),
         vfrShare: pool.segments.vfr.toFixed(4),
         basis: JSON.stringify(pool.basis),
-        gravityVersion: GRAVITY_CONFIG_VERSION,
+        // The world's economy version, so a pool stays explicable after the
+        // gravity coefficients move (invariant 4).
+        gravityVersion: economy.version,
       });
 
       if (batch.length >= batchSize) {

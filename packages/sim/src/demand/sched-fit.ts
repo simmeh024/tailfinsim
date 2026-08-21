@@ -64,7 +64,7 @@
  * It is a fallback now rather than the mechanism.
  */
 
-import type { DemandSegment } from '@tailfin/shared';
+import { type DemandSegment, ECONOMY_CONFIG_V1 } from '@tailfin/shared';
 
 import { MINUTES_PER_DAY } from '../schedule/rotation';
 
@@ -104,45 +104,16 @@ export interface SchedFitConfig {
   bankExponent: number;
 }
 
-export const DEFAULT_SCHED_FIT: SchedFitConfig = {
-  curve: {
-    /**
-     * Two peaks and a hole. 07:00 is the best hour of the day, 18:00 nearly as
-     * good, and the middle of the afternoon is worth less than a third of
-     * either. Overnight is close to worthless: a 03:00 departure is not a
-     * business proposition at any price, which is why the trough is 0.02 rather
-     * than something merely low.
-     */
-    //         00    01    02    03    04    05    06    07    08    09    10    11
-    business: [
-      0.02, 0.02, 0.02, 0.02, 0.05, 0.35, 0.85, 1.0, 0.95, 0.7, 0.45, 0.35,
-      //     12    13    14    15    16    17    18    19    20    21    22    23
-      0.3, 0.3, 0.35, 0.45, 0.65, 0.85, 0.95, 0.85, 0.6, 0.3, 0.1, 0.04,
-    ],
-    /**
-     * Broad and mid-day tolerant, exactly as A.3 says. Anything between 09:00
-     * and 17:00 is close to ideal, and the early morning is only mildly worse —
-     * a 07:00 holiday departure is normal, and often the cheap one. What
-     * leisure dislikes is the small hours, and even then less than business
-     * does.
-     */
-    leisure: [
-      0.12, 0.1, 0.1, 0.1, 0.15, 0.45, 0.72, 0.88, 0.94, 0.97, 1.0, 1.0, 1.0, 0.98, 0.96, 0.94,
-      0.92, 0.9, 0.85, 0.76, 0.64, 0.48, 0.3, 0.18,
-    ],
-    /**
-     * Near-flat, per the issue. Someone flying home to see family will take
-     * whatever is going; the only real preference is against the small hours,
-     * and even that is mild. The full range is about a third, against nearly
-     * the whole scale for business — that gap *is* the mechanic.
-     */
-    vfr: [
-      0.7, 0.66, 0.64, 0.64, 0.7, 0.8, 0.88, 0.93, 0.96, 0.98, 1.0, 1.0, 1.0, 1.0, 0.99, 0.98, 0.97,
-      0.96, 0.95, 0.93, 0.9, 0.85, 0.8, 0.74,
-    ],
-  },
-  bankExponent: 2,
-};
+/**
+ * The per-segment hourly preference curves, as currently tuned.
+ *
+ * The numbers live in `ECONOMY_CONFIG_V1` in `@tailfin/shared` — the same
+ * payload that is seeded into `economy_config` and retuned live (M3-11, §22.3).
+ * This constant is the default parameter for the pure functions below; the
+ * server reads the world's pinned config instead, and lint stops it reaching
+ * for this one.
+ */
+export const DEFAULT_SCHED_FIT: SchedFitConfig = ECONOMY_CONFIG_V1.demand.schedFit;
 
 /** Version tag. A share has to stay explicable after a retune (invariant 4). */
 export const SCHED_FIT_CONFIG_VERSION = 'v1' as const;
