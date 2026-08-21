@@ -45,6 +45,21 @@ function uniqueName(prefix: string): string {
   return `${prefix}-${randomUUID().slice(0, 8)}`;
 }
 
+/**
+ * Two letters, from a serial rather than a random draw.
+ *
+ * ICAO codes are unique per airport and must be four uppercase letters. A
+ * random pair would collide eventually across a long run and fail an insert
+ * for a reason that had nothing to do with the test; a serial cannot, and CI
+ * starts from a fresh database each run.
+ */
+const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+let tagSerial = 0;
+function nextTag(): string {
+  const n = tagSerial++;
+  return `${LETTERS[Math.floor(n / 26) % 26]!}${LETTERS[n % 26]!}`;
+}
+
 describeDb('NPC carriers', () => {
   let db: DatabaseHandle;
   const madeWorlds: string[] = [];
@@ -82,7 +97,10 @@ describeDb('NPC carriers', () => {
    * or fail on whether another suite had imported it.
    */
   async function makeMarket(worldId: string, dailyPassengers = 1_400): Promise<[string, string]> {
-    const tag = randomUUID().slice(0, 3).toUpperCase();
+    // Four uppercase letters, because `airport_icao_code_format` demands
+    // exactly that. A uuid slice looks unique and is not a legal ICAO code — it
+    // carries digits, and CI refused every one of them.
+    const tag = nextTag();
     const a = `ZA${tag}`;
     const b = `ZB${tag}`;
 
@@ -103,7 +121,11 @@ describeDb('NPC carriers', () => {
         scheduledService: true,
         hasRunwayData: true,
         tier: 'flagship',
-        catchmentPopulation: 5_000_000,
+        // Deliberately enormous. Seeding takes the top hubs by catchment and
+        // caps the number of countries, so a fixture with a merely plausible
+        // catchment could be pushed out of the running by whatever airports
+        // another suite happened to leave in the shared CI database.
+        catchmentPopulation: 900_000_000,
       });
       madeAirports.push(icao);
     }
