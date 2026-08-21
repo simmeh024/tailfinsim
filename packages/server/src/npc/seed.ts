@@ -11,6 +11,7 @@ import {
   type Rng,
 } from '@tailfin/sim';
 
+import { moveAirlineCash } from '../airline/cash';
 import { type Database } from '../db/client';
 import { airline, airport, route, world } from '../db/schema';
 import { type PinnedEconomyConfig } from '../economy/config';
@@ -247,28 +248,52 @@ export async function seedNpcCarriers(
         continue;
       }
 
-      const inserted = await db
-        .insert(airline)
-        .values({
-          worldId,
-          playerId: null,
-          kind: 'npc',
-          archetype,
-          name: identity.name,
-          iataCode: identity.iataCode,
-          icaoCode: identity.icaoCode,
-          callsign: identity.callsign,
-          baseCountry: country.iso,
-          // Opening cash from the same config a player is founded with. An NPC
-          // with a bottomless balance would be the clearest possible breach of
-          // the no-cheating criterion.
-          cashMinor: economy.airlineStartingPosition.openingCashMinor,
-          reputation: npc.archetypes[archetype].reputation.toFixed(2),
-        })
-        .returning({ id: airline.id });
+      /**
+       * Created the way a player's airline is created: inserted with no cash,
+       * then granted its opening position through the ledger.
+       *
+       * Setting `cash_minor` directly is refused by
+       * `enforce_airline_cash_reconciliation`, and rightly — an airline's cash
+       * is the sum of its movements or it is a number somebody typed. CI caught
+       * this on the first run, which is the no-cheating criterion being enforced
+       * by the database rather than by anybody remembering it.
+       */
+      const carrier = await db.transaction(async (tx) => {
+        const inserted = await tx
+          .insert(airline)
+          .values({
+            worldId,
+            playerId: null,
+            kind: 'npc',
+            archetype,
+            name: identity.name,
+            iataCode: identity.iataCode,
+            icaoCode: identity.icaoCode,
+            callsign: identity.callsign,
+            baseCountry: country.iso,
+            reputation: npc.archetypes[archetype].reputation.toFixed(2),
+          })
+          .returning({ id: airline.id, createdAt: airline.createdAt });
 
-      const carrier = inserted[0];
-      if (!carrier) throw new Error(`NPC insert returned nothing for ${identity.iataCode}`);
+        const row = inserted[0];
+        if (!row) throw new Error(`NPC insert returned nothing for ${identity.iataCode}`);
+
+        // The same cause and the same amount a founded player receives. An NPC
+        // with a bottomless balance would be the clearest possible breach of
+        // the fourth acceptance criterion.
+        const opening = await moveAirlineCash(tx, {
+          airlineId: row.id,
+          amountMinor: economy.airlineStartingPosition.openingCashMinor,
+          cause: 'airline_founding',
+          reference: row.id,
+          occurredAt: row.createdAt,
+        });
+        if (opening.status !== 'applied') {
+          throw new Error(`Opening cash already existed for NPC ${row.id}`);
+        }
+
+        return row;
+      });
       created.push({ id: carrier.id, country: country.iso });
 
       const opened = await openNetwork({
