@@ -238,6 +238,13 @@ const FACTOR_LABEL: Record<string, string> = {
   product: 'Product',
   reputation: 'Reputation',
   schedule: 'Schedule fit',
+  // A.3's remaining terms. Loyalty and alliance are post-MVP and read zero
+  // today, so they are filtered out before they reach here — but they are
+  // named anyway, because the alternative when one first goes non-zero is a
+  // raw `connectionPenalty` appearing in front of a player.
+  loyalty: 'Loyalty',
+  alliance: 'Alliance',
+  connectionPenalty: 'Connection',
 };
 
 const SEGMENT_LABEL: Record<string, string> = {

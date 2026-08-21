@@ -472,6 +472,39 @@ describe('the waterfall — “why am I losing?” (M3-10, App. A.9)', () => {
     expect(screen.getByText(/▲ 0\.192/)).toBeInTheDocument();
   });
 
+  it('names every factor the model can produce, never a raw key', async () => {
+    // A.3 has eight terms. Five are live and three are post-MVP, and the one
+    // thing that must not happen is `connectionPenalty` appearing in front of
+    // a player the first time one of them goes non-zero.
+    stubWaterfall({
+      ...WATERFALL,
+      bySegment: [
+        {
+          segment: 'leisure',
+          factors: [
+            { factor: 'schedule', delta: -0.24 },
+            { factor: 'connectionPenalty', delta: -0.5 },
+            { factor: 'loyalty', delta: 0.11 },
+            { factor: 'alliance', delta: 0.07 },
+          ],
+          netDelta: -0.56,
+          shareRatio: 0.571,
+          yourShare: 0.2,
+          theirShare: 0.35,
+        },
+      ],
+    });
+    await openWaterfall();
+
+    await waitFor(() => {
+      expect(screen.getByText('Schedule fit')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Connection')).toBeInTheDocument();
+    expect(screen.getByText('Loyalty')).toBeInTheDocument();
+    expect(screen.getByText('Alliance')).toBeInTheDocument();
+    expect(screen.queryByText('connectionPenalty')).toBeNull();
+  });
+
   it('says you have the route to yourself rather than drawing an empty chart', async () => {
     // The honest state of every route today — no AI carriers until M3-12.
     stubWaterfall({ ok: false, kind: 'no-rival', rivals: [] }, 422);
