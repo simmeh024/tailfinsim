@@ -19,13 +19,12 @@ import { type HandlerRegistry } from './sim/event-queue';
  * open one loopback port, shut down cleanly. Everything worth testing is in
  * `engine/`.
  *
- * ## Nothing starts this yet
+ * ## Where this runs
  *
- * There is no `tailfin-worker.service` in this change and no unit anywhere runs
- * it. OPS-08 is the boundary and the shape; OPS-09 (#188) is the dev service and
- * OPS-11 (#191) the production one. Building the process and starting it are
- * deliberately separate steps, so the first environment a worker ever runs in is
- * chosen rather than inherited.
+ * Dev only, as `tailfin-dev-worker.service` on `tailfin-dev-worker-01` (OPS-09).
+ * **Production has no worker**, and giving it one is OPS-11 (#191) — a separate
+ * decision on purpose, so the first environment a worker ever ran in was chosen
+ * rather than inherited.
  */
 
 const env = loadEnv();

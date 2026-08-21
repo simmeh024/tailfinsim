@@ -54,12 +54,46 @@ Untrusted Internet
     |                                                        +--> local PostgreSQL: tailfin_dev
     |
     +-- SSH :22 -------------> operator/host boundary
+    |                              ^
+    |                              |  OPS-09: the dev worker node's only route in
+    |                              |  (tailfin-tunnel, forced to one forward)
+    |
+    +-- (no listener) --------> tailfin-dev-worker-01, a second DreamCompute VM
+                                   |
+                                   +-- SSH -L 127.0.0.1:5433 -> the web host's
+                                   |   loopback :5432, as tailfin-tunnel
+                                   |
+                                   +--> PostgreSQL: tailfin_dev, as
+                                        tailfin_worker_dev (pg_hba refuses it
+                                        the production database)
 
 Browser <--------------------> Google OAuth
 Tailfin server --------------> Google token/user-info endpoints
 operator/deploy checkout ----> GitHub
 local backup job ------------> DreamObjects (a full database copy)
 ```
+
+**The dev worker is a second host, and it is deliberately the quieter side of every link.**
+It listens on nothing reachable — ufw allows only :22, its health endpoint binds loopback,
+and the unit adds `IPAddressDeny=any` — so it originates connections and accepts none from
+the application estate. Its route to the database is an SSH forward rather than a Postgres
+listener, which was chosen because both VMs sit on a _shared public segment_ with other
+DreamCompute tenants: a packet capture on the web host shows their broadcast traffic. No new
+listening port exists anywhere as a result of adding the node.
+
+Two credentials bound it, and neither is trusted further than it must be. The tunnel account
+`tailfin-tunnel` has `/usr/sbin/nologin` and an `authorized_keys` entry of
+`restrict,port-forwarding,permitopen="127.0.0.1:5432"` — proven by test to refuse a shell
+and unable to forward anywhere else. The database role `tailfin_worker_dev` is confined by
+`pg_hba.conf` to `tailfin_dev` and is **rejected** for `tailfin`, which is a property of
+the server rather than of the connection string the worker was handed. It holds no
+`SESSION_SECRET` and no Google credential: a process that serves no sessions has no business
+holding the key that signs them.
+
+What this does not buy: the forward is a convenience over a shared segment, not a private
+network. Root on the worker node can use the tunnel, so the worker node is inside the dev
+trust boundary — it is simply outside production's. WireGuard (OPS-13) is the version that
+would make it a network boundary rather than an access-control one.
 
 Caddy, both application processes, both databases, the build checkout and the backup job
 share one host. Process, database and environment-file separation reduces accidents; it is
@@ -76,8 +110,9 @@ and manual deploy command are the approval boundary.
 
 ### Boundaries that do not exist yet
 
-OPS-08's web/worker split will add network links among web, worker, queue and PostgreSQL,
-and OPS-11 must decide where the database lives. M12 will add long-lived WebSockets. POD
+OPS-08's web/worker split is now deployed on dev and is described above; OPS-11 must still
+decide where the database lives when production gets a worker, and OPS-13 must decide whether
+the SSH forward becomes a real private network. M12 will add long-lived WebSockets. POD
 will add hosted Stripe checkout, signed Stripe and print-provider webhooks, fulfilment data
 and shipping addresses. File uploads, object storage, transactional email and any CDN will
 also create new boundaries.

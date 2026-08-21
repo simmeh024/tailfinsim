@@ -965,6 +965,97 @@ of root, which is the opposite of the point.
 service is running. If the service is down it rebuilds regardless — that is what makes a
 first-ever deploy and crash recovery work without a flag.
 
+## The dev worker node (OPS-09)
+
+`tailfin-dev-worker-01` — `208.113.129.83`, `gp1.lightspeed`, key pair `tailfin2` — runs the
+simulation engine and nothing else. It is the first place a Tailfin worker has ever run, which
+is the point: production must not be where the engine's operational behaviour gets learned.
+
+|                 | dev web (`208.113.129.131`)      | dev worker (`208.113.129.83`)                                  |
+| --------------- | -------------------------------- | -------------------------------------------------------------- |
+| Checkout        | `/srv/tailfin-dev`               | `/srv/tailfin-dev-worker`                                      |
+| Service         | `tailfin-dev`                    | `tailfin-dev-worker`                                           |
+| Entry point     | `dist/main.js`                   | `dist/worker.js`                                               |
+| Port            | 3001, proxied by Caddy           | 3100, **loopback only, no vhost**                              |
+| Database        | local socket, role `tailfin_dev` | `127.0.0.1:5433` through the tunnel, role `tailfin_worker_dev` |
+| Owns migrations | **yes**                          | no (`RUNS_MIGRATIONS=0`)                                       |
+| Deploy          | `./deploy/deploy-dev.sh`         | `./deploy/deploy-dev-worker.sh`                                |
+
+### Why a tunnel and not a Postgres listener
+
+The two VMs have no private network — both sit on the public `208.113.128.0/21` shared with
+other DreamCompute tenants, which a packet capture on the web host makes plain. Opening 5432
+onto that segment was rejected; `tailfin-db-tunnel.service` forwards over SSH instead, so
+Postgres keeps `listen_addresses = localhost` and ufw keeps allowing only 22/80/443. **Adding
+this node created no new listening port anywhere.**
+
+The tunnel account is `tailfin-tunnel` on the web host: `/usr/sbin/nologin`, with
+
+```
+restrict,port-forwarding,permitopen="127.0.0.1:5432" ssh-ed25519 AAAA...
+```
+
+so the key cannot get a shell (it answers `This account is currently not available.`) and
+cannot forward anywhere else.
+
+### Why the worker cannot reach production
+
+Not because its connection string points elsewhere — because the server refuses it.
+`pg_hba.conf` carries, **above** the catch-all:
+
+```
+host    tailfin_dev    tailfin_worker_dev    127.0.0.1/32    scram-sha-256
+host    all            tailfin_worker_dev    all             reject
+```
+
+Demonstrated rather than asserted: connecting that role to `tailfin` returns
+`FATAL: pg_hba.conf rejects connection for host "127.0.0.1", user "tailfin_worker_dev",
+database "tailfin"`. The original file is kept at `pg_hba.conf.pre-ops09`.
+
+### Which keys belong to which role
+
+The worker's `.env` is **not** a copy of the web node's. Absent, not blank:
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SESSION_SECRET`, `WEB_SURFACE`, `PORT`. A process
+serving no sessions has no business holding the key that signs them, and `loadEnv()` refuses a
+half-configured auth setup — so a partial copy fails at boot rather than running degraded.
+Worker-only keys are `WORKER_HEALTH_PORT`, `WORKER_HEALTH_HOST` and `WORKER_TICK_INTERVAL_MS`.
+
+### Failure modes
+
+| Symptom                                                     | Cause                                                | What to do                                                                                                                                                   |
+| ----------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `worker` inactive, `tunnel` inactive                        | The unit `Requires=` the tunnel, so it stops with it | `systemctl start tailfin-db-tunnel` then the worker; the dependency is deliberate — a worker logging connection failures at 1 Hz is worse than a stopped one |
+| `/healthz` 503, `engine.status: stopped`                    | Process alive, loop not running                      | The failure `systemctl is-active` cannot see. Read the journal; this is why the endpoint exists                                                              |
+| `/healthz` 503, `db: down`, `engine.status: running`        | Tunnel up but Postgres unreachable                   | Counters keep working through it by design — the snapshot needs no database                                                                                  |
+| `engine.errors` rising                                      | Each tick is throwing                                | `journalctl -u tailfin-dev-worker`; a failing tick does not stop the clock, so this climbs quietly                                                           |
+| `engine.failed` rising                                      | Events drained of a type with no handler             | Check `engine.unhandledEventTypes` — see the warning below                                                                                                   |
+| Deploy says "does not own them — deploy the web node first" | Schema change pending                                | Deploy dev web first. Ordering is enforced, not documented                                                                                                   |
+| `Permission denied` running the deploy script               | Checkout is at a commit predating it                 | `git checkout --detach origin/<ref>` once, then deploy normally                                                                                              |
+
+### The warning that matters before scheduling real work
+
+`/healthz` reports `engine.unhandledEventTypes`, and today it is
+`["FLIGHT_DEPART", "TURNAROUND_COMPLETE"]`. `drainDueEvents` marks an event of an unhandled
+type **failed** rather than done, so a worker started against a queue holding materialised
+departures marks every one of them failed on the first tick. It was safe to start here because
+`tailfin_dev` had **zero** `world_event` rows, verified first. **Check the queue before
+starting a worker anywhere else**, production included.
+
+### Checking on it
+
+```bash
+ssh -i ~/.ssh/tailfin2.pem ubuntu@208.113.129.83 'curl -s http://127.0.0.1:3100/healthz'
+```
+
+```bash
+ssh -i ~/.ssh/tailfin2.pem ubuntu@208.113.129.83 'curl -s http://127.0.0.1:3100/queues'
+```
+
+`/queues` asks Postgres per world, so it is deliberately not part of `/healthz`, which a
+deploy script polls every second.
+
+---
+
 ## Two gotchas worth knowing
 
 **Deleting a keypair in OpenStack does not change a running instance.** cloud-init injects

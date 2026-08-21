@@ -1,0 +1,71 @@
+[Unit]
+# The simulation engine, on dev (OPS-09).
+#
+# The process ADR-0019 defined: it runs the tick loop, drains `world_event`, and
+# serves nothing but a loopback health endpoint. It is the first place a Tailfin
+# worker has ever run, which is the point — production must not be where the
+# engine's operational behaviour gets learned.
+Description=Tailfin simulation worker (dev environment)
+Documentation=https://github.com/simmeh024/tailfinsim/blob/main/deploy/README.md
+After=network-online.target tailfin-db-tunnel.service
+Wants=network-online.target
+
+# Not `Requires=postgresql.service` like the web units: there is no Postgres on
+# this node. The database is reached through the tunnel, and without it this
+# process can do nothing at all — so the dependency is hard, and systemd stops
+# the worker when the tunnel stops rather than leaving it logging failures at
+# 1 Hz.
+Requires=tailfin-db-tunnel.service
+
+[Service]
+Type=simple
+User=tailfin
+Group=tailfin
+
+# Its own checkout, not the web node's. #193 wants the nodes independently
+# deployable, and sharing a directory across a machine boundary is not an option
+# here anyway.
+WorkingDirectory=/srv/tailfin-dev-worker/packages/server
+ExecStart=/usr/bin/node dist/worker.js
+
+Restart=always
+RestartSec=5s
+
+# SIGTERM, and longer than the web unit's 15s on purpose. The worker's shutdown
+# waits for a tick that is already inside a transaction to finish before it
+# closes the pool — that wait is the difference between a clean stop and an event
+# applied halfway. `worker.ts` gives up on its own at 15s, so systemd must not
+# reach for SIGKILL before then.
+KillSignal=SIGTERM
+TimeoutStopSec=30s
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tailfin-dev-worker
+
+# Bounded from the start rather than after the first incident (#175, and the
+# risk #188 names). This node has two cores and the worker is alone on it today,
+# but the engine is the part of Tailfin whose cost is unknown — it has never run
+# anywhere — and an unbounded loop discovering that on a box someone is watching
+# is worth avoiding for the price of one line.
+CPUQuota=150%
+MemoryMax=1G
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+
+# No public interface. `worker.ts` binds 127.0.0.1 by default and refuses to read
+# HOST; this says the same thing at the unit level, so a future `WORKER_HEALTH_HOST`
+# in the environment file cannot quietly publish the endpoint.
+IPAddressAllow=localhost
+IPAddressDeny=any
+
+[Install]
+WantedBy=multi-user.target

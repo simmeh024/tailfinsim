@@ -1,0 +1,82 @@
+[Unit]
+# The worker node's only route to the database (OPS-09).
+#
+# `tailfin-dev-worker-01` and the database are on different machines, and
+# DreamCompute gives these instances no private network — both sit on the public
+# 208.113.128.0/21 alongside other tenants. So the choice was between opening a
+# Postgres listener onto that segment and forwarding over the SSH port that is
+# already the trust boundary. This is the second one.
+#
+# What it buys, stated plainly: no new listening port anywhere. Postgres stays
+# bound to localhost on the database host, `pg_hba.conf` keeps accepting only
+# 127.0.0.1, and ufw keeps allowing only 22/80/443. From the database host's
+# point of view the worker's connections arrive from itself.
+#
+# It is not a private network, and it is not pretending to be one. WireGuard is
+# the better answer and belongs to OPS-13; this is the version that works today
+# and is undone by stopping one unit.
+Description=SSH tunnel from this node to the Tailfin database host
+Documentation=https://github.com/simmeh024/tailfinsim/blob/main/deploy/README.md
+After=network-online.target
+Wants=network-online.target
+
+# The worker is useless without this, and starting it first would only produce a
+# minute of connection errors before the tunnel appears. `tailfin-dev-worker`
+# carries the matching `Requires=`/`After=`.
+Before=tailfin-dev-worker.service
+
+[Service]
+Type=exec
+User=tailfin
+Group=tailfin
+
+# `-N` runs no remote command, `-T` asks for no terminal. Together with the
+# forced command in the database host's authorized_keys, this session can do
+# exactly one thing: forward a port.
+#
+# ExitOnForwardFailure is the important flag. Without it ssh reports success when
+# the local bind fails, systemd calls the unit started, and the worker connects
+# to nothing at all — a tunnel that is "up" and forwards nowhere is worse than
+# one that is down, because only the second is visible.
+#
+# ServerAlive* turns a silently dead TCP session into an exit, which Restart=
+# then repairs. Without it a network partition leaves ssh believing it is
+# connected for far longer than the worker can tolerate.
+ExecStart=/usr/bin/ssh -NT \
+  -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=15 \
+  -o ServerAliveCountMax=3 \
+  -o StrictHostKeyChecking=yes \
+  -o UserKnownHostsFile=/etc/tailfin/tunnel_known_hosts \
+  -o IdentitiesOnly=yes \
+  -o BatchMode=yes \
+  -i /etc/tailfin/db-tunnel.key \
+  -L 127.0.0.1:5433:127.0.0.1:5432 \
+  tailfin-tunnel@208.113.129.131
+
+# 127.0.0.1 on the left of -L, deliberately. A bare `-L 5433:...` binds every
+# interface, which would republish the database to the public segment through the
+# back door this unit exists to avoid.
+
+Restart=always
+RestartSec=5s
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tailfin-db-tunnel
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+
+# The key and the known_hosts file live here and nowhere else.
+ReadOnlyPaths=/etc/tailfin
+
+[Install]
+WantedBy=multi-user.target

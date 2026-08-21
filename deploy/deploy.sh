@@ -40,6 +40,22 @@ SERVICE="${SERVICE:-tailfin}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3000/healthz}"
 MIGRATION_DATABASE="${MIGRATION_DATABASE:-tailfin}"
 
+# ---------------------------------------------------------------------------
+# Does this node own migrations for its database? (OPS-09)
+#
+# Exactly one must, and it must be the web node. From the moment a database has
+# two nodes deploying against it, two deploys can reach `migrate.js --apply` at
+# the same time — and the second one's pre-migration backup would be taken after
+# the first had already started changing the schema, which is the one moment the
+# backup is supposed to describe.
+#
+# Defaults to 1, so every existing caller keeps the behaviour it had. The worker
+# wrapper is the only thing that turns it off, and it still runs the preflight:
+# proving a node is pointed at the database it thinks it is stays worth doing
+# even when it will not write to it.
+# ---------------------------------------------------------------------------
+RUNS_MIGRATIONS="${RUNS_MIGRATIONS:-1}"
+
 case "${MIGRATION_DATABASE}" in
   tailfin | tailfin_dev) ;;
   *)
@@ -231,6 +247,17 @@ if [[ ! "${PENDING_MIGRATIONS}" =~ ^[0-9]+$ ]]; then
   die "migration preflight returned an invalid pending count — database NOT touched"
 fi
 
+if [ "${RUNS_MIGRATIONS}" != '1' ]; then
+  # The preflight above has already proved this node is pointed at
+  # ${MIGRATION_DATABASE}. Everything below belongs to whichever node owns the
+  # schema, and a node that is not it must not take a backup either — the backup
+  # unit is what the owner's failure message points at.
+  if [ "${PENDING_MIGRATIONS}" -gt 0 ]; then
+    die "${PENDING_MIGRATIONS} migration(s) pending on ${MIGRATION_DATABASE} and this node does not own them — deploy the web node first; database NOT touched, service still running ${PREVIOUS}"
+  fi
+  echo "schema is current, and this node does not own migrations — nothing applied"
+else
+
 MIGRATION_BACKUP_STATUS="/var/lib/tailfin/migration-backup-${MIGRATION_DATABASE}.json"
 if [ "${PENDING_MIGRATIONS}" -gt 0 ]; then
   log "Taking pre-migration backup (${PENDING_MIGRATIONS} pending)"
@@ -274,6 +301,8 @@ case "${MIGRATION_RESULT}" in
     die "migration command exited ${MIGRATION_RESULT} — DATABASE STATE UNKNOWN; service NOT restarted; follow the migration recovery runbook"
     ;;
 esac
+
+fi
 
 log "Restarting ${SERVICE}"
 sudo systemctl restart "${SERVICE}"
