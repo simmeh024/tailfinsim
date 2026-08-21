@@ -47,6 +47,22 @@ describe('deploying the dev worker', () => {
     expect(source).toContain('MIGRATION_DATABASE="${MIGRATION_DATABASE:-tailfin_dev}"');
   });
 
+  it('is executable, like every other deploy script', () => {
+    // Git's mode, not the filesystem's: the working tree on Windows does not
+    // carry the bit, so `statSync` would pass here and fail on the box. This one
+    // did — the first deploy attempt died with "Permission denied" after the
+    // node was otherwise ready.
+    const modes = spawnSync(
+      'git',
+      ['ls-files', '-s', 'deploy/deploy.sh', 'deploy/deploy-dev.sh', 'deploy/deploy-dev-worker.sh'],
+      { cwd: repoRoot, encoding: 'utf8' },
+    ).stdout.trim();
+
+    for (const line of modes.split('\n')) {
+      expect(line.startsWith('100755'), `not executable in git: ${line}`).toBe(true);
+    }
+  });
+
   it('does not own migrations', () => {
     // The property that matters most here. Two nodes deploying against one
     // database can both reach the migrator, and the second one's pre-migration
@@ -67,7 +83,7 @@ describe('migration ownership', () => {
     // pointed at production would otherwise deploy quietly and start draining
     // the wrong world.
     const preflight = source.indexOf('configured database is ${ACTUAL_DATABASE}');
-    const ownership = source.indexOf("if [ \"${RUNS_MIGRATIONS}\" != '1' ]");
+    const ownership = source.indexOf('if [ "${RUNS_MIGRATIONS}" != \'1\' ]');
     expect(preflight).toBeGreaterThan(0);
     expect(ownership).toBeGreaterThan(preflight);
   });
