@@ -3,6 +3,7 @@ import { buildWorkerHealthApp } from './engine/health';
 import { createSimulationEngine } from './engine/simulation';
 import { loadEnv } from './env';
 import { createFlightArriveHandler } from './flight/settle';
+import { createHeartbeat } from './ops/heartbeat';
 import { type HandlerRegistry } from './sim/event-queue';
 
 /**
@@ -119,9 +120,73 @@ if (unhandled.length > 0) {
   );
 }
 
+/**
+ * The worker's own report, and the only way the console learns anything about
+ * this machine (OPS-15).
+ *
+ * `/healthz` here is loopback-only on a host whose firewall allows nothing but
+ * SSH, so nothing can poll it from outside. The engine state therefore travels
+ * the same way everything else does between these processes: through the
+ * database. Queue depth is asked per beat rather than per tick — once every
+ * fifteen seconds, not once a second.
+ */
+const heartbeat = createHeartbeat({
+  db: db.db,
+  role: 'worker',
+  environment: env.environmentLabel,
+  engine: () => {
+    const snapshot = engine.snapshot();
+    return {
+      running: snapshot.status === 'running',
+      ticks: snapshot.ticks,
+      errors: snapshot.errors,
+      lateTicks: snapshot.lateTicks,
+      processed: snapshot.processed,
+      failed: snapshot.failed,
+      lastTickAt: snapshot.lastTickAt,
+      queueDue: queueSummary.due,
+      oldestDueAt: queueSummary.oldestDueAt,
+      unhandledEventTypes: snapshot.unhandledEventTypes,
+    };
+  },
+  onError: (error) => {
+    app.log.warn({ err: error }, 'heartbeat failed');
+  },
+});
+
+/**
+ * Queue depth, refreshed alongside the heartbeat rather than inside it.
+ *
+ * `engine.queues()` asks Postgres a question per world, and the heartbeat's own
+ * callback has to be synchronous. Refreshing here keeps the beat cheap and means
+ * a database blip costs a stale number rather than a missed heartbeat.
+ */
+let queueSummary: { due: number; oldestDueAt: string | null } = { due: 0, oldestDueAt: null };
+
+async function refreshQueueSummary(): Promise<void> {
+  try {
+    const queues = await engine.queues();
+    const oldest = queues
+      .map((entry) => entry.oldestDueAt)
+      .filter((value): value is Date => value !== null)
+      .sort((a, b) => a.getTime() - b.getTime())[0];
+    queueSummary = {
+      due: queues.reduce((total, entry) => total + entry.due, 0),
+      oldestDueAt: oldest?.toISOString() ?? null,
+    };
+  } catch {
+    // Left as it was. The heartbeat still reports; the number is simply the
+    // last one known, and `lastSeenAt` is what says whether it is current.
+  }
+}
+
 try {
   await app.listen({ port, host });
   engine.start();
+  await refreshQueueSummary();
+  heartbeat.start();
+  const queueTimer = setInterval(() => void refreshQueueSummary(), 15_000);
+  queueTimer.unref();
   app.log.info(
     { environment: env.environmentLabel, intervalMs, host, port },
     'simulation engine started',
@@ -155,6 +220,7 @@ async function shutdown(signal: string): Promise<void> {
   hardExit.unref();
 
   try {
+    heartbeat.stop();
     await engine.stop();
     await app.close();
     await db.close();

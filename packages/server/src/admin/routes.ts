@@ -8,6 +8,7 @@ import {
   adminResetWorldResponseJsonSchema,
   adminSpeedChangeResponseJsonSchema,
   adminWorldStatusResponseJsonSchema,
+  adminSystemHealthResponseJsonSchema,
   adminWorldHealthResponseJsonSchema,
   adminWorldListResponseJsonSchema,
   apiErrorJsonSchema,
@@ -31,6 +32,7 @@ import {
 import { buildOverview } from './overview';
 import { listPlayers, readPlayer } from './players';
 import { changeWorldSpeed, type SpeedRefusalCode, validateSpeedRequest } from './speed';
+import { buildSystemHealth, NODE_OFFLINE_AFTER_MS, NODE_STALE_AFTER_MS } from './system-health';
 import {
   constraintFailure,
   countWorldContents,
@@ -234,6 +236,31 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
         datasets: report.datasets,
         serverTime: report.serverTime.toISOString(),
         behindAfterMs: BEHIND_AFTER_MS,
+      });
+    },
+  );
+
+  /**
+   * The machines, rather than the worlds (OPS-15).
+   *
+   * Read from `node_heartbeat`, never by reaching for another host: the console
+   * cannot open a connection to the worker and must not be able to. See
+   * `ops/heartbeat.ts` for why the direction of trust runs this way.
+   */
+  app.get(
+    '/api/admin/system-health',
+    {
+      onRequest: app.requireAdmin,
+      schema: { response: { 200: adminSystemHealthResponseJsonSchema } },
+    },
+    async (_request, reply) => {
+      const report = await buildSystemHealth(db.db);
+      return reply.code(200).send({
+        nodes: report.nodes,
+        serverTime: report.serverTime.toISOString(),
+        staleAfterMs: NODE_STALE_AFTER_MS,
+        offlineAfterMs: NODE_OFFLINE_AFTER_MS,
+        alerts: report.alerts,
       });
     },
   );

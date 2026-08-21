@@ -5,6 +5,7 @@ import { AdminLayout } from './admin/AdminLayout';
 import { AuditPage } from './admin/AuditPage';
 import { OverviewPage } from './admin/OverviewPage';
 import { PlayersPage } from './admin/PlayersPage';
+import { SystemHealthPage } from './admin/SystemHealthPage';
 import { WorldsPage } from './admin/WorldsPage';
 import { AirlinePage } from './airline/AirlinePage';
 import { RequireSession } from './auth/RequireSession';
@@ -125,6 +126,8 @@ export function App(): ReactNode {
                 <Route path="players" element={<PlayersPage />} />
                 <Route path="players/:playerId" element={<PlayersPage />} />
                 <Route path="audit" element={<AuditPage />} />
+                {/* The machines, rather than the worlds (OPS-15). */}
+                <Route path="system" element={<SystemHealthPage />} />
               </Route>
               <Route
                 path="*"

@@ -1692,3 +1692,75 @@ export type NewDemandPoolRow = typeof demandPool.$inferInsert;
 
 export type FlightResultRow = typeof flightResult.$inferSelect;
 export type NewFlightResultRow = typeof flightResult.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// node_heartbeat — what each machine says about itself (OPS-15)
+// ---------------------------------------------------------------------------
+
+export const nodeRole = pgEnum('node_role', ['web', 'worker']);
+
+/**
+ * One row per node, rewritten on every heartbeat.
+ *
+ * ## Why a table and not an HTTP call
+ *
+ * The admin console runs in the web process. It cannot reach the worker's health
+ * endpoint and must never be able to: that endpoint binds loopback, the worker's
+ * firewall allows only SSH, and its unit carries `IPAddressDeny=any`. ADR-0019
+ * makes the database the channel between the processes, and this is that channel
+ * used for the one thing the console needs from a machine it cannot touch.
+ *
+ * It also inverts the direction of trust in the useful way. The web application
+ * opens no connection to another host and holds no key to one. A node that stops
+ * writing is **detected as stale** rather than merely unreachable — which is a
+ * stronger statement, because it does not depend on the console's own network
+ * path being healthy.
+ *
+ * ## Why the node name is the primary key
+ *
+ * A heartbeat is a node's current state, not a log of its past. One row per node,
+ * upserted, so the table stays the size of the estate rather than growing at one
+ * row per interval forever. History, if it is ever wanted, is a separate decision
+ * with a retention policy attached.
+ *
+ * ## Why `load` and `engine` are text
+ *
+ * They are shapes the console renders and nothing queries by. Storing them as
+ * validated JSON keeps the columns from being renegotiated every time a metric
+ * is added, and the zod schema at the boundary is what actually guarantees the
+ * shape — the same reasoning `world_event.payload` already uses.
+ */
+export const nodeHeartbeat = pgTable(
+  'node_heartbeat',
+  {
+    /** The machine's hostname. Stable across restarts, unique in the estate. */
+    node: text('node').primaryKey(),
+    role: nodeRole('role').notNull(),
+    /** Informational: a database only ever holds one environment's nodes. */
+    environment: text('environment').notNull(),
+    build: integer('build').notNull(),
+    commit: text('commit').notNull(),
+    /** When this process started, so a restart is visible as well as a stall. */
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    uptimeSeconds: integer('uptime_seconds').notNull(),
+    /** `AdminNodeLoad` as JSON. */
+    load: text('load').notNull(),
+    /** `AdminNodeEngine` as JSON. Null for a web node, which runs no engine. */
+    engine: text('engine'),
+  },
+  (t) => [
+    index('node_heartbeat_last_seen_at_idx').on(t.lastSeenAt),
+    check('node_heartbeat_uptime_nonnegative', sql`${t.uptimeSeconds} >= 0`),
+    check('node_heartbeat_build_nonnegative', sql`${t.build} >= 0`),
+    // A web node has no engine to report, and a worker that reports none has
+    // not finished starting. Neither is a state worth storing.
+    check(
+      'node_heartbeat_engine_matches_role',
+      sql`(${t.role} = 'worker' AND ${t.engine} IS NOT NULL)
+          OR (${t.role} = 'web' AND ${t.engine} IS NULL)`,
+    ),
+  ],
+);
+
+export type NodeHeartbeatRow = typeof nodeHeartbeat.$inferSelect;

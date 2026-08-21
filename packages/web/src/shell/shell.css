@@ -2811,3 +2811,142 @@ body {
   font-size: var(--text-sm);
   color: var(--text-secondary);
 }
+
+/* --------------------------------------------------------------------------
+   System health — one card per node (OPS-15)
+   -------------------------------------------------------------------------- */
+
+.node__list {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  margin-block: var(--space-4);
+}
+
+.node {
+  background: var(--console-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  /* The state stripe. Colour is the glance; the word in .node__state is the
+     actual content, for greyscale, screenshots and screen readers (H.7). */
+  border-left: 3px solid var(--text-muted);
+}
+
+.node[data-state='online'] {
+  border-left-color: var(--status-ontime);
+}
+
+.node[data-state='stale'] {
+  border-left-color: var(--status-delayed);
+}
+
+.node[data-state='offline'] {
+  border-left-color: var(--status-cancelled);
+}
+
+.node__head {
+  align-items: baseline;
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.node__name {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.node__state {
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: var(--space-1) var(--space-2);
+  text-transform: uppercase;
+}
+
+.node__state[data-state='online'] {
+  background: var(--status-ontime-quiet);
+  color: var(--status-ontime);
+}
+
+.node__state[data-state='stale'] {
+  background: var(--status-delayed-quiet);
+  color: var(--status-delayed);
+}
+
+.node__state[data-state='offline'] {
+  background: var(--status-cancelled-quiet);
+  color: var(--status-cancelled);
+}
+
+.node__detail {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  margin-block: var(--space-2) var(--space-3);
+}
+
+.node__meter {
+  align-items: center;
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: 4.5rem 1fr 3.5rem;
+  margin-block: var(--space-2);
+}
+
+.node__meter-label {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+
+.node__meter-track {
+  background: var(--bg-inset);
+  border-radius: var(--radius-sm);
+  display: block;
+  height: 0.5rem;
+  overflow: hidden;
+}
+
+.node__meter-fill {
+  background: var(--status-ontime);
+  display: block;
+  height: 100%;
+}
+
+.node__meter-track[data-level='warn'] .node__meter-fill {
+  background: var(--status-delayed);
+}
+
+.node__meter-track[data-level='high'] .node__meter-fill {
+  background: var(--status-cancelled);
+}
+
+.node__meter-value {
+  font-size: 0.8125rem;
+  text-align: right;
+}
+
+.node__stats {
+  border-top: 1px solid var(--border-subtle);
+  display: grid;
+  gap: var(--space-2) var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  margin: 0;
+  margin-block-start: var(--space-3);
+  padding-block-start: var(--space-3);
+}
+
+.node__stats dt {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.node__stats dd {
+  margin: 0;
+}
+
+.node__commit {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}

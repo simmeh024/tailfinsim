@@ -584,3 +584,108 @@ export const AdminWorldHealthResponse = z.object({
   behindAfterMs: z.number().int().positive(),
 });
 export type AdminWorldHealthResponse = z.infer<typeof AdminWorldHealthResponse>;
+
+// ---------------------------------------------------------------------------
+// System health — the machines, not the worlds (OPS-15)
+// ---------------------------------------------------------------------------
+
+/**
+ * What a node is for.
+ *
+ * The same split ADR-0019 draws in code: `web` serves requests, `worker` runs
+ * the clock. A node is one or the other and never both.
+ */
+export const NodeRole = z.enum(['web', 'worker']);
+export type NodeRole = z.infer<typeof NodeRole>;
+
+/**
+ * Whether a node is still reporting.
+ *
+ * Judged from the age of its last heartbeat, on the server. `offline` means it
+ * has stopped writing — which is a stronger and more useful statement than
+ * "unreachable", because it does not depend on the console being able to reach
+ * the machine at all.
+ */
+export const NodeState = z.enum(['online', 'stale', 'offline']);
+export type NodeState = z.infer<typeof NodeState>;
+
+/** What a node is currently carrying. */
+export const AdminNodeLoad = z.object({
+  /**
+   * One-minute load average as a percentage of the cores it has.
+   *
+   * Normalised so two nodes with different core counts are comparable — a load
+   * average of 2 means something quite different on 2 cores than on 8.
+   */
+  cpuPercent: z.number().nonnegative(),
+  loadAverage1m: z.number().nonnegative(),
+  cores: z.number().int().positive(),
+  /** Resident set of this process, as distinct from the machine's total. */
+  processMemoryBytes: z.number().int().nonnegative(),
+  memoryUsedPercent: z.number().nonnegative(),
+  memoryTotalBytes: z.number().int().nonnegative(),
+});
+export type AdminNodeLoad = z.infer<typeof AdminNodeLoad>;
+
+/**
+ * The simulation, as reported by the node running it.
+ *
+ * Only a `worker` carries this. It is the half that no liveness probe can
+ * answer: a worker that is up and not draining looks perfectly healthy from
+ * outside, and these counters are what distinguish it from one that is idle
+ * because there is nothing to do.
+ */
+export const AdminNodeEngine = z.object({
+  running: z.boolean(),
+  ticks: z.number().int().nonnegative(),
+  errors: z.number().int().nonnegative(),
+  lateTicks: z.number().int().nonnegative(),
+  processed: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  lastTickAt: Timestamp.nullable(),
+  /** Events due and unhandled across every world this node drives. */
+  queueDue: z.number().int().nonnegative(),
+  oldestDueAt: Timestamp.nullable(),
+  /** Types the process has no handler for. Non-empty is a deployment gap. */
+  unhandledEventTypes: z.array(z.string()),
+});
+export type AdminNodeEngine = z.infer<typeof AdminNodeEngine>;
+
+/** One machine, as it last described itself. */
+export const AdminNodeHealth = z.object({
+  node: z.string().min(1),
+  role: NodeRole,
+  environment: z.string().min(1),
+  state: NodeState,
+  /** One line saying what the state means, decided on the server (§21). */
+  detail: z.string(),
+  build: z.number().int().nonnegative(),
+  commit: z.string().min(1),
+  startedAt: Timestamp,
+  lastSeenAt: Timestamp,
+  /** Real milliseconds since the last heartbeat, measured against the server clock. */
+  ageMs: z.number().int().nonnegative(),
+  uptimeSeconds: z.number().int().nonnegative(),
+  load: AdminNodeLoad,
+  engine: AdminNodeEngine.nullable(),
+});
+export type AdminNodeHealth = z.infer<typeof AdminNodeHealth>;
+
+/**
+ * `GET /api/admin/system-health` — every node this database has heard from.
+ *
+ * Scoped to the database rather than to a cluster, which is the right scope by
+ * accident and then on purpose: dev nodes write to `tailfin_dev` and production
+ * nodes to `tailfin`, so a console can only ever show its own environment. There
+ * is no path by which the dev console describes production.
+ */
+export const AdminSystemHealthResponse = z.object({
+  nodes: z.array(AdminNodeHealth),
+  serverTime: Timestamp,
+  /** Ages at which a node stops being called online, so the client can say why. */
+  staleAfterMs: z.number().int().positive(),
+  offlineAfterMs: z.number().int().positive(),
+  /** Server-decided problems worth surfacing, in the overview's style. */
+  alerts: z.array(z.string()),
+});
+export type AdminSystemHealthResponse = z.infer<typeof AdminSystemHealthResponse>;

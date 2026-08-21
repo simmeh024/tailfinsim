@@ -1,6 +1,7 @@
 import { buildApp } from './app';
 import { createDatabase } from './db/client';
 import { loadEnv } from './env';
+import { createHeartbeat } from './ops/heartbeat';
 
 /**
  * Process entry point — the thing systemd runs.
@@ -19,10 +20,31 @@ const host = process.env.HOST ?? '127.0.0.1';
 const db = createDatabase();
 const app = buildApp({ env, db });
 
+/**
+ * This node, describing itself for the console (OPS-15).
+ *
+ * Not a scheduled job in ADR-0019's sense — that rule is about who performs work
+ * on the world's behalf, and this is a process reporting its own state. It writes
+ * only its own row, and two web nodes would produce two rows rather than doing
+ * anything twice.
+ */
+const heartbeat = createHeartbeat({
+  db: db.db,
+  role: 'web',
+  environment: env.environmentLabel,
+  onError: (error) => {
+    // Logged and swallowed: a node that cannot report is still a node that
+    // should serve requests, and the console will show it as stale — which is
+    // the correct thing for it to show.
+    app.log.warn({ err: error }, 'heartbeat failed');
+  },
+});
+
 try {
   // Bound to loopback by default: Caddy is the only thing that should reach
   // this, and binding 0.0.0.0 would expose it directly if ufw ever lapsed.
   await app.listen({ port, host });
+  heartbeat.start();
 } catch (error) {
   app.log.fatal({ err: error }, 'failed to start');
   await db.close().catch(() => undefined);
@@ -56,6 +78,7 @@ async function shutdown(signal: string): Promise<void> {
   hardExit.unref();
 
   try {
+    heartbeat.stop();
     await app.close();
     await db.close();
     app.log.info('shutdown complete');
