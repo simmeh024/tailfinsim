@@ -12,6 +12,7 @@ import {
   AirportIcaoCode,
   AirportSummary,
   CreateAirlineInput,
+  ECONOMY_CONFIG_V1,
   EconomyConfig,
   Flight,
   FlightKind,
@@ -345,14 +346,35 @@ describe('player airline context contract', () => {
 });
 
 describe('EconomyConfig', () => {
-  const valid = {
-    version: 'v1',
-    airlineStartingPosition: { openingCashMinor: 50_000_000, freeHubAllowance: 1 },
-    airlineIdentity: { rebrandCostMinor: 2_500_000 },
-  };
+  /**
+   * The shipped payload is the fixture.
+   *
+   * Building a valid one by hand would mean maintaining a second copy of every
+   * balance number, which is the thing M3-11 exists to stop. Spreading over the
+   * real one also means a new required field cannot be added without this suite
+   * exercising it.
+   */
+  const valid: Record<string, unknown> = { ...ECONOMY_CONFIG_V1 };
 
-  it('validates the versioned starting position at runtime', () => {
+  it('validates the shipped payload at runtime', () => {
     expect(EconomyConfig.safeParse(valid).success).toBe(true);
+    // Not just parseable — parsed. The constant is produced by `EconomyConfig.parse`
+    // at module load, so a typo in it fails the first import rather than the
+    // first settlement.
+    expect(ECONOMY_CONFIG_V1.version).toBe('v1');
+  });
+
+  it('refuses a payload missing a whole balance section', () => {
+    // Deliberately not optional. A config that parsed without `demand` would
+    // load, and then the first share calculation would read `undefined` betas.
+    const { demand: _demand, ...withoutDemand } = ECONOMY_CONFIG_V1;
+    expect(EconomyConfig.safeParse(withoutDemand).success).toBe(false);
+  });
+
+  it('refuses a field the schema does not declare', () => {
+    // `.strict()` throughout: a typo in a hand-written retune payload must be a
+    // refusal, not a silently ignored key that leaves the old value in force.
+    expect(EconomyConfig.safeParse({ ...valid, betaPrice: 3 }).success).toBe(false);
   });
 
   it.each([

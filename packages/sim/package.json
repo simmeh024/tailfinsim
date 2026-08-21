@@ -14,5 +14,8 @@
   },
   "dependencies": {
     "@tailfin/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0"
   }
 }

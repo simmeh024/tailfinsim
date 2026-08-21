@@ -56,6 +56,7 @@ import {
   routeVariableCostPerSeatMinor,
   type FuelMarket,
   type FuelStation,
+  type SettlementConfig,
 } from '@tailfin/sim';
 
 import { airline, route } from '../db/schema';
@@ -81,6 +82,15 @@ export interface RouteEconomics {
   competitors: readonly ClassOperator[];
   /** The player's own non-price attributes, until M6 and §15 can supply them. */
   self: { reputation: number; productScore: number; frequency: number };
+  /**
+   * The world's cost table and A.10 floor ratio, from its pinned economy.
+   *
+   * Carried here rather than read inside `floorFor`, so this file stays a pure
+   * rule and the economics provider remains the one place that knows a route
+   * belongs to a world (M3-11).
+   */
+  settlement: SettlementConfig;
+  fareFloorRatio: number;
 }
 
 export interface RouteRow {
@@ -113,14 +123,18 @@ export function parseFares(raw: string): FareTable {
  */
 export function floorFor(economics: RouteEconomics, greatCircleNm: number) {
   return fareFloor(
-    routeVariableCostPerSeatMinor({
-      distanceNm: greatCircleNm,
-      aircraft: economics.aircraft,
-      market: economics.market,
-      originStation: economics.originStation,
-      originFees: economics.originFees,
-      destinationFees: economics.destinationFees,
-    }),
+    routeVariableCostPerSeatMinor(
+      {
+        distanceNm: greatCircleNm,
+        aircraft: economics.aircraft,
+        market: economics.market,
+        originStation: economics.originStation,
+        originFees: economics.originFees,
+        destinationFees: economics.destinationFees,
+      },
+      economics.settlement,
+    ),
+    economics.fareFloorRatio,
   );
 }
 

@@ -49,6 +49,26 @@ function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\r\n]*/g, '');
 }
 
+/**
+ * Removes a trigger's name, timing and event list, up to its `ON`.
+ *
+ * `CREATE TRIGGER t BEFORE TRUNCATE ON thing` names an event to *intercept*; it
+ * truncates nothing. Without this the deny-list below reads the word TRUNCATE
+ * and refuses the migration — and it would refuse it hardest in the case that
+ * matters most, because a trigger forbidding TRUNCATE makes a table strictly
+ * safer for the previous release rather than less compatible with it. Migration
+ * 0023 installs exactly that on `economy_config`.
+ *
+ * Scoped to the clause rather than to the whole statement, so a genuine
+ * contraction elsewhere in the same file is still caught.
+ */
+function stripTriggerEvents(sql: string): string {
+  return sql.replace(
+    /\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?TRIGGER\b[\s\S]*?\bON\b/gi,
+    'CREATE TRIGGER ON',
+  );
+}
+
 function parseStrategy(source: string): MigrationStrategy | null {
   const header = source.split(/\r?\n/, 6).join('\n');
   const match = STRATEGY.exec(header);
@@ -71,7 +91,7 @@ export function migrationPolicyViolationsForSource(
 ): MigrationPolicyViolation[] {
   const violations: MigrationPolicyViolation[] = [];
   const strategy = parseStrategy(source);
-  const sql = stripComments(source);
+  const sql = stripTriggerEvents(stripComments(source));
 
   if (strategy === null) {
     violations.push({

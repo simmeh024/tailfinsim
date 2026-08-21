@@ -25,6 +25,17 @@ target, downloads only from DreamObjects, and repeats the suffix check at `dropd
 turn its source object prefix into a live database connection. Record the measured output as
 the evidence; `/healthz` alone proves only that Postgres answered, not that the restore works.
 
+**The economy is a database row, not a constant.** Since M3-11 every balance number —
+App. A's β coefficients, the gravity model, cost tables, fuel price, boost ceilings —
+lives in one `EconomyConfig` payload, versioned in `economy_config`, pinned per world by
+`world.economy_config_version`. `packages/sim` holds **no balance literal**; its
+`DEFAULT_*` exports are slices of the shipped seed. Retuning is an `INSERT` of a new
+version plus an audited re-pin — rows are immutable and the triggers enforce it, so
+rollback is re-pinning and nothing can edit the numbers an old `flight_result` was billed
+under. The web node seeds the shipped payload at startup and **never updates it**: a
+deploy must not be able to revert a live retune. If a `v1` in the database stops matching
+the one the build ships, startup says so and leaves the database's version in force.
+
 **Every new migration declares expand or contract.** After `0019_large_hellfire_club`, the
 first lines need `-- tailfin:migration-strategy expand` or
 `-- tailfin:migration-strategy contract-safe-after #<issue>`. The previous release must keep

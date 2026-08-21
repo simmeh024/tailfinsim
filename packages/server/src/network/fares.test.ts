@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { DemandSegment, FareTable } from '@tailfin/shared';
+import { ECONOMY_CONFIG_V1 } from '@tailfin/shared';
 import type { ClassOperator } from '@tailfin/sim';
 import { DEFAULT_FUEL_MARKET } from '@tailfin/sim';
 
@@ -50,6 +51,10 @@ function economics(over: Partial<RouteEconomics> = {}): RouteEconomics {
     segmentPools: POOLS,
     competitors: [],
     self: REFERENCE_SELF,
+    // The shipped economy, exactly as a world pinned to v1 would supply it.
+    // Named rather than defaulted, because these tests assert money.
+    settlement: ECONOMY_CONFIG_V1.costs.settlement,
+    fareFloorRatio: ECONOMY_CONFIG_V1.pricing.fareFloorRatio,
     ...over,
   };
 }

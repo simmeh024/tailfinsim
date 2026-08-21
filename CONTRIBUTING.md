@@ -41,6 +41,31 @@ back — **without a deploy**. Every hardcoded constant is a number that cannot 
 while the world is running. If you are typing a number that a designer might one day
 want to change, it belongs in versioned config.
 
+Since M3-11 that is a real table rather than an intention. The whole economy is one
+zod-validated payload, `EconomyConfig` in `@tailfin/shared`; a row in `economy_config`
+holds each version; a world pins one through `world.economy_config_version`; and
+`economy/loader.ts` resolves the pin on every read. **`packages/sim` contains no balance
+literal at all** — every `DEFAULT_*` there is a slice of the shipped payload, which is
+the seed for a fresh database and nothing more. Three things hold that line:
+
+- **Lint.** `packages/server` may not import `DEFAULT_GRAVITY`, `DEFAULT_LOGIT`,
+  `FARE_FLOOR_RATIO` and the rest from `@tailfin/sim`, nor `ECONOMY_CONFIG_V1` from
+  `@tailfin/shared`. Only `economy/**` may, because seeding is its job.
+- **`sim/balance-source.test.ts`.** Asserts each `DEFAULT_*` is the shipped payload's own
+  object — `toBe`, not `toEqual`, since a hand-copied table with the same numbers in it is
+  exactly the duplication being prevented — and reads the declarations off disk, because
+  identity says nothing about a re-introduced scalar.
+- **The database.** `economy_config` rows are immutable; triggers refuse UPDATE, DELETE
+  and TRUNCATE. Retuning is an INSERT of a new version. That is what keeps an old
+  `flight_result` explicable (invariant 4) and what makes the loader's cache correct
+  across processes without any invalidation channel.
+
+Adding a balance number means adding a field to `EconomyConfig`, giving it a value in
+`ECONOMY_CONFIG_V1`, and reading it through the loader. What is deliberately _not_ in
+there: aircraft performance (§22.5's catalogue, versioned separately), disruption
+probability (§15 and the world seed), and scheduling limits. A fare change and an
+aerodynamics change must not share a version number.
+
 **4. No dead-end numbers.** §14.1 is explicit: every figure drills down to its cause.
 Load factor → by route → by flight → by segment → the Appendix A waterfall showing
 which competitor took the passengers and why. A number a player cannot interrogate is a

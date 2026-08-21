@@ -31,7 +31,7 @@
  * cosmetic choice.
  */
 
-import type { FlightLoad } from '@tailfin/shared';
+import { ECONOMY_CONFIG_V1, type FlightLoad } from '@tailfin/shared';
 
 import { roundMinor, sumMinor } from './money';
 
@@ -99,14 +99,16 @@ export interface DisruptionCostConfig {
   careDelayThresholdMinutes: number;
 }
 
-export const DEFAULT_DISRUPTION_COST: DisruptionCostConfig = {
-  rebookingPerPassengerMinor: 12_000,
-  compensationPerPassengerMinor: 25_000,
-  compensationDelayThresholdMinutes: 180,
-  carePerPassengerPerHourMinor: 1_500,
-  recoveryPerPassengerMinor: 8_000,
-  careDelayThresholdMinutes: 120,
-};
+/**
+ * What a delay, cancellation or diversion costs, as currently tuned.
+ *
+ * The numbers live in `ECONOMY_CONFIG_V1` in `@tailfin/shared` — the same
+ * payload that is seeded into `economy_config` and retuned live (M3-11, §22.3).
+ * This constant is the default parameter for the pure functions below; the
+ * server reads the world's pinned config instead, and lint stops it reaching
+ * for this one.
+ */
+export const DEFAULT_DISRUPTION_COST: DisruptionCostConfig = ECONOMY_CONFIG_V1.costs.disruption;
 
 /** Version tag, mirroring the rest. A disruption bill has to stay explicable. */
 export const DISRUPTION_COST_VERSION = 'v1' as const;

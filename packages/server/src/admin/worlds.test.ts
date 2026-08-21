@@ -60,58 +60,87 @@ function config(overrides: Partial<WorldConfig> = {}): WorldConfig {
   };
 }
 
+/**
+ * Stands in for `economy_config`, so this stays a test about the rule rather
+ * than about the table. `createWorldAsAdmin` below uses the real one.
+ */
+const knownVersions = (...versions: string[]) => {
+  return (version: string) => Promise.resolve(versions.includes(version));
+};
+
+const anyVersion = knownVersions(FLAGSHIP_CONFIG.economyConfigVersion);
+
 describe('validateWorldConfig', () => {
-  it('accepts the flagship configuration', () => {
-    const result = validateWorldConfig(FLAGSHIP_CONFIG, NOW);
+  it('accepts the flagship configuration', async () => {
+    const result = await validateWorldConfig(FLAGSHIP_CONFIG, NOW, anyVersion);
     expect(result.ok).toBe(true);
   });
 
-  it('refuses an epoch that is not in the past, and says why', () => {
+  it('refuses an epoch that is not in the past, and says why', async () => {
     // ADR-0005's rule. An epoch of today makes a reset a no-op, and that is a
     // failure nobody discovers until the day they try to reset.
-    const result = validateWorldConfig(config({ epoch: '2027-01-01T00:00:00.000Z' }), NOW);
+    const result = await validateWorldConfig(
+      config({ epoch: '2027-01-01T00:00:00.000Z' }),
+      NOW,
+      anyVersion,
+    );
     if (result.ok) throw new Error('expected a refusal');
     expect(result.fields.epoch?.[0]).toMatch(/has to be in the past/);
     expect(result.fields.epoch?.[0]).toMatch(/reset/);
   });
 
-  it('refuses an epoch of exactly now', () => {
-    const result = validateWorldConfig(config({ epoch: NOW.toISOString() }), NOW);
+  it('refuses an epoch of exactly now', async () => {
+    const result = await validateWorldConfig(config({ epoch: NOW.toISOString() }), NOW, anyVersion);
     expect(result.ok).toBe(false);
   });
 
-  it('points at the field that was wrong', () => {
-    const result = validateWorldConfig(
+  it('points at the field that was wrong', async () => {
+    const result = await validateWorldConfig(
       { ...config(), speedMultiplier: 0, playerCap: 0, name: '' },
       NOW,
+      anyVersion,
     );
     if (result.ok) throw new Error('expected a refusal');
     expect(Object.keys(result.fields).sort()).toEqual(['name', 'playerCap', 'speedMultiplier']);
   });
 
-  it('refuses a negative speed, which would run the world backwards', () => {
-    const result = validateWorldConfig(config({ speedMultiplier: -2 }), NOW);
+  it('refuses a negative speed, which would run the world backwards', async () => {
+    const result = await validateWorldConfig(config({ speedMultiplier: -2 }), NOW, anyVersion);
     expect(result.ok).toBe(false);
   });
 
-  it('refuses an economy version the server cannot pin', () => {
-    const result = validateWorldConfig(config({ economyConfigVersion: 'missing' }), NOW);
+  it('refuses an economy version the database does not have', async () => {
+    const result = await validateWorldConfig(
+      config({ economyConfigVersion: 'missing' }),
+      NOW,
+      anyVersion,
+    );
     if (result.ok) throw new Error('expected a refusal');
-    expect(result.fields.economyConfigVersion?.[0]).toMatch(/missing is not registered/);
-    expect(result.fields.economyConfigVersion?.[0]).toMatch(/pinned/);
+    expect(result.fields.economyConfigVersion?.[0]).toMatch(/no economy version "missing"/);
   });
 
-  it('refuses nonsense rather than throwing on it', () => {
+  it('accepts a version that exists but is not the shipped one', async () => {
+    // The point of M3-11: a world can be created on a retune. Nothing in this
+    // path knows or cares which version is the one the build shipped with.
+    const result = await validateWorldConfig(
+      config({ economyConfigVersion: 'autumn-retune' }),
+      NOW,
+      knownVersions('autumn-retune'),
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('refuses nonsense rather than throwing on it', async () => {
     for (const input of [null, 'a world', 42, [], {}]) {
-      expect(validateWorldConfig(input, NOW).ok).toBe(false);
+      expect((await validateWorldConfig(input, NOW, anyVersion)).ok).toBe(false);
     }
   });
 
-  it('ignores a status somebody tried to smuggle in', () => {
+  it('ignores a status somebody tried to smuggle in', async () => {
     // The request shape has no status field, so asking for an open world is not
     // refused — it is not expressible. This proves the extra key is dropped
     // rather than carried through to the insert.
-    const result = validateWorldConfig({ ...config(), status: 'open' }, NOW);
+    const result = await validateWorldConfig({ ...config(), status: 'open' }, NOW, anyVersion);
     if (!result.ok) throw new Error('expected acceptance');
     expect(result.config).not.toHaveProperty('status');
   });

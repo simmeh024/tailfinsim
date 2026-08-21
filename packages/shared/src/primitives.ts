@@ -105,6 +105,31 @@ export const IsoWeekday = z.number().int().min(1).max(7);
 export type IsoWeekday = z.infer<typeof IsoWeekday>;
 
 /**
+ * A calendar month, 1 = January … 12 = December.
+ *
+ * A literal union rather than a bounded integer, because the things that switch
+ * on a month — a seasonal curve, a holiday list — want the compiler to know
+ * there are exactly twelve. Here rather than in `@tailfin/sim` so that a
+ * `holidayMonths` list validated on its way into the database and the sim's own
+ * `Month` are one type rather than two that agree by luck.
+ */
+export const Month = z.union([
+  z.literal(1),
+  z.literal(2),
+  z.literal(3),
+  z.literal(4),
+  z.literal(5),
+  z.literal(6),
+  z.literal(7),
+  z.literal(8),
+  z.literal(9),
+  z.literal(10),
+  z.literal(11),
+  z.literal(12),
+]);
+export type Month = z.infer<typeof Month>;
+
+/**
  * Cabin classes (§6.2). `premium_economy` is spelled out rather than
  * abbreviated so it never collides with `economy` in a prefix match.
  */

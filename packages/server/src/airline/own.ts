@@ -9,7 +9,7 @@ import { gameTime } from '@tailfin/sim';
 
 import { type Database } from '../db/client';
 import { airline, airlineIdentityChange, world } from '../db/schema';
-import { economyConfigFor } from '../economy/config';
+import { loadEconomyConfig } from '../economy/loader';
 
 import { moveAirlineCash } from './cash';
 import { resolvePlayerAirline, type ResolvedPlayerAirline } from './context';
@@ -23,11 +23,18 @@ import { wireAirline } from './wire';
 const MUTABLE_FIELDS = ['name', 'callsign', 'baseCountry'] as const;
 const IMMUTABLE_FIELDS = ['iataCode', 'icaoCode', 'cash', 'reputation'] as const;
 
-function rebrandTerms(economyConfigVersion: string): NonNullable<OwnAirlineResponse['rebrand']> {
-  const config = economyConfigFor(economyConfigVersion);
-  if (!config) {
-    throw new Error(`Airline world pins unknown economy config ${economyConfigVersion}`);
-  }
+/**
+ * What a rebrand costs, from the world's own economy version.
+ *
+ * A database read since M3-11 rather than a lookup in a code registry: the price
+ * is §22.3 config and an admin can move it without a deploy. Cached by version
+ * in `economy/loader.ts`, so this is a map hit after the first call.
+ */
+async function rebrandTerms(
+  db: Database,
+  economyConfigVersion: string,
+): Promise<NonNullable<OwnAirlineResponse['rebrand']>> {
+  const config = await loadEconomyConfig(db, economyConfigVersion);
   return {
     costMinor: config.airlineIdentity.rebrandCostMinor,
     mutableFields: [...MUTABLE_FIELDS],
@@ -71,7 +78,8 @@ export async function readOwnAirline(
     kind: 'found',
     response: {
       airline: wireAirline(own.row),
-      rebrand: own.row.status === 'active' ? rebrandTerms(own.economyConfigVersion) : null,
+      rebrand:
+        own.row.status === 'active' ? await rebrandTerms(db, own.economyConfigVersion) : null,
     },
   };
 }
@@ -147,7 +155,7 @@ export async function updateOwnAirline(
       };
     }
 
-    const terms = rebrandTerms(current.world.economyConfigVersion);
+    const terms = await rebrandTerms(tx, current.world.economyConfigVersion);
     const occurredAt = gameTime(
       {
         epoch: current.world.epoch,

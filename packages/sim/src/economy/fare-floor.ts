@@ -37,7 +37,12 @@
  * not exist yet arrives as a parameter, not as a stub.
  */
 
-import type { AirportFees, CabinClass, FlightLoad } from '@tailfin/shared';
+import {
+  type AirportFees,
+  type CabinClass,
+  ECONOMY_CONFIG_V1,
+  type FlightLoad,
+} from '@tailfin/shared';
 
 import { computeBlockTime } from '../flight/block';
 import { computeFuelBurn } from '../flight/fuel';
@@ -47,7 +52,7 @@ import { computeFuelCost, type FuelMarket, type FuelStation } from './fuel-price
 import { DEFAULT_SETTLEMENT, type SettlementConfig, settleFlight } from './settlement';
 
 /** A.10's threshold: a fare may not fall below this share of variable cost. */
-export const FARE_FLOOR_RATIO = 0.6;
+export const FARE_FLOOR_RATIO = ECONOMY_CONFIG_V1.pricing.fareFloorRatio;
 
 /** What the aircraft on this route costs to fly, until M4 can say. */
 export interface FareFloorAircraft {

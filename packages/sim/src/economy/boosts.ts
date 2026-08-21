@@ -22,6 +22,8 @@
  * kill persistent multiplayer games."*
  */
 
+import { ECONOMY_CONFIG_V1 } from '@tailfin/shared';
+
 /**
  * One boost from a research node, an academy doctrine, a Head of Ground Ops or a
  * Training Captain (§10.1–§10.4). `fraction` is the share of the quantity it
@@ -39,20 +41,15 @@ export interface EfficiencyBoost {
  * Here rather than scattered across the modules that apply them, so a change to
  * the table is a change in one place and a reviewer can see all six at once.
  */
-export const EFFICIENCY_CEILINGS = {
-  /** −8%. */
-  fuelBurn: 0.08,
-  /** −20%. */
-  turnaroundTime: 0.2,
-  /** −4%. Taxi and routing efficiency; it does not make the aircraft fly faster. */
-  blockTime: 0.04,
-  /** −12%. */
-  maintenanceCost: 0.12,
-  /** −30%. */
-  incidentRate: 0.3,
-  /** −15%. */
-  serviceCost: 0.15,
-} as const;
+/**
+ * The ceilings from §10.4.
+ *
+ * The numbers live in `ECONOMY_CONFIG_V1.boosts.ceilings` in `@tailfin/shared`,
+ * with everything else an admin can retune (M3-11, §22.3) — §22.3 names *"boost
+ * ceilings"* on its own list. Here as the default parameter for the pure
+ * functions below; the server reads the world's pinned config instead.
+ */
+export const EFFICIENCY_CEILINGS = ECONOMY_CONFIG_V1.boosts.ceilings;
 
 export interface StackedBoosts {
   /** The reduction actually applied, 0–1, after diminishing returns and the cap. */

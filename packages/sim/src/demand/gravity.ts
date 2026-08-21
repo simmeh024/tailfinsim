@@ -33,7 +33,7 @@
  * eventually known can use it and the rest are honestly silent.
  */
 
-import type { DemandSegment } from '@tailfin/shared';
+import { type DemandSegment, ECONOMY_CONFIG_V1 } from '@tailfin/shared';
 
 /** One end of a city pair — the four catchment numbers M1-03 derived, plus where it is. */
 export interface DemandEndpoint {
@@ -91,28 +91,21 @@ export interface GravityConfig {
   domesticAffinity: number;
 }
 
-export const DEFAULT_GRAVITY: GravityConfig = {
-  /**
-   * Calibrated to one anchor: **Amsterdam–London at about 10,000 passengers a
-   * day**, both directions, all carriers. That is roughly 3.6 million a year,
-   * which is the right order for one of Europe's densest city pairs.
-   *
-   * One anchor rather than several because the rest of the curve is shape, and
-   * shape is what the distance and affinity terms are for. Pinning a second
-   * point would over-determine a model whose inputs are themselves normalised
-   * indices rather than measurements.
-   */
-  k: 0.026,
-  alpha: 0.4,
-  surfaceCompetitionNm: 100,
-  riseConstantNm: 120,
-  peakDistanceNm: 700,
-  longHaulDecayNm: 2_200,
-  tourismWeight: 0.6,
-  businessWeight: 0.5,
-  languageAffinity: 0.25,
-  domesticAffinity: 0.35,
-};
+/**
+ * A.2's coefficients, as the world is currently tuned.
+ *
+ * The numbers are not here: they are a slice of `ECONOMY_CONFIG_V1` in
+ * `@tailfin/shared`, which is also the row seeded into `economy_config` and the
+ * payload an admin retunes without a deploy (M3-11, §22.3). `packages/sim`
+ * holds no balance literal, so there is exactly one place a coefficient can be
+ * changed and exactly one version number that describes it.
+ *
+ * This constant remains as the **default parameter** for the pure functions
+ * below, so a test can size a pool without carrying a config around. The server
+ * never uses it — lint forbids that, because a route running the shipped seed
+ * instead of the world's pinned config is invariant 3 quietly failing.
+ */
+export const DEFAULT_GRAVITY: GravityConfig = ECONOMY_CONFIG_V1.demand.gravity;
 
 /** Version tag. A demand pool has to stay explicable after a retune (invariant 4). */
 export const GRAVITY_CONFIG_VERSION = 'v1' as const;
@@ -270,17 +263,7 @@ export interface SegmentConfig {
   bounds: Record<DemandSegment, readonly [number, number]>;
 }
 
-export const DEFAULT_SEGMENTS: SegmentConfig = {
-  base: { business: 0.2, leisure: 0.55, vfr: 0.25 },
-  businessSwing: 0.35,
-  tourismSwing: 0.4,
-  vfrSwing: 0.2,
-  bounds: {
-    business: [0.1, 0.35],
-    leisure: [0.4, 0.7],
-    vfr: [0.15, 0.3],
-  },
-};
+export const DEFAULT_SEGMENTS: SegmentConfig = ECONOMY_CONFIG_V1.demand.segments;
 
 /**
  * How a pair's traffic splits between business, leisure and VFR.
@@ -414,7 +397,7 @@ export function demandPool(
  * A balance number like any other: raise it and the world gets smaller and
  * cheaper, lower it and thin regional markets become playable.
  */
-export const VIABLE_DAILY_PASSENGERS = 25;
+export const VIABLE_DAILY_PASSENGERS = ECONOMY_CONFIG_V1.demand.viableDailyPassengers;
 
 /** Whether a pair is worth storing at all. See {@link VIABLE_DAILY_PASSENGERS}. */
 export function isViablePair(

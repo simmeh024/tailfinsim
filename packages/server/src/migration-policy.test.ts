@@ -50,6 +50,39 @@ describe('expand/contract migration policy', () => {
     expect(violations[0]?.message).toContain('contract operation');
   });
 
+  it('does not mistake a trigger that forbids TRUNCATE for a TRUNCATE', () => {
+    // `economy_config` installs exactly this (migration 0023). The trigger makes
+    // the table stricter for the previous release, not looser — reading it as a
+    // contraction would refuse the safest thing a migration can do.
+    const violations = migrationPolicyViolationsForSource(
+      '0020_probe',
+      `-- tailfin:migration-strategy expand
+CREATE TABLE thing ("id" text PRIMARY KEY NOT NULL);
+CREATE TRIGGER thing_no_truncate
+  BEFORE TRUNCATE ON thing
+  FOR EACH STATEMENT EXECUTE FUNCTION thing_is_immutable();
+CREATE TRIGGER thing_no_write
+  BEFORE UPDATE OR DELETE ON thing
+  FOR EACH ROW EXECUTE FUNCTION thing_is_immutable();`,
+    );
+    expect(violations).toEqual([]);
+  });
+
+  it('still catches a real truncation in a file that also defines triggers', () => {
+    // The stripping is scoped to the trigger's event clause, so it cannot be
+    // used to smuggle a contraction past the check.
+    const violations = migrationPolicyViolationsForSource(
+      '0020_probe',
+      `-- tailfin:migration-strategy expand
+CREATE TRIGGER thing_no_truncate
+  BEFORE TRUNCATE ON thing
+  FOR EACH STATEMENT EXECUTE FUNCTION thing_is_immutable();
+TRUNCATE other_thing;`,
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.message).toContain('contract operation');
+  });
+
   it('requires a default on a new required column', () => {
     const violations = migrationPolicyViolationsForSource(
       '0020_probe',

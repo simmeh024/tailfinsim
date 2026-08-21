@@ -2,7 +2,13 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist",
+    // `node` is here only for `balance-source.test.ts`, which reads the package's
+    // own source off disk to prove no balance number is written as a literal
+    // (M3-11). Invariant 2 is unaffected: lint forbids `node:*` imports from
+    // every non-test file in this package, so the sim itself still cannot
+    // perform I/O. Same arrangement as `packages/web` and its token scan.
+    "types": ["node"]
   },
   "include": ["src/**/*.ts"],
   "references": [{ "path": "../shared" }]
