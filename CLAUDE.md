@@ -110,10 +110,12 @@ non-HTTPS `PUBLIC_ORIGIN`; see ADR-0015.
 
 ---
 
-## The two environments
+## The two environments, on three nodes
 
-Both run on one DreamCompute box, `208.113.129.131`. Same repo, same build, different
-checkout, port, database and audience.
+Production and dev **web** share one DreamCompute box, `208.113.129.131`. Same repo, same
+build, different checkout, port, database and audience. Since OPS-09 there is also a second
+box, `tailfin-dev-worker-01` (`208.113.129.83`), running the dev **worker** — so "the box" is
+no longer an unambiguous phrase, and production still has no worker at all.
 
 |                   | production                 | dev                            |
 | ----------------- | -------------------------- | ------------------------------ |
@@ -127,6 +129,19 @@ checkout, port, database and audience.
 | accepts           | **only commits on `main`** | **any ref, deliberately**      |
 | `WEB_SURFACE`     | unset → **holding page**   | `app` → the real client        |
 | access            | public                     | Google sign-in, `noindex`      |
+
+The third node, alongside dev web:
+
+|             | dev worker                                       |
+| ----------- | ------------------------------------------------ |
+| host        | `208.113.129.83` — its own VM                    |
+| checkout    | `/srv/tailfin-dev-worker`                        |
+| service     | `tailfin-dev-worker` (+ `tailfin-db-tunnel`)     |
+| entry point | `dist/worker.js`                                 |
+| port        | 3100, **loopback only** — no Caddy vhost, ever   |
+| database    | `tailfin_dev` via SSH tunnel on `127.0.0.1:5433` |
+| deploy with | `./deploy/deploy-dev-worker.sh <ref>`            |
+| migrations  | **no** — the web node owns them                  |
 
 **Dev is the preview environment and is meant to run unmerged branches.** That is a
 standing decision, not an oversight — it is where the user reviews work before merging.
@@ -156,19 +171,35 @@ boundary is [ADR-0019](docs/adr/0019-web-worker-boundary.md), and it is enforced
 by `engine/boundary.test.ts` rather than by memory — the web process cannot reach the loop.
 Do not wire it into `main.ts`; that is now a failing test as well as a bad idea.
 
-What has **not** changed: no systemd unit runs `worker.js` in any environment. There is still
-no cron and no timer. So no world advances beyond its derived clock, no event is ever drained,
-and any "ticks: 0, errors: 0" reading still means _nothing has run_, not _everything is fine_.
-The admin console's health page infers liveness from the queue for exactly that reason, and
-the worker's own `/healthz` answers **503 while its process is alive** if the engine is not
-ticking. Starting it is [OPS-09](https://github.com/simmeh024/tailfinsim/issues/188) on dev
-and [OPS-11](https://github.com/simmeh024/tailfinsim/issues/191) on production.
+**The simulation now runs on dev, and nowhere else.** OPS-09 put
+`tailfin-dev-worker.service` on its own node, `tailfin-dev-worker-01` — so a dev world's clock
+advances and its queue drains, while **production still has no worker at all**. Do not
+generalise a reading from one to the other; that is [OPS-11](https://github.com/simmeh024/tailfinsim/issues/191).
+
+A "ticks: 0, errors: 0" reading still means _nothing has run_ rather than _everything is fine_.
+The admin console's health page infers liveness from the queue for exactly that reason, and the
+worker's own `/healthz` answers **503 while its process is alive** if the engine is not
+ticking — the failure `systemctl is-active` cannot see.
 
 **Before starting a worker anywhere, check `engine.unhandledEventTypes`.** Only
 `FLIGHT_ARRIVE` has a handler. `FLIGHT_DEPART` is scheduled by `schedule/store.ts` and has
 none, and `drainDueEvents` marks an event of an unhandled type **failed** — so a worker
 started against a queue holding materialised departures marks every one of them failed on the
 first tick. Recoverable, since the rows remain, but not something to discover afterwards.
+Starting it on dev was safe only because `tailfin_dev` had **zero** `world_event` rows, which
+was checked first rather than assumed.
+
+**The dev worker is a second machine, and it reaches the database through an SSH tunnel.**
+There is no private network between the two DreamCompute VMs — they share a public segment with
+other tenants — so `tailfin-db-tunnel.service` forwards `127.0.0.1:5433` to the web host's
+Postgres rather than opening a listener. Postgres still binds localhost only. The worker's role
+`tailfin_worker_dev` is **refused** the production database by `pg_hba.conf`, not merely
+pointed away from it. `deploy/README.md` has the runbook and the failure modes.
+
+**Only the web node migrates.** `deploy.sh` takes `RUNS_MIGRATIONS`, and the worker's wrapper
+sets it to 0: two nodes reaching the migrator at once would take the second one's pre-migration
+backup after the first had started changing the schema. A worker deploy with a pending schema
+change is refused and tells you to deploy the web node first.
 
 **The admin console is real and is the place to look first.** `/admin`, for accounts
 holding a grant: overview with server-decided alerts, world creation, speed changes, the
