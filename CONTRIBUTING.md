@@ -50,6 +50,49 @@ than recomputing or discarding it.
 
 ---
 
+## The web/worker boundary
+
+Two processes come out of `packages/server`, from one build and one commit. What separates
+them is not what they are made of but **who is allowed to start work**.
+
+|                  | **Web** — `src/main.ts`                                                                                                  | **Worker** — `src/worker.ts`                                                                                                                     |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Owns             | HTTP, the client bundle, the API, auth and sessions, the admin console, anything short enough to finish inside a request | The tick loop, draining `world_event`, economy processing, demand and route calculation, every scheduled job, anything CPU-heavy or long-running |
+| Serves           | everything public, via Caddy                                                                                             | one loopback endpoint, `/healthz` and `/queues`                                                                                                  |
+| May start a loop | **no**                                                                                                                   | yes                                                                                                                                              |
+
+**Neither owns both, and a scheduled job has exactly one owner — the worker.** If you find
+yourself wanting a timer in a route, you want an event: write a `world_event` row with
+`scheduleEvent()` and let the worker drain it. A `fire_at` that is already due means "now".
+
+That is also the only channel between them. Web writes a row; the worker picks it up. There
+is no RPC and no HTTP call from one to the other — see
+[ADR-0019](docs/adr/0019-web-worker-boundary.md), which also records why Postgres remains the
+queue and what would change that.
+
+Three things hold the line, so it does not depend on anyone remembering it:
+
+- **Lint.** `sim/tick` may not be imported anywhere in `packages/server` except `worker.ts`,
+  `engine/**` and the loop itself.
+- **`engine/boundary.test.ts`.** Walks the module graph from `app.ts` and `main.ts` and
+  asserts the loop and all of `engine/` are unreachable; walks from `worker.ts` and asserts
+  they are, and that `app.ts` is not.
+- **`engine/health.test.ts`.** Asserts the worker's whole route table, so "the worker serves
+  nothing" fails a test rather than a code review.
+
+Note what is _not_ restricted: `sim/event-queue.ts` stays open to the web process, because
+scheduling an event is web work. The restriction is on the loop, not on the queue.
+
+**Nothing starts the worker yet.** There is no systemd unit for it in any environment; OPS-09
+(#188) is the dev service and OPS-11 (#191) the production one. Running it locally:
+
+```bash
+pnpm build:apps
+node packages/server/dist/worker.js
+```
+
+---
+
 ## Getting set up
 
 ```bash

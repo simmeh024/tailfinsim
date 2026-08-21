@@ -130,6 +130,7 @@ jobs:
           missing=0
           for f in \
             packages/server/dist/main.js \
+            packages/server/dist/worker.js \
             packages/server/dist/migrate.js \
             packages/server/dist/import-airports.js \
             packages/server/dist/classify-airports.js \
