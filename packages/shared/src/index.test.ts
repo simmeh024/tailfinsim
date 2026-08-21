@@ -116,6 +116,10 @@ describe('Airline', () => {
     id: '3f2b8c9e-1d4a-4f6b-8c2e-9a7d5b3f1e0c',
     worldId: '5a1c7d3e-2b8f-4a6c-9d1e-7f3b5c9a2d4e',
     playerId: '7c3e9a1f-4d2b-4e8a-b6c1-3f9d7a5e1c2b',
+    // M3-12: an airline is player-run or an NPC, and the two are exclusive —
+    // a player airline has a player and no archetype.
+    kind: 'player',
+    archetype: null,
     name: 'Tailfin Air',
     iataCode: 'TF',
     icaoCode: 'TFN',
@@ -131,6 +135,14 @@ describe('Airline', () => {
 
   it('accepts a well-formed airline', () => {
     expect(Airline.safeParse(valid).success).toBe(true);
+  });
+
+  it('accepts an NPC carrier, which has an archetype and no player', () => {
+    // §24's AI carriers (M3-12). The same schema, because an NPC is an airline
+    // rather than a separate kind of thing — that is what makes "NPCs obey
+    // exactly the same rules as players" structural rather than a promise.
+    const npc = { ...valid, playerId: null, kind: 'npc', archetype: 'lcc' };
+    expect(Airline.safeParse(npc).success).toBe(true);
   });
 
   it('refuses a three-character IATA code', () => {

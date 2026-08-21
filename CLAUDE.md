@@ -43,6 +43,15 @@ working against the result; the deploy deliberately leaves it serving when migra
 Do not add down-migrations or bypass the policy for `CREATE INDEX CONCURRENTLY`—ADR-0016 owns
 the transaction, lock and recovery trade.
 
+**A world is not populated until `npc:seed` has run.** Since M3-12 the competition is
+real: NPC carriers are rows in `airline` with `kind = 'npc'`, no player, an archetype, and
+routes and fares decided by a weekly review the **worker** runs. They obey the same fare
+floor, the same economy config and the same demand model as players — there is no NPC cost
+table, and `carrier.test.ts` proves it rather than asserting it. The order is
+`demand:generate` then `npc:seed <worldId>`; a world with no demand pools gets no carriers.
+The admin console's Carriers page is where a decision is explained, and it is the answer to
+_"why did a competitor appear in my market?"_.
+
 **Never `git add -A`.** Stage files explicitly, by path. A `.pem` was committed this way
 once. `.claude/` and other untracked directories sit in this working tree routinely.
 

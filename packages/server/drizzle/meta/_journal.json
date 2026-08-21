@@ -169,6 +169,13 @@
       "when": 1787319688933,
       "tag": "0023_sticky_legion",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1787334160367,
+      "tag": "0024_calm_tiger_shark",
+      "breakpoints": true
     }
   ]
 }

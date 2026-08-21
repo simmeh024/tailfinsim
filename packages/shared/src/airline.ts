@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { AirportTier, SlotLevel } from './airport';
 import { ApiError } from './api';
+import { AirlineKind, NpcArchetype } from './npc';
 import {
   AirlineIataCode,
   AirlineIcaoCode,
@@ -104,13 +105,22 @@ export const LIVE_AIRLINE_STATUSES = [
 ] as const satisfies readonly AirlineStatus[];
 
 /**
- * An airline — a player's presence in one world. Mirrors the `airline` table
- * from M0-06.
+ * An airline in one world. Mirrors the `airline` table from M0-06.
+ *
+ * Usually a player's presence in that world, and since M3-12 not always: NPC
+ * carriers are airlines too, in the same table under the same constraints,
+ * which is what makes *"NPCs obey exactly the same rules as players"* a
+ * structural fact rather than a promise. `kind` says which, and `playerId` is
+ * null for exactly the NPCs.
  */
 export const Airline = z.object({
   id: Uuid,
   worldId: Uuid,
-  playerId: Uuid,
+  /** Null for an NPC carrier, which no person runs. */
+  playerId: Uuid.nullable(),
+  kind: AirlineKind,
+  /** The NPC's behavioural archetype. Null for a player airline. */
+  archetype: NpcArchetype.nullable(),
 
   ...AirlineIdentity.shape,
   baseCountry: CountryCode,

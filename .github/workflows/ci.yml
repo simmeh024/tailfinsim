@@ -141,6 +141,7 @@ jobs:
             packages/server/dist/ops-status.js \
             packages/server/dist/generate-demand.js \
             packages/server/dist/assign-timezones.js \
+            packages/server/dist/seed-npcs.js \
             packages/server/dist/build-info.json \
             packages/web/dist/client/index.html
           do

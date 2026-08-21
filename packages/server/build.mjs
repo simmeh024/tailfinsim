@@ -39,6 +39,7 @@ await build({
     'src/admin-cli.ts',
     'src/ops-status.ts',
     'src/generate-demand.ts',
+    'src/seed-npcs.ts',
     'src/assign-timezones.ts',
   ],
   outdir: 'dist',

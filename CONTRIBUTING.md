@@ -188,12 +188,19 @@ Everything below runs from anywhere in the repo and needs the package **built** 
 | `pnpm data:distances`  | Pack the great-circle distance matrix (M1-04)             |
 | `pnpm world:seed`      | Create the flagship world from config (M1-09)             |
 | `pnpm demand:generate` | Size every viable city pair's demand pool (M3-01)         |
+| `pnpm npc:seed`        | Populate a world with NPC incumbents (M3-12)              |
 | `pnpm admin`           | Grant and revoke admin from a shell (M1A-01)              |
 
 They run in that order for a new world: the demand model reads the catchment the importer
 derived, and the catchment needs the airports. `demand:generate` is the only one that is
 safe and sometimes necessary to re-run — the gravity coefficients are balance numbers, and
 retuning them means `--regenerate`.
+
+`npc:seed` is last and takes a world id, because NPC carriers choose their networks from
+`demand_pool`: a world without pools gets no carriers and a message saying so. It is
+idempotent by presence — a world that already has NPCs is left alone — which matters
+because nothing here can be deleted back, and a second run would otherwise double a
+world's competition.
 
 `data:timezones` is the exception to the ordering: it needs only the airports, so it can
 run any time after `data:airports`. It sits here because it shares the GeoNames download

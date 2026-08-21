@@ -12,10 +12,11 @@
  *   a reference config below. Every fare floor on the box is therefore drawn
  *   against a representative narrowbody rather than against the aeroplane the
  *   player actually flies, and it will move when M4 lands.
- * - **Competitors are not.** Nobody else is flying, because there are no AI
- *   carriers (M3-12) and one player. An empty competitor list is a real state,
- *   not a stub — a monopoly is a market of one — so the preview is correct
- *   today and gets more interesting rather than less wrong.
+ * - **Competitors are real, since M3-12.** Every other active airline selling
+ *   the pair — NPC incumbent or rival player — is resolved into the same
+ *   `ClassOperator` shape and handed to the same allocator. An empty list is
+ *   still a real state rather than a stub; it now means what it says, which is
+ *   that this market genuinely has one operator in it.
  *
  * Stating that split matters more than hiding it. A preview built on a
  * reference airframe is useful; a preview that *looks* like it knows your fleet
@@ -29,6 +30,8 @@ import type { FareFloorAircraft, FuelMarket, FuelStation } from '@tailfin/sim';
 
 import { demandPool } from '../db/schema';
 import { loadWorldEconomyConfig } from '../economy/loader';
+
+import { competitorsFor } from './competitors';
 
 import type { RouteEconomics, RouteRow } from './fares';
 import type { Database } from '../db/client';
@@ -71,6 +74,27 @@ export const REFERENCE_STATION: FuelStation = {
 export const REFERENCE_SELF = { reputation: 0.35, productScore: 0.6, frequency: 2 };
 
 /**
+ * A city pair in the order `demand_pool` stores it.
+ *
+ * **A market has no direction.** `demand_pool` enforces that with the
+ * `demand_pool_canonical_order` check — `origin_icao < destination_icao` — so
+ * every pair is stored exactly once, and M3-01's generator only ever walks
+ * `i < j`. A `route`, by contrast, *is* directional: `open-route.ts` stores
+ * whichever way round the player typed it.
+ *
+ * Those two facts have to be reconciled somewhere, and until M3-12 they were
+ * not. `poolsFor` matched the pair in route order, so a route opened as
+ * LEBL→EHAM found no row and reported a market of **zero passengers** — while
+ * the same physical market opened as EHAM→LEBL reported thousands. Roughly half
+ * of all routes, decided by nothing more than the alphabet.
+ */
+export function canonicalPair(originIcao: string, destinationIcao: string): [string, string] {
+  return originIcao < destinationIcao
+    ? [originIcao, destinationIcao]
+    : [destinationIcao, originIcao];
+}
+
+/**
  * The market this route sells into, from the world's own demand pools.
  *
  * `numeric` comes back from the driver as a **string** — the trap CLAUDE.md
@@ -82,6 +106,8 @@ export async function poolsFor(
   db: Database,
   row: RouteRow,
 ): Promise<Record<DemandSegment, number>> {
+  const [poolOrigin, poolDestination] = canonicalPair(row.originIcao, row.destinationIcao);
+
   const found = await db
     .select({
       dailyPassengers: demandPool.dailyPassengers,
@@ -93,8 +119,8 @@ export async function poolsFor(
     .where(
       and(
         eq(demandPool.worldId, row.worldId),
-        eq(demandPool.originIcao, row.originIcao),
-        eq(demandPool.destinationIcao, row.destinationIcao),
+        eq(demandPool.originIcao, poolOrigin),
+        eq(demandPool.destinationIcao, poolDestination),
       ),
     )
     .limit(1);
@@ -138,6 +164,18 @@ export function createEconomicsProvider(
       poolsFor(db, row),
     ]);
 
+    const competitors = await competitorsFor(db, {
+      worldId: row.worldId,
+      originIcao: row.originIcao,
+      destinationIcao: row.destinationIcao,
+      excludeAirlineId: row.airlineId,
+      economy,
+      // A rival player is assumed to fly what this player is assumed to fly,
+      // which is the only symmetric answer available before M4 gives anyone a
+      // real fleet.
+      playerSeatsByCabin: REFERENCE_AIRFRAME.seatsByCabin,
+    });
+
     return {
       aircraft: REFERENCE_AIRFRAME,
       market: market ?? { basePricePerTonne: economy.fuel.basePricePerTonne },
@@ -145,8 +183,7 @@ export function createEconomicsProvider(
       originFees: REFERENCE_FEES,
       destinationFees: REFERENCE_FEES,
       segmentPools,
-      // No AI carriers yet (M3-12) and one player. A monopoly is a market of one.
-      competitors: [],
+      competitors,
       self: REFERENCE_SELF,
       settlement: economy.costs.settlement,
       fareFloorRatio: economy.pricing.fareFloorRatio,

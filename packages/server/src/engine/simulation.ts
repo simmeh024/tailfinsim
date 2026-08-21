@@ -1,9 +1,10 @@
 import { asc, ne } from 'drizzle-orm';
 
-import { type WorldClock } from '@tailfin/sim';
+import { gameTime, type WorldClock } from '@tailfin/sim';
 
 import { type Database } from '../db/client';
 import { world, type WorldRow } from '../db/schema';
+import { reviewNpcCarriers } from '../npc/operate';
 import {
   drainDueEvents,
   queueDepth,
@@ -65,6 +66,8 @@ export interface EngineLog {
   tick?: (report: TickReport) => void;
   error?: (error: unknown) => void;
   warn?: (message: string) => void;
+  /** Notable but unalarming. An NPC review that actually did something (M3-12). */
+  info?: (message: string) => void;
 }
 
 export interface SimulationEngineOptions {
@@ -91,6 +94,11 @@ export interface SimulationEngineOptions {
   clearTimer?: (handle: unknown) => void;
   listWorlds?: (db: Database) => Promise<EngineWorld[]>;
   drain?: typeof drainDueEvents;
+  /**
+   * The NPC review (M3-12). Injectable so the engine's own tests do not need a
+   * world full of carriers to assert the loop.
+   */
+  reviewNpcs?: typeof reviewNpcCarriers;
   depth?: typeof queueDepth;
 }
 
@@ -130,6 +138,9 @@ export interface EngineSnapshot {
    * the health output rather than discovered afterwards from the table.
    */
   unhandledEventTypes: WorldEventType[];
+  /** NPC decisions recorded since start, and reviews that threw (M3-12). */
+  npcDecisions: number;
+  npcErrors: number;
 }
 
 export interface QueueDepthByWorld {
@@ -204,6 +215,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     listWorlds = listTickableWorlds,
     drain = drainDueEvents,
     depth = queueDepth,
+    reviewNpcs = reviewNpcCarriers,
   } = options;
 
   const unhandledEventTypes = ALL_EVENT_TYPES.filter((type) => handlers[type] === undefined);
@@ -214,6 +226,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let lastWorldCount = 0;
   let processed = 0;
   let failed = 0;
+  let npcDecisions = 0;
+  let npcErrors = 0;
 
   async function tick(context: { tickedAt: Date; tickNumber: number }): Promise<TickReport> {
     const worlds = await listWorlds(db);
@@ -231,6 +245,28 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       });
       tickProcessed += result.processed;
       tickFailed += result.failed;
+
+      // The NPC review, on the same tick and against the same clock (M3-12).
+      // It decides for itself whether the world is due — the engine ticks every
+      // second and a carrier reviews weekly in game time — so calling it every
+      // tick costs one config lookup and a date comparison in the common case.
+      //
+      // A failure here must not stop the queue draining. An NPC that could not
+      // review this tick reviews the next one; a flight that never settles is
+      // money that never moves.
+      try {
+        const review = await reviewNpcs(db, entry.id, gameTime(entry.clock, now()));
+        if (review.reviewed && review.logged > 0) {
+          npcDecisions += review.logged;
+          log?.info?.(
+            `[${entry.name}] npc review: ${String(review.entered)} entered, ` +
+              `${String(review.exited)} exited, ${String(review.faresChanged)} fares moved`,
+          );
+        }
+      } catch (error) {
+        npcErrors += 1;
+        log?.warn?.(`[${entry.name}] npc review failed: ${String(error)}`);
+      }
     }
 
     const durationMs = now().getTime() - context.tickedAt.getTime();
@@ -296,6 +332,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         processed,
         failed,
         unhandledEventTypes,
+        npcDecisions,
+        npcErrors,
       };
     },
 
