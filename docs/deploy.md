@@ -181,6 +181,23 @@ the callback, after the player has been sent to Google. Production also refuses 
 | `ALLOW_REGISTRATION`          | `false`                                       | no       | **Defaults to false.** Closed unless explicitly opened |
 | `BACKUP_STATUS_FILE`          | `/var/lib/tailfin/backup-status.json`         | no       | Written by `backup.sh`, read by the admin overview     |
 
+#### Worker-only (OPS-08)
+
+Read by `worker.js` and by nothing else. A web node may hold them; they do nothing there.
+
+| Variable                  | Example     | Required | Notes                                         |
+| ------------------------- | ----------- | -------- | --------------------------------------------- |
+| `WORKER_HEALTH_PORT`      | `3100`      | no       | Defaults to 3100. Deliberately **not** `PORT` |
+| `WORKER_HEALTH_HOST`      | `127.0.0.1` | no       | Loopback only. Never proxy this through Caddy |
+| `WORKER_TICK_INTERVAL_MS` | `1000`      | no       | Defaults to 1000, the coarse tick of §21      |
+
+`WORKER_HEALTH_PORT` is a separate variable from `PORT` on purpose: one `.env` copied to a
+worker node would otherwise bind the web port, or two services on one box would fight over 3000. 3100 keeps it clear of both 3000 (production web) and 3001 (dev web).
+
+`WORKER_HEALTH_HOST` is loopback and is not read from `HOST`. The endpoint is
+unauthenticated and describes the shape of the simulation; the web process's variable must
+not be able to expose it.
+
 ### Build numbers (M0-12)
 
 Every deploy carries a build number: `git rev-list --count HEAD`, stamped into

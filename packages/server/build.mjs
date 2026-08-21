@@ -12,8 +12,9 @@ import { build } from 'esbuild';
  * (`moduleResolution: bundler` cannot emit runnable Node output) — see
  * ADR-0001. This is the compiler for the server package.
  *
- * Eleven entry points, and CI asserts every one of them lands in `dist`:
- *   main.js             the server process
+ * Twelve entry points, and CI asserts every one of them lands in `dist`:
+ *   main.js             the web process
+ *   worker.js           the simulation engine (OPS-08) — one build, one stamp
  *   migrate.js          a one-off run by the deploy script before main starts
  *   import-airports.js  a one-off run by hand when the dataset moves (M1-01)
  *   classify-airports.js  assigns tiers over the imported set (M1-02)
@@ -28,6 +29,7 @@ import { build } from 'esbuild';
 await build({
   entryPoints: [
     'src/main.ts',
+    'src/worker.ts',
     'src/migrate.ts',
     'src/import-airports.ts',
     'src/classify-airports.ts',

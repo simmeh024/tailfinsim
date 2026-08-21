@@ -131,6 +131,44 @@ export default tseslint.config(
     },
   },
 
+  // The web/worker boundary — ADR-0019, OPS-08.
+  //
+  // Only the worker runs things on a schedule. Everything in the server package
+  // except the engine and its entry point is web work or shared work, and none
+  // of it may start a tick loop.
+  //
+  // Scoped to the *loop*, not to the queue: `sim/event-queue.ts` stays open to
+  // the web process on purpose, because scheduling an event is web work — a
+  // route writes a due row and the worker picks it up. That is the whole
+  // communication channel, and closing it would break the boundary rather than
+  // enforce it.
+  //
+  // `engine/boundary.test.ts` asserts the same thing across the whole module
+  // graph, which is what catches a path this glob does not. This rule is here
+  // for the version of that feedback that arrives while you are still typing.
+  {
+    files: ['packages/server/**/*.ts'],
+    ignores: [
+      'packages/server/src/worker.ts',
+      'packages/server/src/engine/**/*.ts',
+      'packages/server/src/sim/tick.ts',
+    ],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/sim/tick', '**/sim/tick.js'],
+              message:
+                'Only the worker process runs things on a schedule. Put the work in packages/server/src/engine/ and let worker.ts drive it, or schedule an event with scheduleEvent() and let the worker drain it. See docs/adr/0019-web-worker-boundary.md.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   // Tests may reach for things production code may not.
   {
     files: ['**/*.test.ts', '**/*.spec.ts'],

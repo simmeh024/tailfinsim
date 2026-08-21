@@ -147,16 +147,28 @@ back; the new code is already serving.
 
 Two facts that are not visible from the code and cost time to rediscover.
 
-**Nothing runs the simulation.** `createTickLoop` and `drainDueEvents` are built, tested,
-and called by **no process** in any environment. There is no cron, no timer, no loop in
-`main.ts`. So no world advances beyond its derived clock, no event is ever drained, and
-any "ticks: 0, errors: 0" reading means _nothing has run_, not _everything is fine_. The
-admin console's health page infers liveness from the queue instead, precisely so it cannot
-report a stopped engine as healthy.
+**Nothing runs the simulation — the engine now exists, and no service starts it.** Read
+that as two separate facts, because only one of them changed.
 
-Where the engine should live is [OPS-08](https://github.com/simmeh024/tailfinsim/issues/187)'s
-decision — a separate worker process, not the web process. Do not wire the loop into
-`main.ts` as a convenience; that prejudges it.
+OPS-08 settled where the engine lives: `src/worker.ts`, a second entry point from the same
+build, driving `createTickLoop` and `drainDueEvents` over every non-archived world. The
+boundary is [ADR-0019](docs/adr/0019-web-worker-boundary.md), and it is enforced by lint and
+by `engine/boundary.test.ts` rather than by memory — the web process cannot reach the loop.
+Do not wire it into `main.ts`; that is now a failing test as well as a bad idea.
+
+What has **not** changed: no systemd unit runs `worker.js` in any environment. There is still
+no cron and no timer. So no world advances beyond its derived clock, no event is ever drained,
+and any "ticks: 0, errors: 0" reading still means _nothing has run_, not _everything is fine_.
+The admin console's health page infers liveness from the queue for exactly that reason, and
+the worker's own `/healthz` answers **503 while its process is alive** if the engine is not
+ticking. Starting it is [OPS-09](https://github.com/simmeh024/tailfinsim/issues/188) on dev
+and [OPS-11](https://github.com/simmeh024/tailfinsim/issues/191) on production.
+
+**Before starting a worker anywhere, check `engine.unhandledEventTypes`.** Only
+`FLIGHT_ARRIVE` has a handler. `FLIGHT_DEPART` is scheduled by `schedule/store.ts` and has
+none, and `drainDueEvents` marks an event of an unhandled type **failed** — so a worker
+started against a queue holding materialised departures marks every one of them failed on the
+first tick. Recoverable, since the rows remain, but not something to discover afterwards.
 
 **The admin console is real and is the place to look first.** `/admin`, for accounts
 holding a grant: overview with server-decided alerts, world creation, speed changes, the
