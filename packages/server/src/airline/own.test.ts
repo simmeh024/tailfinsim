@@ -196,6 +196,41 @@ describeDb('reading and changing your own airline', () => {
     expect(OwnAirlineResponse.safeParse(response.json()).success).toBe(true);
   });
 
+  it('returns restricted and ceased airlines as read-only records', async () => {
+    const playerId = await makePlayer();
+    const own = await makeAirline(playerId);
+    const token = await tokenFor(playerId);
+
+    await db.db.update(airline).set({ status: 'restricted' }).where(eq(airline.id, own.id));
+    const restricted = await app.inject({
+      method: 'GET',
+      url: '/api/airlines/me',
+      cookies: { [SESSION_COOKIE]: token },
+    });
+    expect(restricted.statusCode).toBe(200);
+    expect(restricted.json()).toMatchObject({
+      airline: { id: own.id, status: 'restricted', ceasedAt: null },
+      rebrand: null,
+    });
+
+    const ceasedAt = new Date('2026-08-21T12:00:00.000Z');
+    await db.db
+      .update(airline)
+      .set({ status: 'ceased', statusChangedAt: ceasedAt, ceasedAt })
+      .where(eq(airline.id, own.id));
+    const ceased = await app.inject({
+      method: 'GET',
+      url: '/api/airlines/me',
+      cookies: { [SESSION_COOKIE]: token },
+    });
+    expect(ceased.statusCode).toBe(200);
+    expect(ceased.json()).toMatchObject({
+      airline: { id: own.id, status: 'ceased', ceasedAt: ceasedAt.toISOString() },
+      rebrand: null,
+    });
+    expect(OwnAirlineResponse.safeParse(ceased.json()).success).toBe(true);
+  });
+
   it('changes AIR-02 identity fields and charges one event through the cash ledger', async () => {
     const playerId = await makePlayer();
     const before = await makeAirline(playerId);

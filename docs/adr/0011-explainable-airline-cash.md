@@ -45,7 +45,8 @@ boundary.
 
 Rows are append-only. An attempted update is refused by the database; a correction is a new
 compensating movement with its own cause and reference. Deleting an airline deliberately
-cascades its movements, matching world reset semantics in ADR-0005. Deleting an isolated
+cascades its movements, matching world reset semantics in ADR-0005. Ordinary cessation
+retains the airline and ledger as read-only history (ADR-0018). Deleting an isolated
 movement while its airline survives fails reconciliation.
 
 ### One transaction service changes the balance

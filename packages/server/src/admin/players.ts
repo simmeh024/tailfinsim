@@ -267,6 +267,9 @@ export async function readPlayer(
         callsign: airline.callsign,
         cashMinor: airline.cashMinor,
         reputation: airline.reputation,
+        status: airline.status,
+        statusChangedAt: airline.statusChangedAt,
+        ceasedAt: airline.ceasedAt,
         createdAt: airline.createdAt,
       })
       .from(airline)
@@ -302,6 +305,7 @@ export async function readPlayer(
       id: row.id,
       displayName: row.displayName,
       avatarUrl: row.avatarUrl,
+      anonymizedAt: row.anonymizedAt?.toISOString() ?? null,
       createdAt: row.createdAt.toISOString(),
       isAdmin: grants.length > 0,
       identities: identities.map((identity) => ({
@@ -329,6 +333,9 @@ export async function readPlayer(
         callsign: entry.callsign,
         cashMinor: entry.cashMinor,
         reputation: Number(entry.reputation),
+        status: entry.status,
+        statusChangedAt: entry.statusChangedAt.toISOString(),
+        ceasedAt: entry.ceasedAt?.toISOString() ?? null,
         createdAt: entry.createdAt.toISOString(),
       })),
     };

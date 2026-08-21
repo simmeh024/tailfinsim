@@ -32,6 +32,9 @@ const OWN: OwnAirlineResponse = {
     baseCountry: 'NL',
     cash: 50_000_000,
     reputation: 0.35,
+    status: 'active',
+    statusChangedAt: '2026-08-20T10:00:00.000Z',
+    ceasedAt: null,
     createdAt: '2026-08-20T10:00:00.000Z',
   },
   rebrand: {
@@ -133,7 +136,7 @@ describe('your airline page', () => {
     }
     expect(screen.queryByLabelText(/IATA/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/ICAO/i)).not.toBeInTheDocument();
-    expect(await screen.findByText(/make historical references ambiguous/i)).toBeInTheDocument();
+    expect(await screen.findByText(/released only if the airline ceases/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Rebrand for 25,000.00' })).toBeDisabled();
   });
 
@@ -199,5 +202,28 @@ describe('your airline page', () => {
       'href',
       '/found',
     );
+  });
+
+  it('keeps a ceased airline visible as history without offering mutations or founding', async () => {
+    stubApi({
+      own: {
+        airline: {
+          ...OWN.airline!,
+          status: 'ceased',
+          statusChangedAt: '2026-08-21T12:00:00.000Z',
+          ceasedAt: '2026-08-21T12:00:00.000Z',
+        },
+        rebrand: null,
+      },
+    });
+    renderPage();
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Tailfin Air' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/operational history remains readable/i)).toBeInTheDocument();
+    expect(screen.getByText(/former codes may now be allocated/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /rebrand/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Open the founding desk' })).not.toBeInTheDocument();
   });
 });

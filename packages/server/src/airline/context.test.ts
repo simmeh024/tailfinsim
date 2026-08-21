@@ -304,4 +304,59 @@ describeDb('player airline context over HTTP', () => {
     expect(response.statusCode).toBe(409);
     expect(response.json()).toMatchObject({ code: 'airline_required' });
   });
+
+  it('applies active, operating and read-only lifecycle permissions consistently', async () => {
+    const worldId = await makeWorld();
+    const playerId = await makePlayer();
+    const airlineId = await makeAirline(worldId, playerId);
+    const token = await cookieFor(playerId);
+    const request = async (
+      method: 'GET' | 'POST' | 'PUT' | 'PATCH',
+      requestUrl: string,
+      payload?: Record<string, unknown>,
+    ) =>
+      app.inject({
+        method,
+        url: requestUrl,
+        payload,
+        headers: { [ACTIVE_WORLD_HEADER]: worldId },
+        cookies: { [SESSION_COOKIE]: token },
+      });
+
+    await db.db.update(airline).set({ status: 'restricted' }).where(eq(airline.id, airlineId));
+    expect((await request('GET', '/api/routes')).statusCode).toBe(200);
+    expect((await request('POST', '/api/routes', {})).json()).toMatchObject({
+      code: 'airline_restricted',
+    });
+    // Restricted airlines may still manage an existing operation. This missing
+    // id reaches route ownership resolution instead of being lifecycle-blocked.
+    expect(
+      (
+        await request('PUT', '/api/routes/00000000-0000-4000-8000-000000000000/fares', {
+          fares: { economy: 12_000 },
+        })
+      ).statusCode,
+    ).toBe(404);
+    expect((await request('PATCH', '/api/airlines/me', {})).json()).toMatchObject({
+      code: 'airline_restricted',
+    });
+
+    await db.db
+      .update(airline)
+      .set({ status: 'ceased', ceasedAt: new Date() })
+      .where(eq(airline.id, airlineId));
+    expect((await request('GET', '/api/routes')).statusCode).toBe(200);
+    for (const response of [
+      await request('POST', '/api/routes', {}),
+      await request('PUT', '/api/routes/00000000-0000-4000-8000-000000000000/fares', {
+        fares: { economy: 12_000 },
+      }),
+      await request('POST', '/api/routes/00000000-0000-4000-8000-000000000000/fares/preview', {
+        fares: { economy: 12_000 },
+      }),
+    ]) {
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ code: 'airline_ceased' });
+    }
+  });
 });

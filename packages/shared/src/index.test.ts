@@ -122,6 +122,9 @@ describe('Airline', () => {
     baseCountry: 'NL',
     cash: 50_000_000,
     reputation: 0.35,
+    status: 'active',
+    statusChangedAt: '2026-08-17T12:00:00.000Z',
+    ceasedAt: null,
     createdAt: '2026-08-17T12:00:00.000Z',
   };
 
@@ -144,6 +147,7 @@ describe('Airline', () => {
     expect(Object.keys(PublicAirline.shape)).not.toContain('playerId');
     expect(Object.keys(PublicAirline.shape)).toContain('callsign');
     expect(Object.keys(PublicAirline.shape)).toContain('reputation');
+    expect(Object.keys(PublicAirline.shape)).toContain('status');
   });
 
   it('does not let a client choose its own starting cash', () => {
@@ -319,14 +323,17 @@ describe('airline code allocation contracts', () => {
 });
 
 describe('player airline context contract', () => {
-  it.each(['airline_required', 'active_world_required', 'invalid_active_world'])(
-    'keeps %s machine-readable while allowing the wording to improve',
-    (code) => {
-      expect(
-        PlayerAirlineContextError.safeParse({ code, message: 'A useful explanation.' }).success,
-      ).toBe(true);
-    },
-  );
+  it.each([
+    'airline_required',
+    'active_world_required',
+    'invalid_active_world',
+    'airline_restricted',
+    'airline_ceased',
+  ])('keeps %s machine-readable while allowing the wording to improve', (code) => {
+    expect(
+      PlayerAirlineContextError.safeParse({ code, message: 'A useful explanation.' }).success,
+    ).toBe(true);
+  });
 
   it('does not mistake authentication or route lookup errors for context state', () => {
     for (const code of ['unauthorized', 'not_found', 'duplicate_route']) {

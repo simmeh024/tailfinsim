@@ -28,7 +28,7 @@ the player's intended one.
 ### One request boundary resolves ownership
 
 `registerPlayerAirlineContext` provides a Fastify `requireAirline` guard. It first applies
-the existing session requirement, then resolves `{ id, worldId }` from `airline.player_id`
+the existing session requirement, then resolves `{ id, worldId, status }` from `airline.player_id`
 and the active world and stores that result on the request.
 
 Guarded handlers receive no client-supplied airline id. They constrain every route query by
@@ -74,8 +74,13 @@ may improve without requiring clients to match prose.
 AIR-08's private `GET /api/airlines/me` is the deliberate discovery exception: it uses the
 same authentication and active-world selection, but returns a successful nullable airline
 instead of `airline_required` when none exists. That lets the client decide between founding
-and managing without turning an expected onboarding state into an error. Its mutation still
-uses `requireAirline`; other guarded endpoints keep the table above.
+and managing without turning an expected onboarding state into an error.
+
+AIR-09 layers lifecycle permission onto the same resolution rather than creating another
+ownership query: `requireAirline` allows historical reads, `requireOperatingAirline` allows
+active and restricted existing operations, and `requireActiveAirline` admits only active
+airlines for new commitments. Restricted and ceased refusals use the stable
+`airline_restricted` and `airline_ceased` codes recorded by ADR-0018.
 
 ## Consequences
 

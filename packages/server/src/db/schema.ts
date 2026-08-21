@@ -13,6 +13,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 
@@ -154,6 +155,8 @@ export const player = pgTable('player', {
   displayName: text('display_name').notNull(),
   /** From the provider's `picture` claim. Nullable — not everyone has one. */
   avatarUrl: text('avatar_url'),
+  /** Set when personal identity is removed while the world-history anchor remains (§22.10). */
+  anonymizedAt: timestamp('anonymized_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -233,6 +236,9 @@ export const playerIdentity = pgTable(
 // airline — a player's presence in one world.
 // ---------------------------------------------------------------------------
 
+export const airlineStatus = pgEnum('airline_status', ['active', 'restricted', 'ceased']);
+export type AirlineStatus = (typeof airlineStatus.enumValues)[number];
+
 export const airline = pgTable(
   'airline',
   {
@@ -294,11 +300,24 @@ export const airline = pgTable(
      */
     reputation: numeric('reputation', { precision: 3, scale: 2 }).notNull().default('0.35'),
 
+    /** AIR-09 lifecycle; cessation retains the row as immutable world history. */
+    status: airlineStatus('status').notNull().default('active'),
+    /** Real time at which `status` most recently changed. */
+    statusChangedAt: timestamp('status_changed_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Present only for terminal cessation; codes are reusable from this instant. */
+    ceasedAt: timestamp('ceased_at', { withTimezone: true }),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    unique('airline_world_id_iata_code_key').on(t.worldId, t.iataCode),
-    unique('airline_world_id_icao_code_key').on(t.worldId, t.icaoCode),
+    // Ceased rows retain their historical designators, while the live namespace
+    // can allocate those scarce codes again (ADR-0018).
+    uniqueIndex('airline_world_id_iata_code_key')
+      .on(t.worldId, t.iataCode)
+      .where(sql`${t.status} <> 'ceased'`),
+    uniqueIndex('airline_world_id_icao_code_key')
+      .on(t.worldId, t.icaoCode)
+      .where(sql`${t.status} <> 'ceased'`),
     // One airline per player per world.
     unique('airline_world_id_player_id_key').on(t.worldId, t.playerId),
     index('airline_world_id_idx').on(t.worldId),
@@ -320,8 +339,50 @@ export const airline = pgTable(
       'airline_cash_safe_integer',
       sql`${t.cashMinor} >= -9007199254740991 AND ${t.cashMinor} <= 9007199254740991`,
     ),
+    check(
+      'airline_ceased_at_matches_status',
+      sql`(${t.status} = 'ceased' AND ${t.ceasedAt} IS NOT NULL)
+          OR (${t.status} <> 'ceased' AND ${t.ceasedAt} IS NULL)`,
+    ),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// airline_status_transition — immutable lifecycle history (AIR-09)
+// ---------------------------------------------------------------------------
+
+/**
+ * One recorded lifecycle transition. The current status remains on `airline`
+ * for fast permission and leaderboard predicates; this table explains how it
+ * got there and is retained with the airline's operational record.
+ */
+export const airlineStatusTransition = pgTable(
+  'airline_status_transition',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    fromStatus: airlineStatus('from_status').notNull(),
+    toStatus: airlineStatus('to_status').notNull(),
+    reason: text('reason').notNull(),
+    /** Game time at which the transition took effect in this world. */
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+    /** Real time at which the transition committed. */
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('airline_status_transition_airline_id_occurred_at_idx').on(t.airlineId, t.occurredAt),
+    check('airline_status_transition_changes_status', sql`${t.fromStatus} <> ${t.toStatus}`),
+    check(
+      'airline_status_transition_reason_not_blank',
+      sql`char_length(${t.reason}) > 0 AND ${t.reason} = btrim(${t.reason})`,
+    ),
+  ],
+);
+
+export type AirlineStatusTransitionRow = typeof airlineStatusTransition.$inferSelect;
+export type NewAirlineStatusTransitionRow = typeof airlineStatusTransition.$inferInsert;
 
 // ---------------------------------------------------------------------------
 // cash_movement — the authoritative explanation for airline.cash_minor (AIR-06)

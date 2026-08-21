@@ -33,7 +33,8 @@ All deterministic identity rules live in `packages/shared/src/airline.ts`:
   than the display name so later ATC, voice and search surfaces can reproduce it exactly.
 - **IATA and ICAO codes remain ASCII** under their existing two-character uppercase
   alphanumeric and three-letter uppercase rules. ADR-0009 owns per-world allocation and
-  AIR-09 owns release; the moderation rename path does not change codes.
+  ADR-0018 releases them from the live namespace only on terminal cessation; the
+  moderation rename path does not change codes.
 
 Validation and moderation stay separate. The server calls an `AirlineIdentityModerator`
 after shared validation. Its default accepts everything structurally valid; M13-10 supplies
@@ -47,8 +48,8 @@ do not copy an airline name into every operational row.
 
 The force-rename service and admin API are a moderation remedy. Ordinary player editing is
 the paid rebrand in ADR-0017, not a reuse of the admin route. It changes only the name,
-callsign and base country; IATA and ICAO codes stay allocated until AIR-09 defines their
-lifecycle.
+callsign and base country; IATA and ICAO codes stay allocated throughout the airline's live
+lifecycle and are released only by ADR-0018's terminal cessation.
 
 ## Consequences
 
@@ -93,4 +94,4 @@ hidden in an undocumented word list.
 - ADR-0017's player rebrand boundary needs another identity field;
 - a public history surface requires period-accurate names or liveries rather than current
   identity; or
-- AIR-09 decides that codes can change during an airline's lifetime.
+- a future identity milestone permits code replacement before terminal cessation.

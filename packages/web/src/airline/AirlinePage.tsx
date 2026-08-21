@@ -67,7 +67,7 @@ export function AirlinePage(): ReactNode {
     );
   }
 
-  if (!ownAirline?.airline || !ownAirline.rebrand || !draft) {
+  if (!ownAirline?.airline || !draft) {
     return (
       <section className="page airline-page">
         <h1 className="page__title">Your airline</h1>
@@ -80,6 +80,62 @@ export function AirlinePage(): ReactNode {
   }
 
   const current = ownAirline.airline;
+  if (!ownAirline.rebrand) {
+    const restricted = current.status === 'restricted';
+    return (
+      <section className="page airline-page" aria-labelledby="airline-page-title">
+        <div className="airline-page__heading">
+          <div>
+            <p className="airline-page__eyebrow">Read-only airline record</p>
+            <h1 className="page__title" id="airline-page-title">
+              {current.name}
+            </h1>
+            <p className="page__note">
+              {restricted
+                ? 'Restricted · existing operations remain available, but new commitments and rebrands are paused.'
+                : `Ceased ${current.ceasedAt?.slice(0, 10) ?? ''} · operational history remains readable.`}
+            </p>
+          </div>
+          <div className="airline-page__designators" aria-label="Historical airline designators">
+            <span>
+              IATA <strong className="figure">{current.iataCode}</strong>
+            </span>
+            <span>
+              ICAO <strong className="figure">{current.icaoCode}</strong>
+            </span>
+          </div>
+        </div>
+
+        <dl className="airline-page__metrics">
+          <div>
+            <dt>Lifecycle</dt>
+            <dd>{current.status}</dd>
+            <span>changed {current.statusChangedAt.slice(0, 10)}</span>
+          </div>
+          <div>
+            <dt>Cash</dt>
+            <dd className="figure">{formatMinorUnits(current.cash)}</dd>
+            <span>preserved world record</span>
+          </div>
+          <div>
+            <dt>Reputation</dt>
+            <dd className="figure">{current.reputation.toFixed(2)} / 1.00</dd>
+            <span>preserved world record</span>
+          </div>
+        </dl>
+
+        <aside className="airline-page__locked">
+          <h2>{restricted ? 'Recovery remains possible' : 'History remains attached'}</h2>
+          <p>
+            {restricted
+              ? 'Existing routes may still be managed and flown. Opening routes, acquiring aircraft and changing the brand require active status.'
+              : 'Flights, results and audit entries continue to resolve this airline by its stable id. Its former codes may now be allocated to another live airline.'}
+          </p>
+        </aside>
+      </section>
+    );
+  }
+
   const dirty =
     draft.name !== current.name ||
     draft.callsign !== current.callsign ||
@@ -265,11 +321,12 @@ export function AirlinePage(): ReactNode {
 
         <aside className="airline-page__locked" aria-labelledby="designators-title">
           <p className="airline-page__eyebrow">Stable identity</p>
-          <h2 id="designators-title">Designators stay allocated</h2>
+          <h2 id="designators-title">Designators stay allocated while live</h2>
           <p>
             <strong className="figure">{current.iataCode}</strong> and{' '}
             <strong className="figure">{current.icaoCode}</strong> remain attached to this airline.
-            Changing them would free scarce codes and make historical references ambiguous.
+            They are released only if the airline ceases; historical records keep this airline’s
+            stable id and original codes.
           </p>
           <p>Cash moves through recorded causes. Reputation is earned from operations.</p>
         </aside>

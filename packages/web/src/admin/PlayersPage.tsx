@@ -220,8 +220,9 @@ function PlayerDetail({ playerId }: { playerId: string }): ReactNode {
         </Link>
         <h2 className="admin__heading">{player.displayName}</h2>
         <p className="admin__note">
-          Signed up {formatAt(player.createdAt)}.{player.isAdmin && ' Holds an admin grant.'} This
-          view is recorded in the audit log.
+          Signed up {formatAt(player.createdAt)}.
+          {player.anonymizedAt && ` Anonymized ${formatAt(player.anonymizedAt)}.`}
+          {player.isAdmin && ' Holds an admin grant.'} This view is recorded in the audit log.
         </p>
       </section>
 
@@ -330,6 +331,7 @@ function PlayerDetail({ playerId }: { playerId: string }): ReactNode {
                 <th scope="col">IATA</th>
                 <th scope="col">ICAO</th>
                 <th scope="col">Callsign</th>
+                <th scope="col">State</th>
                 <th scope="col">Cash</th>
                 <th scope="col">Reputation</th>
               </tr>
@@ -342,6 +344,7 @@ function PlayerDetail({ playerId }: { playerId: string }): ReactNode {
                   <td className="figure">{entry.iataCode}</td>
                   <td className="figure">{entry.icaoCode}</td>
                   <td className="figure">{entry.callsign}</td>
+                  <td>{entry.status}</td>
                   <td className="figure">{formatCash(entry.cashMinor)}</td>
                   <td className="figure">{entry.reputation.toFixed(2)}</td>
                 </tr>

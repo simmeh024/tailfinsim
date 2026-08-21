@@ -1,4 +1,4 @@
-import { count, eq } from 'drizzle-orm';
+import { and, count, eq } from 'drizzle-orm';
 
 import {
   INITIAL_AIRLINE_REPUTATION,
@@ -21,6 +21,7 @@ import {
   tailfinAirlineCodePolicy,
   type AirlineCodeAllocationPolicy,
 } from './codes';
+import { liveAirlineWhere } from './lifecycle';
 import {
   moderateAirlineIdentity,
   type AirlineIdentityModerationDependencies,
@@ -169,7 +170,7 @@ export async function foundAirline(
         const counts = await tx
           .select({ value: count(airline.id) })
           .from(airline)
-          .where(eq(airline.worldId, selectedWorld.id));
+          .where(and(eq(airline.worldId, selectedWorld.id), liveAirlineWhere()));
         if ((counts[0]?.value ?? 0) >= selectedWorld.playerCap) {
           return { ok: false, kind: 'world-full', playerCap: selectedWorld.playerCap };
         }

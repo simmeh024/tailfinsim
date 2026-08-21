@@ -68,6 +68,7 @@ const DETAIL: AdminPlayerDetail = {
   id: 'aaaaaaaa-1111-2222-3333-444444444444',
   displayName: 'Amelia Hart',
   avatarUrl: null,
+  anonymizedAt: null,
   createdAt: '2026-08-17T09:00:00.000Z',
   isAdmin: true,
   identities: [
@@ -105,6 +106,9 @@ const DETAIL: AdminPlayerDetail = {
       callsign: 'HARTAIR',
       cashMinor: 50_000_000,
       reputation: 0.35,
+      status: 'active',
+      statusChangedAt: '2026-08-17T10:00:00.000Z',
+      ceasedAt: null,
       createdAt: '2026-08-17T10:00:00.000Z',
     },
   ],

@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 import {
   type AirlineCodeAvailabilityAdvisory,
@@ -9,6 +9,8 @@ import {
 
 import { type Database } from '../db/client';
 import { airline, world } from '../db/schema';
+
+import { liveAirlineWhere } from './lifecycle';
 
 const IATA_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 const ICAO_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -147,7 +149,7 @@ async function usedCodesInWorld(db: Database, worldId: string): Promise<UsedCode
   const rows = await db
     .select({ iataCode: airline.iataCode, icaoCode: airline.icaoCode })
     .from(airline)
-    .where(eq(airline.worldId, worldId));
+    .where(and(eq(airline.worldId, worldId), liveAirlineWhere()));
   return {
     iata: new Set(rows.map((row) => row.iataCode)),
     icao: new Set(rows.map((row) => row.icaoCode)),

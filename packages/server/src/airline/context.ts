@@ -11,8 +11,8 @@ import { and, asc, eq } from 'drizzle-orm';
 
 import { Uuid } from '@tailfin/shared';
 
-import { type DatabaseHandle, type Database } from '../db/client';
-import { airline } from '../db/schema';
+import { type Database, type DatabaseHandle } from '../db/client';
+import { airline, type AirlineStatus } from '../db/schema';
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
@@ -21,6 +21,7 @@ export const ACTIVE_WORLD_HEADER = 'x-tailfin-world-id' as const;
 export interface ResolvedPlayerAirline {
   id: string;
   worldId: string;
+  status: AirlineStatus;
 }
 
 export type ActiveWorldHeaderResult = { ok: true; worldId: string | undefined } | { ok: false };
@@ -52,7 +53,7 @@ export async function resolvePlayerAirline(
   activeWorldId: string | undefined,
 ): Promise<ResolvePlayerAirlineResult> {
   const rows = await db
-    .select({ id: airline.id, worldId: airline.worldId })
+    .select({ id: airline.id, worldId: airline.worldId, status: airline.status })
     .from(airline)
     .where(
       activeWorldId === undefined
@@ -83,6 +84,10 @@ declare module 'fastify' {
      * Responds itself when the player context is incomplete.
      */
     requireAirline: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    /** Requires the airline to be live and unrestricted for a new commitment. */
+    requireActiveAirline: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    /** Allows existing operations while restricted, but never after cessation. */
+    requireOperatingAirline: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
 }
 
@@ -96,7 +101,7 @@ export function registerPlayerAirlineContext(
 ): void {
   app.decorateRequest('airline', null);
 
-  app.decorate('requireAirline', async (request: FastifyRequest, reply: FastifyReply) => {
+  const resolveRequestAirline = async (request: FastifyRequest, reply: FastifyReply) => {
     await app.requireAuth(request, reply);
     if (reply.sent || request.player === undefined) return;
 
@@ -126,6 +131,33 @@ export function registerPlayerAirlineContext(
     }
 
     request.airline = result.airline;
+  };
+
+  app.decorate('requireAirline', resolveRequestAirline);
+  app.decorate('requireActiveAirline', async (request: FastifyRequest, reply: FastifyReply) => {
+    await resolveRequestAirline(request, reply);
+    if (reply.sent || request.airline === null) return;
+    if (request.airline.status === 'restricted') {
+      await reply.code(409).send({
+        code: 'airline_restricted',
+        message: 'This airline is restricted and cannot make new commitments',
+      });
+      return;
+    }
+    if (request.airline.status === 'ceased') {
+      await reply.code(409).send({
+        code: 'airline_ceased',
+        message: 'This airline has ceased and its record is read-only',
+      });
+    }
+  });
+  app.decorate('requireOperatingAirline', async (request: FastifyRequest, reply: FastifyReply) => {
+    await resolveRequestAirline(request, reply);
+    if (reply.sent || request.airline?.status !== 'ceased') return;
+    await reply.code(409).send({
+      code: 'airline_ceased',
+      message: 'This airline has ceased and its record is read-only',
+    });
   });
 }
 

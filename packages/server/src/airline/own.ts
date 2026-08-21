@@ -71,7 +71,7 @@ export async function readOwnAirline(
     kind: 'found',
     response: {
       airline: wireAirline(own.row),
-      rebrand: rebrandTerms(own.economyConfigVersion),
+      rebrand: own.row.status === 'active' ? rebrandTerms(own.economyConfigVersion) : null,
     },
   };
 }
@@ -89,7 +89,9 @@ export type UpdateOwnAirlineResult =
       kind: 'identity-refused';
       field: ModeratedAirlineIdentityField;
       reason: string;
-    };
+    }
+  | { ok: false; kind: 'airline-restricted' }
+  | { ok: false; kind: 'airline-ceased' };
 
 /**
  * Apply one paid ordinary-player rebrand (§15).
@@ -128,6 +130,8 @@ export async function updateOwnAirline(
       .for('update');
     const current = rows[0];
     if (!current) throw new Error(`Resolved airline ${own.id} vanished during its rebrand`);
+    if (current.row.status === 'restricted') return { ok: false, kind: 'airline-restricted' };
+    if (current.row.status === 'ceased') return { ok: false, kind: 'airline-ceased' };
 
     const changed =
       current.row.name !== input.name ||

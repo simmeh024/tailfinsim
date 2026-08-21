@@ -41,7 +41,7 @@ import { eq, inArray } from 'drizzle-orm';
 import { checkReachability, haversineNm } from '@tailfin/sim';
 import type { AircraftCapability, AirportCapability, Reachability } from '@tailfin/sim';
 
-import { airport, route, runway } from '../db/schema';
+import { airline, airport, route, runway } from '../db/schema';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
 import type { Database } from '../db/client';
@@ -70,6 +70,7 @@ const REFERENCE_LIMITS = {
 
 export type OpenRouteResult =
   | { ok: true; routeId: string; greatCircleNm: number }
+  | { ok: false; kind: 'airline-not-active'; status: 'restricted' | 'ceased' }
   | { ok: false; kind: 'unknown-airport'; icao: string }
   | { ok: false; kind: 'same-airport' }
   | { ok: false; kind: 'duplicate' }
@@ -196,23 +197,42 @@ export async function openRoute(
     return { ok: false, kind: 'unreachable', reachability };
   }
 
-  // The unique constraint decides, not a lookup: two requests racing would both
-  // pass a check-then-insert, and `route_airline_pair_key` cannot be raced.
-  const inserted = await db
-    .insert(route)
-    .values({
-      worldId: own.worldId,
-      airlineId: own.id,
-      originIcao,
-      destinationIcao,
-      greatCircleNm,
-      fares: '{}',
-    })
-    .onConflictDoNothing()
-    .returning({ id: route.id });
+  return db.transaction(async (tx): Promise<OpenRouteResult> => {
+    // Serialize with AIR-09 cessation. If route opening wins the lock, a
+    // following cessation deactivates the new instruction; if cessation wins,
+    // this recheck refuses the stale request context.
+    const states = await tx
+      .select({ status: airline.status })
+      .from(airline)
+      .where(eq(airline.id, own.id))
+      .limit(1)
+      .for('update');
+    const status = states[0]?.status;
+    if (status !== 'active') {
+      if (status === 'restricted' || status === 'ceased') {
+        return { ok: false, kind: 'airline-not-active', status };
+      }
+      throw new Error(`Resolved airline ${own.id} vanished while opening a route`);
+    }
 
-  const created = inserted[0];
-  if (!created) return { ok: false, kind: 'duplicate' };
+    // The unique constraint decides, not a lookup: two requests racing would
+    // both pass a check-then-insert, and `route_airline_pair_key` cannot be raced.
+    const inserted = await tx
+      .insert(route)
+      .values({
+        worldId: own.worldId,
+        airlineId: own.id,
+        originIcao,
+        destinationIcao,
+        greatCircleNm,
+        fares: '{}',
+      })
+      .onConflictDoNothing()
+      .returning({ id: route.id });
 
-  return { ok: true, routeId: created.id, greatCircleNm };
+    const created = inserted[0];
+    if (!created) return { ok: false, kind: 'duplicate' };
+
+    return { ok: true, routeId: created.id, greatCircleNm };
+  });
 }

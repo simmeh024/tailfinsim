@@ -148,6 +148,13 @@
       "when": 1787265991309,
       "tag": "0020_airline_rebrand",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1787269027616,
+      "tag": "0021_airline_lifecycle",
+      "breakpoints": true
     }
   ]
 }
