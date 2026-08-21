@@ -9,3 +9,5 @@
  * else *"reads only `effective_spec`"*, so nothing special-cases an option.
  */
 export * from './payload-range';
+
+export * from './availability';

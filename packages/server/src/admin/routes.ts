@@ -22,6 +22,7 @@ import {
   Uuid,
 } from '@tailfin/shared';
 
+import { catalogueVersionExists, ensureCatalogueSeeded } from '../aircraft/catalogue';
 import { revokePlayerSessions } from '../auth/revocation';
 import { type DatabaseHandle } from '../db/client';
 import { economyChecksum, ECONOMY_CONFIG_V1 } from '../economy/config';
@@ -308,12 +309,18 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
     },
     async (request, reply) => {
       const now = new Date();
-      const validated = await validateWorldConfig(request.body, now, async (version) => {
-        // Validation runs before `createWorld`, so the shipped version has to be
-        // there by now or a freshly migrated database refuses its first world
-        // with a field error. Memoised and insert-only; see `economy/seed.ts`.
-        await ensureEconomyConfigSeeded(db.db);
-        return economyConfigVersionExists(db.db, version);
+      const validated = await validateWorldConfig(request.body, now, {
+        // Validation runs before `createWorld`, so both shipped versions have to
+        // be there by now or a freshly migrated database refuses its first world
+        // with a field error. Both seeds are memoised and insert-only.
+        economyVersionExists: async (version) => {
+          await ensureEconomyConfigSeeded(db.db);
+          return economyConfigVersionExists(db.db, version);
+        },
+        catalogueVersionExists: async (version) => {
+          await ensureCatalogueSeeded(db.db);
+          return catalogueVersionExists(db.db, version);
+        },
       });
       if (!validated.ok) {
         return reply.code(400).send({

@@ -176,6 +176,13 @@
       "when": 1787334160367,
       "tag": "0024_calm_tiger_shark",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1787338724680,
+      "tag": "0025_broken_warbird",
+      "breakpoints": true
     }
   ]
 }

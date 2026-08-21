@@ -43,6 +43,14 @@ working against the result; the deploy deliberately leaves it serving when migra
 Do not add down-migrations or bypass the policy for `CREATE INDEX CONCURRENTLY`—ADR-0016 owns
 the transaction, lock and recovery trade.
 
+**A world pins two versions, and they are not the same version.** `economy_config_version`
+is §22.3's balance payload; `aircraft_catalogue_version` is §22.5's eighteen aircraft, stored
+as immutable `aircraft_type` rows keyed by `(catalogue_version, designation)`. Both are seeded
+at web startup, insert-if-absent and never updated, and both refuse a version that is not
+there rather than falling back. They are separate on purpose: a fare change and an
+aerodynamics change must not share a number, or a `flight_result` can no longer say which of
+the two explained it. Retuning either is a new version, never an edit.
+
 **A new `EconomyConfig` section must arrive with a default.** Rows in
 `economy_config` are immutable and are parsed **on the way out**, against today's schema —
 so a required new section makes every payload written before it unparseable, and the

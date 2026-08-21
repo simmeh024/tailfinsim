@@ -65,10 +65,15 @@ function config(overrides: Partial<WorldConfig> = {}): WorldConfig {
  * than about the table. `createWorldAsAdmin` below uses the real one.
  */
 const knownVersions = (...versions: string[]) => {
-  return (version: string) => Promise.resolve(versions.includes(version));
+  const check = (version: string) => Promise.resolve(versions.includes(version));
+  return { economyVersionExists: check, catalogueVersionExists: check };
 };
 
-const anyVersion = knownVersions(FLAGSHIP_CONFIG.economyConfigVersion);
+/** Both of the world's pins resolve — the ordinary case. */
+const anyVersion = knownVersions(
+  FLAGSHIP_CONFIG.economyConfigVersion,
+  FLAGSHIP_CONFIG.aircraftCatalogueVersion,
+);
 
 describe('validateWorldConfig', () => {
   it('accepts the flagship configuration', async () => {
@@ -125,7 +130,7 @@ describe('validateWorldConfig', () => {
     const result = await validateWorldConfig(
       config({ economyConfigVersion: 'autumn-retune' }),
       NOW,
-      knownVersions('autumn-retune'),
+      knownVersions('autumn-retune', FLAGSHIP_CONFIG.aircraftCatalogueVersion),
     );
     expect(result.ok).toBe(true);
   });

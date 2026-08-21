@@ -1,3 +1,4 @@
+import { seedAircraftCatalogue } from './aircraft/catalogue';
 import { buildApp } from './app';
 import { createDatabase } from './db/client';
 import { seedEconomyConfig } from './economy/seed';
@@ -54,6 +55,17 @@ const heartbeat = createHeartbeat({
  * database is one that cannot price anything, and failing to start is a clearer
  * signal than serving 500s.
  */
+async function seedCatalogue(): Promise<void> {
+  // The aircraft catalogue, alongside the economy and for the same reasons
+  // (M4-01, §22.5). Inserts if absent and never updates, so a deploy cannot
+  // change what a running world is flying.
+  const result = await seedAircraftCatalogue(db.db);
+  app.log.info(
+    { version: result.version, inserted: result.inserted, existing: result.existing },
+    result.inserted > 0 ? 'aircraft catalogue seeded' : 'aircraft catalogue already present',
+  );
+}
+
 async function seedEconomy(): Promise<void> {
   const result = await seedEconomyConfig(db.db);
   if (result.inserted) {
@@ -79,6 +91,7 @@ async function seedEconomy(): Promise<void> {
 
 try {
   await seedEconomy();
+  await seedCatalogue();
   // Bound to loopback by default: Caddy is the only thing that should reach
   // this, and binding 0.0.0.0 would expose it directly if ufw ever lapsed.
   await app.listen({ port, host });
