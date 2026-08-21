@@ -56,6 +56,11 @@
   --status-ontime: #4ade80;
   --status-delayed: #fbbf24;
   --status-cancelled: #f87171;
+
+  /* Quiet fills for status badges — the same three, at badge weight (OPS-15). */
+  --status-ontime-quiet: rgb(74 222 128 / 16%);
+  --status-delayed-quiet: rgb(251 191 36 / 16%);
+  --status-cancelled-quiet: rgb(248 113 113 / 16%);
   --status-profit: #4ade80;
   --status-loss: #f87171;
 
@@ -125,6 +130,11 @@
   --status-ontime: #157f3c;
   --status-delayed: #a2570a;
   --status-cancelled: #b3261e;
+
+  /* Lighter ground here, so the fills are weaker to keep the text legible. */
+  --status-ontime-quiet: rgb(21 127 60 / 12%);
+  --status-delayed-quiet: rgb(162 87 10 / 12%);
+  --status-cancelled-quiet: rgb(179 38 30 / 12%);
   --status-profit: #157f3c;
   --status-loss: #b3261e;
 

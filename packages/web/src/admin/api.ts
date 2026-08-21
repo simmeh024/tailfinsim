@@ -6,6 +6,7 @@ import type {
   AdminPlayerListResponse,
   AdminResetWorldResponse,
   AdminSpeedChangeResponse,
+  AdminSystemHealthResponse,
   AdminWorldHealthResponse,
   AdminWorldStatusResponse,
   AdminWorldSummary,
@@ -289,4 +290,10 @@ export async function revokePlayerSessions(playerId: string): Promise<number> {
 export async function fetchWorldHealth(): Promise<AdminWorldHealthResponse> {
   const body = await getJson('/api/admin/worlds/health');
   return body as AdminWorldHealthResponse;
+}
+
+/** The machines, rather than the worlds (OPS-15). */
+export async function fetchSystemHealth(): Promise<AdminSystemHealthResponse> {
+  const body = await getJson('/api/admin/system-health');
+  return body as AdminSystemHealthResponse;
 }

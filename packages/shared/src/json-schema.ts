@@ -8,6 +8,7 @@ import {
   AdminPlayerDetailResponse,
   AdminPlayerListResponse,
   AdminWorldHealthResponse,
+  AdminSystemHealthResponse,
   AdminResetWorldResponse,
   AdminSpeedChangeResponse,
   AdminWorldStatusResponse,
@@ -71,6 +72,7 @@ export const adminOverviewResponseJsonSchema = z.toJSONSchema(AdminOverviewRespo
 export const adminPlayerListResponseJsonSchema = z.toJSONSchema(AdminPlayerListResponse);
 export const adminPlayerDetailResponseJsonSchema = z.toJSONSchema(AdminPlayerDetailResponse);
 export const adminWorldHealthResponseJsonSchema = z.toJSONSchema(AdminWorldHealthResponse);
+export const adminSystemHealthResponseJsonSchema = z.toJSONSchema(AdminSystemHealthResponse);
 export const adminSpeedChangeResponseJsonSchema = z.toJSONSchema(AdminSpeedChangeResponse);
 export const adminWorldStatusResponseJsonSchema = z.toJSONSchema(AdminWorldStatusResponse);
 export const adminResetWorldResponseJsonSchema = z.toJSONSchema(AdminResetWorldResponse);
