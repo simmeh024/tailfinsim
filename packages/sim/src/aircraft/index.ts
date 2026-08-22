@@ -9,6 +9,8 @@
  *   `availability`    — whether a type exists in this world at all (§7.2b)
  *   `used-market`     — what a second-hand airframe is worth, and which ones the
  *                       world is offering (App. C.5)
+ *   `maintenance`     — hours, cycles, A/C/D checks, and the reliability decay
+ *                       that deferring one causes (§7.3)
  *
  * App. C.6 makes this the only place a downstream system should look: everything
  * else *"reads only `effective_spec`"*, so nothing special-cases an option.
@@ -20,3 +22,5 @@ export * from './payload-range';
 export * from './availability';
 
 export * from './used-market';
+
+export * from './maintenance';

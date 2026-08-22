@@ -120,6 +120,24 @@ export const AircraftClass = z.enum([
 ]);
 export type AircraftClass = z.infer<typeof AircraftClass>;
 
+/**
+ * Which maintenance programme a type follows (§7.3, M4-06).
+ *
+ * Coarser than `AircraftClass` on purpose — a ULH widebody and an ordinary one
+ * are maintained the same way, and a regional turboprop and a ULH twin are not.
+ * Named rather than inline because `EconomyConfig.maintenance` keys its check
+ * intervals on it, and two copies of the list is how one of them ends up missing
+ * a programme and silently pricing an aircraft as `undefined`.
+ */
+export const MaintenanceProfile = z.enum([
+  'turboprop',
+  'regional_jet',
+  'narrowbody',
+  'widebody',
+  'freighter',
+]);
+export type MaintenanceProfile = z.infer<typeof MaintenanceProfile>;
+
 export const AircraftType = z.object({
   /** e.g. `A321neo`, `ATR 72-600`. The catalogue key. */
   designation: z.string().min(1),
@@ -154,7 +172,7 @@ export const AircraftType = z.object({
    * authoring data the design doc does not have, and doing it in the milestone
    * that does not own the subject.
    */
-  maintenanceProfile: z.enum(['turboprop', 'regional_jet', 'narrowbody', 'widebody', 'freighter']),
+  maintenanceProfile: MaintenanceProfile,
 
   availableOptionIds: z.array(z.string()).default([]),
 });

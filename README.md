@@ -17,6 +17,7 @@ wall-clock time, that never pauses.
 - **Authorization boundary:** [`docs/authorization-matrix.md`](docs/authorization-matrix.md)
 - **Feature contracts:** [`docs/aircraft-acquisition.md`](docs/aircraft-acquisition.md) ·
   [`docs/used-aircraft-market.md`](docs/used-aircraft-market.md) ·
+  [`docs/maintenance.md`](docs/maintenance.md) ·
   [`docs/world-renderer.md`](docs/world-renderer.md)
 - **Deployment & DNS:** [`docs/deploy.md`](docs/deploy.md) ·
   [`deploy/README.md`](deploy/README.md)
@@ -175,6 +176,13 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   airframe commit together; the Worker materialises due new orders exactly once. The typed
   API and the M4-07 ownership boundary are documented in
   [`docs/aircraft-acquisition.md`](docs/aircraft-acquisition.md).
+- **Maintenance that bites.** Airframes accrue block hours and cycles from every settled
+  flight; A, C and D checks fall due on whichever of the two limits arrives first, so a
+  short-haul turboprop and a long-haul widebody wear out differently. Deferring a check
+  raises the airframe’s technical-fault risk on a ramp rather than a cliff, and deferring it
+  half again past the limit grounds the aeroplane — which a schedule then refuses as a
+  conflict. See [`docs/maintenance.md`](docs/maintenance.md), including what the risk does
+  not yet feed.
 - **A used aircraft market with a history.** A world offers a bounded, self-refilling
   inventory of second-hand airframes, each with a build date, hours, cycles and a previous
   owner’s configuration, priced by a depreciation curve and an unusual-configuration

@@ -283,7 +283,19 @@ same trap as "ticks: 0, errors: 0" and worth remembering before telling anyone t
 broken. `usedListingsCreated`, `usedListingsWithdrawn` and `usedMarketErrors` are the
 counters that distinguish the two. `docs/used-aircraft-market.md` has the mechanism.
 
-The generation is idempotent by unique constraint rather than by a remembered timestamp:
+**Maintenance is the same story, with a sharper edge.** M4-06 makes checks complete and
+airframes ground on the worker's tick, so on a production world a booked check would never
+finish and nothing would ever be grounded — an aeroplane put into a C-check there stays in it
+for ever. `checksCompleted`, `airframesGrounded` and `maintenanceErrors` are the counters.
+
+**And one thing not to "fix".** `airframe.maintenance_state` is nullable, and a null means
+_every tier was last completed at the hours this airframe has now_ — not _at hour zero_. It
+looks like a missing default and it is load-bearing: the other reading would make every
+airframe delivered before 0030 tens of thousands of hours overdue, and the first tick after the
+deploy would ground a live fleet for maintenance nobody had deferred. There is a database test
+holding that line; do not "tidy" it into a zero.
+
+The used market's generation is idempotent by unique constraint rather than by a remembered timestamp:
 `(world_id, slot_index, generation_index)` is unique and every insert is
 `ON CONFLICT DO NOTHING`, so the tick can call it every second and two workers can race
 through a handover. Do not add a "last generated" column to make that cheaper — a column

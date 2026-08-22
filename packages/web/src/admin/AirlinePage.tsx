@@ -23,6 +23,7 @@ const CAUSE_LABEL: Record<AdminCashMovementCause, string> = {
   aircraft_lease_deposit: 'Aircraft lease deposit',
   aircraft_used_purchase: 'Used aircraft purchase',
   aircraft_new_purchase: 'New aircraft purchase',
+  maintenance_check: 'Maintenance check',
   flight_settlement: 'Flight settlement',
   migration_opening_balance: 'Migration opening balance',
 };

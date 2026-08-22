@@ -1020,6 +1020,248 @@ export const SHIPPED_USED_MARKET_BALANCE = {
 };
 
 // ---------------------------------------------------------------------------
+// Maintenance — §7.3 (M4-06)
+// ---------------------------------------------------------------------------
+
+/** Every field of this shape is per maintenance programme (§7.3). */
+function byMaintenanceProfile<T extends z.ZodType>(value: T) {
+  return z
+    .object({
+      turboprop: value,
+      regional_jet: value,
+      narrowbody: value,
+      widebody: value,
+      freighter: value,
+    })
+    .strict();
+}
+
+/**
+ * One check tier.
+ *
+ * **Two intervals, and whichever arrives first wins.** That is not detail for
+ * its own sake — it is what makes a turboprop and a widebody different aircraft
+ * to own. A regional turboprop flying eight short sectors a day reaches its cycle
+ * limit long before its hour limit; a ULH widebody does the opposite. One
+ * interval would have made every type the same shape of problem.
+ */
+export const CheckTierBalance = z
+  .object({
+    /** Block hours between checks. */
+    intervalHours: z.number().positive(),
+    /** Cycles between checks. A cycle is one flight. */
+    intervalCycles: z.number().int().positive(),
+    /** Game days the airframe is out of service while the check runs. */
+    downtimeDays: z.number().positive(),
+    /** What the check costs, whether in-house or bought in. */
+    costMinor: MinorUnits.nonnegative(),
+  })
+  .strict();
+export type CheckTierBalance = z.infer<typeof CheckTierBalance>;
+
+/** A programme's three tiers, lightest first. */
+export const MaintenanceProgrammeBalance = z
+  .object({
+    /** Light line maintenance — overnight, cheap, frequent. */
+    a: CheckTierBalance,
+    /** Heavy check — days to weeks, and the one §22.8's alert warns about. */
+    c: CheckTierBalance,
+    /** The heaviest — weeks, and a real capital decision on an older airframe. */
+    d: CheckTierBalance,
+  })
+  .strict()
+  .refine((v) => v.a.intervalHours < v.c.intervalHours && v.c.intervalHours < v.d.intervalHours, {
+    message: 'check intervals must escalate from A through C to D',
+  })
+  .refine((v) => v.a.downtimeDays < v.c.downtimeDays && v.c.downtimeDays < v.d.downtimeDays, {
+    message: 'check downtime must escalate from A through C to D',
+  })
+  .refine((v) => v.a.costMinor < v.c.costMinor && v.c.costMinor < v.d.costMinor, {
+    message: 'check cost must escalate from A through C to D',
+  });
+
+/**
+ * What deferring a check does to the aeroplane.
+ *
+ * §7.3's second bullet, and the whole of it: *"Skipped maintenance → reliability
+ * decay → delays and cancellations → reputation damage."* It feeds
+ * `DisruptionRisk.technical`, which M2-08 reserved for exactly this and
+ * documented as *"the inverse of condition … M4-06 owns what moves it."*
+ */
+export const MaintenanceReliabilityBalance = z
+  .object({
+    /**
+     * The technical risk of a perfectly maintained airframe, per flight.
+     *
+     * Not zero. An aeroplane in the best condition money can buy still breaks
+     * occasionally, and a floor of zero would make a well-run fleet feel
+     * unnaturally clean — and would make the deferral penalty the *only* source
+     * of technical faults, which would read as a punishment mechanic rather than
+     * as operations.
+     */
+    baselineRisk: z.number().min(0).max(1),
+    /**
+     * Risk added by each tier once it is fully overdue.
+     *
+     * Escalating for the obvious reason: a deferred A-check is a nuisance and a
+     * deferred D-check is a serious aeroplane problem.
+     */
+    overdueRisk: z
+      .object({
+        a: z.number().min(0).max(1),
+        c: z.number().min(0).max(1),
+        d: z.number().min(0).max(1),
+      })
+      .strict(),
+    /**
+     * Block hours over which the overdue penalty ramps in.
+     *
+     * A ramp rather than a step, so deferral degrades an airframe visibly and
+     * progressively — which is what M4-06's first acceptance criterion asks for
+     * (*"measurably raises disruption rate within a few game weeks"*) and what a
+     * player can actually notice and act on. A step would make a deferred check
+     * either free or catastrophic with nothing in between.
+     */
+    overdueRampHours: z.number().positive(),
+    /**
+     * The ceiling on technical risk, however neglected.
+     *
+     * §7.2b's philosophy applied to maintenance: *"Your beloved fleet becomes
+     * uneconomic before it becomes illegal."* A neglected airframe should be
+     * expensive and unreliable, not unusable — the grounding below is what makes
+     * it unusable, and that is a state a player can see and fix rather than a
+     * probability that silently approaches 1.
+     */
+    maxRisk: z.number().min(0).max(1),
+  })
+  .strict()
+  .refine((v) => v.maxRisk >= v.baselineRisk, {
+    message: 'maxRisk must be at least the baseline',
+  });
+
+export const MaintenanceBalance = z
+  .object({
+    programmes: byMaintenanceProfile(MaintenanceProgrammeBalance),
+    reliability: MaintenanceReliabilityBalance,
+    /**
+     * How far past a check's interval an airframe may fly before it is grounded.
+     *
+     * `1.5` means half again the interval. Expressed as a multiple rather than a
+     * fixed number of hours so it scales with the tier — an A-check's grace is
+     * days and a D-check's is months, which is right.
+     *
+     * **This is the only thing that grounds an aircraft in M4-06, and that is a
+     * deliberate boundary.** Real AOG is mostly unscheduled — a bird strike, a
+     * failed part — and §24 lists *"Safety, incidents & insurance"* as its own
+     * unaddressed area, with no incident definition or severity ladder. Inventing
+     * one here would be inventing that milestone's answer. So an aircraft is
+     * grounded because its owner deferred maintenance past the limit, which is a
+     * decision the player made and can reverse.
+     */
+    groundingOverdueMultiple: z.number().gt(1),
+  })
+  .strict();
+export type MaintenanceBalance = z.infer<typeof MaintenanceBalance>;
+
+/**
+ * The shipped maintenance programmes.
+ *
+ * §24 lists **maintenance** as MVP-blocking with *"§7.3 is two bullets"* against
+ * it, so — as with the used market — every number here is authored rather than
+ * quoted. They are anchored on real-world practice: an A-check every few hundred
+ * hours and roughly overnight, a C-check in the thousands of hours and one to
+ * three weeks, a D-check in the tens of thousands and over a month. Costs scale
+ * with the airframe, which is what the per-profile split is for.
+ *
+ * Defaulted, for the reason `SHIPPED_NPC_BALANCE` records: a required new section
+ * makes every earlier payload unparseable and a world pinned to one cannot price
+ * a flight.
+ */
+export const SHIPPED_MAINTENANCE_BALANCE = {
+  programmes: {
+    // Cycle-limited in practice: eight short sectors a day reaches 400 cycles
+    // long before 500 hours.
+    turboprop: {
+      a: { intervalHours: 500, intervalCycles: 400, downtimeDays: 1, costMinor: 800_000 },
+      c: { intervalHours: 6_000, intervalCycles: 5_000, downtimeDays: 10, costMinor: 18_000_000 },
+      d: { intervalHours: 24_000, intervalCycles: 20_000, downtimeDays: 25, costMinor: 70_000_000 },
+    },
+    regional_jet: {
+      a: { intervalHours: 600, intervalCycles: 500, downtimeDays: 1, costMinor: 1_200_000 },
+      c: { intervalHours: 7_000, intervalCycles: 5_500, downtimeDays: 12, costMinor: 26_000_000 },
+      d: {
+        intervalHours: 28_000,
+        intervalCycles: 22_000,
+        downtimeDays: 28,
+        costMinor: 110_000_000,
+      },
+    },
+    narrowbody: {
+      a: { intervalHours: 750, intervalCycles: 500, downtimeDays: 1, costMinor: 1_800_000 },
+      c: { intervalHours: 7_500, intervalCycles: 5_000, downtimeDays: 14, costMinor: 42_000_000 },
+      d: {
+        intervalHours: 30_000,
+        intervalCycles: 20_000,
+        downtimeDays: 35,
+        costMinor: 200_000_000,
+      },
+    },
+    // Hour-limited: long sectors reach 900 hours well before 400 cycles.
+    widebody: {
+      a: { intervalHours: 900, intervalCycles: 400, downtimeDays: 2, costMinor: 3_500_000 },
+      c: { intervalHours: 9_000, intervalCycles: 3_500, downtimeDays: 21, costMinor: 90_000_000 },
+      d: {
+        intervalHours: 36_000,
+        intervalCycles: 14_000,
+        downtimeDays: 45,
+        costMinor: 550_000_000,
+      },
+    },
+    freighter: {
+      a: { intervalHours: 800, intervalCycles: 400, downtimeDays: 2, costMinor: 2_800_000 },
+      c: { intervalHours: 8_000, intervalCycles: 3_500, downtimeDays: 18, costMinor: 70_000_000 },
+      d: {
+        intervalHours: 32_000,
+        intervalCycles: 14_000,
+        downtimeDays: 40,
+        costMinor: 400_000_000,
+      },
+    },
+  },
+
+  reliability: {
+    baselineRisk: 0.004,
+    overdueRisk: { a: 0.02, c: 0.08, d: 0.2 },
+    /**
+     * 300 block hours.
+     *
+     * A narrowbody at the ~8 block hours a day a busy operator flies covers that
+     * in a bit over a game month, so a deferred check is visibly worse within a
+     * few game weeks and fully penalised in about six. That is the window
+     * M4-06's first acceptance criterion names, and the ramp is what makes the
+     * degradation observable rather than a cliff.
+     */
+    overdueRampHours: 300,
+    /**
+     * `0.3`, and it binds — which took a test to get right.
+     *
+     * The first value here was `0.35`, and the sum of the baseline and all three
+     * fully-overdue penalties is `0.004 + 0.02 + 0.08 + 0.2 = 0.304`. So the
+     * ceiling could never be reached and was dead configuration: a number that
+     * looked like a safety limit and was in fact decoration, which is exactly
+     * the dead end invariant 4 exists to prevent.
+     *
+     * At `0.3` it is a real limit at the extreme, and `maintenance.test.ts`
+     * asserts it is reachable so it cannot quietly become decoration again after
+     * a retune of the tier penalties.
+     */
+    maxRisk: 0.3,
+  },
+
+  groundingOverdueMultiple: 1.5,
+};
+
+// ---------------------------------------------------------------------------
 // The payload
 // ---------------------------------------------------------------------------
 
@@ -1051,6 +1293,8 @@ export const EconomyConfig = z
     // Defaulted for the same reason. Every `v1` row written before M4-05 is
     // still parseable, and reads back the shipped used market.
     usedMarket: UsedMarketBalance.default(SHIPPED_USED_MARKET_BALANCE),
+    // Defaulted for the same reason again (M4-06).
+    maintenance: MaintenanceBalance.default(SHIPPED_MAINTENANCE_BALANCE),
   })
   .strict();
 export type EconomyConfig = z.infer<typeof EconomyConfig>;
@@ -1334,6 +1578,7 @@ export const ECONOMY_CONFIG_V1: EconomyConfig = EconomyConfig.parse({
 
   npc: SHIPPED_NPC_BALANCE,
   usedMarket: SHIPPED_USED_MARKET_BALANCE,
+  maintenance: SHIPPED_MAINTENANCE_BALANCE,
 });
 
 // ---------------------------------------------------------------------------

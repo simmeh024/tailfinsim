@@ -96,6 +96,15 @@ describe('a payload written before a section existed', () => {
     expect(parsed.usedMarket).toEqual(ECONOMY_CONFIG_V1.usedMarket);
   });
 
+  it('takes the shipped maintenance programmes when a pre-M4-06 payload is read back', () => {
+    // Third time the same rule has been needed, and it is now the pattern rather
+    // than an exception: a new section arrives defaulted or it is a new version.
+    const { maintenance: _maintenance, ...beforeMaintenanceExisted } = ECONOMY_CONFIG_V1;
+
+    const parsed = EconomyConfig.parse(beforeMaintenanceExisted);
+    expect(parsed.maintenance).toEqual(ECONOMY_CONFIG_V1.maintenance);
+  });
+
   it('keeps a section the payload does carry, rather than defaulting over it', () => {
     // A default fills an absence. It must never overwrite a live retune —
     // which is the property the whole seed-but-never-update design rests on.

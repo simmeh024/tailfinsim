@@ -34,6 +34,7 @@ import {
 } from './airline';
 import { ApiError, HealthResponse } from './api';
 import { LogoutResponse, MeResponse, RevokeSessionsResponse } from './auth';
+import { MaintenanceResponse, BookCheckResponse } from './maintenance';
 import { AdminNpcResponse } from './npc';
 import { UsedMarketResponse } from './used-market';
 import { VersionResponse } from './version';
@@ -119,5 +120,7 @@ export const fleetCatalogueResponseJsonSchema = z.toJSONSchema(FleetCatalogueRes
 export const aircraftAcquisitionResponseJsonSchema = z.toJSONSchema(AircraftAcquisitionResponse);
 export const aircraftOrderListResponseJsonSchema = z.toJSONSchema(AircraftOrderListResponse);
 export const usedMarketResponseJsonSchema = z.toJSONSchema(UsedMarketResponse);
+export const maintenanceResponseJsonSchema = z.toJSONSchema(MaintenanceResponse);
+export const bookCheckResponseJsonSchema = z.toJSONSchema(BookCheckResponse);
 
 export const adminRequeueEventsResponseJsonSchema = z.toJSONSchema(AdminRequeueEventsResponse);
