@@ -20,6 +20,13 @@ export default defineConfig({
     projects: [
       {
         test: {
+          name: 'tools',
+          include: ['deploy/**/*.{test,spec}.mjs'],
+          environment: 'node',
+        },
+      },
+      {
+        test: {
           name: 'shared',
           include: ['packages/shared/src/**/*.{test,spec}.{ts,tsx}'],
           environment: 'node',

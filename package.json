@@ -22,6 +22,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:perf": "vitest run --project sim -t \"cost at world scale\"",
+    "verify": "node deploy/verify-local.mjs",
     "dev": "pnpm --parallel --filter \"./packages/*\" dev",
     "db:generate": "pnpm --filter @tailfin/server db:generate",
     "db:migrate": "pnpm --filter @tailfin/server db:migrate",

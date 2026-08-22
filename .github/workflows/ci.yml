@@ -26,6 +26,9 @@ env:
   DATABASE_URL: postgres://tailfin:tailfin_ci@127.0.0.1:5432/tailfin_test
 
 jobs:
+  # `pnpm verify` composes the locally applicable package scripts in this order
+  # and points back here. Keep its list aligned, but keep these CI steps explicit:
+  # this job also owns PostgreSQL, Caddy, and deploy-artefact assertions.
   verify:
     name: typecheck · lint · test
     runs-on: ubuntu-latest
