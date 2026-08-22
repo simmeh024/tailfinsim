@@ -6,6 +6,7 @@ import { createDarknessField } from './terminator';
 
 import type { WorldRoute } from './layers';
 import type { WorldPalette } from './palette';
+import type { Layer } from '@deck.gl/core';
 
 const palette: WorldPalette = {
   ocean: [1, 2, 3, 255],
@@ -32,6 +33,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [antimeridianRoute],
       darkness: DARKNESS,
+      projection: 'flat',
       visibility: { graticule: true, routes: true, terminator: true },
     });
     const routes = layers.find(
@@ -50,6 +52,7 @@ describe('projection-independent world layers', () => {
       quality: 'reduced',
       routes: [],
       darkness: DARKNESS,
+      projection: 'flat',
       visibility: { graticule: false, routes: true, terminator: false },
     });
     expect(layers.filter((layer) => layer !== false).map((layer) => layer.id)).toEqual([
@@ -65,6 +68,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [antimeridianRoute],
       darkness: DARKNESS,
+      projection: 'flat',
       visibility: { graticule: false, routes: true, terminator: false },
     });
     const reduced = createWorldLayers({
@@ -72,6 +76,7 @@ describe('projection-independent world layers', () => {
       quality: 'reduced',
       routes: [antimeridianRoute],
       darkness: DARKNESS,
+      projection: 'flat',
       visibility: { graticule: false, routes: true, terminator: false },
     });
     const fullRoutes = full.find(
@@ -84,5 +89,47 @@ describe('projection-independent world layers', () => {
     );
     expect(fullRoutes?.props.numSegments).toBe(100);
     expect(reducedRoutes?.props.numSegments).toBe(50);
+  });
+
+  /**
+   * The bug this guards is invisible in the layer list and fatal on screen.
+   *
+   * `BitmapLayer` rebuilds its mesh only when `props.bounds` changes by *reference*,
+   * and tessellates to the viewport's resolution — a flat quad for `MapView`, a
+   * sphere-following mesh for `GlobeView`. One shared frozen constant meant the flat
+   * quad survived the switch to the globe and cut straight through the planet, so the
+   * sea and the day/night shading vanished behind `GlobeView`'s own backdrop and the
+   * globe rendered black with land floating on it.
+   */
+  it('gives each projection its own bounds instance, so the mesh re-tessellates', () => {
+    const options = {
+      palette,
+      quality: 'full' as const,
+      routes: [],
+      darkness: DARKNESS,
+      visibility: { graticule: true, routes: true, terminator: true },
+    };
+    const boundsFor = (projection: 'flat' | 'globe') =>
+      createWorldLayers({ ...options, projection })
+        .filter((layer): layer is Layer => layer !== false)
+        .filter((layer) => layer.id === 'world-ocean' || layer.id === 'world-terminator')
+        .map((layer) => (layer.props as unknown as { bounds: unknown }).bounds);
+
+    const flat = boundsFor('flat');
+    const globe = boundsFor('globe');
+    expect(flat).toHaveLength(2);
+    expect(globe).toHaveLength(2);
+
+    // Equal in value, different in identity. Both halves matter: the same numbers,
+    // so the two views cover the same world, and a different reference, so deck.gl
+    // knows to rebuild.
+    expect(flat[0]).toEqual([-180, -90, 180, 90]);
+    expect(globe[0]).toEqual([-180, -90, 180, 90]);
+    expect(flat[0]).not.toBe(globe[0]);
+    expect(flat[1]).not.toBe(globe[1]);
+
+    // And stable within a projection, so an ordinary re-render does not churn the
+    // mesh every time the palette or the terminator updates.
+    expect(boundsFor('flat')[0]).toBe(flat[0]);
   });
 });

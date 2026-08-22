@@ -140,6 +140,18 @@ describe.each(['dark', 'light'] as const)('the %s world meets WCAG AA', (theme) 
     expect(dimming).toBeLessThan(3);
   });
 
+  it('gives the globe a silhouette against space', () => {
+    // The globe does not fill the frame, and once the sea became a legible navy the
+    // surround could no longer be the same colour — a planet whose limb has no
+    // contrast against its background is not a planet.
+    //
+    // The bar is deliberately modest. A navy sea against *pure black* only reaches
+    // 1.28:1, so luminance alone cannot carry a globe edge in a dark theme; the
+    // atmosphere ring does that. What this asserts is that the two are not the same
+    // colour and that space is the darker of them.
+    expect(contrastRatio(plain('space'), plain('ocean'))).toBeGreaterThanOrEqual(1.2);
+  });
+
   it('leaves the day side exactly as authored', () => {
     const untouched = compositeOver([...plain('night'), 0], opaque('land'));
     expect(untouched).toEqual(plain('land'));
