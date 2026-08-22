@@ -15,10 +15,9 @@ wall-clock time, that never pauses.
   rules that are not negotiable.
 - **Architecture decisions:** [`docs/adr/`](docs/adr/)
 - **Deployment & DNS:** [`docs/deploy.md`](docs/deploy.md) · [`deploy/README.md`](deploy/README.md)
-- **Backlog:** 273 issues across 23 milestones. `M0`–`M15` are the game, `M1A` the admin
-  console core, and the rest are cross-cutting tracks that deliberately sit outside the
-  feature sequence: `OPS` (delivery and operations), `SEC` and `SEC-HARD` (authorization
-  and hardening), `AUTH`, `E2E` and `POD`.
+- **Roadmap:** [GitHub milestones](https://github.com/simmeh024/tailfinsim/milestones) are
+  the live source for feature and cross-cutting work. Counts and track lists are not copied
+  here because they change whenever the roadmap does.
 
 ## Quick start
 
@@ -70,11 +69,10 @@ second person. CodeQL's measured thresholds and baseline decisions are recorded 
 
 ## Status
 
-Pre-MVP, and pre-launch. **M0 · Foundations**, **M1 · World, Time & Airport Data**,
-**M1A · Admin Console Core** and **M2 · Flight Operations** are complete, and
-**M3 · Demand & Commercial** has begun. The public site still serves a holding page:
-promoting the client is one environment variable (`WEB_SURFACE`) plus a deploy, not a
-different build.
+Pre-MVP, and pre-launch. The list below describes what is in the current repository; the
+[live milestone list](https://github.com/simmeh024/tailfinsim/milestones) owns sequencing and
+completion status. The public site still serves a holding page: promoting the client is one
+environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
 
 ### What exists
 
@@ -100,7 +98,8 @@ different build.
   the database itself refuses to let anyone edit ([ADR-0015](docs/adr/0015-session-lifecycle.md)).
 - **A repository-specific threat model.** Security work prioritises the persistent world's
   integrity, then the identities and control paths that can change it. The model records the
-  real single-host boundaries, attackers, ordinary operator mistakes and explicit non-goals
+  deployed web, worker, database, SSH and provider boundaries, attackers, ordinary operator
+  mistakes and explicit non-goals
   in [ADR-0012](docs/adr/0012-tailfin-threat-model.md).
 - **A browser security boundary at Caddy.** CSP restricts code, connections and framing;
   powerful unused browser features are denied; Google avatars have one narrow image-source
@@ -169,25 +168,27 @@ different build.
 
 ### What does not exist yet
 
-- **Nothing runs the simulation.** The tick loop and the event queue are built and tested,
-  and no process calls them — see [#187](https://github.com/simmeh024/tailfinsim/issues/187),
-  which decides where the engine lives before it has a home. The console reports this
-  honestly rather than showing a healthy-looking zero. Everything above is therefore
-  machinery that works and is not yet being driven.
-- **No fleet, crew or cabin.** Aircraft are a `uuid` with no catalogue behind it (M4),
-  crew and ground handling are inputs the models take rather than systems (M5), and the
-  livery and cabin builders are M6.
+- **No production worker or complete flight-event lifecycle.** The dev simulation runs in
+  `dist/worker.js`, separated from the web process by ADR-0019, but production has no worker.
+  The Worker currently handles `FLIGHT_ARRIVE`; event types without a handler are parked as
+  `unsupported` rather than destroyed. The exact live topology is maintained in
+  [`CLAUDE.md`](CLAUDE.md#the-two-environments-on-three-nodes).
+- **No owned-fleet, crew or cabin management.** The Fleet page exposes the world's
+  era-gated aircraft catalogue, but it does not yet list an airline's airframes, hours,
+  cycles or maintenance state. Crew and ground handling are still model inputs rather than
+  managed systems, and the livery and cabin builders remain future work.
 - **Most of the player client.** The standalone founding desk, private airline/rebrand desk
-  and network/fare page are real; world, fleet, finance, crew, design and board remain
-  labelled placeholders, and the guided ninety-minute onboarding is still M10-01. The
-  production front door still serves a holding page.
+  and network/fare pages plus the aircraft catalogue are real; world, finance, crew, design
+  and board remain labelled placeholders, and the guided ninety-minute onboarding is still
+  M10-01. The production front door still serves a holding page.
 
 ### Where it runs
 
-One DreamCompute instance hosts both environments: `tailfinsim.com` (production, holding
-page) and `dev.tailfinsim.com` (the preview environment, which deliberately runs unmerged
-branches). Splitting those onto dedicated web and worker nodes is planned in
-[OPS-08 – OPS-16](https://github.com/simmeh024/tailfinsim/issues/195).
+The canonical live node, service, database and deploy-command table is
+[`CLAUDE.md`'s operational topology](CLAUDE.md#the-two-environments-on-three-nodes). It is
+kept in one place so README does not become a second, stale topology after the next OPS
+change. The deployment reasoning is in [`docs/deploy.md`](docs/deploy.md), and the exact
+operator procedures are in [`deploy/README.md`](deploy/README.md).
 
 **Merging does not deploy anything.** Production moves only when somebody runs
 `./deploy/deploy.sh` on the server, which is ADR-0003's deliberate choice and was

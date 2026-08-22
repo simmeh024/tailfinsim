@@ -80,7 +80,7 @@ jobs:
         # is the typechecker here rather than the compiler — `moduleResolution:
         # bundler` cannot emit runnable Node output. So typecheck never produces
         # the artefacts that run in production, and until this step existed a PR
-        # could typecheck, lint, format and pass all 1,482 tests while the
+        # could typecheck, lint, format and pass every test while the
         # esbuild bundle or the Vite build was broken. The first sign of it
         # would have been `deploy.sh` failing on the box.
         #

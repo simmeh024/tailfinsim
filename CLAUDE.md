@@ -170,6 +170,10 @@ build, different checkout, port, database and audience. Since OPS-09 there is al
 box, `tailfin-dev-worker-01` (`208.113.129.83`), running the dev **worker** — so "the box" is
 no longer an unambiguous phrase, and production still has no worker at all.
 
+**This section is the canonical current operational topology.** `README.md` and
+`docs/deploy.md` link here instead of copying the node table; update this section whenever a
+node, service, database owner or deploy path changes.
+
 |                   | production                 | dev                            |
 | ----------------- | -------------------------- | ------------------------------ |
 | URL               | `tailfinsim.com`           | `dev.tailfinsim.com`           |
@@ -231,10 +235,8 @@ back; the new code is already serving.
 
 Two facts that are not visible from the code and cost time to rediscover.
 
-**Nothing runs the simulation — the engine now exists, and no service starts it.** Read
-that as two separate facts, because only one of them changed.
-
-OPS-08 settled where the engine lives: `src/worker.ts`, a second entry point from the same
+**The engine's home is the worker, never the web process.** OPS-08 settled that boundary:
+`src/worker.ts` is a second entry point from the same
 build, driving `createTickLoop` and `drainDueEvents` over every non-archived world. The
 boundary is [ADR-0019](docs/adr/0019-web-worker-boundary.md), and it is enforced by lint and
 by `engine/boundary.test.ts` rather than by memory — the web process cannot reach the loop.
@@ -243,7 +245,8 @@ Do not wire it into `main.ts`; that is now a failing test as well as a bad idea.
 **The simulation now runs on dev, and nowhere else.** OPS-09 put
 `tailfin-dev-worker.service` on its own node, `tailfin-dev-worker-01` — so a dev world's clock
 advances and its queue drains, while **production still has no worker at all**. Do not
-generalise a reading from one to the other; that is [OPS-11](https://github.com/simmeh024/tailfinsim/issues/191).
+generalise a reading from one to the other; the production worker is
+[OPS-12](https://github.com/simmeh024/tailfinsim/issues/191).
 
 A "ticks: 0, errors: 0" reading still means _nothing has run_ rather than _everything is fine_.
 The admin console's health page infers liveness from the queue for exactly that reason, and the
@@ -388,21 +391,10 @@ asset and attacker or failure mode a control addresses. A new public port, provi
 privileged role, secret or personal-data class, or deployment node changes the threat model;
 update ADR-0012 and `docs/deploy.md` in the same change.
 
-**Milestones:** 273 issues across 23 of them. `M0`–`M15` are the game backlog and `M1A`
-is the admin console core. The rest are cross-cutting tracks that deliberately sit outside
-the feature sequence, because none of them are game behaviour:
-
-| Track      | What it covers                                                        |
-| ---------- | --------------------------------------------------------------------- |
-| `OPS`      | Deployment, backups, infrastructure                                   |
-| `SEC`      | Authorization and ownership                                           |
-| `SEC-HARD` | Security hardening                                                    |
-| `AUTH`     | Multi-method authentication                                           |
-| `E2E`      | Browser and end-to-end testing                                        |
-| `POD`      | The poster shop — post-launch, and the first thing needing real money |
-
-Complete so far: **M0**, **M1**, **M1A** and **M2**. `M3 · Demand & Commercial` has
-started.
+**Roadmap:** use the live
+[GitHub milestone list](https://github.com/simmeh024/tailfinsim/milestones). Do not copy an
+issue count, milestone count, completion summary or supposedly complete track list into this
+file: all four become false as soon as roadmap work lands.
 
 ---
 

@@ -1,10 +1,9 @@
 # Deployment & connections
 
-Status: **live.** The DreamCompute instance exists and serves both `tailfinsim.com` (the
-holding page) and `dev.tailfinsim.com` (the application). This document is the reasoning —
-why this hosting, this topology, these records. The step-by-step runbook for building the
-box is [`deploy/README.md`](../deploy/README.md); the operational rules are
-[`CLAUDE.md`](../CLAUDE.md).
+Status: **live.** The exact current nodes, services, databases and deploy commands are
+maintained in [`CLAUDE.md`](../CLAUDE.md#the-two-environments-on-three-nodes). This document
+records why Tailfin uses this hosting and these connections without copying that volatile
+topology. The step-by-step runbook is [`deploy/README.md`](../deploy/README.md).
 
 ---
 
@@ -30,32 +29,18 @@ That rules out two of DreamHost's four products:
 whose name suggests it would work and which specifically will not. Confirm current
 product capabilities at purchase time; DreamHost's lineup does change.
 
-## 2. Target topology
+## 2. Current topology and trust boundaries
 
-A single DreamCompute instance running everything behind one reverse proxy:
+[`CLAUDE.md`'s three-node table](../CLAUDE.md#the-two-environments-on-three-nodes) is the
+canonical operational topology. This file deliberately does not repeat its IPs, checkout
+paths, service names or database ownership; those facts must have one current source.
 
-```
-                    tailfinsim.com
-                          │
-                          ▼
-              ┌───────────────────────┐
-              │  Caddy (TLS, :443)    │   automatic Let's Encrypt
-              └───────────┬───────────┘
-                          │
-          ┌───────────────┼────────────────┐
-          ▼               ▼                ▼
-     /  → web        /api → server    /ws → server
-     built client     Fastify          WebSocket —
-     (WEB_SURFACE)                     M12-01, not built
-                          │
-                          ▼
-                    Postgres 16
-```
-
-The security trust-boundary view—including dev, SSH, Google OAuth, GitHub and the backup
-path—is in [ADR-0012](adr/0012-tailfin-threat-model.md). This topology and that threat model
-must be updated together when OPS-08 splits web and worker or OPS-11 moves PostgreSQL; a new
-node or provider is a new trust boundary, not just a deployment detail.
+At the public edge, the client and API still share one Caddy origin. The Worker is a separate
+non-public process and reaches Postgres through the connection described below and in the
+runbook. The full security trust-boundary view—including dev, Worker SSH, Google OAuth,
+GitHub and the backup path—is in [ADR-0012](adr/0012-tailfin-threat-model.md). A new node,
+provider, privileged role or connection must update the canonical topology, this reasoning
+document and ADR-0012 together.
 
 **One origin, deliberately.** The client and API share `tailfinsim.com` rather than
 splitting into `app.` and `api.` subdomains. This is not laziness — M0-11 specifies
@@ -100,16 +85,17 @@ traffic, that is the signal to move up.
 
 All accounts include 100 GB of block storage and free bandwidth.
 
-**Status (2026-08-19):** running on one `lightspeed` instance in `US-East 2` (`iad2`),
-serving production and dev from the same box — separate checkout, port, database and
-service. 2 GB of swap was added because deploys build on the machine and 4 GB is tight
-while bundling.
+**Historical sizing observation (2026-08-19):** the shared production/dev web and database
+host was one `lightspeed` instance in `US-East 2` (`iad2`). Two GB of swap was added because
+deploys build on that host and 4 GB was tight while bundling. This is retained as sizing
+evidence, not as the current topology; use the canonical table above for that.
 
-Splitting dev from production, and web from worker, is
-[OPS-08 – OPS-16](https://github.com/simmeh024/tailfinsim/issues/195). That plan raises a
-question this section does not answer: **where Postgres lives** once the app is on more
-than one node. Today it is local, reached over a loopback socket, and `backup.sh` depends
-on that through peer authentication.
+OPS-08 and OPS-09 established the Web/Worker boundary and deployed the dev Worker. The
+remaining production split is tracked through
+[OPS-10 – OPS-16](https://github.com/simmeh024/tailfinsim/issues/195). Postgres currently
+remains on the web/database host; the dev Worker reaches it through the constrained SSH
+tunnel documented in the runbook. The future production split still has to decide the
+database's long-term home.
 
 Note for the launch wizard: attaching the instance to the **`public`** network gives it a
 routable IPv4 directly, so **no floating IP is involved**. And if booting from a new volume,
@@ -127,7 +113,7 @@ means recreating them, and because the omissions below are deliberate rather tha
 | ---- | ------------- | --------------- | ---------------------------- |
 | `A`  | _(blank / @)_ | `<instance IP>` | Apex → the app               |
 | `A`  | `www`         | `<instance IP>` | Caddy redirects `www` → apex |
-| `A`  | `dev`         | `<instance IP>` | Dev — the same box today     |
+| `A`  | `dev`         | `<instance IP>` | Dev web → the public edge    |
 
 Leave everything else empty for now. In particular:
 
@@ -181,7 +167,7 @@ the callback, after the player has been sent to Google. Production also refuses 
 | `ALLOW_REGISTRATION`          | `false`                                       | no       | **Defaults to false.** Closed unless explicitly opened |
 | `BACKUP_STATUS_FILE`          | `/var/lib/tailfin/backup-status.json`         | no       | Written by `backup.sh`, read by the admin overview     |
 
-#### Worker-only (OPS-08)
+#### Worker process
 
 Read by `worker.js` and by nothing else. A web node may hold them; they do nothing there.
 
@@ -191,12 +177,18 @@ Read by `worker.js` and by nothing else. A web node may hold them; they do nothi
 | `WORKER_HEALTH_HOST`      | `127.0.0.1` | no       | Loopback only. Never proxy this through Caddy |
 | `WORKER_TICK_INTERVAL_MS` | `1000`      | no       | Defaults to 1000, the coarse tick of §21      |
 
-`WORKER_HEALTH_PORT` is a separate variable from `PORT` on purpose: one `.env` copied to a
-worker node would otherwise bind the web port, or two services on one box would fight over 3000. 3100 keeps it clear of both 3000 (production web) and 3001 (dev web).
+`WORKER_HEALTH_PORT` is separate from `PORT` so an environment copied between roles cannot
+make the Worker bind the web process's port. Port 3100 remains distinct from the web defaults
+whether those roles are deployed together or on separate nodes.
 
 `WORKER_HEALTH_HOST` is loopback and is not read from `HOST`. The endpoint is
 unauthenticated and describes the shape of the simulation; the web process's variable must
 not be able to expose it.
+
+`RUNS_MIGRATIONS` is a deploy capability, not an application boot variable, so it does not
+belong in the table above. Web deploys own their database schema; the dev Worker wrapper sets
+`RUNS_MIGRATIONS=0` and still runs migration preflight, refusing a build that needs the web
+node to migrate first.
 
 ### Build numbers (M0-12)
 
@@ -285,6 +277,15 @@ ssh tailfin@<ip> → cd /srv/tailfin → ./deploy/deploy.sh
                           └─ poll /healthz, print the rollback command on failure
 ```
 
+That diagram is the migration-owning Web path. The dev Worker uses
+`deploy-dev-worker.sh`, which sets `RUNS_MIGRATIONS=0`, checks that its event handlers cover
+the pending queue and polls the Worker's loopback health endpoint. It connects to
+`tailfin_dev` through `tailfin-db-tunnel.service` as the restricted `tailfin_worker_dev`
+database role; it never receives a production database grant. The canonical topology links
+the login/deploy command, and the
+[Worker runbook](../deploy/README.md#the-dev-worker-node-ops-09) owns the SSH, systemd,
+`pg_hba.conf` and failure-recovery detail.
+
 **Running the command is the approval step.** Nothing automated can push to production,
 and no credential exists that lets GitHub reach the instance.
 
@@ -303,13 +304,14 @@ Full step-by-step server setup: [`deploy/README.md`](../deploy/README.md).
 
 ### The trade-off, stated plainly
 
-Builds run on the production box. A deploy needs dev dependencies and a few hundred MB of
-`node_modules`, and a broken build is found on the server rather than in CI. `deploy.sh`
-orders itself to limit the damage — build, preflight, verified recovery point, migrate, then
-restart. A database failure leaves the old process serving a schema it is required to support,
-but rollback still means rebuilding, takes minutes and can itself fail. A long migration also
-holds its strongest lock for the whole pending batch; the 100,000-row OPS-05 experiment made
-that cost visible rather than hypothetical.
+Builds run on the target node. A deploy needs dev dependencies and a few hundred MB of
+`node_modules`, and a broken build can still be found there even though CI also builds the
+production bundles. `deploy.sh` orders itself to limit the damage — build, preflight, verified
+recovery point on migration-owning nodes, migrate, then restart. A database failure leaves the
+old process serving a schema it is required to support, but rollback still means rebuilding,
+takes minutes and can itself fail. A long migration also holds its strongest lock for the
+whole pending batch; the 100,000-row OPS-05 experiment made that cost visible rather than
+hypothetical.
 
 ## 6. Since settled
 
@@ -320,9 +322,9 @@ answered, because the reasoning is more useful than the fact.
   `packages/web/dist/client` when `WEB_SURFACE=app`, on the same origin as the API. No CDN.
   Production still has `WEB_SURFACE` unset and serves the holding page; promoting the app
   is that one variable plus a deploy.
-- **Staging** — settled, though not as a second box. `dev.tailfinsim.com` shares this
-  instance: separate checkout, port, database and service. Splitting it onto its own
-  machine, along with a web/worker split, is [OPS-08 – OPS-16](https://github.com/simmeh024/tailfinsim/issues/195).
+- **Staging** — settled. `dev.tailfinsim.com` is the preview environment and deliberately
+  accepts unmerged refs. Its Web and Worker placement is maintained only in the canonical
+  topology table; this historical question no longer owns a node diagram.
 - **Backups** — settled by OPS-03, well ahead of M13-11. Nightly `pg_dump` at 03:15 UTC,
   verified by reading each archive's table of contents back, uploaded to DreamObjects with
   7 nightly and 12 monthly copies retained, and **an upload failure is a backup failure** —
@@ -363,14 +365,15 @@ answered, because the reasoning is more useful than the fact.
 - **Region.** DreamCompute is US-only and the instance is in US-East 2 — roughly 90–110 ms
   from European players. Acceptable for a sim where a flight takes hours, but it is a real
   cost of staying with DreamHost and worth revisiting if latency becomes a complaint.
-- **Where the simulation runs.** Nothing runs the tick loop today — `createTickLoop` and
-  the event queue are built, tested, and called by no process. Where the engine lives is
-  [OPS-08](https://github.com/simmeh024/tailfinsim/issues/187), and it should be a worker
-  rather than the web process.
-- **Where Postgres lives after the split.** The four-node topology in OPS-08 – OPS-16 has
-  no home for the database, which today is local to the box and reached over a loopback
-  socket — including by `backup.sh`, which uses peer authentication.
-  [OPS-11](https://github.com/simmeh024/tailfinsim/issues/190) forces that decision.
+- **Production Worker rollout.** Engine placement is settled by ADR-0019 and the dev Worker
+  runs it today. Production still has no Worker;
+  [OPS-12](https://github.com/simmeh024/tailfinsim/issues/191) owns adding one rather than
+  reopening the Web/Worker boundary.
+- **Where Postgres lives after the full split.** Postgres currently stays on the shared
+  web/database host. The dev Worker tunnels to it over SSH with a database role confined to
+  `tailfin_dev`; the production Worker does not exist yet. The four-node end state still
+  needs a long-term database home, forced by
+  [OPS-11](https://github.com/simmeh024/tailfinsim/issues/190) and OPS-12.
 - **Real-money payments.** Settled in principle by [ADR-0006](adr/0006-stripe-for-real-money.md)
   — Stripe, hosted checkout, no card data on Tailfin's servers. Nothing is integrated: the
   first product that needs it is the poster shop
