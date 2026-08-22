@@ -15,7 +15,9 @@ describe('the local verification summary', () => {
         return pass();
       },
       inspect: inspectDatabase,
-      databaseUrl: undefined,
+      // CI supplies DATABASE_URL globally. An explicit empty string models the
+      // ordinary local environment without inheriting CI's disposable database.
+      databaseUrl: '',
       write: (text) => {
         output += text;
       },
