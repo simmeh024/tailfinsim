@@ -479,11 +479,18 @@ export async function fleetMaintenance(
   return { airframes };
 }
 
-/** Higher is more urgent. Grounded first, then due, then closest to due. */
+/**
+ * Higher is more urgent. Grounded first, then unairworthy, then closest to due.
+ *
+ * Keyed on the status column rather than only on recomputed airworthiness, and
+ * kept identical to `fleet.ts`'s ordering — the fleet table and the maintenance
+ * page must not disagree about which aeroplane needs attention first.
+ */
 function urgency(view: MaintenanceAirframeView): number {
-  if (!view.airworthy) return 1_000;
-  const worst = view.tiers.reduce((max, t) => Math.max(max, t.usedFraction), 0);
-  return worst;
+  if (view.status === 'grounded') return 3_000;
+  if (!view.airworthy) return 2_000;
+  if (view.status === 'in_check') return -1;
+  return view.tiers.reduce((max, t) => Math.max(max, t.usedFraction), 0);
 }
 
 /**

@@ -628,9 +628,23 @@ export async function listFleet(
   return { airframes };
 }
 
-/** Higher is more urgent. Cannot fly first, then closest to a check. */
+/**
+ * Higher is more urgent. Grounded first, then unairworthy, then closest to due.
+ *
+ * The **status column decides**, not the recomputed airworthiness. Grounding is a
+ * latch the worker sets and the player clears by booking the work, so a row can
+ * legitimately read `grounded` while a fresh calculation says nothing is overdue —
+ * and the table displays that column. Sorting on anything else puts a row labelled
+ * "Grounded" below a healthy one, which is the sort looking wrong to the only
+ * person who matters.
+ *
+ * An aeroplane already in a check sorts to the bottom on purpose: the decision has
+ * been taken, so it is inventory rather than a decision.
+ */
 function urgency(view: FleetAirframeView): number {
-  if (!view.airworthy) return 1_000;
+  if (view.status === 'grounded') return 3_000;
+  if (!view.airworthy) return 2_000;
+  if (view.status === 'in_check') return -1;
   return view.nextCheck?.usedFraction ?? 0;
 }
 

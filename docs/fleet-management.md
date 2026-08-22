@@ -85,7 +85,25 @@ produced it.
   aircraft arrived.
 
 **The next check** is quoted by the limit that binds — hours or cycles, whichever arrives
-first — which is M4-06's rule carried into the table. _"A-check in 95 cycles"_ is a plan;
+first — which is M4-06's rule carried into the table.
+
+### Grounding is a latch, and the sort reads the latch
+
+The list is ordered by what needs the player: **grounded first**, then anything a recomputed
+status says is unairworthy, then whatever is closest to due — and an aeroplane already _in_ a
+check sorts to the bottom, because the decision has been taken and it is inventory rather than
+a decision.
+
+Grounded has to come from the `status` column rather than from recomputed airworthiness. The
+worker sets that latch and the player clears it by booking the work, so a row can legitimately
+read `grounded` while a fresh calculation finds nothing overdue. Sorting on the calculation
+instead put a row labelled "Grounded" below a healthy one.
+
+The first version sorted on airworthiness alone, which left two new aeroplanes equal and let
+the tie-break fall to registrations minted from a random order UUID. It passed once and failed
+in CI on the next unrelated pull request. `fleet.ts` and `maintenance.ts` now share the
+ordering, so the fleet table and the maintenance page cannot disagree about which aeroplane
+needs attention first. _"A-check in 95 cycles"_ is a plan;
 _"an A-check soonish"_ is not.
 
 ---

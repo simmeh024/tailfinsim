@@ -24,7 +24,7 @@ import {
 import { acquireAircraft, deliverDueAircraftOrders } from './acquisition';
 import { seedAircraftCatalogue } from './catalogue';
 import { airframeDetail, listFleet } from './fleet';
-import { fleetMaintenance } from './maintenance';
+import { bookCheck, fleetMaintenance } from './maintenance';
 
 /**
  * The fleet list and aircraft detail against real Postgres (M4-07).
@@ -459,7 +459,7 @@ describeDb('the fleet', () => {
       expect(await listFleet(db.db, own(fixture))).toEqual({ airframes: [] });
     });
 
-    it('puts the aeroplane that cannot fly first', async () => {
+    it('puts the grounded aeroplane first, on the strength of its status column', async () => {
       const fixture = await fixtures.create();
       const flyable = await acquire(fixture, 'ATR 72-600');
       const stuck = await acquire(fixture, 'Dash 8-400');
@@ -470,11 +470,40 @@ describeDb('the fleet', () => {
         .where(eq(airframe.id, stuck.airframeId));
 
       const list = await listFleet(db.db, own(fixture), atGameDay(fixture.world, 2));
-      expect(list.airframes.map((row) => row.airframeId)).toEqual([
-        stuck.airframeId,
-        flyable.airframeId,
-      ]);
+
+      // Both aeroplanes are new, so a recomputed maintenance status says both are
+      // airworthy — which is exactly the case that made the first version of this
+      // test flaky. Sorting on `airworthy` alone left the two equal, and the
+      // tie-break fell to registrations minted from a random order UUID, so the
+      // order was a coin toss that happened to land right once. Grounding is a
+      // latch in the status column, and that is what the sort has to read.
+      expect(list.airframes[0]?.airframeId).toBe(stuck.airframeId);
       expect(list.airframes[0]?.status).toBe('grounded');
+      expect(list.airframes[0]?.airworthy).toBe(true);
+      expect(list.airframes[1]?.airframeId).toBe(flyable.airframeId);
+    });
+
+    it('sorts an aeroplane already in a check to the bottom', async () => {
+      const fixture = await fixtures.create();
+      const busy = await acquire(fixture, 'ATR 72-600');
+      const free = await acquire(fixture, 'Dash 8-400');
+      await topUp(fixture, 50_000_000_000);
+
+      const booked = await bookCheck(
+        db.db,
+        own(fixture),
+        busy.airframeId,
+        'a',
+        atGameDay(fixture.world, 1),
+      );
+      expect(booked.ok).toBe(true);
+
+      const list = await listFleet(db.db, own(fixture), atGameDay(fixture.world, 2));
+      // The decision has already been taken, so it is inventory rather than a
+      // decision. The list is sorted by what needs the player, not by state.
+      expect(list.airframes[0]?.airframeId).toBe(free.airframeId);
+      expect(list.airframes[1]?.airframeId).toBe(busy.airframeId);
+      expect(list.airframes[1]?.status).toBe('in_check');
     });
 
     it('quotes the tier closest to due, with the limit that binds it', async () => {
