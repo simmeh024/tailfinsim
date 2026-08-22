@@ -156,6 +156,7 @@ export async function fleetCatalogue(
 
       listPrice: type.listPrice,
       monthlyLeaseRate: type.monthlyLeaseRate,
+      baseDeliveryLeadWeeks: type.baseDeliveryLeadWeeks,
 
       restrictions: cost.charges.map((charge) => ({
         kind: charge.kind,

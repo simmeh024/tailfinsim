@@ -157,6 +157,13 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   the record from live caps and rankings. Player anonymisation removes sign-in authority
   while keeping that world history intact
   ([ADR-0018](docs/adr/0018-airline-lifecycle-and-code-release.md)).
+- **Three atomic aircraft acquisition paths.** Active airlines can lease an immediately
+  available aircraft for a two-month deposit, buy a persisted used listing with its prior
+  configuration intact, or pay for a factory build whose pinned options extend a wall-clock
+  delivery date. The order, used-listing claim, explaining cash movement and any immediate
+  airframe commit together; the Worker materialises due new orders exactly once. The typed
+  API and the M4-05/M4-07 ownership boundary are documented in
+  [`docs/aircraft-acquisition.md`](docs/aircraft-acquisition.md).
 - **One founded-airline database fixture.** Server tests that need a player airline go
   through the real founding transaction, so they receive an open world, owner, founder hub,
   allocated per-world codes and configured opening cash with its AIR-06 movement. The
@@ -180,13 +187,14 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
 
 - **No production worker or complete flight-event lifecycle.** The dev simulation runs in
   `dist/worker.js`, separated from the web process by ADR-0019, but production has no worker.
-  The Worker currently handles `FLIGHT_ARRIVE`; event types without a handler are parked as
-  `unsupported` rather than destroyed. The exact live topology is maintained in
+  The Worker currently handles `FLIGHT_ARRIVE` plus M4-04's real-time factory-delivery sweep;
+  event types without a handler are parked as `unsupported` rather than destroyed. The exact live topology is maintained in
   [`CLAUDE.md`](CLAUDE.md#the-two-environments-on-three-nodes).
-- **No owned-fleet, crew or cabin management.** The Fleet page exposes the world's
-  era-gated aircraft catalogue, but it does not yet list an airline's airframes, hours,
-  cycles or maintenance state. Crew and ground handling are still model inputs rather than
-  managed systems, and the livery and cabin builders remain future work.
+- **No fleet-management UI, crew or cabin management.** Orders and physical airframes now
+  exist behind the typed fleet API, but the Fleet page still exposes only the world's
+  era-gated catalogue; M4-07 owns listing those airframes, hours and cycles. M4-05 still owns
+  rolling used-market generation and depreciation, M4-06 owns maintenance, and crew, ground
+  handling, livery and cabin builders remain future work.
 - **Most of the player client.** The standalone founding desk, private airline/rebrand desk,
   network/fare pages, aircraft catalogue, and dual-projection world surface are real. The
   world does not yet receive live aircraft/route data; finance, crew, design and board remain

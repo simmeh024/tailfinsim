@@ -38,9 +38,10 @@ import { Timestamp } from './primitives';
  * kilograms-per-hour figure is a cruise-average of the right order rather than
  * a specification — `flight/fuel.ts` already models burn properly from a
  * per-nautical-mile rate, and this figure exists for display and comparison.
- * **Lease rates** are commercially confidential; these are drawn at a
- * conventional monthly ~0.8% of list price, which is the right order and is not
- * a quoted number for any specific aircraft.
+ * **Lease rates** are commercially confidential; except where the design gives
+ * a concrete onboarding term, these are drawn at a conventional monthly ~0.8%
+ * of list price. Appendix B.4 is authoritative for the ATR 72: its two-month
+ * deposit is $170k, hence $85k/month.
  *
  * Anything genuinely uncertain is better stated than smoothed over. A player who
  * checks and finds a figure wrong should be able to see which kind of figure it
@@ -130,7 +131,8 @@ const V1_TYPES = [
       restrictionDates: [],
     },
     listPrice: millions(26),
-    monthlyLeaseRate: leaseFor(26),
+    // App. B.4: two months' deposit is $170k, therefore one month is $85k.
+    monthlyLeaseRate: 8_500_000,
   },
   {
     designation: 'Dash 8-400',

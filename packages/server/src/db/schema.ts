@@ -444,6 +444,9 @@ export type NewAirlineStatusTransitionRow = typeof airlineStatusTransition.$infe
 export const cashMovementCause = pgEnum('cash_movement_cause', [
   'airline_founding',
   'airline_rebrand',
+  'aircraft_lease_deposit',
+  'aircraft_used_purchase',
+  'aircraft_new_purchase',
   'flight_settlement',
   'migration_opening_balance',
 ]);
@@ -2088,6 +2091,8 @@ export const aircraftType = pgTable(
     /** Null for a used-market-only type — App. C.2 shows those as "—". */
     listPriceMinor: bigint('list_price_minor', { mode: 'number' }),
     monthlyLeaseRateMinor: bigint('monthly_lease_rate_minor', { mode: 'number' }),
+    /** Off-the-shelf factory lead in real weeks; options add to it (M4-04). */
+    baseDeliveryLeadWeeks: integer('base_delivery_lead_weeks').notNull().default(4),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     /** Which build wrote it, so a mismatch can be traced to a release. */
@@ -2111,6 +2116,7 @@ export const aircraftType = pgTable(
       sql`(${t.listPriceMinor} IS NULL OR ${t.listPriceMinor} >= 0)
           AND (${t.monthlyLeaseRateMinor} IS NULL OR ${t.monthlyLeaseRateMinor} >= 0)`,
     ),
+    check('aircraft_type_base_delivery_positive', sql`${t.baseDeliveryLeadWeeks} > 0`),
   ],
 );
 
@@ -2207,3 +2213,187 @@ export const aircraftTypeOption = pgTable(
 );
 
 export type AircraftTypeOptionRow = typeof aircraftTypeOption.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// Aircraft acquisition and physical airframes (M4-04, §7.2, App. C.5–C.6)
+// ---------------------------------------------------------------------------
+
+export const aircraftAcquisitionKind = pgEnum('aircraft_acquisition_kind', [
+  'lease',
+  'used',
+  'new',
+]);
+export const aircraftOrderStatus = pgEnum('aircraft_order_status', ['pending', 'delivered']);
+export const airframeOwnership = pgEnum('airframe_ownership', ['owned', 'leased', 'financed']);
+export const usedAircraftListingStatus = pgEnum('used_aircraft_listing_status', [
+  'available',
+  'sold',
+  'withdrawn',
+]);
+
+/**
+ * A server-authored used-aircraft offer.
+ *
+ * M4-04 owns the purchase boundary and the configuration snapshot. M4-05 owns
+ * how these rows are generated, refreshed and priced; keeping that distinction
+ * means a client can select a listing id but can never submit its own cheap,
+ * young, unusually configured aircraft.
+ */
+export const usedAircraftListing = pgTable(
+  'used_aircraft_listing',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    catalogueVersion: text('catalogue_version').notNull(),
+    typeDesignation: text('type_designation').notNull(),
+    registration: text('registration').notNull(),
+    buildOptionIds: text('build_option_ids').notNull().default('[]'),
+    cabinConfigId: uuid('cabin_config_id'),
+    liveryId: uuid('livery_id'),
+    effectiveSpec: text('effective_spec').notNull(),
+    ownerHistory: text('owner_history').notNull().default('[]'),
+    hours: doublePrecision('hours').notNull(),
+    cycles: integer('cycles').notNull(),
+    askingPriceMinor: bigint('asking_price_minor', { mode: 'number' }).notNull(),
+    locationIcao: text('location_icao')
+      .notNull()
+      .references(() => airport.icaoCode),
+    status: usedAircraftListingStatus('status').notNull().default('available'),
+    availableAt: timestamp('available_at', { withTimezone: true }).notNull().defaultNow(),
+    soldAt: timestamp('sold_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('used_aircraft_listing_world_status_idx').on(t.worldId, t.status, t.availableAt),
+    check('used_aircraft_listing_hours_nonnegative', sql`${t.hours} >= 0`),
+    check('used_aircraft_listing_cycles_nonnegative', sql`${t.cycles} >= 0`),
+    check('used_aircraft_listing_price_nonnegative', sql`${t.askingPriceMinor} >= 0`),
+    check(
+      'used_aircraft_listing_sold_at_matches_status',
+      sql`(${t.status} = 'sold' AND ${t.soldAt} IS NOT NULL)
+          OR (${t.status} <> 'sold' AND ${t.soldAt} IS NULL)`,
+    ),
+    check(
+      'used_aircraft_listing_registration_not_blank',
+      sql`char_length(${t.registration}) BETWEEN 2 AND 10 AND ${t.registration} = btrim(${t.registration})`,
+    ),
+  ],
+);
+
+/** One idempotent commercial commitment, including its immutable build snapshot. */
+export const aircraftOrder = pgTable(
+  'aircraft_order',
+  {
+    /** Client request id: also the cash-movement reference. */
+    id: uuid('id').primaryKey(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    kind: aircraftAcquisitionKind('kind').notNull(),
+    status: aircraftOrderStatus('status').notNull(),
+    catalogueVersion: text('catalogue_version').notNull(),
+    typeDesignation: text('type_designation').notNull(),
+    buildOptionIds: text('build_option_ids').notNull().default('[]'),
+    cabinConfigId: uuid('cabin_config_id'),
+    liveryId: uuid('livery_id'),
+    effectiveSpec: text('effective_spec').notNull(),
+    ownerHistory: text('owner_history').notNull().default('[]'),
+    hours: doublePrecision('hours').notNull().default(0),
+    cycles: integer('cycles').notNull().default(0),
+    chargedMinor: bigint('charged_minor', { mode: 'number' }).notNull(),
+    monthlyLeaseRateMinor: bigint('monthly_lease_rate_minor', { mode: 'number' }),
+    baseLeadTimeWeeks: integer('base_lead_time_weeks').notNull(),
+    optionLeadTimeWeeks: integer('option_lead_time_weeks').notNull(),
+    deliveryAirportIcao: text('delivery_airport_icao')
+      .notNull()
+      .references(() => airport.icaoCode),
+    usedListingId: uuid('used_listing_id')
+      .unique()
+      .references(() => usedAircraftListing.id, { onDelete: 'restrict' }),
+    orderedAt: timestamp('ordered_at', { withTimezone: true }).notNull(),
+    deliveryAt: timestamp('delivery_at', { withTimezone: true }).notNull(),
+    deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('aircraft_order_airline_ordered_at_idx').on(t.airlineId, t.orderedAt),
+    index('aircraft_order_due_idx').on(t.worldId, t.status, t.deliveryAt),
+    check('aircraft_order_charge_nonnegative', sql`${t.chargedMinor} >= 0`),
+    check(
+      'aircraft_order_lease_rate_nonnegative',
+      sql`${t.monthlyLeaseRateMinor} IS NULL OR ${t.monthlyLeaseRateMinor} >= 0`,
+    ),
+    check(
+      'aircraft_order_lead_times_nonnegative',
+      sql`${t.baseLeadTimeWeeks} >= 0 AND ${t.optionLeadTimeWeeks} >= 0`,
+    ),
+    check('aircraft_order_hours_nonnegative', sql`${t.hours} >= 0`),
+    check('aircraft_order_cycles_nonnegative', sql`${t.cycles} >= 0`),
+    check('aircraft_order_delivery_not_before_order', sql`${t.deliveryAt} >= ${t.orderedAt}`),
+    check(
+      'aircraft_order_delivered_at_matches_status',
+      sql`(${t.status} = 'delivered' AND ${t.deliveredAt} IS NOT NULL)
+          OR (${t.status} = 'pending' AND ${t.deliveredAt} IS NULL)`,
+    ),
+    check(
+      'aircraft_order_kind_terms_match',
+      sql`(${t.kind} = 'lease' AND ${t.monthlyLeaseRateMinor} IS NOT NULL AND ${t.usedListingId} IS NULL)
+          OR (${t.kind} = 'used' AND ${t.monthlyLeaseRateMinor} IS NULL AND ${t.usedListingId} IS NOT NULL)
+          OR (${t.kind} = 'new' AND ${t.monthlyLeaseRateMinor} IS NULL AND ${t.usedListingId} IS NULL)`,
+    ),
+  ],
+);
+
+/** The physical object delivered by an order; its configuration never comes from the client. */
+export const airframe = pgTable(
+  'airframe',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    sourceOrderId: uuid('source_order_id')
+      .notNull()
+      .unique()
+      .references(() => aircraftOrder.id, { onDelete: 'restrict' }),
+    catalogueVersion: text('catalogue_version').notNull(),
+    typeDesignation: text('type_designation').notNull(),
+    registration: text('registration').notNull(),
+    buildOptionIds: text('build_option_ids').notNull().default('[]'),
+    cabinConfigId: uuid('cabin_config_id'),
+    liveryId: uuid('livery_id'),
+    effectiveSpec: text('effective_spec').notNull(),
+    ownerHistory: text('owner_history').notNull().default('[]'),
+    hours: doublePrecision('hours').notNull().default(0),
+    cycles: integer('cycles').notNull().default(0),
+    ownership: airframeOwnership('ownership').notNull(),
+    deliveredToIcao: text('delivered_to_icao')
+      .notNull()
+      .references(() => airport.icaoCode),
+    deliveredAt: timestamp('delivered_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('airframe_world_registration_key').on(t.worldId, t.registration),
+    index('airframe_airline_id_idx').on(t.airlineId),
+    check('airframe_hours_nonnegative', sql`${t.hours} >= 0`),
+    check('airframe_cycles_nonnegative', sql`${t.cycles} >= 0`),
+    check(
+      'airframe_registration_not_blank',
+      sql`char_length(${t.registration}) BETWEEN 2 AND 10 AND ${t.registration} = btrim(${t.registration})`,
+    ),
+  ],
+);
+
+export type AircraftOrderRow = typeof aircraftOrder.$inferSelect;
+export type NewAircraftOrderRow = typeof aircraftOrder.$inferInsert;
+export type AirframeRow = typeof airframe.$inferSelect;
+export type NewAirframeRow = typeof airframe.$inferInsert;
+export type UsedAircraftListingRow = typeof usedAircraftListing.$inferSelect;
+export type NewUsedAircraftListingRow = typeof usedAircraftListing.$inferInsert;

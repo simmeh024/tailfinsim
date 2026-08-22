@@ -60,6 +60,15 @@ costs more, and only `out_of_service` makes it illegal. The dates are the catalo
 rates are the economy's, so a world can make old aircraft dearer without re-issuing its
 catalogue.
 
+**Aircraft acquisition has two clocks and one owner.** `POST /api/fleet/acquisitions`
+atomically writes the pinned commercial/build snapshot and its AIR-06 movement. Lease and
+used paths deliver in that request; used configuration comes only from a locked
+`used_aircraft_listing`, never the client. New orders store a wall-clock `delivery_at` — §7.2
+explicitly says real weeks — and only the Worker materialises them. Do not turn those dates
+into `world_event.fire_at`, which is game time and changes meaning with world speed. The
+complete boundary and current M4-05/M4-07 exclusions are in
+[`docs/aircraft-acquisition.md`](docs/aircraft-acquisition.md).
+
 **A world pins two versions, and they are not the same version.** `economy_config_version`
 is §22.3's balance payload; `aircraft_catalogue_version` is §22.5's eighteen aircraft, stored
 as immutable `aircraft_type` rows keyed by `(catalogue_version, designation)`. Both are seeded
@@ -247,6 +256,11 @@ Do not wire it into `main.ts`; that is now a failing test as well as a bad idea.
 advances and its queue drains, while **production still has no worker at all**. Do not
 generalise a reading from one to the other; the production worker is
 [OPS-12](https://github.com/simmeh024/tailfinsim/issues/191).
+
+The same tick now claims due factory aircraft orders by **real** `delivery_at`, per tickable
+world, before it drains that world's game-time events. `aircraftDeliveries` and
+`aircraftDeliveryErrors` are heartbeat counters; a delivery-only tick is logged rather than
+mistaken for an idle one.
 
 A "ticks: 0, errors: 0" reading still means _nothing has run_ rather than _everything is fine_.
 The admin console's health page infers liveness from the queue for exactly that reason, and the

@@ -30,6 +30,8 @@ function engineFixture(overrides: Partial<AdminNodeEngine> = {}): AdminNodeEngin
     processed: 0,
     failed: 0,
     unsupported: 0,
+    aircraftDeliveries: 0,
+    aircraftDeliveryErrors: 0,
     lastTickAt: NOW.toISOString(),
     queueDue: 0,
     oldestDueAt: null,

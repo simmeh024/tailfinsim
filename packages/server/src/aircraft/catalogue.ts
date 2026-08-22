@@ -166,6 +166,7 @@ export async function loadCatalogueVersion(
           eraDates: AircraftEraDates.parse(JSON.parse(row.eraDates)),
           listPrice: row.listPriceMinor,
           monthlyLeaseRate: row.monthlyLeaseRateMinor,
+          baseDeliveryLeadWeeks: row.baseDeliveryLeadWeeks,
           // Sorted into the same canonical order `availableOptionsFor` uses, so a
           // type read back out of the database equals the type written into it.
           // Postgres returns these rows in no guaranteed order (invariant 2).
@@ -292,6 +293,7 @@ export async function seedAircraftCatalogue(db: Database): Promise<CatalogueSeed
         outOfService: asDate(type.eraDates.outOfService),
         listPriceMinor: type.listPrice,
         monthlyLeaseRateMinor: type.monthlyLeaseRate,
+        baseDeliveryLeadWeeks: type.baseDeliveryLeadWeeks,
         createdByLabel: label,
       })),
     )

@@ -165,6 +165,26 @@ describe('what the engine reports', () => {
     expect(snapshot.worlds).toBe(1);
   });
 
+  it('sweeps real-time aircraft deliveries for every tickable world', async () => {
+    const deliverAircraft = vi.fn((_db: Database, worldId: string) =>
+      Promise.resolve({ delivered: worldId === 'world-0' ? 2 : 1 }),
+    );
+    const engine = createSimulationEngine({
+      db,
+      handlers: {},
+      listWorlds: () => Promise.resolve(worldsFixture('Flagship', 'Second')),
+      drain: () => Promise.resolve(drainResult(0)),
+      deliverAircraft,
+    });
+
+    const report = await engine.runOnce();
+
+    expect(report.aircraftDelivered).toBe(3);
+    expect(engine.snapshot().aircraftDeliveries).toBe(3);
+    expect(engine.snapshot().aircraftDeliveryErrors).toBe(0);
+    expect(deliverAircraft.mock.calls.map((call) => call[1])).toEqual(['world-0', 'world-1']);
+  });
+
   it('names the event types it has no handler for', () => {
     const engine = createSimulationEngine({ db, handlers: {} });
 

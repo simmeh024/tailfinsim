@@ -179,7 +179,13 @@ const engine = createSimulationEngine({
     tick: (report) => {
       // Only ticks that did something. At 1 Hz against an empty queue the log
       // would otherwise be 86,400 lines a day saying nothing happened.
-      if (report.processed === 0 && report.failed === 0 && report.unsupported === 0) return;
+      if (
+        report.processed === 0 &&
+        report.failed === 0 &&
+        report.unsupported === 0 &&
+        report.aircraftDelivered === 0
+      )
+        return;
       app.log.info(
         {
           tick: report.tickNumber,
@@ -187,6 +193,7 @@ const engine = createSimulationEngine({
           processed: report.processed,
           failed: report.failed,
           unsupported: report.unsupported,
+          aircraftDelivered: report.aircraftDelivered,
           durationMs: report.durationMs,
         },
         'tick',
@@ -247,6 +254,8 @@ const heartbeat = createHeartbeat({
       queueDue: queueSummary.due,
       oldestDueAt: queueSummary.oldestDueAt,
       unhandledEventTypes: snapshot.unhandledEventTypes,
+      aircraftDeliveries: snapshot.aircraftDeliveries,
+      aircraftDeliveryErrors: snapshot.aircraftDeliveryErrors,
     };
   },
   onError: (error) => {
