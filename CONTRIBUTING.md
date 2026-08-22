@@ -486,3 +486,38 @@ Do not describe a merge as a deploy. Check `pnpm ops:status` before reporting wh
 The design doc mixes `$` and `€`, and nm/ft/m/t/kg (§24 lists this as open design debt,
 resolved by M8-02). Until M8-02 lands, **do not invent a convention** — flag it on the
 issue and use whatever the surrounding code already does.
+
+---
+
+## Licence, and what a contribution grants
+
+**Code is [AGPL-3.0-only](LICENSE). Documentation is reserved ([`docs/LICENSE`](docs/LICENSE)).**
+
+Inbound matches outbound, and there is no CLA. Opening a pull request against
+this repository offers your contribution under the licence that already covers
+the file you are changing: the AGPL for anything under `packages/` or `deploy/`,
+and `docs/LICENSE`'s reserved terms for anything under `docs/`. Nothing more is
+asked and nothing is signed. If that is not what you intend, say so in the pull
+request rather than assuming — it is far easier to sort out before a merge than
+after one.
+
+Two consequences worth knowing before you build on this.
+
+**The AGPL reaches network use.** §13 is the clause that distinguishes it from
+the GPL: run a modified Tailfin as a service and its users are entitled to the
+modified source. That is deliberate. Tailfin is a hosted persistent world that
+nobody downloads, so ordinary GPL copyleft would almost never trigger and a
+closed hosted fork would be entirely permitted. If you fork this to run it, you
+are welcome to — and you have to publish what you changed.
+
+**A new dependency is a licence decision.** Every current dependency is
+permissive or MPL-2.0, and none conflicts with the AGPL —
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) has the table. Adding a
+package under anything else needs deciding before it lands, not after. Note that
+Dependency Review blocks a _vulnerable_ package and checks no licences at all,
+so nothing automated will catch this for you.
+
+Anything the design document says about trademarks still holds: type
+designations and manufacturer names are factual and are used descriptively;
+manufacturer logos, trade dress and house liveries are not shipped, and adding
+one would be a licensing problem rather than an art decision.

@@ -219,3 +219,23 @@ To see where things actually are, from anywhere and without an SSH session:
 ```bash
 pnpm ops:status
 ```
+
+## Licence
+
+**Code: [AGPL-3.0-only](LICENSE). Documentation: reserved ([`docs/LICENSE`](docs/LICENSE)).**
+
+Tailfin is source-available and copyleft. You may read, run, fork and modify the
+code, and if you run a modified Tailfin as a service you have to offer your
+users its source — that is the AGPL's §13, and it is the reason this licence
+rather than the GPL. Tailfin is a hosted persistent world that nobody downloads,
+so plain GPL copyleft would essentially never trigger and a closed hosted fork
+would be permitted. The AGPL is what closes that.
+
+`docs/` is not covered. The design document and the ADRs are reserved, and that
+is deliberate: a fork inherits the simulation, not the appendices that explain
+why it behaves as it does.
+
+Third-party terms — dependencies, the public-domain OurAirports dataset, and the
+position on manufacturer names — are recorded in
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md). No dependency is copyleft
+and none is licence-incompatible.

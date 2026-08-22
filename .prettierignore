@@ -7,3 +7,9 @@ pnpm-lock.yaml
 # Authored prose — keep the original formatting so diffs against the source
 # document stay readable.
 docs/tailfin-design-doc.md
+
+# Licence text, verbatim. The AGPL-3.0 must stay byte-identical to the FSF's
+# canonical copy — reformatting it would both misstate the licence and break
+# GitHub's licence detection, which matches against the exact text.
+LICENSE
+docs/LICENSE

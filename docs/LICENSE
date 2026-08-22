@@ -1,0 +1,49 @@
+Tailfin documentation — all rights reserved
+===========================================
+
+Copyright (C) 2026 simmeh024. All rights reserved.
+
+This directory is NOT covered by the GNU Affero General Public License in
+`/LICENSE`. That licence covers Tailfin's source code; this directory is
+documentation and is licensed separately, which is to say: not licensed.
+
+What this covers
+----------------
+
+Everything in `docs/`, including:
+
+  - `tailfin-design-doc.md` — the design document and its appendices
+  - `adr/` — the architecture decision records
+  - every other document in this directory and its subdirectories
+
+You may read it. GitHub's terms permit viewing and forking a public
+repository, and nothing here objects to that. You may not otherwise copy,
+adapt, republish or redistribute it, and no licence to do so is granted by
+implication, by the presence of the AGPL on the code, or by this file.
+
+Why the split
+-------------
+
+The code is copyleft because Tailfin is a hosted service and the AGPL is what
+stops a closed hosted fork of it. That reasoning is about software.
+
+The design document is a different kind of thing: it is the game's design,
+worked out over a long time, and it is the part that would be most valuable to
+someone building a competitor and least protected by a licence written for
+programs. Keeping it reserved is a deliberate choice rather than an oversight,
+and the practical effect is the intended one — a fork inherits the simulation,
+not the appendices that explain why it behaves as it does.
+
+Contributions
+-------------
+
+A contribution to `docs/` is offered under these terms rather than under the
+AGPL. If that is not what you intend, say so in the pull request rather than
+assuming; see `CONTRIBUTING.md`.
+
+Third-party material
+--------------------
+
+Where a document quotes or reproduces third-party material, that material
+remains under its own terms and this file does not extend to it. See
+`/THIRD-PARTY-NOTICES.md`.
