@@ -2263,12 +2263,79 @@ export const usedAircraftListing = pgTable(
     status: usedAircraftListingStatus('status').notNull().default('available'),
     availableAt: timestamp('available_at', { withTimezone: true }).notNull().defaultNow(),
     soldAt: timestamp('sold_at', { withTimezone: true }),
+
+    // --- M4-05: generation, age and the price's own explanation ------------
+
+    /**
+     * Which berth this listing occupies, and which generation filled it.
+     *
+     * The pair is the listing's identity in the seeded draw, and the unique
+     * index over `(world, slot, generation)` is what makes the refresh
+     * *idempotent by construction* rather than by hoping the engine only calls
+     * it once. The tick runs every second; a game generation lasts a week. The
+     * database is what stops the second call.
+     *
+     * Nullable because this is an expand migration: M4-04's rows and any row a
+     * test wrote by hand have no berth, and the previous build — which inserts
+     * neither column — has to keep working. A null slot is a hand-made listing
+     * and the refresh leaves it alone.
+     */
+    slotIndex: integer('slot_index'),
+    generationIndex: integer('generation_index'),
+
+    /**
+     * When the airframe was built, as a game-time instant.
+     *
+     * Age is derived from this and the world clock, never stored — the same
+     * reasoning ADR-0005 gives for the world clock itself. A stored `age_years`
+     * would be wrong one game day later, and wrong in a way nothing would
+     * notice.
+     */
+    builtAt: timestamp('built_at', { withTimezone: true }),
+
+    /** Game-time instant the listing is withdrawn if nobody has bought it. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+
+    /**
+     * The asking price, taken apart — anchor, age factor, utilisation factor and
+     * the per-option configuration drag, as JSON.
+     *
+     * Stored rather than recomputed on read, and that is deliberate. The
+     * economy config can be re-pinned, so recomputing would eventually explain
+     * an old listing with today's coefficients and quietly disagree with the
+     * price beside it. Invariant 4 is the rule: a number a player cannot
+     * attribute is one they will assume is a bug.
+     */
+    valuation: text('valuation'),
   },
   (t) => [
     index('used_aircraft_listing_world_status_idx').on(t.worldId, t.status, t.availableAt),
+    // One row per berth per generation, for ever. See `slotIndex` above.
+    unique('used_aircraft_listing_slot_generation_key').on(
+      t.worldId,
+      t.slotIndex,
+      t.generationIndex,
+    ),
+    // The withdrawal sweep: this world's available listings, oldest expiry first.
+    index('used_aircraft_listing_expiry_idx').on(t.worldId, t.status, t.expiresAt),
     check('used_aircraft_listing_hours_nonnegative', sql`${t.hours} >= 0`),
     check('used_aircraft_listing_cycles_nonnegative', sql`${t.cycles} >= 0`),
     check('used_aircraft_listing_price_nonnegative', sql`${t.askingPriceMinor} >= 0`),
+    check(
+      'used_aircraft_listing_slot_nonnegative',
+      sql`(${t.slotIndex} IS NULL OR ${t.slotIndex} >= 0)
+          AND (${t.generationIndex} IS NULL OR ${t.generationIndex} >= 0)`,
+    ),
+    // A berth and a generation are one fact. Half of it would be a row the
+    // refresh could neither recognise nor replace.
+    check(
+      'used_aircraft_listing_slot_generation_together',
+      sql`(${t.slotIndex} IS NULL) = (${t.generationIndex} IS NULL)`,
+    ),
+    check(
+      'used_aircraft_listing_built_before_available',
+      sql`${t.builtAt} IS NULL OR ${t.builtAt} <= ${t.availableAt}`,
+    ),
     check(
       'used_aircraft_listing_sold_at_matches_status',
       sql`(${t.status} = 'sold' AND ${t.soldAt} IS NOT NULL)
@@ -2304,6 +2371,21 @@ export const aircraftOrder = pgTable(
     ownerHistory: text('owner_history').notNull().default('[]'),
     hours: doublePrecision('hours').notNull().default(0),
     cycles: integer('cycles').notNull().default(0),
+    /**
+     * Inherited from a used listing, and null for a lease or a new order — those
+     * airframes are built on delivery.
+     *
+     * Travels the same path `hours` and `cycles` already travel, for the same
+     * reason: M4-04's acceptance criterion is that *"used airframes arrive with
+     * their previous owner's configuration intact"*, and an aeroplane that was
+     * twelve years old in the listing and brand new once bought would be the
+     * most visible way to break it.
+     *
+     * This is an inherited build fact on an existing path, not an identity
+     * claim. HIST-01 (#508) owns the airframe identity and serial contract, and
+     * nothing here anticipates it.
+     */
+    builtAt: timestamp('built_at', { withTimezone: true }),
     chargedMinor: bigint('charged_minor', { mode: 'number' }).notNull(),
     monthlyLeaseRateMinor: bigint('monthly_lease_rate_minor', { mode: 'number' }),
     baseLeadTimeWeeks: integer('base_lead_time_weeks').notNull(),
@@ -2373,6 +2455,8 @@ export const airframe = pgTable(
     hours: doublePrecision('hours').notNull().default(0),
     cycles: integer('cycles').notNull().default(0),
     ownership: airframeOwnership('ownership').notNull(),
+    /** Carried from the order, so a bought used aircraft keeps its age (M4-05). */
+    builtAt: timestamp('built_at', { withTimezone: true }),
     deliveredToIcao: text('delivered_to_icao')
       .notNull()
       .references(() => airport.icaoCode),

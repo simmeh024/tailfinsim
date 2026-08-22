@@ -273,6 +273,23 @@ world, before it drains that world's game-time events. `aircraftDeliveries` and
 `aircraftDeliveryErrors` are heartbeat counters; a delivery-only tick is logged rather than
 mistaken for an idle one.
 
+**The used aircraft market only exists where a worker does.** M4-05 makes the second-hand
+inventory a worker job on the world's **game** clock — a berth is refilled and an expired
+listing withdrawn once per game week, so a world at 4× renews twice as often in real time as
+one at 2×. Production has no worker, so a production world would generate no listings, refresh
+nothing and expire nothing, and `GET /api/fleet/used-market` would answer `200` with an empty
+array. **That reads like an empty market rather than like a missing process**, which is the
+same trap as "ticks: 0, errors: 0" and worth remembering before telling anyone the market is
+broken. `usedListingsCreated`, `usedListingsWithdrawn` and `usedMarketErrors` are the
+counters that distinguish the two. `docs/used-aircraft-market.md` has the mechanism.
+
+The generation is idempotent by unique constraint rather than by a remembered timestamp:
+`(world_id, slot_index, generation_index)` is unique and every insert is
+`ON CONFLICT DO NOTHING`, so the tick can call it every second and two workers can race
+through a handover. Do not add a "last generated" column to make that cheaper — a column
+would have to be reset on a world reset (ADR-0005), and forgetting would leave a fresh world
+believing its market was already full.
+
 A "ticks: 0, errors: 0" reading still means _nothing has run_ rather than _everything is fine_.
 The admin console's health page infers liveness from the queue for exactly that reason, and the
 worker's own `/healthz` answers **503 while its process is alive** if the engine is not

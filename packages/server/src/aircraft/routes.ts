@@ -4,6 +4,7 @@ import {
   aircraftOrderListResponseJsonSchema,
   apiErrorJsonSchema,
   fleetCatalogueResponseJsonSchema,
+  usedMarketResponseJsonSchema,
   type ApiError,
 } from '@tailfin/shared';
 
@@ -16,6 +17,7 @@ import {
   type AircraftAcquisitionRefusal,
 } from './acquisition';
 import { fleetCatalogue } from './era';
+import { listUsedMarket } from './used-market';
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
@@ -87,6 +89,33 @@ export function registerAircraftRoutes(app: FastifyInstance, { db }: { db: Datab
         airframe: result.airframe,
         replayed: result.replayed,
       });
+    },
+  );
+
+  /**
+   * What the world is offering second-hand (M4-05, App. C.5).
+   *
+   * `requireAirline`, not `requireActiveAirline`: browsing commits nothing, and a
+   * restricted airline that can already read its own orders should be able to see
+   * what it would be buying if it were not restricted. The purchase itself still
+   * goes through `/api/fleet/acquisitions`, which does require an active airline
+   * (ADR-0018).
+   *
+   * The world comes from the session, like everywhere else, so this cannot be
+   * asked what a *different* world is selling — the same reason the catalogue
+   * route takes no id. A used market is world-specific twice over: era gating
+   * decides which types could appear at all, and the world seed decides which
+   * ones did.
+   */
+  app.get(
+    '/api/fleet/used-market',
+    {
+      onRequest: app.requireAirline,
+      schema: { response: { 200: usedMarketResponseJsonSchema } },
+    },
+    async (request, reply) => {
+      const own = resolvedAirlineOf(request);
+      return reply.code(200).send(await listUsedMarket(db.db, own.worldId));
     },
   );
 

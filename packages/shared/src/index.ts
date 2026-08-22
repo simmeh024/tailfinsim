@@ -43,6 +43,7 @@ export * from './aircraft';
 export * from './aircraft-acquisition';
 export * from './aircraft-options';
 export * from './aircraft-catalogue';
+export * from './used-market';
 export * from './network';
 export * from './flight';
 export * from './api';

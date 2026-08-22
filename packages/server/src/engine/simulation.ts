@@ -3,6 +3,7 @@ import { asc, ne } from 'drizzle-orm';
 import { gameTime, type WorldClock } from '@tailfin/sim';
 
 import { deliverDueAircraftOrders } from '../aircraft/acquisition';
+import { refreshUsedAircraftMarket } from '../aircraft/used-market';
 import { type Database } from '../db/client';
 import { world, type WorldRow } from '../db/schema';
 import { reviewNpcCarriers } from '../npc/operate';
@@ -65,6 +66,10 @@ export interface TickReport {
   unsupported: number;
   /** New factory orders materialised against wall-clock delivery dates. */
   aircraftDelivered: number;
+  /** Used-market berths filled on this tick (M4-05). Zero on almost every one. */
+  usedListingsCreated: number;
+  /** Used listings withdrawn because they had been on the market too long. */
+  usedListingsWithdrawn: number;
 }
 
 export interface EngineLog {
@@ -106,6 +111,8 @@ export interface SimulationEngineOptions {
   reviewNpcs?: typeof reviewNpcCarriers;
   /** Real-time aircraft delivery sweep (M4-04), injected in engine tests. */
   deliverAircraft?: typeof deliverDueAircraftOrders;
+  /** Used-market generation and withdrawal (M4-05), injected in engine tests. */
+  refreshUsedMarket?: typeof refreshUsedAircraftMarket;
   depth?: typeof queueDepth;
 }
 
@@ -159,6 +166,10 @@ export interface EngineSnapshot {
   npcErrors: number;
   aircraftDeliveries: number;
   aircraftDeliveryErrors: number;
+  /** Used-market listings created and withdrawn since start, and sweeps that threw (M4-05). */
+  usedListingsCreated: number;
+  usedListingsWithdrawn: number;
+  usedMarketErrors: number;
 }
 
 export interface QueueDepthByWorld {
@@ -235,6 +246,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     depth = queueDepth,
     reviewNpcs = reviewNpcCarriers,
     deliverAircraft = deliverDueAircraftOrders,
+    refreshUsedMarket = refreshUsedAircraftMarket,
   } = options;
 
   const unhandledEventTypes = ALL_EVENT_TYPES.filter((type) => handlers[type] === undefined);
@@ -250,6 +262,9 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let npcErrors = 0;
   let aircraftDeliveries = 0;
   let aircraftDeliveryErrors = 0;
+  let usedListingsCreated = 0;
+  let usedListingsWithdrawn = 0;
+  let usedMarketErrors = 0;
 
   async function tick(context: { tickedAt: Date; tickNumber: number }): Promise<TickReport> {
     const worlds = await listWorlds(db);
@@ -257,6 +272,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     let tickFailed = 0;
     let tickUnsupported = 0;
     let tickAircraftDelivered = 0;
+    let tickListingsCreated = 0;
+    let tickListingsWithdrawn = 0;
 
     for (const entry of worlds) {
       // Aircraft factory lead time is explicitly **real time** (§7.2), not a
@@ -273,6 +290,35 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       } catch (error) {
         aircraftDeliveryErrors += 1;
         log?.warn?.(`[${entry.name}] aircraft delivery sweep failed: ${String(error)}`);
+      }
+
+      // The used market (M4-05), against this world's *game* clock rather than
+      // the wall clock the delivery sweep above uses. A generation is a game
+      // week, so a world at 4× renews its market twice as often in real time as
+      // one at 2× — which is the same asymmetry §7.2 draws between era gating
+      // and factory lead time, kept deliberately.
+      //
+      // Called every tick and does nothing on almost all of them: one config
+      // lookup, one date comparison and one indexed count in the common case.
+      // Cheap enough not to need a schedule, and a schedule is a second thing
+      // that can be wrong.
+      //
+      // Isolated like the NPC review, and for the same reason: a market that
+      // could not renew this tick renews the next one, but a flight that never
+      // settles is money that never moves.
+      try {
+        const market = await refreshUsedMarket(db, entry.id, now());
+        tickListingsCreated += market.created;
+        tickListingsWithdrawn += market.withdrawn;
+        if (market.created > 0 || market.withdrawn > 0) {
+          log?.info?.(
+            `[${entry.name}] used market: ${String(market.created)} listed, ` +
+              `${String(market.withdrawn)} withdrawn (generation ${String(market.generation)})`,
+          );
+        }
+      } catch (error) {
+        usedMarketErrors += 1;
+        log?.warn?.(`[${entry.name}] used market refresh failed: ${String(error)}`);
       }
 
       // Each world is drained against its own clock: `fire_at` is a game-time
@@ -316,6 +362,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     failed += tickFailed;
     unsupported += tickUnsupported;
     aircraftDeliveries += tickAircraftDelivered;
+    usedListingsCreated += tickListingsCreated;
+    usedListingsWithdrawn += tickListingsWithdrawn;
     lastTickAt = context.tickedAt;
     lastTickDurationMs = durationMs;
     lastWorldCount = worlds.length;
@@ -329,6 +377,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       failed: tickFailed,
       unsupported: tickUnsupported,
       aircraftDelivered: tickAircraftDelivered,
+      usedListingsCreated: tickListingsCreated,
+      usedListingsWithdrawn: tickListingsWithdrawn,
     };
   }
 
@@ -382,6 +432,9 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         npcErrors,
         aircraftDeliveries,
         aircraftDeliveryErrors,
+        usedListingsCreated,
+        usedListingsWithdrawn,
+        usedMarketErrors,
       };
     },
 
