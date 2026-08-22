@@ -552,7 +552,7 @@ and a klaxon for production, which OPS-01 refuses. An unreachable box says so on
 row rather than vanishing from the table.
 
 It always exits zero, including when it reports problems: drift is what it exists to
-show, not a failure of the tool. It needs the server package built (`pnpm build:apps`),
+show, not a failure of the tool. It needs the server package built (`pnpm build`),
 like every other CLI here.
 
 ## Swap

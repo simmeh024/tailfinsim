@@ -10,10 +10,10 @@
     "pnpm": ">=11.0.0"
   },
   "scripts": {
-    "build": "tsc -b",
+    "build": "pnpm --filter @tailfin/server build && pnpm --filter @tailfin/web build",
     "typecheck": "tsc -b",
-    "build:apps": "pnpm --filter @tailfin/server build && pnpm --filter @tailfin/web build",
-    "clean": "tsc -b --clean",
+    "build:apps": "pnpm build",
+    "clean": "node --input-type=module --eval \"import { rmSync } from 'node:fs'; for (const directory of ['packages/shared/dist', 'packages/sim/dist', 'packages/server/dist', 'packages/web/dist']) rmSync(directory, { recursive: true, force: true })\"",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

@@ -372,7 +372,7 @@ and a closing keyword in a _comment_ never fires at all. Write `Closes #17` and
 
 **One-off jobs run from `dist`, not from source.** `data:airports`, `data:classify`,
 `data:catchment`, `data:timezones`, `data:distances`, `world:seed`, `demand:generate`,
-`admin` and `ops:status` are all bundled entry points, so `pnpm build:apps` has to have
+`admin` and `ops:status` are all bundled entry points, so `pnpm build` has to have
 run first. The order matters for a new world — airports, then tiers, then catchment, then
 distances, then the world, then its demand pools — because each reads what the last one
 wrote. `data:timezones` is the exception and needs only the airports. CONTRIBUTING.md has

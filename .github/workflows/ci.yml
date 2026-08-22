@@ -96,7 +96,7 @@ jobs:
         # running tests. It does not depend on the typecheck step either — both
         # workspace packages resolve to `./src/index.ts` at runtime, so esbuild
         # and Vite compile from source rather than from `tsc -b` output.
-        run: pnpm build:apps
+        run: pnpm build
 
       - name: Test the running Caddy security policy
         # Exercise the committed Caddyfile itself in report-only and enforced
