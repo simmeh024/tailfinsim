@@ -2,7 +2,16 @@ import { z } from 'zod';
 
 import { AirlineIdentity, AirlineStatus } from './airline';
 import { EconomyConfigVersion } from './economy-config';
-import { Timestamp, Uuid } from './primitives';
+import { AirlineKind, NpcArchetype } from './npc';
+import {
+  AirportIcaoCode,
+  CountryCode,
+  MinorUnits,
+  NauticalMiles,
+  Reputation,
+  Timestamp,
+  Uuid,
+} from './primitives';
 import { WorldStatus } from './world';
 import { MAX_SPEED_MULTIPLIER } from './world-config';
 
@@ -418,6 +427,18 @@ export const AdminPlayerSummary = z.object({
   /** Newest session activity, or null for an account that has never signed in since sessions existed. */
   lastSeenAt: Timestamp.nullable(),
   airlines: z.number().int().nonnegative(),
+  /** Named links, so the list is an entry point to airline support rather than only a count. */
+  airlineLinks: z.array(
+    z.object({
+      id: Uuid,
+      worldId: Uuid,
+      worldName: z.string().min(1),
+      name: z.string().min(1),
+      iataCode: z.string().min(1),
+      icaoCode: z.string().min(1),
+      status: AirlineStatus,
+    }),
+  ),
   /** True if this player holds an admin grant — worth seeing in a list of accounts. */
   isAdmin: z.boolean(),
 });
@@ -503,6 +524,89 @@ export const AdminPlayerDetailResponse = z.object({
   player: AdminPlayerDetail,
 });
 export type AdminPlayerDetailResponse = z.infer<typeof AdminPlayerDetailResponse>;
+
+/** The balance-changing causes that exist today (AIR-06, ADR-0011). */
+export const AdminCashMovementCause = z.enum([
+  'airline_founding',
+  'airline_rebrand',
+  'flight_settlement',
+  'migration_opening_balance',
+]);
+export type AdminCashMovementCause = z.infer<typeof AdminCashMovementCause>;
+
+/** One current or historical route on an airline's support record (AIR-10). */
+const AdminFareTable = z.object({
+  economy: MinorUnits.optional(),
+  premium_economy: MinorUnits.optional(),
+  business: MinorUnits.optional(),
+  first: MinorUnits.optional(),
+});
+
+export const AdminAirlineRoute = z.object({
+  id: Uuid,
+  originIcao: AirportIcaoCode,
+  originName: z.string().min(1),
+  destinationIcao: AirportIcaoCode,
+  destinationName: z.string().min(1),
+  greatCircleNm: NauticalMiles,
+  // Named fields serialise cleanly through Fastify's JSON-schema response
+  // compiler; `FareTable`'s equivalent enum-keyed partial record emits
+  // `propertyNames`, which Fastify warns about in strict mode.
+  fares: AdminFareTable,
+  active: z.boolean(),
+  createdAt: Timestamp,
+  updatedAt: Timestamp,
+});
+export type AdminAirlineRoute = z.infer<typeof AdminAirlineRoute>;
+
+/** One immutable AIR-06 ledger entry, newest game-time first. */
+export const AdminAirlineCashMovement = z.object({
+  id: Uuid,
+  amountMinor: MinorUnits,
+  cause: AdminCashMovementCause,
+  reference: z.string().min(1),
+  balanceAfterMinor: MinorUnits,
+  occurredAt: Timestamp,
+  recordedAt: Timestamp,
+});
+export type AdminAirlineCashMovement = z.infer<typeof AdminAirlineCashMovement>;
+
+/** The complete read-only support projection for one airline (AIR-10, §22.6). */
+export const AdminAirlineDetail = z.object({
+  id: Uuid,
+  worldId: Uuid,
+  worldName: z.string().min(1),
+  owner: z
+    .object({
+      id: Uuid,
+      displayName: z.string().min(1),
+    })
+    .nullable(),
+  kind: AirlineKind,
+  archetype: NpcArchetype.nullable(),
+  ...AirlineIdentity.shape,
+  baseCountry: CountryCode,
+  cashMinor: MinorUnits,
+  reputation: Reputation,
+  status: AirlineStatus,
+  statusChangedAt: Timestamp,
+  ceasedAt: Timestamp.nullable(),
+  createdAt: Timestamp,
+  routes: z.array(AdminAirlineRoute),
+});
+export type AdminAirlineDetail = z.infer<typeof AdminAirlineDetail>;
+
+/** `GET /api/admin/airlines/:airlineId?movementLimit=&movementOffset=` */
+export const AdminAirlineDetailResponse = z.object({
+  airline: AdminAirlineDetail,
+  cashMovements: z.object({
+    entries: z.array(AdminAirlineCashMovement),
+    total: z.number().int().nonnegative(),
+    limit: z.number().int().positive(),
+    offset: z.number().int().nonnegative(),
+  }),
+});
+export type AdminAirlineDetailResponse = z.infer<typeof AdminAirlineDetailResponse>;
 
 /**
  * What the tick loop looks like from outside (M1A-06).

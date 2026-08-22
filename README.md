@@ -159,7 +159,9 @@ different build.
   ([ADR-0018](docs/adr/0018-airline-lifecycle-and-code-release.md)).
 - **The admin console**, at `/admin` for accounts holding a grant: an overview with
   server-decided alerts, world creation, speed changes, the full open/lock/archive/reset
-  lifecycle, world health, a read-only player browser, and the audit log.
+  lifecycle, world health, a read-only player browser, linkable airline support records
+  with current and historical routes and the complete paginated AIR-06 cash-movement
+  ledger, and the audit log. The airline record has no balance-edit control.
 
 ### What does not exist yet
 

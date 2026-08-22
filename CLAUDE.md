@@ -265,9 +265,11 @@ change is refused and tells you to deploy the web node first.
 
 **The admin console is real and is the place to look first.** `/admin`, for accounts
 holding a grant: overview with server-decided alerts, world creation, speed changes, the
-open/lock/archive/reset lifecycle, world health, a read-only player browser, and the audit
-log. Anything it can answer is faster than SSH, and every mutation it performs is audited
-in the same transaction as the change.
+open/lock/archive/reset lifecycle, world health, a read-only player browser, linkable
+read-only airline support records (identity, standing, current/historical routes and the
+paginated AIR-06 cash ledger), and the audit log. Anything it can answer is faster than SSH,
+and every mutation it performs is audited in the same transaction as the change. The airline
+record deliberately has no cash adjustment path: money still moves only through AIR-06.
 
 The four-node dev/production web/worker split is planned in
 [OPS-08 – OPS-16](https://github.com/simmeh024/tailfinsim/issues/195). Read that sequence

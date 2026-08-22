@@ -151,7 +151,17 @@ function PlayerList(): ReactNode {
                       <td className="figure">
                         {entry.lastSeenAt === null ? 'never' : formatAt(entry.lastSeenAt)}
                       </td>
-                      <td className="figure">{entry.airlines}</td>
+                      <td>
+                        {entry.airlineLinks.length === 0
+                          ? 'none'
+                          : entry.airlineLinks.map((airline, index) => (
+                              <span key={airline.id}>
+                                {index > 0 && ', '}
+                                <Link to={`/admin/airlines/${airline.id}`}>{airline.name}</Link>
+                                <span className="figure"> ({airline.iataCode})</span>
+                              </span>
+                            ))}
+                      </td>
                       <td>{entry.isAdmin ? 'yes' : ''}</td>
                     </tr>
                   ))}
@@ -340,7 +350,9 @@ function PlayerDetail({ playerId }: { playerId: string }): ReactNode {
               {player.airlines.map((entry) => (
                 <tr key={entry.id}>
                   <td>{entry.worldName}</td>
-                  <td>{entry.name}</td>
+                  <td>
+                    <Link to={`/admin/airlines/${entry.id}`}>{entry.name}</Link>
+                  </td>
                   <td className="figure">{entry.iataCode}</td>
                   <td className="figure">{entry.icaoCode}</td>
                   <td className="figure">{entry.callsign}</td>

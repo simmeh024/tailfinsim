@@ -8,6 +8,7 @@ import {
   AdminEconomyConfigListResponse,
   AdminListResponse,
   AdminOverviewResponse,
+  AdminAirlineDetailResponse,
   AdminPlayerDetailResponse,
   AdminPinEconomyConfigResponse,
   AdminRequeueEventsResponse,
@@ -76,6 +77,7 @@ export const adminListResponseJsonSchema = z.toJSONSchema(AdminListResponse);
 export const adminWorldListResponseJsonSchema = z.toJSONSchema(AdminWorldListResponse);
 export const adminCreateWorldResponseJsonSchema = z.toJSONSchema(AdminCreateWorldResponse);
 export const adminOverviewResponseJsonSchema = z.toJSONSchema(AdminOverviewResponse);
+export const adminAirlineDetailResponseJsonSchema = z.toJSONSchema(AdminAirlineDetailResponse);
 export const adminPlayerListResponseJsonSchema = z.toJSONSchema(AdminPlayerListResponse);
 export const adminPlayerDetailResponseJsonSchema = z.toJSONSchema(AdminPlayerDetailResponse);
 export const adminWorldHealthResponseJsonSchema = z.toJSONSchema(AdminWorldHealthResponse);

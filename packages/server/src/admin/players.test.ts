@@ -153,6 +153,9 @@ describeDb('browsing players', () => {
       expect(found).toBeDefined();
       expect(found?.displayName).toBe(`Amelia ${tag}`);
       expect(found?.airlines).toBe(1);
+      expect(found?.airlineLinks).toEqual([
+        expect.objectContaining({ name: `Hart Air ${tag}`, worldId, status: 'active' }),
+      ]);
       expect(found?.isAdmin).toBe(false);
       expect(found?.lastSeenAt).toBeNull();
     });
