@@ -147,82 +147,90 @@ describeDb('HTTP surface', () => {
 
 describe('GET /api/version', () => {
   /**
-   * No database involved, so this runs everywhere. The handle points at a dead
-   * port and is never queried — if `/api/version` ever starts touching the
-   * database, this test hangs, which is the correct alarm.
+   * No database involved, so this runs everywhere.
+   *
+   * TIDY-02 measured the old fixture before changing it. One hundred unused
+   * `pg.Pool` create/end cycles against its dead port took 0.59 ms total, while
+   * the five isolated tests each took 96-221 ms because every test registered,
+   * readied and closed the complete Fastify plugin tree. Under cross-project
+   * CPU contention that redundant lifecycle sat inside each test's five-second
+   * budget and occasionally lost to the scheduler.
+   *
+   * Keep one app per environment label instead. The database is a synchronous,
+   * non-network alarm: any future database access fails immediately and names
+   * the boundary, instead of waiting on a dead-port connection timeout. App
+   * teardown remains awaited without swallowing errors.
    */
-  async function withApp(
-    label: 'local' | 'dev' | 'production',
-    body: (app: ReturnType<typeof buildApp>) => Promise<void>,
-  ): Promise<void> {
-    const db = createDatabaseAt('postgres://nobody:nothing@127.0.0.1:1/none');
-    const app = buildApp({ env: { ...testEnv, environmentLabel: label }, db });
-    await app.ready();
-    try {
-      await body(app);
-    } finally {
-      await app.close();
-      await db.close().catch(() => undefined);
-    }
-  }
+  const databaseAlarm = createDatabaseAccessAlarm('GET /api/version');
+  let devApp: ReturnType<typeof buildApp>;
+  let productionApp: ReturnType<typeof buildApp>;
+
+  beforeAll(async () => {
+    devApp = buildApp({ env: { ...testEnv, environmentLabel: 'dev' }, db: databaseAlarm });
+    productionApp = buildApp({
+      env: { ...testEnv, environmentLabel: 'production' },
+      db: databaseAlarm,
+    });
+    await Promise.all([devApp.ready(), productionApp.ready()]);
+  });
+
+  afterAll(async () => {
+    await Promise.all([devApp.close(), productionApp.close()]);
+  });
+
+  it('keeps database access as an immediate, named failure', () => {
+    expect(() => databaseAlarm.db.select()).toThrow(
+      'GET /api/version unexpectedly accessed db.select',
+    );
+  });
 
   it('answers with a build number, commit, environment and start time', async () => {
-    await withApp('dev', async (app) => {
-      const res = await app.inject({ method: 'GET', url: '/api/version' });
-      expect(res.statusCode).toBe(200);
+    const res = await devApp.inject({ method: 'GET', url: '/api/version' });
+    expect(res.statusCode).toBe(200);
 
-      const parsed = VersionResponse.safeParse(res.json());
-      expect(parsed.success).toBe(true);
-      expect(parsed.success && parsed.data.environment).toBe('dev');
-      // Shape, not value. Whether a build stamp exists depends on whether this
-      // package has been built on this machine, which is not something an HTTP
-      // test should assert on — build-info.test.ts covers the values.
-      expect(parsed.success && Number.isInteger(parsed.data.build)).toBe(true);
-      expect(parsed.success && parsed.data.commit.length).toBeGreaterThan(0);
-    });
+    const parsed = VersionResponse.safeParse(res.json());
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.environment).toBe('dev');
+    // Shape, not value. Whether a build stamp exists depends on whether this
+    // package has been built on this machine, which is not something an HTTP
+    // test should assert on — build-info.test.ts covers the values.
+    expect(parsed.success && Number.isInteger(parsed.data.build)).toBe(true);
+    expect(parsed.success && parsed.data.commit.length).toBeGreaterThan(0);
   });
 
   it('reports the environment it was told, not NODE_ENV', async () => {
     // The whole point: NODE_ENV is `production` on the dev box too, so it cannot
     // be what the badge reads.
-    await withApp('production', async (app) => {
-      const res = await app.inject({ method: 'GET', url: '/api/version' });
-      expect(res.json()).toMatchObject({ environment: 'production' });
-    });
+    const res = await productionApp.inject({ method: 'GET', url: '/api/version' });
+    expect(res.json()).toMatchObject({ environment: 'production' });
   });
 
   it('is not cached, so a redeployed box does not keep claiming the old build', async () => {
-    await withApp('dev', async (app) => {
-      const res = await app.inject({ method: 'GET', url: '/api/version' });
-      expect(res.headers['cache-control']).toBe('no-store');
-    });
+    const res = await devApp.inject({ method: 'GET', url: '/api/version' });
+    expect(res.headers['cache-control']).toBe('no-store');
   });
 
   it('reports the same start time across requests', async () => {
     // It is process start, not request time — a value that changed every call
     // would say nothing about whether the box restarted.
-    await withApp('dev', async (app) => {
-      const a = await app.inject({ method: 'GET', url: '/api/version' });
-      const b = await app.inject({ method: 'GET', url: '/api/version' });
-      expect(a.json<{ startedAt: string }>().startedAt).toBe(
-        b.json<{ startedAt: string }>().startedAt,
-      );
-    });
+    const a = await devApp.inject({ method: 'GET', url: '/api/version' });
+    const b = await devApp.inject({ method: 'GET', url: '/api/version' });
+    expect(a.json<{ startedAt: string }>().startedAt).toBe(
+      b.json<{ startedAt: string }>().startedAt,
+    );
   });
 
   it('exposes nothing beyond the declared fields', async () => {
-    await withApp('dev', async (app) => {
-      const res = await app.inject({ method: 'GET', url: '/api/version' });
-      expect(Object.keys(res.json<Record<string, unknown>>()).sort()).toEqual([
-        'build',
-        'commit',
-        'deployedAt',
-        'environment',
-        'ref',
-        'serverTime',
-        'startedAt',
-      ]);
-    });
+    const res = await devApp.inject({ method: 'GET', url: '/api/version' });
+    expect(Object.keys(res.json<Record<string, unknown>>()).sort()).toEqual([
+      'build',
+      'commit',
+      'deployedAt',
+      'environment',
+      'ref',
+      'serverTime',
+      'startedAt',
+    ]);
   });
 });
 
@@ -242,10 +250,38 @@ describe('health degradation', () => {
       expect(HealthResponse.safeParse(res.json()).success).toBe(true);
     } finally {
       await app.close();
-      await db.close().catch(() => undefined);
+      await db.close();
     }
   });
 });
+
+/**
+ * A zero-I/O handle for tests whose contract is that the database is untouched.
+ * Access throws synchronously, so the failure identifies the forbidden boundary
+ * rather than presenting as a connection timeout several seconds later.
+ */
+function createDatabaseAccessAlarm(context: string): DatabaseHandle {
+  const inaccessible = <T extends object>(surface: string): T =>
+    new Proxy(
+      {},
+      {
+        get(_target, property): never {
+          throw new Error(`${context} unexpectedly accessed ${surface}.${String(property)}`);
+        },
+        set(_target, property): never {
+          throw new Error(`${context} unexpectedly wrote ${surface}.${String(property)}`);
+        },
+      },
+    ) as T;
+
+  return {
+    db: inaccessible<DatabaseHandle['db']>('db'),
+    pool: inaccessible<DatabaseHandle['pool']>('pool'),
+    close: () => {
+      throw new Error(`${context} unexpectedly closed its database alarm`);
+    },
+  };
+}
 
 /**
  * Builds a handle against an explicit URL, bypassing the environment.
@@ -291,7 +327,7 @@ describe('GET /api/routes/:routeId/waterfall is on the surface (M3-10)', () => {
       await body(app);
     } finally {
       await app.close();
-      await db.close().catch(() => undefined);
+      await db.close();
     }
   }
 
