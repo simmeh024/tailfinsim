@@ -62,26 +62,120 @@ body {
   background: var(--bg-inset);
 }
 
-/* Placeholder until M7-01 brings the deck.gl renderer. */
-.world__placeholder {
+.world-renderer {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-content: center;
+  isolation: isolate;
+  background: var(--world-ocean);
+}
+
+.world-renderer__canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  transition:
+    opacity var(--motion-base) var(--ease),
+    transform var(--motion-base) var(--ease);
+}
+
+.world-renderer[data-transitioning='true'] .world-renderer__canvas {
+  opacity: 0.76;
+  transform: scale(0.985);
+}
+
+.world-renderer__atmosphere {
+  position: absolute;
+  inset: 5%;
+  z-index: 2;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow:
+    inset 0 0 4rem var(--world-atmosphere),
+    0 0 3rem var(--world-atmosphere);
+  transition: opacity var(--motion-base) var(--ease);
+}
+
+.world-renderer[data-projection='globe'][data-quality='full'] .world-renderer__atmosphere {
+  opacity: 0.08;
+}
+
+.world-renderer__controls {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
-  text-align: center;
-  color: var(--text-muted);
+}
+
+.world-renderer__control-group {
+  display: flex;
+  padding: var(--space-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  backdrop-filter: blur(10px);
+}
+
+.world-renderer__control-group button,
+.world-renderer__performance button {
+  min-height: 2rem;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.world-renderer__control-group button:hover,
+.world-renderer__performance button:hover {
+  color: var(--text-primary);
+}
+
+.world-renderer__control-group button[aria-pressed='true'] {
+  background: var(--accent-quiet);
+  color: var(--accent);
+}
+
+.world-renderer__performance,
+.world-renderer__failure {
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  z-index: 4;
+  width: min(24rem, calc(100% - 2 * var(--space-3)));
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  backdrop-filter: blur(10px);
+  color: var(--text-secondary);
   font-size: var(--text-sm);
 }
 
-.world__grid {
-  position: absolute;
-  inset: 0;
-  opacity: 0.5;
-  background-image:
-    linear-gradient(var(--border-subtle) 1px, transparent 1px),
-    linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
-  background-size: 4rem 4rem;
+.world-renderer__performance p {
+  margin: 0 0 var(--space-2);
+}
+
+.world-renderer__performance > div {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.world-renderer__performance button:first-child {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.world-renderer__failure {
+  border-color: var(--status-cancelled);
+  color: var(--status-cancelled);
 }
 
 /* ----------------------------------------------------------------- rail ---- */
@@ -620,11 +714,26 @@ body {
 .page {
   position: absolute;
   inset: 0;
+  z-index: 3;
   display: grid;
   place-content: center;
   gap: var(--space-2);
   text-align: center;
   padding: var(--space-6);
+}
+
+.world-page {
+  place-content: end start;
+  text-align: left;
+  pointer-events: none;
+}
+
+.world-page .page__title,
+.world-page .page__note {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  backdrop-filter: blur(10px);
 }
 
 .page__title {
@@ -884,6 +993,22 @@ body {
       'panel'
       'strip'
       'rail';
+  }
+
+  .world-renderer__controls {
+    right: var(--space-2);
+    top: var(--space-2);
+    left: var(--space-2);
+  }
+
+  .world-renderer__control-group button,
+  .world-renderer__performance button {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+
+  .world-page {
+    padding: var(--space-3);
   }
 
   .rail {

@@ -66,6 +66,15 @@
 
   --focus-ring: #8ccdff;
 
+  /* M7-01 world renderer. Kept semantic so deck.gl and CSS share one palette. */
+  --world-ocean: #060f1b;
+  --world-land: #1f3441;
+  --world-land-line: #577081;
+  --world-grid: #6e8b9d;
+  --world-night: #03070e;
+  --world-route: #5eb8ff;
+  --world-atmosphere: #5eb8ff;
+
   /*
    * The console's own surfaces.
    *
@@ -139,6 +148,14 @@
   --status-loss: #b3261e;
 
   --focus-ring: #0a63b0;
+
+  --world-ocean: #d9e9f0;
+  --world-land: #b4c8c2;
+  --world-land-line: #526b71;
+  --world-grid: #506f7d;
+  --world-night: #172536;
+  --world-route: #0a63b0;
+  --world-atmosphere: #0a63b0;
 
   /* See the dark set for why the console has its own ground. */
   --console-bg: #eeeae3;
