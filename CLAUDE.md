@@ -251,6 +251,18 @@ nothing attempted, nothing lost — and the first worker booting with the handle
 still says what a build cannot do, and the System Health page says how much is waiting, per
 world and per type.
 
+**And since SCALE-06 the deploy refuses to create that situation in the first place.** A
+worker deploy runs `node dist/worker.js --handler-preflight` after the migration preflight and
+**before the pre-migration backup**; a build with no handler for a type holding `pending` work
+is refused, naming the types and counts, with nothing touched and the previous build still
+serving. `--handled-event-types` prints the registry's keys from the bundle without starting
+the engine or binding a port — which is the whole point, because `/healthz` answers the same
+question one tick after the queue has already been drained against the build. History,
+already-parked rows and `pending` rows in archived worlds are excluded and reported as
+excluded; blocking on those would refuse every deploy forever. Override with
+`ALLOW_HANDLER_GAP=1` typed on the command — never defaulted in a wrapper — which is logged to
+the journal. A preflight that could not read the queue is **not** overridable.
+
 **The dev worker is a second machine, and it reaches the database through an SSH tunnel.**
 There is no private network between the two DreamCompute VMs — they share a public segment with
 other tenants — so `tailfin-db-tunnel.service` forwards `127.0.0.1:5433` to the web host's

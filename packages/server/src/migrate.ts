@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 
 import { createDatabase } from './db/client';
+import { errorChain } from './error-chain';
 import { inspectMigrationPolicy } from './migration-policy';
 import {
   classifyMigrationFailure,
@@ -26,20 +27,6 @@ import {
  */
 
 const MIGRATIONS_FOLDER = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'drizzle');
-
-function errorChain(error: unknown): string {
-  const messages: string[] = [];
-  const seen = new Set<unknown>();
-  let current = error;
-
-  while (current instanceof Error && !seen.has(current)) {
-    seen.add(current);
-    messages.push(current.message);
-    current = current.cause;
-  }
-
-  return messages.join('\ncaused by: ');
-}
 
 const mode = process.argv[2] ?? '--apply';
 if (!['--apply', '--database-name', '--pending-count'].includes(mode)) {

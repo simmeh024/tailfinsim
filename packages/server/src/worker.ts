@@ -1,15 +1,19 @@
-import { createDatabase } from './db/client';
+import { writeSync } from 'node:fs';
+
+import { createDatabase, type DatabaseHandle } from './db/client';
+import {
+  collectHandlerPreflight,
+  formatHandlerPreflight,
+  HANDLER_EXIT_GAP,
+  HANDLER_EXIT_UNKNOWN,
+} from './engine/handler-preflight';
+import { createHandlerRegistry, handledEventTypes } from './engine/handlers';
 import { buildWorkerHealthApp } from './engine/health';
 import { createSimulationEngine } from './engine/simulation';
 import { loadEnv } from './env';
-import { createFlightArriveHandler } from './flight/settle';
+import { errorChain } from './error-chain';
 import { createHeartbeat } from './ops/heartbeat';
-import {
-  requeueSupportedEvents,
-  unsupportedEvents,
-  type WorldEventType,
-  type HandlerRegistry,
-} from './sim/event-queue';
+import { requeueSupportedEvents, unsupportedEvents, type WorldEventType } from './sim/event-queue';
 
 /**
  * The worker process — the second thing systemd runs (OPS-08).
@@ -31,7 +35,94 @@ import {
  * **Production has no worker**, and giving it one is OPS-11 (#191) — a separate
  * decision on purpose, so the first environment a worker ever ran in was chosen
  * rather than inherited.
+ *
+ * ## It is also two probes the deploy runs before it starts anything (SCALE-06)
+ *
+ * `--handled-event-types` and `--handler-preflight` answer, from the built
+ * bundle, whether this candidate can do the work the database is already
+ * holding. Both return before `engine.start()` and before `app.listen()`, which
+ * is the entire point: `/healthz` reports the same gap, but the engine has
+ * already drained a tick against the queue by the time the deploy could read it.
+ * A check that arrives after the thing it was checking is not a gate.
  */
+
+const MODES = ['--serve', '--handled-event-types', '--handler-preflight'] as const;
+const mode = process.argv[2] ?? '--serve';
+
+if (!(MODES as readonly string[]).includes(mode)) {
+  process.stderr.write(`usage: node dist/worker.js [${MODES.join('|')}]\n`);
+  process.exit(2);
+}
+
+/**
+ * What this build can handle, and nothing else — no database, no port, no clock.
+ *
+ * `writeSync` rather than `process.stdout.write`: the deploy reads this through
+ * command substitution, which is a pipe, and writes to a pipe are asynchronous
+ * on POSIX. `process.exit()` does not flush them, so the obvious spelling can
+ * truncate its own output — silently, and only under the exact conditions the
+ * caller uses. A gate that reports a short list of handled types would refuse a
+ * perfectly good deploy.
+ */
+if (mode === '--handled-event-types') {
+  writeSync(1, `${handledEventTypes().join('\n')}\n`);
+  process.exit(0);
+}
+
+/**
+ * The gate (SCALE-06).
+ *
+ * Reads only. The report goes to stderr because it is for a person, following
+ * `migrate.js` — stdout carries machine-readable answers and stderr carries the
+ * explanation — and the exit code is what `deploy.sh` actually branches on.
+ *
+ * Fails closed on any error. A build that cannot find out whether it can do the
+ * work must not be assumed able to do it; that is the whole disposition of this
+ * check, and it is why `HANDLER_EXIT_UNKNOWN` is not overridable.
+ */
+if (mode === '--handler-preflight') {
+  // `writeSync` for the same reason as above, and it matters more here: this is
+  // the message an operator reads to find out why their deploy stopped, and
+  // `process.exit()` does not flush an asynchronous write to a pipe. A deploy
+  // run over SSH with its output piped anywhere is exactly that case.
+  const say = (line: string): void => {
+    writeSync(2, `${line}\n`);
+  };
+
+  let handle: DatabaseHandle | null = null;
+  let code = 0;
+
+  try {
+    // Inside the try, not above it. `createDatabase()` calls `loadEnv()`, which
+    // throws on a missing or malformed `DATABASE_URL` — a real and unremarkable
+    // way for this to fail on a freshly provisioned node. Constructed outside,
+    // that throw would escape as a bare stack trace and exit 1, which
+    // `deploy.sh` can only report as "exited 1". It is an unknown answer like
+    // any other, and should say so.
+    handle = createDatabase();
+    const result = await collectHandlerPreflight(handle.db, handledEventTypes());
+    for (const line of formatHandlerPreflight(result)) say(line);
+    if (!result.compatible) code = HANDLER_EXIT_GAP;
+  } catch (error) {
+    // `errorChain`, not `error.message`. Drizzle wraps driver errors, so the
+    // outer message is the SQL it was running and the reason Postgres actually
+    // refused is one level down in `cause` — which means the bare message
+    // renders "the tunnel is down", "the password is wrong" and "the table is
+    // missing" identically, as a paragraph of select. Three very different
+    // 2am problems, and the deploy has just refused to proceed on the strength
+    // of it.
+    say(`handler preflight failed: ${errorChain(error)}`);
+    say(
+      'HANDLER PREFLIGHT: UNKNOWN — the queue could not be read, so whether this build can ' +
+        'handle the work is unknown. Nothing was changed.',
+    );
+    code = HANDLER_EXIT_UNKNOWN;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+
+  process.exit(code);
+}
 
 const env = loadEnv();
 
@@ -63,22 +154,21 @@ const db = createDatabase();
 /**
  * What this process can actually handle.
  *
- * One entry today. `FLIGHT_DEPART` is scheduled by `schedule/store.ts` when
- * flights are materialised and `TURNAROUND_COMPLETE` by nothing yet, and neither
- * has a handler — departure is M2/M4 behaviour and inventing one here would be
- * exactly the accidental decision this boundary exists to prevent.
+ * The registry moved to `engine/handlers.ts` in SCALE-06 and is built here from
+ * the same factory the deploy probes call. That is not tidying: the gate is only
+ * worth having if it answers for the engine that will actually run, and two
+ * lists in two files would eventually disagree — at which point the gate starts
+ * approving builds it should refuse.
  *
- * The gap is announced at boot and carried in `/healthz`, and since SCALE-05 it
- * is no longer dangerous: `drainDueEvents` marks an event of an unhandled type
- * `unsupported` rather than `failed`. Starting this against a queue holding
- * materialised departures pauses that work — excluded from the claim so it
- * cannot starve anything behind it, nothing attempted, nothing destroyed — and
- * the first Worker that ships the handler puts it back (`requeueSupportedEvents`
- * below).
+ * The gap it leaves is announced at boot and carried in `/healthz`, and since
+ * SCALE-05 it is no longer dangerous: `drainDueEvents` marks an event of an
+ * unhandled type `unsupported` rather than `failed`. Starting this against a
+ * queue holding materialised departures pauses that work — excluded from the
+ * claim so it cannot starve anything behind it, nothing attempted, nothing
+ * destroyed — and the first Worker that ships the handler puts it back
+ * (`requeueSupportedEvents` below).
  */
-const handlers: HandlerRegistry = {
-  FLIGHT_ARRIVE: createFlightArriveHandler(),
-};
+const handlers = createHandlerRegistry();
 
 const engine = createSimulationEngine({
   db: db.db,
@@ -213,9 +303,11 @@ async function requeueWhatThisBuildCanHandle(): Promise<void> {
       );
     }
 
-    // Said at boot rather than discovered from the table later. The cheap half
-    // of SCALE-06's deployment gate: this Worker cannot refuse to start yet,
-    // but it can say exactly what it is about to leave alone.
+    // Said at boot rather than discovered from the table later. SCALE-06's gate
+    // now refuses the deploy that would create this situation, so reaching here
+    // with rows listed means one of three things: the operator set
+    // ALLOW_HANDLER_GAP, the rows were parked before the gate existed, or they
+    // arrived after the preflight ran. All three are worth naming out loud.
     const waiting = await unsupportedEvents(db.db);
     for (const group of waiting) {
       app.log.warn(

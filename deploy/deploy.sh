@@ -56,6 +56,26 @@ MIGRATION_DATABASE="${MIGRATION_DATABASE:-tailfin}"
 # ---------------------------------------------------------------------------
 RUNS_MIGRATIONS="${RUNS_MIGRATIONS:-1}"
 
+# ---------------------------------------------------------------------------
+# Does this node run the simulation? (SCALE-06)
+#
+# A Worker is the only role that drains the event queue, so it is the only role
+# for which "can this build handle what is queued?" is a question at all. The web
+# node schedules events and never handles them; running the check there would ask
+# a question whose answer cannot affect anything, and would put a database round
+# trip in front of every front-door deploy for it.
+#
+# Defaults to 0 so the web deploy is byte-for-byte the deploy it was. The worker
+# wrapper turns it on, exactly as it turns migrations off.
+#
+# This is a capability flag rather than a role name on purpose. #193 (OPS-14)
+# owns "deploy to a named node and role", and inventing a competing NODE_ROLE
+# here would leave two vocabularies for one idea. `RUNS_MIGRATIONS` is the
+# pattern this repository already reaches for, and a capability collapses into
+# whatever role mechanism OPS-14 settles on without a migration of its own.
+# ---------------------------------------------------------------------------
+CHECKS_EVENT_HANDLERS="${CHECKS_EVENT_HANDLERS:-0}"
+
 case "${MIGRATION_DATABASE}" in
   tailfin | tailfin_dev) ;;
   *)
@@ -245,6 +265,63 @@ PENDING_MIGRATIONS="$(cd packages/server && node dist/migrate.js --pending-count
   die "migration policy/preflight failed — database NOT touched; service still running ${PREVIOUS}"
 if [[ ! "${PENDING_MIGRATIONS}" =~ ^[0-9]+$ ]]; then
   die "migration preflight returned an invalid pending count — database NOT touched"
+fi
+
+# ---------------------------------------------------------------------------
+# Can this build do the work the database is already holding? (SCALE-06)
+#
+# Placed here, and the position is the design. The migration preflight above has
+# just proved this node is pointed at ${MIGRATION_DATABASE}, so the queue this
+# asks about is provably the right one — and nothing below has run yet, so a
+# refusal here costs nothing at all. In particular it is **before the
+# pre-migration backup**: a refusal that happens after a backup has been written
+# is a refusal that already cost something.
+#
+# The worker's own /healthz reports the same gap and reports it too late. The
+# engine starts before the deploy polls and drains on its first tick, so by then
+# the queue has been processed against the build. This asks the question from a
+# process that never starts the engine and never binds a port.
+# ---------------------------------------------------------------------------
+if [ "${CHECKS_EVENT_HANDLERS}" = '1' ]; then
+  log "Checking handler coverage"
+  set +e
+  (cd packages/server && node dist/worker.js --handler-preflight)
+  HANDLER_RESULT=$?
+  set -e
+
+  case "${HANDLER_RESULT}" in
+    0) ;;
+    30)
+      # A real gap. Deliberately overridable — dev exists to run unmerged
+      # branches, and a branch that adds a producer before its handler is a
+      # legitimate thing to preview. A gate that blocks legitimate work is a gate
+      # people disable, so the escape hatch is part of the design; it is an
+      # environment variable typed on the command, never a default in a wrapper.
+      if [ "${ALLOW_HANDLER_GAP:-0}" = '1' ]; then
+        printf '\n\033[33mOVERRIDDEN: ALLOW_HANDLER_GAP=1 — deploying a build that cannot handle queued work.\033[0m\n'
+        echo "  Those events will be parked as unsupported on the first tick, not lost."
+        echo "  The first worker that ships the handler returns them to the queue (SCALE-05)."
+        # Recorded where it outlives the terminal. This is the one decision in a
+        # deploy that knowingly accepts a stalled queue, and scrollback on
+        # somebody's laptop is not where that belongs.
+        if command -v logger >/dev/null 2>&1; then
+          logger -t tailfin-deploy \
+            "ALLOW_HANDLER_GAP=1 override on ${SERVICE}: deployed ${NEXT} (${TARGET}) against ${MIGRATION_DATABASE} despite queued work it cannot handle"
+        fi
+      else
+        die "this build has no handler for event types with queued work (see the list above) — database NOT touched, nothing restarted, service still running ${PREVIOUS}; deploy a build that registers the handler, or re-run with ALLOW_HANDLER_GAP=1 to accept the pause"
+      fi
+      ;;
+    31)
+      # Not the same thing as a gap, and deliberately not overridable. An
+      # operator can say "I accept that work will pause"; nobody can say that
+      # about a question that was never answered.
+      die "handler preflight could not read the queue — database NOT touched, nothing restarted, service still running ${PREVIOUS}; ALLOW_HANDLER_GAP does not apply to an unknown answer"
+      ;;
+    *)
+      die "handler preflight exited ${HANDLER_RESULT} — database NOT touched, nothing restarted, service still running ${PREVIOUS}"
+      ;;
+  esac
 fi
 
 if [ "${RUNS_MIGRATIONS}" != '1' ]; then
