@@ -157,8 +157,7 @@ availability and privacy decision, not a cosmetic dependency change.
 
 ```bash
 pnpm install
-pnpm typecheck
-pnpm test
+pnpm verify
 ```
 
 Node version is pinned in `.nvmrc`; pnpm version in `package.json`'s `packageManager`.
@@ -180,6 +179,7 @@ Node version is pinned in `.nvmrc`; pnpm version in `package.json`'s `packageMan
 | `pnpm test`                                     | Vitest across all packages                         |
 | `pnpm test:coverage`                            | Adds coverage; thresholds enforced for `sim`       |
 | `pnpm test:perf`                                | Only the budgeted benchmarks, uninstrumented       |
+| `pnpm verify`                                   | Local pre-PR checks with an explicit skip summary  |
 | `pnpm ops:status`                               | What is deployed where, over public HTTP (OPS-02)  |
 | `pnpm security:headers --mode enforced <urls…>` | Exact edge policy on running hosts (SEC-HARD-05)   |
 | `pnpm clean`                                    | Removes all generated bundle and declaration files |
@@ -188,6 +188,13 @@ CI runs typecheck, lint, format check and coverage on every PR. It also starts t
 Caddyfile with a checksum-pinned Caddy 2.11.4 and checks report-only/enforced headers on real
 HTTP responses. Dependency and code scanning are described under
 [Dependencies](#dependencies) below.
+
+Run `pnpm verify` before opening a PR. It composes those existing package scripts in
+cheap-fails-first order, adds the canonical production build and an indicative local
+performance pass, and prints a final PASS/FAIL/SKIPPED line for every stage. A missing,
+refused or unreachable test database is called out explicitly. The command does not replace
+CI: PostgreSQL verification, the running Caddy policy and deploy-artefact assertions remain
+authoritative there.
 
 **`pnpm test:perf` is a separate, uninstrumented run on purpose.** V8 coverage costs about
 5× on the code paths that carry a budget, so measuring them under it would be measuring

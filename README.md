@@ -25,17 +25,18 @@ Requires Node (version pinned in [`.nvmrc`](.nvmrc)) and pnpm.
 
 ```bash
 pnpm install
-pnpm typecheck
-pnpm test
+pnpm verify
 ```
 
-`pnpm typecheck` emits the declaration files that packages resolve each other through, so
-run it once after cloning or your editor will report unresolved `@tailfin/*` imports.
+`pnpm verify` runs typecheck, lint, formatting, the production build, coverage tests and an
+indicative performance pass in CI's cheap-fails-first order. It prints what passed and what
+was skipped; CI remains authoritative for the protected merge checks. Its typecheck stage
+also emits the declaration files that packages resolve each other through.
 
-**The database-backed tests skip without `DATABASE_URL`**, and they are a large share of
-the server suite. A green local run says much less than it looks like for server work —
-CI is where those run. They are also destructive by design and refuse to run against any
-database whose name does not end in `_test` or `_ci`.
+**The database-backed tests skip without `DATABASE_URL`**, and `pnpm verify` says so in its
+summary rather than folding that gap into a pass. They are destructive by design and refuse
+to run against any database whose name does not end in `_test` or `_ci`; the verifier also
+distinguishes a refused URL from a disposable database it cannot reach.
 
 ## Layout
 

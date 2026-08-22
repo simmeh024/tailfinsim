@@ -404,6 +404,11 @@ file: all four become false as soon as roadmap work lands.
 tests actually _ran_ rather than silently skipped, read the CI log rather than the badge,
 and query the live system rather than the config that was supposed to produce it.
 
+Run `pnpm verify` for the standard local pre-PR pass and report its final summary, not merely
+that Vitest was green. It composes the same package scripts as CI while naming an absent,
+refused or unreachable test database explicitly. Its performance result is indicative only;
+CI remains authoritative for protected checks and full PostgreSQL verification.
+
 Specific traps met so far:
 
 - **Database tests skip without `DATABASE_URL`.** A green local run means very little for
