@@ -224,6 +224,8 @@ pnpm ops:status
 
 **Code: [AGPL-3.0-only](LICENSE). Documentation: reserved ([`docs/LICENSE`](docs/LICENSE)).**
 
+Copyright (C) 2026 Tailfinsim.
+
 Tailfin is source-available and copyleft. You may read, run, fork and modify the
 code, and if you run a modified Tailfin as a service you have to offer your
 users its source — that is the AGPL's §13, and it is the reason this licence
