@@ -55,12 +55,16 @@ const entry = (over: Partial<FleetCatalogueResponse['types'][number]> = {}) => (
   monthlyLeaseRate: 88_000_000,
   restrictions: [],
   restrictionCostPerDepartureMinor: 0,
+  // M4-03. The page does not render the configurator — that is M4-07 — but the
+  // response carries it, so the fixture does too.
+  availableOptionIds: [],
   ...over,
 });
 
 const CATALOGUE: FleetCatalogueResponse = {
   inGameDate: '2024-10-20T00:00:00.000Z',
   catalogueVersion: 'v1',
+  options: [],
   types: [
     entry(),
     entry({
@@ -167,7 +171,12 @@ describe('the fleet catalogue page', () => {
   it('says so plainly when the world is too early for any aircraft', async () => {
     // The 1950s world. A real state, and a very different one from a failure —
     // the criterion is that such a world offers no jets, not that it errors.
-    stubApi({ inGameDate: '1955-06-01T00:00:00.000Z', catalogueVersion: 'v1', types: [] });
+    stubApi({
+      inGameDate: '1955-06-01T00:00:00.000Z',
+      catalogueVersion: 'v1',
+      types: [],
+      options: [],
+    });
     await openFleet();
 
     expect(await screen.findByText(/No aircraft type has flown yet/i)).toBeInTheDocument();
