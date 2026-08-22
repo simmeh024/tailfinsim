@@ -128,7 +128,33 @@ Two details are load-bearing:
   `terminator.test.ts` asserts the row order against a solstice.
 
 The field is generated palette-free and coloured in `layers.ts`, so a theme change re-colours
-the night without recomputing any astronomy. luma.gl wants the texture as flat `data` with
+the night without recomputing any astronomy.
+
+### Night has to be legible
+
+The night alpha was `215` — 84% of `#03070e`, which is very nearly black. At that strength the
+shading does not dim the night side, it erases it: land composites to `rgb(8, 14, 22)` and
+ocean to `rgb(4, 8, 16)`, a perceptual distance under 4. That was survivable only while the
+terminator was being drawn at the wrong viewport scale; once it covered the hemisphere it
+actually describes, half the world went black.
+
+It is now `115`, and `palette.test.ts` asserts the _composited_ result rather than the alpha:
+land and ocean stay apart under full night, the night side stays lighter than the night colour
+itself, the day side is untouched, and night is still visibly darker than day. A retune that
+makes the map unreadable fails those four.
+
+### The terminator follows the wall clock, not the world clock
+
+Known, and wrong. `createDarknessField` is called with `new Date()`, so the sun is where it is
+_in reality_ — but a Tailfin world runs from its own epoch at its own speed multiplier
+(ADR-0005), so its date and time of day are not ours. A world at 2x has days passing twice as
+fast and its terminator should sweep twice as fast.
+
+Fixing it needs the world's clock on the client, and no player-facing endpoint carries it:
+`/api/fleet/catalogue` returns `inGameDate`, which is a snapshot rather than a clock — there is
+no `epoch`, `launchDate` or `speedMultiplier` to advance locally. That is a contract change and
+belongs with whichever issue puts live world state on this page (M7-02), not with a shading
+fix. luma.gl wants the texture as flat `data` with
 `width` and `height` beside it; handed `{ data: { data, width, height } }` it silently
 produces a `1 x 1` texture, which renders as one flat wash over the world.
 
