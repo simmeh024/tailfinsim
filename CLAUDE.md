@@ -19,6 +19,14 @@ person's admin access. `packages/server/src/test-setup.ts` now refuses any datab
 name does not end in `_test` or `_ci`, but do not rely on the guard to remember the rule
 for you. Run them in CI.
 
+**A player airline in a database test is founded, never inserted.** Use
+`createFoundedAirlineFixtureHarness` from `packages/server/src/test-fixtures/founded-airline.ts`.
+It creates an open world, owner, founder hub, unique per-world codes and the configured opening
+AIR-06 cash movement through `foundAirline`; existing worlds, players and hubs can be supplied
+for multi-airline scenarios. Call the harness's `cleanup()` before suite-specific cleanup. It
+deletes only the identities it created, so do not replace it with a truncate or a direct
+`insert(airline)` that recreates the impossible zero-cash state AIR-11 removed.
+
 **Restore rehearsals have one destructive target: a database ending in `_test`.** Use
 `/usr/local/sbin/tailfin-restore-rehearsal`; it refuses every other name, refuses an existing
 target, downloads only from DreamObjects, and repeats the suffix check at `dropdb`. Do not

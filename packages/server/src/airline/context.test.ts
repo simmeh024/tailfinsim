@@ -8,6 +8,10 @@ import { createSession, SESSION_COOKIE } from '../auth/session';
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { airline, airport, player, route, world } from '../db/schema';
 import { type ServerEnv } from '../env';
+import {
+  createFoundedAirlineFixtureHarness,
+  type FoundedAirlineFixtureHarness,
+} from '../test-fixtures/founded-airline';
 import { createWorld } from '../world/lifecycle';
 
 import { ACTIVE_WORLD_HEADER, parseActiveWorldHeader } from './context';
@@ -16,7 +20,6 @@ const url = process.env.DATABASE_URL;
 if (!url)
   console.warn('\n  [context.test] DATABASE_URL not set — skipping airline context tests.\n');
 const describeDb = url ? describe : describe.skip;
-const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 const env: ServerEnv = {
   nodeEnv: 'test',
@@ -56,15 +59,18 @@ describeDb('player airline context over HTTP', () => {
   const madeWorlds: string[] = [];
   const madePlayers: string[] = [];
   const madeAirports: string[] = [];
+  let fixtures: FoundedAirlineFixtureHarness;
   let sequence = 0;
 
   beforeAll(async () => {
     db = createDatabase();
+    fixtures = createFoundedAirlineFixtureHarness(db.db);
     app = buildApp({ env, db });
     await app.ready();
   });
 
   afterEach(async () => {
+    await fixtures.cleanup();
     if (madeWorlds.length > 0) {
       await db.db.delete(world).where(inArray(world.id, madeWorlds.splice(0)));
     }
@@ -98,26 +104,12 @@ describeDb('player airline context over HTTP', () => {
       name: `context-world-${String(sequence++)}`,
     });
     madeWorlds.push(result.world.id);
+    await db.db.update(world).set({ status: 'open' }).where(eq(world.id, result.world.id));
     return result.world.id;
   }
 
   async function makeAirline(worldId: string, playerId: string): Promise<string> {
-    const n = sequence++;
-    const rows = await db.db
-      .insert(airline)
-      .values({
-        worldId,
-        playerId,
-        name: `Context Air ${String(n)}`,
-        iataCode: String(n % 100).padStart(2, '0'),
-        icaoCode: `C${LETTERS[n % 26] ?? 'A'}${LETTERS[Math.floor(n / 26) % 26] ?? 'A'}`,
-        callsign: `CONTEXT ${String(n)}`,
-        baseCountry: 'NL',
-      })
-      .returning({ id: airline.id });
-    const id = rows[0]?.id;
-    if (!id) throw new Error('no airline created');
-    return id;
+    return (await fixtures.create({ worldId, playerId })).airline.id;
   }
 
   async function makeAirport(icaoCode: string): Promise<void> {

@@ -1,21 +1,14 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { FLAGSHIP_CONFIG, type WorldConfig } from '@tailfin/shared';
 import { type Horizon, MINUTES_PER_DAY } from '@tailfin/sim';
 
 import { createDatabase, type DatabaseHandle } from '../db/client';
+import { airport, flight, schedule, scheduleLeg, world, worldEvent } from '../db/schema';
 import {
-  airline,
-  airport,
-  flight,
-  player,
-  schedule,
-  scheduleLeg,
-  world,
-  worldEvent,
-} from '../db/schema';
-import { createWorld } from '../world/lifecycle';
+  createFoundedAirlineFixtureHarness,
+  type FoundedAirlineFixtureHarness,
+} from '../test-fixtures/founded-airline';
 
 import {
   createSchedule,
@@ -75,23 +68,16 @@ function code(): string {
 
 describeDb('schedules and their flights', () => {
   let db: DatabaseHandle;
-  const madeWorlds: string[] = [];
-  const madePlayers: string[] = [];
+  let fixtures: FoundedAirlineFixtureHarness;
   const madeAirports: string[] = [];
 
   beforeAll(() => {
     db = createDatabase();
+    fixtures = createFoundedAirlineFixtureHarness(db.db);
   });
 
   afterEach(async () => {
-    // Worlds first: the cascade takes airlines, schedules and flights with them,
-    // and `airline.player_id` is `restrict`, so a player cannot go first.
-    for (const id of madeWorlds.splice(0)) {
-      await db.db.delete(world).where(eq(world.id, id));
-    }
-    for (const id of madePlayers.splice(0)) {
-      await db.db.delete(player).where(eq(player.id, id));
-    }
+    await fixtures.cleanup();
     for (const icao of madeAirports.splice(0)) {
       await db.db.delete(airport).where(eq(airport.icaoCode, icao));
     }
@@ -120,38 +106,8 @@ describeDb('schedules and their flights', () => {
   }
 
   async function makeWorldAndAirline(): Promise<{ worldId: string; airlineId: string }> {
-    const config: WorldConfig = {
-      ...FLAGSHIP_CONFIG,
-      name: `sched-${Math.random().toString(36).slice(2, 10)}`,
-    };
-    const { world: created } = await createWorld(db.db, config);
-    madeWorlds.push(created.id);
-
-    const [p] = await db.db
-      .insert(player)
-      .values({ displayName: `player-${Math.random().toString(36).slice(2, 8)}` })
-      .returning({ id: player.id });
-    if (p === undefined) throw new Error('no player');
-    madePlayers.push(p.id);
-
-    // The schema's format checks are strict, so the codes are built rather than
-    // improvised: `^[A-Z0-9]{2}$`, `^[A-Z]{3}$`, `^[A-Z]{2}$`.
-    const two = code().slice(0, 2);
-    const [a] = await db.db
-      .insert(airline)
-      .values({
-        worldId: created.id,
-        playerId: p.id,
-        name: `Test Air ${two}`,
-        iataCode: two,
-        icaoCode: `T${two}`,
-        callsign: `TEST${two}`,
-        baseCountry: 'GB',
-      })
-      .returning({ id: airline.id });
-    if (a === undefined) throw new Error('no airline');
-
-    return { worldId: created.id, airlineId: a.id };
+    const created = await fixtures.create({ baseCountry: 'GB' });
+    return { worldId: created.world.id, airlineId: created.airline.id };
   }
 
   /** An out-and-back that closes, twice a day, from a hub. */
@@ -633,7 +589,6 @@ describeDb('schedules and their flights', () => {
       await materialiseSchedule(db.db, scheduleId, window(MONDAY, 2));
 
       await db.db.delete(world).where(eq(world.id, worldId));
-      madeWorlds.splice(madeWorlds.indexOf(worldId), 1);
 
       const [row] = await db.db
         .select({ count: sql<string>`count(*)` })

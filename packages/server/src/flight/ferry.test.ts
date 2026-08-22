@@ -1,11 +1,12 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { FLAGSHIP_CONFIG, type WorldConfig } from '@tailfin/shared';
-
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { airline, airport, flight, flightResult, player, world, worldEvent } from '../db/schema';
-import { createWorld } from '../world/lifecycle';
+import { airline, airport, flight, flightResult, worldEvent } from '../db/schema';
+import {
+  createFoundedAirlineFixtureHarness,
+  type FoundedAirlineFixtureHarness,
+} from '../test-fixtures/founded-airline';
 
 import { createFerryFlight, ferryForRotation, locateAirframe } from './ferry';
 import { arrivalKey, settleArrivedFlight } from './settle';
@@ -45,21 +46,16 @@ function code(): string {
 
 describeDb('positioning and ferries', () => {
   let db: DatabaseHandle;
-  const madeWorlds: string[] = [];
-  const madePlayers: string[] = [];
+  let fixtures: FoundedAirlineFixtureHarness;
   const madeAirports: string[] = [];
 
   beforeAll(() => {
     db = createDatabase();
+    fixtures = createFoundedAirlineFixtureHarness(db.db);
   });
 
   afterEach(async () => {
-    for (const id of madeWorlds.splice(0)) {
-      await db.db.delete(world).where(eq(world.id, id));
-    }
-    for (const id of madePlayers.splice(0)) {
-      await db.db.delete(player).where(eq(player.id, id));
-    }
+    await fixtures.cleanup();
     for (const icao of madeAirports.splice(0)) {
       await db.db.delete(airport).where(eq(airport.icaoCode, icao));
     }
@@ -90,6 +86,7 @@ describeDb('positioning and ferries', () => {
   interface Fixture {
     worldId: string;
     airlineId: string;
+    openingCashMinor: number;
     airframeId: string;
     ams: string;
     lhr: string;
@@ -97,39 +94,12 @@ describeDb('positioning and ferries', () => {
   }
 
   async function makeWorld(): Promise<Fixture> {
-    const config: WorldConfig = {
-      ...FLAGSHIP_CONFIG,
-      name: `ferry-${Math.random().toString(36).slice(2, 10)}`,
-    };
-    const { world: created } = await createWorld(db.db, config);
-    madeWorlds.push(created.id);
-
-    const [p] = await db.db
-      .insert(player)
-      .values({ displayName: `player-${Math.random().toString(36).slice(2, 8)}` })
-      .returning({ id: player.id });
-    if (!p) throw new Error('no player');
-    madePlayers.push(p.id);
-
-    const two = code().slice(0, 2);
-    const [a] = await db.db
-      .insert(airline)
-      .values({
-        worldId: created.id,
-        playerId: p.id,
-        name: `Test Air ${two}`,
-        iataCode: two,
-        icaoCode: `T${two}`,
-        callsign: `TEST${two}`,
-        baseCountry: 'NL',
-        cashMinor: 0,
-      })
-      .returning({ id: airline.id });
-    if (!a) throw new Error('no airline');
+    const created = await fixtures.create();
 
     return {
-      worldId: created.id,
-      airlineId: a.id,
+      worldId: created.world.id,
+      airlineId: created.airline.id,
+      openingCashMinor: created.airline.cash,
       airframeId: crypto.randomUUID(),
       ams: await makeAirport(52.3086, 4.76389),
       lhr: await makeAirport(51.4706, -0.461941),
@@ -334,7 +304,7 @@ describeDb('positioning and ferries', () => {
         .select({ cash: airline.cashMinor })
         .from(airline)
         .where(eq(airline.id, f.airlineId));
-      expect(air?.cash).toBeLessThan(0);
+      expect(air?.cash).toBe(f.openingCashMinor + (result?.netMinor ?? 0));
     });
 
     it('is refused by the database if anything tries to book revenue on it', async () => {

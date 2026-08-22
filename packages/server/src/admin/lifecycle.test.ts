@@ -10,6 +10,10 @@ import { createDatabase, type DatabaseHandle } from '../db/client';
 import { adminGrant, airline, player, world, worldEvent, type WorldRow } from '../db/schema';
 import { type ServerEnv } from '../env';
 import { drainDueEvents, scheduleEvent } from '../sim/event-queue';
+import {
+  createFoundedAirlineFixtureHarness,
+  type FoundedAirlineFixtureHarness,
+} from '../test-fixtures/founded-airline';
 import { createWorld } from '../world/lifecycle';
 
 import { readAudit } from './audit';
@@ -83,14 +87,17 @@ describe('validateResetRequest', () => {
 
 describeDb('the world lifecycle', () => {
   let db: DatabaseHandle;
+  let fixtures: FoundedAirlineFixtureHarness;
   const madeWorlds: string[] = [];
   const madePlayers: string[] = [];
 
   beforeAll(() => {
     db = createDatabase();
+    fixtures = createFoundedAirlineFixtureHarness(db.db);
   });
 
   afterEach(async () => {
+    await fixtures.cleanup();
     for (const id of madeWorlds.splice(0)) {
       await db.db.delete(worldEvent).where(eq(worldEvent.worldId, id));
       await db.db.delete(airline).where(eq(airline.worldId, id));
@@ -152,10 +159,8 @@ describeDb('the world lifecycle', () => {
    */
   async function makeAirline(worldId: string, suffix: string): Promise<string> {
     const code = suffix.slice(0, 2).toUpperCase();
-    const playerId = await makePlayer();
-    await db.db.insert(airline).values({
+    const created = await fixtures.create({
       worldId,
-      playerId,
       name: `Test Air ${suffix}`,
       iataCode: code,
       icaoCode: `T${code}`,
@@ -164,7 +169,7 @@ describeDb('the world lifecycle', () => {
     });
     // The owner, so a test can assert about that player rather than counting a
     // table other test files are inserting into at the same time.
-    return playerId;
+    return created.player.id;
   }
 
   async function auditFor(worldId: string) {

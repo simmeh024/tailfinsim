@@ -20,6 +20,10 @@ import {
   session,
   world,
 } from '../db/schema';
+import {
+  createFoundedAirlineFixtureHarness,
+  type FoundedAirlineFixtureHarness,
+} from '../test-fixtures/founded-airline';
 import { createWorld } from '../world/lifecycle';
 
 import { anonymizePlayerForWorldHistory } from './anonymize-player';
@@ -31,6 +35,7 @@ const describeDb = url ? describe : describe.skip;
 
 describeDb('airline lifecycle and historical retention', () => {
   let db: DatabaseHandle;
+  let fixtures: FoundedAirlineFixtureHarness;
   const madeWorlds: string[] = [];
   const madePlayers: string[] = [];
   const madeAirports: string[] = [];
@@ -38,9 +43,11 @@ describeDb('airline lifecycle and historical retention', () => {
 
   beforeAll(() => {
     db = createDatabase();
+    fixtures = createFoundedAirlineFixtureHarness(db.db);
   });
 
   afterEach(async () => {
+    await fixtures.cleanup();
     if (madeWorlds.length > 0) {
       await db.db.delete(world).where(inArray(world.id, madeWorlds.splice(0)));
     }
@@ -73,6 +80,7 @@ describeDb('airline lifecycle and historical retention', () => {
       name: `lifecycle-world-${String(sequence++)}`,
     });
     madeWorlds.push(result.world.id);
+    await db.db.update(world).set({ status: 'open' }).where(eq(world.id, result.world.id));
     return result.world.id;
   }
 
@@ -82,21 +90,16 @@ describeDb('airline lifecycle and historical retention', () => {
     codes: { iata: string; icao: string } = { iata: 'LC', icao: 'LFC' },
   ): Promise<string> {
     const n = sequence++;
-    const rows = await db.db
-      .insert(airline)
-      .values({
-        worldId,
-        playerId,
-        name: `Lifecycle Air ${String(n)}`,
-        iataCode: codes.iata,
-        icaoCode: codes.icao,
-        callsign: `LIFECYCLE ${String(n)}`,
-        baseCountry: 'NL',
-      })
-      .returning({ id: airline.id });
-    const id = rows[0]?.id;
-    if (!id) throw new Error('no airline created');
-    return id;
+    const created = await fixtures.create({
+      worldId,
+      playerId,
+      name: `Lifecycle Air ${String(n)}`,
+      iataCode: codes.iata,
+      icaoCode: codes.icao,
+      callsign: `LIFECYCLE ${String(n)}`,
+      baseCountry: 'NL',
+    });
+    return created.airline.id;
   }
 
   async function makeAirport(icaoCode: string): Promise<void> {

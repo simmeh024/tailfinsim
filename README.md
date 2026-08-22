@@ -157,6 +157,10 @@ different build.
   the record from live caps and rankings. Player anonymisation removes sign-in authority
   while keeping that world history intact
   ([ADR-0018](docs/adr/0018-airline-lifecycle-and-code-release.md)).
+- **One founded-airline database fixture.** Server tests that need a player airline go
+  through the real founding transaction, so they receive an open world, owner, founder hub,
+  allocated per-world codes and configured opening cash with its AIR-06 movement. The
+  harness cleans only the row identities it created; no fixture truncates shared tables.
 - **The admin console**, at `/admin` for accounts holding a grant: an overview with
   server-decided alerts, world creation, speed changes, the full open/lock/archive/reset
   lifecycle, world health, a read-only player browser, linkable airline support records

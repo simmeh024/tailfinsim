@@ -1,12 +1,13 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { FLAGSHIP_CONFIG, type WorldConfig } from '@tailfin/shared';
-
 import { reconcileAirlineCash } from '../airline/cash';
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { airline, airport, cashMovement, flight, flightResult, player, world } from '../db/schema';
-import { createWorld } from '../world/lifecycle';
+import { airline, airport, cashMovement, flight, flightResult } from '../db/schema';
+import {
+  createFoundedAirlineFixtureHarness,
+  type FoundedAirlineFixtureHarness,
+} from '../test-fixtures/founded-airline';
 
 import { arrivalKey, createFlightArriveHandler, settleArrivedFlight } from './settle';
 
@@ -81,21 +82,16 @@ async function expectConstraint(promise: Promise<unknown>, constraint: string): 
 
 describeDb('settling an arrived flight', () => {
   let db: DatabaseHandle;
-  const madeWorlds: string[] = [];
-  const madePlayers: string[] = [];
+  let fixtures: FoundedAirlineFixtureHarness;
   const madeAirports: string[] = [];
 
   beforeAll(() => {
     db = createDatabase();
+    fixtures = createFoundedAirlineFixtureHarness(db.db);
   });
 
   afterEach(async () => {
-    for (const id of madeWorlds.splice(0)) {
-      await db.db.delete(world).where(eq(world.id, id));
-    }
-    for (const id of madePlayers.splice(0)) {
-      await db.db.delete(player).where(eq(player.id, id));
-    }
+    await fixtures.cleanup();
     for (const icao of madeAirports.splice(0)) {
       await db.db.delete(airport).where(eq(airport.icaoCode, icao));
     }
@@ -130,38 +126,11 @@ describeDb('settling an arrived flight', () => {
     flightId: string;
     airlineId: string;
     worldId: string;
+    openingCashMinor: number;
     origin: string;
     dest: string;
   }> {
-    const config: WorldConfig = {
-      ...FLAGSHIP_CONFIG,
-      name: `settle-${Math.random().toString(36).slice(2, 10)}`,
-    };
-    const { world: created } = await createWorld(db.db, config);
-    madeWorlds.push(created.id);
-
-    const [p] = await db.db
-      .insert(player)
-      .values({ displayName: `player-${Math.random().toString(36).slice(2, 8)}` })
-      .returning({ id: player.id });
-    if (!p) throw new Error('no player');
-    madePlayers.push(p.id);
-
-    const two = code().slice(0, 2);
-    const [a] = await db.db
-      .insert(airline)
-      .values({
-        worldId: created.id,
-        playerId: p.id,
-        name: `Test Air ${two}`,
-        iataCode: two,
-        icaoCode: `T${two}`,
-        callsign: `TEST${two}`,
-        baseCountry: 'NL',
-        cashMinor: 0,
-      })
-      .returning({ id: airline.id });
-    if (!a) throw new Error('no airline');
+    const created = await fixtures.create();
 
     const origin = await makeAirport(52.3086, 4.76389);
     const dest = await makeAirport(51.4706, -0.461941);
@@ -169,8 +138,8 @@ describeDb('settling an arrived flight', () => {
     const [f] = await db.db
       .insert(flight)
       .values({
-        worldId: created.id,
-        airlineId: a.id,
+        worldId: created.world.id,
+        airlineId: created.airline.id,
         airframeId: crypto.randomUUID(),
         originIcao: origin,
         destinationIcao: dest,
@@ -183,7 +152,14 @@ describeDb('settling an arrived flight', () => {
       .returning({ id: flight.id });
     if (!f) throw new Error('no flight');
 
-    return { flightId: f.id, airlineId: a.id, worldId: created.id, origin, dest };
+    return {
+      flightId: f.id,
+      airlineId: created.airline.id,
+      worldId: created.world.id,
+      openingCashMinor: created.airline.cash,
+      origin,
+      dest,
+    };
   }
 
   async function cashOf(airlineId: string): Promise<number> {
@@ -195,7 +171,7 @@ describeDb('settling an arrived flight', () => {
   }
 
   it('writes a result traceable to its inputs, and moves cash by exactly the net', async () => {
-    const { flightId, airlineId } = await makeFlight();
+    const { flightId, airlineId, openingCashMinor } = await makeFlight();
 
     const outcome = await db.db.transaction((tx) => settleArrivedFlight(tx, flightId, ARRIVES));
     expect(outcome.status).toBe('settled');
@@ -234,23 +210,24 @@ describeDb('settling an arrived flight', () => {
     expect(breakdown.distanceNm).toBeGreaterThan(195);
     expect(breakdown.distanceNm).toBeLessThan(205);
 
-    expect(await cashOf(airlineId)).toBe(row.netMinor);
+    expect(await cashOf(airlineId)).toBe(openingCashMinor + row.netMinor);
 
     const movements = await db.db
       .select()
       .from(cashMovement)
       .where(eq(cashMovement.airlineId, airlineId));
-    expect(movements).toHaveLength(1);
-    expect(movements[0]).toMatchObject({
+    expect(movements).toHaveLength(2);
+    const settlementMovement = movements.find((movement) => movement.cause === 'flight_settlement');
+    expect(settlementMovement).toMatchObject({
       amountMinor: row.netMinor,
       cause: 'flight_settlement',
       reference: flightId,
-      balanceAfterMinor: row.netMinor,
+      balanceAfterMinor: openingCashMinor + row.netMinor,
       occurredAt: ARRIVES,
     });
     expect(await reconcileAirlineCash(db.db, airlineId)).toMatchObject({
-      balanceMinor: row.netMinor,
-      movementTotalMinor: row.netMinor,
+      balanceMinor: openingCashMinor + row.netMinor,
+      movementTotalMinor: openingCashMinor + row.netMinor,
       reconciles: true,
     });
   });
@@ -501,11 +478,11 @@ describeDb('settling an arrived flight', () => {
     }
 
     it('settles the flight its payload names', async () => {
-      const { flightId, airlineId } = await makeFlight();
+      const { flightId, airlineId, openingCashMinor } = await makeFlight();
 
       await db.db.transaction((tx) => handler(event(ARRIVES), { payload: { flightId }, tx }));
 
-      expect(await cashOf(airlineId)).not.toBe(0);
+      expect(await cashOf(airlineId)).not.toBe(openingCashMinor);
     });
 
     it('is safe to replay, which is what the queue does after a restart', async () => {
