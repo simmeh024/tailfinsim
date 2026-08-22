@@ -66,12 +66,20 @@
 
   --focus-ring: #8ccdff;
 
-  /* M7-01 world renderer. Kept semantic so deck.gl and CSS share one palette. */
-  --world-ocean: #060f1b;
-  --world-land: #1f3441;
-  --world-land-line: #577081;
-  --world-grid: #6e8b9d;
-  --world-night: #03070e;
+  /*
+   * M7-01 world renderer. Kept semantic so deck.gl and CSS share one palette.
+   *
+   * Retuned against H.7's *"WCAG AA contrast throughout"*, which these did not
+   * meet: land against ocean was 1.49:1, and a coastline against its own land
+   * 2.48:1, where the AA bar for a meaningful graphic is 3:1. The map was a very
+   * dark object with a slightly-less-dark object on it. `palette.test.ts`
+   * measures every pairing now, in both themes and under full night.
+   */
+  --world-ocean: #0d2038;
+  --world-land: #7799b0;
+  --world-land-line: #0f1e2e;
+  --world-grid: #dcecf7;
+  --world-night: #0b1a2e;
   --world-route: #5eb8ff;
   --world-atmosphere: #5eb8ff;
 
@@ -149,11 +157,11 @@
 
   --focus-ring: #0a63b0;
 
-  --world-ocean: #d9e9f0;
-  --world-land: #b4c8c2;
-  --world-land-line: #526b71;
-  --world-grid: #506f7d;
-  --world-night: #172536;
+  --world-ocean: #e6f1f7;
+  --world-land: #4f6d63;
+  --world-land-line: #e3ede8;
+  --world-grid: #0e1a1f;
+  --world-night: #1a2b40;
   --world-route: #0a63b0;
   --world-atmosphere: #0a63b0;
 

@@ -130,18 +130,40 @@ Two details are load-bearing:
 The field is generated palette-free and coloured in `layers.ts`, so a theme change re-colours
 the night without recomputing any astronomy.
 
-### Night has to be legible
+## The palette has a measurable bar
 
-The night alpha was `215` — 84% of `#03070e`, which is very nearly black. At that strength the
-shading does not dim the night side, it erases it: land composites to `rgb(8, 14, 22)` and
-ocean to `rgb(4, 8, 16)`, a perceptual distance under 4. That was survivable only while the
-terminator was being drawn at the wrong viewport scale; once it covered the hemisphere it
-actually describes, half the world went black.
+App. H.7 asks for **"WCAG AA contrast throughout"**, and the world is nothing but graphical
+objects sitting on each other: land on ocean, a coastline on its own land, a route across the
+sea it crosses. AA's threshold for a meaningful graphic is **3:1**. The original palette was
+nowhere near it:
 
-It is now `115`, and `palette.test.ts` asserts the _composited_ result rather than the alpha:
-land and ocean stay apart under full night, the night side stays lighter than the night colour
-itself, the day side is untouched, and night is still visibly darker than day. A retune that
-makes the map unreadable fails those four.
+| pairing                      | before     | after  | AA  |
+| ---------------------------- | ---------- | ------ | --- |
+| dark: land vs ocean, day     | **1.49**:1 | 5.44:1 | 3:1 |
+| dark: land vs ocean, night   | **1.19**:1 | 3.05:1 | 3:1 |
+| dark: coastline vs land, day | **2.48**:1 | 5.59:1 | 3:1 |
+| light: land vs ocean, day    | **1.41**:1 | 4.94:1 | 3:1 |
+
+The map was a very dark object with a slightly-less-dark object drawn on it, which is why it
+read as unlit even in daylight. Two changes fixed it together, because they interact: the base
+colours moved (a navy sea with legibly lighter land, in both themes) and the night alpha came
+down from `215` — 84% of a near-black — to `90`.
+
+`palette.test.ts` measures every pairing in **both themes, in daylight and under full night**,
+and asserts the _composited_ result rather than the alpha, because the alpha is not the thing
+that matters. It also asserts that night still reads as night: the dimming has a floor as well
+as a ceiling, since shading nobody can see is not shading.
+
+The graticule is the one world layer the contrast tests do not gate. One flat overlay at 31%
+cannot contrast strongly with both a dark sea and a light landmass; its colour favours the
+ocean, where most of a meridian runs, and it is toggleable.
+
+### `FALLBACK_PALETTE` is a duplicate, and there is a test for that
+
+`palette.ts` carries the dark theme's colours a second time, for when `getComputedStyle`
+returns nothing — which is every jsdom test. That is a drift hole, so `palette.test.ts` parses
+`tokens.css` and asserts the two agree. Without it, a retune in one place and not the other is
+invisible until the world is rendered somewhere the tokens cannot be read.
 
 ### The terminator follows the wall clock, not the world clock
 
