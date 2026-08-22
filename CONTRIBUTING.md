@@ -75,6 +75,21 @@ than recomputing or discarding it.
 
 ---
 
+## The authorization matrix
+
+[`docs/authorization-matrix.md`](docs/authorization-matrix.md) is the intended boundary for
+every web/API and worker HTTP route: public, session-protected, owner-scoped, admin-only or
+loopback-only. Update its method/path row in the same pull request as a route. Derive the row
+from the design, not from whichever hook the implementation currently happens to carry; a
+disagreement is a bug or an explicit open question.
+
+The matrix is deliberately separate from the route table so the authorization tests can
+compare intent with implementation. SEC-04 owns the Fastify enumeration gate; do not replace
+that comparison with documentation generated from the router, because generated expectations
+cannot catch a missing guard.
+
+---
+
 ## The web/worker boundary
 
 Two processes come out of `packages/server`, from one build and one commit. What separates
