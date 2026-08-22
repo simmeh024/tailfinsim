@@ -123,6 +123,13 @@ function EngineDetail({ node }: { node: AdminNodeHealth }): ReactNode {
         <dt>Failed</dt>
         <dd className="figure">{engine.failed}</dd>
       </div>
+      <div>
+        {/* Apart from Failed on purpose (SCALE-05): a rising Failed means
+            something is broken, and a rising Unsupported means a handler is
+            missing. Sharing one number made the first meaningless. */}
+        <dt>Unsupported</dt>
+        <dd className="figure">{engine.unsupported}</dd>
+      </div>
     </dl>
   );
 }
@@ -220,6 +227,33 @@ export function SystemHealthPage(): ReactNode {
           <p className="admin__note" role="alert">
             The last refresh failed; the figures below are older than they look.
           </p>
+        )}
+
+        {value.unsupportedEvents.length > 0 && (
+          <table>
+            <caption>
+              Work paused for want of a handler. Nothing has been attempted and nothing is lost —
+              the first worker that ships the handler returns it to the queue.
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">World</th>
+                <th scope="col">Event type</th>
+                <th scope="col">Waiting</th>
+                <th scope="col">Oldest due (world time)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {value.unsupportedEvents.map((group) => (
+                <tr key={`${group.worldId}-${group.type}`}>
+                  <td>{group.worldName}</td>
+                  <td className="figure">{group.type}</td>
+                  <td className="figure">{group.count}</td>
+                  <td className="figure">{group.oldestFireAt.slice(0, 10)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
 
         {value.alerts.length > 0 && (

@@ -83,6 +83,7 @@ const HEALTHY: AdminSystemHealthResponse = {
         lateTicks: 0,
         processed: 0,
         failed: 0,
+        unsupported: 0,
         lastTickAt: '2026-08-21T12:04:58.000Z',
         queueDue: 0,
         oldestDueAt: null,
@@ -94,6 +95,7 @@ const HEALTHY: AdminSystemHealthResponse = {
   staleAfterMs: 45_000,
   offlineAfterMs: 120_000,
   alerts: [],
+  unsupportedEvents: [],
 };
 
 function stubApi(health: AdminSystemHealthResponse = HEALTHY) {

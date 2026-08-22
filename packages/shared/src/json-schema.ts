@@ -10,6 +10,7 @@ import {
   AdminOverviewResponse,
   AdminPlayerDetailResponse,
   AdminPinEconomyConfigResponse,
+  AdminRequeueEventsResponse,
   AdminPlayerListResponse,
   AdminWorldHealthResponse,
   AdminSystemHealthResponse,
@@ -111,3 +112,5 @@ export const adminPinEconomyConfigResponseJsonSchema = z.toJSONSchema(
 export const adminNpcResponseJsonSchema = z.toJSONSchema(AdminNpcResponse);
 
 export const fleetCatalogueResponseJsonSchema = z.toJSONSchema(FleetCatalogueResponse);
+
+export const adminRequeueEventsResponseJsonSchema = z.toJSONSchema(AdminRequeueEventsResponse);

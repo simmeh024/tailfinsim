@@ -908,7 +908,26 @@ export const worldEventType = pgEnum('world_event_type', [
   'TURNAROUND_COMPLETE',
 ]);
 
-export const worldEventStatus = pgEnum('world_event_status', ['pending', 'done', 'failed']);
+/**
+ * Where an event is in its life (M1-06, SCALE-05).
+ *
+ * `unsupported` exists because one state was being asked to mean two things.
+ * *This event is broken* is a data problem an operator should investigate;
+ * *this Worker cannot do this yet* is a deployment problem that resolves itself
+ * when the handler ships. Both used to land in `failed`, which made handler
+ * absence look terminal and made a rising `failed` count meaningless.
+ *
+ * `unsupported` is deliberately **not** `pending`: the claim predicate skips it,
+ * so it cannot be reclaimed on every tick and starve the queue behind it. And
+ * deliberately **not** terminal: nothing has happened to the event, and a Worker
+ * that knows the type moves it back.
+ */
+export const worldEventStatus = pgEnum('world_event_status', [
+  'pending',
+  'done',
+  'failed',
+  'unsupported',
+]);
 
 /**
  * Scheduled events, in **game time**.
@@ -962,7 +981,25 @@ export const worldEvent = pgTable(
     check('world_event_attempts_nonneg', sql`${t.attempts} >= 0`),
     check(
       'world_event_processed_when_finished',
-      sql`(${t.status} = 'pending') = (${t.processedAt} IS NULL)`,
+      /**
+       * `processed_at` is set exactly when something finished the event.
+       *
+       * Written in terms of the **terminal** statuses rather than as
+       * `status <> 'pending'`, which is what it used to say. Two reasons, and
+       * both matter:
+       *
+       *   - `unsupported` has not been processed. Nothing ran, nothing decided
+       *     anything, and stamping a time on it would be a lie that later made
+       *     "when did this happen?" unanswerable.
+       *   - Naming only values that already exist is what lets the enum gain
+       *     `unsupported` and this constraint be rewritten **in the same
+       *     migration transaction**. Postgres refuses to *use* a new enum value
+       *     in the transaction that added it; it does not mind one being added
+       *     and left alone. `deploy.sh` batches the whole pending set into one
+       *     transaction, so a constraint mentioning the new value would fail
+       *     the deploy at the migration step.
+       */
+      sql`(${t.status} IN ('done', 'failed')) = (${t.processedAt} IS NOT NULL)`,
     ),
   ],
 );

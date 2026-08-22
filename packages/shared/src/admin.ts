@@ -37,6 +37,7 @@ export const AdminAction = z.enum([
   'airline.identity_changed',
   'economy.version_created',
   'world.economy_pinned',
+  'events.requeued',
 ]);
 export type AdminAction = z.infer<typeof AdminAction>;
 
@@ -47,6 +48,7 @@ export const AdminSubjectType = z.enum([
   'instance',
   'airline',
   'economy_config',
+  'world_event',
 ]);
 export type AdminSubjectType = z.infer<typeof AdminSubjectType>;
 
@@ -650,7 +652,16 @@ export const AdminNodeEngine = z.object({
   errors: z.number().int().nonnegative(),
   lateTicks: z.number().int().nonnegative(),
   processed: z.number().int().nonnegative(),
+  /** Events whose handler threw. A rising number here means something is broken. */
   failed: z.number().int().nonnegative(),
+  /**
+   * Events this build had no handler for, since it started (SCALE-05).
+   *
+   * Apart from `failed` on purpose. They shared a number until SCALE-05, which
+   * made the more important one useless — the commonest cause of `failed`
+   * moving was a build that simply did not have a handler yet.
+   */
+  unsupported: z.number().int().nonnegative().default(0),
   lastTickAt: Timestamp.nullable(),
   /** Events due and unhandled across every world this node drives. */
   queueDue: z.number().int().nonnegative(),
@@ -688,6 +699,23 @@ export type AdminNodeHealth = z.infer<typeof AdminNodeHealth>;
  * nodes to `tailfin`, so a console can only ever show its own environment. There
  * is no path by which the dev console describes production.
  */
+/**
+ * Work waiting for a handler, per world and per type (SCALE-05).
+ *
+ * Grouped rather than totalled, because *"412 unsupported events"* is not
+ * actionable and *"412 FLIGHT_DEPART in Northern Sky, oldest due three days
+ * ago"* is.
+ */
+export const AdminUnsupportedEvents = z.object({
+  worldId: Uuid,
+  worldName: z.string().min(1),
+  type: z.string().min(1),
+  count: z.number().int().positive(),
+  /** Game time of the oldest one — how far behind this work has fallen. */
+  oldestFireAt: Timestamp,
+});
+export type AdminUnsupportedEvents = z.infer<typeof AdminUnsupportedEvents>;
+
 export const AdminSystemHealthResponse = z.object({
   nodes: z.array(AdminNodeHealth),
   serverTime: Timestamp,
@@ -696,6 +724,14 @@ export const AdminSystemHealthResponse = z.object({
   offlineAfterMs: z.number().int().positive(),
   /** Server-decided problems worth surfacing, in the overview's style. */
   alerts: z.array(z.string()),
+  /**
+   * Events paused for want of a handler. Empty is the ordinary state.
+   *
+   * Read from the queue rather than from a node's counters, because it is a
+   * property of the **database** and survives a Worker restart — a node that
+   * has just booted has drained nothing and would report zero.
+   */
+  unsupportedEvents: z.array(AdminUnsupportedEvents).default([]),
 });
 export type AdminSystemHealthResponse = z.infer<typeof AdminSystemHealthResponse>;
 
@@ -844,3 +880,29 @@ export const AdminPinEconomyConfigResponse = z.object({
   pendingEvents: z.number().int().nonnegative(),
 });
 export type AdminPinEconomyConfigResponse = z.infer<typeof AdminPinEconomyConfigResponse>;
+
+/**
+ * `POST /api/admin/events/requeue` — return paused work to the queue (SCALE-05).
+ *
+ * A small audited action rather than a data-repair script, which is the whole
+ * point of `unsupported` being a state rather than a failure: recovering the
+ * work must not require somebody to write an `UPDATE` against a live database.
+ */
+export const AdminRequeueEventsRequest = z.object({
+  /**
+   * The types to return. Required, and deliberately not defaulted to "all".
+   *
+   * Requeueing a type whose handler still does not exist just moves the rows
+   * back into `pending` for the next drain to move out again — churn, and a
+   * confusing audit trail. Naming the types makes the operator state what they
+   * believe has changed.
+   */
+  types: z.array(z.string().min(1)).min(1),
+});
+export type AdminRequeueEventsRequest = z.infer<typeof AdminRequeueEventsRequest>;
+
+export const AdminRequeueEventsResponse = z.object({
+  requeued: z.number().int().nonnegative(),
+  types: z.array(z.string()),
+});
+export type AdminRequeueEventsResponse = z.infer<typeof AdminRequeueEventsResponse>;

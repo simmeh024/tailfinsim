@@ -60,6 +60,8 @@ export interface TickReport {
   worlds: number;
   processed: number;
   failed: number;
+  /** Events left for a Worker that knows their type (SCALE-05). */
+  unsupported: number;
 }
 
 export interface EngineLog {
@@ -123,19 +125,28 @@ export interface EngineSnapshot {
   lastTickDurationMs: number | null;
   /** Worlds driven on the last tick. */
   worlds: number;
-  /** Events handled, and events refused, since this process started. */
+  /** Events handled, and events whose handler threw, since this process started. */
   processed: number;
   failed: number;
   /**
+   * Events this build could not handle, since it started (SCALE-05).
+   *
+   * Counted apart from `failed` deliberately. They used to share a number, which
+   * made the more important one useless: `failed` should mean *something is
+   * broken*, and its commonest cause was a build that simply did not have a
+   * handler yet. A rising `failed` is now worth waking somebody for; a rising
+   * `unsupported` is worth shipping a handler for.
+   */
+  unsupported: number;
+  /**
    * Event types with no handler registered in this process.
    *
-   * Not empty today, and saying so is the point. `drainDueEvents` marks an event
-   * of an unhandled type `failed` rather than `done`, reasoning that an unhandled
-   * type is a deployment problem and the row should still be there when the
-   * handler ships. That is the right behaviour, and it is also a loaded gun:
-   * start an engine against a queue full of a type it cannot handle and every one
-   * of those rows is marked failed on the first tick. So the gap is carried in
-   * the health output rather than discovered afterwards from the table.
+   * Not empty today, and saying so is still the point — but it is no longer a
+   * loaded gun. Since SCALE-05 an event of an unhandled type is marked
+   * `unsupported`: excluded from the claim so it cannot starve the queue, not
+   * terminal, nothing attempted, and returned to `pending` by the first Worker
+   * that knows the type. Starting an engine against a queue full of a type it
+   * cannot handle now pauses that work instead of destroying it.
    */
   unhandledEventTypes: WorldEventType[];
   /** NPC decisions recorded since start, and reviews that threw (M3-12). */
@@ -226,6 +237,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let lastWorldCount = 0;
   let processed = 0;
   let failed = 0;
+  let unsupported = 0;
   let npcDecisions = 0;
   let npcErrors = 0;
 
@@ -233,6 +245,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     const worlds = await listWorlds(db);
     let tickProcessed = 0;
     let tickFailed = 0;
+    let tickUnsupported = 0;
 
     for (const entry of worlds) {
       // Each world is drained against its own clock: `fire_at` is a game-time
@@ -245,6 +258,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       });
       tickProcessed += result.processed;
       tickFailed += result.failed;
+      tickUnsupported += result.unsupported;
 
       // The NPC review, on the same tick and against the same clock (M3-12).
       // It decides for itself whether the world is due — the engine ticks every
@@ -273,6 +287,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
 
     processed += tickProcessed;
     failed += tickFailed;
+    unsupported += tickUnsupported;
     lastTickAt = context.tickedAt;
     lastTickDurationMs = durationMs;
     lastWorldCount = worlds.length;
@@ -284,6 +299,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       worlds: worlds.length,
       processed: tickProcessed,
       failed: tickFailed,
+      unsupported: tickUnsupported,
     };
   }
 
@@ -331,6 +347,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         worlds: lastWorldCount,
         processed,
         failed,
+        unsupported,
         unhandledEventTypes,
         npcDecisions,
         npcErrors,

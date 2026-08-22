@@ -36,8 +36,8 @@ function worldsFixture(...names: string[]): EngineWorld[] {
   return names.map((name, index) => ({ id: `world-${String(index)}`, name, clock }));
 }
 
-function drainResult(processed: number, failed = 0): DrainResult {
-  return { processed, failed, upTo: new Date('2024-10-20T00:00:00.000Z') };
+function drainResult(processed: number, failed = 0, unsupported = 0): DrainResult {
+  return { processed, failed, unsupported, upTo: new Date('2024-10-20T00:00:00.000Z') };
 }
 
 /**

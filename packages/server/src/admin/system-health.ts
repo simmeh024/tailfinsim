@@ -4,12 +4,14 @@ import {
   AdminNodeEngine,
   AdminNodeLoad,
   type AdminNodeHealth,
+  type AdminUnsupportedEvents,
   type NodeState,
 } from '@tailfin/shared';
 
 import { type Database } from '../db/client';
-import { nodeHeartbeat, type NodeHeartbeatRow } from '../db/schema';
+import { nodeHeartbeat, type NodeHeartbeatRow, world } from '../db/schema';
 import { HEARTBEAT_INTERVAL_MS } from '../ops/heartbeat';
+import { unsupportedEvents } from '../sim/event-queue';
 
 /**
  * The machines, as the console sees them (OPS-15).
@@ -140,7 +142,10 @@ export function assessNode(input: {
 }
 
 /** Problems worth stating outright, in the overview's style. */
-export function nodeAlerts(nodes: AdminNodeHealth[]): string[] {
+export function nodeAlerts(
+  nodes: AdminNodeHealth[],
+  unsupported: AdminUnsupportedEvents[] = [],
+): string[] {
   const alerts: string[] = [];
 
   for (const node of nodes) {
@@ -173,10 +178,21 @@ export function nodeAlerts(nodes: AdminNodeHealth[]): string[] {
     .filter((node) => node.engine !== null && node.engine.unhandledEventTypes.length > 0)
     .map((node) => `${node.node}: ${node.engine?.unhandledEventTypes.join(', ') ?? ''}`);
   if (gaps.length > 0) {
-    // Events of an unhandled type are marked *failed* when drained, so this is a
-    // gap that destroys work rather than merely deferring it.
+    // Since SCALE-05 this defers work rather than destroying it — an event of an
+    // unhandled type is marked `unsupported`, and the first Worker with the
+    // handler puts it back. Still worth surfacing: it is a deployment gap, and
+    // the pile does not clear itself until somebody ships the handler.
     alerts.push(
-      `Event types with no handler — these are marked failed if drained: ${gaps.join('; ')}.`,
+      `Event types with no handler — these are paused as unsupported if drained: ${gaps.join('; ')}.`,
+    );
+  }
+
+  for (const group of unsupported) {
+    // Per world and per type, with the age. A total would not be actionable.
+    const behind = Math.round((Date.now() - Date.parse(group.oldestFireAt)) / 86_400_000);
+    alerts.push(
+      `${String(group.count)} ${group.type} events in ${group.worldName} are waiting for a handler; ` +
+        `the oldest was due ${String(behind)} days ago in world time.`,
     );
   }
 
@@ -209,6 +225,8 @@ export interface SystemHealthReport {
   nodes: AdminNodeHealth[];
   serverTime: Date;
   alerts: string[];
+  /** Work paused for want of a handler, per world and type (SCALE-05). */
+  unsupportedEvents: AdminUnsupportedEvents[];
 }
 
 /** Every node this database has heard from, judged against the server's clock. */
@@ -225,5 +243,35 @@ export async function buildSystemHealth(
     .orderBy(asc(nodeHeartbeat.role), asc(nodeHeartbeat.node));
 
   const nodes = rows.map((row) => toNodeHealth(row, now));
-  return { nodes, serverTime: now, alerts: nodeAlerts(nodes) };
+
+  /**
+   * Read from the queue, not from a node's counters (SCALE-05).
+   *
+   * A Worker's `unsupported` count is what *that process* has seen since it
+   * started, so a node that has just booted reports zero however much work is
+   * waiting. The pile is a property of the database and survives every restart,
+   * so the database is what is asked.
+   */
+  const groups = await unsupportedEvents(db);
+  const worldNames = new Map(
+    (await db.select({ id: world.id, name: world.name }).from(world)).map((row) => [
+      row.id,
+      row.name,
+    ]),
+  );
+
+  const unsupported: AdminUnsupportedEvents[] = groups.map((group) => ({
+    worldId: group.worldId,
+    worldName: worldNames.get(group.worldId) ?? 'unknown world',
+    type: group.type,
+    count: group.count,
+    oldestFireAt: group.oldestFireAt.toISOString(),
+  }));
+
+  return {
+    nodes,
+    serverTime: now,
+    alerts: nodeAlerts(nodes, unsupported),
+    unsupportedEvents: unsupported,
+  };
 }
