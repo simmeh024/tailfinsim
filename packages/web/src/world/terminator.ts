@@ -5,9 +5,20 @@ export interface SubsolarPoint {
   latitude: number;
 }
 
-export interface TerminatorCell {
-  polygon: [LngLat, LngLat, LngLat, LngLat];
-  darkness: number;
+/**
+ * A sampled night-opacity field, one byte per texel, row-major from the north.
+ *
+ * A field rather than geometry, because the terminator has no singularity-free
+ * parametrisation: at an equinox the curve is a pair of meridians rather than a
+ * function of longitude, and any "latitude per longitude" mesh degenerates
+ * there. Sampling `darknessAt` needs no parametrisation at all, and the GPU's
+ * bilinear filter does the smoothing that 2,592 flat-shaded cells could not.
+ */
+export interface DarknessField {
+  width: number;
+  height: number;
+  /** `width * height` alpha bytes. Row 0 is +90°, column 0 is -180°. */
+  alpha: Uint8Array;
 }
 
 const DEGREES = 180 / Math.PI;
@@ -85,30 +96,36 @@ export function darknessAt(longitude: number, latitude: number, sun: SubsolarPoi
 }
 
 /**
- * A static GPU-friendly mesh for the night hemisphere. It is regenerated once
- * a minute, not once a frame; the renderer only animates things that really move.
+ * Sample the night field once, for upload as a texture.
+ *
+ * Regenerated once a minute, not once a frame; the renderer only animates things
+ * that really move.
+ *
+ * **Row 0 is the north pole**, which is the row order `BitmapLayer` expects for
+ * `bounds: [west, south, east, north]` — the image's top edge is the northern
+ * one. Getting that backwards flips day and night, which is why there is a test
+ * for it rather than a comment alone.
+ *
+ * Texel *centres* are sampled, not corners. A corner sample makes the first and
+ * last row land exactly on a pole, where longitude is meaningless and every
+ * texel in the row would carry the same value as its neighbour's corner — the
+ * seam that shows up as a hard line along the antimeridian.
  */
-export function createTerminatorCells(date: Date, stepDegrees = 5): TerminatorCell[] {
-  if (stepDegrees <= 0 || 180 % stepDegrees !== 0 || 360 % stepDegrees !== 0) {
-    throw new Error('Terminator step must be a positive divisor of both 180 and 360 degrees');
+export function createDarknessField(date: Date, width: number, height: number): DarknessField {
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 2 || height < 2) {
+    throw new Error('Darkness field needs an integer width and height of at least 2');
   }
 
   const sun = subsolarPoint(date);
-  const cells: TerminatorCell[] = [];
-  for (let latitude = -90; latitude < 90; latitude += stepDegrees) {
-    for (let longitude = -180; longitude < 180; longitude += stepDegrees) {
-      const north = latitude + stepDegrees;
-      const east = longitude + stepDegrees;
-      cells.push({
-        polygon: [
-          [longitude, latitude],
-          [east, latitude],
-          [east, north],
-          [longitude, north],
-        ],
-        darkness: darknessAt(longitude + stepDegrees / 2, latitude + stepDegrees / 2, sun),
-      });
+  const alpha = new Uint8Array(width * height);
+
+  for (let row = 0; row < height; row += 1) {
+    const latitude = 90 - ((row + 0.5) * 180) / height;
+    for (let column = 0; column < width; column += 1) {
+      const longitude = -180 + ((column + 0.5) * 360) / width;
+      alpha[row * width + column] = Math.round(255 * darknessAt(longitude, latitude, sun));
     }
   }
-  return cells;
+
+  return { width, height, alpha };
 }

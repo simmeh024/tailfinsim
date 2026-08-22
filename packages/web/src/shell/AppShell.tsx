@@ -7,20 +7,31 @@ import { fetchOwnAirline, formatMinorUnits } from '../airline/api';
 import { AccountBadge } from '../auth/AccountBadge';
 import { useTheme } from '../theme/ThemeProvider';
 import { BuildBadge } from '../version/BuildBadge';
-import { WorldRenderer } from '../world/WorldRenderer';
 
 import type { ReactNode } from 'react';
 
 /**
  * The app shell from App. H.4.
  *
- * Layout is a CSS grid of four named areas: rail, world, panel, strip. The world
+ * Layout is a CSS grid of four named areas: rail, stage, panel, strip. The stage
  * is a real grid area rather than a fixed-position backdrop, so the panel takes
  * space from it instead of covering it — H.4 requires a context panel "that
  * never covers the world".
  *
- * Route content renders *inside* the world area via `<Outlet />`, which is why
- * the world is always visible behind the UI.
+ * ## The world is a page, not a backdrop
+ *
+ * H.4 describes the world as permanently visible behind every screen, and this
+ * shell used to render the world renderer here with `<Outlet />` on top of it.
+ * That read as the doc's intent and behaved nothing like it: a fleet table is
+ * opaque, so the world underneath was invisible and unreachable — the page
+ * content took every drag — while still costing a WebGL context and its frames
+ * on screens that never showed it.
+ *
+ * So the renderer belongs to `WorldPage`, which is the world at full size with
+ * nothing over it. Every other route gets the plain inset background. A shared
+ * backdrop can come back if it is ever built as one — translucent page surfaces,
+ * pointer events reaching through — but that is a design decision, not the
+ * accident this was.
  */
 
 interface NavItem {
@@ -80,13 +91,9 @@ function LeftRail({ ownAirline }: { ownAirline: OwnAirlineResponse | null }): Re
   );
 }
 
-function WorldBackdrop({ children }: { children: ReactNode }): ReactNode {
-  return (
-    <main className="world" aria-label="World">
-      <WorldRenderer />
-      {children}
-    </main>
-  );
+/** The route's own area. Named `stage` because it is no longer only the world. */
+function Stage({ children }: { children: ReactNode }): ReactNode {
+  return <main className="stage">{children}</main>;
 }
 
 function ContextPanel({ open, onToggle }: { open: boolean; onToggle: () => void }): ReactNode {
@@ -191,9 +198,9 @@ export function AppShell(): ReactNode {
   return (
     <div className="shell">
       <LeftRail ownAirline={ownAirline} />
-      <WorldBackdrop>
+      <Stage>
         <Outlet context={outletContext} />
-      </WorldBackdrop>
+      </Stage>
       <ContextPanel open={panelOpen} onToggle={() => setPanelOpen((open) => !open)} />
       <StatusStrip ownAirline={ownAirline} />
     </div>

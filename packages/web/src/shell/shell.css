@@ -45,21 +45,32 @@ body {
 .shell {
   display: grid;
   height: 100%;
-  /* rail | world | panel, with the strip spanning the bottom. */
-  grid-template-columns: var(--rail-width) 1fr auto;
-  grid-template-rows: 1fr var(--strip-height);
+  /* rail | stage | panel, with the strip spanning the bottom. */
+  grid-template-columns: var(--rail-width) minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) var(--strip-height);
   grid-template-areas:
-    'rail world panel'
+    'rail stage panel'
     'strip strip strip';
 }
 
-/* ---------------------------------------------------------------- world ---- */
+/* ---------------------------------------------------------------- stage ---- */
 
-.world {
-  grid-area: world;
+/* The route's area. `overflow: auto` because an ordinary page — a fleet table,
+   a cash ledger — is taller than the viewport, and the world backdrop this
+   replaced was `overflow: hidden`, which silently clipped every one of them. */
+.stage {
+  grid-area: stage;
   position: relative;
-  overflow: hidden;
+  overflow: auto;
   background: var(--bg-inset);
+}
+
+/* The world is the whole stage and scrolls with nothing: absolute against the
+   stage so the renderer gets a definite box to fill, whatever the page is. */
+.world-page {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
 }
 
 .world-renderer {
@@ -720,20 +731,6 @@ body {
   gap: var(--space-2);
   text-align: center;
   padding: var(--space-6);
-}
-
-.world-page {
-  place-content: end start;
-  text-align: left;
-  pointer-events: none;
-}
-
-.world-page .page__title,
-.world-page .page__note {
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-sm);
-  background: var(--bg-panel);
-  backdrop-filter: blur(10px);
 }
 
 .page__title {

@@ -2,6 +2,7 @@ import { ArcLayer } from '@deck.gl/layers';
 import { describe, expect, it } from 'vitest';
 
 import { createWorldLayers } from './layers';
+import { createDarknessField } from './terminator';
 
 import type { WorldRoute } from './layers';
 import type { WorldPalette } from './palette';
@@ -15,6 +16,9 @@ const palette: WorldPalette = {
   route: [16, 17, 18, 230],
 };
 
+/** Small enough to keep the test fast; the field's own tests own its contents. */
+const DARKNESS = createDarknessField(new Date('2026-08-22T12:00:00.000Z'), 16, 8);
+
 const antimeridianRoute: WorldRoute = {
   id: 'antimeridian',
   source: [170, 35],
@@ -27,7 +31,7 @@ describe('projection-independent world layers', () => {
       palette,
       quality: 'full',
       routes: [antimeridianRoute],
-      terminatorCells: [],
+      darkness: DARKNESS,
       visibility: { graticule: true, routes: true, terminator: true },
     });
     const routes = layers.find(
@@ -45,7 +49,7 @@ describe('projection-independent world layers', () => {
       palette,
       quality: 'reduced',
       routes: [],
-      terminatorCells: [],
+      darkness: DARKNESS,
       visibility: { graticule: false, routes: true, terminator: false },
     });
     expect(layers.filter((layer) => layer !== false).map((layer) => layer.id)).toEqual([
@@ -60,14 +64,14 @@ describe('projection-independent world layers', () => {
       palette,
       quality: 'full',
       routes: [antimeridianRoute],
-      terminatorCells: [],
+      darkness: DARKNESS,
       visibility: { graticule: false, routes: true, terminator: false },
     });
     const reduced = createWorldLayers({
       palette,
       quality: 'reduced',
       routes: [antimeridianRoute],
-      terminatorCells: [],
+      darkness: DARKNESS,
       visibility: { graticule: false, routes: true, terminator: false },
     });
     const fullRoutes = full.find(
