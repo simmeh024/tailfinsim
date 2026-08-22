@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, lte } from 'drizzle-orm';
 
 import {
   type UsedMarketListing as UsedMarketListingDto,
@@ -364,19 +364,4 @@ export async function listUsedMarket(db: Database, worldId: string): Promise<Use
   });
 
   return { listings, slots: economy.usedMarket.inventory.slots };
-}
-
-/** How many berths this world is currently offering. For the admin health page. */
-export async function usedMarketDepth(db: Database, worldId: string): Promise<number> {
-  const rows = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(usedAircraftListing)
-    .where(
-      and(
-        eq(usedAircraftListing.worldId, worldId),
-        eq(usedAircraftListing.status, 'available'),
-        isNull(usedAircraftListing.soldAt),
-      ),
-    );
-  return rows[0]?.count ?? 0;
 }
