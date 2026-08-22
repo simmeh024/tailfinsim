@@ -11,17 +11,11 @@ import { WorldsPage } from './admin/WorldsPage';
 import { AirlinePage } from './airline/AirlinePage';
 import { RequireSession } from './auth/RequireSession';
 import { SessionProvider } from './auth/SessionProvider';
+import { FleetPage } from './fleet/FleetPage';
 import { fetchFoundingOptions } from './founding/api';
 import { FoundingPage } from './founding/FoundingPage';
 import { NetworkPage } from './network/NetworkPage';
-import {
-  BoardPage,
-  CrewPage,
-  DesignPage,
-  FinancePage,
-  FleetPage,
-  WorldPage,
-} from './routes/Placeholder';
+import { BoardPage, CrewPage, DesignPage, FinancePage, WorldPage } from './routes/Placeholder';
 import { AppShell } from './shell/AppShell';
 import { ThemeProvider } from './theme/ThemeProvider';
 

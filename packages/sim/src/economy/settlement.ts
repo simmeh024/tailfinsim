@@ -65,7 +65,21 @@ export type RevenueSource = 'tickets' | 'ancillary' | 'cargo';
  * one ever appears here it should be because someone decided a flight causes it,
  * not because a report wanted the columns to add up to a familiar total.
  */
-export type CostSource = 'fuel' | 'crew' | 'maintenance' | 'airport' | 'handling';
+export type CostSource =
+  | 'fuel'
+  | 'crew'
+  | 'maintenance'
+  | 'airport'
+  | 'handling'
+  /**
+   * §7.2b's era restrictions, priced per departure (M4-02).
+   *
+   * Its own line rather than folded into `airport`, because it is the answer to
+   * a question a player will ask — *"why does this aircraft cost more than it
+   * did last year?"* — and an era charge buried in the airport total is a
+   * number nobody can act on.
+   */
+  | 'restrictions';
 
 /** One line of the bill, and the sentence that explains it. */
 export interface SettlementLine {
@@ -240,6 +254,22 @@ export interface SettlementInputs {
   originFees: AirportFees;
   /** Charges at the arrival airport. Landing fees are levied on arrival. */
   destinationFees: AirportFees;
+  /**
+   * §7.2b's era restrictions for the type that flew, per departure (M4-02).
+   *
+   * Zero for an unrestricted type, which is every type in the shipped
+   * catalogue today — the eighteen launch aircraft carry no restriction dates,
+   * because C.2 publishes none and inventing them would be authoring data the
+   * design doc does not have.
+   *
+   * Supplied by the caller rather than derived here, because deriving it needs
+   * the flight's aircraft *type*, and a flight does not yet carry one:
+   * `flight.airframe_id` has no catalogue behind it until M4-04 builds
+   * ordering. The cost line exists, is charged, and is tested; wiring it to a
+   * real airframe is one call in `settleArrivedFlight` when there is an
+   * airframe to ask.
+   */
+  restrictionSurchargeMinor?: number;
 }
 
 /** Order for display, so a readout is stable and a test can prove each is reachable. */
@@ -250,6 +280,7 @@ export const COST_SOURCES: readonly CostSource[] = [
   'maintenance',
   'airport',
   'handling',
+  'restrictions',
 ];
 
 /** Cabin classes in cabin order, so a breakdown reads front to back. */
@@ -434,6 +465,20 @@ export function settleFlight(
       `Ramp, bags and cleaning: ${money(config.groundHandlingPerTurnMinor)} a turn plus ` +
       `${String(seats)} seats at ${money(config.groundHandlingPerSeatMinor)}.`,
   });
+
+  // §7.2b's era restrictions (M4-02). Only a line when there is something to
+  // charge — an unrestricted type should not carry a zero row telling a player
+  // about a penalty they are not paying.
+  const restrictionMinor = roundMinor(inputs.restrictionSurchargeMinor ?? 0);
+  if (restrictionMinor > 0) {
+    costs.push({
+      source: 'restrictions',
+      amountMinor: restrictionMinor,
+      detail:
+        `Era restrictions on this type: ${money(restrictionMinor)} per departure in noise, ` +
+        'emissions and curfew charges.',
+    });
+  }
 
   // ---- Totals ------------------------------------------------------------
   // Summed from the rounded lines, never computed alongside them. That is what

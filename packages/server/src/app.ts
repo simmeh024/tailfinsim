@@ -11,6 +11,7 @@ import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 import { healthResponseJsonSchema, versionResponseJsonSchema } from '@tailfin/shared';
 
 import { registerAdminRoutes } from './admin/routes';
+import { registerAircraftRoutes } from './aircraft/routes';
 import { type AirlineCodeAllocationPolicy } from './airline/codes';
 import { registerPlayerAirlineContext } from './airline/context';
 import { type AirlineIdentityModerator } from './airline/moderation';
@@ -134,6 +135,7 @@ export function buildApp({
   // because the fleet does not exist yet — see `network/economics.ts` for which
   // half of it is real.
   registerNetworkRoutes(app, { db, economicsFor: createEconomicsProvider(db.db) });
+  registerAircraftRoutes(app, { db });
 
   const startedAt = Date.now();
 

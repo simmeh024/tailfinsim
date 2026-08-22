@@ -315,11 +315,62 @@ export const AirportFeeBalance = z
   })
   .strict();
 
+/**
+ * What an era restriction costs to fly through (M4-02, §7.2b).
+ *
+ * §7.2b's slow squeeze, priced: *"noise regulations, emissions rules, and fuel
+ * price shocks progressively strangle old types rather than deleting them. Your
+ * beloved fleet becomes uneconomic before it becomes illegal."*
+ *
+ * The **dates** are the aircraft catalogue's — a restriction is a property of a
+ * type, versioned with it (§22.5). The **rates** are economy config, because
+ * they are money and §22.3 owns money. That split is the same one M3-11 drew
+ * between an aerodynamics change and a fare change, and it is what lets a world
+ * make old aircraft more expensive without re-issuing its catalogue.
+ */
+export const RestrictionBalance = z
+  .object({
+    /**
+     * Charged per departure at a noise-quota airport.
+     *
+     * Per departure rather than per tonne, because a noise quota counts
+     * movements — an airport that has run out of night quota does not care how
+     * heavy the aeroplane is, only that it made a noise.
+     */
+    noiseQuotaPerDepartureMinor: MinorUnits.nonnegative(),
+    /** Charged per tonne of MTOW per departure. Emissions scale with size. */
+    emissionsChargePerTonneMinor: MinorUnits.nonnegative(),
+    /**
+     * Charged per departure by a type excluded from a curfew.
+     *
+     * A curfew exclusion is really an operational restriction rather than a
+     * charge — the aircraft may not fly at night at all. Until §8.2's curfew
+     * enforcement can refuse the departure, it is priced as the cost of the
+     * disruption it causes, which is the honest interim: it degrades the
+     * economics in the right direction and by a defensible amount, and the
+     * comment says why it is not yet a refusal.
+     */
+    curfewExclusionPerDepartureMinor: MinorUnits.nonnegative(),
+  })
+  .strict();
+
 export const CostBalance = z
   .object({
     settlement: SettlementBalance,
     defaultAirportFees: AirportFeeBalance,
     disruption: DisruptionCostBalance,
+    /**
+     * Defaulted for the same reason `npc` is, and the rule generalises one level
+     * down: a payload written before this field existed must still parse, or
+     * every world pinned to it stops being able to price a flight. A new
+     * *field* inside an existing section is as much an expand-shaped change as a
+     * new section is.
+     */
+    restrictions: RestrictionBalance.default({
+      noiseQuotaPerDepartureMinor: 180_000,
+      emissionsChargePerTonneMinor: 900,
+      curfewExclusionPerDepartureMinor: 260_000,
+    }),
   })
   .strict();
 
@@ -884,6 +935,23 @@ export const ECONOMY_CONFIG_V1: EconomyConfig = EconomyConfig.parse({
       paxFee: 680,
       parkingPerHour: 4_500,
       gateLeaseAnnual: 22_000_000,
+    },
+    /**
+     * A noise-quota movement at €1,800 and an emissions charge of €9 a tonne.
+     *
+     * Sized against what a sector already costs rather than picked: §13.4's
+     * worked example puts airport fees at about €1,440 per ATR sector, so a
+     * noise charge of €1,800 is a real penalty on a small aircraft and a
+     * rounding error on a widebody — which is backwards, and is why the
+     * emissions charge is per tonne. Together they make an old 350-tonne
+     * aircraft cost about €4,950 more per departure than a new one, on a sector
+     * whose fees are otherwise a few thousand. Enough to change a decision,
+     * not enough to ground a fleet overnight.
+     */
+    restrictions: {
+      noiseQuotaPerDepartureMinor: 180_000,
+      emissionsChargePerTonneMinor: 900,
+      curfewExclusionPerDepartureMinor: 260_000,
     },
     disruption: {
       rebookingPerPassengerMinor: 12_000,
