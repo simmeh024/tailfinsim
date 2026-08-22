@@ -158,6 +158,35 @@ The graticule is the one world layer the contrast tests do not gate. One flat ov
 cannot contrast strongly with both a dark sea and a light landmass; its colour favours the
 ocean, where most of a meridian runs, and it is toggleable.
 
+### One `bounds` array per projection, and why that is not a micro-optimisation
+
+The world-sized layers — the ocean fill and the night texture — are `BitmapLayer`s covering
+`[-180, -90, 180, 90]`. Each projection gets its **own array instance** of those same four
+numbers, which looks like pointless duplication and is the opposite.
+
+`BitmapLayer.updateState` rebuilds its mesh only when `props.bounds` changes by **reference**,
+and `createMesh` tessellates according to the viewport's `resolution`: absent on `MapView`, so
+a flat two-triangle quad; five degrees on `GlobeView`, so a mesh that follows the sphere.
+Hand both views one frozen module constant and the quad built for the flat map survives the
+switch — two triangles cutting straight through the planet, ending up inside it and occluded by
+`GlobeView`'s own opaque backdrop.
+
+The symptom is a **black globe with land floating on it**: continents are drawn from real
+multi-vertex coastlines and tessellate on their own, so they appear, while the sea and the
+day/night shading do not appear at all. Measured on the globe, the meshes go from 2 triangles
+to 5,184 once each view has its own bounds.
+
+This is also why `projection` is a dependency of the layer `useMemo` in `WorldRenderer` even
+though the layer _list_ is identical for both views: switching projection has to rebuild the
+layers for the meshes to re-tessellate.
+
+### The ocean is a bitmap, not a polygon
+
+It was a `SolidPolygonLayer` holding one six-vertex rectangle, which is exactly right on a flat
+map and cannot wrap a sphere — `SolidPolygonLayer` does not subdivide for the globe. That was
+invisible while the ocean was `#060f1b`, which is very nearly the same black as `GlobeView`'s
+backdrop. Retuning the palette to a legible navy is what exposed it.
+
 ### `FALLBACK_PALETTE` is a duplicate, and there is a test for that
 
 `palette.ts` carries the dark theme's colours a second time, for when `getComputedStyle`

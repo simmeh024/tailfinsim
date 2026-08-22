@@ -1,8 +1,9 @@
-import { ArcLayer, BitmapLayer, GeoJsonLayer, PathLayer, SolidPolygonLayer } from '@deck.gl/layers';
+import { ArcLayer, BitmapLayer, GeoJsonLayer, PathLayer } from '@deck.gl/layers';
 import { feature } from 'topojson-client';
 import landTopologyJson from 'world-atlas/land-110m.json';
 
 import type { WorldPalette } from './palette';
+import type { WorldProjection } from './projection';
 import type { DarknessField, LngLat } from './terminator';
 import type { Layer } from '@deck.gl/core';
 import type { GeometryCollection, Topology } from 'topojson-specification';
@@ -27,6 +28,27 @@ export interface CreateWorldLayersOptions {
   routes: readonly WorldRoute[];
   darkness: DarknessField;
   visibility: WorldLayerVisibility;
+  /**
+   * The projection these layers are about to be drawn into.
+   *
+   * **Not** used to choose a layer — the list is identical for both views, which is
+   * this file's contract. It selects which `bounds` array instance the world-sized
+   * `BitmapLayer`s are given, and that is load-bearing for a reason worth writing
+   * down.
+   *
+   * `BitmapLayer.updateState` rebuilds its mesh only when `props.bounds` changes by
+   * **reference**, and `createMesh` tessellates according to the viewport's
+   * `resolution` — absent on `MapView`, so a flat two-triangle quad; five degrees on
+   * `GlobeView`, so a mesh that follows the sphere. Hand both views one frozen
+   * constant and the quad built for the flat map survives the switch: two triangles
+   * cutting straight through the planet, ending up inside it and occluded by
+   * `GlobeView`'s own opaque backdrop.
+   *
+   * The symptom is a **black globe with land floating on it**, because the land is
+   * drawn from real multi-vertex coastlines and tessellates on its own, while the
+   * sea and the day/night shading do not appear at all.
+   */
+  projection: WorldProjection;
 }
 
 interface GraticulePath {
@@ -36,17 +58,6 @@ interface GraticulePath {
 
 const topology = landTopologyJson as unknown as Topology<{ land: GeometryCollection }>;
 const LAND = feature(topology, topology.objects.land);
-
-const OCEAN: LngLat[][] = [
-  [
-    [-180, 90],
-    [0, 90],
-    [180, 90],
-    [180, -90],
-    [0, -90],
-    [-180, -90],
-  ],
-];
 
 function graticulePaths(): GraticulePath[] {
   const paths: GraticulePath[] = [];
@@ -69,8 +80,51 @@ function graticulePaths(): GraticulePath[] {
 
 const GRATICULE = graticulePaths();
 
-/** West, south, east, north — the whole sphere, for the night texture. */
-const WORLD_BOUNDS: [number, number, number, number] = [-180, -90, 180, 90];
+/**
+ * West, south, east, north — the whole sphere, once per projection.
+ *
+ * Two arrays with identical values, deliberately. See `projection` above: the
+ * *identity* is what tells `BitmapLayer` to rebuild its mesh, and each view needs
+ * a different tessellation of the same bounds.
+ */
+const WORLD_BOUNDS: Record<WorldProjection, [number, number, number, number]> = {
+  flat: [-180, -90, 180, 90],
+  globe: [-180, -90, 180, 90],
+};
+
+/**
+ * A solid fill covering the whole world, as a texture.
+ *
+ * The ocean used to be a `SolidPolygonLayer` holding one six-vertex rectangle in
+ * longitude/latitude, which is exactly right on a flat map and **cannot wrap a
+ * sphere**. `SolidPolygonLayer` tessellates in the coordinate system it is given
+ * and does not subdivide for the globe, so those two long edges became straight
+ * chords cutting through the planet: the fill ended up inside the sphere, occluded
+ * by `GlobeView`'s own opaque backdrop, and the globe rendered black.
+ *
+ * That was invisible for as long as the ocean was `#060f1b`, which is very nearly
+ * the same black. Retuning the palette to a legible navy is what exposed it — the
+ * land, drawn from real multi-vertex coastlines, took the new colour while the sea
+ * did not.
+ *
+ * `BitmapLayer` tessellates its `bounds` to the viewport's resolution, so a
+ * two-by-two texture of one colour fills either projection correctly from a single
+ * layer — provided each view gets its own `bounds` instance, which is what the
+ * `projection` option above is for. Keeping one layer list for both views is this
+ * file's whole contract; forking the ocean per projection would break it to fix a
+ * fill.
+ */
+function solidTexture(colour: readonly [number, number, number, number]): {
+  data: Uint8Array;
+  width: number;
+  height: number;
+} {
+  const data = new Uint8Array(2 * 2 * 4);
+  for (let texel = 0; texel < 4; texel += 1) {
+    data.set([colour[0], colour[1], colour[2], colour[3]], texel * 4);
+  }
+  return { data, width: 2, height: 2 };
+}
 
 /**
  * Expand a one-byte-per-texel darkness field into an RGBA texture in the
@@ -114,15 +168,16 @@ export function createWorldLayers({
   palette,
   quality,
   darkness,
+  projection,
   routes,
   visibility,
 }: CreateWorldLayersOptions): (Layer | false)[] {
+  const bounds = WORLD_BOUNDS[projection];
   return [
-    new SolidPolygonLayer<LngLat[]>({
+    new BitmapLayer({
       id: 'world-ocean',
-      data: OCEAN,
-      getPolygon: (polygon) => polygon,
-      getFillColor: palette.ocean,
+      bounds,
+      image: solidTexture(palette.ocean),
       parameters: { cullMode: 'back' },
     }),
     new GeoJsonLayer({
@@ -150,7 +205,7 @@ export function createWorldLayers({
         id: 'world-terminator',
         // The whole sphere, once. `BitmapLayer` maps the image's top edge to the
         // northern bound, which is why `createDarknessField` puts +90° in row 0.
-        bounds: WORLD_BOUNDS,
+        bounds,
         image: nightTexture(darkness, palette.night),
         // Linear filtering is the entire point: it is what turns a sampled field
         // into a smooth gradient instead of the staircase 5-degree flat-shaded

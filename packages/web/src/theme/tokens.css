@@ -75,6 +75,15 @@
    * dark object with a slightly-less-dark object on it. `palette.test.ts`
    * measures every pairing now, in both themes and under full night.
    */
+  /*
+   * Outside the sphere on the globe.
+   *
+   * A dark sea on a dark ground has a low ceiling: against pure black the navy
+   * ocean only reaches 1.28:1, so the limb cannot be carried by luminance alone.
+   * This is as far as it goes, and the atmosphere ring is what actually draws the
+   * edge — which is why that ring exists.
+   */
+  --world-space: #02040a;
   --world-ocean: #0d2038;
   --world-land: #7799b0;
   --world-land-line: #0f1e2e;
@@ -157,6 +166,7 @@
 
   --focus-ring: #0a63b0;
 
+  --world-space: #9fb4c2;
   --world-ocean: #e6f1f7;
   --world-land: #4f6d63;
   --world-land-line: #e3ede8;

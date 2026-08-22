@@ -77,7 +77,15 @@ body {
   position: absolute;
   inset: 0;
   isolation: isolate;
+  /* The flat map fills the frame, so the ground behind it is the sea itself. */
   background: var(--world-ocean);
+}
+
+/* The globe does not fill the frame. What surrounds it is not ocean — and once the
+   sea became a legible navy, painting the surround the same colour left the planet
+   with no silhouette at all. */
+.world-renderer[data-projection='globe'] {
+  background: var(--world-space);
 }
 
 .world-renderer__canvas {

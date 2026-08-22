@@ -99,9 +99,12 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       quality === 'full' ? createDarknessField(now, 512, 256) : createDarknessField(now, 256, 128),
     [now, quality],
   );
+  // `projection` is a dependency, and not because the layer list differs between
+  // the views — it does not. Switching projection has to rebuild the layers so the
+  // world-sized bitmaps re-tessellate for the new viewport; see `layers.ts`.
   const layers = useMemo(
-    () => createWorldLayers({ palette, quality, routes, darkness, visibility }),
-    [palette, quality, routes, darkness, visibility],
+    () => createWorldLayers({ palette, projection, quality, routes, darkness, visibility }),
+    [palette, projection, quality, routes, darkness, visibility],
   );
   const view = useMemo(
     () =>
