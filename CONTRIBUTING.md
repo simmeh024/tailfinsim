@@ -208,6 +208,14 @@ whose source id is absent from the incoming dataset, which is right for the impo
 lethal for whatever else is mid-test. The other projects keep their parallelism; they
 share nothing.
 
+A route whose contract says **no database access** should fail at that boundary, not wait
+for a connection attempt to a deliberately dead port. `GET /api/version` in
+`packages/server/src/app.test.ts` uses a synchronous, non-network database alarm for this
+reason. Its cases also share one fully readied Fastify app per environment label: putting a
+complete plugin-tree ready/close cycle inside every small assertion makes scheduler delay look
+like handler delay under cross-project load. Keep teardown awaited without an empty `catch` so
+cleanup failures remain test failures.
+
 Tests needing a player airline use `createFoundedAirlineFixtureHarness` from
 `packages/server/src/test-fixtures/founded-airline.ts`. The harness calls the real founding
 transaction, including code allocation, founder hub and opening cash movement, and its cleanup
