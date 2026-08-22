@@ -7,6 +7,9 @@ open question, not a reason to copy the current behaviour into this file without
 
 The matrix was audited against `packages/server/src/app.ts` and every `routes.ts` registered
 from it, plus the worker-only routes in `packages/server/src/engine/health.ts`.
+The status and concealment rules are owned by
+[ADR-0020](adr/0020-http-authorization-and-concealment.md); this document applies them to the
+current route inventory.
 
 ## Identities and results
 
@@ -27,6 +30,32 @@ signed-in non-admin. The airline guards compose `requireAuth` with session-deriv
 restricted or ceased airline, and `requireOperatingAirline` refuses a ceased airline while
 allowing an existing operation to continue when restricted.
 
+## Response policy
+
+| Situation                                                   | Status | Contract                                                                         |
+| ----------------------------------------------------------- | -----: | -------------------------------------------------------------------------------- |
+| No valid session on a protected route                       |    401 | Missing, expired, revoked and invalid credentials are indistinguishable.         |
+| Valid session lacks a disclosed route permission            |    403 | Currently the admin grant; the guard runs before target lookup.                  |
+| Path id does not resolve in the actor's permitted namespace |    404 | Malformed, missing and cross-owner private ids receive the endpoint's same body. |
+| Invalid request shape, syntax, body or query value          |    400 | The request itself needs correction.                                             |
+| Valid request conflicts with persisted state                |    409 | Retrying after state changes may succeed.                                        |
+| Valid request is refused by a domain rule                   |    422 | The response names the rule and recovery information.                            |
+
+A **private resource** is a target whose existence, ownership or membership is not intended
+for every signed-in player. It is selected with an owner-scoped query, never fetched globally
+and compared after the fact. A cross-owner id and a nonexistent id therefore execute the same
+lookup and return the same status, code and message. Current airline routes are private.
+
+A **public projection** is a deliberately limited view whose existence and fields are safe for
+its declared audience independent of ownership. It must be marked public in this matrix and
+carry disclosure tests; a public view never grants mutation rights over its backing private
+row. `/api/version` is public today. Future public airline profiles or rankings must establish
+their projection explicitly rather than weakening the private-resource rule.
+
+Admin detail routes are permission-protected rather than player-owner-scoped. Guests and
+non-admins stop at 401/403 before lookup; an admitted admin can receive an entity-specific 404
+because that grant already authorizes the operational visibility.
+
 Automatic `HEAD` variants inherit the corresponding `GET` expectation and are not repeated.
 The static client and SPA fallback are recorded separately because they are not explicit API
 route registrations. Unknown `/api/*` paths return a public 404 rather than the SPA.
@@ -39,51 +68,51 @@ must compare with Fastify's route table. One method/path pair appears in each ro
 
 <!-- AUTHORIZATION_MATRIX_START -->
 
-| Route                                               | Mechanism                                                              | Guest | Player                               | Owner                                       | Admin                       |
-| --------------------------------------------------- | ---------------------------------------------------------------------- | ----- | ------------------------------------ | ------------------------------------------- | --------------------------- |
-| `GET /`                                             | Intentionally public surface                                           | Allow | Allow                                | Allow                                       | Allow                       |
-| `GET /healthz`                                      | Intentionally public health probe                                      | Allow | Allow                                | Allow                                       | Allow                       |
-| `GET /api/version`                                  | Intentionally public release identity                                  | Allow | Allow                                | Allow                                       | Allow                       |
-| `GET /api/me`                                       | Public, session-adaptive response                                      | Allow | Allow                                | Allow                                       | Allow                       |
-| `GET /api/auth/google`                              | OAuth initiation; signed state + PKCE                                  | Allow | Allow                                | Allow                                       | Allow                       |
-| `GET /api/auth/google/callback`                     | OAuth callback; signed state + PKCE                                    | Allow | Allow                                | Allow                                       | Allow                       |
-| `POST /api/auth/logout`                             | Intentionally public and idempotent; affects only the presented cookie | Allow | Allow                                | Allow                                       | Allow                       |
-| `POST /api/auth/logout-all`                         | `requireAuth`; affects only the caller                                 | 401   | Allow                                | Allow                                       | Allow                       |
-| `GET /api/admin/overview`                           | `requireAdmin`                                                         | 401   | 403                                  | 403                                         | Allow                       |
-| `GET /api/admin/audit`                              | `requireAdmin`                                                         | 401   | 403                                  | 403                                         | Allow                       |
-| `GET /api/admin/admins`                             | `requireAdmin`                                                         | 401   | 403                                  | 403                                         | Allow                       |
-| `GET /api/admin/players`                            | `requireAdmin`                                                         | 401   | 403                                  | 403                                         | Allow                       |
-| `GET /api/admin/players/:playerId`                  | `requireAdmin`                                                         | 401   | 403                                  | 403                                         | Allow                       |
-| `POST /api/admin/players/:playerId/sessions/revoke` | `requireAdmin`                                                         | 401   | 403                                  | 403                                         | Allow                       |
-| `GET /api/admin/airlines/:airlineId`                | `requireAdmin`                                                         | 401   | 403                                  | 403                                         | Allow                       |
-| `PATCH /api/admin/airlines/:airlineId/identity`     | `requireAdmin`                                                         | 401   | 403                                  | 403                                         | Allow                       |
-| `GET /api/admin/worlds/health`                      | `requireAdmin`                                                         | 401   | 403                                  | 403                                         | Allow                       |
-| `GET /api/admin/system-health`                      | `requireAdmin`                                                         | 401   | 403                                  | 403                                         | Allow                       |
-| `GET /api/admin/worlds`                             | `requireAdmin`                                                         | 401   | 403                                  | 403                                         | Allow                       |
-| `POST /api/admin/worlds`                            | `requireAdmin`                                                         | 401   | 403                                  | 403                                         | Allow                       |
-| `POST /api/admin/worlds/:worldId/speed`             | `requireAdmin`                                                         | 401   | 403                                  | 403                                         | Allow                       |
-| `POST /api/admin/worlds/:worldId/status`            | `requireAdmin`                                                         | 401   | 403                                  | 403                                         | Allow                       |
-| `POST /api/admin/worlds/:worldId/reset`             | `requireAdmin`                                                         | 401   | 403                                  | 403                                         | Allow                       |
-| `GET /api/admin/economy-config`                     | `requireAdmin`                                                         | 401   | 403                                  | 403                                         | Allow                       |
-| `GET /api/admin/economy-config/:version`            | `requireAdmin`                                                         | 401   | 403                                  | 403                                         | Allow                       |
-| `POST /api/admin/economy-config`                    | `requireAdmin`                                                         | 401   | 403                                  | 403                                         | Allow                       |
-| `POST /api/admin/worlds/:worldId/economy-config`    | `requireAdmin`                                                         | 401   | 403                                  | 403                                         | Allow                       |
-| `GET /api/admin/worlds/:worldId/npc`                | `requireAdmin`                                                         | 401   | 403                                  | 403                                         | Allow                       |
-| `POST /api/admin/events/requeue`                    | `requireAdmin`                                                         | 401   | 403                                  | 403                                         | Allow                       |
-| `GET /api/airlines/me`                              | `requireAuth`; session-derived identity                                | 401   | Allow                                | Allow                                       | Allow; no ownership bypass  |
-| `PATCH /api/airlines/me`                            | `requireActiveAirline`                                                 | 401   | 409 without an owned airline         | Allow when active                           | Same as player/owner        |
-| `GET /api/airlines/founding-options`                | `requireAuth`                                                          | 401   | Allow                                | Allow                                       | Allow                       |
-| `GET /api/airlines/founding-airports`               | `requireAuth`                                                          | 401   | Allow                                | Allow                                       | Allow                       |
-| `POST /api/airlines/code-availability`              | `requireAuth`                                                          | 401   | Allow                                | Allow                                       | Allow                       |
-| `POST /api/airlines`                                | `requireAuth`; founding rules decide eligibility                       | 401   | Allow                                | Allow; may be refused as already founded    | Allow; no bypass            |
-| `GET /api/fleet/catalogue`                          | `requireAirline`                                                       | 401   | 409 without an owned airline         | Allow                                       | Same as player/owner        |
-| `GET /api/fleet/orders`                             | `requireAirline`; airline derived from session/world                   | 401   | 409 without an owned airline         | Allow                                       | Same as player/owner        |
-| `POST /api/fleet/acquisitions`                      | `requireActiveAirline`; airline derived from session/world             | 401   | 409 without an owned airline         | Allow only when active                      | Same as player/owner        |
-| `GET /api/routes`                                   | `requireAirline`                                                       | 401   | 409 without an owned airline         | Allow                                       | Same as player/owner        |
-| `POST /api/routes`                                  | `requireActiveAirline`                                                 | 401   | 409 without an owned airline         | Allow when active                           | Same as player/owner        |
-| `PUT /api/routes/:routeId/fares`                    | `requireOperatingAirline` + owner-scoped query                         | 401   | 409 without airline; 404 cross-owner | Allow unless ceased                         | 404 unless owner; no bypass |
-| `GET /api/routes/:routeId/waterfall`                | `requireAuth` + owner-scoped query; see open question 1                | 401   | 404 cross-owner                      | Allow intended; implementation disagreement | 404 unless owner; no bypass |
-| `POST /api/routes/:routeId/fares/preview`           | `requireOperatingAirline` + owner-scoped query                         | 401   | 409 without airline; 404 cross-owner | Allow unless ceased                         | 404 unless owner; no bypass |
+| Route                                               | Mechanism                                                              | Guest | Player                               | Owner                                    | Admin                       |
+| --------------------------------------------------- | ---------------------------------------------------------------------- | ----- | ------------------------------------ | ---------------------------------------- | --------------------------- |
+| `GET /`                                             | Intentionally public surface                                           | Allow | Allow                                | Allow                                    | Allow                       |
+| `GET /healthz`                                      | Intentionally public health probe                                      | Allow | Allow                                | Allow                                    | Allow                       |
+| `GET /api/version`                                  | Intentionally public release identity                                  | Allow | Allow                                | Allow                                    | Allow                       |
+| `GET /api/me`                                       | Public, session-adaptive response                                      | Allow | Allow                                | Allow                                    | Allow                       |
+| `GET /api/auth/google`                              | OAuth initiation; signed state + PKCE                                  | Allow | Allow                                | Allow                                    | Allow                       |
+| `GET /api/auth/google/callback`                     | OAuth callback; signed state + PKCE                                    | Allow | Allow                                | Allow                                    | Allow                       |
+| `POST /api/auth/logout`                             | Intentionally public and idempotent; affects only the presented cookie | Allow | Allow                                | Allow                                    | Allow                       |
+| `POST /api/auth/logout-all`                         | `requireAuth`; affects only the caller                                 | 401   | Allow                                | Allow                                    | Allow                       |
+| `GET /api/admin/overview`                           | `requireAdmin`                                                         | 401   | 403                                  | 403                                      | Allow                       |
+| `GET /api/admin/audit`                              | `requireAdmin`                                                         | 401   | 403                                  | 403                                      | Allow                       |
+| `GET /api/admin/admins`                             | `requireAdmin`                                                         | 401   | 403                                  | 403                                      | Allow                       |
+| `GET /api/admin/players`                            | `requireAdmin`                                                         | 401   | 403                                  | 403                                      | Allow                       |
+| `GET /api/admin/players/:playerId`                  | `requireAdmin`                                                         | 401   | 403                                  | 403                                      | Allow                       |
+| `POST /api/admin/players/:playerId/sessions/revoke` | `requireAdmin`                                                         | 401   | 403                                  | 403                                      | Allow                       |
+| `GET /api/admin/airlines/:airlineId`                | `requireAdmin`                                                         | 401   | 403                                  | 403                                      | Allow                       |
+| `PATCH /api/admin/airlines/:airlineId/identity`     | `requireAdmin`                                                         | 401   | 403                                  | 403                                      | Allow                       |
+| `GET /api/admin/worlds/health`                      | `requireAdmin`                                                         | 401   | 403                                  | 403                                      | Allow                       |
+| `GET /api/admin/system-health`                      | `requireAdmin`                                                         | 401   | 403                                  | 403                                      | Allow                       |
+| `GET /api/admin/worlds`                             | `requireAdmin`                                                         | 401   | 403                                  | 403                                      | Allow                       |
+| `POST /api/admin/worlds`                            | `requireAdmin`                                                         | 401   | 403                                  | 403                                      | Allow                       |
+| `POST /api/admin/worlds/:worldId/speed`             | `requireAdmin`                                                         | 401   | 403                                  | 403                                      | Allow                       |
+| `POST /api/admin/worlds/:worldId/status`            | `requireAdmin`                                                         | 401   | 403                                  | 403                                      | Allow                       |
+| `POST /api/admin/worlds/:worldId/reset`             | `requireAdmin`                                                         | 401   | 403                                  | 403                                      | Allow                       |
+| `GET /api/admin/economy-config`                     | `requireAdmin`                                                         | 401   | 403                                  | 403                                      | Allow                       |
+| `GET /api/admin/economy-config/:version`            | `requireAdmin`                                                         | 401   | 403                                  | 403                                      | Allow                       |
+| `POST /api/admin/economy-config`                    | `requireAdmin`                                                         | 401   | 403                                  | 403                                      | Allow                       |
+| `POST /api/admin/worlds/:worldId/economy-config`    | `requireAdmin`                                                         | 401   | 403                                  | 403                                      | Allow                       |
+| `GET /api/admin/worlds/:worldId/npc`                | `requireAdmin`                                                         | 401   | 403                                  | 403                                      | Allow                       |
+| `POST /api/admin/events/requeue`                    | `requireAdmin`                                                         | 401   | 403                                  | 403                                      | Allow                       |
+| `GET /api/airlines/me`                              | `requireAuth`; session-derived identity                                | 401   | Allow                                | Allow                                    | Allow; no ownership bypass  |
+| `PATCH /api/airlines/me`                            | `requireActiveAirline`                                                 | 401   | 409 without an owned airline         | Allow when active                        | Same as player/owner        |
+| `GET /api/airlines/founding-options`                | `requireAuth`                                                          | 401   | Allow                                | Allow                                    | Allow                       |
+| `GET /api/airlines/founding-airports`               | `requireAuth`                                                          | 401   | Allow                                | Allow                                    | Allow                       |
+| `POST /api/airlines/code-availability`              | `requireAuth`                                                          | 401   | Allow                                | Allow                                    | Allow                       |
+| `POST /api/airlines`                                | `requireAuth`; founding rules decide eligibility                       | 401   | Allow                                | Allow; may be refused as already founded | Allow; no bypass            |
+| `GET /api/fleet/catalogue`                          | `requireAirline`                                                       | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
+| `GET /api/fleet/orders`                             | `requireAirline`; airline derived from session/world                   | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
+| `POST /api/fleet/acquisitions`                      | `requireActiveAirline`; airline derived from session/world             | 401   | 409 without an owned airline         | Allow only when active                   | Same as player/owner        |
+| `GET /api/routes`                                   | `requireAirline`                                                       | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
+| `POST /api/routes`                                  | `requireActiveAirline`                                                 | 401   | 409 without an owned airline         | Allow when active                        | Same as player/owner        |
+| `PUT /api/routes/:routeId/fares`                    | `requireOperatingAirline` + owner-scoped query                         | 401   | 409 without airline; 404 cross-owner | Allow unless ceased                      | 404 unless owner; no bypass |
+| `GET /api/routes/:routeId/waterfall`                | `requireAirline` + owner-scoped query                                  | 401   | 409 without airline; 404 cross-owner | Allow                                    | 404 unless owner; no bypass |
+| `POST /api/routes/:routeId/fares/preview`           | `requireOperatingAirline` + owner-scoped query                         | 401   | 409 without airline; 404 cross-owner | Allow unless ceased                      | 404 unless owner; no bypass |
 
 <!-- AUTHORIZATION_MATRIX_END -->
 
@@ -117,25 +146,20 @@ The three ambiguities recorded when SEC-01 was opened have changed as the produc
 2. **`GET /api/me` remains intentionally public.** The login wall needs
    `registrationOpen`, and an anonymous response contains `player: null` and
    `isAdmin: false`; keep the adaptive public response.
-3. **`requireAuth` is no longer unused.** Airline founding, own-airline discovery, global
-   sign-out and route explainability use it directly; the airline guards compose it. Do not
-   remove or replace it with handler-local session checks.
+3. **`requireAuth` is no longer unused.** Airline founding, own-airline discovery and global
+   sign-out use it directly; the airline guards compose it. Do not remove or replace it with
+   handler-local session checks.
 
 Current open questions are:
 
-1. **The waterfall ownership query disagrees with this matrix.**
-   `GET /api/routes/:routeId/waterfall` passes `request.player.id` to a query whose parameter
-   is an airline id. That still conceals competitors' routes, but it can also return 404 for
-   the real owner. Recommendation: use the session-resolved airline context, as the fare and
-   preview endpoints do, and retain an indistinguishable 404 for cross-owner ids.
-2. **Worker diagnostics rely entirely on loopback.** That is a valid boundary while no
+1. **Worker diagnostics rely entirely on loopback.** That is a valid boundary while no
    public or private-network listener exists. Recommendation: keep the routes credentialless
    on loopback, but require a separate operator credential before any future network exposure.
-3. **Admin authority is all-or-nothing.** The design document's `Support`, `GameMaster`,
+2. **Admin authority is all-or-nothing.** The design document's `Support`, `GameMaster`,
    `Economist`, `WorldAdmin` and `SuperAdmin` roles do not exist yet. They remain future work
    owned by [M11-01](https://github.com/simmeh024/tailfinsim/issues/101); until then the matrix
    must not imply finer grants than `requireAdmin` can enforce.
-4. **Admin is not an ownership bypass.** This prevents a broad operational grant from
+3. **Admin is not an ownership bypass.** This prevents a broad operational grant from
    silently becoming permission to act as an airline. Recommendation: keep admin remediation
    on explicit `/api/admin/*` routes with audit requirements rather than weakening player
    ownership guards.
@@ -150,4 +174,5 @@ Add or change the matrix row in the same pull request as an HTTP route. The row 
 intended boundary first; tests then prove the registered route agrees. SEC-04 owns the
 Fastify route-enumeration test that makes a missing row fail, and later ownership/admin issues
 own the denial and unchanged-effect cases. Until those land, review this table explicitly
-against every `app.get`/`post`/`put`/`patch`/`delete` registration.
+against every `app.get`/`post`/`put`/`patch`/`delete` registration. Any new private identifier
+also needs missing, malformed and cross-owner cases with the same observable 404 response.

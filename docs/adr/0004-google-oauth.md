@@ -2,6 +2,8 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-17
+- **Operational update:** 2026-08-22 — dev Google sign-in and avatar delivery are live;
+  production still serves the holding surface and must be checked/configured before promotion.
 - **Deciders:** @simmeh024
 - **Implements:** M0-11
 
@@ -83,15 +85,21 @@ A single point of failure for login, in exchange for not writing authentication.
 - A Google outage causes real downtime, at which point magic-link becomes a second path
   rather than a replacement.
 
-## What still needs doing outside the code
+## External configuration state
 
-These are account actions, not code, and they block M0-11:
+These are account actions, not code. They cannot be inferred from the repository and must be
+verified again before the production app surface opens:
 
-1. A Google Cloud project, OAuth 2.0 **Web application** client.
-2. Authorised redirect URIs — production **and** dev, since dev is a separate origin:
+1. **Dev is configured and observed working.** A Google Cloud project and OAuth 2.0 Web
+   application client complete the authorization-code flow on `dev.tailfinsim.com`; the
+   returned Google-hosted avatar also renders under the enforced CSP.
+2. **Both redirect URIs belong on the launch checklist**, since dev and production are
+   separate origins:
    - `https://tailfinsim.com/api/auth/google/callback`
    - `https://dev.tailfinsim.com/api/auth/google/callback`
-3. A consent screen with a privacy policy URL — needed before leaving testing mode, and
-   testing mode caps you at 100 users.
-4. Client ID and secret into each environment's `.env` as `GOOGLE_CLIENT_ID` and
-   `GOOGLE_CLIENT_SECRET`. Separate clients per environment would be cleaner still.
+3. **Public launch still needs the consent/legal check.** The consent screen needs a privacy
+   policy URL before leaving testing mode; testing mode caps access at 100 users.
+4. **Environment credentials stay separate from source.** Dev has the client id, client
+   secret and session secret configured. Production may leave all three absent while it serves
+   `WEB_SURFACE=holding`; set the complete trio before promotion. Separate OAuth clients per
+   environment would reduce blast radius further.

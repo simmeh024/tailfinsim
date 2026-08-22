@@ -2,6 +2,8 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-17
+- **Amended:** 2026-08-22 — ADR-0019 split the server package into Web and Worker
+  processes without changing the selected stack or dependency graph.
 - **Deciders:** @simmeh024
 
 ## Context
@@ -29,12 +31,12 @@ That shape constrains the stack more than it might first appear:
 A **TypeScript monorepo** managed by **pnpm workspaces** with TypeScript project
 references, split into four packages:
 
-| Package  | Role                                | May depend on   |
-| -------- | ----------------------------------- | --------------- |
-| `shared` | types and zod schemas               | —               |
-| `sim`    | pure deterministic simulation       | `shared`        |
-| `server` | Fastify API, world clock, tick loop | `shared`, `sim` |
-| `web`    | React + Vite client                 | `shared`        |
+| Package  | Role                                             | May depend on   |
+| -------- | ------------------------------------------------ | --------------- |
+| `shared` | types and zod schemas                            | —               |
+| `sim`    | pure deterministic simulation                    | `shared`        |
+| `server` | Fastify Web/API and Worker entry points, storage | `shared`, `sim` |
+| `web`    | React + Vite client                              | `shared`        |
 
 - **Fastify** for the server — fast, schema-first with JSON Schema validation that pairs
   naturally with zod, first-class TypeScript support, and a plugin model that keeps the
@@ -63,8 +65,9 @@ once and the shared types genuinely are shared.
 
 ### What this makes harder
 
-- A single always-on stateful server does not scale horizontally for free. Sharding is
-  listed as open design debt in §24 and is not solved here.
+- Splitting Web and Worker processes does not make the stateful simulation or its Postgres
+  queue scale horizontally for free. Sharding is listed as open design debt in §24 and is
+  not solved here or by ADR-0019.
 - Node is not the fastest option for a tick loop under load. The mitigation is
   architectural rather than linguistic: flight state is computed on read from departure
   time and route, not stored per tick (§21), and economic resolution happens at flight
@@ -89,5 +92,5 @@ CONTRIBUTING.md exists partly so that remains possible.
 
 - The tick loop cannot hold its cadence at the target concurrent-world size under the
   load tests in M13-04.
-- The single-server assumption blocks a milestone — at which point §24's sharding debt
+- The current Web/Worker/Postgres topology blocks a milestone — at which point §24's sharding debt
   needs closing properly rather than incrementally.

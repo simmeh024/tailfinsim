@@ -12,7 +12,7 @@ import { build } from 'esbuild';
  * (`moduleResolution: bundler` cannot emit runnable Node output) — see
  * ADR-0001. This is the compiler for the server package.
  *
- * Twelve entry points, and CI asserts every one of them lands in `dist`:
+ * Thirteen entry points, and CI asserts every one of them lands in `dist`:
  *   main.js             the web process
  *   worker.js           the simulation engine (OPS-08) — one build, one stamp
  *   migrate.js          a one-off run by the deploy script before main starts
@@ -24,6 +24,7 @@ import { build } from 'esbuild';
  *   admin-cli.js        grants and revokes admin from a shell (M1A-01)
  *   ops-status.js       what is deployed where, over public HTTP (OPS-02)
  *   generate-demand.js  App. A.2's demand pools for a world (M3-01)
+ *   seed-npcs.js        populates a world with incumbent carriers (M3-12)
  *   assign-timezones.js what the local clock reads at each airport (M3-04a)
  */
 await build({

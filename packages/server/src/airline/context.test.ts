@@ -171,6 +171,10 @@ describeDb('player airline context over HTTP', () => {
       { method: 'POST', url: '/api/routes', payload: {} },
       { method: 'PUT', url: '/api/routes/00000000-0000-4000-8000-000000000000/fares', payload: {} },
       {
+        method: 'GET',
+        url: '/api/routes/00000000-0000-4000-8000-000000000000/waterfall',
+      },
+      {
         method: 'POST',
         url: '/api/routes/00000000-0000-4000-8000-000000000000/fares/preview',
         payload: {},
@@ -249,27 +253,78 @@ describeDb('player airline context over HTTP', () => {
     ]);
   });
 
-  it("cannot update another airline's route, even inside the selected world", async () => {
+  it('makes cross-owner, missing and malformed private route ids indistinguishable', async () => {
     await makeAirport('CTBA');
     await makeAirport('CTBB');
     const worldId = await makeWorld();
     const ownerId = await makePlayer('owner');
     const strangerId = await makePlayer('stranger');
-    await makeAirline(worldId, ownerId);
+    const ownerAirlineId = await makeAirline(worldId, ownerId);
     const competitorAirlineId = await makeAirline(worldId, strangerId);
+    const ownerRouteId = await makeRoute(worldId, ownerAirlineId, 'CTBA', 'CTBB');
     const competitorRouteId = await makeRoute(worldId, competitorAirlineId, 'CTBA', 'CTBB');
     const token = await cookieFor(ownerId);
 
-    const response = await app.inject({
-      method: 'PUT',
-      url: `/api/routes/${competitorRouteId}/fares`,
-      headers: { [ACTIVE_WORLD_HEADER]: worldId },
-      cookies: { [SESSION_COOKIE]: token },
-      payload: { fares: { economy: 99_999 } },
-    });
+    const request = async (
+      method: 'GET' | 'PUT' | 'POST',
+      path: (routeId: string) => string,
+      routeId: string,
+      payload?: Record<string, unknown>,
+    ) =>
+      app.inject({
+        method,
+        url: path(routeId),
+        headers: { [ACTIVE_WORLD_HEADER]: worldId },
+        cookies: { [SESSION_COOKIE]: token },
+        payload,
+      });
 
-    expect(response.statusCode).toBe(404);
-    expect(response.json()).toEqual({ code: 'not_found', message: 'No such route' });
+    const surfaces = [
+      {
+        method: 'PUT' as const,
+        path: (routeId: string) => `/api/routes/${routeId}/fares`,
+        payload: { fares: { economy: 99_999 } },
+      },
+      {
+        method: 'GET' as const,
+        path: (routeId: string) => `/api/routes/${routeId}/waterfall`,
+      },
+      {
+        method: 'POST' as const,
+        path: (routeId: string) => `/api/routes/${routeId}/fares/preview`,
+        payload: { fares: { economy: 99_999 } },
+      },
+    ];
+
+    for (const surface of surfaces) {
+      // Proves the owner lookup is an airline lookup. The waterfall previously
+      // passed a player id here and concealed the route from its real owner.
+      const owned = await request(
+        surface.method,
+        surface.path,
+        ownerRouteId,
+        'payload' in surface ? surface.payload : undefined,
+      );
+      expect(owned.statusCode, surface.path(':routeId')).toBe(200);
+
+      const denied = await Promise.all(
+        [competitorRouteId, '00000000-0000-4000-8000-000000000000', 'not-a-uuid'].map((routeId) =>
+          request(
+            surface.method,
+            surface.path,
+            routeId,
+            'payload' in surface ? surface.payload : undefined,
+          ),
+        ),
+      );
+
+      expect(new Set(denied.map((response) => response.body)).size).toBe(1);
+      for (const response of denied) {
+        expect(response.statusCode, surface.path(':routeId')).toBe(404);
+        expect(response.json()).toEqual({ code: 'not_found', message: 'No such route' });
+      }
+    }
+
     const stored = await db.db
       .select({ fares: route.fares })
       .from(route)

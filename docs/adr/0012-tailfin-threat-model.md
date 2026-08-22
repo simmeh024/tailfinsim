@@ -143,7 +143,9 @@ API calls made at machine speed; it is not limited to malformed traffic.
 
 - The client is never an authority. External input is validated at the server boundary,
   ownership is resolved from the session, and economic changes carry database-enforced
-  idempotency, reconciliation and audit evidence.
+  idempotency, reconciliation and audit evidence. ADR-0020 makes another owner's private
+  resource indistinguishable from an absent one and requires the owner scope inside the
+  database query.
 - Controls that preserve world integrity outrank controls that hide already-public source or
   game data. Recovery prefers targeted, attributable correction over restoring the entire
   world to an older snapshot.
@@ -183,8 +185,8 @@ design target.
 ## Keeping the model current
 
 Review this ADR when an external provider, public port, privileged role, secret class,
-personal-data class or deployment node is added. OPS-08's split is an explicit mandatory
-review point. The topology diagram here and the canonical deployment topology in
+personal-data class or deployment node is added. The topology diagram here,
+`CLAUDE.md`'s canonical operational topology and the connection reasoning in
 `docs/deploy.md` must change together.
 
 ## Consequences
@@ -198,7 +200,7 @@ review point. The topology diagram here and the canonical deployment topology in
 
 ## Revisit when
 
-- OPS-08/OPS-11 split web, worker, queue or PostgreSQL across nodes;
+- OPS-11/OPS-12 move production Web, Worker, queue access or PostgreSQL across nodes;
 - M12 adds public WebSockets;
 - M6/POD add uploads or externally served player content;
 - Stripe, POD fulfilment or transactional email first holds real customer data; or

@@ -2,6 +2,8 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-20
+- **Deployed:** 2026-08-22 — report-only sign-in/avatar validation completed; production
+  and dev now serve the enforced policy and pass the running-host verifier.
 - **Deciders:** Tailfin maintainers
 
 ## Context
@@ -59,7 +61,8 @@ already-HSTS pre-launch service and creates a recovery cost the project cannot y
 
 - An injected script cannot load arbitrary code or connect to another origin under the
   enforced policy.
-- A hostile site cannot frame Tailfin, including while CSP is still report-only.
+- A hostile site could not frame Tailfin during the report-only rollout and cannot frame the
+  now-enforced surface.
 - One Caddy snippet and one integration check keep both hosts and all response types aligned.
 - Google avatars have one narrow external image exception; OAuth itself needs none because it
   is a navigation rather than a framed or scripted integration.

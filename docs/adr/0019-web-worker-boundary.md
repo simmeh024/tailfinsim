@@ -2,6 +2,8 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-21
+- **Deployed:** 2026-08-22 — OPS-09 runs the dev Worker on its own node. Production still
+  has no Worker; OPS-12 owns that rollout.
 - **Deciders:** @simmeh024
 - **Constrains:** every scheduled job, every new server entry point, and the node topology in OPS-09 – OPS-16
 
@@ -20,7 +22,7 @@ cheapest this decision will ever be.
 
 Three facts shaped it:
 
-- `esbuild` already emits eleven entry points from `build.mjs`, so a multi-entry-point build
+- `esbuild` already emitted multiple entry points from `build.mjs`, so a multi-entry-point build
   is an established pattern here rather than a new one.
 - The `world_event` table is already a durable job queue and already multi-worker-safe: rows
   are claimed `FOR UPDATE SKIP LOCKED`, one transaction per event, with a unique
@@ -92,10 +94,10 @@ worker for something.
 
 ## Consequences
 
-**What this does not do.** It starts nothing. No systemd unit in this change runs `worker.js`,
-and the simulation still does not run in any environment. Building the process and starting it
-are deliberately separate steps so that the first environment a worker ever runs in is chosen
-rather than inherited — OPS-09 (#188) is the dev service, OPS-12 (#191) the production one.
+**Deployment state.** At adoption this ADR started nothing: building the process and starting
+it were deliberately separate so the first environment was chosen rather than inherited.
+OPS-09 (#188) has since deployed `worker.js` on the dedicated dev Worker node. Production
+still has no Worker; OPS-12 (#191) owns that separate rollout.
 
 **A known gap, carried in the open.** The worker registers a handler for `FLIGHT_ARRIVE` only.
 `FLIGHT_DEPART` is scheduled by `schedule/store.ts` when flights are materialised, and

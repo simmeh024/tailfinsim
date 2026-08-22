@@ -315,7 +315,7 @@ describe('GET /api/routes/:routeId/waterfall is on the surface (M3-10)', () => {
    * feature dead, so this asserts the wiring and nothing else.
    *
    * No database is touched. With `authEnabled: false` the session hook returns
-   * before its query and `requireAuth` answers 401 — so a 401 here means the
+   * before its query and `requireAirline` answers 401 — so a 401 here means the
    * route exists, and a 404 would mean it does not. If this ever hangs, the
    * handler has started querying before checking auth.
    */

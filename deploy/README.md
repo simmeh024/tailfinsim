@@ -269,6 +269,7 @@ allocate or attach.
 | ---- | ------------- | --------------- |
 | `A`  | _(blank / @)_ | `<instance IP>` |
 | `A`  | `www`         | `<instance IP>` |
+| `A`  | `dev`         | `<instance IP>` |
 
 Do this **before** installing Caddy. Let's Encrypt rate-limits repeated failed challenges,
 so a premature start costs you an hour of waiting.
@@ -277,6 +278,7 @@ Confirm it resolves before continuing:
 
 ```bash
 dig +short tailfinsim.com
+dig +short dev.tailfinsim.com
 ```
 
 ## 3. Harden
@@ -341,9 +343,11 @@ Create `/srv/tailfin/.env`, owned by `tailfin`, mode `600`. **Never commit this.
 
 ```bash
 NODE_ENV=production
+ENVIRONMENT_LABEL=production
 PORT=3000
 DATABASE_URL=postgres://tailfin:<password>@127.0.0.1:5432/tailfin
 PUBLIC_ORIGIN=https://tailfinsim.com
+WEB_SURFACE=holding
 LOG_LEVEL=info
 SESSION_TTL_HOURS=720
 ADMIN_SESSION_TTL_HOURS=12
@@ -359,6 +363,11 @@ sessions default to 30 days because this is a persistent world; admin sessions e
 12 hours. Granting or revoking admin deletes the target's existing sessions, so they must
 sign in again under the new authority. Both lifetimes and the revocation controls are
 documented in `docs/adr/0015-session-lifecycle.md`.
+
+The holding page needs no identity provider. Before changing production to
+`WEB_SURFACE=app`, add `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and a 32+ character
+`SESSION_SECRET` together, and choose `ALLOW_REGISTRATION` explicitly. Supplying only part of
+the auth trio is refused at boot.
 
 ## 8. Service and proxy
 
@@ -379,6 +388,12 @@ systemctl restart caddy
 ```
 
 ### First security-policy rollout (SEC-HARD-05)
+
+**Current live state:** the report-only browser journey, including Google sign-in and the
+Google-hosted avatar, was observed successfully before enforcement. On 2026-08-22 both
+`tailfinsim.com` and `dev.tailfinsim.com` passed
+`pnpm security:headers --mode enforced`. The procedure below remains mandatory when rebuilding
+or materially changing the edge policy.
 
 The committed Caddyfile defaults to an **enforced** Content Security Policy. Do not copy it
 over a running edge for the first time and skip straight to that default. Install it in
@@ -481,7 +496,8 @@ freshly deployed box has an empty database and a running server that can serve a
 page and nothing else.
 
 Each job below is a bundled entry point under `packages/server/dist`, so the deploy above
-has to have run first. **The order matters**: each reads what the previous one wrote.
+has to have run first. **The dependency order matters**; the timezone assignment is the one
+independent branch after airports.
 
 ```bash
 cd /srv/tailfin/packages/server
@@ -489,20 +505,26 @@ cd /srv/tailfin/packages/server
 sudo -u tailfin pnpm data:airports    # ~86,000 aerodromes from OurAirports (M1-01)
 sudo -u tailfin pnpm data:classify    # tiers over the ~4,400 with scheduled service (M1-02)
 sudo -u tailfin pnpm data:catchment   # population and the wealth/tourism/business indices (M1-03)
+sudo -u tailfin pnpm data:timezones   # IANA timezone and UTC offset per airport (M3-04a)
 sudo -u tailfin pnpm data:distances   # the packed great-circle matrix (M1-04)
 sudo -u tailfin pnpm world:seed       # the flagship world from config (M1-09)
 sudo -u tailfin pnpm demand:generate <worldId>   # App. A.2's demand pools (M3-01)
+sudo -u tailfin pnpm npc:seed <worldId>          # seeded incumbent carriers (M3-12)
 ```
 
-The first four are global reference data and are shared by every world — geography does
-not vary, and era worlds filter this set by opening and closing date rather than owning a
-copy of it. Only `demand:generate` is per world, because the gravity coefficients are
-economy config and a world pins its version.
+The first five are global reference data and are shared by every world — geography does not
+vary, and era worlds filter this set by opening and closing date rather than owning a copy of
+it. `data:timezones` needs only the airport import and may run alongside the classification and
+catchment steps. `demand:generate` and `npc:seed` are per world; NPC carriers choose their
+initial networks from the generated demand pools, so seed them last.
 
-`demand:generate` is also the only one worth re-running: retuning `k` or `α` means
-regenerating, and it takes `--regenerate` to clear first. Without that flag a re-run is a
-no-op, which is the safe default — changing a coefficient and re-running without clearing
-would leave a world holding a mixture of two economies.
+Re-run `demand:generate` only deliberately: retuning `k` or `α` means regenerating, and it
+takes `--regenerate` to clear first. Without that flag a re-run is a no-op, which is the safe
+default — changing a coefficient and re-running without clearing would leave a world holding
+a mixture of two economies. `data:timezones` is independently safe to re-run and updates its
+derived values in place.
+
+`npc:seed` is idempotent by presence: a world that already has NPC airlines is left alone.
 
 Grant yourself admin once there is a world and you have signed in at least once:
 
@@ -856,7 +878,8 @@ looking.
 ## The dev environment
 
 `dev.tailfinsim.com` is where work in progress gets looked at on a real server before it
-reaches the front door. It shares the box with production and nothing else:
+reaches the front door. The dev **web process and database** share the production host; the
+dev simulation engine runs on the separate Worker node documented below:
 
 |              | Production                          | Dev                              |
 | ------------ | ----------------------------------- | -------------------------------- |
@@ -932,16 +955,27 @@ launch.
 
 ### Promoting dev to the front door
 
-When the app is ready to be public, the "copy to the front door" step is just pointing
-production at the same commit:
+When the app is ready to be public, first configure production for the app surface and auth:
+
+```bash
+# /srv/tailfin/.env — values are examples except the generated secret
+WEB_SURFACE=app
+GOOGLE_CLIENT_ID=…
+GOOGLE_CLIENT_SECRET=…
+SESSION_SECRET=…
+ALLOW_REGISTRATION=false
+```
+
+Then point production at the reviewed commit:
 
 ```bash
 ./deploy/deploy.sh              # production takes origin/main
 ```
 
-The holding page is replaced by whatever the client build serves at that point (M0-09).
-Production and dev run the same code from the same repo — the only differences are the
-database, the port and who is allowed in.
+The deploy alone does not replace the holding page: `WEB_SURFACE` lives in `.env` and safely
+defaults to `holding`. Production and dev use the same repository and build pipeline, but may
+run different reviewed revisions; their surface, identity configuration, database, port,
+audience and Worker placement also differ by environment.
 
 ### `deploy.sh` does not sync anything under /etc
 

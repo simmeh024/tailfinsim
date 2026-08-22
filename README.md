@@ -12,9 +12,13 @@ wall-clock time, that never pauses.
 - **Contributing & the four invariants:** [`CONTRIBUTING.md`](CONTRIBUTING.md) — read
   before writing anything.
 - **Operating the project:** [`CLAUDE.md`](CLAUDE.md) — deployment, environments, and the
-  rules that are not negotiable.
+  shared instructions for coding agents, including the rules that are not negotiable.
 - **Architecture decisions:** [`docs/adr/`](docs/adr/)
-- **Deployment & DNS:** [`docs/deploy.md`](docs/deploy.md) · [`deploy/README.md`](deploy/README.md)
+- **Authorization boundary:** [`docs/authorization-matrix.md`](docs/authorization-matrix.md)
+- **Feature contracts:** [`docs/aircraft-acquisition.md`](docs/aircraft-acquisition.md) ·
+  [`docs/world-renderer.md`](docs/world-renderer.md)
+- **Deployment & DNS:** [`docs/deploy.md`](docs/deploy.md) ·
+  [`deploy/README.md`](deploy/README.md)
 - **Roadmap:** [GitHub milestones](https://github.com/simmeh024/tailfinsim/milestones) are
   the live source for feature and cross-cutting work. Counts and track lists are not copied
   here because they change whenever the roadmap does.
@@ -44,7 +48,7 @@ distinguishes a refused URL from a disposable database it cannot reach.
 packages/
   shared/   types and zod schemas          — depends on nothing
   sim/      pure deterministic simulation  — depends on shared only
-  server/   Fastify API, clock, event queue — depends on shared, sim
+  server/   Fastify web + Worker, database  — depends on shared, sim
   web/      React client and admin console  — depends on shared only
 docs/
   adr/      architecture decision records
@@ -97,6 +101,11 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
 - **Accounts.** Google OAuth, database-backed sessions, atomic login rotation, immediate
   per-player revocation, shorter admin lifetimes, admin grants, and an append-only audit log
   the database itself refuses to let anyone edit ([ADR-0015](docs/adr/0015-session-lifecycle.md)).
+- **One authorization error contract.** A missing session is 401, a signed-in actor without
+  a disclosed grant is 403, and a malformed, missing or cross-owner private resource is the
+  same 404. Ownership is resolved inside the query so player endpoints cannot become
+  object-existence oracles
+  ([ADR-0020](docs/adr/0020-http-authorization-and-concealment.md)).
 - **A repository-specific threat model.** Security work prioritises the persistent world's
   integrity, then the identities and control paths that can change it. The model records the
   deployed web, worker, database, SSH and provider boundaries, attackers, ordinary operator
@@ -104,8 +113,9 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   in [ADR-0012](docs/adr/0012-tailfin-threat-model.md).
 - **A browser security boundary at Caddy.** CSP restricts code, connections and framing;
   powerful unused browser features are denied; Google avatars have one narrow image-source
-  exception. The first edge rollout is report-only before enforcement, and HSTS preload is
-  deliberately deferred ([ADR-0014](docs/adr/0014-browser-security-policy.md)).
+  exception. The edge rollout was observed in report-only mode before enforcement, both live
+  hosts now pass the enforced-policy verifier, and HSTS preload is deliberately deferred
+  ([ADR-0014](docs/adr/0014-browser-security-policy.md)).
 - **Recoverable off-box backups.** Nightly DreamObjects dumps and their checksums are restored
   repeatably into a guarded `_test` database, migrated, booted and checked against real domain
   data and the world clock, with observed recovery time and up-to-24-hour data loss stated in
