@@ -193,7 +193,18 @@ describeDb('asking a real queue what is actionable', () => {
     return created.world.id;
   }
 
-  /** One event, in one state. Keyed per row so setting a status hits only it. */
+  /**
+   * One event, in one state. Keyed per row so setting a status hits only it.
+   *
+   * `processed_at` is set for the terminal statuses and left null otherwise,
+   * because `world_event_processed_when_finished` requires exactly that:
+   * `status IN ('done','failed') = (processed_at IS NOT NULL)`. Not a fixture
+   * detail — it is the same distinction SCALE-05 turns on. `done` and `failed`
+   * mean something ran and decided; `unsupported` means nothing ran at all, and
+   * stamping a time on it would be a lie that makes "when did this happen?"
+   * unanswerable. A fixture that wrote one of these states without the other
+   * half would be describing a row the database will not hold.
+   */
   async function put(
     worldId: string,
     type: WorldEventType,
@@ -208,7 +219,11 @@ describeDb('asking a real queue what is actionable', () => {
       idempotencyKey: key,
     });
     if (status !== 'pending') {
-      await handle.db.update(worldEvent).set({ status }).where(eq(worldEvent.idempotencyKey, key));
+      const finished = status === 'done' || status === 'failed';
+      await handle.db
+        .update(worldEvent)
+        .set({ status, processedAt: finished ? new Date() : null })
+        .where(eq(worldEvent.idempotencyKey, key));
     }
   }
 

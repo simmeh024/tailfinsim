@@ -1,6 +1,6 @@
 import { writeSync } from 'node:fs';
 
-import { createDatabase } from './db/client';
+import { createDatabase, type DatabaseHandle } from './db/client';
 import {
   collectHandlerPreflight,
   formatHandlerPreflight,
@@ -81,12 +81,27 @@ if (mode === '--handled-event-types') {
  * check, and it is why `HANDLER_EXIT_UNKNOWN` is not overridable.
  */
 if (mode === '--handler-preflight') {
-  const handle = createDatabase();
+  // `writeSync` for the same reason as above, and it matters more here: this is
+  // the message an operator reads to find out why their deploy stopped, and
+  // `process.exit()` does not flush an asynchronous write to a pipe. A deploy
+  // run over SSH with its output piped anywhere is exactly that case.
+  const say = (line: string): void => {
+    writeSync(2, `${line}\n`);
+  };
+
+  let handle: DatabaseHandle | null = null;
   let code = 0;
 
   try {
+    // Inside the try, not above it. `createDatabase()` calls `loadEnv()`, which
+    // throws on a missing or malformed `DATABASE_URL` — a real and unremarkable
+    // way for this to fail on a freshly provisioned node. Constructed outside,
+    // that throw would escape as a bare stack trace and exit 1, which
+    // `deploy.sh` can only report as "exited 1". It is an unknown answer like
+    // any other, and should say so.
+    handle = createDatabase();
     const result = await collectHandlerPreflight(handle.db, handledEventTypes());
-    for (const line of formatHandlerPreflight(result)) process.stderr.write(`${line}\n`);
+    for (const line of formatHandlerPreflight(result)) say(line);
     if (!result.compatible) code = HANDLER_EXIT_GAP;
   } catch (error) {
     // `errorChain`, not `error.message`. Drizzle wraps driver errors, so the
@@ -96,14 +111,14 @@ if (mode === '--handler-preflight') {
     // missing" identically, as a paragraph of select. Three very different
     // 2am problems, and the deploy has just refused to proceed on the strength
     // of it.
-    process.stderr.write(`handler preflight failed: ${errorChain(error)}\n`);
-    process.stderr.write(
+    say(`handler preflight failed: ${errorChain(error)}`);
+    say(
       'HANDLER PREFLIGHT: UNKNOWN — the queue could not be read, so whether this build can ' +
-        'handle the work is unknown. Nothing was changed.\n',
+        'handle the work is unknown. Nothing was changed.',
     );
     code = HANDLER_EXIT_UNKNOWN;
   } finally {
-    await handle.close().catch(() => undefined);
+    await handle?.close().catch(() => undefined);
   }
 
   process.exit(code);
