@@ -35,6 +35,7 @@ import {
 import { ApiError, HealthResponse } from './api';
 import { LogoutResponse, MeResponse, RevokeSessionsResponse } from './auth';
 import { AdminNpcResponse } from './npc';
+import { UsedMarketResponse } from './used-market';
 import { VersionResponse } from './version';
 
 /**
@@ -117,5 +118,6 @@ export const adminNpcResponseJsonSchema = z.toJSONSchema(AdminNpcResponse);
 export const fleetCatalogueResponseJsonSchema = z.toJSONSchema(FleetCatalogueResponse);
 export const aircraftAcquisitionResponseJsonSchema = z.toJSONSchema(AircraftAcquisitionResponse);
 export const aircraftOrderListResponseJsonSchema = z.toJSONSchema(AircraftOrderListResponse);
+export const usedMarketResponseJsonSchema = z.toJSONSchema(UsedMarketResponse);
 
 export const adminRequeueEventsResponseJsonSchema = z.toJSONSchema(AdminRequeueEventsResponse);

@@ -85,6 +85,17 @@ describe('a payload written before a section existed', () => {
     expect(parsed.npc).toEqual(ECONOMY_CONFIG_V1.npc);
   });
 
+  it('takes the shipped used market when a pre-M4-05 payload is read back', () => {
+    // The same rule, one section later. Every `v1` row already in dev and
+    // production was written before `usedMarket` existed; if this default were
+    // missing, the first economy read after the deploy would throw and take
+    // flight pricing, airline founding and the fare floor down with it.
+    const { usedMarket: _usedMarket, ...beforeUsedMarketExisted } = ECONOMY_CONFIG_V1;
+
+    const parsed = EconomyConfig.parse(beforeUsedMarketExisted);
+    expect(parsed.usedMarket).toEqual(ECONOMY_CONFIG_V1.usedMarket);
+  });
+
   it('keeps a section the payload does carry, rather than defaulting over it', () => {
     // A default fills an absence. It must never overwrite a live retune —
     // which is the property the whole seed-but-never-update design rests on.

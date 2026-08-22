@@ -16,6 +16,7 @@ wall-clock time, that never pauses.
 - **Architecture decisions:** [`docs/adr/`](docs/adr/)
 - **Authorization boundary:** [`docs/authorization-matrix.md`](docs/authorization-matrix.md)
 - **Feature contracts:** [`docs/aircraft-acquisition.md`](docs/aircraft-acquisition.md) ·
+  [`docs/used-aircraft-market.md`](docs/used-aircraft-market.md) ·
   [`docs/world-renderer.md`](docs/world-renderer.md)
 - **Deployment & DNS:** [`docs/deploy.md`](docs/deploy.md) ·
   [`deploy/README.md`](deploy/README.md)
@@ -172,8 +173,15 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   configuration intact, or pay for a factory build whose pinned options extend a wall-clock
   delivery date. The order, used-listing claim, explaining cash movement and any immediate
   airframe commit together; the Worker materialises due new orders exactly once. The typed
-  API and the M4-05/M4-07 ownership boundary are documented in
+  API and the M4-07 ownership boundary are documented in
   [`docs/aircraft-acquisition.md`](docs/aircraft-acquisition.md).
+- **A used aircraft market with a history.** A world offers a bounded, self-refilling
+  inventory of second-hand airframes, each with a build date, hours, cycles and a previous
+  owner’s configuration, priced by a depreciation curve and an unusual-configuration
+  discount. Every asking price arrives taken apart, so App. C.5’s claim that an odd
+  specification is cheap to buy is something a player can see rather than infer. The market
+  is the Worker’s, so it renews on dev only — see
+  [`docs/used-aircraft-market.md`](docs/used-aircraft-market.md).
 - **One founded-airline database fixture.** Server tests that need a player airline go
   through the real founding transaction, so they receive an open world, owner, founder hub,
   allocated per-world codes and configured opening cash with its AIR-06 movement. The

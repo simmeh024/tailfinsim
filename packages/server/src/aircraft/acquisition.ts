@@ -172,6 +172,17 @@ interface OrderFacts {
   ownerHistory: readonly unknown[];
   hours: number;
   cycles: number;
+  /**
+   * Inherited from a used listing; null for a lease or a new order, which are
+   * built on delivery (M4-05).
+   *
+   * Travels with `hours` and `cycles` because it is the same kind of fact and
+   * has the same acceptance criterion behind it: a used airframe *"arrives with
+   * the previous owner's configuration intact"*, and one that was twelve years
+   * old in the listing and brand new the moment it was bought would be the most
+   * visible possible way to break that.
+   */
+  builtAt: Date | null;
   chargedMinor: number;
   monthlyLeaseRateMinor: number | null;
   baseLeadTimeWeeks: number;
@@ -191,6 +202,7 @@ function factsFromUsed(listing: UsedAircraftListingRow): OrderFacts {
     ownerHistory: jsonArray(listing.ownerHistory),
     hours: listing.hours,
     cycles: listing.cycles,
+    builtAt: listing.builtAt,
     chargedMinor: listing.askingPriceMinor,
     monthlyLeaseRateMinor: null,
     baseLeadTimeWeeks: 0,
@@ -237,6 +249,7 @@ async function materializeAirframe(
       ownerHistory: order.ownerHistory,
       hours: order.hours,
       cycles: order.cycles,
+      builtAt: order.builtAt,
       ownership: order.kind === 'lease' ? 'leased' : 'owned',
       deliveredToIcao: order.deliveryAirportIcao,
       deliveredAt: order.deliveredAt ?? order.deliveryAt,
@@ -392,6 +405,12 @@ export async function acquireAircraft(
             ownerHistory: [],
             hours: 0,
             cycles: 0,
+            // A lease is an aircraft off the lessor's shelf, and the design says
+            // nothing about its age. Null rather than "today" — an unknown build
+            // date is a fact, and a fabricated one would make every leased
+            // airframe eternally brand new. Lessor counterparties and lease terms
+            // are §24 design debt.
+            builtAt: null,
             chargedMinor: type.monthlyLeaseRate * LEASE_DEPOSIT_MONTHS,
             monthlyLeaseRateMinor: type.monthlyLeaseRate,
             baseLeadTimeWeeks: 0,
@@ -430,6 +449,9 @@ export async function acquireAircraft(
             ownerHistory: [],
             hours: 0,
             cycles: 0,
+            // A factory order has no build date until it is built. The delivery
+            // sweep is where that becomes known, and M4-05 does not reach into it.
+            builtAt: null,
             chargedMinor: build.priceMinor,
             monthlyLeaseRateMinor: null,
             baseLeadTimeWeeks: type.baseDeliveryLeadWeeks,
@@ -461,6 +483,7 @@ export async function acquireAircraft(
           ownerHistory: JSON.stringify(facts.ownerHistory),
           hours: facts.hours,
           cycles: facts.cycles,
+          builtAt: facts.builtAt,
           chargedMinor: facts.chargedMinor,
           monthlyLeaseRateMinor: facts.monthlyLeaseRateMinor,
           baseLeadTimeWeeks: facts.baseLeadTimeWeeks,

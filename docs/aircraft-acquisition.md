@@ -28,8 +28,14 @@ flights; delivery is merely the starting point for that fold.
 
 `used_aircraft_listing` is server-authored. M4-04 locks and consumes a row but does not let a
 client submit its age, price or configuration. This is the acceptance guarantee that a used
-aircraft arrives with the prior owner's configuration intact. M4-05 owns generation,
-depreciation, refresh and withdrawal of those listings.
+aircraft arrives with the prior owner's configuration intact. Generation, depreciation,
+refresh and withdrawal are M4-05's, and are documented in
+[`used-aircraft-market.md`](used-aircraft-market.md).
+
+M4-05 adds `built_at` to the listing, and it travels with `hours` and `cycles` through the
+order onto the airframe — so a bought used aircraft keeps its age as well as its build.
+`built_at` is null for a lease and for a factory order, both of which have no previous
+owner's build date to inherit.
 
 The order, explaining cash movement, used-listing claim and any immediate airframe are one
 database transaction. An acquisition that would leave the airline below zero rolls back all

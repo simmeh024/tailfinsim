@@ -668,6 +668,358 @@ export const SHIPPED_NPC_BALANCE = {
 };
 
 // ---------------------------------------------------------------------------
+// Used market — App. C.5 (M4-05)
+// ---------------------------------------------------------------------------
+
+/** Every field of this shape is per factory-option category (App. C.3). */
+function byOptionCategory<T extends z.ZodType>(value: T) {
+  return z
+    .object({
+      fuel: value,
+      structural: value,
+      cabin: value,
+      aerodynamic: value,
+      engine: value,
+      avionics: value,
+      cargo: value,
+    })
+    .strict();
+}
+
+/** Every field of this shape is per aircraft class (App. C.2). */
+function byAircraftClass<T extends z.ZodType>(value: T) {
+  return z
+    .object({
+      turboprop_regional: value,
+      regional_jet: value,
+      narrowbody: value,
+      widebody: value,
+      widebody_ulh: value,
+      freighter: value,
+    })
+    .strict();
+}
+
+/**
+ * What the world offers second-hand, and how much of it.
+ *
+ * The market is a fixed number of **berths**, not a growing list. That is the
+ * shape M4-05's acceptance criterion asks for — *"inventory does not become
+ * infinite or exhausted"* — and a count is the only way to promise both halves:
+ * `slots` is the ceiling, and a berth that empties is refilled at the next
+ * generation, so it cannot run dry either.
+ */
+export const UsedMarketInventoryBalance = z
+  .object({
+    /** Berths. The hard ceiling on how many aircraft are for sale at once. */
+    slots: z.number().int().positive(),
+    /**
+     * Game days between generations.
+     *
+     * A berth that is empty at a generation boundary is refilled; a berth that
+     * is occupied is left alone. So this is the rate at which the market can
+     * *renew*, not a churn interval — an aircraft nobody buys is not swept away
+     * on a schedule, it ages out of its own listing lifetime below.
+     */
+    refreshIntervalDays: z.number().int().positive(),
+    /** Game days an ordinary listing stays on the market before it is withdrawn. */
+    baseListingLifetimeDays: z.number().int().positive(),
+    /**
+     * Extra game days a maximally unusual listing lingers, scaled linearly by
+     * how unusual it is.
+     *
+     * This is C.5's *"a common configuration sells fast … an unusual one is
+     * cheap to buy **and hard to sell**"*, from the buyer's side of the glass.
+     * There is no second buyer in MVP — NPCs do not shop — so "somebody else
+     * bought it" is modelled as the listing disappearing sooner. A player who
+     * keeps seeing the same odd A350 for seven game weeks is being told
+     * something true about what they would be taking on.
+     */
+    unusualLingerDays: z.number().int().nonnegative(),
+    /** The youngest and oldest an airframe on the market may be, in years. */
+    minAgeYears: z.number().nonnegative(),
+    maxAgeYears: z.number().positive(),
+    /**
+     * Relative likelihood that a berth is filled by each class.
+     *
+     * Without this the draw is uniform, and a uniform draw over C.2's eighteen
+     * types puts as many A380s on the market as A320s — which is wrong about the
+     * world in a way a player would notice immediately. Weights rather than
+     * probabilities, so a class can be retuned without renormalising the rest.
+     */
+    classSupplyWeight: byAircraftClass(z.number().nonnegative()),
+  })
+  .strict()
+  .refine((v) => v.maxAgeYears > v.minAgeYears, {
+    message: 'maxAgeYears must be greater than minAgeYears',
+  });
+
+/**
+ * The depreciation curve.
+ *
+ * **§24 lists "used-aircraft supply and depreciation model" as unresolved —
+ * *needed before launch, not before MVP*.** App. C.5 is four qualitative
+ * bullets: it gives no curve, no rate and no residual. So these are authored
+ * numbers rather than quoted ones, and that is exactly why they belong here and
+ * not in `packages/sim` — retuning them is one `INSERT` and a deliberate
+ * re-pin, and no listing a world has already priced changes underneath it.
+ *
+ * One declining-balance rate cannot fit both a twelve-year-old A321neo and a
+ * twenty-year-old 737-800 to the real market at once; that is a property of the
+ * one-parameter form, not a mistuning. The three properties that matter for
+ * play are all structural rather than fitted: older is always cheaper, nothing
+ * is ever free, and configuration moves the price.
+ */
+export const UsedMarketDepreciationBalance = z
+  .object({
+    /** Rate the *depreciable* share decays per year. `0.86` is ~14%/yr. */
+    annualRetentionRate: z.number().gt(0).lt(1),
+    /**
+     * The residual, as a share of the type's new-equivalent value.
+     *
+     * Not zero, and not decoration: an airframe too old to earn is still worth
+     * its engines and its spares, and a curve that ran to nothing would make a
+     * very old aircraft the cheapest route to a fleet in the game.
+     *
+     * **It is a salvage term, not a clamp**, and that distinction was worth a
+     * bug. Clamping `max(floor, retention ** age)` makes the curve *flat* past
+     * the age where it crosses the floor — with a floor of 0.10 that is about
+     * year 26 — and everything in the flat zone prices identically, so
+     * configuration and hours stop mattering exactly where the market is
+     * cheapest and most interesting. `floor + (1 - floor) * retention ** age`
+     * approaches the same residual and never reaches it, so an unusual
+     * twenty-four-year-old is still cheaper than a plain one.
+     */
+    residualFloorRatio: z.number().gt(0).lt(1),
+    /** Block hours a year an averagely-used airframe of this class flies. */
+    expectedAnnualHours: byAircraftClass(z.number().positive()),
+    /** Average block hours per cycle, so cycles follow from hours and class. */
+    averageBlockHoursPerCycle: byAircraftClass(z.number().positive()),
+    /**
+     * How hard hours bite, per unit of excess over what the airframe's age
+     * predicts.
+     *
+     * Relative to expected hours rather than absolute, because age and hours are
+     * strongly correlated and an absolute term would charge twice for one fact.
+     * What is left after the age curve has taken its share is the genuinely new
+     * information: *this* airframe was worked harder, or less hard, than its age
+     * suggests.
+     */
+    utilisationSensitivity: z.number().nonnegative(),
+    /** Bounds on the utilisation factor. Low time is a premium, but a bounded one. */
+    utilisationFactorBounds: z.tuple([z.number().positive(), z.number().positive()]),
+  })
+  .strict()
+  .refine((v) => v.utilisationFactorBounds[0] <= v.utilisationFactorBounds[1], {
+    message: 'utilisation factor bounds must be ordered',
+  });
+
+/**
+ * What the market makes of somebody else's configuration.
+ *
+ * **This is the mechanism App. C.5 exists for**: *"buying used means buying
+ * someone else's decisions, including their cabin, their engine variant and
+ * their MTOW rating"*. A drag is subtracted from `1` for each option fitted, so
+ * a plain airframe prices at its depreciated value and a specialised one prices
+ * below it.
+ *
+ * ## Why a category and not the option itself
+ *
+ * The obvious home for a resale coefficient is beside the option, in the
+ * catalogue. It cannot go there. `aircraft_option` rows are immutable by trigger
+ * for the same reason `aircraft_type` rows are — an airframe's build is folded
+ * into every `flight_result` it ever settled — so a column added now could never
+ * be filled in for the v1 options already seeded, and the only repair would be
+ * re-authoring the catalogue as v2.
+ *
+ * It also belongs here on the merits. How much the market dislikes a
+ * high-density cabin is a *market* fact, and M4 owns market pricing. Putting it
+ * in the catalogue would mean a resale retune renumbered the aerodynamics, and a
+ * `flight_result` could no longer say which of the two explained it.
+ */
+export const UsedMarketConfigurationBalance = z
+  .object({
+    /**
+     * Subtracted from the configuration factor, once per option fitted.
+     *
+     * **Negative is allowed, and is used.** An option that makes the aeroplane
+     * better for *everybody* — a wingtip device, an efficiency package — is not
+     * an unusual configuration, it is a good one, and the market pays for it.
+     * Treating every option as a penalty would make the configurator a trap and
+     * C.5's *"a bargain if it fits your network"* meaningless.
+     */
+    categoryDrag: byOptionCategory(z.number().min(-1).max(1)),
+    /**
+     * Multiplier on the drag of an option that cannot be undone.
+     *
+     * C.3 rule 5 makes anything structural or engine-related non-retrofittable.
+     * A buyer who does not want a folding wingtip is stuck with it for the life
+     * of the airframe, and the market prices exactly that.
+     */
+    nonRetrofittableMultiplier: z.number().positive(),
+    /** Bounds on the configuration factor. The floor also defines "maximally unusual". */
+    factorBounds: z.tuple([z.number().positive(), z.number().positive()]),
+  })
+  .strict()
+  .refine((v) => v.factorBounds[0] < v.factorBounds[1], {
+    message: 'configuration factor bounds must be ordered and distinct',
+  });
+
+export const UsedMarketBalance = z
+  .object({
+    /**
+     * Months of lease that stand in for a list price the catalogue does not give.
+     *
+     * App. C.2 shows *"—"* for a type out of production, and `list_price_minor`
+     * is genuinely null for it: there is no factory left to quote one. The used
+     * market still has to value it, and the lease rate is the only figure the
+     * catalogue states — so it is capitalised at this many months.
+     *
+     * `125` is not arbitrary: the catalogue's own `leaseFor` helper is 0.8% of
+     * list per month, and `1 / 0.008` is 125, so the fallback recovers the
+     * notional new price that lease rate was authored from — exactly, for all
+     * three v1 types that need it (737-800 → $50M, A380-800 → $200M,
+     * 747-8F → $300M).
+     *
+     * It is a fallback and not a general law. The ATR 72-600's rate is App.
+     * B.4's authored $85k rather than a percentage of anything, so inverting it
+     * would give the wrong answer — and it does not have to, because that type
+     * has a list price and the fallback never runs for it.
+     */
+    leaseCapitalisationMonths: z.number().positive(),
+    inventory: UsedMarketInventoryBalance,
+    depreciation: UsedMarketDepreciationBalance,
+    configuration: UsedMarketConfigurationBalance,
+  })
+  .strict();
+export type UsedMarketBalance = z.infer<typeof UsedMarketBalance>;
+
+/**
+ * The shipped used-market balance, and the default for a payload written before
+ * this section existed.
+ *
+ * Defaulted for the reason `SHIPPED_NPC_BALANCE` records at length: rows in
+ * `economy_config` are immutable and are parsed on the way *out*, so a required
+ * new section makes every older payload unparseable and a world pinned to one
+ * cannot price a flight. A new section arrives with a default, or it is a new
+ * version.
+ */
+export const SHIPPED_USED_MARKET_BALANCE = {
+  leaseCapitalisationMonths: 125,
+
+  inventory: {
+    /**
+     * Twenty-four berths.
+     *
+     * Enough that a player opening the market sees a real choice across classes;
+     * small enough that the aircraft they want is not guaranteed to be there,
+     * which is what makes waiting — or ordering new — a decision.
+     */
+    slots: 24,
+    /** A game week, the same cadence the NPC review runs on. */
+    refreshIntervalDays: 7,
+    baseListingLifetimeDays: 21,
+    unusualLingerDays: 28,
+    /**
+     * Two years, because an airframe younger than that has not had a previous
+     * owner in any meaningful sense — and inheriting one is C.5's whole subject.
+     */
+    minAgeYears: 2,
+    maxAgeYears: 25,
+    /**
+     * Narrowbodies dominate, because they do: they are the type most operators
+     * fly and therefore the type most often for sale. A ULH widebody is the
+     * rarest, and a berth holding one should feel like an opportunity.
+     */
+    classSupplyWeight: {
+      turboprop_regional: 3,
+      regional_jet: 3,
+      narrowbody: 8,
+      widebody: 2,
+      widebody_ulh: 1,
+      freighter: 2,
+    },
+  },
+
+  depreciation: {
+    /*
+     * Fitted by eye against a handful of real transactions, using the salvage
+     * form documented above:
+     *
+     *   A321neo (anchor $129M)   2 yr → $99M    8 yr → $48M   12 yr → $32M
+     *   737-800 (anchor $50M)   25 yr → $6.0M
+     *
+     * which is close to what those airframes actually change hands for. Nothing
+     * here claims more precision than that: one exponential cannot fit the
+     * whole life of an airframe, and §24 owns the model that eventually will.
+     */
+    annualRetentionRate: 0.86,
+    residualFloorRatio: 0.1,
+    /**
+     * Block hours a year. A short-haul narrowbody near 2,600 and a widebody near
+     * 4,200 is roughly what utilisation looks like; a turboprop flies fewer hours
+     * across far more sectors, which the cycles figure below picks up.
+     */
+    expectedAnnualHours: {
+      turboprop_regional: 2_200,
+      regional_jet: 2_400,
+      narrowbody: 2_600,
+      widebody: 4_200,
+      widebody_ulh: 4_600,
+      freighter: 3_000,
+    },
+    /**
+     * Hours per cycle — the sector length that turns hours into landings.
+     *
+     * This is where a turboprop and an A350 stop resembling each other. Both may
+     * be twelve years old; one has tens of thousands of landings and the other a
+     * few thousand, and cycles are what a maintenance programme actually counts
+     * (M4-06).
+     */
+    averageBlockHoursPerCycle: {
+      turboprop_regional: 1.1,
+      regional_jet: 1.5,
+      narrowbody: 2.2,
+      widebody: 7.0,
+      widebody_ulh: 11.0,
+      freighter: 5.0,
+    },
+    utilisationSensitivity: 0.25,
+    utilisationFactorBounds: [0.7, 1.1] as [number, number],
+  },
+
+  configuration: {
+    /**
+     * Ordered from what everybody wants to what nobody else does.
+     *
+     * `aerodynamic` is negative on purpose — sharklets and an efficiency package
+     * lower fuel burn for whoever ends up with the aeroplane, so the market pays
+     * a little more rather than less.
+     *
+     * `cargo` is the largest because a main-deck cargo door is the most drastic
+     * and least reversible thing in C.3's list: it commits the airframe to a
+     * role. `engine` and `cabin` come next, and they are the two C.5 names by
+     * hand — *"their cabin, their engine variant"* — because an alternative
+     * engine variant fragments a maintenance programme and a cabin is the most
+     * operator-specific thing on the aircraft.
+     */
+    categoryDrag: {
+      aerodynamic: -0.02,
+      avionics: 0.01,
+      structural: 0.02,
+      fuel: 0.04,
+      engine: 0.07,
+      cabin: 0.08,
+      cargo: 0.12,
+    },
+    nonRetrofittableMultiplier: 1.5,
+    // Not `as const`: zod's `.default()` will not take a readonly tuple, and
+    // `SHIPPED_NPC_BALANCE` above is written the same way for the same reason.
+    factorBounds: [0.55, 1.05] as [number, number],
+  },
+};
+
+// ---------------------------------------------------------------------------
 // The payload
 // ---------------------------------------------------------------------------
 
@@ -696,6 +1048,9 @@ export const EconomyConfig = z
     // Defaulted, not required — see `SHIPPED_NPC_BALANCE` for why a new
     // section must be, and what to do when it cannot be.
     npc: NpcBalance.default(SHIPPED_NPC_BALANCE),
+    // Defaulted for the same reason. Every `v1` row written before M4-05 is
+    // still parseable, and reads back the shipped used market.
+    usedMarket: UsedMarketBalance.default(SHIPPED_USED_MARKET_BALANCE),
   })
   .strict();
 export type EconomyConfig = z.infer<typeof EconomyConfig>;
@@ -978,6 +1333,7 @@ export const ECONOMY_CONFIG_V1: EconomyConfig = EconomyConfig.parse({
   },
 
   npc: SHIPPED_NPC_BALANCE,
+  usedMarket: SHIPPED_USED_MARKET_BALANCE,
 });
 
 // ---------------------------------------------------------------------------
