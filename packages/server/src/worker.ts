@@ -32,7 +32,7 @@ import { requeueSupportedEvents, unsupportedEvents, type WorldEventType } from '
  * ## Where this runs
  *
  * Dev only, as `tailfin-dev-worker.service` on `tailfin-dev-worker-01` (OPS-09).
- * **Production has no worker**, and giving it one is OPS-11 (#191) — a separate
+ * **Production has no worker**, and giving it one is OPS-12 (#191) — a separate
  * decision on purpose, so the first environment a worker ever ran in was chosen
  * rather than inherited.
  *
@@ -129,10 +129,11 @@ const env = loadEnv();
 /**
  * The worker's own port, and it is not `PORT`.
  *
- * Sharing the variable with the web process would mean one `.env` copied to a
- * worker node silently binding the web port, or two services on one box fighting
- * over 3000. Named separately so a mistake is a missing variable rather than a
- * collision. 3100 keeps it clear of both 3000 (production web) and 3001 (dev).
+ * Sharing the variable with the web process would mean one `.env` copied between
+ * roles could make the worker silently bind the web port. Named separately so a
+ * mistake is a missing role-specific value rather than a collision. 3100 keeps
+ * it clear of both 3000 (production web) and 3001 (dev web), wherever the roles
+ * are deployed.
  */
 const port = Number.parseInt(process.env.WORKER_HEALTH_PORT ?? '3100', 10);
 

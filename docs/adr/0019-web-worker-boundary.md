@@ -87,7 +87,7 @@ worker for something.
 **What this does not do.** It starts nothing. No systemd unit in this change runs `worker.js`,
 and the simulation still does not run in any environment. Building the process and starting it
 are deliberately separate steps so that the first environment a worker ever runs in is chosen
-rather than inherited — OPS-09 (#188) is the dev service, OPS-11 (#191) the production one.
+rather than inherited — OPS-09 (#188) is the dev service, OPS-12 (#191) the production one.
 
 **A known gap, carried in the open.** The worker registers a handler for `FLIGHT_ARRIVE` only.
 `FLIGHT_DEPART` is scheduled by `schedule/store.ts` when flights are materialised, and

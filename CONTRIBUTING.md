@@ -108,8 +108,10 @@ Three things hold the line, so it does not depend on anyone remembering it:
 Note what is _not_ restricted: `sim/event-queue.ts` stays open to the web process, because
 scheduling an event is web work. The restriction is on the loop, not on the queue.
 
-**Nothing starts the worker yet.** There is no systemd unit for it in any environment; OPS-09
-(#188) is the dev service and OPS-11 (#191) the production one. Running it locally:
+**Dev runs the worker as a systemd service; production does not yet have one.** The current
+node, service and database ownership is maintained in
+[`CLAUDE.md`](CLAUDE.md#the-two-environments-on-three-nodes), not duplicated here. To run the
+same entry point locally as a development convenience:
 
 ```bash
 pnpm build:apps
