@@ -598,7 +598,22 @@ export function availableOptionsFor(type: {
   // C.3 marks this "(era worlds)"; the turboprops are what an era world flies.
   if (type.class === 'turboprop_regional') ids.push('rough-field-kit');
 
-  return ids;
+  /*
+   * Sorted, and this is load-bearing rather than tidiness.
+   *
+   * The rows come back from `aircraft_type_option` in whatever order Postgres
+   * chose, so `loadCatalogue` has to impose an order to be deterministic — and
+   * if the order it imposes is not the one the shipped constant carries, then
+   * a type read out of the database is not equal to the type that was written
+   * into it. `catalogue.test.ts`'s "round-trips a type through the database
+   * unchanged" caught exactly that, which is what the test is for.
+   *
+   * So there is one canonical order, defined here, and the loader reproduces
+   * it. Alphabetical because it is the cheapest total order to agree on; the
+   * fold does not care either way, since `computeEffectiveBuild` sorts the
+   * options it is given before folding them.
+   */
+  return ids.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
 /**

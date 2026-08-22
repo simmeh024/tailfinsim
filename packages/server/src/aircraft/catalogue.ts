@@ -166,8 +166,9 @@ export async function loadCatalogueVersion(
           eraDates: AircraftEraDates.parse(JSON.parse(row.eraDates)),
           listPrice: row.listPriceMinor,
           monthlyLeaseRate: row.monthlyLeaseRateMinor,
-          // Sorted so a build folds in a stable order whatever order Postgres
-          // returned the rows in (CONTRIBUTING invariant 2).
+          // Sorted into the same canonical order `availableOptionsFor` uses, so a
+          // type read back out of the database equals the type written into it.
+          // Postgres returns these rows in no guaranteed order (invariant 2).
           availableOptionIds: (availability.get(row.designation) ?? []).sort((a, b) =>
             a < b ? -1 : a > b ? 1 : 0,
           ),
