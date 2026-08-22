@@ -6,20 +6,32 @@ export type RgbaColor = [red: number, green: number, blue: number, alpha: number
  * `tokens.css` holds six-digit hex, so opacity is decided here. `NIGHT_ALPHA` is
  * the one worth a note.
  *
- * It was `215` — 84% of `#03070e`, which is very nearly black. At that strength
- * the night side is not shaded, it is erased: land goes to `rgb(8, 14, 22)` and
- * ocean to `rgb(4, 8, 16)`, two colours nobody can tell apart. That was survivable
- * only while the terminator was being drawn at the wrong scale; once it covered
- * the hemisphere it actually describes, half the world went black.
+ * It was `215` — 84% of a near-black night colour, which does not dim the night
+ * side, it erases it. Now `90`, chosen with the rest of the world palette so that
+ * **every meaningful pairing clears WCAG AA's 3:1 in both themes, in daylight and
+ * under full night**: land against ocean, a coastline against its own land, and a
+ * route against the sea it crosses.
  *
+ * That is App. H.7's bar — *"WCAG AA contrast throughout"* — and the world palette
+ * missed it badly before: land against ocean measured 1.49:1 in the dark theme.
  * §1's promise is that a player *"comes back the next morning to see where their
- * aircraft ended up"*, and roughly half of any given moment is night. So night
- * has to read as dusk rather than as an absence: coastlines, borders and routes
- * must all survive it. `palette.test.ts` asserts they do, so a future retune
- * cannot quietly make the map unreadable again.
+ * aircraft ended up"*, and roughly half of any moment is night, so night has to
+ * read as dusk rather than as an absence.
+ *
+ * `palette.test.ts` measures all of it rather than trusting the numbers to look
+ * about right, and `tokens.css` is the only place the colours live.
  */
-const NIGHT_ALPHA = 115;
+const NIGHT_ALPHA = 90;
 const LAND_LINE_ALPHA = 180;
+/**
+ * The graticule is faint on purpose, and unavoidably fainter over land.
+ *
+ * One flat overlay at 31% cannot contrast strongly with both a dark sea and a
+ * light landmass; the colour chosen favours the ocean, where most of a meridian
+ * runs. It is a reference grid, it is toggleable, and it is not a meaningful
+ * graphic in WCAG's sense — so it is the one world layer the contrast tests do
+ * not gate.
+ */
 const GRID_ALPHA = 80;
 const ROUTE_ALPHA = 230;
 
@@ -32,12 +44,20 @@ export interface WorldPalette {
   route: RgbaColor;
 }
 
+/**
+ * The dark theme's world colours, for when the tokens cannot be read.
+ *
+ * A duplicate of `tokens.css`, which is a drift hole — so `palette.test.ts` parses
+ * that file and asserts these match it. Without that, a retune in one place and
+ * not the other is invisible until someone renders the world in an environment
+ * where `getComputedStyle` returns nothing.
+ */
 const FALLBACK_PALETTE: WorldPalette = {
-  ocean: [6, 15, 27, 255],
-  land: [31, 52, 65, 255],
-  landLine: [87, 112, 129, LAND_LINE_ALPHA],
-  grid: [110, 139, 157, GRID_ALPHA],
-  night: [3, 7, 14, NIGHT_ALPHA],
+  ocean: [13, 32, 56, 255],
+  land: [119, 153, 176, 255],
+  landLine: [15, 30, 46, LAND_LINE_ALPHA],
+  grid: [220, 236, 247, GRID_ALPHA],
+  night: [11, 26, 46, NIGHT_ALPHA],
   route: [94, 184, 255, ROUTE_ALPHA],
 };
 
@@ -81,10 +101,27 @@ export function compositeOver(layer: RgbaColor, background: RgbaColor): [number,
   ) as [number, number, number];
 }
 
-/** Perceptual distance, good enough to ask "can these be told apart?". */
-export function colourDistance(
+/** WCAG relative luminance. */
+function relativeLuminance(colour: readonly [number, number, number]): number {
+  const channel = (value: number): number => {
+    const scaled = value / 255;
+    return scaled <= 0.03928 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(colour[0]) + 0.7152 * channel(colour[1]) + 0.0722 * channel(colour[2]);
+}
+
+/**
+ * WCAG contrast ratio, 1:1 to 21:1.
+ *
+ * The measure App. H.7 names, rather than a Euclidean distance that happens to
+ * correlate with it. AA wants 3:1 for a meaningful graphical object against what
+ * it sits on, and the world palette is nothing but graphical objects sitting on
+ * each other.
+ */
+export function contrastRatio(
   a: readonly [number, number, number],
   b: readonly [number, number, number],
 ): number {
-  return Math.hypot((a[0] - b[0]) * 0.299, (a[1] - b[1]) * 0.587, (a[2] - b[2]) * 0.114);
+  const [lighter, darker] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);
+  return ((lighter ?? 0) + 0.05) / ((darker ?? 0) + 0.05);
 }
