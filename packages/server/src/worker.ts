@@ -123,7 +123,8 @@ const unhandled = engine.snapshot().unhandledEventTypes;
 if (unhandled.length > 0) {
   app.log.warn(
     { unhandledEventTypes: unhandled },
-    'no handler registered for these event types; events of them will be marked failed when drained',
+    'no handler registered for these event types; events of them are paused as unsupported ' +
+      'when drained, and returned to the queue by the first build that can handle them',
   );
 }
 
