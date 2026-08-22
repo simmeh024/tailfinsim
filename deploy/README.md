@@ -1085,16 +1085,21 @@ engine, so the probe cannot drift from the process.
 node packages/server/dist/worker.js --handler-preflight
 ```
 
-Reads the queue and decides. Output looks like this:
+Reads the queue and decides. Real output, from a seeded `tailfin_test` holding 412 pending
+`FLIGHT_DEPART`, 12 pending `FLIGHT_ARRIVE`, 40 `done`, 3 `failed`, and 7 pending in an
+archived world:
 
 ```
 this build handles: FLIGHT_ARRIVE
 actionable queued work:
-  FLIGHT_ARRIVE: 12 events across 1 world, oldest due 2031-04-02T09:15:00.000Z — ok
-  FLIGHT_DEPART: 412 events across 2 worlds, oldest due 2031-03-30T22:40:00.000Z — NO HANDLER
-excluded from the decision: 40 done, 3 failed, 0 already parked for want of a handler, 0 pending in archived worlds
-HANDLER PREFLIGHT: REFUSED — this build has no handler for FLIGHT_DEPART (412 events). …
+  FLIGHT_ARRIVE: 12 events across 1 world, oldest due 2026-08-22T02:24:58.300Z — ok
+  FLIGHT_DEPART: 412 events across 1 world, oldest due 2026-08-21T19:44:58.307Z — NO HANDLER
+excluded from the decision: 40 done, 3 failed, 0 already parked for want of a handler, 7 pending in archived worlds
+HANDLER PREFLIGHT: REFUSED — this build has no handler for FLIGHT_DEPART (412 events). Starting it would park that work as unsupported rather than doing it. Deploy a build that registers the handler, or set ALLOW_HANDLER_GAP=1 on the deploy command to accept the pause deliberately.
 ```
+
+Note what did **not** block it: the 43 terminal rows and the 7 in the archived world are
+counted, reported, and ignored for the decision.
 
 | Exit | Means                                     | Deploy does                               |
 | ---- | ----------------------------------------- | ----------------------------------------- |
