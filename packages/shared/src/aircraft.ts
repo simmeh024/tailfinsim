@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { MinorUnits, NauticalMiles, Timestamp, Uuid } from './primitives';
+import { MinorUnits, NauticalMiles, Uuid } from './primitives';
 
 /**
  * Aircraft types and individual airframes, following App. C.6's data model.
@@ -15,6 +15,20 @@ import { MinorUnits, NauticalMiles, Timestamp, Uuid } from './primitives';
  * system becoming unmaintainable, so `AircraftSpec` is deliberately one shape
  * used for both.
  */
+
+/**
+ * ICAO aerodrome reference code letter.
+ *
+ * Named rather than inlined because M4-03's factory options move an aircraft
+ * along this scale — C.3's sharklets push it up and the 777-9's folding wingtips
+ * pull it down — so the ordering is now arithmetic rather than a label, and
+ * three files need to agree about which six letters there are.
+ */
+export const WingspanCode = z.enum(['A', 'B', 'C', 'D', 'E', 'F']);
+export type WingspanCode = z.infer<typeof WingspanCode>;
+
+/** The scale in order, smallest first. Index arithmetic depends on it. */
+export const WINGSPAN_CODES: readonly WingspanCode[] = ['A', 'B', 'C', 'D', 'E', 'F'];
 
 export const AircraftSpec = z.object({
   /**
@@ -53,7 +67,7 @@ export const AircraftSpec = z.object({
   runwayRequirementM: z.number().int().positive(),
   fuelBurnKgPerHour: z.number().positive(),
   /** ICAO aerodrome reference code letter, matched against an airport's `maxWingspanCode`. */
-  wingspanCode: z.enum(['A', 'B', 'C', 'D', 'E', 'F']),
+  wingspanCode: WingspanCode,
   /** ICAO Chapter number. Higher is quieter; drives noise-quota exclusion (§7.2b). */
   noiseChapter: z.number().int().positive(),
   /** Baseline minutes on stand before cabin config and ground handling adjust it (§8.2). */
@@ -209,7 +223,7 @@ export const CatalogueEntry = z.object({
   rangeNm: NauticalMiles,
   mtowTonnes: z.number().positive(),
   runwayRequirementM: z.number().int().positive(),
-  wingspanCode: z.enum(['A', 'B', 'C', 'D', 'E', 'F']),
+  wingspanCode: WingspanCode,
 
   listPrice: MinorUnits.nullable(),
   monthlyLeaseRate: MinorUnits.nullable(),
@@ -225,22 +239,14 @@ export const CatalogueEntry = z.object({
   ),
   /** Sum of the above. Zero for an unrestricted type. */
   restrictionCostPerDepartureMinor: MinorUnits,
+
+  /**
+   * What this type can be configured with (M4-03, App. C.6 `available_options[]`).
+   *
+   * Ids into `FleetCatalogueResponse.options`, rather than the rows: the same
+   * option appears on most of the eighteen types, and sending it eighteen times
+   * would triple the payload to say one thing repeatedly.
+   */
+  availableOptionIds: z.array(z.string()),
 });
 export type CatalogueEntry = z.infer<typeof CatalogueEntry>;
-
-/** `GET /api/fleet/catalogue` — what this world can fly, on its own clock. */
-export const FleetCatalogueResponse = z.object({
-  /** The world's own date, so the client can say "as at" rather than guessing. */
-  inGameDate: Timestamp,
-  catalogueVersion: z.string().min(1),
-  /**
-   * Every type that exists in this world, in catalogue order.
-   *
-   * Types before their first flight are **absent**, not listed as locked:
-   * §7.2b's rule is that an aircraft *does not exist* in a world whose clock has
-   * not reached it, and a 1950s world showing a greyed-out A350 would be
-   * telling the player about a future that world does not have.
-   */
-  types: z.array(CatalogueEntry),
-});
-export type FleetCatalogueResponse = z.infer<typeof FleetCatalogueResponse>;

@@ -5,13 +5,19 @@ import type {
   CatalogueEntry,
   FleetCatalogueResponse,
 } from '@tailfin/shared';
-import { availabilityOf, gameTime, restrictionCost, type WorldClock } from '@tailfin/sim';
+import {
+  availabilityOf,
+  computeEffectiveSpec,
+  gameTime,
+  restrictionCost,
+  type WorldClock,
+} from '@tailfin/sim';
 
 import { type Database } from '../db/client';
 import { world } from '../db/schema';
 import { loadEconomyConfig } from '../economy/loader';
 
-import { loadCatalogue } from './catalogue';
+import { loadCatalogueVersion } from './catalogue';
 
 /**
  * The catalogue as one world sees it, on its own clock (M4-02, §7.2b).
@@ -94,21 +100,36 @@ export async function fleetCatalogue(
 
   const inGameDate = gameTime(clockOf(row), now);
   const [catalogue, economy] = await Promise.all([
-    loadCatalogue(db, row.catalogueVersion),
+    loadCatalogueVersion(db, row.catalogueVersion),
     loadEconomyConfig(db, row.economyConfigVersion),
   ]);
 
   const types: CatalogueEntry[] = [];
 
-  for (const type of catalogue.values()) {
+  for (const type of catalogue.types.values()) {
     const state = availabilityOf(type.eraDates, inGameDate);
     // §7.2b: it does not exist yet. Not listed, not greyed out, not mentioned.
     if (state === 'unannounced') continue;
 
+    /*
+     * The type's spec, through the same fold an airframe's goes through.
+     *
+     * With no options taken this returns the base spec unchanged, so it looks
+     * like ceremony. It is not: C.6's rule is that *"everything downstream reads
+     * only `effective_spec`"*, and the cheapest way to keep that true is for
+     * there to be no code path that reads `baseSpec` and does arithmetic on it.
+     * A catalogue listing describes a standard aircraft — the effective spec of
+     * a build with an empty option list — and saying so in the call makes the
+     * rule a property of the call graph rather than of everyone's memory.
+     */
+    const spec = computeEffectiveSpec({ baseSpec: type.baseSpec });
+
     const cost = restrictionCost(
       type.eraDates,
       inGameDate,
-      type.baseSpec.mtowTonnes,
+      // Charged against the effective MTOW. C.3 rule 4 — a paper upgrade raises
+      // fees for ever — is the same arithmetic on an airframe.
+      spec.mtowTonnes,
       economy.costs.restrictions,
     );
 
@@ -124,12 +145,14 @@ export async function fleetCatalogue(
       // announce, and putting its historical EIS here would read as a countdown.
       arrivesOn: state === 'prototype' ? type.eraDates.entryIntoService : null,
 
-      seatsTwoClass: type.baseSpec.seatsTwoClass,
-      maxSeats: type.baseSpec.maxSeats,
-      rangeNm: type.baseSpec.rangeNm,
-      mtowTonnes: type.baseSpec.mtowTonnes,
-      runwayRequirementM: type.baseSpec.runwayRequirementM,
-      wingspanCode: type.baseSpec.wingspanCode,
+      seatsTwoClass: spec.seatsTwoClass,
+      maxSeats: spec.maxSeats,
+      rangeNm: spec.rangeNm,
+      mtowTonnes: spec.mtowTonnes,
+      runwayRequirementM: spec.runwayRequirementM,
+      wingspanCode: spec.wingspanCode,
+
+      availableOptionIds: type.availableOptionIds,
 
       listPrice: type.listPrice,
       monthlyLeaseRate: type.monthlyLeaseRate,
@@ -148,5 +171,8 @@ export async function fleetCatalogue(
     inGameDate: inGameDate.toISOString(),
     catalogueVersion: row.catalogueVersion,
     types,
+    // The whole version's option set, once. Each entry's `availableOptionIds`
+    // indexes into it (M4-03).
+    options: [...catalogue.options.values()],
   };
 }

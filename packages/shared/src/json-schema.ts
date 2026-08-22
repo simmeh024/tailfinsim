@@ -20,7 +20,7 @@ import {
   AdminWorldStatusResponse,
   AdminWorldListResponse,
 } from './admin';
-import { FleetCatalogueResponse } from './aircraft';
+import { FleetCatalogueResponse } from './aircraft-catalogue';
 import {
   AirlineFoundingAirportListResponse,
   AirlineFoundingOptionsResponse,

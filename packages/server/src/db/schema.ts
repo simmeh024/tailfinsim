@@ -2116,3 +2116,94 @@ export const aircraftType = pgTable(
 
 export type AircraftTypeRow = typeof aircraftType.$inferSelect;
 export type NewAircraftTypeRow = typeof aircraftType.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// aircraft_option — the factory configurator (M4-03, App. C.3, C.6)
+// ---------------------------------------------------------------------------
+
+/**
+ * One factory option, in one version of the catalogue.
+ *
+ * Versioned and immutable for exactly the reason `aircraft_type` is: an airframe
+ * built with three auxiliary tanks has that build's weight and range folded into
+ * every `flight_result` it ever settled, and a delta that could change
+ * underneath would make an old flight inexplicable (invariant 4). Retuning an
+ * option is a new catalogue version.
+ *
+ * ## Why the availability is a separate table
+ *
+ * C.6 puts `available_options[]` on the type, which would suggest a column on
+ * `aircraft_type`. It cannot be one: those rows are immutable by trigger, so a
+ * column added now could never be backfilled for the v1 rows already seeded into
+ * dev — every existing world would offer an empty configurator for ever, and the
+ * only repair would be re-authoring eighteen types as v2.
+ *
+ * A join table has none of that problem. It is new, so there is nothing to
+ * backfill; the seed completes v1's availability on a database that already
+ * holds v1's types, which is the same *"partially-present version is completed
+ * rather than refused"* behaviour `seedAircraftCatalogue` already documents.
+ */
+export const aircraftOption = pgTable(
+  'aircraft_option',
+  {
+    catalogueVersion: text('catalogue_version').notNull(),
+    /** `sharklets`, `act-3`. Unique within a version, and referenced by a build. */
+    optionId: text('option_id').notNull(),
+
+    name: text('name').notNull(),
+    summary: text('summary').notNull(),
+    /** Also what decides retrofittability — see `AircraftOptionCategory`. */
+    category: text('category').notNull(),
+
+    /** `AircraftSpecDelta` as JSON text. Read whole; nothing queries inside it. */
+    specDeltas: text('spec_deltas').notNull(),
+
+    priceMinor: bigint('price_minor', { mode: 'number' }).notNull(),
+    /** C.3 rule 2: options extend delivery. Weeks added to the order. */
+    leadTimeWeeks: integer('lead_time_weeks').notNull(),
+
+    /** C.3 rule 5. False for anything structural or engine-related. */
+    retrofittable: boolean('retrofittable').notNull(),
+    /** §10.3 topics, as a JSON array of strings. */
+    requiresResearch: text('requires_research').notNull(),
+    /** Option ids, as a JSON array. Asserted symmetric by test, not by constraint. */
+    conflictsWith: text('conflicts_with').notNull(),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Which build wrote it, so a mismatch can be traced to a release. */
+    createdByLabel: text('created_by_label').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.catalogueVersion, t.optionId] }),
+    check('aircraft_option_price_nonnegative', sql`${t.priceMinor} >= 0`),
+    check('aircraft_option_lead_time_nonnegative', sql`${t.leadTimeWeeks} >= 0`),
+  ],
+);
+
+export type AircraftOptionRow = typeof aircraftOption.$inferSelect;
+export type NewAircraftOptionRow = typeof aircraftOption.$inferInsert;
+
+/**
+ * Which options a type may be ordered with — C.6's `available_options[]`.
+ *
+ * No foreign keys, for the same reason `world.aircraft_catalogue_version` has
+ * none: a key would force the migration to seed a version, which means writing
+ * eighteen aircraft and eighteen options into SQL. The seed inserts from
+ * `AIRCRAFT_CATALOGUE_V1` at startup instead, and `loadCatalogue` parses on the
+ * way out so a row that does not resolve is caught at read time.
+ */
+export const aircraftTypeOption = pgTable(
+  'aircraft_type_option',
+  {
+    catalogueVersion: text('catalogue_version').notNull(),
+    designation: text('designation').notNull(),
+    optionId: text('option_id').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.catalogueVersion, t.designation, t.optionId] }),
+    // The configurator's query: what can this type be ordered with?
+    index('aircraft_type_option_type_idx').on(t.catalogueVersion, t.designation),
+  ],
+);
+
+export type AircraftTypeOptionRow = typeof aircraftTypeOption.$inferSelect;
