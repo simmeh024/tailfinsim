@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Tailfin \u2014 real-time online airline management sim",
+  "license": "AGPL-3.0-only",
   "packageManager": "pnpm@11.22.0",
   "engines": {
     "node": ">=24.19.0 <25",
