@@ -192,6 +192,7 @@ renews the next one; a flight that never settles is money that never moves.
   for a new delivery.
 - **M4-06** owns maintenance. Cycles are generated here because they are a fact about a used
   airframe; what they _cost_ is not this milestone's.
-- **M4-07** owns the fleet and market UI. `GET /api/fleet/used-market` is the contract it will
-  render.
+- **M4-07** built the fleet list and aircraft detail ([`fleet-management.md`](fleet-management.md)).
+  The used **market** still has no page: `GET /api/fleet/used-market` remains the contract for
+  one, and the asking-price decomposition is what it should render.
 - **Player-to-player trading** remains Post-MVP (§7.4, §16).

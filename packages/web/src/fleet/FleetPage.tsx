@@ -2,11 +2,15 @@ import { useEffect, useState } from 'react';
 
 import type {
   AircraftAvailabilityState,
+  AirframeDetailResponse,
   CatalogueEntry,
+  FleetAirframesResponse,
   FleetCatalogueResponse,
 } from '@tailfin/shared';
 
-import { fetchFleetCatalogue } from './api';
+import { AirframeDetail } from './AirframeDetail';
+import { fetchAirframeDetail, fetchFleetAirframes, fetchFleetCatalogue } from './api';
+import { FleetTable } from './FleetTable';
 
 import type { ReactNode } from 'react';
 
@@ -33,8 +37,17 @@ import type { ReactNode } from 'react';
  * could not reach `availabilityOf` even by accident, which is exactly the point
  * (§21).
  *
- * The airframe list — what *this airline* actually owns, with hours, cycles and
- * maintenance state — is M4-07 and lands on this page above the catalogue.
+ * ## Two lists, and the owned one comes first (M4-07)
+ *
+ * The airframe list is what *this airline* actually owns; the catalogue is what
+ * the world offers. The fleet goes above, because a player who opens this page
+ * usually has a decision about an aeroplane they already have rather than one
+ * they might buy — and the fleet table is sorted so the decision is the first
+ * row.
+ *
+ * The two lists load independently. A catalogue that fails must not hide the
+ * fleet, and an empty fleet is a real state rather than an error: a player who
+ * has not bought anything yet is exactly who most needs the catalogue.
  */
 
 const STATE_LABEL: Record<AircraftAvailabilityState, string> = {
@@ -103,7 +116,12 @@ function TypeRow({ entry }: { entry: CatalogueEntry }): ReactNode {
 
 export function FleetPage(): ReactNode {
   const [catalogue, setCatalogue] = useState<FleetCatalogueResponse | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [catalogueFailed, setCatalogueFailed] = useState(false);
+  const [fleet, setFleet] = useState<FleetAirframesResponse | null>(null);
+  const [fleetFailed, setFleetFailed] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<AirframeDetailResponse | null>(null);
+  const [detailFailed, setDetailFailed] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -112,85 +130,133 @@ export function FleetPage(): ReactNode {
         if (live) setCatalogue(value);
       })
       .catch(() => {
-        if (live) setFailed(true);
+        if (live) setCatalogueFailed(true);
+      });
+    void fetchFleetAirframes()
+      .then((value) => {
+        if (live) setFleet(value);
+      })
+      .catch(() => {
+        if (live) setFleetFailed(true);
       });
     return () => {
       live = false;
     };
   }, []);
 
-  if (failed) {
-    return (
-      <section className="admin__section">
-        <h1 className="page__title">Fleet</h1>
-        <p className="admin__note" role="alert">
-          Could not load the aircraft catalogue.
-        </p>
-      </section>
-    );
-  }
+  useEffect(() => {
+    if (selectedId === null) {
+      setDetail(null);
+      setDetailFailed(false);
+      return;
+    }
+    let live = true;
+    // Cleared first, so the previous aircraft's specification is never on screen
+    // under the new one's registration while the request is in flight.
+    setDetail(null);
+    setDetailFailed(false);
+    void fetchAirframeDetail(selectedId)
+      .then((value) => {
+        if (live) setDetail(value);
+      })
+      .catch(() => {
+        if (live) setDetailFailed(true);
+      });
+    return () => {
+      live = false;
+    };
+  }, [selectedId]);
 
-  if (catalogue === null) {
-    return (
-      <section className="admin__section">
-        <h1 className="page__title">Fleet</h1>
-        <p className="admin__note">Loading…</p>
-      </section>
-    );
-  }
-
-  const sorted = [...catalogue.types].sort(
-    (a, b) =>
-      STATE_ORDER.indexOf(a.availability) - STATE_ORDER.indexOf(b.availability) ||
-      a.seatsTwoClass - b.seatsTwoClass,
-  );
+  const sorted =
+    catalogue === null
+      ? []
+      : [...catalogue.types].sort(
+          (a, b) =>
+            STATE_ORDER.indexOf(a.availability) - STATE_ORDER.indexOf(b.availability) ||
+            a.seatsTwoClass - b.seatsTwoClass,
+        );
 
   return (
     <section className="admin__section">
       <h1 className="page__title">Fleet</h1>
 
-      <p className="admin__hint">
-        The aircraft catalogue as of {new Date(catalogue.inGameDate).toISOString().slice(0, 10)} in
-        this world. An aircraft that has not yet flown does not appear at all — types arrive on
-        their real dates, and the ones still in testing are listed with the date they enter service.
-      </p>
-
-      {sorted.length === 0 ? (
-        // The 1950s world: a real state, and a very different one from a
-        // failed request.
-        <p className="admin__note">
-          No aircraft type has flown yet in this world. Nothing in the catalogue exists at this
-          date.
+      <h2 className="fleet__section-heading">Your aircraft</h2>
+      {fleetFailed ? (
+        <p className="admin__note" role="alert">
+          Could not load your fleet.
         </p>
+      ) : fleet === null ? (
+        <p className="admin__note">Loading your fleet…</p>
       ) : (
-        <table>
-          <caption>
-            {String(sorted.length)} types, available first. Seats are a two-class layout; a dash
-            means a freighter.
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">Type</th>
-              <th scope="col">Status</th>
-              <th scope="col">Seats</th>
-              <th scope="col">Range (nm)</th>
-              <th scope="col">Runway (m)</th>
-              <th scope="col">Code</th>
-              <th scope="col">List</th>
-              <th scope="col">Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((entry) => (
-              <TypeRow key={entry.designation} entry={entry} />
-            ))}
-          </tbody>
-        </table>
+        <FleetTable airframes={fleet.airframes} selectedId={selectedId} onSelect={setSelectedId} />
       )}
 
-      <p className="admin__hint">
-        Your own aircraft — hours, cycles, configuration and maintenance state — arrive with M4-07.
-      </p>
+      {selectedId !== null &&
+        (detailFailed ? (
+          <p className="admin__note" role="alert">
+            Could not load that aircraft.
+          </p>
+        ) : detail === null ? (
+          <p className="admin__note">Loading aircraft…</p>
+        ) : (
+          <AirframeDetail
+            detail={detail}
+            onClose={() => {
+              setSelectedId(null);
+            }}
+          />
+        ))}
+
+      <h2 className="fleet__section-heading">Catalogue</h2>
+      {catalogueFailed ? (
+        <p className="admin__note" role="alert">
+          Could not load the aircraft catalogue.
+        </p>
+      ) : catalogue === null ? (
+        <p className="admin__note">Loading the catalogue…</p>
+      ) : (
+        <>
+          <p className="admin__hint">
+            The aircraft catalogue as of {new Date(catalogue.inGameDate).toISOString().slice(0, 10)}{' '}
+            in this world. An aircraft that has not yet flown does not appear at all — types arrive
+            on their real dates, and the ones still in testing are listed with the date they enter
+            service.
+          </p>
+
+          {sorted.length === 0 ? (
+            // The 1950s world: a real state, and a very different one from a
+            // failed request.
+            <p className="admin__note">
+              No aircraft type has flown yet in this world. Nothing in the catalogue exists at this
+              date.
+            </p>
+          ) : (
+            <table>
+              <caption>
+                {String(sorted.length)} types, available first. Seats are a two-class layout; a dash
+                means a freighter.
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Type</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Seats</th>
+                  <th scope="col">Range (nm)</th>
+                  <th scope="col">Runway (m)</th>
+                  <th scope="col">Code</th>
+                  <th scope="col">List</th>
+                  <th scope="col">Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((entry) => (
+                  <TypeRow key={entry.designation} entry={entry} />
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
     </section>
   );
 }
