@@ -5,6 +5,9 @@ import {
   apiErrorJsonSchema,
   fleetCatalogueResponseJsonSchema,
   usedMarketResponseJsonSchema,
+  BookCheckInput,
+  bookCheckResponseJsonSchema,
+  maintenanceResponseJsonSchema,
   type ApiError,
 } from '@tailfin/shared';
 
@@ -17,6 +20,7 @@ import {
   type AircraftAcquisitionRefusal,
 } from './acquisition';
 import { fleetCatalogue } from './era';
+import { bookCheck, fleetMaintenance } from './maintenance';
 import { listUsedMarket } from './used-market';
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -129,6 +133,109 @@ export function registerAircraftRoutes(app: FastifyInstance, { db }: { db: Datab
     async (request, reply) =>
       reply.code(200).send({ orders: await listAircraftOrders(db.db, resolvedAirlineOf(request)) }),
   );
+
+  /**
+   * The fleet's maintenance position (M4-06, §7.3).
+   *
+   * `requireAirline`: a restricted airline still has aeroplanes, still accrues
+   * hours on the ones already flying, and still needs to see what is due. Being
+   * unable to *book* a check is a different thing from being unable to look, and
+   * conflating them would leave a restricted operator blind to a grounding they
+   * are heading for.
+   */
+  app.get(
+    '/api/fleet/maintenance',
+    {
+      onRequest: app.requireAirline,
+      schema: { response: { 200: maintenanceResponseJsonSchema } },
+    },
+    async (request, reply) => {
+      const own = resolvedAirlineOf(request);
+      return reply.code(200).send(await fleetMaintenance(db.db, own));
+    },
+  );
+
+  /**
+   * Book a check.
+   *
+   * `requireActiveAirline`, because it spends money and takes an aeroplane out of
+   * service — a commitment, like an acquisition (ADR-0018).
+   *
+   * The tier is the only thing the client chooses. Cost, downtime and the
+   * completion instant are all derived server-side from the world's economy and
+   * the type's maintenance profile, so a client cannot ask for a cheap D-check or
+   * a one-day one.
+   */
+  app.post<{ Body: unknown }>(
+    '/api/fleet/maintenance/checks',
+    {
+      onRequest: app.requireActiveAirline,
+      schema: {
+        response: {
+          201: bookCheckResponseJsonSchema,
+          400: apiErrorJsonSchema,
+          404: apiErrorJsonSchema,
+          409: apiErrorJsonSchema,
+          422: apiErrorJsonSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const parsed = BookCheckInput.safeParse(request.body);
+      if (!parsed.success) {
+        const fields: Record<string, string[]> = {};
+        for (const issue of parsed.error.issues) {
+          const field = issue.path.length === 0 ? 'form' : String(issue.path[0]);
+          (fields[field] ??= []).push(issue.message);
+        }
+        return reply.code(400).send({
+          code: 'invalid_maintenance_check',
+          message: 'The maintenance check request is not valid',
+          fields,
+        });
+      }
+
+      const own = resolvedAirlineOf(request);
+      const result = await bookCheck(db.db, own, parsed.data.airframeId, parsed.data.tier);
+      if (!result.ok) return sendCheckRefusal(reply, result);
+
+      return reply.code(201).send({
+        airframeId: parsed.data.airframeId,
+        tier: result.tier,
+        costMinor: result.costMinor,
+        completesAt: result.completesAt.toISOString(),
+      });
+    },
+  );
+}
+
+function sendCheckRefusal(reply: FastifyReply, result: { kind: string } & Record<string, unknown>) {
+  switch (result.kind) {
+    // `not-owned` answers 404, not 403. An airframe belonging to somebody else
+    // must be indistinguishable from one that does not exist, or the endpoint
+    // becomes a way to ask whether a given id is a real aeroplane (ADR-0010).
+    case 'airframe-not-found':
+    case 'not-owned':
+      return reply.code(404).send({
+        code: 'airframe_not_found',
+        message: 'No such aircraft in your fleet',
+      });
+    case 'already-in-check':
+      return reply.code(409).send({
+        code: 'airframe_already_in_check',
+        message: 'That aircraft is already in a check',
+      });
+    case 'insufficient-funds':
+      return reply.code(422).send({
+        code: 'insufficient_funds',
+        message: 'The airline cannot afford that check',
+      });
+    default:
+      return reply.code(422).send({
+        code: 'maintenance_check_refused',
+        message: 'That maintenance check cannot be booked',
+      });
+  }
 }
 
 function sendAcquisitionRefusal(reply: FastifyReply, result: AircraftAcquisitionRefusal) {

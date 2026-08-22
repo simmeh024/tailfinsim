@@ -447,6 +447,7 @@ export const cashMovementCause = pgEnum('cash_movement_cause', [
   'aircraft_lease_deposit',
   'aircraft_used_purchase',
   'aircraft_new_purchase',
+  'maintenance_check',
   'flight_settlement',
   'migration_opening_balance',
 ]);
@@ -2225,6 +2226,16 @@ export const aircraftAcquisitionKind = pgEnum('aircraft_acquisition_kind', [
 ]);
 export const aircraftOrderStatus = pgEnum('aircraft_order_status', ['pending', 'delivered']);
 export const airframeOwnership = pgEnum('airframe_ownership', ['owned', 'leased', 'financed']);
+
+/**
+ * Whether an airframe can fly (M4-06, §7.3).
+ *
+ * `grounded` is the maintenance grounding only — flown past
+ * `groundingOverdueMultiple` times a check's interval. Unscheduled AOG from a
+ * failed part or an incident is §24's separate, unspecified area, and giving it a
+ * value here would imply this milestone had modelled it.
+ */
+export const airframeStatus = pgEnum('airframe_status', ['in_service', 'in_check', 'grounded']);
 export const usedAircraftListingStatus = pgEnum('used_aircraft_listing_status', [
   'available',
   'sold',
@@ -2462,11 +2473,57 @@ export const airframe = pgTable(
       .references(() => airport.icaoCode),
     deliveredAt: timestamp('delivered_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+
+    // --- M4-06: maintenance -------------------------------------------------
+
+    /**
+     * `MaintenanceState`'s per-tier "hours and cycles at last check", as JSON.
+     *
+     * A blob rather than six columns because nothing queries inside it: the due
+     * calculation needs the whole state or none of it, and a fleet is small
+     * enough to fold in the application. Same treatment `effective_spec` and
+     * `owner_history` already get, and the same reason.
+     *
+     * Nullable, because this is an expand migration: airframes delivered before
+     * M4-06 have no recorded history, and `null` is read as *"every tier last
+     * done at the hours it has now"* rather than as *"catastrophically overdue"*.
+     * Grounding an existing fleet on deploy would be the worst possible reading.
+     */
+    maintenanceState: text('maintenance_state'),
+
+    /**
+     * Whether the aeroplane can fly, and why not.
+     *
+     * A column rather than a derived value, because two of the three states are
+     * facts about the world rather than about the totals: a check that is running
+     * has a finish time, and `grounded` is a latch a player has to clear. Only
+     * `in_service` is the absence of anything.
+     */
+    status: airframeStatus('status').notNull().default('in_service'),
+    /** Which tier is running, when `status = 'in_check'`. */
+    checkTier: text('check_tier'),
+    /** Game-time instant the running check finishes. The worker sweeps on it. */
+    checkCompletesAt: timestamp('check_completes_at', { withTimezone: true }),
   },
   (t) => [
     unique('airframe_world_registration_key').on(t.worldId, t.registration),
     index('airframe_airline_id_idx').on(t.airlineId),
+    // The worker's completion sweep: this world's running checks, soonest first.
+    index('airframe_check_due_idx').on(t.worldId, t.status, t.checkCompletesAt),
     check('airframe_hours_nonnegative', sql`${t.hours} >= 0`),
+    check(
+      'airframe_check_tier_valid',
+      sql`${t.checkTier} IS NULL OR ${t.checkTier} IN ('a', 'c', 'd')`,
+    ),
+    // A running check is a tier and a finish time together, or it is not running.
+    // Half of it would be a row the sweep could neither finish nor recognise.
+    check(
+      'airframe_in_check_has_terms',
+      sql`(${t.status} = 'in_check'
+             AND ${t.checkTier} IS NOT NULL AND ${t.checkCompletesAt} IS NOT NULL)
+          OR (${t.status} <> 'in_check'
+             AND ${t.checkTier} IS NULL AND ${t.checkCompletesAt} IS NULL)`,
+    ),
     check('airframe_cycles_nonnegative', sql`${t.cycles} >= 0`),
     check(
       'airframe_registration_not_blank',

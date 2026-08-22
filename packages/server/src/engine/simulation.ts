@@ -3,6 +3,7 @@ import { asc, ne } from 'drizzle-orm';
 import { gameTime, type WorldClock } from '@tailfin/sim';
 
 import { deliverDueAircraftOrders } from '../aircraft/acquisition';
+import { sweepMaintenance } from '../aircraft/maintenance';
 import { refreshUsedAircraftMarket } from '../aircraft/used-market';
 import { type Database } from '../db/client';
 import { world, type WorldRow } from '../db/schema';
@@ -70,6 +71,9 @@ export interface TickReport {
   usedListingsCreated: number;
   /** Used listings withdrawn because they had been on the market too long. */
   usedListingsWithdrawn: number;
+  /** Checks finished on this tick, and airframes grounded for deferring one (M4-06). */
+  checksCompleted: number;
+  airframesGrounded: number;
 }
 
 export interface EngineLog {
@@ -113,6 +117,8 @@ export interface SimulationEngineOptions {
   deliverAircraft?: typeof deliverDueAircraftOrders;
   /** Used-market generation and withdrawal (M4-05), injected in engine tests. */
   refreshUsedMarket?: typeof refreshUsedAircraftMarket;
+  /** Check completion and maintenance grounding (M4-06), injected in engine tests. */
+  sweepChecks?: typeof sweepMaintenance;
   depth?: typeof queueDepth;
 }
 
@@ -170,6 +176,10 @@ export interface EngineSnapshot {
   usedListingsCreated: number;
   usedListingsWithdrawn: number;
   usedMarketErrors: number;
+  /** Checks finished and airframes grounded since start, and sweeps that threw (M4-06). */
+  checksCompleted: number;
+  airframesGrounded: number;
+  maintenanceErrors: number;
 }
 
 export interface QueueDepthByWorld {
@@ -247,6 +257,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     reviewNpcs = reviewNpcCarriers,
     deliverAircraft = deliverDueAircraftOrders,
     refreshUsedMarket = refreshUsedAircraftMarket,
+    sweepChecks = sweepMaintenance,
   } = options;
 
   const unhandledEventTypes = ALL_EVENT_TYPES.filter((type) => handlers[type] === undefined);
@@ -265,6 +276,9 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let usedListingsCreated = 0;
   let usedListingsWithdrawn = 0;
   let usedMarketErrors = 0;
+  let checksCompleted = 0;
+  let airframesGrounded = 0;
+  let maintenanceErrors = 0;
 
   async function tick(context: { tickedAt: Date; tickNumber: number }): Promise<TickReport> {
     const worlds = await listWorlds(db);
@@ -274,6 +288,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     let tickAircraftDelivered = 0;
     let tickListingsCreated = 0;
     let tickListingsWithdrawn = 0;
+    let tickChecksCompleted = 0;
+    let tickAirframesGrounded = 0;
 
     for (const entry of worlds) {
       // Aircraft factory lead time is explicitly **real time** (§7.2), not a
@@ -321,6 +337,29 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         log?.warn?.(`[${entry.name}] used market refresh failed: ${String(error)}`);
       }
 
+      // Maintenance (M4-06), also on this world's game clock: a check's downtime
+      // is a span in the world's calendar, so a world at 4× returns its aeroplanes
+      // to service twice as fast in real time. Factory lead time is the one thing
+      // in the fleet that stays in real weeks (§7.2).
+      //
+      // Isolated like the two above. A sweep that could not run this tick runs the
+      // next one; the aeroplane stays in its check a second longer, which is a
+      // cosmetic delay rather than lost money.
+      try {
+        const swept = await sweepChecks(db, entry.id, now());
+        tickChecksCompleted += swept.completed;
+        tickAirframesGrounded += swept.grounded;
+        if (swept.completed > 0 || swept.grounded > 0) {
+          log?.info?.(
+            `[${entry.name}] maintenance: ${String(swept.completed)} check(s) finished, ` +
+              `${String(swept.grounded)} airframe(s) grounded`,
+          );
+        }
+      } catch (error) {
+        maintenanceErrors += 1;
+        log?.warn?.(`[${entry.name}] maintenance sweep failed: ${String(error)}`);
+      }
+
       // Each world is drained against its own clock: `fire_at` is a game-time
       // instant, so what is due depends on where that world's clock has got to,
       // and two worlds at different speeds disagree about the same moment.
@@ -364,6 +403,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     aircraftDeliveries += tickAircraftDelivered;
     usedListingsCreated += tickListingsCreated;
     usedListingsWithdrawn += tickListingsWithdrawn;
+    checksCompleted += tickChecksCompleted;
+    airframesGrounded += tickAirframesGrounded;
     lastTickAt = context.tickedAt;
     lastTickDurationMs = durationMs;
     lastWorldCount = worlds.length;
@@ -379,6 +420,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       aircraftDelivered: tickAircraftDelivered,
       usedListingsCreated: tickListingsCreated,
       usedListingsWithdrawn: tickListingsWithdrawn,
+      checksCompleted: tickChecksCompleted,
+      airframesGrounded: tickAirframesGrounded,
     };
   }
 
@@ -435,6 +478,9 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         usedListingsCreated,
         usedListingsWithdrawn,
         usedMarketErrors,
+        checksCompleted,
+        airframesGrounded,
+        maintenanceErrors,
       };
     },
 

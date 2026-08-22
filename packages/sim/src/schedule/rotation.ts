@@ -148,6 +148,23 @@ export type RotationProblem =
 export type RotationCheck = { ok: true } | { ok: false; problem: RotationProblem; detail: string };
 
 /**
+ * Everything that can stop a schedule being saved — the rules above, plus the
+ * ones only a database can answer.
+ *
+ * Kept apart from `RotationProblem` on purpose, and a failing test is what
+ * insisted on it. `ROTATION_PROBLEMS` carries a contract that **every value is
+ * reachable from `validateRotation`**, asserted by `rotation.test.ts` so a
+ * problem cannot be added without a rule that produces it. `airframe_unavailable`
+ * is decided by the server, from a row, so putting it in there broke that
+ * contract — the test was right and the first attempt was wrong.
+ *
+ * The player still meets one vocabulary: `createSchedule` returns this type, so a
+ * grounded aeroplane surfaces through the same conflict channel as a rotation that
+ * does not close (M4-06, §7.3).
+ */
+export type SchedulingProblem = RotationProblem | 'airframe_unavailable';
+
+/**
  * Every problem, in the order the checks run.
  *
  * Exported so a test can prove each one is reachable, and so an interface can

@@ -16,6 +16,7 @@ import {
   settleFlight,
 } from '@tailfin/sim';
 
+import { accrueFlightHours } from '../aircraft/maintenance';
 import { moveAirlineCash } from '../airline/cash';
 import { airport, flight, flightResult } from '../db/schema';
 import { type PinnedEconomyConfig } from '../economy/config';
@@ -264,6 +265,16 @@ export async function settleArrivedFlight(
     // movement. Treat it as ledger drift and roll the whole settlement back.
     throw new Error(`Flight ${row.id} had a cash movement before its result`);
   }
+
+  // The airframe got older (M4-06, §7.3). In this transaction, after the
+  // `flight_result` insert has proved the arrival is not a replay — so hours and
+  // cycles accrue exactly once per flight, for the same reason the cash does.
+  //
+  // A flight whose money moved but whose hours did not would leave the fleet
+  // permanently younger than its own history, and the drift would be silent and
+  // unrecoverable. `block.blockMinutes` is the number the settlement already
+  // billed against; recomputing it here would be a second answer to one fact.
+  await accrueFlightHours(tx, row.airframeId, block.blockMinutes / 60);
 
   // The flight's own arrival. `actualArrival` is only written if it is not
   // already set — a diversion or an air return records its own arrival, and this

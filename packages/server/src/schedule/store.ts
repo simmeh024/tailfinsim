@@ -27,10 +27,12 @@ import {
   type RepeatPattern,
   type Rotation,
   type RotationProblem,
+  type SchedulingProblem,
   type ScheduledLeg,
   validateRotation,
 } from '@tailfin/sim';
 
+import { airframeUnavailability } from '../aircraft/maintenance';
 import { flight, schedule, scheduleLeg, worldEvent } from '../db/schema';
 import { scheduleEvent } from '../sim/event-queue';
 
@@ -76,7 +78,10 @@ export interface RotationContext {
 }
 
 export type SaveResult =
-  { ok: true; scheduleId: string } | { ok: false; problem: RotationProblem; detail: string };
+  | { ok: true; scheduleId: string }
+  // `SchedulingProblem`, not `RotationProblem`: this can also refuse for a reason
+  // only the database knows, such as an aeroplane in a check (M4-06).
+  | { ok: false; problem: SchedulingProblem; detail: string };
 
 function toRotation(
   id: string,
@@ -111,6 +116,23 @@ export async function createSchedule(
 ): Promise<SaveResult> {
   const check = validateRotation(toRotation('pending', input.legs, input.repeat, context));
   if (!check.ok) return { ok: false, problem: check.problem, detail: check.detail };
+
+  // The aeroplane has to be able to fly (M4-06, §7.3). Checked here rather than
+  // in `validateRotation`, because availability is a row in the database and the
+  // rotation rules are pure — but it is reported as a rotation problem, because
+  // to the player that is exactly what it is: the schedule is unflyable for a
+  // reason about the aircraft, like `not_positioned`.
+  const unavailable = await airframeUnavailability(db, input.worldId, input.airframeId);
+  if (unavailable !== null) {
+    return {
+      ok: false,
+      problem: 'airframe_unavailable',
+      detail:
+        unavailable === 'in_check'
+          ? 'That aircraft is in a maintenance check and cannot be scheduled until it returns to service.'
+          : 'That aircraft is grounded for overdue maintenance. Book the check it is due and it will fly again.',
+    };
+  }
 
   return db.transaction(async (tx): Promise<SaveResult> => {
     const [row] = await tx
