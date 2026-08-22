@@ -4,7 +4,12 @@ import { createSimulationEngine } from './engine/simulation';
 import { loadEnv } from './env';
 import { createFlightArriveHandler } from './flight/settle';
 import { createHeartbeat } from './ops/heartbeat';
-import { type HandlerRegistry } from './sim/event-queue';
+import {
+  requeueSupportedEvents,
+  unsupportedEvents,
+  type WorldEventType,
+  type HandlerRegistry,
+} from './sim/event-queue';
 
 /**
  * The worker process — the second thing systemd runs (OPS-08).
@@ -63,12 +68,13 @@ const db = createDatabase();
  * has a handler — departure is M2/M4 behaviour and inventing one here would be
  * exactly the accidental decision this boundary exists to prevent.
  *
- * The gap is announced at boot and carried in `/healthz`, because
- * `drainDueEvents` marks an event of an unhandled type `failed`: start this
- * against a queue holding materialised departures and it will mark every one of
- * them failed on the first tick. That is recoverable — the rows are still there
- * for when the handler ships — but it is not something to discover from the
- * table afterwards.
+ * The gap is announced at boot and carried in `/healthz`, and since SCALE-05 it
+ * is no longer dangerous: `drainDueEvents` marks an event of an unhandled type
+ * `unsupported` rather than `failed`. Starting this against a queue holding
+ * materialised departures pauses that work — excluded from the claim so it
+ * cannot starve anything behind it, nothing attempted, nothing destroyed — and
+ * the first Worker that ships the handler puts it back (`requeueSupportedEvents`
+ * below).
  */
 const handlers: HandlerRegistry = {
   FLIGHT_ARRIVE: createFlightArriveHandler(),
@@ -82,13 +88,14 @@ const engine = createSimulationEngine({
     tick: (report) => {
       // Only ticks that did something. At 1 Hz against an empty queue the log
       // would otherwise be 86,400 lines a day saying nothing happened.
-      if (report.processed === 0 && report.failed === 0) return;
+      if (report.processed === 0 && report.failed === 0 && report.unsupported === 0) return;
       app.log.info(
         {
           tick: report.tickNumber,
           worlds: report.worlds,
           processed: report.processed,
           failed: report.failed,
+          unsupported: report.unsupported,
           durationMs: report.durationMs,
         },
         'tick',
@@ -143,6 +150,7 @@ const heartbeat = createHeartbeat({
       lateTicks: snapshot.lateTicks,
       processed: snapshot.processed,
       failed: snapshot.failed,
+      unsupported: snapshot.unsupported,
       lastTickAt: snapshot.lastTickAt,
       queueDue: queueSummary.due,
       oldestDueAt: queueSummary.oldestDueAt,
@@ -180,8 +188,53 @@ async function refreshQueueSummary(): Promise<void> {
   }
 }
 
+/**
+ * Put back the work this build can now do (SCALE-05).
+ *
+ * Before the loop starts, not after: an event returned to `pending` should be
+ * claimed by the first tick rather than sit for another interval, and doing it
+ * before `engine.start()` means there is no window where a requeued row could
+ * be claimed by a half-started engine.
+ *
+ * Scoped to the types this build actually registers, so a Worker still missing
+ * a handler leaves those rows exactly where they are. Failing here must not
+ * stop the Worker: an engine that cannot requeue is still an engine that can
+ * drain, and the rows are not going anywhere.
+ */
+async function requeueWhatThisBuildCanHandle(): Promise<void> {
+  try {
+    const types = Object.keys(handlers) as WorldEventType[];
+    const requeued = await requeueSupportedEvents(db.db, types);
+    if (requeued > 0) {
+      app.log.warn(
+        { requeued, types },
+        'returned unsupported events to the queue — this build has handlers a previous one did not',
+      );
+    }
+
+    // Said at boot rather than discovered from the table later. The cheap half
+    // of SCALE-06's deployment gate: this Worker cannot refuse to start yet,
+    // but it can say exactly what it is about to leave alone.
+    const waiting = await unsupportedEvents(db.db);
+    for (const group of waiting) {
+      app.log.warn(
+        {
+          worldId: group.worldId,
+          type: group.type,
+          count: group.count,
+          oldestFireAt: group.oldestFireAt.toISOString(),
+        },
+        'events waiting for a handler this build does not have',
+      );
+    }
+  } catch (error) {
+    app.log.error({ err: error }, 'could not reconcile unsupported events');
+  }
+}
+
 try {
   await app.listen({ port, host });
+  await requeueWhatThisBuildCanHandle();
   engine.start();
   await refreshQueueSummary();
   heartbeat.start();

@@ -29,6 +29,7 @@ function engineFixture(overrides: Partial<AdminNodeEngine> = {}): AdminNodeEngin
     lateTicks: 0,
     processed: 0,
     failed: 0,
+    unsupported: 0,
     lastTickAt: NOW.toISOString(),
     queueDue: 0,
     oldestDueAt: null,
@@ -205,7 +206,7 @@ describe('the alerts', () => {
     expect(alerts.join(' ')).toMatch(/stopped reporting/i);
   });
 
-  it('surfaces an unhandled event type as work-destroying, not merely missing', () => {
+  it('surfaces an unhandled event type as a deployment gap that pauses work', () => {
     const alerts = nodeAlerts([
       nodeFixture({
         node: 'worker-01',
@@ -216,9 +217,41 @@ describe('the alerts', () => {
 
     const text = alerts.join(' ');
     expect(text).toContain('FLIGHT_DEPART');
-    // The wording matters: drainDueEvents marks these *failed*, so this is not a
-    // gap that politely waits for a handler to ship.
-    expect(text).toMatch(/marked failed/i);
+    // This assertion used to read `/marked failed/` and was correct until
+    // SCALE-05. `drainDueEvents` now marks these `unsupported`: the work is
+    // paused rather than destroyed, and the alert must not keep telling an
+    // operator otherwise — an alert that overstates is one they learn to ignore.
+    expect(text).toMatch(/paused as unsupported/i);
+    expect(text).not.toMatch(/marked failed/i);
+  });
+
+  it('says how much work is waiting, per world and per type', () => {
+    // "412 unsupported events" is not actionable; naming the world, the type
+    // and the age is.
+    const alerts = nodeAlerts(
+      [nodeFixture({ node: 'worker-01', role: 'worker', engine: engineFixture() })],
+      [
+        {
+          worldId: '11111111-2222-3333-4444-555555555555',
+          worldName: 'Northern Sky',
+          type: 'FLIGHT_DEPART',
+          count: 412,
+          oldestFireAt: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+        },
+      ],
+    );
+
+    const text = alerts.join(' ');
+    expect(text).toContain('412 FLIGHT_DEPART');
+    expect(text).toContain('Northern Sky');
+    expect(text).toMatch(/3 days ago/);
+  });
+
+  it('says nothing about unsupported work when there is none', () => {
+    const alerts = nodeAlerts([
+      nodeFixture({ node: 'worker-01', role: 'worker', engine: engineFixture() }),
+    ]);
+    expect(alerts.join(' ')).not.toMatch(/waiting for a handler/i);
   });
 
   it('is empty for a healthy, matched pair', () => {

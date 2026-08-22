@@ -283,14 +283,25 @@ describeDb('event queue', () => {
       expect(fired).toEqual(['good']);
     });
 
-    it('fails an event whose type has no handler, rather than quietly discarding it', async () => {
-      // An unhandled type is a deployment problem. Marking it done would lose it.
+    it('pauses an event whose type has no handler, rather than failing or discarding it', async () => {
+      // An unhandled type is a deployment problem, and since SCALE-05 it is
+      // recorded as one. This assertion used to read `result.failed` and was
+      // correct until then; conflating "no handler in this build" with "the
+      // handler threw" made a rising `failed` count meaningless and made
+      // recoverable work look destroyed.
       await schedule('orphan', 10, 'TURNAROUND_COMPLETE');
       const result = await drainDueEvents(db.db, worldId, clock, realAtGameMinutes(60), {});
 
-      expect(result.failed).toBe(1);
+      expect(result.unsupported).toBe(1);
+      expect(result.failed).toBe(0);
+
       const rows = await db.db.select().from(worldEvent).where(eq(worldEvent.worldId, worldId));
+      expect(rows[0]?.status).toBe('unsupported');
       expect(rows[0]?.lastError).toContain('No handler registered');
+      // Nothing was attempted and nothing processed it, which is what makes the
+      // way back a status change rather than a repair.
+      expect(rows[0]?.attempts).toBe(0);
+      expect(rows[0]?.processedAt).toBeNull();
     });
   });
 

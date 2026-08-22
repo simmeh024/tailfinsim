@@ -6,6 +6,7 @@ import {
   adminEconomyConfigListResponseJsonSchema,
   adminNpcResponseJsonSchema,
   adminPinEconomyConfigResponseJsonSchema,
+  adminRequeueEventsResponseJsonSchema,
   adminListResponseJsonSchema,
   adminOverviewResponseJsonSchema,
   adminPlayerDetailResponseJsonSchema,
@@ -40,6 +41,7 @@ import {
 } from '../economy/versions';
 
 import { parseAuditJson, readAudit } from './audit';
+import { requeueUnsupportedEvents, validateRequeueRequest } from './events';
 import { type Actor, listAdmins } from './grants';
 import { BEHIND_AFTER_MS, buildWorldHealth } from './health';
 import {
@@ -282,6 +284,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
         staleAfterMs: NODE_STALE_AFTER_MS,
         offlineAfterMs: NODE_OFFLINE_AFTER_MS,
         alerts: report.alerts,
+        unsupportedEvents: report.unsupportedEvents,
       });
     },
   );
@@ -816,6 +819,48 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
         return reply.code(404).send({ code: 'world_not_found', message: 'No world with that id.' });
       }
       return reply.code(200).send(await buildNpcReport(db.db, request.params.worldId));
+    },
+  );
+
+  /**
+   * Return paused work to the queue (SCALE-05).
+   *
+   * The manual half of the recovery path. The automatic half runs in the Worker
+   * at boot; this exists for the case an operator knows about and the Worker
+   * cannot — a handler that shipped on a node which has not restarted, or rows
+   * paused by a build since rolled back.
+   */
+  app.post(
+    '/api/admin/events/requeue',
+    {
+      onRequest: app.requireAdmin,
+      schema: {
+        response: { 200: adminRequeueEventsResponseJsonSchema, 400: apiErrorJsonSchema },
+      },
+    },
+    async (request, reply) => {
+      const validated = validateRequeueRequest(request.body);
+      if (!validated.ok) {
+        return reply
+          .code(400)
+          .send({ code: validated.code, message: validated.message, fields: validated.fields });
+      }
+
+      const outcome = await requeueUnsupportedEvents(db.db, validated.request, actorOf(request));
+      if (!outcome.ok) {
+        return reply
+          .code(400)
+          .send({ code: outcome.code, message: outcome.message, fields: outcome.fields });
+      }
+
+      // `warn`, not `info`: this puts simulation work back into a live world's
+      // queue, and the server log should carry it at a level somebody greps for.
+      request.log.warn(
+        { requeued: outcome.requeued, types: outcome.types },
+        'unsupported events returned to the queue',
+      );
+
+      return reply.code(200).send({ requeued: outcome.requeued, types: outcome.types });
     },
   );
 }

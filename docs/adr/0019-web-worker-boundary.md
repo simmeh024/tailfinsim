@@ -95,13 +95,33 @@ rather than inherited — OPS-09 (#188) is the dev service, OPS-11 (#191) the pr
 and M4 work and inventing it here would be exactly the accidental decision this ADR exists to
 prevent.
 
-That matters operationally, because `drainDueEvents` marks an event of an unhandled type
+That mattered operationally, because `drainDueEvents` marked an event of an unhandled type
 `failed` rather than `done` — right, on the reasoning that an unhandled type is a deployment
 problem and the row should still be there when the handler ships, and also a loaded gun. Start
-a worker against a queue holding materialised departures and every one of those rows is marked
-failed on the first tick. So the gap is announced at boot and reported in `/healthz` as
-`engine.unhandledEventTypes`, and **it must be closed before OPS-09 starts a worker against a
-database whose queue is not empty.**
+a worker against a queue holding materialised departures and every one of those rows was marked
+failed on the first tick.
+
+**Closed by SCALE-05 (#454).** The reasoning was sound; the bug was that one state was being
+asked to mean two things — _this event is broken_ and _this worker cannot do this yet_. There
+is now a fourth `world_event_status`, `unsupported`:
+
+- excluded from the claim predicate, so it cannot be reclaimed on every tick and starve the
+  supported events behind it;
+- not terminal, and nothing is attempted — `attempts` stays at zero and `processed_at` stays
+  null, which is what makes returning it to `pending` a status change rather than a repair;
+- counted apart from `failed` in `EngineSnapshot` and on the System Health page, so a rising
+  `failed` means something is genuinely broken again;
+- returned to the queue automatically by the first worker that boots with a handler for the
+  type, and manually through an audited `POST /api/admin/events/requeue`.
+
+The migration adding the enum value is written so the new value is never _used_ in the
+transaction that adds it — the constraint it widens is expressed in terms of the two existing
+terminal statuses — because `deploy.sh` batches the whole pending migration set into one
+transaction and Postgres refuses the other shape.
+
+So the gap is still real and still announced at boot and in `/healthz` as
+`engine.unhandledEventTypes`. What changed is that meeting it now pauses work instead of
+destroying it, and a worker may safely start against a database whose queue is not empty.
 
 **Two processes are more to run than one.** The mitigation is that this change is code shape,
 not machines: the split can land as two processes on one box and stay there indefinitely.

@@ -22,7 +22,7 @@ function engineWith(options: { running: boolean } = { running: false }): Simulat
     db,
     handlers: {},
     listWorlds: () => Promise.resolve([]),
-    drain: () => Promise.resolve({ processed: 0, failed: 0, upTo: new Date() }),
+    drain: () => Promise.resolve({ processed: 0, failed: 0, unsupported: 0, upTo: new Date() }),
     // Never fires: the loop schedules its next run through this and the test
     // never calls it back, so exactly one tick happens.
     setTimer: () => 1,

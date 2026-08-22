@@ -1,4 +1,4 @@
-import { and, asc, eq, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, lte, sql } from 'drizzle-orm';
 
 import { gameTime, type WorldClock } from '@tailfin/sim';
 
@@ -85,7 +85,17 @@ export async function scheduleEvent(db: Database, event: ScheduledEvent): Promis
 
 export interface DrainResult {
   processed: number;
+  /**
+   * Events whose handler threw.
+   *
+   * Kept separate from `unsupported` (SCALE-05) so that a rising number here
+   * means something is genuinely broken. Absorbing both made this counter
+   * useless as an alert, because the commonest cause of it moving was a build
+   * that simply did not have a handler yet.
+   */
   failed: number;
+  /** Events left for a Worker that knows their type. Nothing was attempted. */
+  unsupported: number;
   /** The game time the drain ran against, for logging. */
   upTo: Date;
 }
@@ -123,6 +133,7 @@ export async function drainDueEvents(
 
   let processed = 0;
   let failed = 0;
+  let unsupported = 0;
 
   for (let handledInThisDrain = 0; handledInThisDrain < batchSize; handledInThisDrain += 1) {
     const done = await db.transaction(async (tx) => {
@@ -147,6 +158,43 @@ export async function drainDueEvents(
       if (!event) return true;
 
       const handler = handlers[event.type];
+
+      if (!handler) {
+        /**
+         * No handler for this type — a **deployment** problem, not a data one.
+         *
+         * Marked `unsupported` rather than `failed` (SCALE-05). One state was
+         * being asked to mean two things, and conflating them cost twice: a
+         * rising `failed` count stopped meaning "something is broken", and work
+         * a later build could have done looked permanently destroyed.
+         *
+         * Three properties this state has to have, and each is load-bearing:
+         *
+         *   - **Not `pending`**, so the claim above skips it. Left pending, a
+         *     type nobody handles would be reclaimed on every tick for ever and
+         *     starve every supported event behind it.
+         *   - **Not terminal**, because nothing happened to it. `processed_at`
+         *     stays null and `attempts` is not incremented — no attempt was
+         *     made, and counting one would make a retry policy read this as a
+         *     flaky event rather than an absent handler.
+         *   - **Recorded**, so an operator can see it per type and per world
+         *     rather than discovering a silent pile.
+         *
+         * A Worker that knows the type moves these back to `pending` at boot;
+         * see `requeueSupportedEvents`.
+         */
+        await tx
+          .update(worldEvent)
+          .set({
+            status: 'unsupported',
+            lastError: `No handler registered for ${event.type} in this build.`,
+          })
+          .where(eq(worldEvent.id, event.id));
+        unsupported += 1;
+        log?.(`event ${event.id} (${event.type}) has no handler in this build; left unsupported`);
+        return false;
+      }
+
       let payload: Record<string, unknown>;
       try {
         const parsed: unknown = JSON.parse(event.payload);
@@ -157,12 +205,6 @@ export async function drainDueEvents(
       }
 
       try {
-        if (!handler) {
-          // An unhandled type is a deployment problem, not a data problem — the
-          // event is left failed rather than silently marked done, so it is still
-          // there when the handler ships.
-          throw new Error(`No handler registered for ${event.type}`);
-        }
         await handler(event, { payload, tx: tx });
 
         await tx
@@ -198,7 +240,7 @@ export async function drainDueEvents(
     if (done) break;
   }
 
-  return { processed, failed, upTo };
+  return { processed, failed, unsupported, upTo };
 }
 
 /** How many events are waiting, and how far behind the oldest is. */
@@ -239,4 +281,79 @@ export async function queueDepth(
     // care which.
     oldestDueAt: oldest === null ? null : oldest instanceof Date ? oldest : new Date(oldest),
   };
+}
+
+/**
+ * Return unsupported events to the queue for the types this build can handle.
+ *
+ * The other half of SCALE-05, and the moment that makes `unsupported` a pause
+ * rather than a graveyard: a Worker starting with a handler for a type that has
+ * rows waiting is exactly when they should go back.
+ *
+ * Scoped to the types passed in, so a build still missing a handler leaves those
+ * rows alone. `processed_at` is already null on every unsupported row, so
+ * returning them to `pending` needs no repair — which is the payoff of not
+ * having stamped a time on them in the first place.
+ *
+ * **This is not a re-execution.** Nothing ran, so nothing is being run twice;
+ * `attempts` was never incremented and the idempotency key is untouched. The
+ * exactly-once guarantee is unaffected (V-11).
+ *
+ * One thing the caller must know: an event whose game-time `fire_at` has long
+ * passed fires on the next tick. Whether that is right is the handler author's
+ * decision, not this function's — a departure three world-days late may want to
+ * be cancelled rather than flown.
+ */
+export async function requeueSupportedEvents(
+  db: Database,
+  types: readonly WorldEventType[],
+): Promise<number> {
+  if (types.length === 0) return 0;
+
+  const requeued = await db
+    .update(worldEvent)
+    .set({ status: 'pending', lastError: null })
+    .where(and(eq(worldEvent.status, 'unsupported'), inArray(worldEvent.type, [...types])))
+    .returning({ id: worldEvent.id });
+
+  return requeued.length;
+}
+
+/** Unsupported events, grouped by world and type — what an operator needs to act. */
+export interface UnsupportedEventGroup {
+  worldId: string;
+  type: WorldEventType;
+  count: number;
+  /** Game time of the oldest one, so "how far behind" is answerable. */
+  oldestFireAt: Date;
+}
+
+/**
+ * What is waiting for a handler, per world and per type.
+ *
+ * Grouped rather than counted, because *"412 unsupported events"* is not
+ * actionable and *"412 FLIGHT_DEPART in Northern Sky, oldest due three days
+ * ago"* is.
+ */
+export async function unsupportedEvents(db: Database): Promise<UnsupportedEventGroup[]> {
+  const rows = await db
+    .select({
+      worldId: worldEvent.worldId,
+      type: worldEvent.type,
+      count: sql<number>`count(*)::int`,
+      oldestFireAt: sql<string>`min(${worldEvent.fireAt})`,
+    })
+    .from(worldEvent)
+    .where(eq(worldEvent.status, 'unsupported'))
+    .groupBy(worldEvent.worldId, worldEvent.type);
+
+  // `min()` is a raw aggregate, so no column type parser applies and the driver
+  // hands back a string however the column is declared — the trap CLAUDE.md
+  // records. Normalised here rather than trusted.
+  return rows.map((row) => ({
+    worldId: row.worldId,
+    type: row.type,
+    count: row.count,
+    oldestFireAt: new Date(row.oldestFireAt),
+  }));
 }

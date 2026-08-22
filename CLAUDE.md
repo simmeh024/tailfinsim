@@ -242,13 +242,14 @@ The admin console's health page infers liveness from the queue for exactly that 
 worker's own `/healthz` answers **503 while its process is alive** if the engine is not
 ticking — the failure `systemctl is-active` cannot see.
 
-**Before starting a worker anywhere, check `engine.unhandledEventTypes`.** Only
-`FLIGHT_ARRIVE` has a handler. `FLIGHT_DEPART` is scheduled by `schedule/store.ts` and has
-none, and `drainDueEvents` marks an event of an unhandled type **failed** — so a worker
-started against a queue holding materialised departures marks every one of them failed on the
-first tick. Recoverable, since the rows remain, but not something to discover afterwards.
-Starting it on dev was safe only because `tailfin_dev` had **zero** `world_event` rows, which
-was checked first rather than assumed.
+**An event type nobody handles is now paused, not destroyed.** Only `FLIGHT_ARRIVE` has a
+handler; `FLIGHT_DEPART` is scheduled by `schedule/store.ts` and `TURNAROUND_COMPLETE` by
+nothing yet. Since SCALE-05 `drainDueEvents` marks an event of an unhandled type
+`unsupported` rather than `failed` — excluded from the claim so it cannot starve the queue,
+nothing attempted, nothing lost — and the first worker booting with the handler returns it to
+`pending`. A worker may safely start against a non-empty queue. `engine.unhandledEventTypes`
+still says what a build cannot do, and the System Health page says how much is waiting, per
+world and per type.
 
 **The dev worker is a second machine, and it reaches the database through an SSH tunnel.**
 There is no private network between the two DreamCompute VMs — they share a public segment with
