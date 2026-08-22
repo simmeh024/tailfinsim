@@ -163,6 +163,31 @@ jobs:
             console.log("build stamp:", stamp.build, stamp.commit);
           '
 
+      - name: Verify the worker can be asked what it handles
+        # SCALE-06's deployment gate is only as good as the probe it runs, and
+        # the probe lives in the bundle rather than in the source tree the tests
+        # exercise. An entry point flag dropped by a refactor would leave
+        # `deploy-dev-worker.sh` dying on every worker deploy, discovered on the
+        # box — the same class of gap the entry-point assertions above exist for.
+        #
+        # `env -u DATABASE_URL` is the load-bearing part, not tidiness. The whole
+        # design of the flag is that it answers *before* `loadEnv()`, before a
+        # pool is created and long before `engine.start()` — because a probe that
+        # boots the engine to interrogate it drains a tick against the very queue
+        # it was meant to protect. Running it with no database configured at all
+        # is the cheapest possible proof that it does not touch one: if the flag
+        # ever slips below `createDatabase()`, this step fails here rather than
+        # silently ticking on a production worker later.
+        run: |
+          set -euo pipefail
+          cd packages/server
+          handled="$(env -u DATABASE_URL node dist/worker.js --handled-event-types)"
+          echo "worker handles: ${handled}"
+          # Non-empty and one type per line. The registry's *contents* are the
+          # unit tests' business; what CI owns is that the bundle still answers.
+          [ -n "${handled}" ]
+          grep -qx 'FLIGHT_ARRIVE' <<<"${handled}"
+
       - name: Apply migrations
         # The schema constraint tests need a migrated database. This also means
         # every migration is proven to apply cleanly on every PR, which is

@@ -123,6 +123,21 @@ So the gap is still real and still announced at boot and in `/healthz` as
 `engine.unhandledEventTypes`. What changed is that meeting it now pauses work instead of
 destroying it, and a worker may safely start against a database whose queue is not empty.
 
+**Gated at deploy time by SCALE-06 (#455).** Safe is not the same as intended. A Worker rolled
+back to a build without a handler still stops processing a type the world is generating, and
+the operator's first sign is a growing pile of deferred work rather than a refused deploy.
+`worker.js` therefore carries two probes — `--handled-event-types` and `--handler-preflight` —
+which answer from the built bundle and return before `engine.start()` and before
+`app.listen()`. `deploy.sh` runs the second for the Worker role only, after the migration
+preflight and before the pre-migration backup, and fails closed on a gap.
+
+The probes read the same registry the engine is handed, now `engine/handlers.ts` rather than a
+literal in `worker.ts`. That is the load-bearing part: two lists would eventually disagree, and
+a gate that approves builds it should refuse is worse than no gate. `/healthz` cannot serve
+this purpose however carefully it is polled — the engine drains a tick before the first poll
+lands, so the endpoint reports on a queue that has already met the build it was meant to
+protect.
+
 **Two processes are more to run than one.** The mitigation is that this change is code shape,
 not machines: the split can land as two processes on one box and stay there indefinitely.
 OPS-16's Checkpoint A makes stopping there a legitimate outcome.

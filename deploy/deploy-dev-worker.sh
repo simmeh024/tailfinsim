@@ -30,6 +30,15 @@
 # alive if the engine is not ticking. That is deliberate: it makes this script's
 # health poll fail for a worker that started and did not run, which is exactly
 # the failure `systemctl is-active` cannot see.
+#
+# ## It is gated on handler coverage
+#
+# `CHECKS_EVENT_HANDLERS=1` — the other half of the same instinct as
+# `RUNS_MIGRATIONS=0`. A worker deployed ahead of a schema change is told to
+# deploy the web node first; a worker that cannot handle the event types already
+# queued is now told the same kind of thing, before anything restarts. This is
+# the only role for which the question means anything, because it is the only
+# role that drains the queue. See SCALE-06.
 
 set -euo pipefail
 
@@ -38,6 +47,17 @@ export SERVICE="${SERVICE:-tailfin-dev-worker}"
 export HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3100/healthz}"
 export MIGRATION_DATABASE="${MIGRATION_DATABASE:-tailfin_dev}"
 export RUNS_MIGRATIONS=0
+export CHECKS_EVENT_HANDLERS=1
+
+# ALLOW_HANDLER_GAP is deliberately **not** set here, and must never be.
+#
+# The override is the pressure valve that stops the gate being deleted the first
+# time it blocks something legitimate — but only while it stays a decision. A
+# default in this file would make every worker deploy carry it silently, which is
+# indistinguishable from not having the gate. It is passed through from the
+# environment, so it has to be typed on the command that wants it:
+#
+#     ALLOW_HANDLER_GAP=1 ./deploy/deploy-dev-worker.sh my-branch
 
 # Same exemption as dev web: this node exists to run branches before they merge.
 export ALLOW_UNMERGED_REF=1

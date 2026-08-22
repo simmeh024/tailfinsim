@@ -40,6 +40,7 @@ you:  ssh tailfin@<ip>
              ├─ pnpm install --frozen-lockfile
              ├─ build                 ── fails here? nothing was touched
              ├─ migration preflight  ── database name, policy, pending count
+             ├─ handler preflight    ── worker nodes only; refuses before the dump
              ├─ verified local dump  ── only for a non-empty migration batch
              ├─ atomic migrate       ── reports rollback / commit / unknown
              ├─ systemctl restart tailfin
@@ -1051,19 +1052,87 @@ Worker-only keys are `WORKER_HEALTH_PORT`, `WORKER_HEALTH_HOST` and `WORKER_TICK
 | `/healthz` 503, `engine.status: stopped`                    | Process alive, loop not running                      | The failure `systemctl is-active` cannot see. Read the journal; this is why the endpoint exists                                                              |
 | `/healthz` 503, `db: down`, `engine.status: running`        | Tunnel up but Postgres unreachable                   | Counters keep working through it by design — the snapshot needs no database                                                                                  |
 | `engine.errors` rising                                      | Each tick is throwing                                | `journalctl -u tailfin-dev-worker`; a failing tick does not stop the clock, so this climbs quietly                                                           |
-| `engine.failed` rising                                      | Events drained of a type with no handler             | Check `engine.unhandledEventTypes` — see the warning below                                                                                                   |
+| `engine.failed` rising                                      | A handler is throwing                                | Genuinely broken, since SCALE-05: a type with no handler is counted as `unsupported` instead. `journalctl -u tailfin-dev-worker`                             |
+| `engine.unsupported` rising                                 | Events drained of a type with no handler             | Work paused, not lost. The deploy gate below normally refuses this build; reaching it means `ALLOW_HANDLER_GAP`, or rows parked before the gate existed      |
 | Deploy says "does not own them — deploy the web node first" | Schema change pending                                | Deploy dev web first. Ordering is enforced, not documented                                                                                                   |
+| Deploy says "no handler for event types with queued work"   | This build cannot do what is queued                  | Deploy a build that registers the handler, or accept the pause with `ALLOW_HANDLER_GAP=1` — see [The handler gate](#the-handler-gate-scale-06)               |
 | `dubious ownership` at `==> Fetching`                       | Deploy run as `ubuntu`; `tailfin` owns the checkout  | Re-run through `sudo -n -u tailfin -H` — see [Which user the deploy runs as](#which-user-the-deploy-runs-as). **Do not add `safe.directory`**                |
 | `Permission denied` running the deploy script               | Checkout is at a commit predating it                 | `git checkout --detach origin/<ref>` once, then deploy normally                                                                                              |
 
-### The warning that matters before scheduling real work
+### The handler gate (SCALE-06)
 
-`/healthz` reports `engine.unhandledEventTypes`, and today it is
-`["FLIGHT_DEPART", "TURNAROUND_COMPLETE"]`. `drainDueEvents` marks an event of an unhandled
-type **failed** rather than done, so a worker started against a queue holding materialised
-departures marks every one of them failed on the first tick. It was safe to start here because
-`tailfin_dev` had **zero** `world_event` rows, verified first. **Check the queue before
-starting a worker anywhere else**, production included.
+The deploy refuses a Worker that cannot handle the work the database is already holding.
+
+`/healthz` reports `engine.unhandledEventTypes` — today `["FLIGHT_DEPART",
+"TURNAROUND_COMPLETE"]` — but it reports it too late to be a gate: the engine starts before
+the deploy polls and has drained a tick against the queue by the time anyone could read it.
+So `deploy-dev-worker.sh` sets `CHECKS_EVENT_HANDLERS=1`, and `deploy.sh` asks the built
+bundle instead, straight after the migration preflight and **before the pre-migration
+backup** — a refusal that happens after a backup has been written is a refusal that already
+cost something.
+
+Two flags on `worker.js` answer it, neither of which starts the engine or binds a port:
+
+```bash
+node packages/server/dist/worker.js --handled-event-types
+```
+
+Prints one type per line and exits. Needs no database at all — CI runs it with `DATABASE_URL`
+unset precisely to prove that. The keys come from the same registry `worker.ts` hands the
+engine, so the probe cannot drift from the process.
+
+```bash
+node packages/server/dist/worker.js --handler-preflight
+```
+
+Reads the queue and decides. Output looks like this:
+
+```
+this build handles: FLIGHT_ARRIVE
+actionable queued work:
+  FLIGHT_ARRIVE: 12 events across 1 world, oldest due 2031-04-02T09:15:00.000Z — ok
+  FLIGHT_DEPART: 412 events across 2 worlds, oldest due 2031-03-30T22:40:00.000Z — NO HANDLER
+excluded from the decision: 40 done, 3 failed, 0 already parked for want of a handler, 0 pending in archived worlds
+HANDLER PREFLIGHT: REFUSED — this build has no handler for FLIGHT_DEPART (412 events). …
+```
+
+| Exit | Means                                     | Deploy does                               |
+| ---- | ----------------------------------------- | ----------------------------------------- |
+| 0    | Every type with queued work has a handler | Continues                                 |
+| 30   | A gap — named, with counts                | **Refuses**, unless `ALLOW_HANDLER_GAP=1` |
+| 31   | The queue could not be read               | **Refuses.** Not overridable              |
+
+**What counts as work.** Only `pending` rows in worlds the engine will actually tick. `done`
+and `failed` are history and nothing drains them again; `unsupported` is already parked by
+SCALE-05, and blocking on it would make the pause self-perpetuating — the first Worker able
+to clear the backlog is precisely the one that would be refused. `pending` rows in an
+**archived** world are inert too, because `listTickableWorlds` filters archived worlds out.
+All four are counted and printed on the `excluded` line rather than silently dropped, so
+"considered and classified" is distinguishable from "did not notice".
+
+### Overriding the gate
+
+```bash
+ALLOW_HANDLER_GAP=1 ./deploy/deploy-dev-worker.sh my-branch
+```
+
+Legitimate on dev, which exists to run unmerged branches: a branch that adds a producer
+before its handler will trip the gate correctly and you may still want to preview it. The
+work is paused, not lost — those events are marked `unsupported` on the first tick and the
+first Worker that ships the handler returns them.
+
+It has to be typed on the command every time. It is deliberately **not** set in
+`deploy-dev-worker.sh`, and must never be: a default there would put it on every worker
+deploy silently, which is the same as not having the gate. The override is logged to the
+journal, so the decision outlives somebody's scrollback:
+
+```bash
+journalctl -t tailfin-deploy --no-pager | tail
+```
+
+Exit 31 ignores it on purpose. An operator can say "I accept that work will pause"; nobody
+can say that about a question that was never answered, so a preflight that could not read
+the queue fails closed with no way round it.
 
 ### Checking on it
 
