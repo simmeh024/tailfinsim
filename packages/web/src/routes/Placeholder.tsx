@@ -17,14 +17,8 @@ export function Placeholder({ title, note }: { title: string; note: string }): R
   );
 }
 
-export const WorldPage = (): ReactNode => (
-  <section className="page world-page">
-    <h1 className="page__title">World</h1>
-    <p className="page__note">
-      One shared world. Live aircraft and operational routes arrive with M7-02.
-    </p>
-  </section>
-);
+// WorldPage is no longer a placeholder and no longer lives here — it is the
+// world renderer at full size, in `world/WorldPage.tsx`.
 
 // FleetPage is no longer a placeholder — M4-02 filled it with the era-gated
 // aircraft catalogue and M4-07 added the airframe list above it, with the

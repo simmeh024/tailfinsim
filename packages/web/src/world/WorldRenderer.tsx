@@ -14,7 +14,7 @@ import {
 import { readWorldPalette } from './palette';
 import { SustainedFrameRateMonitor, type FrameRateSample } from './performance';
 import { persistProjection, readInitialProjection, type WorldProjection } from './projection';
-import { createTerminatorCells } from './terminator';
+import { createDarknessField } from './terminator';
 
 import type { WorldPalette } from './palette';
 import type { ReactNode } from 'react';
@@ -91,13 +91,17 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     frameRateMonitor.current.reset();
   }, [projection]);
 
-  const terminatorCells = useMemo(
-    () => createTerminatorCells(now, quality === 'full' ? 5 : 10),
+  // Sampled once a minute, at the quality the device is coping with. Half the
+  // resolution is still far finer than the twilight band it has to describe: the
+  // gradient spans twelve degrees of solar elevation, and a reduced texel is two.
+  const darkness = useMemo(
+    () =>
+      quality === 'full' ? createDarknessField(now, 512, 256) : createDarknessField(now, 256, 128),
     [now, quality],
   );
   const layers = useMemo(
-    () => createWorldLayers({ palette, quality, routes, terminatorCells, visibility }),
-    [palette, quality, routes, terminatorCells, visibility],
+    () => createWorldLayers({ palette, quality, routes, darkness, visibility }),
+    [palette, quality, routes, darkness, visibility],
   );
   const view = useMemo(
     () =>

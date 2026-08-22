@@ -16,9 +16,10 @@ import { FleetPage } from './fleet/FleetPage';
 import { fetchFoundingOptions } from './founding/api';
 import { FoundingPage } from './founding/FoundingPage';
 import { NetworkPage } from './network/NetworkPage';
-import { BoardPage, CrewPage, DesignPage, FinancePage, WorldPage } from './routes/Placeholder';
+import { BoardPage, CrewPage, DesignPage, FinancePage } from './routes/Placeholder';
 import { AppShell } from './shell/AppShell';
 import { ThemeProvider } from './theme/ThemeProvider';
+import { WorldPage } from './world/WorldPage';
 
 import type { ReactNode } from 'react';
 

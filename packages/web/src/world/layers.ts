@@ -1,9 +1,9 @@
-import { ArcLayer, GeoJsonLayer, PathLayer, SolidPolygonLayer } from '@deck.gl/layers';
+import { ArcLayer, BitmapLayer, GeoJsonLayer, PathLayer, SolidPolygonLayer } from '@deck.gl/layers';
 import { feature } from 'topojson-client';
 import landTopologyJson from 'world-atlas/land-110m.json';
 
 import type { WorldPalette } from './palette';
-import type { LngLat, TerminatorCell } from './terminator';
+import type { DarknessField, LngLat } from './terminator';
 import type { Layer } from '@deck.gl/core';
 import type { GeometryCollection, Topology } from 'topojson-specification';
 
@@ -25,7 +25,7 @@ export interface CreateWorldLayersOptions {
   palette: WorldPalette;
   quality: RendererQuality;
   routes: readonly WorldRoute[];
-  terminatorCells: readonly TerminatorCell[];
+  darkness: DarknessField;
   visibility: WorldLayerVisibility;
 }
 
@@ -69,6 +69,43 @@ function graticulePaths(): GraticulePath[] {
 
 const GRATICULE = graticulePaths();
 
+/** West, south, east, north — the whole sphere, for the night texture. */
+const WORLD_BOUNDS: [number, number, number, number] = [-180, -90, 180, 90];
+
+/**
+ * Expand a one-byte-per-texel darkness field into an RGBA texture in the
+ * palette's night colour.
+ *
+ * Built here rather than in `terminator.ts` because the colour is the theme's and
+ * the field is the sun's; keeping them apart means a theme change re-colours the
+ * night without recomputing any astronomy.
+ *
+ * The shape matters. luma.gl wants `data` flat with `width` and `height` beside
+ * it — handed `{ data: { data, width, height } }` it silently produces a 1x1
+ * texture, which renders as a single flat wash over the entire world and looks
+ * like a palette bug rather than a shape bug.
+ */
+function nightTexture(
+  field: DarknessField,
+  night: readonly [number, number, number, number],
+): { data: Uint8Array; width: number; height: number } {
+  const data = new Uint8Array(field.width * field.height * 4);
+  // Indexed rather than destructured: `tokens.test.ts` forbids CSS colour names
+  // outside the theme file, and `const [red, green, blue] = night` is three of
+  // them. The guard is right to be blunt about it — a stray literal is exactly
+  // what survives review and then only shows up in the other theme.
+  const opacity = night[3];
+  for (let texel = 0; texel < field.alpha.length; texel += 1) {
+    const offset = texel * 4;
+    data[offset] = night[0];
+    data[offset + 1] = night[1];
+    data[offset + 2] = night[2];
+    // The palette's own alpha is the ceiling; the field scales it.
+    data[offset + 3] = Math.round((opacity * (field.alpha[texel] ?? 0)) / 255);
+  }
+  return { data, width: field.width, height: field.height };
+}
+
 /**
  * One projection-agnostic layer list. MapView and GlobeView consume these exact
  * instances; projection switching never forks route, terminator, or toggle logic.
@@ -76,8 +113,8 @@ const GRATICULE = graticulePaths();
 export function createWorldLayers({
   palette,
   quality,
+  darkness,
   routes,
-  terminatorCells,
   visibility,
 }: CreateWorldLayersOptions): (Layer | false)[] {
   return [
@@ -109,18 +146,23 @@ export function createWorldLayers({
         parameters: { cullMode: 'none' },
       }),
     visibility.terminator &&
-      new SolidPolygonLayer<TerminatorCell>({
+      new BitmapLayer({
         id: 'world-terminator',
-        data: terminatorCells,
-        getPolygon: ({ polygon }) => polygon,
-        getFillColor: ({ darkness }) => [
-          palette.night[0],
-          palette.night[1],
-          palette.night[2],
-          Math.round(palette.night[3] * darkness),
-        ],
+        // The whole sphere, once. `BitmapLayer` maps the image's top edge to the
+        // northern bound, which is why `createDarknessField` puts +90° in row 0.
+        bounds: WORLD_BOUNDS,
+        image: nightTexture(darkness, palette.night),
+        // Linear filtering is the entire point: it is what turns a sampled field
+        // into a smooth gradient instead of the staircase 5-degree flat-shaded
+        // cells produced. Clamped rather than repeated, so the poles do not
+        // sample across to the opposite pole.
+        textureParameters: {
+          minFilter: 'linear',
+          magFilter: 'linear',
+          addressModeU: 'clamp-to-edge',
+          addressModeV: 'clamp-to-edge',
+        },
         parameters: { cullMode: 'back' },
-        updateTriggers: { getFillColor: palette.night },
       }),
     visibility.routes &&
       new ArcLayer<WorldRoute>({

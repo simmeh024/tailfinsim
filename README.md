@@ -212,11 +212,15 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   lifecycle, world health, a read-only player browser, linkable airline support records
   with current and historical routes and the complete paginated AIR-06 cash-movement
   ledger, and the audit log. The airline record has no balance-edit control.
-- **One world renderer in two projections.** The player shell uses one deck.gl layer stack
-  for a repeating flat map and a 3D globe, with a persisted device-aware default, shared
-  camera and layer controls, bundled Natural Earth land, soft day/night shading,
-  antimeridian-safe great-circle routes, and sustained-FPS degradation. Its contract and
-  performance policy are documented in [`docs/world-renderer.md`](docs/world-renderer.md).
+- **One world renderer in two projections.** The World page uses one deck.gl layer stack for
+  a repeating flat map and a 3D globe, with a persisted device-aware default, shared camera
+  and layer controls, bundled Natural Earth land, antimeridian-safe great-circle routes, and
+  sustained-FPS degradation. Day and night are a sampled darkness field uploaded as a
+  filtered texture, so the terminator is a smooth curve rather than a staircase of flat-shaded
+  cells. The renderer belongs to that page and no other: it was a shell-wide backdrop, which
+  meant every opaque page hid it while still paying for its WebGL context, and page content
+  took every drag aimed at the map. Its contract and performance policy are documented in
+  [`docs/world-renderer.md`](docs/world-renderer.md).
 
 ### What does not exist yet
 

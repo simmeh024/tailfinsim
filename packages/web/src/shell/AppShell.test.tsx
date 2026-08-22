@@ -100,9 +100,23 @@ describe('layout', () => {
   it('renders the four regions from App. H.4', async () => {
     await renderAt('/world');
     expect(screen.getByRole('navigation', { name: 'Main' })).toBeInTheDocument();
-    expect(screen.getByRole('main', { name: 'World' })).toBeInTheDocument();
+    // The stage is the one `main` landmark and is deliberately unnamed: it holds
+    // whichever page is routed, not the world in particular.
+    expect(screen.getByRole('main')).toBeInTheDocument();
     expect(screen.getByRole('complementary', { name: 'Context' })).toBeInTheDocument();
     expect(screen.getByLabelText('Status')).toBeInTheDocument();
+  });
+
+  it('renders the world on the World page and nowhere else', async () => {
+    const { unmount } = await renderAt('/world');
+    expect(screen.getByLabelText('Interactive world renderer')).toBeInTheDocument();
+    unmount();
+
+    // The shell used to mount the renderer for every route with the page drawn
+    // on top of it, so a WebGL context and its frames were paid for on screens
+    // that never showed a map — and page content took every drag aimed at it.
+    await renderAt('/fleet');
+    expect(screen.queryByLabelText('Interactive world renderer')).toBeNull();
   });
 
   it('has a rail link for each of the seven destinations', async () => {
