@@ -1,4 +1,5 @@
 import type {
+  AdminAirlineDetailResponse,
   AdminNpcResponse,
   AdminAuditEntry,
   AdminGrantSummary,
@@ -268,6 +269,26 @@ export async function fetchPlayer(playerId: string): Promise<AdminPlayerDetail |
   if (!response.ok) throw new Error(`GET player failed with ${String(response.status)}`);
   const body: unknown = await response.json();
   return (body as { player: AdminPlayerDetail }).player;
+}
+
+/** One airline's read-only support record, including a bounded AIR-06 ledger page. */
+export async function fetchAdminAirline(
+  airlineId: string,
+  movementOffset = 0,
+): Promise<AdminAirlineDetailResponse | null> {
+  const params = new URLSearchParams();
+  if (movementOffset > 0) params.set('movementOffset', String(movementOffset));
+  const suffix = params.toString();
+  const response = await fetch(
+    `/api/admin/airlines/${encodeURIComponent(airlineId)}${suffix === '' ? '' : `?${suffix}`}`,
+    {
+      headers: { accept: 'application/json' },
+      credentials: 'same-origin',
+    },
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`GET airline failed with ${String(response.status)}`);
+  return (await response.json()) as AdminAirlineDetailResponse;
 }
 
 /** Incident-response control: immediately ends every session for one player. */

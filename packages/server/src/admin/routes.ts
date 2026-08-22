@@ -1,4 +1,5 @@
 import {
+  adminAirlineDetailResponseJsonSchema,
   adminAuditResponseJsonSchema,
   adminCreateEconomyConfigResponseJsonSchema,
   adminCreateWorldResponseJsonSchema,
@@ -40,6 +41,7 @@ import {
   validatePinRequest,
 } from '../economy/versions';
 
+import { readAirline } from './airlines';
 import { parseAuditJson, readAudit } from './audit';
 import { requeueUnsupportedEvents, validateRequeueRequest } from './events';
 import { type Actor, listAdmins } from './grants';
@@ -236,6 +238,49 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
           .send({ code: 'player_not_found', message: 'No player with that id.' });
       }
       return reply.code(200).send({ signedOut: true, revokedSessions });
+    },
+  );
+
+  // ---------------------------------------------------------------- airlines
+
+  app.get<{
+    Params: { airlineId: string };
+    Querystring: { movementLimit?: string; movementOffset?: string };
+  }>(
+    '/api/admin/airlines/:airlineId',
+    {
+      onRequest: app.requireAdmin,
+      schema: {
+        response: { 200: adminAirlineDetailResponseJsonSchema, 404: apiErrorJsonSchema },
+      },
+    },
+    async (request, reply) => {
+      if (!Uuid.safeParse(request.params.airlineId).success) {
+        return reply
+          .code(404)
+          .send({ code: 'airline_not_found', message: 'No airline with that id.' });
+      }
+
+      // Purely read-only. AIR-06 owns every game-balance change and records its
+      // immutable cause in the same transaction; this route only makes that
+      // evidence visible to support.
+      const detail = await readAirline(db.db, request.params.airlineId, {
+        movementLimit:
+          request.query.movementLimit === undefined
+            ? undefined
+            : Number(request.query.movementLimit),
+        movementOffset:
+          request.query.movementOffset === undefined
+            ? undefined
+            : Number(request.query.movementOffset),
+      });
+      if (!detail) {
+        return reply
+          .code(404)
+          .send({ code: 'airline_not_found', message: 'No airline with that id.' });
+      }
+
+      return reply.code(200).send(detail);
     },
   );
 

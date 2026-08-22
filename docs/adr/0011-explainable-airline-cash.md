@@ -113,6 +113,10 @@ the category, counterparty and dimensional fields owned by M8-01.
 - M8-01 can build statements from an already-reconciling source instead of repairing an
   unexplained balance first.
 - Support can distinguish game occurrence time from delayed real processing time.
+- AIR-10 exposes that history from the admin console beside airline identity, standing and
+  current or historical routes. The projection is paginated and read-only; it does not add a
+  cash-adjustment cause or a direct balance edit. A future correction remains a new,
+  explicitly named compensating movement through this decision's transaction boundary.
 
 ### What this makes harder
 

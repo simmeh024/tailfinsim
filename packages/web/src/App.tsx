@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router';
 
 import { AdminLayout } from './admin/AdminLayout';
+import { AdminAirlinePage } from './admin/AirlinePage';
 import { AuditPage } from './admin/AuditPage';
 import { CarriersPage } from './admin/CarriersPage';
 import { OverviewPage } from './admin/OverviewPage';
@@ -120,6 +121,7 @@ export function App(): ReactNode {
                 */}
                 <Route path="players" element={<PlayersPage />} />
                 <Route path="players/:playerId" element={<PlayersPage />} />
+                <Route path="airlines/:airlineId" element={<AdminAirlinePage />} />
                 <Route path="audit" element={<AuditPage />} />
                 {/* The competition, and why it did what it did (M3-12). */}
                 <Route path="carriers" element={<CarriersPage />} />

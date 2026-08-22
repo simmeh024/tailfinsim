@@ -8,6 +8,7 @@ import {
   AirlineFoundingOptionsResponse,
   AirlineIdentity,
   AirlineIataCode,
+  AdminAirlineDetailResponse,
   Airport,
   AirportIcaoCode,
   AirportSummary,
@@ -290,6 +291,77 @@ describe('Airline', () => {
         identityChangeId: '8a1c7d3e-2b8f-4a6c-9d1e-7f3b5c9a2d4e',
       }).success,
     ).toBe(true);
+  });
+});
+
+describe('admin airline support record', () => {
+  const valid = {
+    airline: {
+      id: '3f2b8c9e-1d4a-4f6b-8c2e-9a7d5b3f1e0c',
+      worldId: '5a1c7d3e-2b8f-4a6c-9d1e-7f3b5c9a2d4e',
+      worldName: 'Flagship',
+      owner: {
+        id: '7c3e9a1f-4d2b-4e8a-b6c1-3f9d7a5e1c2b',
+        displayName: 'Amelia Hart',
+      },
+      kind: 'player',
+      archetype: null,
+      name: 'Tailfin Air',
+      iataCode: 'TF',
+      icaoCode: 'TFN',
+      callsign: 'TAILFIN',
+      baseCountry: 'NL',
+      cashMinor: 49_987_500,
+      reputation: 0.35,
+      status: 'active',
+      statusChangedAt: '2026-08-17T12:00:00.000Z',
+      ceasedAt: null,
+      createdAt: '2026-08-17T12:00:00.000Z',
+      routes: [
+        {
+          id: '8d4f2a6c-1b3e-4d7f-9a5c-2e8b6d4f1a3c',
+          originIcao: 'EHAM',
+          originName: 'Amsterdam Airport Schiphol',
+          destinationIcao: 'EGLL',
+          destinationName: 'London Heathrow Airport',
+          greatCircleNm: 200,
+          fares: { economy: 12_500 },
+          active: true,
+          createdAt: '2026-08-18T12:00:00.000Z',
+          updatedAt: '2026-08-18T12:00:00.000Z',
+        },
+      ],
+    },
+    cashMovements: {
+      entries: [
+        {
+          id: '9e5a3b7d-2c4f-4e8a-a6d1-3f9c7b5e2a4d',
+          amountMinor: -12_500,
+          cause: 'flight_settlement',
+          reference: 'flight-123',
+          balanceAfterMinor: 49_987_500,
+          occurredAt: '2026-08-19T12:00:00.000Z',
+          recordedAt: '2026-08-19T12:00:01.000Z',
+        },
+      ],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    },
+  };
+
+  it('accepts a route and immutable balance explanation together', () => {
+    expect(AdminAirlineDetailResponse.safeParse(valid).success).toBe(true);
+  });
+
+  it('refuses an invented cash cause and fractional minor units', () => {
+    const inventedCause = JSON.parse(JSON.stringify(valid)) as typeof valid;
+    inventedCause.cashMovements.entries[0]!.cause = 'manual_adjustment';
+    expect(AdminAirlineDetailResponse.safeParse(inventedCause).success).toBe(false);
+
+    const fractional = JSON.parse(JSON.stringify(valid)) as typeof valid;
+    fractional.cashMovements.entries[0]!.amountMinor = 12.5;
+    expect(AdminAirlineDetailResponse.safeParse(fractional).success).toBe(false);
   });
 });
 

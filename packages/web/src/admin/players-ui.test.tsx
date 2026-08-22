@@ -51,7 +51,18 @@ const ROWS: AdminPlayerSummary[] = [
     displayName: 'Amelia Hart',
     createdAt: '2026-08-17T09:00:00.000Z',
     lastSeenAt: '2026-08-18T20:00:00.000Z',
-    airlines: 2,
+    airlines: 1,
+    airlineLinks: [
+      {
+        id: 'eeeeeeee-1111-2222-3333-444444444444',
+        worldId: 'ffffffff-1111-2222-3333-444444444444',
+        worldName: 'Flagship',
+        name: 'Hart Air',
+        iataCode: 'HA',
+        icaoCode: 'XHA',
+        status: 'active',
+      },
+    ],
     isAdmin: true,
   },
   {
@@ -60,6 +71,7 @@ const ROWS: AdminPlayerSummary[] = [
     createdAt: '2026-08-16T09:00:00.000Z',
     lastSeenAt: null,
     airlines: 0,
+    airlineLinks: [],
     isAdmin: false,
   },
 ];
@@ -205,6 +217,10 @@ describe('the players section', () => {
     expect(within(table).getByText('2026-08-18 20:00')).toBeInTheDocument();
     // An account that has never signed in says so rather than showing a blank.
     expect(within(table).getByText('never')).toBeInTheDocument();
+    expect(within(table).getByRole('link', { name: 'Hart Air' })).toHaveAttribute(
+      'href',
+      '/admin/airlines/eeeeeeee-1111-2222-3333-444444444444',
+    );
   });
 
   it('says it is read-only, and which milestone owns the rest', async () => {
@@ -277,6 +293,10 @@ describe('one player in detail', () => {
     // Cash is integer minor units on the wire; the console is where it becomes
     // money a person can read.
     expect(screen.getByText('500,000')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Hart Air' })).toHaveAttribute(
+      'href',
+      '/admin/airlines/eeeeeeee-1111-2222-3333-444444444444',
+    );
   });
 
   it('says which sessions are live and which have expired', async () => {

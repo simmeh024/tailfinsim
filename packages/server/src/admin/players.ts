@@ -133,7 +133,8 @@ export async function listPlayers(db: Database, options: PlayerQuery = {}): Prom
       displayName: row.displayName,
       createdAt: row.createdAt.toISOString(),
       lastSeenAt: toIso(extras.lastSeen.get(row.id) ?? null),
-      airlines: extras.airlines.get(row.id) ?? 0,
+      airlines: extras.airlineLinks.get(row.id)?.length ?? 0,
+      airlineLinks: extras.airlineLinks.get(row.id) ?? [],
       isAdmin: extras.admins.has(row.id),
     })),
     total: totals[0]?.n ?? 0,
@@ -144,30 +145,32 @@ export async function listPlayers(db: Database, options: PlayerQuery = {}): Prom
 }
 
 /**
- * What each player on the page holds — three grouped queries, not three
- * correlated subqueries.
+ * What each player on the page holds — three bounded queries, not three
+ * correlated subqueries per player.
  *
  * The first version computed these as correlated scalar subqueries inside the
  * select list. Against real Postgres they came back as zero and null for players
  * who demonstrably had airlines and sessions, while the *same* correlated shape
  * in the `where` clause worked. Rather than debug drizzle's rendering blind — the
  * database-backed tests only run in CI — this uses the pattern already proven in
- * `countWorldContents`: group once per table, look up by id.
+ * `countWorldContents`: read once per table, then look up by id.
  *
  * Scoped to the ids on the page, so the cost is bounded by page size rather than
- * by how many players exist. Grouped rather than joined because a join to both
+ * by how many players exist. Separate rather than joined because a join to both
  * airlines and sessions multiplies them together and counts each several times.
+ * Airlines are returned as named links instead of only grouped counts so the
+ * list can lead directly to AIR-10's support record.
  */
 async function countFor(
   db: Database,
   ids: string[],
 ): Promise<{
-  airlines: Map<string, number>;
+  airlineLinks: Map<string, AdminPlayerSummary['airlineLinks']>;
   lastSeen: Map<string, Date | string>;
   admins: Set<string>;
 }> {
   if (ids.length === 0) {
-    return { airlines: new Map(), lastSeen: new Map(), admins: new Set() };
+    return { airlineLinks: new Map(), lastSeen: new Map(), admins: new Set() };
   }
 
   // `inArray` against a list of real player ids already excludes NPC carriers:
@@ -176,10 +179,20 @@ async function countFor(
   // column's type is now nullable and a silent `null` key would be a bug that
   // only showed up as a missing count.
   const airlines = await db
-    .select({ playerId: airline.playerId, n: count() })
+    .select({
+      playerId: airline.playerId,
+      id: airline.id,
+      worldId: airline.worldId,
+      worldName: world.name,
+      name: airline.name,
+      iataCode: airline.iataCode,
+      icaoCode: airline.icaoCode,
+      status: airline.status,
+    })
     .from(airline)
+    .innerJoin(world, eq(world.id, airline.worldId))
     .where(inArray(airline.playerId, ids))
-    .groupBy(airline.playerId);
+    .orderBy(asc(airline.createdAt), asc(airline.id));
 
   const seen = await db
     .select({ playerId: session.playerId, at: max(session.lastSeenAt) })
@@ -202,12 +215,24 @@ async function countFor(
     if (at !== null) lastSeen.set(row.playerId, at);
   }
 
+  const airlineLinks = new Map<string, AdminPlayerSummary['airlineLinks']>();
+  for (const row of airlines) {
+    if (row.playerId === null) continue;
+    const links = airlineLinks.get(row.playerId) ?? [];
+    links.push({
+      id: row.id,
+      worldId: row.worldId,
+      worldName: row.worldName,
+      name: row.name,
+      iataCode: row.iataCode,
+      icaoCode: row.icaoCode,
+      status: row.status,
+    });
+    airlineLinks.set(row.playerId, links);
+  }
+
   return {
-    airlines: new Map(
-      airlines
-        .filter((row): row is { playerId: string; n: number } => row.playerId !== null)
-        .map((row) => [row.playerId, row.n]),
-    ),
+    airlineLinks,
     lastSeen,
     admins: new Set(admins.map((row) => row.playerId)),
   };
