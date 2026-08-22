@@ -56,12 +56,14 @@ top-level navigation; the one external resource exception is
 and rejected HSTS preload option are in
 [ADR-0014](adr/0014-browser-security-policy.md).
 
-The source default is enforced, while the first installation deliberately overrides the
-header name to `Content-Security-Policy-Report-Only`. The operator removes that override
-only after the real dev sign-in/avatar journey is clean, then repeats it with enforcement.
-This is an edge-config rollout, not an application deploy: neither deploy script copies
-`deploy/Caddyfile`. [`deploy/README.md`](../deploy/README.md#first-security-policy-rollout-sec-hard-05)
-has the commands, and `pnpm security:headers` asserts exact values against the running hosts.
+The source default is enforced. The first live installation deliberately used
+`Content-Security-Policy-Report-Only` until the real dev sign-in/avatar journey was clean;
+the override was then removed, and both public hosts passed the enforced-policy verifier on
+2026-08-22. This remains an edge-config rollout, not an application deploy: neither deploy
+script copies `deploy/Caddyfile`.
+[`deploy/README.md`](../deploy/README.md#first-security-policy-rollout-sec-hard-05) has the
+rebuild/change procedure, and `pnpm security:headers` asserts exact values against the running
+hosts.
 
 ### Sizing
 
@@ -92,7 +94,8 @@ evidence, not as the current topology; use the canonical table above for that.
 
 OPS-08 and OPS-09 established the Web/Worker boundary and deployed the dev Worker. The
 remaining production split is tracked through
-[OPS-10 – OPS-16](https://github.com/simmeh024/tailfinsim/issues/195). Postgres currently
+[OPS-10](https://github.com/simmeh024/tailfinsim/issues/189) through
+[OPS-16](https://github.com/simmeh024/tailfinsim/issues/195). Postgres currently
 remains on the web/database host; the dev Worker reaches it through the constrained SSH
 tunnel documented in the runbook. The future production split still has to decide the
 database's long-term home.
@@ -135,7 +138,8 @@ fails. Propagation on a fresh domain with no prior records is usually minutes.
 
 ## 4. Environment variables
 
-Read by the server at boot from a `.env` beside the bundle.
+Read by the server at boot from the repository-root `.env` (resolved from the bundle's
+location, not from the shell's current directory).
 
 **Only `DATABASE_URL` is genuinely required** — everything else has a default, and the
 defaults are chosen to be safe rather than convenient: `WEB_SURFACE` serves a holding page,
@@ -152,6 +156,7 @@ the callback, after the player has been sent to Google. Production also refuses 
 | ----------------------------- | --------------------------------------------- | -------- | ------------------------------------------------------ |
 | `NODE_ENV`                    | `production`                                  | no       | `development` \| `test` \| `production`                |
 | `PORT`                        | `3000`                                        | no       | Caddy proxies to this. Defaults to 3000                |
+| `HOST`                        | `127.0.0.1`                                   | no       | Web bind address. Keep loopback behind local Caddy     |
 | `DATABASE_URL`                | `postgres://tailfin:…@localhost:5432/tailfin` | yes      | M0-05. Never hardcoded, never committed                |
 | `DATABASE_POOL_MAX`           | `10`                                          | no       | Defaults to 10                                         |
 | `DATABASE_CONNECT_TIMEOUT_MS` | `5000`                                        | no       | Defaults to 5000. `pg`'s own default waits forever     |
@@ -234,8 +239,8 @@ half-configured server looks like working sign-in right up to the callback, by w
 point the player has already been sent to Google.
 
 That optionality is what lets production run this build today with no OAuth client of its
-own. Each environment needs its **own** client, because Google matches the redirect URI
-exactly:
+own. Google must authorize each environment's exact redirect URI; separate OAuth clients are
+recommended for blast-radius isolation but are not technically required:
 
     https://tailfinsim.com/api/auth/google/callback
     https://dev.tailfinsim.com/api/auth/google/callback

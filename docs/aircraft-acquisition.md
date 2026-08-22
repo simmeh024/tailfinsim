@@ -45,7 +45,9 @@ Only the Worker sweeps due new orders. It claims one pending order at a time wit
 `FOR UPDATE SKIP LOCKED`, updates it to delivered and inserts its airframe in the same
 transaction. `airframe.source_order_id` is unique, so a rolling handover between two Workers
 cannot deliver the same aircraft twice. Production still has no Worker; pending production
-orders therefore cannot be enabled until OPS-12 supplies one.
+orders therefore cannot be enabled until OPS-12 supplies one. The dev Worker performs this
+sweep before draining game-time events and exposes cumulative `aircraftDeliveries` and
+`aircraftDeliveryErrors` counters in its loopback health snapshot.
 
 ## Authored v1 terms
 

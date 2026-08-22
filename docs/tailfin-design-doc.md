@@ -1,4 +1,5 @@
 # TAILFIN
+
 ### Design Document v1.4 — Full Feature Outline
 
 > **Name:** Tailfin
@@ -9,6 +10,13 @@
 > **Time model:** Continuous real time at **2× speed** — a 10h flight lands in 5h
 > **Flagship world epoch:** 20 October 2024
 > **World model:** Single shared persistent world; all players compete in the same market
+
+> **Implementation-status note:** this document is the authority on intended mechanics, not
+> the release tracker. [`README.md`](../README.md) describes what the repository currently
+> implements, and the live
+> [GitHub milestones](https://github.com/simmeh024/tailfinsim/milestones) own sequencing and
+> completion. Historical build-order lists below are retained as design rationale, not as a
+> claim that their work is still pending.
 
 Sections marked **`[MVP]`** are in scope for the first shippable build; **`[MVP-lite]`** means a reduced version ships in MVP with depth added after. Everything else is the long-term vision — documented now so the MVP is architected to grow into it.
 
@@ -1271,24 +1279,30 @@ Economy health — the numbers that tell you a world is dying before players do:
 
 An audit of this document surfaced systems that are **referenced by existing mechanics but not yet specified**. They are listed here rather than left implicit, ordered by how much depends on them. Nothing below is optional-but-nice; each one is already load-bearing somewhere in the text above.
 
+### Closed or narrowed since the original audit
+
+| Original gap | Current MVP decision |
+|---|---|
+| **Disruption model and weather** | The deterministic MVP baseline is now implemented: world-seeded climatological weather by airport/date feeds cause-specific delay, cancellation, diversion and air-return risk; the same input replays identically. Origin weather delays, destination weather can divert, forecasts lose confidence toward climatology with horizon, and cold moisture drives de-icing. Deeper ATC, fault and live-data fidelity remains subject to the ceiling decision below. |
+| **AI / NPC carriers and world seeding** | M3-12 supplies deterministic, server-owned NPC airlines after demand generation. They use the same economy payload, fare floor and demand model as players, seed by world, and review entry, exit and fares weekly in the Worker. |
+| **Server architecture and persistence** | ADR-0001 selects the TypeScript/Fastify/Postgres stack; ADR-0019 separates Web and Worker processes while keeping Postgres as the durable queue and channel. Scale targets, `player_cap` and sharding remain open below. |
+| **IATA/ICAO scarcity** | ADR-0009 makes codes unique per world, allocates them under database constraints, offers deterministic alternatives and releases the live namespace on terminal cessation while retaining history. |
+
 ### Blocking for MVP
 
 | Gap | Referenced by | Why it blocks |
 |---|---|---|
-| **Disruption model** | §8.4 is four lines | OTP, reputation, crew timeout (§9.2), Cat IIIb (App. C.3), the −30% incident boost (§10.4), the Ops Controller hire, and A.1's "randomness lives in disruption" all rest on it. **The second-largest hidden system after Appendix A.** |
-| **Weather** | Disruption, crew XP (§10.2), de-icing (§9.3), remote stands (App. B.6) | No source, granularity, forecast horizon or seasonality defined |
-| **AI / NPC carriers & world seeding** | A.8's whole worked example, A.10's monopoly guard, §22.8's HHI monitoring | 500 players cannot populate 4,000 airports. Without AI incumbents the world is empty and the demand model has nothing to compete against |
 | **Maintenance** | §7.3 is two bullets | AOG, check scheduling, retrofits (App. C.3), hangar facilities (App. B.5), lender repossession (§13.5) |
 | **Slots** | §8.1 is three lines; §21 open question 3 unresolved | Called "the scarce resource of the shared world" (§16). Allocation at world launch is still an open question about an MVP system |
 | **Safety, incidents & insurance** | §10.2, §10.3, §10.4, §9.1 all reference incidents | No incident definition, severity ladder, investigation, grounding, or hull/liability cover — the latter mandatory for leased and financed airframes |
 | **Currency, FX & tax** | §11, §13, §14 unit economics | The document mixes `$` and `€`; §13.4 derives dollars from a euro fare. No home currency, no corporate or ticket taxes, in a game promising full P&L |
 | **Regulatory layer** | App. B.4 check 6, §19 gates, A.10's "regulator investigation" | Traffic rights, AOC, freedoms of the air and the regulator entity are all named and none defined |
 | **Anti-cheat & multi-accounting** | Slots, exclusive gates, alliance voting, livery contests, player trading | The most predictable exploit in the design, entirely unaddressed |
-| **Server architecture & scale** | §21 is eight bullets | No stack, sharding, concurrency target, persistence model, or `player_cap` value. The only scale figure in the document is a 30 MB distance matrix |
+| **Scale targets and sharding** | §21, ADR-0001 and ADR-0019 | The process and persistence boundaries are settled, but concurrent-world/player targets, `player_cap`, sharding triggers and the measured load envelope are not. |
 
 ### Needed before launch, not before MVP
 
-Crew labour market as a real shared pool (§9.2 asserts one) · lessor counterparties, lease terms and return conditions · used-aircraft supply and depreciation model · distribution channel and booking costs · seasonal schedules (A.2 has a `Season` term; §8.2 has only permanent rotations) · service recovery and passenger compensation · passenger charter and wet lease (named revenue lines in §11) · aircraft delivery positioning and ferry flights · IATA code scarcity (~1,300 usable two-letter codes vs. an unbounded player count) · in-game communication, without which alliances, poaching and marketplaces cannot function · progressive tutorials past week one · endgame, prestige and the seasons/reset philosophy (§16 and §7.2b currently propose two competing ones)
+Crew labour market as a real shared pool (§9.2 asserts one) · lessor counterparties, lease terms and return conditions · used-aircraft supply and depreciation model · distribution channel and booking costs · seasonal schedules (A.2 has a `Season` term; §8.2 has only permanent rotations) · service recovery and passenger compensation · passenger charter and wet lease (named revenue lines in §11) · aircraft delivery positioning and ferry flights · in-game communication, without which alliances, poaching and marketplaces cannot function · progressive tutorials past week one · endgame, prestige and the seasons/reset philosophy (§16 and §7.2b currently propose two competing ones)
 
 ### Production, not design
 
@@ -1301,7 +1315,11 @@ Team, roles, budget, timeline and critical path · art production plan and asset
 
 ---
 
-## 25. Next Steps
+## 25. Original Implementation Sequence (Historical)
+
+This was the design document's recommended ordering before the repository roadmap existed.
+Several items are now complete or partially complete. It remains here to explain dependency
+and risk ordering; the live milestones, not this numbered list, decide what is next.
 
 1. Lock the name and secure the domain / app handles
 2. Paper-prototype the demand share formula — it decides whether the game is fair
@@ -1326,7 +1344,6 @@ Team, roles, budget, timeline and critical path · art production plan and asset
 21. Lock the earnable-vs-purchasable line on design items (App. G.4) before the store exists, not after
 22. Build the world renderer with **both projections from day one** (App. H.2) — retrofitting a globe onto a flat-map codebase is a rewrite
 23. Close the §24 blocking gaps in order — **disruption first**, since more systems depend on it than on anything except Appendix A
-20. Lock the earnable-vs-purchasable line on design items (App. G.4) before the store exists, not after
 
 ---
 

@@ -2,6 +2,8 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-17
+- **Amended:** 2026-08-22 — clarified that the current clock is derived while domain records
+  may persist game-time instants; the original wording predated `world_event.fire_at`.
 - **Deciders:** @simmeh024
 - **Constrains:** M0-06 (core schema), M1-05 (world clock), M1-09 (world creation), M11-02 (admin world management)
 
@@ -93,9 +95,11 @@ That last one exists because the reset that matters is the one nobody meant to r
 
 ### What we accept
 
-That in-game time is never available as a stored column to query against directly. Reports
-that want "flights in October 2024" must convert to the real-time window and query that —
-slightly more work at the query layer, in exchange for a clock that cannot drift.
+That the world's **current** in-game time is never a mutable stored clock column. Domain
+records may and do persist game-time instants such as `world_event.fire_at` and scheduled
+flight timestamps; reports query those facts directly. A report that starts from a real-time
+observation must convert through the world's clock mapping, in exchange for a current clock
+that cannot drift while the server is offline.
 
 ## Alternatives considered
 
@@ -133,10 +137,12 @@ being quietly absorbed.
 **What was not built, and is still owed.** The piecewise-segment model. The past calendar is
 still derived from a single speed, so after a change, an older real instant maps to a
 different in-game date than it did before, and changing the speed back does not restore the
-old mapping. Nothing stores an in-game timestamp today — §21 computes them all on read — so
-nothing is currently _wrong_ as a result. The day anything does persist an in-game date, the
-segment table has to exist first. The console's confirmation states this in as many words,
-so it is a known cost rather than a surprise.
+old mapping. Persisted game-time facts such as `world_event.fire_at` keep their intended
+calendar instant and are not rewritten. The danger is historical code that stores only a
+real timestamp and later recomputes what game date it represented: after a speed change that
+answer is no longer stable. Such a feature must persist the game-time occurrence when it
+happens or add the segment table first. The console's confirmation states this cost rather
+than hiding it.
 
 **§22.2's two-person rule is also still owed.** The table above says a speed change is gated
 behind one admin requesting and another approving. What exists is a single-admin

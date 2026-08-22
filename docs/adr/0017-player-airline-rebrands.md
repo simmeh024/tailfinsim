@@ -114,5 +114,4 @@ copying display metadata into every flight.
 
 - a later milestone permits a live airline to replace either code;
 - M8-02 defines the accounting and display currency;
-- M3-11 moves economy payloads to live versioned storage; or
 - a public history surface needs to present the identity timeline.

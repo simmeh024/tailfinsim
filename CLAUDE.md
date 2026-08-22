@@ -1,9 +1,10 @@
 # Working on Tailfin
 
-Instructions for coding agents. [`CONTRIBUTING.md`](CONTRIBUTING.md) covers how the code
-is written — the four invariants, the package graph, the commands. This file covers how
-the project is **operated**, which is the part that is not visible from the code and where
-the expensive mistakes have actually been made.
+Shared instructions for coding agents, including Claude Code and Codex.
+[`CONTRIBUTING.md`](CONTRIBUTING.md) covers how the code is written — the four invariants,
+the package graph, the commands. This file covers how the project is **operated**, which is
+the part that is not visible from the code and where the expensive mistakes have actually
+been made.
 
 Everything here was learned by getting it wrong at least once.
 
@@ -163,6 +164,8 @@ they do not copy `/srv/tailfin/deploy/Caddyfile` into `/etc/caddy` or reload the
 security-header change, follow the report-only/enforced sequence in `deploy/README.md` and run
 `pnpm security:headers` against both live hosts before saying the policy is active. A green
 in-repository Caddy integration test proves the committed config, not the installed one.
+The SEC-HARD-05 rollout completed its browser sign-in/avatar check and both public hosts passed
+the enforced-policy verifier on 2026-08-22; the report-only procedure remains the rebuild path.
 
 **Session authority rotates when privilege changes.** A real admin grant or revocation deletes
 all of the target player's sessions in the same transaction as the grant and audit row. Do not
@@ -170,14 +173,22 @@ change that to preserve a convenient cookie: the pre-change token must receive 4
 player sessions default to 30 days, admin sessions to 12 hours, and production refuses a
 non-HTTPS `PUBLIC_ORIGIN`; see ADR-0015.
 
+**Private resources are concealed by resolution, not by a post-query owner check.** ADR-0020
+sets the HTTP vocabulary: 401 means no valid session, 403 means a valid identity lacks a safe-
+to-disclose permission, and malformed, missing or cross-owner private path ids receive the
+endpoint's identical 404 body. Scope the database query by the session-resolved owner. Public
+projections are explicit authorization-matrix entries with limited fields; they are not a
+reason to weaken the private endpoint behind them.
+
 ---
 
 ## The two environments, on three nodes
 
-Production and dev **web** share one DreamCompute box, `208.113.129.131`. Same repo, same
-build, different checkout, port, database and audience. Since OPS-09 there is also a second
-box, `tailfin-dev-worker-01` (`208.113.129.83`), running the dev **worker** — so "the box" is
-no longer an unambiguous phrase, and production still has no worker at all.
+Production and dev **web** share one DreamCompute box, `208.113.129.131`. They use the same
+repository and build pipeline but deliberately have different checkouts, deployed revisions,
+ports, databases and audiences. Since OPS-09 there is also a second box,
+`tailfin-dev-worker-01` (`208.113.129.83`), running the dev **worker** — so "the box" is no
+longer an unambiguous phrase, and production still has no worker at all.
 
 **This section is the canonical current operational topology.** `README.md` and
 `docs/deploy.md` link here instead of copying the node table; update this section whenever a
@@ -308,10 +319,12 @@ paginated AIR-06 cash ledger), and the audit log. Anything it can answer is fast
 and every mutation it performs is audited in the same transaction as the change. The airline
 record deliberately has no cash adjustment path: money still moves only through AIR-06.
 
-The four-node dev/production web/worker split is planned in
-[OPS-08 – OPS-16](https://github.com/simmeh024/tailfinsim/issues/195). Read that sequence
-before designing anything infrastructural; it already records the two things that bite —
-the database has no home in the four-node diagram, and builds happen on the box.
+OPS-08 and OPS-09 established the process boundary and the dev Worker; OPS-15 made node/build
+drift visible. The remaining production split is tracked by
+[OPS-10](https://github.com/simmeh024/tailfinsim/issues/189) through
+[OPS-16](https://github.com/simmeh024/tailfinsim/issues/195). Read that sequence
+before designing anything infrastructural; it already records the two things that bite — the
+database has no long-term home in the four-node diagram, and builds happen on the box.
 
 ---
 
@@ -374,8 +387,10 @@ ever changes.
 
 ## Conventions
 
-**Branches:** `feat/<issue-key>-<slug>`, `fix/<slug>`, `chore/<slug>`. There is no
-`develop`. Everything targets `main`.
+**Branches:** coding-agent branches identify their owner: `codex/<issue-key>-<slug>` for
+Codex and `claude/<issue-key>-<slug>` for Claude Code. Human-maintained branches may use
+`feat/<issue-key>-<slug>`, `fix/<slug>` or `chore/<slug>`. There is no `develop`; everything
+targets `main`.
 
 **Issues and PRs:** one issue per PR where practical. Issue titles are `[M1-07] Sentence
 case`. Reference the key in the branch name and the commit subject.
@@ -386,11 +401,11 @@ and a closing keyword in a _comment_ never fires at all. Write `Closes #17` and
 
 **One-off jobs run from `dist`, not from source.** `data:airports`, `data:classify`,
 `data:catchment`, `data:timezones`, `data:distances`, `world:seed`, `demand:generate`,
-`admin` and `ops:status` are all bundled entry points, so `pnpm build` has to have
-run first. The order matters for a new world — airports, then tiers, then catchment, then
-distances, then the world, then its demand pools — because each reads what the last one
-wrote. `data:timezones` is the exception and needs only the airports. CONTRIBUTING.md has
-the table.
+`npc:seed`, `admin` and `ops:status` are all bundled entry points, so `pnpm build` has to
+have run first. The order matters for a new world — airports, then tiers and catchment,
+then distances, then the world, its demand pools and finally `npc:seed <worldId>` — because
+each reads what the preceding data stage wrote. `data:timezones` is the exception and needs
+only the airports. CONTRIBUTING.md has the table.
 
 CI builds the bundles on every pull request and asserts that each of those entry points
 actually lands in `dist`, so an entry point dropped from `build.mjs` fails the run rather
@@ -409,6 +424,14 @@ update ADR-0012 and `docs/deploy.md` in the same change.
 [GitHub milestone list](https://github.com/simmeh024/tailfinsim/milestones). Do not copy an
 issue count, milestone count, completion summary or supposedly complete track list into this
 file: all four become false as soon as roadmap work lands.
+
+**Documentation ships with the behavior it describes.** A change to current mechanics,
+routes, configuration, commands or deployment topology updates the matching maintained docs
+in the same pull request. Keep `README.md`'s status accurate; update this file for operational
+facts; update the authorization matrix with every HTTP route; update a subsystem contract
+when its boundary changes; and write or amend an ADR when a decision changes. Historical
+design plans and ADR context may remain, but label them historical instead of letting them
+read as current state. Do not copy the volatile node table out of this file.
 
 ---
 

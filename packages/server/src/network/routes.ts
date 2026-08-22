@@ -24,7 +24,7 @@
 
 import { and, eq } from 'drizzle-orm';
 
-import { CabinClass, FareTable } from '@tailfin/shared';
+import { CabinClass, FareTable, Uuid } from '@tailfin/shared';
 
 import { resolvedAirlineOf } from '../airline/context';
 import { route } from '../db/schema';
@@ -58,6 +58,12 @@ async function ownedRoute(
   airlineId: string,
   routeId: string,
 ): Promise<RouteRow | null> {
+  // A URL identifier that cannot name a row is indistinguishable from a
+  // well-formed id that names no owned row. Besides being the least surprising
+  // contract for the client, parsing before the query keeps Postgres' uuid
+  // type error from turning an ordinary miss into a 500.
+  if (!Uuid.safeParse(routeId).success) return null;
+
   const rows = await db
     .select({
       id: route.id,
@@ -210,17 +216,16 @@ export function registerNetworkRoutes(
    */
   app.get<{ Params: { routeId: string }; Querystring: { cabin?: string; rival?: string } }>(
     '/api/routes/:routeId/waterfall',
-    { onRequest: app.requireAuth },
+    { onRequest: app.requireAirline },
     async (request, reply) => {
-      const playerId = request.player?.id;
-      if (playerId === undefined) return notFound(reply);
+      const own = resolvedAirlineOf(request);
 
       const cabin = CabinClass.safeParse(request.query.cabin ?? 'economy');
       if (!cabin.success) {
         return reply.code(400).send({ code: 'invalid_cabin', message: 'No such cabin' });
       }
 
-      const row = await ownedRoute(db.db, playerId, request.params.routeId);
+      const row = await ownedRoute(db.db, own.id, request.params.routeId);
       if (!row) return notFound(reply);
 
       const economics = await economicsFor(row);

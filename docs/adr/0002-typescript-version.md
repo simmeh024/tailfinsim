@@ -6,8 +6,8 @@
 
 ## Context
 
-TypeScript 7 (the native Go port) is the current `latest` on npm at 7.0.2 and is
-substantially faster than the JavaScript compiler — attractive for a monorepo with
+At the time of this decision, TypeScript 7 (the native Go port) was npm's `latest` at 7.0.2
+and was substantially faster than the JavaScript compiler — attractive for a monorepo with
 project references and a CI budget of under four minutes (M0-03).
 
 However, M0-02 requires an ESLint flat config with `@typescript-eslint` and, specifically,
@@ -29,6 +29,12 @@ Pin TypeScript to `~6.0.3` — the newest stable release inside typescript-eslin
 supported range. The tilde range keeps us on 6.0.x so a future 6.1.0 cannot silently
 break the peer constraint.
 
+**Implementation drift recorded 2026-08-22:** `package.json` currently declares `^6.0.3`,
+while `pnpm-lock.yaml` resolves 6.0.3 and typescript-eslint's peer range remains `<6.1.0`.
+The installed toolchain therefore matches the decision, but the manifest does not encode its
+tilde guard. Correct that in a deliberate dependency change; do not describe the caret as a
+pin or let a routine documentation edit silently change the toolchain contract.
+
 ## Consequences
 
 ### What this makes easier
@@ -46,9 +52,9 @@ break the peer constraint.
 
 ### What we accept
 
-Being one major version behind `latest` on the single most central tool in the stack, in
-exchange for a working lint story. Type-aware linting is worth more than compile speed at
-this repository size.
+At adoption, being one major version behind npm's `latest` on the single most central tool
+in the stack, in exchange for a working lint story. Type-aware linting is worth more than
+compile speed at this repository size.
 
 ## Alternatives considered
 

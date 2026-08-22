@@ -4,6 +4,9 @@ The full design document lives at [`docs/tailfin-design-doc.md`](docs/tailfin-de
 **If anything here conflicts with the design doc, the design doc wins** — say so in a
 comment or an issue rather than guessing.
 
+Coding agents must also read [`CLAUDE.md`](CLAUDE.md). Despite the filename, it is the shared
+operational guide for Claude Code, Codex and any other agent working in this repository.
+
 ---
 
 ## The four invariants
@@ -87,6 +90,14 @@ The matrix is deliberately separate from the route table so the authorization te
 compare intent with implementation. SEC-04 owns the Fastify enumeration gate; do not replace
 that comparison with documentation generated from the router, because generated expectations
 cannot catch a missing guard.
+
+[ADR-0020](docs/adr/0020-http-authorization-and-concealment.md) owns the error vocabulary:
+401 means no valid session, 403 means a resolved identity lacks a disclosed permission, and
+404 means a resource does not resolve inside that identity's permitted namespace. For a
+private resource, malformed, missing and cross-owner path ids must use the endpoint's exact
+same 404 status, code and message. Resolve ownership in the query; do not fetch globally and
+compare afterwards. A public projection is an explicit matrix row with a limited field
+contract, not an exception invented inside a handler.
 
 ---
 
@@ -243,7 +254,10 @@ session cookies through production code, and removes only those exact identities
 four expected statuses in one `expectAuthorization` case. For a protected mutation, submit an
 invalid payload and expect the admin to reach validation (usually 400); that proves the guard
 order without changing game state. Add the corresponding intent row to
-[`docs/authorization-matrix.md`](docs/authorization-matrix.md) in the same change.
+[`docs/authorization-matrix.md`](docs/authorization-matrix.md) in the same change. Every new
+identifier-bearing route also needs a malformed path case that proves it returns 404 rather
+than a database 500. Private identifiers additionally need missing and cross-owner cases whose
+status and body are identical.
 
 ### One-off jobs
 
@@ -372,7 +386,8 @@ shared  ──────────────┬─────────
 
 - **`shared`** — types and zod schemas. Depends on nothing.
 - **`sim`** — the pure core: demand, flights, economy, crew. Depends on `shared` only.
-- **`server`** — world clock, tick loop, persistence, API. May use `sim` and `shared`.
+- **`server`** — Fastify web/API and Worker entry points, persistence, clock and event queue.
+  May use `sim` and `shared`; only the Worker may start the engine loop.
 - **`web`** — the browser client. May use `shared` only.
 
 Arrows are the _only_ permitted directions. The lint config enforces the two that
@@ -478,6 +493,10 @@ Do not describe a merge as a deploy. Check `pnpm ops:status` before reporting wh
   name and the commit subject.
 - **Architectural decisions get an ADR.** See [`docs/adr/`](docs/adr/). If you find
   yourself explaining a choice twice, write it down once instead.
+- **Documentation changes with behavior.** Keep `README.md`'s current-state list,
+  `CLAUDE.md`'s operational facts, the relevant subsystem contract and the authorization
+  matrix accurate in the same pull request. Preserve ADR history, but amend any wording that
+  would otherwise present an obsolete implementation state as current.
 
 ---
 
