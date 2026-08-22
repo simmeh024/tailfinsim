@@ -108,6 +108,8 @@ the category, counterparty and dimensional fields owned by M8-01.
 - A current balance always has a complete causal path from the AIR-06 migration onward.
 - Founding and flight settlement cannot commit their domain result without the matching cash
   movement.
+- Database tests that need a player airline use AIR-11's founded-airline fixture, so the same
+  opening movement exists in test state instead of being bypassed by a hand-built zero balance.
 - Retried causes are idempotent by a named database constraint rather than an application
   race check.
 - M8-01 can build statements from an already-reconciling source instead of repairing an

@@ -4,8 +4,8 @@ import { defineConfig } from 'vitest/config';
 /**
  * Root Vitest configuration.
  *
- * Per-package projects (M0-04) so each can diverge later — `web` will need a
- * jsdom environment, `server` will need database fixtures — without the others
+ * Per-package projects (M0-04) so each can diverge — `web` needs a jsdom
+ * environment, `server` has guarded database fixtures — without the others
  * inheriting that cost. Projects deliberately share the repository root rather
  * than setting their own, so every coverage path stays root-relative and the
  * threshold globs below match what the reporter actually emits.

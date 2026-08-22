@@ -173,6 +173,14 @@ whose source id is absent from the incoming dataset, which is right for the impo
 lethal for whatever else is mid-test. The other projects keep their parallelism; they
 share nothing.
 
+Tests needing a player airline use `createFoundedAirlineFixtureHarness` from
+`packages/server/src/test-fixtures/founded-airline.ts`. The harness calls the real founding
+transaction, including code allocation, founder hub and opening cash movement, and its cleanup
+is scoped to the exact ids it created. Reuse an existing world, player or hub through its
+options when a test needs shared context; do not hand-insert an airline or use a table-wide
+cleanup. A direct insert creates a state the game cannot reach and silently omits the ledger
+entry every real airline has.
+
 ### One-off jobs
 
 Everything below runs from anywhere in the repo and needs the package **built** first

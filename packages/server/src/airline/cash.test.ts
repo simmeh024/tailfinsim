@@ -1,11 +1,12 @@
-import { eq, inArray } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { FLAGSHIP_CONFIG } from '@tailfin/shared';
-
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { airline, cashMovement, player, world } from '../db/schema';
-import { createWorld } from '../world/lifecycle';
+import { airline, cashMovement } from '../db/schema';
+import {
+  createFoundedAirlineFixtureHarness,
+  type FoundedAirlineFixtureHarness,
+} from '../test-fixtures/founded-airline';
 
 import { moveAirlineCash, reconcileAirlineCash } from './cash';
 
@@ -34,95 +35,53 @@ async function expectConstraint(promise: PromiseLike<unknown>, constraint: strin
 
 describeDb('cash movements', () => {
   let db: DatabaseHandle;
-  const madeWorlds: string[] = [];
-  const madePlayers: string[] = [];
-  let sequence = 0;
+  let fixtures: FoundedAirlineFixtureHarness;
 
   beforeAll(() => {
     db = createDatabase();
+    fixtures = createFoundedAirlineFixtureHarness(db.db);
   });
 
   afterEach(async () => {
-    if (madeWorlds.length > 0) {
-      await db.db.delete(world).where(inArray(world.id, madeWorlds.splice(0)));
-    }
-    if (madePlayers.length > 0) {
-      await db.db.delete(player).where(inArray(player.id, madePlayers.splice(0)));
-    }
+    await fixtures.cleanup();
   });
 
   afterAll(async () => {
     await db.close();
   });
 
-  async function makeAirline(): Promise<string> {
-    const n = sequence++;
-    const createdWorld = await createWorld(db.db, {
-      ...FLAGSHIP_CONFIG,
-      name: `cash-world-${String(n)}`,
-    });
-    madeWorlds.push(createdWorld.world.id);
-
-    const players = await db.db
-      .insert(player)
-      .values({ displayName: `cash-player-${String(n)}` })
-      .returning({ id: player.id });
-    const playerId = players[0]?.id;
-    if (!playerId) throw new Error('no player created');
-    madePlayers.push(playerId);
-
-    const airlines = await db.db
-      .insert(airline)
-      .values({
-        worldId: createdWorld.world.id,
-        playerId,
-        name: `Cash Air ${String(n)}`,
-        iataCode: String(n % 100).padStart(2, '0'),
-        icaoCode: `C${String.fromCharCode(65 + (n % 26))}${String.fromCharCode(
-          65 + (Math.floor(n / 26) % 26),
-        )}`,
-        callsign: `CASH ${String(n)}`,
-        baseCountry: 'NL',
-      })
-      .returning({ id: airline.id });
-    const airlineId = airlines[0]?.id;
-    if (!airlineId) throw new Error('no airline created');
-    return airlineId;
+  async function makeAirline(): Promise<{ airlineId: string; openingCashMinor: number }> {
+    const created = await fixtures.create();
+    return { airlineId: created.airline.id, openingCashMinor: created.airline.cash };
   }
 
   const occurredAt = new Date('2024-10-20T12:00:00.000Z');
 
   it('records amount, cause, reference and resulting balance together', async () => {
-    const airlineId = await makeAirline();
-    const result = await db.db.transaction((tx) =>
-      moveAirlineCash(tx, {
-        airlineId,
-        amountMinor: 50_000_000,
-        cause: 'airline_founding',
-        reference: airlineId,
-        occurredAt,
-      }),
-    );
+    const { airlineId, openingCashMinor } = await makeAirline();
+    const movements = await db.db
+      .select()
+      .from(cashMovement)
+      .where(eq(cashMovement.airlineId, airlineId));
 
-    expect(result.status).toBe('applied');
-    expect(result.movement).toMatchObject({
+    expect(movements).toHaveLength(1);
+    expect(movements[0]).toMatchObject({
       airlineId,
-      amountMinor: 50_000_000,
+      amountMinor: openingCashMinor,
       cause: 'airline_founding',
       reference: airlineId,
-      balanceAfterMinor: 50_000_000,
-      occurredAt,
+      balanceAfterMinor: openingCashMinor,
     });
     expect(await reconcileAirlineCash(db.db, airlineId)).toEqual({
       airlineId,
-      balanceMinor: 50_000_000,
-      movementTotalMinor: 50_000_000,
+      balanceMinor: openingCashMinor,
+      movementTotalMinor: openingCashMinor,
       reconciles: true,
     });
   });
 
   it('replaying a cause moves the balance once', async () => {
-    const airlineId = await makeAirline();
+    const { airlineId, openingCashMinor } = await makeAirline();
     const input = {
       airlineId,
       amountMinor: 12_345,
@@ -137,8 +96,8 @@ describeDb('cash movements', () => {
     expect(first.status).toBe('applied');
     expect(second.status).toBe('already-applied');
     expect(await reconcileAirlineCash(db.db, airlineId)).toMatchObject({
-      balanceMinor: 12_345,
-      movementTotalMinor: 12_345,
+      balanceMinor: openingCashMinor + 12_345,
+      movementTotalMinor: openingCashMinor + 12_345,
       reconciles: true,
     });
     const rows = await db.db
@@ -149,7 +108,7 @@ describeDb('cash movements', () => {
   });
 
   it('enforces cause idempotency by the named database constraint', async () => {
-    const airlineId = await makeAirline();
+    const { airlineId } = await makeAirline();
     const input = {
       airlineId,
       amountMinor: 1_000,
@@ -169,7 +128,7 @@ describeDb('cash movements', () => {
   });
 
   it('refuses a direct balance update that has no explaining movement', async () => {
-    const airlineId = await makeAirline();
+    const { airlineId, openingCashMinor } = await makeAirline();
 
     await expectConstraint(
       db.db.transaction(async (tx) => {
@@ -178,14 +137,14 @@ describeDb('cash movements', () => {
       'airline_cash_reconciles',
     );
     expect(await reconcileAirlineCash(db.db, airlineId)).toMatchObject({
-      balanceMinor: 0,
-      movementTotalMinor: 0,
+      balanceMinor: openingCashMinor,
+      movementTotalMinor: openingCashMinor,
       reconciles: true,
     });
   });
 
   it('keeps a recorded movement immutable', async () => {
-    const airlineId = await makeAirline();
+    const { airlineId } = await makeAirline();
     const applied = await db.db.transaction((tx) =>
       moveAirlineCash(tx, {
         airlineId,
@@ -206,7 +165,7 @@ describeDb('cash movements', () => {
   });
 
   it('serialises different causes so concurrent updates cannot lose money', async () => {
-    const airlineId = await makeAirline();
+    const { airlineId, openingCashMinor } = await makeAirline();
 
     const results = await Promise.all([
       db.db.transaction((tx) =>
@@ -232,14 +191,14 @@ describeDb('cash movements', () => {
     expect(results.every((result) => result.status === 'applied')).toBe(true);
     expect(await reconcileAirlineCash(db.db, airlineId)).toEqual({
       airlineId,
-      balanceMinor: 17_500,
-      movementTotalMinor: 17_500,
+      balanceMinor: openingCashMinor + 17_500,
+      movementTotalMinor: openingCashMinor + 17_500,
       reconciles: true,
     });
   });
 
   it('rolls the movement and balance back when the surrounding cause fails', async () => {
-    const airlineId = await makeAirline();
+    const { airlineId, openingCashMinor } = await makeAirline();
     class CauseFailed extends Error {}
 
     await expect(
@@ -257,14 +216,14 @@ describeDb('cash movements', () => {
 
     expect(await reconcileAirlineCash(db.db, airlineId)).toEqual({
       airlineId,
-      balanceMinor: 0,
-      movementTotalMinor: 0,
+      balanceMinor: openingCashMinor,
+      movementTotalMinor: openingCashMinor,
       reconciles: true,
     });
   });
 
   it('refuses a replay that changes the facts behind the same cause', async () => {
-    const airlineId = await makeAirline();
+    const { airlineId, openingCashMinor } = await makeAirline();
     const base = {
       airlineId,
       cause: 'flight_settlement' as const,
@@ -277,14 +236,14 @@ describeDb('cash movements', () => {
       db.db.transaction((tx) => moveAirlineCash(tx, { ...base, amountMinor: 2_000 })),
     ).rejects.toThrow(/different facts/);
     expect(await reconcileAirlineCash(db.db, airlineId)).toMatchObject({
-      balanceMinor: 1_000,
-      movementTotalMinor: 1_000,
+      balanceMinor: openingCashMinor + 1_000,
+      movementTotalMinor: openingCashMinor + 1_000,
       reconciles: true,
     });
   });
 
   it('refuses unsafe arithmetic before a movement can be stored', async () => {
-    const airlineId = await makeAirline();
+    const { airlineId } = await makeAirline();
     await expect(
       db.db.transaction((tx) =>
         moveAirlineCash(tx, {

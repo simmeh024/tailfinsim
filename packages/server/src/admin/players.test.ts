@@ -8,6 +8,10 @@ import { createSession, SESSION_COOKIE } from '../auth/session';
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { adminGrant, airline, player, playerIdentity, session, world } from '../db/schema';
 import { type ServerEnv } from '../env';
+import {
+  createFoundedAirlineFixtureHarness,
+  type FoundedAirlineFixtureHarness,
+} from '../test-fixtures/founded-airline';
 import { createWorld } from '../world/lifecycle';
 
 import { readAudit } from './audit';
@@ -54,11 +58,13 @@ describeDb('browsing players', () => {
   let db: DatabaseHandle;
   const madePlayers: string[] = [];
   const madeWorlds: string[] = [];
+  let fixtures: FoundedAirlineFixtureHarness;
   /** Unique per run, so a search cannot match rows another test file left behind. */
   const tag = Math.random().toString(36).slice(2, 8);
 
   beforeAll(() => {
     db = createDatabase();
+    fixtures = createFoundedAirlineFixtureHarness(db.db);
   });
 
   /**
@@ -80,6 +86,7 @@ describeDb('browsing players', () => {
   }
 
   afterEach(async () => {
+    await fixtures.cleanup();
     if (madePlayers.length > 0) {
       await deleteInBatches(madePlayers.splice(0));
     }
@@ -108,6 +115,7 @@ describeDb('browsing players', () => {
       name: `players-${Math.random().toString(36).slice(2, 10)}`,
     });
     madeWorlds.push(created.id);
+    await db.db.update(world).set({ status: 'open' }).where(eq(world.id, created.id));
     return created.id;
   }
 
@@ -118,27 +126,20 @@ describeDb('browsing players', () => {
    * Postgres refused — so the letters are taken from an alphabet rather than
    * from the caller's code.
    */
-  const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  let airlineSeq = 0;
-
   async function makeAirline(
     worldId: string,
     playerId: string,
     name: string,
     code: string,
   ): Promise<string> {
-    const n = airlineSeq++;
-    const icao = `X${LETTERS[n % 26] ?? 'A'}${LETTERS[Math.floor(n / 26) % 26] ?? 'A'}`;
-    await db.db.insert(airline).values({
+    const created = await fixtures.create({
       worldId,
       playerId,
       name,
       iataCode: code.slice(0, 2).toUpperCase(),
-      icaoCode: icao,
-      callsign: `CALL${icao}`,
       baseCountry: 'GB',
     });
-    return icao;
+    return created.airline.icaoCode;
   }
 
   describe('the list', () => {

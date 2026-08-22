@@ -1,15 +1,16 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { FLAGSHIP_CONFIG } from '@tailfin/shared';
-
 import { moveAirlineCash } from '../airline/cash';
 import { buildApp } from '../app';
 import { createSession, SESSION_COOKIE } from '../auth/session';
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { adminGrant, airline, airport, cashMovement, player, route, world } from '../db/schema';
+import { adminGrant, airline, airport, cashMovement, player, route } from '../db/schema';
 import { type ServerEnv } from '../env';
-import { createWorld } from '../world/lifecycle';
+import {
+  createFoundedAirlineFixtureHarness,
+  type FoundedAirlineFixtureHarness,
+} from '../test-fixtures/founded-airline';
 
 import { readAirline } from './airlines';
 import { BOOTSTRAP_ACTOR, grantAdmin } from './grants';
@@ -45,17 +46,18 @@ const env: ServerEnv = {
 
 describeDb('the airline support record', () => {
   let db: DatabaseHandle;
-  const madeWorlds: string[] = [];
   const madePlayers: string[] = [];
   const madeAirports: string[] = [];
+  let fixtures: FoundedAirlineFixtureHarness;
   let sequence = 0;
 
   beforeAll(() => {
     db = createDatabase();
+    fixtures = createFoundedAirlineFixtureHarness(db.db);
   });
 
   afterEach(async () => {
-    for (const id of madeWorlds.splice(0)) await db.db.delete(world).where(eq(world.id, id));
+    await fixtures.cleanup();
     for (const id of madeAirports.splice(0)) await db.db.delete(airport).where(eq(airport.id, id));
     for (const id of madePlayers.splice(0)) {
       await db.db.delete(adminGrant).where(eq(adminGrant.playerId, id));
@@ -76,15 +78,6 @@ describeDb('the airline support record', () => {
     if (!id) throw new Error('no player created');
     madePlayers.push(id);
     return id;
-  }
-
-  async function makeWorld(): Promise<string> {
-    const created = await createWorld(db.db, {
-      ...FLAGSHIP_CONFIG,
-      name: `airline-support-${String(sequence++)}`,
-    });
-    madeWorlds.push(created.world.id);
-    return created.world.id;
   }
 
   async function makeAirport(icaoCode: string, name: string): Promise<void> {
@@ -110,24 +103,22 @@ describeDb('the airline support record', () => {
     madeAirports.push(id);
   }
 
-  async function makeAirline(): Promise<{ airlineId: string; ownerId: string }> {
-    const worldId = await makeWorld();
-    const ownerId = await makePlayer();
-    const rows = await db.db
-      .insert(airline)
-      .values({
-        worldId,
-        playerId: ownerId,
-        name: 'Support Air',
-        iataCode: 'SA',
-        icaoCode: 'SPA',
-        callsign: 'SUPPORT',
-        baseCountry: 'NL',
-      })
-      .returning({ id: airline.id });
-    const airlineId = rows[0]?.id;
-    if (!airlineId) throw new Error('no airline created');
-    return { airlineId, ownerId };
+  async function makeAirline(): Promise<{
+    airlineId: string;
+    ownerId: string;
+    openingCashMinor: number;
+  }> {
+    const created = await fixtures.create({
+      name: 'Support Air',
+      iataCode: 'SA',
+      icaoCode: 'SPA',
+      callsign: 'SUPPORT',
+    });
+    return {
+      airlineId: created.airline.id,
+      ownerId: created.player.id,
+      openingCashMinor: created.airline.cash,
+    };
   }
 
   async function addMovement(
@@ -153,7 +144,7 @@ describeDb('the airline support record', () => {
   }
 
   it('shows identity, standing, current and historical routes, and the immutable cash ledger', async () => {
-    const { airlineId, ownerId } = await makeAirline();
+    const { airlineId, ownerId, openingCashMinor } = await makeAirline();
     await makeAirport('EHAA', 'Support Origin');
     await makeAirport('EHBB', 'Support Destination');
     const airlineRows = await db.db.select().from(airline).where(eq(airline.id, airlineId));
@@ -168,13 +159,7 @@ describeDb('the airline support record', () => {
       fares: JSON.stringify({ economy: 12_500, business: 33_000 }),
       active: false,
     });
-    await addMovement(
-      airlineId,
-      50_000_000,
-      `opening-${String(sequence++)}`,
-      '2026-08-20T10:00:00Z',
-    );
-    await addMovement(airlineId, -12_500, `flight-${String(sequence++)}`, '2026-08-21T10:00:00Z');
+    await addMovement(airlineId, -12_500, `flight-${String(sequence++)}`, '2099-01-01T10:00:00Z');
 
     const before = {
       airline: await db.db.select().from(airline).where(eq(airline.id, airlineId)),
@@ -200,7 +185,7 @@ describeDb('the airline support record', () => {
       iataCode: 'SA',
       icaoCode: 'SPA',
       callsign: 'SUPPORT',
-      cashMinor: 49_987_500,
+      cashMinor: openingCashMinor - 12_500,
       reputation: 0.35,
       status: 'active',
       owner: { id: ownerId },
@@ -216,11 +201,12 @@ describeDb('the airline support record', () => {
       }),
     ]);
     expect(detail?.cashMovements.entries.map((entry) => entry.amountMinor)).toEqual([
-      -12_500, 50_000_000,
+      -12_500,
+      openingCashMinor,
     ]);
     expect(detail?.cashMovements.entries[0]).toMatchObject({
       cause: 'flight_settlement',
-      balanceAfterMinor: 49_987_500,
+      balanceAfterMinor: openingCashMinor - 12_500,
     });
     // AIR-10 reads only. The three game-state tables are byte-for-byte the same afterwards.
     expect(after).toEqual(before);
@@ -228,22 +214,22 @@ describeDb('the airline support record', () => {
 
   it('pages a long ledger newest first and bounds invalid page input', async () => {
     const { airlineId } = await makeAirline();
-    await addMovement(airlineId, 100, `first-${String(sequence++)}`, '2026-08-20T10:00:00Z');
-    await addMovement(airlineId, 200, `second-${String(sequence++)}`, '2026-08-21T10:00:00Z');
-    await addMovement(airlineId, 300, `third-${String(sequence++)}`, '2026-08-22T10:00:00Z');
+    await addMovement(airlineId, 100, `first-${String(sequence++)}`, '2099-01-01T10:00:00Z');
+    await addMovement(airlineId, 200, `second-${String(sequence++)}`, '2099-01-02T10:00:00Z');
+    await addMovement(airlineId, 300, `third-${String(sequence++)}`, '2099-01-03T10:00:00Z');
 
     const secondPage = await readAirline(db.db, airlineId, {
       movementLimit: 1,
       movementOffset: 1,
     });
-    expect(secondPage?.cashMovements).toMatchObject({ total: 3, limit: 1, offset: 1 });
+    expect(secondPage?.cashMovements).toMatchObject({ total: 4, limit: 1, offset: 1 });
     expect(secondPage?.cashMovements.entries[0]?.amountMinor).toBe(200);
 
     const bounded = await readAirline(db.db, airlineId, {
       movementLimit: Number.NaN,
       movementOffset: -10,
     });
-    expect(bounded?.cashMovements).toMatchObject({ total: 3, limit: 50, offset: 0 });
+    expect(bounded?.cashMovements).toMatchObject({ total: 4, limit: 50, offset: 0 });
   });
 
   it('returns null for an airline that is not there', async () => {
