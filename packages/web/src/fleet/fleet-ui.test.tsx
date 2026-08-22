@@ -53,6 +53,7 @@ const entry = (over: Partial<FleetCatalogueResponse['types'][number]> = {}) => (
   wingspanCode: 'C' as const,
   listPrice: 11_000_000_000,
   monthlyLeaseRate: 88_000_000,
+  baseDeliveryLeadWeeks: 4,
   restrictions: [],
   restrictionCostPerDepartureMinor: 0,
   // M4-03. The page does not render the configurator — that is M4-07 — but the

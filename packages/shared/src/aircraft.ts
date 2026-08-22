@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { MinorUnits, NauticalMiles, Uuid } from './primitives';
+import { MinorUnits, NauticalMiles, Timestamp, Uuid } from './primitives';
 
 /**
  * Aircraft types and individual airframes, following App. C.6's data model.
@@ -136,6 +136,16 @@ export const AircraftType = z.object({
   monthlyLeaseRate: MinorUnits.nullable(),
 
   /**
+   * Real-time weeks for an off-the-shelf factory order.
+   *
+   * The design fixes the unit (weeks of wall-clock time) but does not publish a
+   * per-type schedule. Four weeks is therefore the explicit v1 authored term;
+   * options add their own lead time on top (App. C.3). Keeping it on the pinned
+   * catalogue row means a future retune cannot move an order already placed.
+   */
+  baseDeliveryLeadWeeks: z.number().int().positive().default(4),
+
+  /**
    * Which maintenance programme this type follows (§7.3, M4-06).
    *
    * An identifier, not a schedule. §7.3 is two bullets and gives no intervals,
@@ -163,6 +173,7 @@ export const Airframe = z.object({
   airlineId: Uuid,
 
   typeDesignation: z.string().min(1),
+  catalogueVersion: z.string().min(1),
   /** Player-defined prefix, auto-incremented per airframe (§5.2), e.g. `PH-TFA`. */
   registration: z.string().min(2).max(10),
 
@@ -180,6 +191,20 @@ export const Airframe = z.object({
   cycles: z.number().int().nonnegative(),
 
   ownership: z.enum(['owned', 'leased', 'financed']),
+  /** Where the aircraft first entered this world; later position is derived from flights. */
+  deliveredToIcao: z.string().regex(/^[A-Z]{4}$/),
+  /** Real time, because factory lead times are explicitly wall-clock time (§7.2). */
+  deliveredAt: Timestamp,
+  /** C.6: ownership/configuration history follows a used airframe. */
+  ownerHistory: z
+    .array(
+      z.object({
+        ownerLabel: z.string().min(1),
+        acquiredAt: Timestamp,
+        releasedAt: Timestamp.nullable(),
+      }),
+    )
+    .default([]),
 });
 export type Airframe = z.infer<typeof Airframe>;
 
@@ -227,6 +252,7 @@ export const CatalogueEntry = z.object({
 
   listPrice: MinorUnits.nullable(),
   monthlyLeaseRate: MinorUnits.nullable(),
+  baseDeliveryLeadWeeks: z.number().int().positive(),
 
   /** §7.2b's progressive squeeze, and what it costs per departure. */
   restrictions: z.array(

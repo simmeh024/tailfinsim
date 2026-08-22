@@ -20,6 +20,9 @@ type Load =
 const CAUSE_LABEL: Record<AdminCashMovementCause, string> = {
   airline_founding: 'Airline founding',
   airline_rebrand: 'Airline rebrand',
+  aircraft_lease_deposit: 'Aircraft lease deposit',
+  aircraft_used_purchase: 'Used aircraft purchase',
+  aircraft_new_purchase: 'New aircraft purchase',
   flight_settlement: 'Flight settlement',
   migration_opening_balance: 'Migration opening balance',
 };

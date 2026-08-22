@@ -2,6 +2,7 @@ import { asc, ne } from 'drizzle-orm';
 
 import { gameTime, type WorldClock } from '@tailfin/sim';
 
+import { deliverDueAircraftOrders } from '../aircraft/acquisition';
 import { type Database } from '../db/client';
 import { world, type WorldRow } from '../db/schema';
 import { reviewNpcCarriers } from '../npc/operate';
@@ -62,6 +63,8 @@ export interface TickReport {
   failed: number;
   /** Events left for a Worker that knows their type (SCALE-05). */
   unsupported: number;
+  /** New factory orders materialised against wall-clock delivery dates. */
+  aircraftDelivered: number;
 }
 
 export interface EngineLog {
@@ -101,6 +104,8 @@ export interface SimulationEngineOptions {
    * world full of carriers to assert the loop.
    */
   reviewNpcs?: typeof reviewNpcCarriers;
+  /** Real-time aircraft delivery sweep (M4-04), injected in engine tests. */
+  deliverAircraft?: typeof deliverDueAircraftOrders;
   depth?: typeof queueDepth;
 }
 
@@ -152,6 +157,8 @@ export interface EngineSnapshot {
   /** NPC decisions recorded since start, and reviews that threw (M3-12). */
   npcDecisions: number;
   npcErrors: number;
+  aircraftDeliveries: number;
+  aircraftDeliveryErrors: number;
 }
 
 export interface QueueDepthByWorld {
@@ -227,6 +234,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     drain = drainDueEvents,
     depth = queueDepth,
     reviewNpcs = reviewNpcCarriers,
+    deliverAircraft = deliverDueAircraftOrders,
   } = options;
 
   const unhandledEventTypes = ALL_EVENT_TYPES.filter((type) => handlers[type] === undefined);
@@ -240,14 +248,33 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let unsupported = 0;
   let npcDecisions = 0;
   let npcErrors = 0;
+  let aircraftDeliveries = 0;
+  let aircraftDeliveryErrors = 0;
 
   async function tick(context: { tickedAt: Date; tickNumber: number }): Promise<TickReport> {
     const worlds = await listWorlds(db);
     let tickProcessed = 0;
     let tickFailed = 0;
     let tickUnsupported = 0;
+    let tickAircraftDelivered = 0;
 
     for (const entry of worlds) {
+      // Aircraft factory lead time is explicitly **real time** (§7.2), not a
+      // world-event fire_at. The Worker still owns it: one sweep per tickable
+      // world, exactly where other scheduled mutations live (ADR-0019).
+      try {
+        const delivery = await deliverAircraft(db, entry.id, now());
+        tickAircraftDelivered += delivery.delivered;
+        if (delivery.delivered > 0) {
+          log?.info?.(
+            `[${entry.name}] aircraft delivery: ${String(delivery.delivered)} order(s) arrived`,
+          );
+        }
+      } catch (error) {
+        aircraftDeliveryErrors += 1;
+        log?.warn?.(`[${entry.name}] aircraft delivery sweep failed: ${String(error)}`);
+      }
+
       // Each world is drained against its own clock: `fire_at` is a game-time
       // instant, so what is due depends on where that world's clock has got to,
       // and two worlds at different speeds disagree about the same moment.
@@ -288,6 +315,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     processed += tickProcessed;
     failed += tickFailed;
     unsupported += tickUnsupported;
+    aircraftDeliveries += tickAircraftDelivered;
     lastTickAt = context.tickedAt;
     lastTickDurationMs = durationMs;
     lastWorldCount = worlds.length;
@@ -300,6 +328,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       processed: tickProcessed,
       failed: tickFailed,
       unsupported: tickUnsupported,
+      aircraftDelivered: tickAircraftDelivered,
     };
   }
 
@@ -351,6 +380,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         unhandledEventTypes,
         npcDecisions,
         npcErrors,
+        aircraftDeliveries,
+        aircraftDeliveryErrors,
       };
     },
 

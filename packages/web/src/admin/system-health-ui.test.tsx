@@ -84,6 +84,8 @@ const HEALTHY: AdminSystemHealthResponse = {
         processed: 0,
         failed: 0,
         unsupported: 0,
+        aircraftDeliveries: 0,
+        aircraftDeliveryErrors: 0,
         lastTickAt: '2026-08-21T12:04:58.000Z',
         queueDue: 0,
         oldestDueAt: null,

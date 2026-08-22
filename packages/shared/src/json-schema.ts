@@ -20,6 +20,7 @@ import {
   AdminWorldStatusResponse,
   AdminWorldListResponse,
 } from './admin';
+import { AircraftAcquisitionResponse, AircraftOrderListResponse } from './aircraft-acquisition';
 import { FleetCatalogueResponse } from './aircraft-catalogue';
 import {
   AirlineFoundingAirportListResponse,
@@ -114,5 +115,7 @@ export const adminPinEconomyConfigResponseJsonSchema = z.toJSONSchema(
 export const adminNpcResponseJsonSchema = z.toJSONSchema(AdminNpcResponse);
 
 export const fleetCatalogueResponseJsonSchema = z.toJSONSchema(FleetCatalogueResponse);
+export const aircraftAcquisitionResponseJsonSchema = z.toJSONSchema(AircraftAcquisitionResponse);
+export const aircraftOrderListResponseJsonSchema = z.toJSONSchema(AircraftOrderListResponse);
 
 export const adminRequeueEventsResponseJsonSchema = z.toJSONSchema(AdminRequeueEventsResponse);

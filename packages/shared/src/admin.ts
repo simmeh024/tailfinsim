@@ -529,6 +529,9 @@ export type AdminPlayerDetailResponse = z.infer<typeof AdminPlayerDetailResponse
 export const AdminCashMovementCause = z.enum([
   'airline_founding',
   'airline_rebrand',
+  'aircraft_lease_deposit',
+  'aircraft_used_purchase',
+  'aircraft_new_purchase',
   'flight_settlement',
   'migration_opening_balance',
 ]);
@@ -766,6 +769,9 @@ export const AdminNodeEngine = z.object({
    * moving was a build that simply did not have a handler yet.
    */
   unsupported: z.number().int().nonnegative().default(0),
+  /** Real-time factory orders delivered since this Worker started (M4-04). */
+  aircraftDeliveries: z.number().int().nonnegative().default(0),
+  aircraftDeliveryErrors: z.number().int().nonnegative().default(0),
   lastTickAt: Timestamp.nullable(),
   /** Events due and unhandled across every world this node drives. */
   queueDue: z.number().int().nonnegative(),

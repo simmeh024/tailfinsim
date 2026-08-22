@@ -102,8 +102,12 @@ them is not what they are made of but **who is allowed to start work**.
 | May start a loop | **no**                                                                                                                   | yes                                                                                                                                              |
 
 **Neither owns both, and a scheduled job has exactly one owner — the worker.** If you find
-yourself wanting a timer in a route, you want an event: write a `world_event` row with
-`scheduleEvent()` and let the worker drain it. A `fire_at` that is already due means "now".
+yourself wanting a timer in a route, persist the commitment and let the Worker claim it. A
+game-time due date is normally a `world_event` written with `scheduleEvent()`; a `fire_at`
+that is already due means "now". An explicitly wall-clock commitment must not be squeezed
+into that queue: M4-04's aircraft orders store `delivery_at` as real time and the Worker
+claims due rows with `FOR UPDATE SKIP LOCKED`. Both shapes keep timers out of HTTP handlers
+and make the data change and job completion one transaction.
 
 That is also the only channel between them. Web writes a row; the worker picks it up. There
 is no RPC and no HTTP call from one to the other — see
