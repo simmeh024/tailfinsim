@@ -9,6 +9,10 @@ import { createDatabase, type DatabaseHandle } from '../db/client';
 import { adminGrant, airline, player, playerIdentity, session, world } from '../db/schema';
 import { type ServerEnv } from '../env';
 import {
+  createAuthorizationTestSuite,
+  type AuthorizationTestSuite,
+} from '../test-fixtures/authorization';
+import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixtureHarness,
 } from '../test-fixtures/founded-airline';
@@ -446,6 +450,16 @@ describeDb('browsing players', () => {
   });
 
   describe('over HTTP', () => {
+    let authorization: AuthorizationTestSuite;
+
+    beforeAll(async () => {
+      authorization = await createAuthorizationTestSuite({ db, env, suite: 'admin-players' });
+    });
+
+    afterAll(async () => {
+      await authorization.cleanup();
+    });
+
     async function cookieFor(playerId: string): Promise<string> {
       const { token } = await createSession(db.db, playerId, 1);
       return `${SESSION_COOKIE}=${token}`;
@@ -457,24 +471,19 @@ describeDb('browsing players', () => {
       return id;
     }
 
-    it('refuses an anonymous request with 401 and a signed-in player with 403', async () => {
-      const ordinary = await makePlayer(`ordinary ${tag}`);
-      const app = buildApp({ env, db });
-      try {
-        for (const path of ['/api/admin/players', `/api/admin/players/${ordinary}`]) {
-          expect((await app.inject({ method: 'GET', url: path })).statusCode).toBe(401);
-          expect(
-            (
-              await app.inject({
-                method: 'GET',
-                url: path,
-                headers: { cookie: await cookieFor(ordinary) },
-              })
-            ).statusCode,
-          ).toBe(403);
-        }
-      } finally {
-        await app.close();
+    it('enforces the canonical actor matrix on the player browser', async () => {
+      const paths = [
+        '/api/admin/players',
+        `/api/admin/players/${authorization.identities.playerA.playerId!}`,
+      ];
+      for (const path of paths) {
+        await authorization.expectAuthorization({
+          request: { method: 'GET', url: path },
+          guest: 401,
+          playerA: 403,
+          playerB: 403,
+          admin: 200,
+        });
       }
     });
 

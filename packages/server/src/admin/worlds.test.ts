@@ -8,6 +8,10 @@ import { createSession, SESSION_COOKIE } from '../auth/session';
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { adminGrant, player, world } from '../db/schema';
 import { type ServerEnv } from '../env';
+import {
+  createAuthorizationTestSuite,
+  type AuthorizationTestSuite,
+} from '../test-fixtures/authorization';
 import { currentGameDate } from '../world/lifecycle';
 
 import { readAudit } from './audit';
@@ -279,39 +283,29 @@ describeDb('creating worlds', () => {
   });
 
   describe('over HTTP', () => {
+    let authorization: AuthorizationTestSuite;
+
+    beforeAll(async () => {
+      authorization = await createAuthorizationTestSuite({ db, env, suite: 'admin-worlds' });
+    });
+
+    afterAll(async () => {
+      await authorization.cleanup();
+    });
+
     async function cookieFor(playerId: string): Promise<string> {
       const { token } = await createSession(db.db, playerId, 1);
       return `${SESSION_COOKIE}=${token}`;
     }
 
-    it('refuses an anonymous request with 401 and a signed-in player with 403', async () => {
-      const ordinary = await db.db
-        .insert(player)
-        .values({ displayName: 'ordinary' })
-        .returning({ id: player.id });
-      const ordinaryId = ordinary[0]?.id;
-      if (!ordinaryId) throw new Error('no player');
-      madePlayers.push(ordinaryId);
-
-      const app = buildApp({ env, db });
-      try {
-        const anon = await app.inject({
-          method: 'POST',
-          url: '/api/admin/worlds',
-          payload: config(),
-        });
-        expect(anon.statusCode).toBe(401);
-
-        const asPlayer = await app.inject({
-          method: 'POST',
-          url: '/api/admin/worlds',
-          payload: config(),
-          headers: { cookie: await cookieFor(ordinaryId) },
-        });
-        expect(asPlayer.statusCode).toBe(403);
-      } finally {
-        await app.close();
-      }
+    it('enforces the canonical actor matrix before validating a world', async () => {
+      await authorization.expectAuthorization({
+        request: { method: 'POST', url: '/api/admin/worlds', payload: {} },
+        guest: 401,
+        playerA: 403,
+        playerB: 403,
+        admin: 400,
+      });
     });
 
     it('creates a world and answers 201 with it', async () => {

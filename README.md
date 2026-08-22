@@ -160,6 +160,10 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   through the real founding transaction, so they receive an open world, owner, founder hub,
   allocated per-world codes and configured opening cash with its AIR-06 movement. The
   harness cleans only the row identities it created; no fixture truncates shared tables.
+- **One authorization test harness.** Server route tests receive deterministic guest,
+  playerA, playerB and admin identities with real session cookies, declare all expected HTTP
+  statuses in one case, and clean only their own players. The Vitest setup also refuses every
+  configured database whose name does not end in `_test` or `_ci`.
 - **The admin console**, at `/admin` for accounts holding a grant: an overview with
   server-decided alerts, world creation, speed changes, the full open/lock/archive/reset
   lifecycle, world health, a read-only player browser, linkable airline support records

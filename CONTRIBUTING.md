@@ -198,6 +198,15 @@ options when a test needs shared context; do not hand-insert an airline or use a
 cleanup. A direct insert creates a state the game cannot reach and silently omits the ledger
 entry every real airline has.
 
+HTTP authorization tests use `createAuthorizationTestSuite` from
+`packages/server/src/test-fixtures/authorization.ts`. Give each suite a stable, unique name;
+the harness deterministically creates `guest`, `playerA`, `playerB` and `admin`, issues real
+session cookies through production code, and removes only those exact identities. Express all
+four expected statuses in one `expectAuthorization` case. For a protected mutation, submit an
+invalid payload and expect the admin to reach validation (usually 400); that proves the guard
+order without changing game state. Add the corresponding intent row to
+[`docs/authorization-matrix.md`](docs/authorization-matrix.md) in the same change.
+
 ### One-off jobs
 
 Everything below runs from anywhere in the repo and needs the package **built** first
@@ -290,10 +299,11 @@ The database-backed tests are **destructive**: they create and delete players, a
 them arranges for there to be exactly one admin in order to prove the last one cannot be
 revoked. They must never see a database anyone cares about.
 
-`packages/server/src/test-setup.ts` enforces this. If `DATABASE_URL` is set and names a
-database whose name does not end in `_test` or `_ci`, the server suite **throws** rather
-than running — it does not skip, because a silent skip in CI would report success for work
-it never did.
+`packages/server/src/test-setup.ts` calls the shared guard in
+`packages/server/src/test-support/database-safety.ts`. If `DATABASE_URL` is set and names a
+database whose name does not end in `_test` or `_ci`, the server suite **throws** rather than
+running — it does not skip, because a silent skip in CI would report success for work it never
+did. Keep the boundary in the Vitest setup file; individual suites must not reimplement it.
 
 With `DATABASE_URL` unset, the database suites skip themselves and everything else runs.
 That is the ordinary local case and needs no setup. To run them locally:
