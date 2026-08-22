@@ -114,12 +114,52 @@ describeDb('the fleet', () => {
     return new Date(world.epoch.getTime() + days * DAY_MS);
   }
 
+  /**
+   * One flown sector, respecting `flight_arrives_after_departure`.
+   *
+   * The check is `estimated_arrival > scheduled_departure`, so a flight cannot be
+   * inserted as arriving the instant it left. Worth a helper rather than five
+   * copies: the first version of this test set both to the same instant and
+   * Postgres refused every insert.
+   */
+  async function flew(
+    fixture: FoundedAirlineFixture,
+    airframeId: string,
+    fromIcao: string,
+    toIcao: string,
+    departsOnGameDay: number,
+    blockHours: number,
+    options: { divertedTo?: string } = {},
+  ): Promise<void> {
+    const off = gameDay(fixture.world, departsOnGameDay);
+    const on = new Date(off.getTime() + blockHours * HOUR_MS);
+    await db.db.insert(flight).values({
+      worldId: fixture.world.id,
+      airlineId: fixture.airline.id,
+      airframeId,
+      originIcao: fromIcao,
+      destinationIcao: toIcao,
+      diversionIcao: options.divertedTo ?? null,
+      phase: 'turnaround',
+      scheduledDeparture: off,
+      estimatedArrival: on,
+      actualDeparture: off,
+      actualArrival: on,
+      load: '{}',
+    });
+  }
+
   async function acquire(
     fixture: FoundedAirlineFixture,
     designation: string,
     options: { at?: Date; deliverTo?: string } = {},
   ): Promise<{ airframeId: string; icao: string }> {
     const icao = options.deliverTo ?? (await makeAirport());
+    // The founding grant covers about one turboprop deposit, so a second lease —
+    // or a first narrowbody one — is refused for want of cash. Topped up here
+    // rather than per test, because none of these tests is about affording an
+    // aeroplane; `acquisition.test.ts` owns that.
+    await topUp(fixture, 50_000_000_000);
     const acquired = await acquireAircraft(
       db.db,
       own(fixture),
@@ -308,19 +348,7 @@ describeDb('the fleet', () => {
       let list = await listFleet(db.db, own(fixture));
       expect(list.airframes[0]?.locationIcao).toBe(home);
 
-      await db.db.insert(flight).values({
-        worldId: fixture.world.id,
-        airlineId: fixture.airline.id,
-        airframeId,
-        originIcao: home,
-        destinationIcao: away,
-        phase: 'turnaround',
-        scheduledDeparture: gameDay(fixture.world, 1),
-        estimatedArrival: gameDay(fixture.world, 1),
-        actualDeparture: gameDay(fixture.world, 1),
-        actualArrival: new Date(gameDay(fixture.world, 1).getTime() + 2 * HOUR_MS),
-        load: '{}',
-      });
+      await flew(fixture, airframeId, home, away, 1, 2);
 
       list = await listFleet(db.db, own(fixture));
       expect(list.airframes[0]?.locationIcao).toBe(away);
@@ -333,20 +361,7 @@ describeDb('the fleet', () => {
       const actual = await makeAirport();
       const { airframeId } = await acquire(fixture, 'ATR 72-600', { deliverTo: home });
 
-      await db.db.insert(flight).values({
-        worldId: fixture.world.id,
-        airlineId: fixture.airline.id,
-        airframeId,
-        originIcao: home,
-        destinationIcao: planned,
-        diversionIcao: actual,
-        phase: 'turnaround',
-        scheduledDeparture: gameDay(fixture.world, 1),
-        estimatedArrival: gameDay(fixture.world, 1),
-        actualDeparture: gameDay(fixture.world, 1),
-        actualArrival: new Date(gameDay(fixture.world, 1).getTime() + 2 * HOUR_MS),
-        load: '{}',
-      });
+      await flew(fixture, airframeId, home, planned, 1, 2, { divertedTo: actual });
 
       // The case that makes derivation worth having rather than merely tidy: a
       // stored position updated on arrival would have to remember to handle it.
@@ -360,6 +375,7 @@ describeDb('the fleet', () => {
       const away = await makeAirport();
       const { airframeId } = await acquire(fixture, 'ATR 72-600', { deliverTo: home });
 
+      // Planned, never flown: no `actual_*` times at all.
       await db.db.insert(flight).values({
         worldId: fixture.world.id,
         airlineId: fixture.airline.id,
@@ -368,7 +384,7 @@ describeDb('the fleet', () => {
         destinationIcao: away,
         phase: 'scheduled',
         scheduledDeparture: gameDay(fixture.world, 1),
-        estimatedArrival: gameDay(fixture.world, 1),
+        estimatedArrival: new Date(gameDay(fixture.world, 1).getTime() + 2 * HOUR_MS),
         load: '{}',
       });
 
@@ -390,20 +406,7 @@ describeDb('the fleet', () => {
 
       // Two three-hour sectors on game day one.
       for (const hour of [8, 14]) {
-        const off = new Date(gameDay(fixture.world, 1).getTime() + hour * HOUR_MS);
-        await db.db.insert(flight).values({
-          worldId: fixture.world.id,
-          airlineId: fixture.airline.id,
-          airframeId,
-          originIcao: home,
-          destinationIcao: away,
-          phase: 'turnaround',
-          scheduledDeparture: off,
-          estimatedArrival: new Date(off.getTime() + 3 * HOUR_MS),
-          actualDeparture: off,
-          actualArrival: new Date(off.getTime() + 3 * HOUR_MS),
-          load: '{}',
-        });
+        await flew(fixture, airframeId, home, away, 1 + hour / 24, 3);
       }
 
       // Read at game day three: the aeroplane has existed for three days, so the
@@ -436,20 +439,7 @@ describeDb('the fleet', () => {
       // One sector on game day one, one on game day twenty. Read at day twenty-one,
       // only the second is inside the seven-day window.
       for (const day of [1, 20]) {
-        const off = new Date(gameDay(fixture.world, day).getTime() + 8 * HOUR_MS);
-        await db.db.insert(flight).values({
-          worldId: fixture.world.id,
-          airlineId: fixture.airline.id,
-          airframeId,
-          originIcao: home,
-          destinationIcao: away,
-          phase: 'turnaround',
-          scheduledDeparture: off,
-          estimatedArrival: new Date(off.getTime() + 4 * HOUR_MS),
-          actualDeparture: off,
-          actualArrival: new Date(off.getTime() + 4 * HOUR_MS),
-          load: '{}',
-        });
+        await flew(fixture, airframeId, home, away, day + 8 / 24, 4);
       }
 
       const list = await listFleet(db.db, own(fixture), atGameDay(fixture.world, 21));
@@ -626,7 +616,9 @@ describeDb('the fleet', () => {
   describe('the wire contract', () => {
     it('parses what the assembler produces, strictly', async () => {
       const fixture = await fixtures.create();
-      const { airframeId } = await acquireConfigured(fixture, 'A321XLR', ['sharklets', 'act-3']);
+      // An A320neo, not the XLR: the XLR is still a prototype at the flagship
+      // epoch, and `acquireAircraft` refuses one — which is M4-02 working.
+      const { airframeId } = await acquireConfigured(fixture, 'A320neo', ['sharklets', 'act-3']);
 
       const list = await listFleet(db.db, own(fixture));
       const detail = await airframeDetail(db.db, own(fixture), airframeId);
