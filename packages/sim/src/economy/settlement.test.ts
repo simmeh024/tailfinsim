@@ -160,7 +160,28 @@ describe('settleFlight', () => {
     it('charges all five of §13.4’s flight-caused lines', () => {
       const result = settleFlight(inputs());
 
-      expect(result.costs.map((l) => l.source)).toEqual([...COST_SOURCES]);
+      // The five §13.4 names, not `COST_SOURCES` — M4-02 added a sixth source
+      // for §7.2b's era restrictions, and that one is deliberately absent
+      // unless there is something to charge. Comparing against the whole enum
+      // would have made this test claim §13.4 has a line it does not.
+      expect(result.costs.map((l) => l.source)).toEqual([
+        'fuel',
+        'crew',
+        'maintenance',
+        'airport',
+        'handling',
+      ]);
+    });
+
+    it('lists every source it can charge, so none is unreachable', () => {
+      // What the previous assertion used to cover incidentally. Each source in
+      // the enum has to be producible by some input, or it should not be there.
+      const restricted = settleFlight(inputs({ restrictionSurchargeMinor: 1_000 }));
+      const charged = new Set([
+        ...settleFlight(inputs()).costs.map((l) => l.source),
+        ...restricted.costs.map((l) => l.source),
+      ]);
+      expect([...charged].sort()).toEqual([...COST_SOURCES].sort());
     });
 
     it('charges the landing fee against MTOW, so a paper upgrade costs for ever', () => {

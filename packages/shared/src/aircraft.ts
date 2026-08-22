@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { MinorUnits, NauticalMiles, Uuid } from './primitives';
+import { MinorUnits, NauticalMiles, Timestamp, Uuid } from './primitives';
 
 /**
  * Aircraft types and individual airframes, following App. C.6's data model.
@@ -168,3 +168,79 @@ export const Airframe = z.object({
   ownership: z.enum(['owned', 'leased', 'financed']),
 });
 export type Airframe = z.infer<typeof Airframe>;
+
+/**
+ * One catalogue entry as a world sees it today (M4-02, §7.2b).
+ *
+ * The availability is the **server's**, computed from the world's own clock. A
+ * browser with a skewed clock must not reach a different conclusion about
+ * whether an aircraft exists than the world does (§21) — and the world's clock
+ * is not the browser's in any case, because it runs at the world's speed
+ * multiplier from the world's epoch.
+ */
+export const AircraftAvailabilityState = z.enum([
+  'unannounced',
+  'prototype',
+  'orderable',
+  'used_only',
+  'retired',
+]);
+export type AircraftAvailabilityState = z.infer<typeof AircraftAvailabilityState>;
+
+export const CatalogueEntry = z.object({
+  designation: z.string().min(1),
+  family: z.string().min(1),
+  manufacturer: z.string().min(1),
+  class: AircraftClass,
+
+  availability: AircraftAvailabilityState,
+  /** One sentence, server-written: what this state means for this type. */
+  detail: z.string().min(1),
+  /**
+   * When it becomes orderable. Null when it already is, or when nobody knows.
+   *
+   * The second acceptance criterion of M4-02 in one field: *"Types arriving
+   * soon are visible with their EIS date, not hidden."*
+   */
+  arrivesOn: z.iso.date().nullable(),
+
+  seatsTwoClass: z.number().int().nonnegative(),
+  maxSeats: z.number().int().nonnegative(),
+  rangeNm: NauticalMiles,
+  mtowTonnes: z.number().positive(),
+  runwayRequirementM: z.number().int().positive(),
+  wingspanCode: z.enum(['A', 'B', 'C', 'D', 'E', 'F']),
+
+  listPrice: MinorUnits.nullable(),
+  monthlyLeaseRate: MinorUnits.nullable(),
+
+  /** §7.2b's progressive squeeze, and what it costs per departure. */
+  restrictions: z.array(
+    z.object({
+      kind: z.enum(['noise_quota', 'emissions_charge', 'curfew_exclusion']),
+      since: z.iso.date(),
+      amountMinor: MinorUnits,
+      note: z.string().min(1),
+    }),
+  ),
+  /** Sum of the above. Zero for an unrestricted type. */
+  restrictionCostPerDepartureMinor: MinorUnits,
+});
+export type CatalogueEntry = z.infer<typeof CatalogueEntry>;
+
+/** `GET /api/fleet/catalogue` — what this world can fly, on its own clock. */
+export const FleetCatalogueResponse = z.object({
+  /** The world's own date, so the client can say "as at" rather than guessing. */
+  inGameDate: Timestamp,
+  catalogueVersion: z.string().min(1),
+  /**
+   * Every type that exists in this world, in catalogue order.
+   *
+   * Types before their first flight are **absent**, not listed as locked:
+   * §7.2b's rule is that an aircraft *does not exist* in a world whose clock has
+   * not reached it, and a 1950s world showing a greyed-out A350 would be
+   * telling the player about a future that world does not have.
+   */
+  types: z.array(CatalogueEntry),
+});
+export type FleetCatalogueResponse = z.infer<typeof FleetCatalogueResponse>;

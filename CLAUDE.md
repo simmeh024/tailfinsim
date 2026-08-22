@@ -43,6 +43,15 @@ working against the result; the deploy deliberately leaves it serving when migra
 Do not add down-migrations or bypass the policy for `CREATE INDEX CONCURRENTLY`—ADR-0016 owns
 the transaction, lock and recovery trade.
 
+**An aircraft that has not flown does not appear.** M4-02 gates the catalogue on the
+world's own clock, and §7.2b's rule is stronger than hiding: a type before its first flight
+is absent from `/api/fleet/catalogue` entirely, so a 1950s world lists nothing rather than
+eighteen locked rows. A type in its prototype window _is_ listed, with the date it enters
+service. Restrictions are a **charge**, never a removal — a restricted type keeps flying and
+costs more, and only `out_of_service` makes it illegal. The dates are the catalogue's; the
+rates are the economy's, so a world can make old aircraft dearer without re-issuing its
+catalogue.
+
 **A world pins two versions, and they are not the same version.** `economy_config_version`
 is §22.3's balance payload; `aircraft_catalogue_version` is §22.5's eighteen aircraft, stored
 as immutable `aircraft_type` rows keyed by `(catalogue_version, designation)`. Both are seeded

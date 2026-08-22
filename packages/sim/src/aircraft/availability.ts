@@ -1,4 +1,9 @@
-import type { AircraftEraDates, AircraftRestriction } from '@tailfin/shared';
+import {
+  type AircraftEraDates,
+  type AircraftRestriction,
+  ECONOMY_CONFIG_V1,
+  type EconomyConfig,
+} from '@tailfin/shared';
 
 /**
  * Whether a type exists yet, and what may be done with it (M4-01, §7.2b).
@@ -121,4 +126,77 @@ export function restrictionsInForce(
   return era.restrictionDates
     .filter((restriction) => onOrAfter(restriction.at, at))
     .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+}
+
+// ---------------------------------------------------------------------------
+// What a restriction costs (M4-02)
+// ---------------------------------------------------------------------------
+
+export type RestrictionBalance = EconomyConfig['costs']['restrictions'];
+
+/**
+ * The shipped restriction rates. A slice of the seed, like every other default.
+ */
+export const DEFAULT_RESTRICTIONS: RestrictionBalance = ECONOMY_CONFIG_V1.costs.restrictions;
+
+/** One restriction, and what it adds to a departure. */
+export interface RestrictionCharge {
+  kind: AircraftRestriction['kind'];
+  /** The date it came into force, so a cost line can say when this started. */
+  since: string;
+  amountMinor: number;
+  /** The server's sentence, so a player is told why they are paying it. */
+  note: string;
+}
+
+export interface RestrictionCost {
+  totalMinor: number;
+  /** One line per restriction in force. Empty for an unrestricted type. */
+  charges: readonly RestrictionCharge[];
+}
+
+/**
+ * What flying a restricted type costs, per departure.
+ *
+ * §7.2b's mechanism, priced. The point is that this is **not** a hard removal:
+ * *"Retirement pressure is real too… Your beloved fleet becomes uneconomic
+ * before it becomes illegal."* An operator can keep flying a restricted type
+ * for as long as the numbers work, and the numbers get worse.
+ *
+ * Emissions scale with MTOW because a heavier aircraft burns more; noise and
+ * curfew charges are per movement because that is what an airport counts.
+ *
+ * Returns the lines as well as the total, because a cost a player cannot
+ * attribute is one they will assume is a bug (invariant 4).
+ */
+export function restrictionCost(
+  era: AircraftEraDates,
+  at: Date,
+  mtowTonnes: number,
+  config: RestrictionBalance = DEFAULT_RESTRICTIONS,
+): RestrictionCost {
+  const charges: RestrictionCharge[] = [];
+
+  for (const restriction of restrictionsInForce(era, at)) {
+    const amountMinor =
+      restriction.kind === 'noise_quota'
+        ? config.noiseQuotaPerDepartureMinor
+        : restriction.kind === 'emissions_charge'
+          ? Math.round(config.emissionsChargePerTonneMinor * mtowTonnes)
+          : config.curfewExclusionPerDepartureMinor;
+
+    if (amountMinor > 0) {
+      charges.push({
+        kind: restriction.kind,
+        since: restriction.at,
+        amountMinor,
+        note: restriction.note,
+      });
+    }
+  }
+
+  return {
+    totalMinor: charges.reduce((sum, charge) => sum + charge.amountMinor, 0),
+    charges,
+  };
 }
