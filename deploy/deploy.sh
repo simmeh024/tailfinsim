@@ -228,7 +228,7 @@ log "Building"
 # Build before touching the database. A build failure here leaves the running
 # service completely untouched. Builds both the server bundle and the client,
 # since WEB_SURFACE=app serves the client from packages/web/dist/client.
-pnpm build:apps
+pnpm build
 
 # Stamp the deploy (OPS-02).
 #
