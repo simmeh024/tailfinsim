@@ -18,6 +18,7 @@ wall-clock time, that never pauses.
 - **Feature contracts:** [`docs/aircraft-acquisition.md`](docs/aircraft-acquisition.md) ·
   [`docs/used-aircraft-market.md`](docs/used-aircraft-market.md) ·
   [`docs/maintenance.md`](docs/maintenance.md) ·
+  [`docs/fleet-management.md`](docs/fleet-management.md) ·
   [`docs/world-renderer.md`](docs/world-renderer.md)
 - **Deployment & DNS:** [`docs/deploy.md`](docs/deploy.md) ·
   [`deploy/README.md`](deploy/README.md)
@@ -174,7 +175,7 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   configuration intact, or pay for a factory build whose pinned options extend a wall-clock
   delivery date. The order, used-listing claim, explaining cash movement and any immediate
   airframe commit together; the Worker materialises due new orders exactly once. The typed
-  API and the M4-07 ownership boundary are documented in
+  API and its ownership boundary are documented in
   [`docs/aircraft-acquisition.md`](docs/aircraft-acquisition.md).
 - **Maintenance that bites.** Airframes accrue block hours and cycles from every settled
   flight; A, C and D checks fall due on whichever of the two limits arrives first, so a
@@ -190,6 +191,14 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   specification is cheap to buy is something a player can see rather than infer. The market
   is the Worker’s, so it renews on dev only — see
   [`docs/used-aircraft-market.md`](docs/used-aircraft-market.md).
+- **A fleet you can take apart.** The Fleet page lists every airframe an airline owns, most
+  urgent first, with where it is, what it is doing with its time and which check binds next.
+  Opening one shows its effective specification **option by option** — the base value, the
+  amount each option actually moved it, and the running total — because a percentage from a
+  brochure and the kilograms an aeroplane really burns are not the same number. The
+  decomposition is arithmetically exact by construction and is tested against the airframe's
+  own stored spec. See [`docs/fleet-management.md`](docs/fleet-management.md), including the
+  two bulk actions that have nothing to act on yet.
 - **One founded-airline database fixture.** Server tests that need a player airline go
   through the real founding transaction, so they receive an open world, owner, founder hub,
   allocated per-world codes and configured opening cash with its AIR-06 movement. The
@@ -216,11 +225,13 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   The Worker currently handles `FLIGHT_ARRIVE` plus M4-04's real-time factory-delivery sweep;
   event types without a handler are parked as `unsupported` rather than destroyed. The exact live topology is maintained in
   [`CLAUDE.md`](CLAUDE.md#the-two-environments-on-three-nodes).
-- **No fleet-management UI, crew or cabin management.** Orders and physical airframes now
-  exist behind the typed fleet API, but the Fleet page still exposes only the world's
-  era-gated catalogue; M4-07 owns listing those airframes, hours and cycles. M4-05 still owns
-  rolling used-market generation and depreciation, M4-06 owns maintenance, and crew, ground
-  handling, livery and cabin builders remain future work.
+- **No fleet editing, crew or cabin management.** The Fleet page now lists the airframes an
+  airline owns beside the world's era-gated catalogue, and the aircraft detail takes an
+  effective spec apart option by option. It is **read-only**: reconfiguring a build, editing a
+  registration, booking a check from the page, and the used-market and order screens all
+  remain to be built. Crew, ground handling, and the livery and cabin builders are future
+  work — so an aircraft has no livery to show and no cabin fitted, and the fleet table says so
+  rather than inventing either.
 - **Most of the player client.** The standalone founding desk, private airline/rebrand desk,
   network/fare pages, aircraft catalogue, and dual-projection world surface are real. The
   world does not yet receive live aircraft/route data; finance, crew, design and board remain

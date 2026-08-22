@@ -4,6 +4,9 @@
  *
  *   `effective-spec`  — base spec + option deltas + cabin weight, folded once,
  *                       which is the spec every other system reads
+ *   `spec-decomposition`
+ *                     — the same fold taken back apart, so a player can see which
+ *                       option moved which number (M4-07)
  *   `payload-range`   — OEW from spec + cabin + options, and the fuel/range trade
  *                       that falls out of it, naming the limit that bound it
  *   `availability`    — whether a type exists in this world at all (§7.2b)
@@ -16,6 +19,8 @@
  * else *"reads only `effective_spec`"*, so nothing special-cases an option.
  */
 export * from './effective-spec';
+
+export * from './spec-decomposition';
 
 export * from './payload-range';
 

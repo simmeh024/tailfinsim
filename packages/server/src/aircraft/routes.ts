@@ -8,6 +8,9 @@ import {
   BookCheckInput,
   bookCheckResponseJsonSchema,
   maintenanceResponseJsonSchema,
+  fleetAirframesResponseJsonSchema,
+  airframeDetailResponseJsonSchema,
+  Uuid,
   type ApiError,
 } from '@tailfin/shared';
 
@@ -20,6 +23,7 @@ import {
   type AircraftAcquisitionRefusal,
 } from './acquisition';
 import { fleetCatalogue } from './era';
+import { airframeDetail, listFleet } from './fleet';
 import { bookCheck, fleetMaintenance } from './maintenance';
 import { listUsedMarket } from './used-market';
 
@@ -132,6 +136,67 @@ export function registerAircraftRoutes(app: FastifyInstance, { db }: { db: Datab
     },
     async (request, reply) =>
       reply.code(200).send({ orders: await listAircraftOrders(db.db, resolvedAirlineOf(request)) }),
+  );
+
+  /**
+   * What this airline owns (M4-07, App. C.6).
+   *
+   * `requireAirline`, like every other fleet read: looking at your own aeroplanes
+   * commits nothing, and a restricted airline still operates the fleet it has
+   * (ADR-0018). The world and the airline both come from the session, so this
+   * cannot be asked what somebody else owns.
+   */
+  app.get(
+    '/api/fleet/airframes',
+    {
+      onRequest: app.requireAirline,
+      schema: { response: { 200: fleetAirframesResponseJsonSchema } },
+    },
+    async (request, reply) => {
+      const own = resolvedAirlineOf(request);
+      return reply.code(200).send(await listFleet(db.db, own));
+    },
+  );
+
+  /**
+   * One aircraft, with its effective spec taken apart (M4-07).
+   *
+   * The 404 is the interesting part. A malformed id, an id that does not exist and
+   * an id belonging to another airline all receive the **identical** body, because
+   * ADR-0020 requires a private resource to be concealed by resolution rather than
+   * by a check after the query: `airframeDetail` scopes its select by the
+   * session-resolved owner, so there is no state in which it could answer 403 and
+   * confirm the id is a real aeroplane.
+   */
+  app.get<{ Params: { airframeId: string } }>(
+    '/api/fleet/airframes/:airframeId',
+    {
+      onRequest: app.requireAirline,
+      schema: {
+        response: {
+          200: airframeDetailResponseJsonSchema,
+          404: apiErrorJsonSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const notFound = {
+        code: 'airframe_not_found',
+        message: 'No such aircraft in your fleet',
+      };
+      // Checked before it reaches Postgres. A non-UUID compared against a `uuid`
+      // column raises a driver error, which would answer 500 — and a 500 where a
+      // 404 belongs is itself a disclosure: it tells the caller their id was
+      // malformed rather than unknown. Same guard the admin routes use.
+      if (!Uuid.safeParse(request.params.airframeId).success) {
+        return reply.code(404).send(notFound);
+      }
+
+      const own = resolvedAirlineOf(request);
+      const detail = await airframeDetail(db.db, own, request.params.airframeId);
+      if (detail === null) return reply.code(404).send(notFound);
+      return reply.code(200).send(detail);
+    },
   );
 
   /**

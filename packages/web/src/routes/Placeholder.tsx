@@ -27,8 +27,8 @@ export const WorldPage = (): ReactNode => (
 );
 
 // FleetPage is no longer a placeholder — M4-02 filled it with the era-gated
-// aircraft catalogue. The airframe list (hours, cycles, config, maintenance
-// state) is M4-07's and lands on the same page above it.
+// aircraft catalogue and M4-07 added the airframe list above it, with the
+// aircraft detail and its effective-spec decomposition.
 
 // NetworkPage is no longer a placeholder — M3-09 filled it. Schedules and the
 // seven reachability checks are still M2-01's, and land on the same page.

@@ -150,5 +150,7 @@ finds nothing. Two workers racing through a handover cannot complete the same ch
 - **Retrofits** (App. C.3 rule 5) are a fleet action, not a check. M4-03 owns the option rules.
 - **Lender repossession** (§13.5) reads maintenance state but is M8's.
 - **Unscheduled AOG, incidents, insurance** — §24's own area, untouched.
-- **The fleet maintenance UI** is M4-07's. `GET /api/fleet/maintenance` is the contract it will
-  render, already sorted most-urgent-first.
+- **The maintenance readout** now has a home: M4-07's fleet table quotes the next check by the
+  limit that binds, and the aircraft detail shows all three tiers with their cost and downtime
+  ([`fleet-management.md`](fleet-management.md)). Booking a check from that page is still not
+  wired — `POST /api/fleet/maintenance/checks` works, but the fleet views are read-only.

@@ -73,5 +73,7 @@ yet periodically debited.
 
 - M4-05: rolling used inventory, depreciation, unusual-configuration discounts and removal.
 - M4-06: maintenance programmes and their effects.
-- M4-07: the player fleet/order list and airframe detail UI.
+- M4-07: the player fleet list and airframe detail UI, including the effective-spec
+  decomposition — see [`fleet-management.md`](fleet-management.md). The order list still has
+  no page of its own; `GET /api/fleet/orders` is the contract for it.
 - Peer-to-peer used-aircraft trading remains Post-MVP/out of scope.

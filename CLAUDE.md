@@ -67,7 +67,7 @@ used paths deliver in that request; used configuration comes only from a locked
 `used_aircraft_listing`, never the client. New orders store a wall-clock `delivery_at` — §7.2
 explicitly says real weeks — and only the Worker materialises them. Do not turn those dates
 into `world_event.fire_at`, which is game time and changes meaning with world speed. The
-complete boundary and current M4-05/M4-07 exclusions are in
+complete boundary and its current exclusions are in
 [`docs/aircraft-acquisition.md`](docs/aircraft-acquisition.md).
 
 **A world pins two versions, and they are not the same version.** `economy_config_version`
@@ -287,6 +287,14 @@ counters that distinguish the two. `docs/used-aircraft-market.md` has the mechan
 airframes ground on the worker's tick, so on a production world a booked check would never
 finish and nothing would ever be grounded — an aeroplane put into a C-check there stays in it
 for ever. `checksCompleted`, `airframesGrounded` and `maintenanceErrors` are the counters.
+
+**And since M4-07 there is a page where all of that is visible at once.** The fleet table
+reads its location, utilisation and next check from flights that only the worker produces, so
+on a production world every aeroplane sits at its delivery airport at `0.0 h/day` with a check
+that never comes due. That is a **whole page** that reads as broken rather than as a missing
+process — the same trap as "ticks: 0, errors: 0", and the first thing to rule out before
+believing the fleet API is wrong. `docs/fleet-management.md` has the boundary, including the
+two things M4-07 deliberately did not build.
 
 **And one thing not to "fix".** `airframe.maintenance_state` is nullable, and a null means
 _every tier was last completed at the hours this airframe has now_ — not _at hour zero_. It

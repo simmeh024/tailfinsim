@@ -45,6 +45,7 @@ export * from './aircraft-options';
 export * from './aircraft-catalogue';
 export * from './used-market';
 export * from './maintenance';
+export * from './fleet';
 export * from './network';
 export * from './flight';
 export * from './api';
