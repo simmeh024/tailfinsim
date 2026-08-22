@@ -477,6 +477,13 @@ are not ordered and `pnpm ops:status` marks the dev row with `*`.
 Do not describe a merge as a deploy. Check `pnpm ops:status` before reporting what is live;
 [ADR-0003](docs/adr/0003-deployment-approach.md) owns the boundary and its revisit criteria.
 
+[`.github/pull_request_template.md`](.github/pull_request_template.md) prompts for the part of
+a change that a diff cannot show: the migration's expand/contract strategy, which node needs
+deploying, what was actually verified and against which database, and anything that exists only
+on the server. It is short on purpose and the description above it is free-form on purpose — a
+prompt, not a form. **"None" is a real answer**; a tick that is not true is worse than a blank.
+Every incident will suggest a new section, and adding one is a decision rather than a reflex.
+
 ---
 
 ## Working style
