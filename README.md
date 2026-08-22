@@ -169,6 +169,11 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   lifecycle, world health, a read-only player browser, linkable airline support records
   with current and historical routes and the complete paginated AIR-06 cash-movement
   ledger, and the audit log. The airline record has no balance-edit control.
+- **One world renderer in two projections.** The player shell uses one deck.gl layer stack
+  for a repeating flat map and a 3D globe, with a persisted device-aware default, shared
+  camera and layer controls, bundled Natural Earth land, soft day/night shading,
+  antimeridian-safe great-circle routes, and sustained-FPS degradation. Its contract and
+  performance policy are documented in [`docs/world-renderer.md`](docs/world-renderer.md).
 
 ### What does not exist yet
 
@@ -181,10 +186,11 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   era-gated aircraft catalogue, but it does not yet list an airline's airframes, hours,
   cycles or maintenance state. Crew and ground handling are still model inputs rather than
   managed systems, and the livery and cabin builders remain future work.
-- **Most of the player client.** The standalone founding desk, private airline/rebrand desk
-  and network/fare pages plus the aircraft catalogue are real; world, finance, crew, design
-  and board remain labelled placeholders, and the guided ninety-minute onboarding is still
-  M10-01. The production front door still serves a holding page.
+- **Most of the player client.** The standalone founding desk, private airline/rebrand desk,
+  network/fare pages, aircraft catalogue, and dual-projection world surface are real. The
+  world does not yet receive live aircraft/route data; finance, crew, design and board remain
+  labelled placeholders, and the guided ninety-minute onboarding is still M10-01. The
+  production front door still serves a holding page.
 
 ### Where it runs
 

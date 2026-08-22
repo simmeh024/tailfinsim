@@ -133,6 +133,24 @@ pnpm build:apps
 node packages/server/dist/worker.js
 ```
 
+### The browser world renderer
+
+M7-01's renderer is one deck.gl instance with `MapView` and `_GlobeView` over the same layer
+factory. Read [`docs/world-renderer.md`](docs/world-renderer.md) before changing it. In
+particular:
+
+- add shared visual layers to `packages/web/src/world/layers.ts`; do not create projection-
+  specific copies or a second canvas;
+- preserve the controlled camera and layer-toggle state when changing views;
+- use great-circle arcs for routes and keep an antimeridian case in the layer tests;
+- pass live routes, aircraft, and world time from typed server responses as those APIs land;
+  never invent client-side operational state or import simulation code;
+- treat deck.gl's low-FPS metrics as an active-render signal, not a simulation clock, and
+  verify frame-rate claims in a WebGL browser rather than jsdom.
+
+Natural Earth land is bundled through `world-atlas`; adding a network basemap is an
+availability and privacy decision, not a cosmetic dependency change.
+
 ---
 
 ## Getting set up

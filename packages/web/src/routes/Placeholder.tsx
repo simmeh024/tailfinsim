@@ -18,10 +18,12 @@ export function Placeholder({ title, note }: { title: string; note: string }): R
 }
 
 export const WorldPage = (): ReactNode => (
-  <Placeholder
-    title="World"
-    note="The live map — flat and globe projections over one renderer, aircraft on great-circle paths. M7-01."
-  />
+  <section className="page world-page">
+    <h1 className="page__title">World</h1>
+    <p className="page__note">
+      One shared world. Live aircraft and operational routes arrive with M7-02.
+    </p>
+  </section>
 );
 
 // FleetPage is no longer a placeholder — M4-02 filled it with the era-gated

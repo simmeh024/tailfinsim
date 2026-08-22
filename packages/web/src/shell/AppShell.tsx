@@ -7,6 +7,7 @@ import { fetchOwnAirline, formatMinorUnits } from '../airline/api';
 import { AccountBadge } from '../auth/AccountBadge';
 import { useTheme } from '../theme/ThemeProvider';
 import { BuildBadge } from '../version/BuildBadge';
+import { WorldRenderer } from '../world/WorldRenderer';
 
 import type { ReactNode } from 'react';
 
@@ -79,15 +80,10 @@ function LeftRail({ ownAirline }: { ownAirline: OwnAirlineResponse | null }): Re
   );
 }
 
-/**
- * Placeholder for the world renderer. M7-01 replaces this with deck.gl's
- * MapView/GlobeView; the grid lines exist only so the area reads as "the world
- * goes here" rather than as a broken layout.
- */
 function WorldBackdrop({ children }: { children: ReactNode }): ReactNode {
   return (
     <main className="world" aria-label="World">
-      <div className="world__grid" aria-hidden="true" />
+      <WorldRenderer />
       {children}
     </main>
   );
