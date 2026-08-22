@@ -6,6 +6,10 @@ import { createSession, SESSION_COOKIE } from '../auth/session';
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { adminAudit, adminGrant, player } from '../db/schema';
 import { type ServerEnv } from '../env';
+import {
+  createAuthorizationTestSuite,
+  type AuthorizationTestSuite,
+} from '../test-fixtures/authorization';
 
 import { readAudit, writeAudit } from './audit';
 import { BOOTSTRAP_ACTOR, grantAdmin, isAdmin, listAdmins, revokeAdmin } from './grants';
@@ -363,52 +367,30 @@ describeDb('admin', () => {
 
   describe('the admin routes', () => {
     const ADMIN_ROUTES = ['/api/admin/audit', '/api/admin/admins'];
+    let authorization: AuthorizationTestSuite;
+
+    beforeAll(async () => {
+      authorization = await createAuthorizationTestSuite({ db, env, suite: 'admin-routes' });
+    });
+
+    afterAll(async () => {
+      await authorization.cleanup();
+    });
 
     async function sessionCookie(playerId: string): Promise<string> {
       const { token } = await createSession(db.db, playerId, 1);
       return `${SESSION_COOKIE}=${token}`;
     }
 
-    it('answer 401 to an anonymous request', async () => {
-      const app = buildApp({ env, db });
-      try {
-        for (const route of ADMIN_ROUTES) {
-          const reply = await app.inject({ method: 'GET', url: route });
-          expect(reply.statusCode, route).toBe(401);
-        }
-      } finally {
-        await app.close();
-      }
-    });
-
-    it('answer 403 to a signed-in player without a grant', async () => {
-      // Not 401: signing in again would not help, and a client that treats every
-      // refusal as "session expired" would loop for ever.
-      const id = await makePlayer('ordinary');
-      const app = buildApp({ env, db });
-      try {
-        const cookie = await sessionCookie(id);
-        for (const route of ADMIN_ROUTES) {
-          const reply = await app.inject({ method: 'GET', url: route, headers: { cookie } });
-          expect(reply.statusCode, route).toBe(403);
-        }
-      } finally {
-        await app.close();
-      }
-    });
-
-    it('answer 200 to an admin', async () => {
-      const id = await makePlayer('console-user');
-      await grantAdmin(db.db, id, BOOTSTRAP_ACTOR);
-      const app = buildApp({ env, db });
-      try {
-        const cookie = await sessionCookie(id);
-        for (const route of ADMIN_ROUTES) {
-          const reply = await app.inject({ method: 'GET', url: route, headers: { cookie } });
-          expect(reply.statusCode, route).toBe(200);
-        }
-      } finally {
-        await app.close();
+    it('enforces the canonical actor matrix on every original admin route', async () => {
+      for (const route of ADMIN_ROUTES) {
+        await authorization.expectAuthorization({
+          request: { method: 'GET', url: route },
+          guest: 401,
+          playerA: 403,
+          playerB: 403,
+          admin: 200,
+        });
       }
     });
 

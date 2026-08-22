@@ -11,6 +11,10 @@ import { adminGrant, airline, player, world, worldEvent, type WorldRow } from '.
 import { type ServerEnv } from '../env';
 import { drainDueEvents, scheduleEvent } from '../sim/event-queue';
 import {
+  createAuthorizationTestSuite,
+  type AuthorizationTestSuite,
+} from '../test-fixtures/authorization';
+import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixtureHarness,
 } from '../test-fixtures/founded-airline';
@@ -529,46 +533,38 @@ describeDb('the world lifecycle', () => {
   });
 
   describe('over HTTP', () => {
+    let authorization: AuthorizationTestSuite;
+
+    beforeAll(async () => {
+      authorization = await createAuthorizationTestSuite({ db, env, suite: 'admin-lifecycle' });
+    });
+
+    afterAll(async () => {
+      await authorization.cleanup();
+    });
+
     async function cookieFor(playerId: string): Promise<string> {
       const { token } = await createSession(db.db, playerId, 1);
       return `${SESSION_COOKIE}=${token}`;
     }
 
-    it('refuses an anonymous request with 401 and a signed-in player with 403', async () => {
+    it('enforces the canonical actor matrix before lifecycle changes', async () => {
       const row = await makeWorld('staging');
-      const ordinaryId = await makePlayer();
 
-      const app = buildApp({ env, db });
-      try {
-        for (const path of ['status', 'reset']) {
-          const payload =
-            path === 'status'
-              ? { status: 'open', expectedStatus: 'staging' }
-              : { confirmName: row.name, reason: 'should not work', expectedStatus: 'staging' };
-
-          const anon = await app.inject({
-            method: 'POST',
-            url: `/api/admin/worlds/${row.id}/${path}`,
-            payload,
-          });
-          expect(anon.statusCode).toBe(401);
-
-          const asPlayer = await app.inject({
-            method: 'POST',
-            url: `/api/admin/worlds/${row.id}/${path}`,
-            payload,
-            headers: { cookie: await cookieFor(ordinaryId) },
-          });
-          expect(asPlayer.statusCode).toBe(403);
-        }
-
-        // And the world is exactly as it was.
-        const after = await db.db.select().from(world).where(eq(world.id, row.id));
-        expect(after[0]?.status).toBe('staging');
-        expect(after[0]?.launchDate.getTime()).toBe(row.launchDate.getTime());
-      } finally {
-        await app.close();
+      for (const path of ['status', 'reset']) {
+        await authorization.expectAuthorization({
+          request: { method: 'POST', url: `/api/admin/worlds/${row.id}/${path}`, payload: {} },
+          guest: 401,
+          playerA: 403,
+          playerB: 403,
+          admin: 400,
+        });
       }
+
+      // Invalid admin input reaches validation but no actor changes the world.
+      const after = await db.db.select().from(world).where(eq(world.id, row.id));
+      expect(after[0]?.status).toBe('staging');
+      expect(after[0]?.launchDate.getTime()).toBe(row.launchDate.getTime());
     });
 
     it('opens a world and answers with both sides', async () => {

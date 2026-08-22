@@ -10,6 +10,10 @@ import { createDatabase, type DatabaseHandle } from '../db/client';
 import { adminGrant, player, world, worldEvent, type WorldRow } from '../db/schema';
 import { type ServerEnv } from '../env';
 import { scheduleEvent } from '../sim/event-queue';
+import {
+  createAuthorizationTestSuite,
+  type AuthorizationTestSuite,
+} from '../test-fixtures/authorization';
 import { createWorld } from '../world/lifecycle';
 
 import { BOOTSTRAP_ACTOR, grantAdmin } from './grants';
@@ -307,6 +311,16 @@ describeDb('world health over a database', () => {
   });
 
   describe('over HTTP', () => {
+    let authorization: AuthorizationTestSuite;
+
+    beforeAll(async () => {
+      authorization = await createAuthorizationTestSuite({ db, env, suite: 'admin-health' });
+    });
+
+    afterAll(async () => {
+      await authorization.cleanup();
+    });
+
     async function cookieFor(playerId: string): Promise<string> {
       const { token } = await createSession(db.db, playerId, 1);
       return `${SESSION_COOKIE}=${token}`;
@@ -324,32 +338,14 @@ describeDb('world health over a database', () => {
       return id;
     }
 
-    it('refuses an anonymous request with 401 and a signed-in player with 403', async () => {
-      const rows = await db.db
-        .insert(player)
-        .values({ displayName: 'ordinary-health' })
-        .returning({ id: player.id });
-      const ordinary = rows[0]?.id;
-      if (!ordinary) throw new Error('no player');
-      madePlayers.push(ordinary);
-
-      const app = buildApp({ env, db });
-      try {
-        expect(
-          (await app.inject({ method: 'GET', url: '/api/admin/worlds/health' })).statusCode,
-        ).toBe(401);
-        expect(
-          (
-            await app.inject({
-              method: 'GET',
-              url: '/api/admin/worlds/health',
-              headers: { cookie: await cookieFor(ordinary) },
-            })
-          ).statusCode,
-        ).toBe(403);
-      } finally {
-        await app.close();
-      }
+    it('enforces the canonical actor matrix on world health', async () => {
+      await authorization.expectAuthorization({
+        request: { method: 'GET', url: '/api/admin/worlds/health' },
+        guest: 401,
+        playerA: 403,
+        playerB: 403,
+        admin: 200,
+      });
     });
 
     it('answers every statistic in one request', async () => {

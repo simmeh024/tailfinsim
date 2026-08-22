@@ -10,6 +10,10 @@ import { createDatabase, type DatabaseHandle } from '../db/client';
 import { adminGrant, player, world, worldEvent, type WorldRow } from '../db/schema';
 import { type ServerEnv } from '../env';
 import { drainDueEvents, scheduleEvent } from '../sim/event-queue';
+import {
+  createAuthorizationTestSuite,
+  type AuthorizationTestSuite,
+} from '../test-fixtures/authorization';
 import { createWorld } from '../world/lifecycle';
 
 import { readAudit } from './audit';
@@ -416,45 +420,34 @@ describeDb('changing a world speed', () => {
   });
 
   describe('over HTTP', () => {
+    let authorization: AuthorizationTestSuite;
+
+    beforeAll(async () => {
+      authorization = await createAuthorizationTestSuite({ db, env, suite: 'admin-speed' });
+    });
+
+    afterAll(async () => {
+      await authorization.cleanup();
+    });
+
     async function cookieFor(playerId: string): Promise<string> {
       const { token } = await createSession(db.db, playerId, 1);
       return `${SESSION_COOKIE}=${token}`;
     }
 
-    it('refuses an anonymous request with 401 and a signed-in player with 403', async () => {
+    it('enforces the canonical actor matrix before changing world speed', async () => {
       const row = await runningWorld();
-      const ordinary = await db.db
-        .insert(player)
-        .values({ displayName: 'ordinary' })
-        .returning({ id: player.id });
-      const ordinaryId = ordinary[0]?.id;
-      if (!ordinaryId) throw new Error('no player');
-      madePlayers.push(ordinaryId);
+      await authorization.expectAuthorization({
+        request: { method: 'POST', url: `/api/admin/worlds/${row.id}/speed`, payload: {} },
+        guest: 401,
+        playerA: 403,
+        playerB: 403,
+        admin: 400,
+      });
 
-      const app = buildApp({ env, db });
-      try {
-        const payload = { speedMultiplier: 3, expectedSpeedMultiplier: 2 };
-        const anon = await app.inject({
-          method: 'POST',
-          url: `/api/admin/worlds/${row.id}/speed`,
-          payload,
-        });
-        expect(anon.statusCode).toBe(401);
-
-        const asPlayer = await app.inject({
-          method: 'POST',
-          url: `/api/admin/worlds/${row.id}/speed`,
-          payload,
-          headers: { cookie: await cookieFor(ordinaryId) },
-        });
-        expect(asPlayer.statusCode).toBe(403);
-
-        // And nothing happened to the world on the way past.
-        const after = await db.db.select().from(world).where(eq(world.id, row.id));
-        expect(Number(after[0]?.speedMultiplier)).toBe(2);
-      } finally {
-        await app.close();
-      }
+      // Invalid admin input reaches validation but no actor changes the world.
+      const after = await db.db.select().from(world).where(eq(world.id, row.id));
+      expect(Number(after[0]?.speedMultiplier)).toBe(2);
     });
 
     it('changes the speed and answers with both sides of the clock', async () => {

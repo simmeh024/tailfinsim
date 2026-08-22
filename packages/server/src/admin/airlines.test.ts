@@ -7,6 +7,7 @@ import { createSession, SESSION_COOKIE } from '../auth/session';
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { adminGrant, airline, airport, cashMovement, player, route } from '../db/schema';
 import { type ServerEnv } from '../env';
+import { createAuthorizationTestSuite } from '../test-fixtures/authorization';
 import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixtureHarness,
@@ -237,26 +238,24 @@ describeDb('the airline support record', () => {
   });
 
   it('protects the HTTP record with the admin gate and exposes no cash mutation route', async () => {
-    const { airlineId, ownerId } = await makeAirline();
-    const adminId = await makePlayer('Airline admin');
-    await grantAdmin(db.db, adminId, BOOTSTRAP_ACTOR);
-    const app = buildApp({ env, db });
+    const { airlineId } = await makeAirline();
+    const authorization = await createAuthorizationTestSuite({
+      db,
+      env,
+      suite: 'admin-airline-record',
+    });
     try {
-      expect(
-        (await app.inject({ method: 'GET', url: `/api/admin/airlines/${airlineId}` })).statusCode,
-      ).toBe(401);
-      expect(
-        (
-          await app.inject({
-            method: 'GET',
-            url: `/api/admin/airlines/${airlineId}`,
-            headers: { cookie: await cookieFor(ownerId) },
-          })
-        ).statusCode,
-      ).toBe(403);
+      await authorization.expectAuthorization({
+        request: { method: 'GET', url: `/api/admin/airlines/${airlineId}` },
+        guest: 401,
+        playerA: 403,
+        playerB: 403,
+        admin: 200,
+      });
 
-      const cookie = await cookieFor(adminId);
-      const detail = await app.inject({
+      const cookie = authorization.identities.admin.cookie;
+      if (cookie === undefined) throw new Error('authorization fixture created no admin cookie');
+      const detail = await authorization.app.inject({
         method: 'GET',
         url: `/api/admin/airlines/${airlineId}?movementLimit=1&movementOffset=0`,
         headers: { cookie },
@@ -265,7 +264,7 @@ describeDb('the airline support record', () => {
       expect(detail.json<{ airline: { id: string } }>().airline.id).toBe(airlineId);
 
       for (const method of ['PATCH', 'POST'] as const) {
-        const mutation = await app.inject({
+        const mutation = await authorization.app.inject({
           method,
           url: `/api/admin/airlines/${airlineId}`,
           headers: { cookie, 'content-type': 'application/json' },
@@ -274,7 +273,7 @@ describeDb('the airline support record', () => {
         expect(mutation.statusCode).toBe(404);
       }
     } finally {
-      await app.close();
+      await authorization.cleanup();
     }
   });
 
