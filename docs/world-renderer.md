@@ -185,6 +185,28 @@ The graticule is the one world layer the contrast tests do not gate. One flat ov
 cannot contrast strongly with both a dark sea and a light landmass; its colour favours the
 ocean, where most of a meridian runs, and it is toggleable.
 
+### An unwrapped ring has to be recentred, or the flat map loses a continent
+
+Unwrapping starts its carry at zero on the ring's **first** vertex, so where a ring happens to
+begin decides where the whole ring ends up. Afro-Eurasia's outline starts just west of the
+antimeridian in Chukotka: the second vertex is 358 degrees east of the first, the carry takes
+−360, and the entire landmass came out spanning **−377.6 to −169.9** instead of −17.6 to 190.1.
+
+Contiguous, no jumps, and it passes a jump test — it is simply a whole world to the west. The
+globe did not care, because a sphere is periodic. The flat map had **no Africa, no Europe and
+no Asia on it**, plus a pale sliver of the displaced ring cutting diagonally across the
+Atlantic that looked for all the world like a broken day/night terminator.
+
+So each ring is shifted back by whole worlds until its own midpoint lies inside [−180, 180].
+Every vertex moves by the same multiple of 360, so contiguity is untouched. The bound is
+**strict**: a ring that legitimately straddles the antimeridian sits at 179..181 with a
+midpoint of exactly 180 and must stay there, and Antarctica spans −180..180 with a midpoint of
+0 and never moves. Rounding to the nearest world instead of clamping to the range puts the
+straddling rings back where they started.
+
+`land.test.ts` asserts every ring's midpoint in **both** tiers is in range, which is the
+invariant that was violated, rather than only the jump property that was not.
+
 ### Coastlines come in two resolutions, and the finer one is loaded on demand
 
 `land-110m` is 1:110,000,000 — about a degree between vertices. At whole-globe zoom it is

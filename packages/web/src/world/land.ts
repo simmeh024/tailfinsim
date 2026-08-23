@@ -58,12 +58,28 @@ export const LAND_DETAIL_ZOOM = 1.6;
  * than `179.99, -179.99` — which is the same point on a sphere, and on the flat
  * map `repeat: true` already draws the neighbouring world copy.
  *
+ * **The carry then has to be recentred, and leaving that out cost the flat map a
+ * continent.** The offset starts at zero on the ring's *first* vertex, so where a
+ * ring happens to begin decides where the whole ring ends up. Afro-Eurasia's outline
+ * starts just west of the antimeridian in Chukotka: the second vertex is 358 degrees
+ * east of the first, unwrapping carries −360, and the entire landmass came out at
+ * longitude −377.6 to −169.9 instead of −17.6 to 190.1. Coherent, no jumps, passes a
+ * jump test — and drawn a whole world to the west, so the globe was fine (a sphere is
+ * periodic) while **the flat map simply had no Africa, Europe or Asia on it**, plus a
+ * pale sliver of the displaced ring cutting across the Atlantic.
+ *
+ * So each ring is shifted back by whole worlds until its own midpoint is inside
+ * [−180, 180]. That preserves contiguity exactly — every vertex moves by the same
+ * multiple of 360 — while putting the ring where it belongs.
+ *
  * `wrapLongitude` on the layer does **not** do this, which was worth finding out
  * by trying it: it shifts whole paths for Web Mercator and leaves the jump inside
  * the ring untouched.
  */
 function unwrapRing(ring: number[][]): number[][] {
   let offset = 0;
+  let minimum = Infinity;
+  let maximum = -Infinity;
   const unwrapped: number[][] = [];
   for (let index = 0; index < ring.length; index += 1) {
     const longitude = ring[index]?.[0] ?? 0;
@@ -73,8 +89,29 @@ function unwrapRing(ring: number[][]): number[][] {
       if (delta > 180) offset -= 360;
       else if (delta < -180) offset += 360;
     }
-    unwrapped.push([longitude + offset, ring[index]?.[1] ?? 0]);
+    const carried = longitude + offset;
+    if (carried < minimum) minimum = carried;
+    if (carried > maximum) maximum = carried;
+    unwrapped.push([carried, ring[index]?.[1] ?? 0]);
   }
+
+  /*
+   * Recentre: move the whole ring by whole worlds until its midpoint is in range.
+   *
+   * Only when it is *outside* [-180, 180]. A ring that legitimately straddles the
+   * antimeridian sits at, say, 179..181 with a midpoint of exactly 180, and must
+   * stay there — rounding it to the nearest world would push it a whole turn west
+   * and reintroduce the bug for the rings this whole function exists to fix.
+   * Antarctica spans -180..180, midpoint 0, and never moves either.
+   */
+  const midpoint = (minimum + maximum) / 2;
+  const shift =
+    midpoint > 180
+      ? -360 * Math.ceil((midpoint - 180) / 360)
+      : midpoint < -180
+        ? 360 * Math.ceil((-180 - midpoint) / 360)
+        : 0;
+  if (shift !== 0) for (const point of unwrapped) point[0] = (point[0] ?? 0) + shift;
   return unwrapped;
 }
 
