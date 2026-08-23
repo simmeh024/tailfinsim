@@ -395,6 +395,34 @@ Culling buys nothing here in any case. There is one quad per layer, the depth bu
 hides the far side, and the cost of drawing it is a few thousand fragments that fail the depth
 test. Both world-sized bitmaps now use `none`, and `layers.test.ts` asserts it.
 
+### The day/night wash needs a depth bias, because the land does not lie on the sphere
+
+Zoomed in, land showed **straight-edged facets of undimmed colour** following no geography —
+the last thing left of the "edgy coastline" complaint, and not a coastline problem at all. With
+day/night switched off the same land is flawless, which is what rules the coastline out.
+
+`SolidPolygonLayer` does not subdivide for the globe. Earcut joins distant coastline vertices,
+so although consecutive coastline points are about 0.1° apart, a single land _triangle_ spans
+up to 2.83°, and its flat interior chords about two kilometres below the sphere. The terminator
+is a quad tessellated **to** the sphere. So land crosses the terminator's depth in patches: in
+front of it near a coast, where triangles are small and hug the surface, and behind it inland,
+where they sag. The shading was being depth-rejected wherever land happened to be nearer.
+
+Measured across one patch, as the alpha the terminator actually applied: a clean ramp
+`0,1,2,3…` either side and a flat `0` across the facet.
+
+deck.gl's default offset is `-layerIndex * 100`, so the terminator had **−500** over the land —
+not enough. `TERMINATOR_POLYGON_OFFSET` gives it −20,000, deliberately far more than the gap
+needs, because the sag depends on the coastline's triangulation and nothing usefully bounds it.
+
+It is safe against the far side of the globe: the bias is uniform, so the near and far halves
+keep their order. **Turning the depth test off instead is not** — it also clears the patches,
+and both halves then composite, so the day side comes out darkened by its own antipode. That
+was tried, and the give-away is that the day side renders visibly darker than with the bias.
+
+`layers.test.ts` asserts the gap rather than the presence of an offset, since every deck.gl
+layer carries the default one; it fails at deck.gl's −500.
+
 ### The bitmap mesh has to track the viewport, not just the bounds
 
 Giving each projection its own `bounds` instance makes `BitmapLayer` rebuild its mesh, and it

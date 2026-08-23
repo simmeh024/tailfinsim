@@ -191,6 +191,53 @@ describe('projection-independent world layers', () => {
     }
   });
 
+  it('keeps the day/night wash in front of the land it shades', () => {
+    /*
+     * The angular patches of undimmed land.
+     *
+     * `SolidPolygonLayer` does not subdivide for the globe, so earcut joins distant
+     * coastline vertices and a single land triangle can span nearly three degrees,
+     * its flat interior chording up to about two kilometres below the sphere. The
+     * terminator is tessellated *to* the sphere, so land crosses its depth in
+     * patches — in front near a coast, behind inland — and the shading was
+     * depth-rejected wherever land happened to be nearer. Measured across one
+     * patch: a clean alpha ramp either side and a flat zero across the facet.
+     */
+    const layers = createWorldLayers({
+      palette,
+      quality: 'full',
+      routes: [],
+      darkness: DARKNESS,
+      land: COARSE_LAND,
+      projection: 'globe',
+      visibility: { graticule: false, routes: false, terminator: true },
+    }).filter((layer): layer is Layer => layer !== false);
+
+    const terminator = layers.find((layer) => layer.id === 'world-terminator');
+    const offset = (
+      terminator?.props as unknown as {
+        getPolygonOffset?: (params: { layerIndex: number }) => [number, number];
+      }
+    ).getPolygonOffset;
+    expect(offset).toBeTypeOf('function');
+
+    const [factor, units] = offset!({ layerIndex: 5 });
+    expect(factor).toBe(0);
+    // deck.gl's default is `-layerIndex * 100`, a few hundred units, which is not
+    // enough to clear the sag. Anything in that range leaves the patches.
+    expect(units).toBeLessThan(-1000);
+
+    // And it must beat the land's own bias by a wide margin. Every deck.gl layer
+    // carries the default, so the invariant is the *gap*, not the presence.
+    const land = layers.find((layer) => layer.id === 'world-land');
+    const landOffset = (
+      land?.props as unknown as {
+        getPolygonOffset: (params: { layerIndex: number }) => [number, number];
+      }
+    ).getPolygonOffset({ layerIndex: 1 });
+    expect(units).toBeLessThan(landOffset[1] - 1000);
+  });
+
   it('rebuilds a world-sized bitmap when the viewport that draws it changes', () => {
     /*
      * The projection-switch black globe.
