@@ -159,6 +159,33 @@ same trap as `ticks: 0, errors: 0` and as the used market's empty inventory.
 The sweep is idempotent: it claims each row with an `in_training` filter before touching a
 pool, so a re-run or a second worker racing a handover completes nothing twice.
 
+## The page
+
+`/crew`. Two of the acceptance criteria are visible there rather than in the server, and the
+page is built around them.
+
+**Fragmentation leads.** §9.2's complaint is that a mixed fleet _"quietly wrecks your
+utilisation"_, so the quiet is the bug: the cost of commonality is the first thing on the page,
+in numbers — _"Of 7 available crew, the largest family can call on 4 — 3 cannot fly it"_ —
+rather than something a player infers by adding two tables together. It also says, in as many
+words, that this is **not a penalty**, because a figure that reads as a fine invites "how do I
+avoid the fine?" when the answer is "fly one family".
+
+**Crew in training are shown, not netted off.** `On strength`, `In training` and `Available`
+are three columns. Subtracting the middle one would hide the entire point of a conversion
+taking a fortnight.
+
+**Nothing on the page is a person.** Every column is a count, a rank or a family, and
+`CrewPage.test.tsx` asserts exactly that list of headers plus the absence of any rendered
+identifier. The guard is on the _columns_ rather than on the prose — an earlier version grepped
+the page for the word "roster" and failed on the page's own copy, which correctly says a
+conversion costs fourteen days off the roster.
+
+Every figure is the server's. `available` arrives computed rather than subtracted in the
+browser, because the rule for what counts as available is the server's and duty and rest will
+make it more than "not in a classroom" — and `packages/web` may not import `@tailfin/sim` at
+all (§21).
+
 ## Not built yet
 
 Duty, rest and fatigue (§9.2 calls them the flagship crew mechanic), positioning and

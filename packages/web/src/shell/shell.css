@@ -4329,3 +4329,106 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Crew (M5-01, §9.2)
+
+   Follows the fleet page's vocabulary rather than inventing a second one: the
+   two are the same kind of screen — an operational inventory with controls
+   attached — and a player moving between them should not have to relearn what a
+   table or a hint looks like.
+   --------------------------------------------------------------------------- */
+
+.crew {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.crew__title {
+  font-size: var(--text-lg);
+  color: var(--text-primary);
+}
+
+.crew__heading {
+  font-size: var(--text-base);
+  color: var(--text-primary);
+}
+
+.crew__subheading {
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.crew__note {
+  max-width: 72ch;
+  color: var(--text-primary);
+}
+
+.crew__hint {
+  max-width: 72ch;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* The cost of a mixed fleet, said once and at the top. §9.2's complaint is that
+   fragmentation is *quiet*, so the panel that reports it is the loud thing on
+   the page rather than a figure at the bottom of a table. */
+.crew__fragmentation {
+  padding: var(--space-3);
+  border-left: 3px solid var(--accent);
+  background: var(--console-card-raised);
+}
+
+.crew__refusal {
+  padding: var(--space-3);
+  border-left: 3px solid var(--status-cancelled);
+  background: var(--console-card-raised);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.crew__base {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.crew__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.crew__table td,
+.crew__table th {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  vertical-align: top;
+}
+
+.crew__form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  align-items: flex-end;
+}
+
+.crew__form label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.crew__form h3,
+.crew__form .crew__hint {
+  flex-basis: 100%;
+}
