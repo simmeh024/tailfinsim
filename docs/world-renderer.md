@@ -395,6 +395,49 @@ Culling buys nothing here in any case. There is one quad per layer, the depth bu
 hides the far side, and the cost of drawing it is a few thousand fragments that fail the depth
 test. Both world-sized bitmaps now use `none`, and `layers.test.ts` asserts it.
 
+### The clock is the world's, and the terminator follows it
+
+The renderer shaded day and night by **wall-clock time** until now, which was wrong in a way
+that got worse the longer a world ran. A world starts at its own epoch — October 2024 for the
+flagship — and advances at its own `speedMultiplier`, so the terminator was being drawn for a
+date the world is not on, drifting a further day every real day at 2×.
+
+`GET /api/world/clock` is the fix and the feature at once. It answers with the shared
+`WorldClock` contract, which had been defined since M0 and never served:
+
+| field             | why                                                              |
+| ----------------- | ---------------------------------------------------------------- |
+| `inGameTime`      | what the world's calendar says now                               |
+| `serverTime`      | the server's _real_ time, so a browser can subtract its own skew |
+| `speedMultiplier` | so the client can run the clock between polls                    |
+| `worldId`         | which world answered                                             |
+
+The world is resolved from the session's airline, never taken as a parameter — the same
+`requireAirline` boundary the fleet and network APIs use, so the endpoint cannot be asked what
+time it is somewhere the player is not.
+
+**The browser interpolates rather than polling for every tick.** At 2× a five-second poll would
+jump ten in-game seconds at a time. `useWorldClock` syncs, then runs
+`inGameTime + speed × (realNow − serverTime)` locally, measuring the local part with
+`performance.now()` so an operating-system clock correction cannot make the world lurch or run
+backwards. It re-syncs every ten minutes — not for drift, which is irrelevant at this
+precision, but because an **admin speed change** re-anchors the world and would otherwise leave
+every open tab running the old multiplier for as long as it stayed open.
+
+The field is rebuilt on the **in-game minute**, not on every render. The hook re-renders once a
+second so the displayed time is not late, and a 512×256 field of trigonometry at that rate
+would be absurd; a game minute moves the terminator a quarter of a degree against a texel of
+seven tenths, so the bucket is invisible. At the flagship 2× that is a rebuild every thirty
+real seconds — what the wall-clock version already cost.
+
+A player who has not founded an airline has no world, so the endpoint answers 409 and the chip
+does not render. Shading falls back to wall-clock time there: it is the only time available,
+and a globe with no terminator is worse than one that is an approximation.
+
+A failed sync is swallowed. The clock is decoration over a map that renders without it, and an
+unhandled rejection from a timer is a page-level error for something nobody needed — which is
+how it first showed up in the suite.
+
 ### The day/night wash needs a depth bias, because the land does not lie on the sphere
 
 Zoomed in, land showed **straight-edged facets of undimmed colour** following no geography —
