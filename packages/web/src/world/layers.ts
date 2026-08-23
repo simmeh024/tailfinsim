@@ -178,7 +178,23 @@ export function createWorldLayers({
       id: 'world-ocean',
       bounds,
       image: solidTexture(palette.ocean),
-      parameters: { cullMode: 'back' },
+      // `cullMode: 'none'`, and this is the second half of the black globe.
+      //
+      // A world-sized quad wraps the entire sphere, so its near and far halves
+      // have *opposite* apparent winding once projected. Back-face culling
+      // therefore discards one of them — and when it discards the near one, what
+      // is left is the far half, sitting behind `GlobeView`'s own opaque backdrop
+      // and rejected by the depth test. Nothing reaches the screen and the planet
+      // is black.
+      //
+      // Culling a flat overlay buys nothing anyway: there is one quad, the depth
+      // buffer already hides the far side, and the graticule and route layers have
+      // always used `none` — which is exactly why those two kept rendering on the
+      // globe while the sea and the shading did not.
+      //
+      // No `_imageCoordinateSystem`: the fill is one colour, so it samples the same
+      // whatever the texture coordinates mean.
+      parameters: { cullMode: 'none' },
     }),
     new GeoJsonLayer({
       id: 'world-land',
@@ -217,7 +233,20 @@ export function createWorldLayers({
           addressModeU: 'clamp-to-edge',
           addressModeV: 'clamp-to-edge',
         },
-        parameters: { cullMode: 'back' },
+        /*
+         * The field is sampled on an equirectangular grid — equal degrees of
+         * latitude per row — and `BitmapLayer`'s *default* is to interpolate texture
+         * coordinates in whatever the viewport uses. On the globe that is already
+         * lng/lat, but on the flat map it is **Web Mercator**, which stretches
+         * towards the poles. Left on the default, the night boundary sat at the
+         * wrong latitude on the flat map, increasingly so away from the equator.
+         *
+         * Saying `lnglat` tells deck.gl what the image actually is, and its shader
+         * converts on the way in.
+         */
+        _imageCoordinateSystem: 'lnglat',
+        // See the ocean layer: a full-sphere quad must not be back-face culled.
+        parameters: { cullMode: 'none' },
       }),
     visibility.routes &&
       new ArcLayer<WorldRoute>({

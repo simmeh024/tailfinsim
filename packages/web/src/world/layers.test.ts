@@ -132,4 +132,53 @@ describe('projection-independent world layers', () => {
     // mesh every time the palette or the terminator updates.
     expect(boundsFor('flat')[0]).toBe(flat[0]);
   });
+
+  /**
+   * The other half of the black globe, and the one I could not see.
+   *
+   * A world-sized quad wraps the whole sphere, so its near and far halves have
+   * opposite apparent winding once projected. Back-face culling discards one of
+   * them; when that is the near one, all that is left sits behind `GlobeView`'s
+   * opaque backdrop and is rejected by the depth test.
+   *
+   * The layers that kept rendering on the globe — the graticule and the routes —
+   * are exactly the ones that already used `none`.
+   */
+  it('never back-face culls a layer that covers the whole sphere', () => {
+    const layers = createWorldLayers({
+      palette,
+      quality: 'full',
+      routes: [antimeridianRoute],
+      darkness: DARKNESS,
+      projection: 'globe',
+      visibility: { graticule: true, routes: true, terminator: true },
+    }).filter((layer): layer is Layer => layer !== false);
+
+    for (const id of ['world-ocean', 'world-terminator']) {
+      const layer = layers.find((candidate) => candidate.id === id);
+      const parameters = (layer?.props as unknown as { parameters?: { cullMode?: string } })
+        .parameters;
+      expect(parameters?.cullMode, id).toBe('none');
+    }
+  });
+
+  it('tells deck.gl the night field is equirectangular', () => {
+    const layers = createWorldLayers({
+      palette,
+      quality: 'full',
+      routes: [],
+      darkness: DARKNESS,
+      projection: 'flat',
+      visibility: { graticule: false, routes: false, terminator: true },
+    }).filter((layer): layer is Layer => layer !== false);
+
+    // The field is sampled at equal degrees of latitude per row. `BitmapLayer`
+    // otherwise interpolates texture coordinates in the viewport's own system,
+    // which on the flat map is Web Mercator — so the night boundary drifted from
+    // its true latitude, further the closer to the poles.
+    const terminator = layers.find((layer) => layer.id === 'world-terminator');
+    expect(
+      (terminator?.props as unknown as { _imageCoordinateSystem?: string })._imageCoordinateSystem,
+    ).toBe('lnglat');
+  });
 });
