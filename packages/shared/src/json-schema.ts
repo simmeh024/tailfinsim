@@ -34,6 +34,7 @@ import {
 } from './airline';
 import { ApiError, HealthResponse } from './api';
 import { LogoutResponse, MeResponse, RevokeSessionsResponse } from './auth';
+import { CrewResponse } from './crew';
 import { AirframeDetailResponse, FleetAirframesResponse } from './fleet';
 import { MaintenanceResponse, BookCheckResponse } from './maintenance';
 import { AdminNpcResponse } from './npc';
@@ -129,3 +130,4 @@ export const bookCheckResponseJsonSchema = z.toJSONSchema(BookCheckResponse);
 
 export const adminRequeueEventsResponseJsonSchema = z.toJSONSchema(AdminRequeueEventsResponse);
 export const worldClockJsonSchema = z.toJSONSchema(WorldClock);
+export const crewResponseJsonSchema = z.toJSONSchema(CrewResponse);

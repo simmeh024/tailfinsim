@@ -18,6 +18,7 @@ import { type AirlineIdentityModerator } from './airline/moderation';
 import { registerAirlineRoutes } from './airline/routes';
 import { type GoogleAuthOperations, registerAuthRoutes } from './auth/routes';
 import { readBuildInfo } from './build-info';
+import { registerCrewRoutes } from './crew/routes';
 import { type DatabaseHandle } from './db/client';
 import { readDeployInfo } from './deploy-info';
 import { type ServerEnv } from './env';
@@ -140,6 +141,8 @@ export function buildApp({
   // The world's own clock. Behind the same airline boundary, because which world
   // a player is in is what decides whose clock they get.
   registerWorldRoutes(app, { db });
+  // Crew, behind the same airline boundary (M5-01).
+  registerCrewRoutes(app, { db });
 
   const startedAt = Date.now();
 
