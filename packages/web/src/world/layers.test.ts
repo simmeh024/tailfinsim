@@ -191,6 +191,54 @@ describe('projection-independent world layers', () => {
     }
   });
 
+  it('rebuilds a world-sized bitmap when the viewport that draws it changes', () => {
+    /*
+     * The projection-switch black globe.
+     *
+     * `BitmapLayer` builds its mesh only when `bounds` changes by reference, and it
+     * reads the resolution off whatever viewport is in context at that moment.
+     * deck.gl updates layers *before* it activates the new viewport, so switching
+     * flat to globe built the flat map's two-triangle quad and kept it — a chord
+     * straight through the sphere, occluded, and the ocean and day/night both black.
+     * Measured on the deployed build: viewport `resolution: 2`, correct bounds, and
+     * a mesh of six indices.
+     */
+    const layers = createWorldLayers({
+      palette,
+      quality: 'full',
+      routes: [],
+      darkness: DARKNESS,
+      land: COARSE_LAND,
+      projection: 'globe',
+      visibility: { graticule: false, routes: false, terminator: true },
+    }).filter((layer): layer is Layer => layer !== false);
+
+    const worldSized = layers.filter((layer) =>
+      ['world-ocean', 'world-terminator'].includes(layer.id),
+    );
+    expect(worldSized).toHaveLength(2);
+
+    for (const layer of worldSized) {
+      // Both world-sized bitmaps, and only those, need the viewport-aware subclass.
+      expect((layer.constructor as unknown as { layerName: string }).layerName).toBe(
+        'WorldBitmapLayer',
+      );
+
+      // A stock `BitmapLayer` ignores a viewport-only change; this one must not,
+      // or there is no update on which it could notice the mesh is wrong.
+      const viewportOnly = {
+        changeFlags: { propsOrDataChanged: false, viewportChanged: true },
+      } as never;
+      expect(layer.shouldUpdateState(viewportOnly)).toBe(true);
+
+      // ...and an update with nothing changed at all stays cheap.
+      const nothing = {
+        changeFlags: { propsOrDataChanged: false, viewportChanged: false },
+      } as never;
+      expect(layer.shouldUpdateState(nothing)).toBe(false);
+    }
+  });
+
   it('bounds each projection where its own coordinate system stops', () => {
     const boundsOf = (projection: 'flat' | 'globe') => {
       const layers = createWorldLayers({

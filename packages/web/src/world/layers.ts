@@ -6,7 +6,7 @@ import type { LandGeometry } from './land';
 import type { WorldPalette } from './palette';
 import type { WorldProjection } from './projection';
 import type { DarknessField, LngLat } from './terminator';
-import type { Layer } from '@deck.gl/core';
+import type { Layer, UpdateParameters } from '@deck.gl/core';
 
 export type RendererQuality = 'full' | 'reduced';
 
@@ -152,6 +152,59 @@ const DATA_TEXTURE_SAMPLER = {
 } as const;
 
 /**
+ * A `BitmapLayer` that rebuilds its mesh when the viewport that draws it changes.
+ *
+ * **This is what keeps the globe from going black after a projection switch.**
+ *
+ * `BitmapLayer.updateState` builds its mesh only when `props.bounds` changes by
+ * reference, and `createMesh(bounds, viewport.resolution)` reads the resolution
+ * from whatever viewport is in context *at that moment*. On a projection switch
+ * the view and the layers change in the same React render, and deck.gl updates
+ * layers **before** it activates the new viewport — so the mesh for the globe was
+ * being built against the flat map's viewport, which has no `resolution` at all.
+ *
+ * The result is the two-triangle quad a flat map wants. On a sphere those two
+ * triangles are a chord straight through the planet, occluded by `GlobeView`'s own
+ * backdrop, and the ocean and the day/night shading both render black. Measured on
+ * the deployed build after switching flat to globe: viewport `resolution: 2`,
+ * correct `bounds`, and a mesh of **six indices**.
+ *
+ * A fresh page load never hit it, because there the globe viewport is in context
+ * from the first update — which is exactly why it survived being looked at.
+ *
+ * Giving each projection its own `bounds` instance is still necessary and is not
+ * sufficient: it makes the base class rebuild, but on the frame where the viewport
+ * is still the old one. So the resolution the mesh was actually built at is
+ * recorded, and any update that finds the viewport disagreeing forces the base
+ * class down the same rebuilding branch by presenting it with a changed `bounds`.
+ * `shouldUpdateState` opts in to viewport changes, which a `BitmapLayer` otherwise
+ * ignores.
+ */
+class WorldBitmapLayer extends BitmapLayer {
+  static override layerName = 'WorldBitmapLayer';
+
+  /** `undefined` on `MapView`, the degrees-per-vertex figure on `_GlobeView`. */
+  private get meshResolution(): number {
+    return (this.context.viewport as { resolution?: number }).resolution ?? 0;
+  }
+
+  override shouldUpdateState(params: UpdateParameters<this>): boolean {
+    return super.shouldUpdateState(params) || params.changeFlags.viewportChanged;
+  }
+
+  override updateState(params: UpdateParameters<this>): void {
+    const resolution = this.meshResolution;
+    if (resolution !== (this.state as { meshResolution?: number }).meshResolution) {
+      // The base class rebuilds when `props.bounds !== oldProps.bounds`, so this
+      // is the public surface for saying "the mesh you have is for another view".
+      (params as { oldProps: unknown }).oldProps = { ...params.oldProps, bounds: undefined };
+      this.setState({ meshResolution: resolution });
+    }
+    super.updateState(params);
+  }
+}
+
+/**
  * A solid fill covering the whole world, as a texture.
  *
  * The ocean used to be a `SolidPolygonLayer` holding one six-vertex rectangle in
@@ -239,7 +292,7 @@ export function createWorldLayers({
 }: CreateWorldLayersOptions): (Layer | false)[] {
   const bounds = worldBounds(projection, quality);
   return [
-    new BitmapLayer({
+    new WorldBitmapLayer({
       id: 'world-ocean',
       bounds,
       image: solidTexture(palette.ocean),
@@ -283,7 +336,7 @@ export function createWorldLayers({
         parameters: { cullMode: 'none' },
       }),
     visibility.terminator &&
-      new BitmapLayer({
+      new WorldBitmapLayer({
         id: 'world-terminator',
         // The whole sphere, once. `BitmapLayer` maps the image's top edge to the
         // northern bound, which is why `createDarknessField` puts +90° in row 0.
