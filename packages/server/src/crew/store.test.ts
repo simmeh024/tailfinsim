@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { airline, cashMovement, crewPool } from '../db/schema';
+import { airline, airport, cashMovement, crewPool } from '../db/schema';
 import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixture,
@@ -37,6 +37,8 @@ const describeDb = url ? describe : describe.skip;
 describeDb('crew bases, pools and conversions', () => {
   let db: DatabaseHandle;
   let fixtures: FoundedAirlineFixtureHarness;
+  const madeAirports: string[] = [];
+  let sequence = 0;
 
   beforeAll(() => {
     db = createDatabase();
@@ -44,26 +46,62 @@ describeDb('crew bases, pools and conversions', () => {
   });
 
   afterEach(async () => {
+    // Fixtures first: `crew_base` cascades from the airline, and the airport it
+    // points at cannot go while a base still references it.
     await fixtures.cleanup();
+    for (const id of madeAirports.splice(0)) await db.db.delete(airport).where(eq(airport.id, id));
   });
 
   afterAll(async () => {
     await db.close();
   });
 
-  /** Founded, never inserted — CLAUDE.md's rule, and AIR-11 removed the zero-cash state. */
-  async function foundedAirline(): Promise<FoundedAirlineFixture> {
-    return fixtures.create();
+  /**
+   * A hub that actually has an ICAO code.
+   *
+   * The default fixture airport deliberately has none — `found.test.ts` notes
+   * that OurAirports' `ident` is the universal key and most records carry no
+   * official ICAO. `crew_base.airport_icao` follows the eleven other operational
+   * references in this schema and points at `airport.icao_code`, so a crew base
+   * needs an airport that has one. CI found this; the first version of these
+   * tests assumed the fixture hub would do.
+   */
+  async function makeIcaoHub(): Promise<{ ident: string; icao: string }> {
+    const n = sequence++;
+    const ident = `TFC-${String(n)}`;
+    // 'TC' is unassigned as a national prefix here, so this cannot collide with
+    // an imported record.
+    const icao = `TC${String(n).padStart(2, '0')}`;
+    const rows = await db.db
+      .insert(airport)
+      .values({
+        sourceId: -(8_100_000 + n),
+        ident,
+        icaoCode: icao,
+        name: `Crew Test Hub ${ident}`,
+        isoCountry: 'NL',
+        kind: 'medium_airport',
+        latitude: 52 + n / 10_000,
+        longitude: 4 + n / 10_000,
+        scheduledService: true,
+        hasRunwayData: false,
+        tier: 'medium',
+        slotLevel: 2,
+      })
+      .returning({ id: airport.id });
+    const id = rows[0]?.id;
+    if (id === undefined) throw new Error('Could not create a crew test hub');
+    madeAirports.push(id);
+    return { ident, icao };
   }
 
-  /**
-   * The hub's ICAO code, which the column allows to be null.
-   *
-   * A founder hub without one cannot exist — `foundAirline` picks the airport by
-   * ICAO — so this is an assertion about the fixture rather than a case to
-   * handle, and it should fail loudly here rather than as a confusing insert
-   * error three lines later.
-   */
+  /** Founded, never inserted — CLAUDE.md's rule, and AIR-11 removed the zero-cash state. */
+  async function foundedAirline(): Promise<FoundedAirlineFixture> {
+    const hub = await makeIcaoHub();
+    return fixtures.create({ hubIdent: hub.ident });
+  }
+
+  /** The hub's ICAO code. `foundedAirline` guarantees there is one. */
   function hubIcao(fixture: FoundedAirlineFixture): string {
     const icao = fixture.hubAirport.icaoCode;
     if (icao === null) throw new Error('The founded fixture hub has no ICAO code');
