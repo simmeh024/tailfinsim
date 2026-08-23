@@ -56,11 +56,25 @@ describeDb('crew bases, pools and conversions', () => {
     return fixtures.create();
   }
 
+  /**
+   * The hub's ICAO code, which the column allows to be null.
+   *
+   * A founder hub without one cannot exist — `foundAirline` picks the airport by
+   * ICAO — so this is an assertion about the fixture rather than a case to
+   * handle, and it should fail loudly here rather than as a confusing insert
+   * error three lines later.
+   */
+  function hubIcao(fixture: FoundedAirlineFixture): string {
+    const icao = fixture.hubAirport.icaoCode;
+    if (icao === null) throw new Error('The founded fixture hub has no ICAO code');
+    return icao;
+  }
+
   async function baseFor(fixture: FoundedAirlineFixture): Promise<string> {
     const opened = await openCrewBase(db.db, {
       worldId: fixture.world.id,
       airlineId: fixture.airline.id,
-      airportIcao: fixture.hubAirport.icaoCode,
+      airportIcao: hubIcao(fixture),
     });
     if (!opened.ok) throw new Error(`Could not open a base: ${opened.refusal}`);
     return opened.value.crewBaseId;
@@ -100,7 +114,7 @@ describeDb('crew bases, pools and conversions', () => {
     const again = await openCrewBase(db.db, {
       worldId: fixture.world.id,
       airlineId: fixture.airline.id,
-      airportIcao: fixture.hubAirport.icaoCode,
+      airportIcao: hubIcao(fixture),
     });
     expect(again).toEqual({ ok: false, refusal: 'base_exists' });
   });
