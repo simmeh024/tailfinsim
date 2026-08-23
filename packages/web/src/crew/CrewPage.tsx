@@ -340,6 +340,35 @@ export function CrewPage(): ReactNode {
         <p className="crew__subtitle">Pools, training and bases across your network.</p>
       </header>
 
+      <div className="crew-stats">
+        <Stat
+          label="Total crew"
+          value={String(onStrength)}
+          detail={
+            openBases.length === 1 ? 'Across 1 base' : `Across ${String(openBases.length)} bases`
+          }
+        />
+        <Stat
+          label="Available"
+          value={String(available)}
+          detail={
+            onStrength === 0
+              ? 'Nobody hired yet'
+              : `${String(Math.round((available / onStrength) * 100))}% of crew`
+          }
+        />
+        <Stat
+          label="In training"
+          value={String(inTraining)}
+          detail={inTraining === 0 ? 'No conversions running' : 'Back when their course ends'}
+        />
+        <Stat
+          label="Open bases"
+          value={String(openBases.length)}
+          detail="Crew are hired at a base"
+        />
+      </div>
+
       {/*
        * The banner follows the rank picker below it. It is the one place the page
        * shows a person, and it can be: it illustrates the rank being hired, not a
@@ -371,35 +400,6 @@ export function CrewPage(): ReactNode {
         width={880}
         height={217}
       />
-
-      <div className="crew-stats">
-        <Stat
-          label="Total crew"
-          value={String(onStrength)}
-          detail={
-            openBases.length === 1 ? 'Across 1 base' : `Across ${String(openBases.length)} bases`
-          }
-        />
-        <Stat
-          label="Available"
-          value={String(available)}
-          detail={
-            onStrength === 0
-              ? 'Nobody hired yet'
-              : `${String(Math.round((available / onStrength) * 100))}% of crew`
-          }
-        />
-        <Stat
-          label="In training"
-          value={String(inTraining)}
-          detail={inTraining === 0 ? 'No conversions running' : 'Back when their course ends'}
-        />
-        <Stat
-          label="Open bases"
-          value={String(openBases.length)}
-          detail="Crew are hired at a base"
-        />
-      </div>
 
       {refusal !== null && (
         <p className="crew__refusal" role="alert">
@@ -494,56 +494,55 @@ export function CrewPage(): ReactNode {
               run(hireCrew({ crewBaseId: selectedBase, family, rank, heads }));
             }}
           >
-            <label>
-              Base
-              <select
-                value={selectedBase ?? ''}
-                onChange={(event) => setBaseId(event.target.value)}
-              >
-                {openBases.map((base) => (
-                  <option key={base.id} value={base.id}>
-                    {base.airportIcao}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Family
-              {/* A picker, not a text box. The free-text version created a pool
+            <div className="crew__fields">
+              <label>
+                Base
+                <select
+                  value={selectedBase ?? ''}
+                  onChange={(event) => setBaseId(event.target.value)}
+                >
+                  {openBases.map((base) => (
+                    <option key={base.id} value={base.id}>
+                      {base.airportIcao}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Family
+                {/* A picker, not a text box. The free-text version created a pool
                   rated on a family called `test`, which no aeroplane matches and
                   no amount of money can undo. */}
-              <select value={family} onChange={(event) => setFamily(event.target.value)} required>
-                <option value="">Choose…</option>
-                {familyOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Rank
-              <select value={rank} onChange={(event) => setRank(event.target.value as CrewRank)}>
-                {Object.entries(RANK_LABEL).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Heads
-              <input
-                type="number"
-                min={1}
-                max={crew.costs.weeklyHiringCapacity}
-                value={heads}
-                onChange={(event) => setHeads(Number(event.target.value))}
-              />
-            </label>
-            <button type="submit" disabled={busy || openBases.length === 0}>
-              Hire crew
-            </button>
+                <select value={family} onChange={(event) => setFamily(event.target.value)} required>
+                  <option value="">Choose…</option>
+                  {familyOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Rank
+                <select value={rank} onChange={(event) => setRank(event.target.value as CrewRank)}>
+                  {Object.entries(RANK_LABEL).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Heads
+                <input
+                  type="number"
+                  min={1}
+                  max={crew.costs.weeklyHiringCapacity}
+                  value={heads}
+                  onChange={(event) => setHeads(Number(event.target.value))}
+                />
+              </label>
+            </div>
             <p className="crew__hint">
               {formatCash(
                 FLIGHT_DECK_RANKS.includes(rank)
@@ -554,6 +553,9 @@ export function CrewPage(): ReactNode {
               instantly; growing one takes time, and time is the constraint money cannot route
               around.
             </p>
+            <button type="submit" disabled={busy || openBases.length === 0}>
+              Hire crew
+            </button>
           </form>
         </section>
 
@@ -578,29 +580,31 @@ export function CrewPage(): ReactNode {
               );
             }}
           >
-            <label>
-              To family
-              <select
-                value={toFamily}
-                onChange={(event) => setToFamily(event.target.value)}
-                required
-              >
-                <option value="">Choose…</option>
-                {familyOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button type="submit" disabled={busy || openBases.length === 0}>
-              Convert rating
-            </button>
+            <div className="crew__fields">
+              <label>
+                To family
+                <select
+                  value={toFamily}
+                  onChange={(event) => setToFamily(event.target.value)}
+                  required
+                >
+                  <option value="">Choose…</option>
+                  {familyOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
             <p className="crew__hint">
               Uses the base, family, rank and heads above.{' '}
               {formatCash(crew.costs.conversionPerHeadMinor)} each ·{' '}
               {crew.costs.conversionDurationDays} days off the roster, which is the part that hurts.
             </p>
+            <button type="submit" disabled={busy || openBases.length === 0}>
+              Convert rating
+            </button>
           </form>
         </section>
 
@@ -616,23 +620,25 @@ export function CrewPage(): ReactNode {
               run(openCrewBase({ airportIcao: icao.trim().toUpperCase() }));
             }}
           >
-            <label>
-              Airport
-              <input
-                value={icao}
-                onChange={(event) => setIcao(event.target.value)}
-                placeholder="EHAM"
-                maxLength={4}
-                required
-              />
-            </label>
-            <button type="submit" disabled={busy}>
-              Open base
-            </button>
+            <div className="crew__fields">
+              <label>
+                Airport
+                <input
+                  value={icao}
+                  onChange={(event) => setIcao(event.target.value)}
+                  placeholder="EHAM"
+                  maxLength={4}
+                  required
+                />
+              </label>
+            </div>
             <p className="crew__hint">
               {formatCash(crew.costs.baseOpeningMinor)} to open, then a monthly overhead — which is
               what makes a base per destination the wrong shape.
             </p>
+            <button type="submit" disabled={busy}>
+              Open base
+            </button>
           </form>
         </section>
       </div>

@@ -217,9 +217,26 @@ world's catalogue families travel with the crew payload.
 **Cash carries no currency symbol.** The currency is unnamed until M8-02 and every other
 surface shows it bare; a `$` here would be inventing the answer to an open question.
 
+### The three action cards
+
+Fields, then what it costs, then the button — in that order in the DOM, which is both the
+better reading order and the only arrangement that lines the three buttons up. The cards hold
+different numbers of fields, so the button is pinned to the foot with `margin-top: auto` and
+nothing sits below it to push it back.
+
+The form is a **flex column** for that reason. A grid does not work: an auto margin on a grid
+item resolves inside its own row rather than against the whole form, and the buttons stayed at
+three different heights.
+
+Controls follow `.founding__field` — a small-caps eyebrow label over a bordered control, and an
+accent-filled primary button — rather than a second set of form styles invented for this page.
+The controls reset `font`, `letter-spacing` and `text-transform`, because otherwise they
+inherit the label's eyebrow styling and render their values in small caps.
+
 ### The rank banner
 
-One image per rank, and it follows the rank picker. It is the only place the page shows a
+One image per rank, and it follows the rank picker. It sits **below** the four figures: the
+numbers are what somebody came for, and a picture above them pushes the answer under the fold. It is the only place the page shows a
 person, and that is allowed: it illustrates the rank being hired, not a member of staff who
 exists.
 
