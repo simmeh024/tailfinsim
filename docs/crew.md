@@ -159,6 +159,29 @@ same trap as `ticks: 0, errors: 0` and as the used market's empty inventory.
 The sweep is idempotent: it claims each row with an `in_training` filter before touching a
 pool, so a re-run or a second worker racing a handover completes nothing twice.
 
+## Fleet cover: what the crew are measured against
+
+The page needs a denominator, and M5-01 has exactly one honest candidate: for every airframe
+the airline owns, the legal complement for its seat count on a **short sector**, summed by
+family and rank.
+
+It is a **floor**, and every surface that shows it says so. A single aeroplane flying a day of
+rotations needs several crews; working out how many is duty and rest, which §9.2 defers. A
+number that quietly pretended to be a rostering answer would be worse than no number at all.
+
+Two details:
+
+- **A short sector deliberately.** Relief crew depend on block time, so a long one would inflate
+  the floor with a requirement most flights do not have.
+- **Airline-wide, not per base.** There is no positioning model, so demand cannot be attributed
+  to a base without inventing §9.2's hotelling and deadheading.
+
+`metRequired` is `sum(min(available, required))` **per row**, never total against total. Crew
+are not fungible: a surplus of A320neo cabin crew does nothing for a shortage of 737 MAX
+captains, and dividing the totals let the readiness ring read _100% covered_ directly above the
+words "not enough crew to launch your whole fleet". That was seen in a sandbox, not caught by a
+test, and there is now a test.
+
 ## The page
 
 `/crew`. Two of the acceptance criteria are visible there rather than in the server, and the
@@ -185,6 +208,31 @@ Every figure is the server's. `available` arrives computed rather than subtracte
 browser, because the rule for what counts as available is the server's and duty and rest will
 make it more than "not in a classroom" — and `packages/web` may not import `@tailfin/sim` at
 all (§21).
+
+**Families are a picker, never free text.** The first version had a text box, and a pool rated
+on a family literally called `test` is still sitting in the dev database because of it. A
+rating that matches no aeroplane can never be used and no amount of money can undo it, so the
+world's catalogue families travel with the crew payload.
+
+**Cash carries no currency symbol.** The currency is unnamed until M8-02 and every other
+surface shows it bare; a `$` here would be inventing the answer to an open question.
+
+### The rank banner
+
+One image per rank, and it follows the rank picker. It is the only place the page shows a
+person, and that is allowed: it illustrates the rank being hired, not a member of staff who
+exists.
+
+The artwork carries its own headline and body copy **baked into the pixels**, which decides two
+things. It is never cropped — `object-fit: cover` ate the first letter of every line and
+rendered _"ommand the aircraft"_ — so the height follows each image's own aspect ratio and moves
+a little between ranks. And the `alt` carries the rank and its one-line description, because
+text inside a picture is text a screen reader cannot reach.
+
+The nine supplied PNGs were 1.82 MB together; re-encoded to webp at two widths they are
+**229 KB**, matching the fleet assets' convention. They are separate emitted files, so a visit
+downloads one banner rather than nine. `crewBanner` is a `Record<CrewRank, …>`, so adding a rank
+without artwork is a type error rather than a broken image nobody notices.
 
 ## Not built yet
 

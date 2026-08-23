@@ -2,18 +2,19 @@ import { randomUUID } from 'node:crypto';
 
 import { and, eq, inArray, lte, sql } from 'drizzle-orm';
 
-import type { CrewBalance, CrewResponse } from '@tailfin/shared';
+import type { CrewBalance, CrewDemand, CrewResponse } from '@tailfin/shared';
 import {
   availableHeads,
   checkComplement,
   fragmentation,
   gameTime,
+  requiredComplement,
   type CrewPool,
   type WorldClock,
 } from '@tailfin/sim';
 
 import { moveAirlineCash } from '../airline/cash';
-import { crewBase, crewConversion, crewPool, world } from '../db/schema';
+import { aircraftType, airframe, crewBase, crewConversion, crewPool, world } from '../db/schema';
 import { loadWorldEconomyConfig } from '../economy/loader';
 
 import type { Database } from '../db/client';
@@ -81,6 +82,18 @@ async function worldClock(db: Database, worldId: string): Promise<WorldClock> {
  * found that; the shared working tree had another session's non-compiling work
  * in it, so this branch's first real run was on the runner.
  */
+/** The catalogue version this world is pinned to (§22.5). */
+async function catalogueVersionOf(db: Database, worldId: string): Promise<string> {
+  const rows = await db
+    .select({ version: world.aircraftCatalogueVersion })
+    .from(world)
+    .where(eq(world.id, worldId))
+    .limit(1);
+  const version = rows[0]?.version;
+  if (version === undefined) throw new Error(`No world ${worldId}`);
+  return version;
+}
+
 async function crewBalance(db: Database, worldId: string): Promise<CrewBalance> {
   return (await loadWorldEconomyConfig(db, worldId)).crew;
 }
@@ -156,6 +169,80 @@ export async function readCrewBases(
 }
 
 /**
+ * What the airline's fleet needs, by family and rank.
+ *
+ * **A floor, not a roster.** For every airframe the airline owns, the legal
+ * complement for its seat count on a short sector, summed. One aeroplane flying
+ * a day of rotations needs several crews; working out how many is duty and rest,
+ * which §9.2 defers and M5-01 does not build. Everything that displays this says
+ * so.
+ *
+ * A short sector deliberately: relief crew depend on block time, and using a
+ * long one would inflate the floor with a requirement most flights do not have.
+ * The number is "enough to launch what you own", and that is the smallest honest
+ * thing it can be.
+ */
+async function crewDemand(
+  db: Database,
+  worldId: string,
+  airlineId: string,
+  pools: readonly CrewPool[],
+  balance: CrewBalance,
+): Promise<CrewDemand> {
+  const frames = await db
+    .select({ family: aircraftType.family, effectiveSpec: airframe.effectiveSpec })
+    .from(airframe)
+    .innerJoin(aircraftType, eq(aircraftType.designation, airframe.typeDesignation))
+    .where(and(eq(airframe.worldId, worldId), eq(airframe.airlineId, airlineId)));
+
+  const required = new Map<string, number>();
+  const key = (family: string, rank: string) => `${family}\u0000${rank}`;
+
+  for (const frame of frames) {
+    const spec = JSON.parse(frame.effectiveSpec) as { seatsTwoClass?: number };
+    // A short sector: no relief crew, which is the smallest honest requirement.
+    const complement = requiredComplement(
+      { seats: spec.seatsTwoClass ?? 0, blockMinutes: 0 },
+      balance.regulation,
+    );
+    for (const slot of [...complement.flightDeck, ...complement.cabin]) {
+      const at = key(frame.family, slot.rank);
+      required.set(at, (required.get(at) ?? 0) + slot.count);
+    }
+  }
+
+  const available = new Map<string, number>();
+  for (const pool of pools) {
+    const at = key(pool.family, pool.rank);
+    available.set(at, (available.get(at) ?? 0) + availableHeads(pool));
+  }
+
+  const rows = [...new Set([...required.keys(), ...available.keys()])]
+    .map((at) => {
+      const [family = '', rank = ''] = at.split('\u0000');
+      const need = required.get(at) ?? 0;
+      const have = available.get(at) ?? 0;
+      return { family, rank, required: need, available: have, delta: have - need };
+    })
+    // Only ranks the fleet actually asks for, or that the airline actually holds.
+    .filter((row) => row.required > 0 || row.available > 0)
+    .sort((a, b) => a.family.localeCompare(b.family) || a.rank.localeCompare(b.rank));
+
+  const fleetFamilies = new Set(frames.map((frame) => frame.family));
+  const crewedFamilies = new Set(
+    pools.filter((pool) => availableHeads(pool) > 0).map((p) => p.family),
+  );
+
+  return {
+    rows: rows as CrewDemand['rows'],
+    totalRequired: [...required.values()].reduce((n, value) => n + value, 0),
+    metRequired: rows.reduce((n, row) => n + Math.min(row.available, row.required), 0),
+    covered: rows.every((row) => row.delta >= 0),
+    uncoveredFamilies: [...fleetFamilies].filter((family) => !crewedFamilies.has(family)).sort(),
+  };
+}
+
+/**
  * Everything the Crew page needs, in one read.
  *
  * The costs travel with the state rather than sitting in a second endpoint,
@@ -198,6 +285,20 @@ export async function readCrewState(
           .orderBy(crewConversion.completesAt);
 
   const openPools = bases.filter((base) => base.status === 'open').flatMap((base) => base.pools);
+  const demand = await crewDemand(db, worldId, airlineId, openPools, balance);
+
+  /*
+   * The families this world flies, from its pinned catalogue.
+   *
+   * Sent so the page can offer a picker instead of a text box. The free-text
+   * version let a pool be created rated on a family called `test`, which no
+   * aeroplane will ever match and no amount of money can undo.
+   */
+  const catalogue = await db
+    .selectDistinct({ family: aircraftType.family })
+    .from(aircraftType)
+    .where(eq(aircraftType.catalogueVersion, await catalogueVersionOf(db, worldId)))
+    .orderBy(aircraftType.family);
 
   return {
     bases: bases.map((base) => ({
@@ -228,6 +329,8 @@ export async function readCrewState(
           completesAt: conversion.completesAt.toISOString(),
         })),
     })),
+    demand,
+    families: catalogue.map((row) => row.family),
     fragmentation: (() => {
       // `@tailfin/sim` returns readonly arrays; the wire type is a plain one.
       const report = fragmentation(openPools);

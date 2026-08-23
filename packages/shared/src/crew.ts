@@ -74,9 +74,74 @@ export const CrewFragmentation = z.object({
 });
 export type CrewFragmentation = z.infer<typeof CrewFragmentation>;
 
+/**
+ * What the fleet needs, against what the airline holds.
+ *
+ * ## "Required" means one departure per aeroplane, and nothing more
+ *
+ * The honest demand signal available in M5-01 is: for every airframe the
+ * airline owns, the legal complement for its seat count on a short sector,
+ * summed by family and rank. It is a **floor** — a single aeroplane flying a
+ * day of rotations needs several crews, and working out how many is duty and
+ * rest, which §9.2 defers and this milestone does not build.
+ *
+ * Named and labelled as a floor everywhere it is shown, so it cannot be
+ * mistaken for a rostering answer. A number that quietly pretended to be one
+ * would be worse than no number.
+ *
+ * ## Airline-wide, because crew are not positioned yet
+ *
+ * There is no positioning model, so demand cannot be attributed to a base. The
+ * figures are for the whole airline; an interface that split them per base would
+ * be inventing §9.2's hotelling and deadheading.
+ */
+export const CrewDemandRow = z.object({
+  family: z.string().min(1),
+  rank: CrewRank,
+  /** Heads needed to launch every airframe of this family once. */
+  required: z.number().int().nonnegative(),
+  /** Heads the airline can actually roster, across every open base. */
+  available: z.number().int().nonnegative(),
+  /** `available - required`. Negative is a shortage. */
+  delta: z.number().int(),
+});
+export type CrewDemandRow = z.infer<typeof CrewDemandRow>;
+
+export const CrewDemand = z.object({
+  rows: z.array(CrewDemandRow),
+  totalRequired: z.number().int().nonnegative(),
+  /**
+   * Of `totalRequired`, how much is actually fieldable.
+   *
+   * `sum(min(available, required))` per row, **not** total available against
+   * total required. Crew are not fungible: a surplus of A320neo cabin crew does
+   * nothing for a shortage of 737 MAX captains, and dividing one total by the
+   * other let the readiness ring read *100% covered* directly above the words
+   * "not enough crew to launch your whole fleet". Seen in a sandbox, not caught
+   * by a test.
+   */
+  metRequired: z.number().int().nonnegative(),
+  /** True when no rank is short. The page says so in words as well. */
+  covered: z.boolean(),
+  /** Families the airline owns aircraft in but holds no crew for at all. */
+  uncoveredFamilies: z.array(z.string().min(1)),
+});
+export type CrewDemand = z.infer<typeof CrewDemand>;
+
 export const CrewResponse = z.object({
   bases: z.array(CrewBaseView),
   fragmentation: CrewFragmentation,
+  demand: CrewDemand,
+  /**
+   * The aircraft families this world flies, for the hire and conversion pickers.
+   *
+   * Sent with the crew rather than left to the client to fetch from the
+   * catalogue, and it is not a convenience: the first version of the page had a
+   * free-text family box, and a stray pool rated on a family literally called
+   * `test` is still sitting in the dev database because of it. A rating that
+   * matches no aeroplane can never be used and cannot be spent away.
+   */
+  families: z.array(z.string().min(1)),
   /** What the next base, hire and conversion would cost, so the UI need not guess. */
   costs: z.object({
     baseOpeningMinor: MinorUnits,

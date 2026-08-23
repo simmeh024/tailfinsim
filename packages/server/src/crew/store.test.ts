@@ -75,7 +75,14 @@ describeDb('crew bases, pools and conversions', () => {
     // an imported record.
     // Four letters: `AircraftAcquisitionInput` requires a real ICAO shape, and a
     // digit in a test code fails validation rather than the thing under test.
-    const icao = `T${LETTERS[Math.floor(n / 26) % 26]}${LETTERS[n % 26]}X`;
+    /*
+     * Prefixed per suite. Both crew suites generated `T??X` from a counter that
+     * starts at zero in each file, so the very first airport in each produced the
+     * identical ICAO — and `airport_icao_code_key` is unique, so whichever file
+     * vitest ran second failed on a collision that looked like nothing to do with
+     * crew.
+     */
+    const icao = `TC${LETTERS[Math.floor(n / 26) % 26]}${LETTERS[n % 26]}`;
     const rows = await db.db
       .insert(airport)
       .values({
