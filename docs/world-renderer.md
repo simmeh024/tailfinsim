@@ -180,6 +180,34 @@ This is also why `projection` is a dependency of the layer `useMemo` in `WorldRe
 though the layer _list_ is identical for both views: switching projection has to rebuild the
 layers for the meshes to re-tessellate.
 
+### A data texture must not be left on a mipmapping filter
+
+**This is the one that was actually making the world black**, and it is worth reading before
+the two below it, which were real bugs found while hunting it but were not the cause.
+
+luma.gl's default sampler is `minFilter: linear, mipmapFilter: linear`, which
+`convertMinFilterMode` turns into WebGL's `LINEAR_MIPMAP_LINEAR`. A texture uploaded from a
+typed array has a single mip level and no mipmap chain, so that filter makes it an
+**incomplete texture** — and an incomplete texture samples as **opaque black**, silently, with
+no warning and no GL error.
+
+Setting `minFilter: 'linear'` alone does not fix it. The mipmap half of the pair comes from
+the default and stays; the two are combined, not overridden. Both world bitmaps share
+`DATA_TEXTURE_SAMPLER`, which sets `mipmapFilter: 'none'` explicitly.
+
+Measured on the live texture, the WebGL minification filter goes from `LINEAR_MIPMAP_LINEAR`
+(`0x2703`) to `LINEAR` (`0x2601`). That is the check worth repeating if a texture-backed layer
+ever renders as a flat black shape:
+
+```js
+gl.bindTexture(gl.TEXTURE_2D, texture.handle);
+gl.getTexParameter(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER); // 9729 LINEAR is complete
+```
+
+It also explains the shape of the hunt. A black sea is indistinguishable from a missing sea,
+so the same symptom survived a palette retune, a tessellation fix and a culling fix — each of
+which was a genuine defect, and none of which was this one.
+
 ### A full-sphere quad must not be back-face culled
 
 The other half of the black globe, and the harder half to see.

@@ -181,4 +181,42 @@ describe('projection-independent world layers', () => {
       (terminator?.props as unknown as { _imageCoordinateSystem?: string })._imageCoordinateSystem,
     ).toBe('lnglat');
   });
+
+  /**
+   * The one that was actually making the world black.
+   *
+   * luma.gl's default sampler is `minFilter: linear, mipmapFilter: linear`, which
+   * becomes WebGL's `LINEAR_MIPMAP_LINEAR`. A texture uploaded from a typed array
+   * has a single mip level, so that filter makes it an **incomplete texture** — and
+   * an incomplete texture samples as opaque black, with no warning and no GL error.
+   *
+   * Setting `minFilter: 'linear'` alone does not help: the mipmap half of the pair
+   * comes from the default and stays. Measured on the live texture, the WebGL
+   * minification filter goes from `LINEAR_MIPMAP_LINEAR` to `LINEAR` once
+   * `mipmapFilter: 'none'` is set.
+   */
+  it('never leaves a data texture on a mipmapping filter', () => {
+    const layers = createWorldLayers({
+      palette,
+      quality: 'full',
+      routes: [],
+      darkness: DARKNESS,
+      projection: 'globe',
+      visibility: { graticule: true, routes: true, terminator: true },
+    }).filter((layer): layer is Layer => layer !== false);
+
+    for (const id of ['world-ocean', 'world-terminator']) {
+      const layer = layers.find((candidate) => candidate.id === id);
+      const sampler = (
+        layer?.props as unknown as {
+          textureParameters?: { mipmapFilter?: string; minFilter?: string };
+        }
+      ).textureParameters;
+      expect(
+        sampler?.mipmapFilter,
+        `${id} must not sample from a mipmap chain it has not got`,
+      ).toBe('none');
+      expect(sampler?.minFilter, id).toBe('linear');
+    }
+  });
 });
