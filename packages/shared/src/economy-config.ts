@@ -1413,10 +1413,30 @@ export type CrewBalance = z.infer<typeof CrewBalance>;
  * The shipped crew balance.
  *
  * The regulation numbers are real; everything else is authored, because section
- * 9.2 is prose and App. A has no crew table. They are anchored on the shape of
- * the mechanic rather than on any airline's accounts: a Captain costs several
- * times a new cabin crew member, a conversion costs a fortnight of availability,
- * and a base has an overhead that punishes opening one per destination.
+ * 9.2 is prose and App. A has no crew table.
+ *
+ * ## What they are scaled against
+ *
+ * Two anchors already in this file, because a crew price invented in isolation
+ * is a number nobody can argue with:
+ *
+ *   - **`airlineStartingPosition.openingCashMinor` is 50,000,000.** A crew base
+ *     is a *precondition for flying at all* - no base, no pools, no legal
+ *     complement - so it has to be affordable on day one. The first draft
+ *     charged 250,000,000 for one, five times everything a new airline owns,
+ *     and the database tests could not open a base at all. It now costs 6% of
+ *     the opening balance.
+ *   - **A narrowbody A-check is 1,800,000** and comes round often. A Captain's
+ *     month sits a little under that, which puts the crew for one narrowbody in
+ *     the same order as keeping it airworthy rather than an order above it.
+ *
+ * The shape of the mechanic is kept: a Captain costs several times a new cabin
+ * crew member, a conversion costs a fortnight of availability, and the monthly
+ * overhead punishes opening a base per destination.
+ *
+ * Salaries are not charged anywhere yet - payroll is not M5-01 - but they are
+ * tuned as though they were, so that whichever milestone starts billing them
+ * does not inherit numbers chosen when nothing read them.
  *
  * Defaulted, for the reason `SHIPPED_NPC_BALANCE` records: a required new section
  * makes every earlier payload unparseable, and a world pinned to one cannot price
@@ -1438,28 +1458,34 @@ export const SHIPPED_CREW_BALANCE = {
     reliefCrewFromBlockMinutes: 720,
   },
   base: {
-    openingCostMinor: 250_000_000,
-    monthlyOverheadMinor: 40_000_000,
+    // 6% of a founding airline's cash. A real commitment, and payable on day one.
+    openingCostMinor: 3_000_000,
+    monthlyOverheadMinor: 500_000,
     weeklyHiringCapacity: 12,
   },
   conversion: {
-    costPerHeadMinor: 1_800_000,
+    // About a fortnight of a Captain's pay per head, on top of the fortnight of
+    // lost availability -- which remains the part that actually hurts.
+    costPerHeadMinor: 200_000,
     durationDays: 14,
   },
   flightDeckSalaryMinor: {
-    cadet: 3_200_000,
-    first_officer: 5_500_000,
-    senior_first_officer: 7_800_000,
-    captain: 12_500_000,
-    training_captain: 15_000_000,
+    cadet: 300_000,
+    first_officer: 500_000,
+    senior_first_officer: 700_000,
+    captain: 1_000_000,
+    training_captain: 1_250_000,
   },
   cabinSalaryMinor: {
-    cabin_crew: 2_400_000,
-    senior_cabin_crew: 3_100_000,
-    purser: 4_200_000,
-    cabin_service_manager: 5_400_000,
+    cabin_crew: 200_000,
+    senior_cabin_crew: 260_000,
+    purser: 350_000,
+    cabin_service_manager: 450_000,
   },
-  hiringCostMinor: { flightDeck: 4_000_000, cabin: 900_000 },
+  // One-off recruitment: about four months of pay for a pilot, six weeks for
+  // cabin crew. Time, not money, is the constraint section 9.2 cares about, and
+  // that lives in `weeklyHiringCapacity`.
+  hiringCostMinor: { flightDeck: 400_000, cabin: 100_000 },
 } as const satisfies z.input<typeof CrewBalance>;
 
 export const EconomyConfig = z

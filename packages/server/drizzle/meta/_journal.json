@@ -218,6 +218,13 @@
       "when": 1787413660382,
       "tag": "0030_last_manta",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1787502648148,
+      "tag": "0031_omniscient_albert_cleary",
+      "breakpoints": true
     }
   ]
 }

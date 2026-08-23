@@ -448,6 +448,9 @@ export const cashMovementCause = pgEnum('cash_movement_cause', [
   'aircraft_used_purchase',
   'aircraft_new_purchase',
   'maintenance_check',
+  'crew_base_opening',
+  'crew_hiring',
+  'crew_conversion',
   'flight_settlement',
   'migration_opening_balance',
 ]);
@@ -2538,3 +2541,174 @@ export type AirframeRow = typeof airframe.$inferSelect;
 export type NewAirframeRow = typeof airframe.$inferInsert;
 export type UsedAircraftListingRow = typeof usedAircraftListing.$inferSelect;
 export type NewUsedAircraftListingRow = typeof usedAircraftListing.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Crew (M5-01, section 9.2)
+// ---------------------------------------------------------------------------
+
+/**
+ * The flight-deck and cabin ladders, as one enum.
+ *
+ * One enum rather than two because a pool row holds exactly one rank and the
+ * ladders never mix within a row; two enums would need two nullable columns and
+ * a check constraint to keep exactly one of them filled. `@tailfin/sim`'s
+ * `coversRank` is what knows a Captain cannot serve the cabin, and it refuses
+ * across ladders regardless of what the column can hold.
+ */
+export const crewRank = pgEnum('crew_rank', [
+  'cadet',
+  'first_officer',
+  'senior_first_officer',
+  'captain',
+  'training_captain',
+  'cabin_crew',
+  'senior_cabin_crew',
+  'purser',
+  'cabin_service_manager',
+]);
+export type CrewRankValue = (typeof crewRank.enumValues)[number];
+
+export const crewBaseStatus = pgEnum('crew_base_status', ['open', 'closed']);
+
+/**
+ * A crew base: an airline's presence at an airport, with its own hiring pool.
+ *
+ * Section 9.2 calls it an unlockable facility with its own hiring pool and cost
+ * structure, and the cost structure is what stops an airline opening one per
+ * destination: a monthly overhead falls due whether or not anybody is posted
+ * there.
+ *
+ * Unique on `(airline_id, airport_icao)` — an airline has one base at an
+ * airport or none. A base that is closed keeps its row so the audit trail of
+ * what was paid for survives, which is why the uniqueness is not partial.
+ */
+export const crewBase = pgTable(
+  'crew_base',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    airportIcao: text('airport_icao')
+      .notNull()
+      .references(() => airport.icaoCode),
+
+    status: crewBaseStatus('status').notNull().default('open'),
+
+    /** Game time, so a reset moves it with everything else (ADR-0005). */
+    openedAt: timestamp('opened_at', { withTimezone: true }).notNull(),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('crew_base_airline_airport_key').on(t.airlineId, t.airportIcao),
+    index('crew_base_airline_idx').on(t.airlineId),
+    index('crew_base_world_idx').on(t.worldId),
+  ],
+);
+
+/**
+ * Heads at one rank, rated on one family, at one base.
+ *
+ * **A count, not a roster.** M5-01's acceptance criterion is that the player
+ * interacts with pool sizes and never with individuals, so there is deliberately
+ * no crew member table for this to reference. Individual hours and proficiency
+ * are M9; if one arrives it should hang off this rather than replace it.
+ *
+ * `family` is text and not a foreign key to `aircraft_type`, because a family is
+ * a property of several types rather than a table of its own — and because a
+ * pool must survive a catalogue version that no longer lists the type it was
+ * hired for. Crew do not lose their rating when a model leaves the price list.
+ *
+ * `unavailable` counts heads in conversion training. Held here rather than
+ * subtracted from `headcount` so the player can see that their crew exist but
+ * are in a classroom, which is the entire point of conversion taking time.
+ */
+export const crewPool = pgTable(
+  'crew_pool',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    crewBaseId: uuid('crew_base_id')
+      .notNull()
+      .references(() => crewBase.id, { onDelete: 'cascade' }),
+
+    family: text('family').notNull(),
+    rank: crewRank('rank').notNull(),
+
+    headcount: integer('headcount').notNull().default(0),
+    unavailable: integer('unavailable').notNull().default(0),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('crew_pool_base_family_rank_key').on(t.crewBaseId, t.family, t.rank),
+    index('crew_pool_base_idx').on(t.crewBaseId),
+    check('crew_pool_headcount_nonneg', sql`${t.headcount} >= 0`),
+    // The two together: never more people in a classroom than on strength.
+    check(
+      'crew_pool_unavailable_within_headcount',
+      sql`${t.unavailable} >= 0 AND ${t.unavailable} <= ${t.headcount}`,
+    ),
+  ],
+);
+
+export const crewConversionStatus = pgEnum('crew_conversion_status', [
+  'in_training',
+  'completed',
+  'cancelled',
+]);
+
+/**
+ * Crew being converted from one family rating to another (section 9.2).
+ *
+ * The mechanical teeth behind fleet commonality. The money matters less than the
+ * fortnight: a fleet decision that costs cash is a line in the accounts, and one
+ * that takes crew off the roster is felt in the schedule.
+ *
+ * `completes_at` is **game time**, like `world_event.fire_at` and unlike
+ * `aircraft_order.delivery_at`. A conversion is training inside the world, so it
+ * should run at the world's speed — a world at 4x trains twice as fast in real
+ * time as one at 2x, which is the same rule the used market and maintenance
+ * follow. Aircraft deliveries are the deliberate exception, because section 7.2
+ * says real weeks for those.
+ *
+ * The heads are recorded on the row rather than inferred from the pools, so the
+ * worker completing a conversion does not have to guess how many of a pool's
+ * `unavailable` belonged to which course.
+ */
+export const crewConversion = pgTable(
+  'crew_conversion',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    crewBaseId: uuid('crew_base_id')
+      .notNull()
+      .references(() => crewBase.id, { onDelete: 'cascade' }),
+
+    fromFamily: text('from_family').notNull(),
+    toFamily: text('to_family').notNull(),
+    rank: crewRank('rank').notNull(),
+    heads: integer('heads').notNull(),
+
+    status: crewConversionStatus('status').notNull().default('in_training'),
+
+    /** Both game time. */
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    completesAt: timestamp('completes_at', { withTimezone: true }).notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('crew_conversion_base_idx').on(t.crewBaseId),
+    // The worker's claim query: due, and not yet dealt with.
+    index('crew_conversion_due_idx').on(t.status, t.completesAt),
+    check('crew_conversion_heads_positive', sql`${t.heads} > 0`),
+    check('crew_conversion_families_differ', sql`${t.fromFamily} <> ${t.toFamily}`),
+    check('crew_conversion_completes_after_start', sql`${t.completesAt} > ${t.startedAt}`),
+  ],
+);

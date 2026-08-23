@@ -533,6 +533,9 @@ export const AdminCashMovementCause = z.enum([
   'aircraft_used_purchase',
   'aircraft_new_purchase',
   'maintenance_check',
+  'crew_base_opening',
+  'crew_hiring',
+  'crew_conversion',
   'flight_settlement',
   'migration_opening_balance',
 ]);
