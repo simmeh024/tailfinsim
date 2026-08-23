@@ -1,7 +1,8 @@
 import { ArcLayer } from '@deck.gl/layers';
 import { describe, expect, it } from 'vitest';
 
-import { createWorldLayers, unwrapAntimeridian } from './layers';
+import { COARSE_LAND, unwrapAntimeridian } from './land';
+import { createWorldLayers } from './layers';
 import { createDarknessField } from './terminator';
 
 import type { WorldRoute } from './layers';
@@ -33,6 +34,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [antimeridianRoute],
       darkness: DARKNESS,
+      land: COARSE_LAND,
       projection: 'flat',
       visibility: { graticule: true, routes: true, terminator: true },
     });
@@ -52,6 +54,7 @@ describe('projection-independent world layers', () => {
       quality: 'reduced',
       routes: [],
       darkness: DARKNESS,
+      land: COARSE_LAND,
       projection: 'flat',
       visibility: { graticule: false, routes: true, terminator: false },
     });
@@ -68,6 +71,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [antimeridianRoute],
       darkness: DARKNESS,
+      land: COARSE_LAND,
       projection: 'flat',
       visibility: { graticule: false, routes: true, terminator: false },
     });
@@ -76,6 +80,7 @@ describe('projection-independent world layers', () => {
       quality: 'reduced',
       routes: [antimeridianRoute],
       darkness: DARKNESS,
+      land: COARSE_LAND,
       projection: 'flat',
       visibility: { graticule: false, routes: true, terminator: false },
     });
@@ -107,6 +112,7 @@ describe('projection-independent world layers', () => {
       quality: 'full' as const,
       routes: [],
       darkness: DARKNESS,
+      land: COARSE_LAND,
       visibility: { graticule: true, routes: true, terminator: true },
     };
     const boundsFor = (projection: 'flat' | 'globe') =>
@@ -144,6 +150,7 @@ describe('projection-independent world layers', () => {
         quality,
         routes: [],
         darkness: DARKNESS,
+        land: COARSE_LAND,
         projection: 'globe',
         visibility: { graticule: false, routes: false, terminator: true },
       })
@@ -173,6 +180,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [antimeridianRoute],
       darkness: DARKNESS,
+      land: COARSE_LAND,
       projection: 'globe',
       visibility: { graticule: true, routes: true, terminator: true },
     }).filter((layer): layer is Layer => layer !== false);
@@ -191,6 +199,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       darkness: DARKNESS,
+      land: COARSE_LAND,
       projection: 'flat',
       visibility: { graticule: false, routes: false, terminator: true },
     }).filter((layer): layer is Layer => layer !== false);
@@ -224,6 +233,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       darkness: DARKNESS,
+      land: COARSE_LAND,
       projection: 'globe',
       visibility: { graticule: true, routes: true, terminator: true },
     }).filter((layer): layer is Layer => layer !== false);
@@ -262,6 +272,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       darkness: DARKNESS,
+      land: COARSE_LAND,
       projection: 'flat',
       visibility: { graticule: false, routes: false, terminator: true },
     }).filter((layer): layer is Layer => layer !== false);
@@ -282,6 +293,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       darkness: DARKNESS,
+      land: COARSE_LAND,
       projection: 'flat',
       visibility: { graticule: false, routes: false, terminator: false },
     }).filter((layer): layer is Layer => layer !== false);
@@ -304,6 +316,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       darkness: DARKNESS,
+      land: COARSE_LAND,
       projection: 'flat',
       visibility: { graticule: false, routes: false, terminator: true },
     }).filter((layer): layer is Layer => layer !== false);
@@ -348,6 +361,7 @@ describe('projection-independent world layers', () => {
         quality: 'full',
         routes: [],
         darkness: DARKNESS,
+        land: COARSE_LAND,
         projection: 'globe',
         visibility: { graticule: false, routes: false, terminator: false },
       }).find((layer) => layer !== false && layer.id === 'world-land') as Layer

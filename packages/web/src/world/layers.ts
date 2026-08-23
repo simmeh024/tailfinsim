@@ -1,12 +1,10 @@
 import { ArcLayer, BitmapLayer, GeoJsonLayer, PathLayer } from '@deck.gl/layers';
-import { feature } from 'topojson-client';
-import landTopologyJson from 'world-atlas/land-110m.json';
 
+import type { LandGeometry } from './land';
 import type { WorldPalette } from './palette';
 import type { WorldProjection } from './projection';
 import type { DarknessField, LngLat } from './terminator';
 import type { Layer } from '@deck.gl/core';
-import type { GeometryCollection, Topology } from 'topojson-specification';
 
 export type RendererQuality = 'full' | 'reduced';
 
@@ -27,6 +25,14 @@ export interface CreateWorldLayersOptions {
   quality: RendererQuality;
   routes: readonly WorldRoute[];
   darkness: DarknessField;
+  /**
+   * The coastline outline to draw.
+   *
+   * Passed in rather than imported, because which tier is in hand depends on how
+   * far the camera has zoomed and whether the finer chunk has arrived — see
+   * `land.ts`. The layer list has no opinion about it.
+   */
+  land: LandGeometry;
   visibility: WorldLayerVisibility;
   /**
    * The projection these layers are about to be drawn into.
@@ -55,71 +61,6 @@ interface GraticulePath {
   id: string;
   path: LngLat[];
 }
-
-const topology = landTopologyJson as unknown as Topology<{ land: GeometryCollection }>;
-
-/**
- * Undo the antimeridian jumps in the land data.
- *
- * `land-110m` stores longitudes in `[-180, 180]`, so a coastline crossing the
- * antimeridian has two consecutive vertices like `179.99` and `-180`. On the
- * sphere those are neighbours. **In the coordinate space the layers actually
- * tessellate in, they are 360 degrees apart** — so the coastline `PathLayer` draws
- * a segment sweeping the entire way round the world, which on the globe lands as a
- * huge smooth arc across the Arctic with no coastline under it.
- *
- * There are seven such jumps in this dataset: Eurasia twice at Chukotka (65N and
- * 69N), Wrangel Island, Fiji twice, and Antarctica. The northern ones are why the
- * artefact appears around the North Pole.
- *
- * Unwrapping keeps every step under 180 degrees by carrying a multiple of 360, so
- * a ring may legitimately run past 180 — `179.99, 180.01` rather than
- * `179.99, -179.99`. That is the same point on a sphere, and on the flat map
- * `repeat: true` already draws the neighbouring world copy, so the overhang lands
- * where it belongs.
- *
- * `wrapLongitude` on the layer does not do this, which was worth finding out by
- * trying it: it shifts whole paths for Web Mercator and leaves the jump inside the
- * ring untouched.
- */
-function unwrapRing(ring: number[][]): number[][] {
-  let offset = 0;
-  const unwrapped: number[][] = [];
-  for (let index = 0; index < ring.length; index += 1) {
-    const longitude = ring[index]?.[0] ?? 0;
-    if (index > 0) {
-      const previous = unwrapped[index - 1]?.[0] ?? 0;
-      const delta = longitude + offset - previous;
-      if (delta > 180) offset -= 360;
-      else if (delta < -180) offset += 360;
-    }
-    unwrapped.push([longitude + offset, ring[index]?.[1] ?? 0]);
-  }
-  return unwrapped;
-}
-
-/** Exported for the test that asserts no ring jumps the antimeridian. */
-export function unwrapAntimeridian<T>(geojson: T): T {
-  const walk = (geometry: { type: string; coordinates: unknown }): void => {
-    if (geometry.type === 'Polygon') {
-      geometry.coordinates = (geometry.coordinates as number[][][]).map(unwrapRing);
-    } else if (geometry.type === 'MultiPolygon') {
-      geometry.coordinates = (geometry.coordinates as number[][][][]).map((polygon) =>
-        polygon.map(unwrapRing),
-      );
-    }
-  };
-
-  const value = geojson as unknown as {
-    features?: { geometry: { type: string; coordinates: unknown } }[];
-    geometry?: { type: string; coordinates: unknown };
-  };
-  if (value.features) for (const shape of value.features) walk(shape.geometry);
-  else if (value.geometry) walk(value.geometry);
-  return geojson;
-}
-
-const LAND = unwrapAntimeridian(feature(topology, topology.objects.land));
 
 function graticulePaths(): GraticulePath[] {
   const paths: GraticulePath[] = [];
@@ -275,6 +216,7 @@ export function createWorldLayers({
   palette,
   quality,
   darkness,
+  land,
   projection,
   routes,
   visibility,
@@ -306,7 +248,7 @@ export function createWorldLayers({
     }),
     new GeoJsonLayer({
       id: 'world-land',
-      data: LAND,
+      data: land,
       filled: true,
       stroked: true,
       getFillColor: palette.land,

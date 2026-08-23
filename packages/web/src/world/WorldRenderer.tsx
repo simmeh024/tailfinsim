@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTheme } from '../theme/ThemeProvider';
 
 import { clampViewState, focusViewState } from './camera';
+import { COARSE_LAND, LAND_DETAIL_ZOOM, loadDetailedLand, type LandGeometry } from './land';
 import {
   createWorldLayers,
   type RendererQuality,
@@ -79,6 +80,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   const [performanceOfferDismissed, setPerformanceOfferDismissed] = useState(false);
   const [rendererFailed, setRendererFailed] = useState(false);
   const [palette, setPalette] = useState<WorldPalette>(() => readWorldPalette());
+  const [land, setLand] = useState<LandGeometry>(COARSE_LAND);
   const transitionTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const frameRateMonitor = useRef(new SustainedFrameRateMonitor());
   const deckRef = useRef<DeckGLRef<MapView | GlobeView> | null>(null);
@@ -107,6 +109,30 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     frameRateMonitor.current.reset();
   }, [projection]);
 
+  /*
+   * Fetch the finer coastline the first time the camera goes in far enough to see
+   * the difference, and never again.
+   *
+   * `110m` is a degree between vertices: perfect for a whole globe, and visibly a
+   * row of straight segments once a degree is tens of pixels. `50m` is ten times
+   * the bytes, so it is not in the first paint — most sessions never zoom this far,
+   * and the ones that do can wait a moment for the coastline to sharpen.
+   *
+   * `loadDetailedLand` is idempotent and resolves to the coarse outline if the
+   * chunk cannot be fetched, so this needs no retry and no error branch: the world
+   * stays drawn either way.
+   */
+  useEffect(() => {
+    if (viewState.zoom < LAND_DETAIL_ZOOM || land !== COARSE_LAND) return;
+    let live = true;
+    void loadDetailedLand().then((detailed) => {
+      if (live) setLand(detailed);
+    });
+    return () => {
+      live = false;
+    };
+  }, [viewState.zoom, land]);
+
   // Sampled once a minute, at the quality the device is coping with. Half the
   // resolution is still far finer than the twilight band it has to describe: the
   // gradient spans twelve degrees of solar elevation, and a reduced texel is two.
@@ -119,8 +145,8 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   // the views — it does not. Switching projection has to rebuild the layers so the
   // world-sized bitmaps re-tessellate for the new viewport; see `layers.ts`.
   const layers = useMemo(
-    () => createWorldLayers({ palette, projection, quality, routes, darkness, visibility }),
-    [palette, projection, quality, routes, darkness, visibility],
+    () => createWorldLayers({ palette, projection, quality, routes, darkness, land, visibility }),
+    [palette, projection, quality, routes, darkness, land, visibility],
   );
   const view = useMemo(
     () =>

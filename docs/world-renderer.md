@@ -185,6 +185,35 @@ The graticule is the one world layer the contrast tests do not gate. One flat ov
 cannot contrast strongly with both a dark sea and a light landmass; its colour favours the
 ocean, where most of a meridian runs, and it is toggleable.
 
+### Coastlines come in two resolutions, and the finer one is loaded on demand
+
+`land-110m` is 1:110,000,000 — about a degree between vertices. At whole-globe zoom it is
+indistinguishable from finer data and costs 54 KB. Zoomed in it is unmistakable: the
+Mediterranean becomes a row of straight multi-degree segments, and no amount of mesh
+refinement or filtering helps, because the _data_ has no more shape in it.
+
+`land-50m` is a little over twice as detailed and **ten times the bytes** — 533 KB, roughly a
+third of the whole client bundle, for something most sessions never zoom in far enough to see.
+So it is a dynamic `import()`: Vite emits it as its own chunk, and `loadDetailedLand` fetches
+it once, the first time the camera passes `LAND_DETAIL_ZOOM`.
+
+Measured on a build and a real session:
+
+|                  |                       size | when                                  |
+| ---------------- | -------------------------: | ------------------------------------- |
+| main bundle      | 1,291 KB / **376 KB gzip** | first paint (was 372 KB gzip)         |
+| `land-50m` chunk |   546 KB / **179 KB gzip** | only after zooming past the threshold |
+
+The resource timeline shows `land-110m` at 107 ms and `land-50m` at 15.4 s, when the camera
+first went in.
+
+This does not weaken §21's _"no basemap or tile service is contacted at runtime"_: the chunk is
+served from the same origin as the app, with no API key and no third-party availability in the
+path. A failed fetch resolves to the coarse outline rather than rejecting — losing detail is
+acceptable, losing the world view is not.
+
+`land-10m` exists and is 3 MB. That is a tile service's job, not a bundle's.
+
 ### The land data has to be unwrapped across the antimeridian
 
 `land-110m` stores longitudes in `[-180, 180]`, so a coastline crossing the antimeridian has
@@ -197,10 +226,11 @@ There are seven such jumps in the dataset: Eurasia twice at Chukotka (65N, 69N),
 Island, Fiji twice, and Antarctica. The northern three are why the artefact shows around the
 North Pole.
 
-`unwrapAntimeridian` carries a multiple of 360 along each ring so no step exceeds 180 degrees.
+`unwrapAntimeridian` in `land.ts` carries a multiple of 360 along each ring so no step exceeds
+180 degrees, and both tiers go through it.
 A ring may then legitimately run past 180 — `179.99, 180.01` rather than `179.99, -179.99` —
 which is the same point on a sphere, and on the flat map `repeat: true` already draws the
-neighbouring world copy. `layers.test.ts` asserts no ring jumps.
+neighbouring world copy. `land.test.ts` asserts no ring jumps, in either tier.
 
 `wrapLongitude` on the layer does **not** fix this, which was worth finding out by trying it:
 it shifts whole paths for Web Mercator and leaves the jump inside the ring untouched.
