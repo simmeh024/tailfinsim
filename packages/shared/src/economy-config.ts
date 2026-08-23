@@ -1393,11 +1393,189 @@ export const CrewConversionBalance = z
   .strict();
 export type CrewConversionBalance = z.infer<typeof CrewConversionBalance>;
 
+/**
+ * Duty, rest and fatigue - section 9.2's flagship crew mechanic (M5-02).
+ *
+ * ## Why these numbers are quoted rather than authored
+ *
+ * The same reason `seatsPerCabinCrew` is 50. Flight time limitations are one of
+ * the few parts of an airline a designer does not have to invent: EASA
+ * ORO.FTL.205 and its tables are public, they are what every European operator
+ * actually rosters against, and a player who knows the real rule should find the
+ * game agrees with them. Authoring a prettier set would make the mechanic
+ * arbitrary at exactly the point section 9.2 wants it to bite.
+ *
+ * The one liberty taken is **shape**: the real maximum-FDP table is a grid of
+ * start time against sector count, and this is that grid expressed as a base,
+ * a per-sector reduction and a floor. The parameterisation reproduces the
+ * 06:00-13:29 row exactly (13:00 for two sectors, falling 30 minutes a sector to
+ * 9:00) and approximates the early-start rows through one reduction rather than
+ * six. A world that wants the full grid can add rows later; nothing here reads
+ * the numbers as anything but a maximum.
+ *
+ * ## Why it is a balance section and not a constant
+ *
+ * Because it is the dial. Duty limits are the difference between a schedule that
+ * is tight and one that is impossible, and a world tuning itself towards a more
+ * forgiving or a more punishing operation changes these and nothing else. It is
+ * also why the FTL numbers are not a `packages/sim` literal: M3-11's rule has no
+ * exception for numbers that happen to come from a regulator.
+ */
+export const CrewDutyBalance = z
+  .object({
+    /**
+     * Minutes on duty before the first departure of a duty period.
+     *
+     * Report time is duty time, which is why a rotation's duty always exceeds
+     * the sum of its block times - and why a player who plans to the block hour
+     * and not to the duty hour is the one who discovers this mechanic the hard
+     * way.
+     */
+    reportBeforeDepartureMinutes: z.number().int().nonnegative(),
+    /** Minutes still on duty after the last arrival: shutdown, paperwork, debrief. */
+    offDutyAfterArrivalMinutes: z.number().int().nonnegative(),
+
+    /**
+     * Maximum flight duty period for a favourable start and up to
+     * {@link sectorsBeforeReduction} sectors. EASA's 13:00.
+     */
+    maxFlightDutyMinutes: z.number().int().positive(),
+    /** Sectors that cost nothing. Beyond this each one shortens the day. */
+    sectorsBeforeReduction: z.number().int().positive(),
+    /** How much each additional sector takes off the maximum. EASA's 30 minutes. */
+    sectorReductionMinutes: z.number().int().nonnegative(),
+    /**
+     * The floor however many sectors are flown. EASA's 9:00.
+     *
+     * Without it a ten-sector day would compute to a negative maximum, and the
+     * regulation does not work that way: past a point more sectors stop
+     * shortening the day because the day is already as short as it goes.
+     */
+    minimumFlightDutyMinutes: z.number().int().positive(),
+
+    /**
+     * The window of circadian low, in **local** hours at the reporting airport.
+     *
+     * `[2, 6)` - the real WOCL, and the reason a 03:00 report is a shorter legal
+     * day than an 09:00 one for the same flying. Local rather than UTC because
+     * the body clock is local; the airport's `utc_offset_minutes` is what makes
+     * that answerable.
+     */
+    woclStartHour: z.number().int().min(0).max(23),
+    woclEndHour: z.number().int().min(1).max(24),
+    /** How much a duty period that starts inside the WOCL loses. */
+    woclReductionMinutes: z.number().int().nonnegative(),
+
+    /** Minimum rest at a crew base. EASA's 12 hours. */
+    minimumRestAtBaseMinutes: z.number().int().positive(),
+    /**
+     * Minimum rest away from base. EASA's 10 hours, and lower on purpose.
+     *
+     * It has to be, or nobody could ever night-stop - but it is the shorter rest
+     * that accumulates fatigue, and it comes with a hotel bill.
+     */
+    minimumRestAwayMinutes: z.number().int().positive(),
+
+    /**
+     * Cumulative duty ceilings over rolling windows. EASA's 60/110/190 hours.
+     *
+     * Rolling, not calendar: the question is *"how much duty in any seven
+     * consecutive days"*, which a week-boundary reset would let a player game by
+     * stacking a heavy Sunday against a heavy Monday.
+     */
+    maxDutyMinutesPer7Days: z.number().int().positive(),
+    maxDutyMinutesPer14Days: z.number().int().positive(),
+    maxDutyMinutesPer28Days: z.number().int().positive(),
+    /** The famous one: 100 block hours in 28 days. */
+    maxBlockMinutesPer28Days: z.number().int().positive(),
+
+    /**
+     * How close to the limit counts as *approaching* it.
+     *
+     * Section 9.2 draws the distinction and it is the whole mechanic: exceeding
+     * a limit is refused outright, but *running close* to one is what produces a
+     * crew timeout when the day slips. A rotation inside this margin is legal,
+     * flyable, and one weather delay from not being.
+     */
+    timeoutWarningMarginMinutes: z.number().int().nonnegative(),
+
+    /** Per head, per night, when a duty period ends away from a crew base. */
+    hotelCostPerHeadPerNightMinor: MinorUnits.nonnegative(),
+    /**
+     * Per head, to fly crew somewhere as passengers.
+     *
+     * Deadheading is duty but not flight duty, which is the rule that makes it
+     * useful: it repositions crew without spending their flight duty period, at
+     * the price of a seat and some of their day.
+     */
+    deadheadCostPerHeadMinor: MinorUnits.nonnegative(),
+    /** The fraction of a deadhead sector's block time that counts as duty. */
+    deadheadDutyFraction: z.number().min(0).max(1),
+  })
+  .strict();
+export type CrewDutyBalance = z.infer<typeof CrewDutyBalance>;
+
+/**
+ * EASA ORO.FTL.205 and Subpart FTL, as shipped.
+ *
+ * Real numbers, in the same spirit as `seatsPerCabinCrew: 50`. The two that are
+ * this game's rather than the regulator's are marked.
+ */
+export const SHIPPED_CREW_DUTY_BALANCE = {
+  // An hour to report, half an hour to shut down. Both are typical rather than
+  // regulated: the rule says duty *includes* them, not how long they take.
+  reportBeforeDepartureMinutes: 60,
+  offDutyAfterArrivalMinutes: 30,
+
+  // ORO.FTL.205 Table 2, row 06:00-13:29: 13:00 for one or two sectors, falling
+  // 30 minutes a sector to a floor of 9:00.
+  maxFlightDutyMinutes: 780,
+  sectorsBeforeReduction: 2,
+  sectorReductionMinutes: 30,
+  minimumFlightDutyMinutes: 540,
+
+  // The WOCL, and the reduction that makes an 03:00 report a shorter day.
+  woclStartHour: 2,
+  woclEndHour: 6,
+  woclReductionMinutes: 120,
+
+  // ORO.FTL.235.
+  minimumRestAtBaseMinutes: 720,
+  minimumRestAwayMinutes: 600,
+
+  // ORO.FTL.210: 60 hours in 7 days, 110 in 14, 190 in 28; 100 block hours in 28.
+  maxDutyMinutesPer7Days: 3_600,
+  maxDutyMinutesPer14Days: 6_600,
+  maxDutyMinutesPer28Days: 11_400,
+  maxBlockMinutesPer28Days: 6_000,
+
+  // This game's, not the regulator's. An hour of slack is roughly one weather
+  // delay: enough that a rotation planned to it is genuinely at risk, and not so
+  // much that every schedule is permanently warned about.
+  timeoutWarningMarginMinutes: 60,
+
+  // Also this game's. A hotel night sits near a cabin crew member's weekly pay,
+  // so night-stopping a wide cabin away from base is a real line in the accounts
+  // rather than a rounding error; a deadhead seat costs more, because it is one.
+  hotelCostPerHeadPerNightMinor: 15_000,
+  deadheadCostPerHeadMinor: 25_000,
+  // Deadheading is duty but not flight duty (ORO.FTL.205(e)). Half is the
+  // conventional rostering treatment.
+  deadheadDutyFraction: 0.5,
+} as const satisfies z.input<typeof CrewDutyBalance>;
+
 export const CrewBalance = z
   .object({
     regulation: CrewRegulationBalance,
     base: CrewBaseBalance,
     conversion: CrewConversionBalance,
+    /**
+     * Defaulted, and it has to be. `crew` itself is defaulted for the reason
+     * `SHIPPED_NPC_BALANCE` records; a *required* new field inside it would
+     * reintroduce exactly that failure one level down, making every payload
+     * written before M5-02 unparseable on the first read after the deploy.
+     */
+    duty: CrewDutyBalance.default(SHIPPED_CREW_DUTY_BALANCE),
     /** Monthly salary per head, by rank. Pay bands are M5-02; this is the floor. */
     flightDeckSalaryMinor: byFlightDeckRank(MinorUnits.positive()),
     cabinSalaryMinor: byCabinRank(MinorUnits.positive()),
@@ -1486,6 +1664,7 @@ export const SHIPPED_CREW_BALANCE = {
   // cabin crew. Time, not money, is the constraint section 9.2 cares about, and
   // that lives in `weeklyHiringCapacity`.
   hiringCostMinor: { flightDeck: 400_000, cabin: 100_000 },
+  duty: SHIPPED_CREW_DUTY_BALANCE,
 } as const satisfies z.input<typeof CrewBalance>;
 
 export const EconomyConfig = z
