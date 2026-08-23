@@ -94,13 +94,19 @@ describeDb('crew legality when a schedule is written', () => {
     // Leases take a deposit, and a founding balance is not sized for this test's
     // convenience. `flight_settlement` is the cause the maintenance suite uses
     // for the same top-up.
-    await moveAirlineCash(db.db, {
-      airlineId: fixture.airline.id,
-      amountMinor: 100_000_000,
-      cause: 'flight_settlement',
-      reference: `crew-legality-top-up-${randomUUID()}`,
-      occurredAt: fixture.world.epoch,
-    });
+    // In a transaction, as the maintenance suite does. `airline_cash_reconciles`
+    // checks the movement against the airline's balance, and outside one the
+    // movement commits before the balance is updated -- so the trigger fires on a
+    // state that only exists between two statements.
+    await db.db.transaction((tx) =>
+      moveAirlineCash(tx, {
+        airlineId: fixture.airline.id,
+        amountMinor: 100_000_000,
+        cause: 'flight_settlement',
+        reference: `crew-legality-top-up-${randomUUID()}`,
+        occurredAt: fixture.world.epoch,
+      }),
+    );
 
     const acquired = await acquireAircraft(
       db.db,
