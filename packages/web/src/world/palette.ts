@@ -1,40 +1,17 @@
 export type RgbaColor = [red: number, green: number, blue: number, alpha: number];
 
 /**
- * Layer alphas, which the theme tokens do not carry.
+ * Every world colour carries its own alpha, in `tokens.css`, per theme.
  *
- * `tokens.css` holds six-digit hex, so opacity is decided here. `NIGHT_ALPHA` is
- * the one worth a note.
+ * It used to be split: the colour in the stylesheet, the opacity as a constant
+ * here. That split is what hid the last bug in this palette. The dark theme wants
+ * a strong night wash and the light theme a much weaker one — a single shared
+ * `NIGHT_ALPHA` cannot be both, and because the alpha was nowhere near the theme
+ * it was never obvious that it had to vary with it.
  *
- * It was `215` — 84% of a near-black night colour, which does not dim the night
- * side, it erases it. Now `90`, chosen with the rest of the world palette so that
- * **every meaningful pairing clears WCAG AA's 3:1 in both themes, in daylight and
- * under full night**: land against ocean, a coastline against its own land, and a
- * route against the sea it crosses.
- *
- * That is App. H.7's bar — *"WCAG AA contrast throughout"* — and the world palette
- * missed it badly before: land against ocean measured 1.49:1 in the dark theme.
- * §1's promise is that a player *"comes back the next morning to see where their
- * aircraft ended up"*, and roughly half of any moment is night, so night has to
- * read as dusk rather than as an absence.
- *
- * `palette.test.ts` measures all of it rather than trusting the numbers to look
- * about right, and `tokens.css` is the only place the colours live.
+ * So the tokens are eight-digit hex where the alpha is not 255, and this file
+ * decides nothing about colour at all.
  */
-const NIGHT_ALPHA = 90;
-const LAND_LINE_ALPHA = 180;
-/**
- * The graticule is faint on purpose, and unavoidably fainter over land.
- *
- * One flat overlay at 31% cannot contrast strongly with both a dark sea and a
- * light landmass; the colour chosen favours the ocean, where most of a meridian
- * runs. It is a reference grid, it is toggleable, and it is not a meaningful
- * graphic in WCAG's sense — so it is the one world layer the contrast tests do
- * not gate.
- */
-const GRID_ALPHA = 80;
-const ROUTE_ALPHA = 230;
-
 export interface WorldPalette {
   ocean: RgbaColor;
   land: RgbaColor;
@@ -53,37 +30,43 @@ export interface WorldPalette {
  * where `getComputedStyle` returns nothing.
  */
 const FALLBACK_PALETTE: WorldPalette = {
-  ocean: [13, 32, 56, 255],
-  land: [119, 153, 176, 255],
-  landLine: [15, 30, 46, LAND_LINE_ALPHA],
-  grid: [220, 236, 247, GRID_ALPHA],
-  night: [11, 26, 46, NIGHT_ALPHA],
-  route: [94, 184, 255, ROUTE_ALPHA],
+  ocean: [22, 64, 102, 255],
+  land: [179, 207, 223, 255],
+  landLine: [12, 28, 43, 180],
+  grid: [220, 236, 247, 80],
+  night: [2, 5, 9, 120],
+  route: [127, 212, 255, 230],
 };
-
+/**
+ * Read a theme token as deck.gl channels.
+ *
+ * Accepts `#rrggbb` and `#rrggbbaa`. When the token carries its own alpha that
+ * wins, because the token is the source of truth; `alpha` is only the default for
+ * a six-digit token, and `fallback` covers a token that is missing or malformed.
+ */
 export function parseHexColor(value: string, fallback: RgbaColor, alpha = fallback[3]): RgbaColor {
-  const match = /^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(value.trim());
+  const match = /^#([\da-f]{2})([\da-f]{2})([\da-f]{2})([\da-f]{2})?$/i.exec(value.trim());
   if (!match) return [...fallback];
   return [
     Number.parseInt(match[1]!, 16),
     Number.parseInt(match[2]!, 16),
     Number.parseInt(match[3]!, 16),
-    alpha,
+    match[4] === undefined ? alpha : Number.parseInt(match[4], 16),
   ];
 }
 
 export function readWorldPalette(): WorldPalette {
   const styles = globalThis.getComputedStyle?.(document.documentElement);
-  const read = (property: string, fallback: RgbaColor, alpha = fallback[3]) =>
-    parseHexColor(styles?.getPropertyValue(property) ?? '', fallback, alpha);
+  const read = (property: string, fallback: RgbaColor) =>
+    parseHexColor(styles?.getPropertyValue(property) ?? '', fallback);
 
   return {
     ocean: read('--world-ocean', FALLBACK_PALETTE.ocean),
     land: read('--world-land', FALLBACK_PALETTE.land),
-    landLine: read('--world-land-line', FALLBACK_PALETTE.landLine, LAND_LINE_ALPHA),
-    grid: read('--world-grid', FALLBACK_PALETTE.grid, GRID_ALPHA),
-    night: read('--world-night', FALLBACK_PALETTE.night, NIGHT_ALPHA),
-    route: read('--world-route', FALLBACK_PALETTE.route, ROUTE_ALPHA),
+    landLine: read('--world-land-line', FALLBACK_PALETTE.landLine),
+    grid: read('--world-grid', FALLBACK_PALETTE.grid),
+    night: read('--world-night', FALLBACK_PALETTE.night),
+    route: read('--world-route', FALLBACK_PALETTE.route),
   };
 }
 

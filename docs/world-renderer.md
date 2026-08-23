@@ -130,6 +130,28 @@ Two details are load-bearing:
 The field is generated palette-free and coloured in `layers.ts`, so a theme change re-colours
 the night without recomputing any astronomy.
 
+### The pairing the contrast tests were missing
+
+Every ratio in the table above compares two _things_: land against sea, a coastline against its
+land, a route against the water it crosses. **None of them asks whether night is
+distinguishable from day on the same surface** — and that is the question a terminator is.
+
+It was measured on the deployed build with a scanline across the globe:
+
+| surface | daylight      | night        | ratio    |
+| ------- | ------------- | ------------ | -------- |
+| land    | `119,153,176` | `81,108,130` | 1.83     |
+| sea     | `13,32,56`    | `12,30,52`   | **1.02** |
+
+Two units per channel. The terminator was rendering correctly and perfectly — the twilight
+gradient was there in the scanline, `90,119,141` and `74,101,121` on the way down — and it was
+invisible on the two-thirds of the globe that is water. It looked like a broken shading layer
+and was a palette that had never been asked the right question.
+
+Fixing it needed a **lighter sea**, because there is no room to darken something already
+near-black, and a stronger night wash. `palette.test.ts` now asserts the dimming on both
+surfaces, so a retune cannot lose the terminator again.
+
 ## The palette has a measurable bar
 
 App. H.7 asks for **"WCAG AA contrast throughout"**, and the world is nothing but graphical
@@ -151,7 +173,12 @@ down from `215` — 84% of a near-black — to `90`.
 
 `palette.test.ts` measures every pairing in **both themes, in daylight and under full night**,
 and asserts the _composited_ result rather than the alpha, because the alpha is not the thing
-that matters. It also asserts that night still reads as night: the dimming has a floor as well
+that matters.
+
+The alphas themselves live in `tokens.css`, as eight-digit hex beside the colour. They used to
+be constants in `palette.ts`, and that split is what hid the terminator bug: the dark theme
+wants a strong night wash and the light theme a much weaker one, and with the opacity nowhere
+near the theme it was never obvious it had to vary with it. It also asserts that night still reads as night: the dimming has a floor as well
 as a ceiling, since shading nobody can see is not shading.
 
 The graticule is the one world layer the contrast tests do not gate. One flat overlay at 31%

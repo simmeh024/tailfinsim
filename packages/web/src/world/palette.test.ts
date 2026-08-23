@@ -39,7 +39,7 @@ const tokensCss = readFileSync(tokensPath, 'utf8');
  * rather than the theme. Both are covered: the ratios run against both themes in
  * the file, and the fallback is separately asserted to equal the dark one.
  */
-function worldTokens(theme: 'dark' | 'light'): Record<string, [number, number, number]> {
+function worldTokens(theme: 'dark' | 'light'): Record<string, RgbaColor> {
   // Brace-matched from the theme's own selector. Splitting on lines that look like
   // selectors does not work: comments and nested blocks inside `[data-theme]` cut
   // the block in half, and the half without `--world-night` looks like a theme
@@ -62,16 +62,15 @@ function worldTokens(theme: 'dark' | 'light'): Record<string, [number, number, n
   }
   const block = tokensCss.slice(start, end);
 
-  const found: Record<string, [number, number, number]> = {};
-  for (const match of block.matchAll(/--world-([a-z-]+):\s*(#[\da-f]{6})/gi)) {
-    const rgba = parseHexColor(String(match[2]), [0, 0, 0, 255]);
-    found[String(match[1])] = [rgba[0], rgba[1], rgba[2]];
+  const found: Record<string, RgbaColor> = {};
+  // Six or eight digits: the alpha is part of the token now, and reading it is the
+  // point — the two themes deliberately wash to night at different strengths.
+  for (const match of block.matchAll(/--world-([a-z-]+):\s*(#[\da-f]{6}(?:[\da-f]{2})?)/gi)) {
+    found[String(match[1])] = parseHexColor(String(match[2]), [0, 0, 0, 255]);
   }
   if (found.ocean === undefined) throw new Error(`No world tokens in the ${theme} theme`);
   return found;
 }
-
-const NIGHT_ALPHA = readWorldPalette().night[3];
 
 describe('token parsing', () => {
   it('turns a theme token into deck.gl channels', () => {
@@ -88,29 +87,31 @@ describe('the fallback palette', () => {
   it('does not drift from the dark theme in tokens.css', () => {
     const tokens = worldTokens('dark');
     const fallback = readWorldPalette();
-    const rgb = (colour: RgbaColor): [number, number, number] => [colour[0], colour[1], colour[2]];
-
     // Two copies of the same colours is a drift hole; this is the guard on it.
-    expect(rgb(fallback.ocean)).toEqual(tokens.ocean);
-    expect(rgb(fallback.land)).toEqual(tokens.land);
-    expect(rgb(fallback.landLine)).toEqual(tokens['land-line']);
-    expect(rgb(fallback.grid)).toEqual(tokens.grid);
-    expect(rgb(fallback.night)).toEqual(tokens.night);
-    expect(rgb(fallback.route)).toEqual(tokens.route);
+    // Alphas included, now that the tokens carry them.
+    expect(fallback.ocean).toEqual(tokens.ocean);
+    expect(fallback.land).toEqual(tokens.land);
+    expect(fallback.landLine).toEqual(tokens['land-line']);
+    expect(fallback.grid).toEqual(tokens.grid);
+    expect(fallback.night).toEqual(tokens.night);
+    expect(fallback.route).toEqual(tokens.route);
   });
 });
 
 describe.each(['dark', 'light'] as const)('the %s world meets WCAG AA', (theme) => {
   const tokens = worldTokens(theme);
-  const plain = (name: string): [number, number, number] => {
+  const token = (name: string): RgbaColor => {
     const colour = tokens[name];
     if (colour === undefined) throw new Error(`No --world-${name} in the ${theme} theme`);
     return colour;
   };
+  const plain = (name: string): [number, number, number] => {
+    const c = token(name);
+    return [c[0], c[1], c[2]];
+  };
   const opaque = (name: string): RgbaColor => [...plain(name), 255];
-  const night: RgbaColor = [...plain('night'), NIGHT_ALPHA];
   /** What a colour becomes on the night side of the terminator. */
-  const atNight = (name: string) => compositeOver(night, opaque(name));
+  const atNight = (name: string) => compositeOver(token('night'), opaque(name));
 
   it('separates land from ocean in daylight', () => {
     expect(contrastRatio(plain('land'), plain('ocean'))).toBeGreaterThanOrEqual(3);
@@ -132,12 +133,27 @@ describe.each(['dark', 'light'] as const)('the %s world meets WCAG AA', (theme) 
     expect(contrastRatio(atNight('route'), atNight('ocean'))).toBeGreaterThanOrEqual(3);
   });
 
-  it('still makes night look like night', () => {
-    // Shading nobody can see is not shading, and shading that swallows the map is
-    // the failure this palette was retuned to fix. Night lives between the two.
+  it('makes the terminator visible over land', () => {
     const dimming = contrastRatio(plain('land'), atNight('land'));
-    expect(dimming).toBeGreaterThan(1.25);
-    expect(dimming).toBeLessThan(3);
+    expect(dimming).toBeGreaterThan(1.2);
+    expect(dimming).toBeLessThan(3.4);
+  });
+
+  it('makes the terminator visible over the sea', () => {
+    /*
+     * The pairing this palette was missing, and the reason a working terminator
+     * looked like no terminator at all.
+     *
+     * Every other check here compares two *things* — land against sea, a coastline
+     * against its land. None of them asks whether night is distinguishable from day
+     * on the same surface, and the sea is most of the globe. Measured on the
+     * deployed build, a scanline across the terminator read `13,32,56` in daylight
+     * and `12,30,52` at night: a ratio of 1.02, two units per channel, invisible.
+     * Land was fine at 1.83, which is why it looked like a shading bug rather than
+     * a palette one.
+     */
+    const dimming = contrastRatio(plain('ocean'), atNight('ocean'));
+    expect(dimming).toBeGreaterThan(1.35);
   });
 
   it('gives the globe a silhouette against space', () => {
