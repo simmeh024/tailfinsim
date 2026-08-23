@@ -500,6 +500,11 @@ Every incident will suggest a new section, and adding one is a decision rather t
   name and the commit subject.
 - **Architectural decisions get an ADR.** See [`docs/adr/`](docs/adr/). If you find
   yourself explaining a choice twice, write it down once instead.
+- **Check who owns the domain before filing or building.**
+  [`docs/roadmap-dependencies.md`](docs/roadmap-dependencies.md) records what each milestone
+  owns, what it explicitly does not, and which dependencies are implemented, planned or
+  missing. It exists because the same gap was found three times independently, and because
+  two open issues once described the same replay harness.
 - **Documentation changes with behavior.** Keep `README.md`'s current-state list,
   `CLAUDE.md`'s operational facts, the relevant subsystem contract and the authorization
   matrix accurate in the same pull request. Preserve ADR history, but amend any wording that
