@@ -4576,19 +4576,23 @@ body {
   color: var(--text-secondary);
 }
 
-/* --- the three numbered actions ------------------------------------------ */
+/* --- the three numbered actions ------------------------------------------
+   The three cards are read across, so their controls have to line up across.
+   A grid inside each card, and the hint pushed to the bottom by `margin-top:
+   auto`, so the buttons sit on one line however many fields a card has. */
 
 .crew__actions {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
   gap: var(--space-4);
+  align-items: stretch;
 }
 
 .crew-action {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3);
+  gap: var(--space-3);
+  padding: var(--space-4);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--console-card-raised);
@@ -4606,34 +4610,97 @@ body {
   display: inline-flex;
   width: 1.5rem;
   height: 1.5rem;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
   background: var(--accent);
   color: var(--text-on-accent);
   font-size: var(--text-xs);
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
+/* A column so the button can be pinned to the foot of the card. A grid here
+   instead does not work: an auto margin on a grid item resolves inside its own
+   row, not against the whole form, so the buttons stayed at three heights. */
 .crew__form {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
-  align-items: flex-end;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.crew__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: var(--space-3);
 }
 
 .crew__form label {
   display: flex;
-  flex: 1 1 8rem;
   flex-direction: column;
   gap: var(--space-1);
-  font-size: var(--text-sm);
+  /* Matches `.founding__field`: the label is a small caps eyebrow, not body
+     text, so the control below it is the thing the eye lands on. */
   color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.crew__form button,
+.crew__form input,
+.crew__form select {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  color: var(--text-primary);
+  /* `font: inherit` undoes the label's uppercase eyebrow styling, which the
+     control would otherwise inherit and render the value in small caps. */
+  font: inherit;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.crew__form input:focus-visible,
+.crew__form select:focus-visible {
+  border-color: var(--accent);
+}
+
+.crew__form button {
+  /* Pinned to the foot of the card, and last in the DOM so nothing below it can
+     push it back up. The three cards hold different numbers of fields, so
+     without this the buttons sit at three heights and the row reads as three
+     unrelated panels rather than one sequence. */
+  margin-top: auto;
+  min-height: 2.75rem;
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.crew__form button:hover:not(:disabled),
+.crew__form button:focus-visible {
+  background: var(--accent-hover);
+}
+
+.crew__form button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .crew__form .crew__hint {
-  flex-basis: 100%;
+  margin: 0;
 }
 
 /* --- the rank banner ------------------------------------------------------
