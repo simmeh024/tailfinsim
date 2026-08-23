@@ -5,6 +5,7 @@ import { gameTime, type WorldClock } from '@tailfin/sim';
 import { deliverDueAircraftOrders } from '../aircraft/acquisition';
 import { sweepMaintenance } from '../aircraft/maintenance';
 import { refreshUsedAircraftMarket } from '../aircraft/used-market';
+import { returnRestedCrew, standDownIdleCrew } from '../crew/duty-store';
 import { completeDueConversions } from '../crew/store';
 import { type Database } from '../db/client';
 import { world, type WorldRow } from '../db/schema';
@@ -84,6 +85,10 @@ export interface TickReport {
    * than a missing process.
    */
   crewConversionsCompleted: number;
+  /** M5-02. Crew sets sent off duty because nothing more was dispatched. */
+  crewStoodDown: number;
+  /** M5-02. Crew sets whose rest finished and whose heads went back. */
+  crewRested: number;
   crewErrors: number;
 }
 
@@ -132,6 +137,10 @@ export interface SimulationEngineOptions {
   sweepChecks?: typeof sweepMaintenance;
   /** Injected like the sweeps above, so the tick can be tested without Postgres. */
   completeConversions?: typeof completeDueConversions;
+  /** M5-02. Ends the day for a crew set nothing dispatched. */
+  standDownCrew?: typeof standDownIdleCrew;
+  /** M5-02. Returns rested heads to their pools. */
+  returnCrew?: typeof returnRestedCrew;
   depth?: typeof queueDepth;
 }
 
@@ -201,6 +210,10 @@ export interface EngineSnapshot {
    * than a missing process.
    */
   crewConversionsCompleted: number;
+  /** M5-02. Crew sets sent off duty because nothing more was dispatched. */
+  crewStoodDown: number;
+  /** M5-02. Crew sets whose rest finished and whose heads went back. */
+  crewRested: number;
   crewErrors: number;
   maintenanceErrors: number;
 }
@@ -282,6 +295,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     refreshUsedMarket = refreshUsedAircraftMarket,
     sweepChecks = sweepMaintenance,
     completeConversions = completeDueConversions,
+    standDownCrew = standDownIdleCrew,
+    returnCrew = returnRestedCrew,
   } = options;
 
   const unhandledEventTypes = ALL_EVENT_TYPES.filter((type) => handlers[type] === undefined);
@@ -303,6 +318,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let checksCompleted = 0;
   let airframesGrounded = 0;
   let crewConversionsCompleted = 0;
+  let crewStoodDown = 0;
+  let crewRested = 0;
   let crewErrors = 0;
   let maintenanceErrors = 0;
 
@@ -316,6 +333,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     let tickListingsWithdrawn = 0;
     let tickChecksCompleted = 0;
     let tickCrewConversions = 0;
+    let tickCrewStoodDown = 0;
+    let tickCrewRested = 0;
     let tickCrewErrors = 0;
     let tickAirframesGrounded = 0;
 
@@ -412,6 +431,32 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         log?.warn?.(`[${entry.name}] crew conversion sweep failed: ${String(error)}`);
       }
 
+      /*
+       * Duty and rest (M5-02, section 9.2). Two sweeps, in this order and not
+       * the other: a set is sent off duty first, and the rest it earns is
+       * measured from that moment, so returning crew before standing them down
+       * would give the ones who finished this tick a free night.
+       *
+       * Also game time. A duty period is something that happens inside the
+       * world, like a conversion and unlike a factory delivery.
+       */
+      try {
+        const worldNow = gameTime(entry.clock, now());
+        const down = await standDownCrew(db, entry.id, worldNow);
+        const back = await returnCrew(db, entry.id, worldNow);
+        tickCrewStoodDown += down.stoodDown;
+        tickCrewRested += back.returned;
+        if (down.stoodDown > 0 || back.returned > 0) {
+          log?.info?.(
+            `[${entry.name}] crew: ${String(down.stoodDown)} set(s) off duty, ` +
+              `${String(back.returned)} rested`,
+          );
+        }
+      } catch (error) {
+        tickCrewErrors += 1;
+        log?.warn?.(`[${entry.name}] crew duty sweep failed: ${String(error)}`);
+      }
+
       // Each world is drained against its own clock: `fire_at` is a game-time
       // instant, so what is due depends on where that world's clock has got to,
       // and two worlds at different speeds disagree about the same moment.
@@ -458,6 +503,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     checksCompleted += tickChecksCompleted;
     airframesGrounded += tickAirframesGrounded;
     crewConversionsCompleted += tickCrewConversions;
+    crewStoodDown += tickCrewStoodDown;
+    crewRested += tickCrewRested;
     crewErrors += tickCrewErrors;
     lastTickAt = context.tickedAt;
     lastTickDurationMs = durationMs;
@@ -477,6 +524,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       checksCompleted: tickChecksCompleted,
       airframesGrounded: tickAirframesGrounded,
       crewConversionsCompleted: tickCrewConversions,
+      crewStoodDown: tickCrewStoodDown,
+      crewRested: tickCrewRested,
       crewErrors: tickCrewErrors,
     };
   }
@@ -537,6 +586,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         checksCompleted,
         airframesGrounded,
         crewConversionsCompleted,
+        crewStoodDown,
+        crewRested,
         crewErrors,
         maintenanceErrors,
       };

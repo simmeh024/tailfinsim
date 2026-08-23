@@ -295,6 +295,24 @@ against the airline, and never coming back. `crewConversionsCompleted` and `crew
 counters. The reason it is game time rather than real weeks is that training happens _inside_
 the world; §7.2's factory lead time is the one deliberate exception in the fleet.
 
+**And M5-02 makes that failure mode total, not partial.** Crew duty periods open at departure
+and close on the worker's tick — `standDownIdleCrew` ends the day for a set nothing dispatched,
+`returnRestedCrew` puts the heads back once the rest is served. Without a worker every aeroplane
+flies **exactly one duty period and then stops for ever**, with its crew permanently `on_duty`
+and the pool unable to staff anything else. Not a degradation: a fleet that flies once.
+`crewStoodDown`, `crewRested` and `crewErrors` are the counters. Both sweeps are scoped to one
+world, because game time is a per-world quantity and a sweep that is not would measure one
+world's rest against another world's clock.
+
+**`FLIGHT_DEPART` has a handler as of M5-02, and that was a decision.** `handlers.ts` had said
+for two milestones that inventing a departure would be _"the accidental decision ADR-0019's
+boundary exists to prevent"_, and that remains true of an accidental one. M5-02's _"legality is
+a hard rule at departure"_ needed a departure to be hard at, so `flight/depart.ts` is a
+**dispatch gate** and says at length what it deliberately is not. The consequence to know: the
+first Worker carrying this build returns every parked `FLIGHT_DEPART` to `pending` and starts
+flying them. Dev's queue was empty when it shipped; check `pnpm ops:status` and the queue depth
+before assuming that is still true somewhere else.
+
 **And since M4-07 there is a page where all of that is visible at once.** The fleet table
 reads its location, utilisation and next check from flights that only the worker produces, so
 on a production world every aeroplane sits at its delivery airport at `0.0 h/day` with a check

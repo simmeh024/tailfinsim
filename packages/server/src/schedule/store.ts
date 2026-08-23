@@ -34,6 +34,7 @@ import {
 
 import { airframeUnavailability } from '../aircraft/maintenance';
 import { crewIllegality } from '../crew/legality';
+import { dutyWarningFor, type DutyWarning } from '../crew/roster-warning';
 import { flight, schedule, scheduleLeg, worldEvent } from '../db/schema';
 import { scheduleEvent } from '../sim/event-queue';
 
@@ -91,7 +92,20 @@ export interface RotationContext {
 }
 
 export type SaveResult =
-  | { ok: true; scheduleId: string }
+  | {
+      ok: true;
+      scheduleId: string;
+      /**
+       * A duty warning, when the rotation is legal but hard on the crew (M5-02).
+       *
+       * Optional, and absent rather than null when there is nothing to say. It
+       * is deliberately **not** a refusal: section 9.2's whole texture is that
+       * airlines roster to the line, and a game that quietly declined to let the
+       * player do it would remove the decision rather than model it. The hard
+       * rule is at departure, where the plan has become an aeroplane.
+       */
+      warning?: DutyWarning;
+    }
   // `SchedulingProblem`, not `RotationProblem`: this can also refuse for a reason
   // only the database knows, such as an aeroplane in a check (M4-06).
   | { ok: false; problem: SchedulingProblem; detail: string };
@@ -170,6 +184,26 @@ export async function createSchedule(
     }
   }
 
+  /*
+   * And then the softer question (M5-02): the airline has the crew, but can
+   * those crew legally be worked this hard? Computed before the write so the
+   * answer describes the rotation that was actually saved, and returned rather
+   * than enforced - see `SaveResult.warning`.
+   *
+   * Skipped when the caller asserted `crewLegal`, for the same reason the check
+   * above is: a test scheduling flights for an airline that was never going to
+   * have crew does not want a duty opinion about them either.
+   */
+  const warning =
+    context.crewLegal === undefined
+      ? await dutyWarningFor(db, {
+          worldId: input.worldId,
+          airlineId: input.airlineId,
+          airframeId: input.airframeId,
+          legs: input.legs,
+        })
+      : null;
+
   return db.transaction(async (tx): Promise<SaveResult> => {
     const [row] = await tx
       .insert(schedule)
@@ -197,7 +231,9 @@ export async function createSchedule(
       })),
     );
 
-    return { ok: true, scheduleId: row.id };
+    return warning === null
+      ? { ok: true, scheduleId: row.id }
+      : { ok: true, scheduleId: row.id, warning };
   });
 }
 

@@ -134,14 +134,141 @@ flight comes into existence is `createSchedule`, and that is where the acceptanc
 in production this rule currently guards a path only tests reach — it is ready for the API
 rather than waiting on it.
 
-## What the legality check does not know
+## What the complement check does not know
 
-Nothing about **duty, rest or positioning**. §9.2 calls those the flagship crew mechanic and
-they are not M5-01, so the question answered is narrower: does the airline hold enough crew, at
-the right ranks, rated on this aeroplane's family, to staff its longest leg. An airline that
-passes can still be building a rotation no real crew could fly. The field is named `crewLegal`
-rather than `crewExists` precisely so that duty limits tighten it rather than needing a second
-one.
+Nothing about **duty, rest or positioning**. The question it answers is narrow: does the
+airline hold enough crew, at the right ranks, rated on this aeroplane's family, to staff its
+longest leg. An airline that passes can still be building a rotation no real crew could fly —
+and M5-02 is what says so. The field is named `crewLegal` rather than `crewExists` precisely so
+that duty limits tighten it rather than needing a second one.
+
+---
+
+# Duty, rest and fatigue (M5-02)
+
+§9.2's flagship crew mechanic. The complement check above asks _do these crew exist_; this asks
+_may they legally fly_, and they stay separate checks because the answers mean different things
+to the player — one is a hiring problem and the other is a rostering one.
+
+## Three verdicts, and why two is not enough
+
+`legal` · `tight` · `illegal`.
+
+M5-02 asks for legality _"checked at schedule-save time as a warning and at departure as a hard
+rule"_, and a boolean can express neither half of that. The middle verdict is the mechanic: a
+rotation with forty minutes of slack is legal, flyable, and one weather delay from cancelling,
+and a player who is not told that meets the mechanic for the first time as a cancellation with
+no explanation attached.
+
+- **At schedule-save**: a warning. `SaveResult.warning` carries the severity, the leg and a
+  sentence. It never refuses — airlines roster to the line, and a game that quietly declined to
+  let the player do it would remove the decision rather than model it.
+- **At departure**: absolute. `dispatchCrew` refuses, and the flight delays or cancels.
+
+## The rules, and where the numbers come from
+
+EASA ORO.FTL, quoted rather than authored for the same reason `seatsPerCabinCrew` is 50: flight
+time limitations are public, they are what every European operator actually rosters against,
+and a player who knows the real rule should find the game agrees with them.
+
+| Rule                                    | Shipped value                                     | Source              |
+| --------------------------------------- | ------------------------------------------------- | ------------------- |
+| Max flight duty period, 1–2 sectors     | 13h00                                             | ORO.FTL.205 Table 2 |
+| Reduction per sector beyond the second  | −30 min, floor 9h00                               | same table          |
+| Window of circadian low                 | 02:00–05:59 **local**, −2h00                      | ORO.FTL.105         |
+| Minimum rest at base / away             | 12h00 / 10h00, never less than the preceding duty | ORO.FTL.235         |
+| Cumulative duty, 7 / 14 / 28 days       | 60h / 110h / 190h                                 | ORO.FTL.210         |
+| Block time, 28 days                     | 100h                                              | ORO.FTL.210         |
+| "Approaching" the limit                 | 60 min                                            | this game's         |
+| Timeout delay before cancelling instead | 180 min                                           | this game's         |
+
+They live in `EconomyConfig.crew.duty`, not in `packages/sim` — M3-11's rule has no exception
+for numbers that came from a regulator, and duty limits are exactly the dial a world would
+retune. The section is **defaulted**, because a required new section makes every payload
+written before it unparseable.
+
+The one liberty taken is _shape_: the real maximum-FDP table is a grid of start time against
+sector count, and this is that grid as a base, a per-sector reduction and a floor. It
+reproduces the 06:00–13:29 row exactly and approximates the early-start rows through one
+reduction rather than six.
+
+## The documented failure case
+
+§9.2 describes one specific failure and `duty.test.ts` builds exactly it — four tight sectors
+out of Schiphol, then a 90-minute weather delay on leg two:
+
+|                      | as planned        | delayed                 |
+| -------------------- | ----------------- | ----------------------- |
+| duty periods         | 1                 | 1                       |
+| sectors              | 4                 | 4                       |
+| FDP ceiling          | 12h00             | 12h00                   |
+| flight duty at leg 4 | 11h15             | **12h45**               |
+| leg 4                | `tight`, 45m left | **`illegal`, 45m over** |
+| legs 1–3             | legal             | legal                   |
+
+Nothing random and nothing fitted. The ceiling does not move — the same four sectors, the same
+06:00 report — while the day gets longer underneath it. And the aeroplane flies three of its
+four sectors and strands itself at the fourth, which is what makes the mechanic instructive
+rather than punitive: a model that failed the whole rotation would teach the player nothing
+about _where_ the plan broke.
+
+## A duty period is a row, and still nobody has a name
+
+M5-01's invariant survives. The regulation does not constrain _people_ either — it constrains
+**a duty**, which is a span of time with a report and an off-duty and some flying in the
+middle. So `crew_duty_period` is that span: one crew set, one airframe, a head count and a rank
+breakdown drawn from the pools as counts and returned as counts.
+
+It hangs off the **airframe**, because that is what physically carries the crew from one sector
+to the next. A period stays open across turnarounds, is extended sector by sector, and ends
+either when the crew time out or when nothing was dispatched before they could have gone home.
+
+`crew_pool` grew two columns to match:
+
+- `on_duty` — inside a period, or serving the rest after one. Separate from `unavailable`
+  because a crew member in a classroom is gone for a fortnight and one who is resting is back
+  tonight, and those are different answers to the player's question.
+- `reserve` — a **designation, not a separate pool**. Reserves are ordinary crew held back from
+  the roster; they draw the same salary and can cover anything the rest of the pool could.
+
+## What happens when the crew run out
+
+In order: a **reserve set** if the airline is paying for one; a **delay** if the rested crew
+are back within `crewTimeoutMaxDelayMinutes`; a **cancellation** otherwise, because a crew that
+needs eleven hours is not a delay.
+
+All three record `crew_timeout` in `flight.disruption_cause` — a column M2-08 needed and never
+had. It modelled `DisruptionCause` in `packages/sim` and `flight` stored only the outcome, so
+until M5-02 the reason was computed and thrown away.
+
+## `FLIGHT_DEPART` finally has a handler
+
+It has been queued since M2 and parked as `unsupported` ever since. M5-02 needed a departure to
+be hard at, so `flight/depart.ts` is a **dispatch gate**: it asks whether the aeroplane may push
+back, and if it may, releases it to the `FLIGHT_ARRIVE` handler that has existed since M2-06.
+
+It deliberately does not board, push back, taxi or tick phases — §21 computes flight state on
+read — and it does not roll for weather or technical failure. A departure gate that also
+decides the weather is two mechanisms in one place.
+
+A delayed flight is retried by scheduling a **second** `FLIGHT_DEPART`, keyed by the instant it
+is due. Reusing `departureKey` would make the retry a silent no-op and the flight would sit
+delayed for ever with nothing scheduled to look at it again.
+
+## Duty is also a worker story, with the sharpest edge yet
+
+Two sweeps run per world per tick, on the world's **game** clock: `standDownIdleCrew` ends the
+day for a set nothing dispatched, and `returnRestedCrew` puts the heads back once the rest is
+served. `crewStoodDown`, `crewRested` and `crewErrors` are the counters.
+
+**Production has no worker.** So on a production world every aeroplane would fly exactly one
+duty period and then stop for ever, with its crew permanently `on_duty` and the pool unable to
+staff anything else. That is not a subtle degradation — it is a fleet that flies once. It reads
+as a broken game rather than a missing process, which is the same trap as `ticks: 0, errors: 0`.
+
+Both sweeps are scoped to one world. They were not, in the first draft: called from inside the
+per-world loop while querying globally, they would each run once per world over the same rows
+and measure one world's rest against another world's clock.
 
 ## Conversions finish on the worker, or not at all
 
@@ -253,7 +380,14 @@ without artwork is a type error rather than a broken image nobody notices.
 
 ## Not built yet
 
-Duty, rest and fatigue (§9.2 calls them the flagship crew mechanic), positioning and
-hotelling, reserve crew, morale, and the service-quality link into §6.4 are all described in
-§9.2 and are **not** M5-01. M5-01 is the model they will all need: bases, pools, ranks, type
-ratings and the legal complement.
+**Morale** and the **service-quality link** into §6.4 are described in §9.2 and are not built.
+Neither is **payroll**: salaries are tuned in the economy config and nothing charges them, so
+reserve crew currently cost an airline nothing to keep — which is half of §9.2's _"deliberately
+a hard call"_ missing, and the half that makes the call hard.
+
+**Positioning is modelled and not yet billed.** `positioningFor` and `positioningCostMinor`
+compute the hotel nights a night-stop owes and the deadhead seats a displaced crew needs, and
+no cash movement uses them. The pure model is right and the money is not connected.
+
+**Nothing surfaces duty on the Crew page yet.** The rows are written and the API does not read
+them, so a player can trip a crew timeout and see only that a flight cancelled.
