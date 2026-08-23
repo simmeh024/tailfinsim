@@ -14,7 +14,7 @@ import {
 
 import { moveAirlineCash } from '../airline/cash';
 import { crewBase, crewConversion, crewPool, world } from '../db/schema';
-import { loadEconomyConfig } from '../economy/loader';
+import { loadWorldEconomyConfig } from '../economy/loader';
 
 import type { Database } from '../db/client';
 import type { CrewRankValue } from '../db/schema';
@@ -72,8 +72,17 @@ async function worldClock(db: Database, worldId: string): Promise<WorldClock> {
   return clockOf(row);
 }
 
+/**
+ * The crew balance the world is pinned to.
+ *
+ * `loadWorldEconomyConfig`, not `loadEconomyConfig` — the latter takes a
+ * *version* string, and handing it a world id makes it refuse with
+ * `UnknownEconomyConfigError` naming the id as though it were a version. CI
+ * found that; the shared working tree had another session's non-compiling work
+ * in it, so this branch's first real run was on the runner.
+ */
 async function crewBalance(db: Database, worldId: string): Promise<CrewBalance> {
-  return (await loadEconomyConfig(db, worldId)).crew;
+  return (await loadWorldEconomyConfig(db, worldId)).crew;
 }
 
 // ---------------------------------------------------------------------------
