@@ -1265,6 +1265,203 @@ export const SHIPPED_MAINTENANCE_BALANCE = {
 // The payload
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Crew - section 9.2
+// ---------------------------------------------------------------------------
+
+/** The flight-deck ladder, in promotion order (section 9.2). */
+export const FlightDeckRank = z.enum([
+  'cadet',
+  'first_officer',
+  'senior_first_officer',
+  'captain',
+  'training_captain',
+]);
+export type FlightDeckRank = z.infer<typeof FlightDeckRank>;
+
+/** The cabin ladder, in promotion order (section 9.2). */
+export const CabinRank = z.enum([
+  'cabin_crew',
+  'senior_cabin_crew',
+  'purser',
+  'cabin_service_manager',
+]);
+export type CabinRank = z.infer<typeof CabinRank>;
+
+export const CrewRank = z.enum([...FlightDeckRank.options, ...CabinRank.options]);
+export type CrewRank = z.infer<typeof CrewRank>;
+
+function byFlightDeckRank<T extends z.ZodType>(value: T) {
+  return z
+    .object({
+      cadet: value,
+      first_officer: value,
+      senior_first_officer: value,
+      captain: value,
+      training_captain: value,
+    })
+    .strict();
+}
+
+function byCabinRank<T extends z.ZodType>(value: T) {
+  return z
+    .object({
+      cabin_crew: value,
+      senior_cabin_crew: value,
+      purser: value,
+      cabin_service_manager: value,
+    })
+    .strict();
+}
+
+/**
+ * The regulation that decides a legal complement (section 9.2).
+ *
+ * Separate from pay and hiring because it is the one part a player cannot buy
+ * their way around: cabin crew scale with **seats fitted**, not with seats sold,
+ * so densifying a cabin costs crew as well as earning fares.
+ */
+export const CrewRegulationBalance = z
+  .object({
+    /**
+     * Seats per required cabin crew member.
+     *
+     * `50` is the real rule - ICAO Annex 6 and EASA CAT.OP.MPA.170 both require
+     * one attendant per fifty passenger seats installed - and it is quoted rather
+     * than authored because section 9.2 says cabin crew are "scaled to seat count
+     * by regulation", and this is the regulation.
+     */
+    seatsPerCabinCrew: z.number().int().positive(),
+    /** Nobody flies a passenger aircraft with an empty cabin, however few seats. */
+    minimumCabinCrew: z.number().int().positive(),
+    /**
+     * At or above this many seats the cabin must be led by a Purser.
+     *
+     * Below it the senior crew member leads without the rank, which keeps a
+     * nineteen-seat turboprop from needing a management structure.
+     */
+    purserFromSeats: z.number().int().positive(),
+    /** Section 9.2 puts a Cabin Service Manager on widebody/premium. Seats are the proxy. */
+    cabinServiceManagerFromSeats: z.number().int().positive(),
+
+    /** Captain plus First Officer. Two, and the number is not really negotiable. */
+    flightDeckPerFlight: z.number().int().positive(),
+    /**
+     * Block minutes beyond which the flight deck needs relief crew (section 9.2's ULH).
+     *
+     * A second full flight deck, not one extra pilot: relief crew have to be able
+     * to operate the aeroplane while the operating crew rest.
+     */
+    reliefCrewFromBlockMinutes: z.number().int().positive(),
+  })
+  .strict();
+export type CrewRegulationBalance = z.infer<typeof CrewRegulationBalance>;
+
+/** What a crew base costs to open and run (section 9.2). */
+export const CrewBaseBalance = z
+  .object({
+    /** One-off, charged when the base opens. */
+    openingCostMinor: MinorUnits.positive(),
+    /** Charged per game month regardless of how many crew are posted there. */
+    monthlyOverheadMinor: MinorUnits.nonnegative(),
+    /**
+     * How many crew a base can hire per game week.
+     *
+     * A cap rather than a cost curve, because section 9.2's point is that you
+     * cannot buy a Captain instantly - the constraint has to be time, or money
+     * would simply buy past it.
+     */
+    weeklyHiringCapacity: z.number().int().positive(),
+  })
+  .strict();
+export type CrewBaseBalance = z.infer<typeof CrewBaseBalance>;
+
+/** Type-rating conversion - section 9.2's mechanical teeth behind fleet commonality. */
+export const CrewConversionBalance = z
+  .object({
+    /** Per crew member converted, per family. */
+    costPerHeadMinor: MinorUnits.positive(),
+    /**
+     * Game days a conversion takes, during which the crew are unavailable.
+     *
+     * The unavailability is the mechanic, not the money. A fleet decision that
+     * costs cash is a line in the accounts; one that removes crew from the roster
+     * for a fortnight is felt in the schedule.
+     */
+    durationDays: z.number().int().positive(),
+  })
+  .strict();
+export type CrewConversionBalance = z.infer<typeof CrewConversionBalance>;
+
+export const CrewBalance = z
+  .object({
+    regulation: CrewRegulationBalance,
+    base: CrewBaseBalance,
+    conversion: CrewConversionBalance,
+    /** Monthly salary per head, by rank. Pay bands are M5-02; this is the floor. */
+    flightDeckSalaryMinor: byFlightDeckRank(MinorUnits.positive()),
+    cabinSalaryMinor: byCabinRank(MinorUnits.positive()),
+    /** One-off recruitment cost per head, by ladder. */
+    hiringCostMinor: z
+      .object({ flightDeck: MinorUnits.positive(), cabin: MinorUnits.positive() })
+      .strict(),
+  })
+  .strict();
+export type CrewBalance = z.infer<typeof CrewBalance>;
+
+/**
+ * The shipped crew balance.
+ *
+ * The regulation numbers are real; everything else is authored, because section
+ * 9.2 is prose and App. A has no crew table. They are anchored on the shape of
+ * the mechanic rather than on any airline's accounts: a Captain costs several
+ * times a new cabin crew member, a conversion costs a fortnight of availability,
+ * and a base has an overhead that punishes opening one per destination.
+ *
+ * Defaulted, for the reason `SHIPPED_NPC_BALANCE` records: a required new section
+ * makes every earlier payload unparseable, and a world pinned to one cannot price
+ * a flight, found an airline or draw a fare floor.
+ */
+export const SHIPPED_CREW_BALANCE = {
+  regulation: {
+    // ICAO Annex 6 / EASA CAT.OP.MPA.170.
+    seatsPerCabinCrew: 50,
+    minimumCabinCrew: 1,
+    // Around the regional-jet/narrowbody boundary: a 100-seater is led, a
+    // 70-seat turboprop is not.
+    purserFromSeats: 100,
+    // Widebody territory in this catalogue, which is what section 9.2 asks for.
+    cabinServiceManagerFromSeats: 250,
+    flightDeckPerFlight: 2,
+    // Twelve hours block. Beyond it one flight deck cannot legally operate, which
+    // is what makes ULH a crew decision as well as a fleet one.
+    reliefCrewFromBlockMinutes: 720,
+  },
+  base: {
+    openingCostMinor: 250_000_000,
+    monthlyOverheadMinor: 40_000_000,
+    weeklyHiringCapacity: 12,
+  },
+  conversion: {
+    costPerHeadMinor: 1_800_000,
+    durationDays: 14,
+  },
+  flightDeckSalaryMinor: {
+    cadet: 3_200_000,
+    first_officer: 5_500_000,
+    senior_first_officer: 7_800_000,
+    captain: 12_500_000,
+    training_captain: 15_000_000,
+  },
+  cabinSalaryMinor: {
+    cabin_crew: 2_400_000,
+    senior_cabin_crew: 3_100_000,
+    purser: 4_200_000,
+    cabin_service_manager: 5_400_000,
+  },
+  hiringCostMinor: { flightDeck: 4_000_000, cabin: 900_000 },
+} as const satisfies z.input<typeof CrewBalance>;
+
 export const EconomyConfig = z
   .object({
     version: EconomyConfigVersion,
@@ -1295,6 +1492,8 @@ export const EconomyConfig = z
     usedMarket: UsedMarketBalance.default(SHIPPED_USED_MARKET_BALANCE),
     // Defaulted for the same reason again (M4-06).
     maintenance: MaintenanceBalance.default(SHIPPED_MAINTENANCE_BALANCE),
+    // And again (M5-01).
+    crew: CrewBalance.default(SHIPPED_CREW_BALANCE),
   })
   .strict();
 export type EconomyConfig = z.infer<typeof EconomyConfig>;
@@ -1579,6 +1778,7 @@ export const ECONOMY_CONFIG_V1: EconomyConfig = EconomyConfig.parse({
   npc: SHIPPED_NPC_BALANCE,
   usedMarket: SHIPPED_USED_MARKET_BALANCE,
   maintenance: SHIPPED_MAINTENANCE_BALANCE,
+  crew: SHIPPED_CREW_BALANCE,
 });
 
 // ---------------------------------------------------------------------------
