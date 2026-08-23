@@ -33,6 +33,7 @@ import {
 } from '@tailfin/sim';
 
 import { airframeUnavailability } from '../aircraft/maintenance';
+import { crewIllegality } from '../crew/legality';
 import { flight, schedule, scheduleLeg, worldEvent } from '../db/schema';
 import { scheduleEvent } from '../sim/event-queue';
 
@@ -74,6 +75,18 @@ export interface ScheduleInput {
 export interface RotationContext {
   /** Whether a slot is held for each leg, by index. Missing entries count as held. */
   slots?: readonly boolean[];
+  /**
+   * Crew legality, asserted by the caller.
+   *
+   * **Leave it undefined and the database decides** (M5-01): `createSchedule`
+   * reads the airline's pools and refuses a rotation it has no complement for.
+   * Setting it `true` asserts legality and skips that read, which is for callers
+   * that have already answered the question — and for the tests of other
+   * subsystems, which schedule flights for airlines that were never going to
+   * have crew and are not about crew.
+   *
+   * Setting it `false` refuses in `validateRotation`, before any row is read.
+   */
   crewLegal?: boolean;
 }
 
@@ -132,6 +145,29 @@ export async function createSchedule(
           ? 'That aircraft is in a maintenance check and cannot be scheduled until it returns to service.'
           : 'That aircraft is grounded for overdue maintenance. Book the check it is due and it will fly again.',
     };
+  }
+
+  /*
+   * And the crew have to exist (M5-01, §9.2). Same shape as the check above and
+   * for the same reason: the pools are rows, so this cannot live in
+   * `validateRotation`, but to the player it is a rotation problem — the
+   * schedule cannot run, for a reason about the crew.
+   *
+   * This is where `RotationContext.crewLegal` has been waiting since M2-07. A
+   * caller may still assert it, which the tests that are not about crew use, but
+   * the default is now the database's answer rather than a permissive `true`.
+   */
+  if (context.crewLegal === undefined) {
+    const crewProblem = await crewIllegality(
+      db,
+      input.worldId,
+      input.airlineId,
+      input.airframeId,
+      input.legs,
+    );
+    if (crewProblem !== null) {
+      return { ok: false, problem: 'crew_illegal', detail: crewProblem };
+    }
   }
 
   return db.transaction(async (tx): Promise<SaveResult> => {
