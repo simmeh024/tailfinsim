@@ -25,6 +25,10 @@ wall-clock time, that never pauses.
 - **Roadmap:** [GitHub milestones](https://github.com/simmeh024/tailfinsim/milestones) are
   the live source for feature and cross-cutting work. Counts and track lists are not copied
   here because they change whenever the roadmap does.
+- **Roadmap dependencies:**
+  [`docs/roadmap-dependencies.md`](docs/roadmap-dependencies.md) — which domain owns what,
+  what each depends on, and the contradictions that are still open. Relationships rather
+  than progress, so it stays true as the milestones move.
 
 ## Quick start
 
