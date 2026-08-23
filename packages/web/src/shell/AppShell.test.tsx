@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -230,5 +234,36 @@ describe('theme', () => {
     // "Dark" as a label is ambiguous — is that the state or the action?
     await renderAt('/world');
     expect(screen.getByRole('button', { name: 'Switch to light theme' })).toBeInTheDocument();
+  });
+});
+
+describe('the shell grid', () => {
+  /**
+   * A renamed grid area that one `@media` block still spells the old way places
+   * nothing: `grid-area: stage` matches no named area, the element is auto-placed,
+   * and on a narrow viewport it collapsed to **24 pixels** — the whole page, not
+   * just the world, reduced to a dot in the corner.
+   *
+   * Renaming `world` to `stage` did exactly that and the base layout hid it,
+   * because desktop widths never reach the media query. This asserts every area
+   * named in any `grid-template-areas` is one an element actually claims.
+   */
+  it('places every named area, at every breakpoint', () => {
+    const css = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'shell.css'), 'utf8');
+
+    const claimed = new Set(
+      [...css.matchAll(/grid-area:\s*([a-z-]+)\s*;/gi)].map((match) => String(match[1])),
+    );
+    const named = new Set(
+      [...css.matchAll(/grid-template-areas:([^;]+);/gi)].flatMap((match) =>
+        [...String(match[1]).matchAll(/'([^']+)'/g)].flatMap((row) =>
+          String(row[1]).trim().split(/\s+/),
+        ),
+      ),
+    );
+
+    expect(named.size).toBeGreaterThan(0);
+    const orphans = [...named].filter((area) => area !== '.' && !claimed.has(area));
+    expect(orphans, 'grid areas named in a template that nothing claims').toEqual([]);
   });
 });

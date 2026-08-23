@@ -295,6 +295,19 @@ observable: on `MapView` the layer's `coordinateConversion` becomes `-1`, and on
 stays `0` because no conversion is needed. The ocean does not declare it — a single-colour fill
 samples the same whatever the coordinates mean.
 
+### Renaming a grid area renames it everywhere, including inside a media query
+
+`world` became `stage` in the shell's base grid when the renderer moved to its own page, and
+one `@media (max-width: 48rem)` block kept the old name. A `grid-template-areas` naming an
+area no element claims places nothing: `grid-area: stage` matched no area, the stage was
+auto-placed, and below 48rem it collapsed to **24 pixels** — the whole page reduced to a dot,
+not just the world.
+
+Desktop widths never reach that block, so nothing caught it until a browser pane happened to
+be 316 pixels wide. `AppShell.test.tsx` now parses `shell.css` and asserts that every area
+named in any `grid-template-areas` is one an element actually claims; reintroducing the old
+name fails it with `expected [ 'world' ] to deeply equal []`.
+
 ### The ocean is a bitmap, not a polygon
 
 It was a `SolidPolygonLayer` holding one six-vertex rectangle, which is exactly right on a flat

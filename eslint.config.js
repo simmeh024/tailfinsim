@@ -251,8 +251,12 @@ export default tseslint.config(
   },
 
   // Tests may reach for things production code may not.
+  //
+  // `.tsx` included: a React component test is a test, and leaving it out meant a
+  // shell test that reads a stylesheet off disk was refused the Node builtins that
+  // the identical assertion in a `.ts` test is allowed.
   {
-    files: ['**/*.test.ts', '**/*.spec.ts'],
+    files: ['**/*.test.ts', '**/*.test.tsx', '**/*.spec.ts', '**/*.spec.tsx'],
     rules: {
       '@typescript-eslint/no-restricted-imports': 'off',
       '@typescript-eslint/no-non-null-assertion': 'off',
