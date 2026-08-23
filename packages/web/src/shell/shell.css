@@ -115,7 +115,11 @@ body {
   transition: opacity var(--motion-base) var(--ease);
 }
 
-.world-renderer[data-projection='globe'][data-quality='full'] .world-renderer__atmosphere {
+/* Only while the whole globe is in frame. The ring is a fixed ellipse in the
+   container, so once the planet overflows the view it tracks nothing and reads as
+   a bright arc laid across the map — see `ATMOSPHERE_MAX_ZOOM`. */
+.world-renderer[data-projection='globe'][data-quality='full'][data-atmosphere='on']
+  .world-renderer__atmosphere {
   opacity: 0.08;
 }
 

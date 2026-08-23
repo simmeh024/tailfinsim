@@ -40,6 +40,22 @@ const CONTROLLER = {
   touchZoom: true,
 };
 
+/**
+ * The zoom past which the atmosphere glow is hidden.
+ *
+ * `.world-renderer__atmosphere` is a CSS ellipse inset 5% of the *container*. It
+ * has no idea where the globe actually is, which is fine while the planet sits
+ * small and centred in the frame and is exactly what makes it read as a planet in
+ * space. Zoom in far enough that the globe overflows the frame and the ring stops
+ * tracking anything: it becomes a bright arc sweeping across the map, brightest
+ * where it crosses the pole.
+ *
+ * So it is shown only while the whole globe is still in view. Chosen against the
+ * default camera, which is `0.35`, and the point at which the sphere starts to
+ * exceed the shorter side of a typical stage.
+ */
+const ATMOSPHERE_MAX_ZOOM = 1;
+
 const DEFAULT_VISIBILITY: WorldLayerVisibility = {
   graticule: true,
   routes: true,
@@ -210,6 +226,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       className="world-renderer"
       data-projection={projection}
       data-quality={quality}
+      data-atmosphere={viewState.zoom < ATMOSPHERE_MAX_ZOOM ? 'on' : 'off'}
       data-transitioning={transitioning}
       aria-label="Interactive world renderer"
     >

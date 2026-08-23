@@ -85,12 +85,27 @@ function smoothstep(edge0: number, edge1: number, value: number): number {
   return position * position * (3 - 2 * position);
 }
 
-/** Night opacity with a soft civil-twilight band around the geometric terminator. */
+/**
+ * Where full daylight ends and full night begins, in degrees of solar elevation.
+ *
+ * The band between them is the terminator a player actually sees, and it was
+ * originally +3 to -9: twelve degrees, which on a globe is a narrow enough smear
+ * that the edge reads as a line rather than as dusk.
+ *
+ * These are the real thresholds instead. Astronomical twilight ends at -18, and
+ * below it the sky is genuinely dark; +6 is comfortably into full day. That makes
+ * the band twenty-four degrees — twice as soft, and no longer an invented number.
+ */
+const FULL_DAY_ELEVATION = 6;
+const FULL_NIGHT_ELEVATION = -18;
+
+/** Night opacity, with the twilight band spread across the elevations above. */
 export function darknessAt(longitude: number, latitude: number, sun: SubsolarPoint): number {
-  // Solar elevation is asin(dot). Full day above +3°, full night below -9°.
+  // Solar elevation is asin(dot), and `smoothstep` is monotonic, so comparing the
+  // sines directly avoids an arcsine per texel across half a million of them.
   return smoothstep(
-    Math.sin(3 * RADIANS),
-    Math.sin(-9 * RADIANS),
+    Math.sin(FULL_DAY_ELEVATION * RADIANS),
+    Math.sin(FULL_NIGHT_ELEVATION * RADIANS),
     solarDot(longitude, latitude, sun),
   );
 }

@@ -1,7 +1,7 @@
 import { ArcLayer } from '@deck.gl/layers';
 import { describe, expect, it } from 'vitest';
 
-import { createWorldLayers } from './layers';
+import { createWorldLayers, unwrapAntimeridian } from './layers';
 import { createDarknessField } from './terminator';
 
 import type { WorldRoute } from './layers';
@@ -322,5 +322,94 @@ describe('projection-independent world layers', () => {
     }
     expect(Math.min(...alphas)).toBe(0);
     expect(Math.max(...alphas)).toBe(palette.night[3]);
+  });
+
+  /**
+   * The Arctic ring, which was neither the atmosphere nor the shading nor the
+   * mesh — all three of which I checked first.
+   *
+   * `land-110m` stores longitudes in `[-180, 180]`, so a coastline crossing the
+   * antimeridian has consecutive vertices like `179.99` and `-180`. Neighbours on a
+   * sphere; **360 degrees apart in the space the layers tessellate in**. The
+   * coastline `PathLayer` drew that as a segment sweeping the whole way round the
+   * world, which on the globe is a smooth arc across the Arctic with no coastline
+   * under it.
+   */
+  it('leaves no ring jumping the antimeridian', () => {
+    const rings: number[][][] = [];
+    const collect = (geometry: { type: string; coordinates: unknown }) => {
+      if (geometry.type === 'Polygon') rings.push(...(geometry.coordinates as number[][][]));
+      else if (geometry.type === 'MultiPolygon')
+        for (const polygon of geometry.coordinates as number[][][][]) rings.push(...polygon);
+    };
+    const land = (
+      createWorldLayers({
+        palette,
+        quality: 'full',
+        routes: [],
+        darkness: DARKNESS,
+        projection: 'globe',
+        visibility: { graticule: false, routes: false, terminator: false },
+      }).find((layer) => layer !== false && layer.id === 'world-land') as Layer
+    ).props.data as { features?: { geometry: { type: string; coordinates: unknown } }[] };
+
+    for (const shape of land.features ?? []) collect(shape.geometry);
+    expect(rings.length).toBeGreaterThan(100);
+
+    const jumps = rings.flatMap((ring) =>
+      ring
+        .map((point, index) =>
+          index === 0 ? 0 : Math.abs((point[0] ?? 0) - (ring[index - 1]?.[0] ?? 0)),
+        )
+        .filter((delta) => delta > 180),
+    );
+    expect(jumps, 'consecutive coastline vertices 360 degrees apart').toEqual([]);
+  });
+
+  it('unwraps a ring that crosses the antimeridian, and leaves others alone', () => {
+    const crossing = {
+      type: 'Feature',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [179, 60],
+            [-180, 61],
+            [-179, 62],
+            [179, 60],
+          ],
+        ],
+      },
+    };
+    unwrapAntimeridian(crossing);
+    // -180 becomes 180, -179 becomes 181: the same points, contiguous.
+    expect(crossing.geometry.coordinates[0]).toEqual([
+      [179, 60],
+      [180, 61],
+      [181, 62],
+      [179, 60],
+    ]);
+
+    const ordinary = {
+      type: 'Feature',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [10, 50],
+            [12, 51],
+            [11, 52],
+            [10, 50],
+          ],
+        ],
+      },
+    };
+    unwrapAntimeridian(ordinary);
+    expect(ordinary.geometry.coordinates[0]).toEqual([
+      [10, 50],
+      [12, 51],
+      [11, 52],
+      [10, 50],
+    ]);
   });
 });
