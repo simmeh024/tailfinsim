@@ -379,3 +379,70 @@ describe('queue depth', () => {
     expect(asked).toBe(1);
   });
 });
+
+describe('crew conversions on the tick', () => {
+  /**
+   * M5-01. Crew put into a type conversion come back out on the worker's tick,
+   * against the world's own clock — so this proves the engine calls the sweep at
+   * all, which is the part production does not have. `store.test.ts` proves what
+   * the sweep does to the rows.
+   */
+  it('completes conversions for every tickable world and counts them', async () => {
+    const completeConversions = vi.fn((_db: Database, _worldId: string, _at: Date) =>
+      Promise.resolve({ completed: 2 }),
+    );
+    const engine = createSimulationEngine({
+      db,
+      handlers: {},
+      listWorlds: () => Promise.resolve(worldsFixture('Flagship', 'Second')),
+      drain: () => Promise.resolve(drainResult(0)),
+      completeConversions,
+    });
+
+    const report = await engine.runOnce();
+
+    expect(completeConversions).toHaveBeenCalledTimes(2);
+    expect(report.crewConversionsCompleted).toBe(4);
+    expect(report.crewErrors).toBe(0);
+  });
+
+  it('sweeps against game time, not wall time', async () => {
+    const completeConversions = vi.fn((_db: Database, _worldId: string, _at: Date) =>
+      Promise.resolve({ completed: 0 }),
+    );
+    const engine = createSimulationEngine({
+      db,
+      handlers: {},
+      listWorlds: () => Promise.resolve(worldsFixture('Flagship')),
+      drain: () => Promise.resolve(drainResult(0)),
+      completeConversions,
+    });
+
+    await engine.runOnce();
+
+    // A fortnight of training is a span in the world's calendar, so the instant
+    // handed to the sweep has to be the world's, not the operating system's.
+    const at = completeConversions.mock.calls[0]?.[2];
+    if (at === undefined) throw new Error('the sweep was never called');
+    expect(at.getTime()).toBeGreaterThanOrEqual(clock.epoch.getTime());
+    expect(at.getFullYear()).toBe(clock.epoch.getFullYear());
+  });
+
+  it('keeps draining when the crew sweep throws', async () => {
+    // Crew who could not be released this tick are released the next one. A
+    // flight that never settles is money that never moves, so the queue wins.
+    const engine = createSimulationEngine({
+      db,
+      handlers: {},
+      listWorlds: () => Promise.resolve(worldsFixture('Flagship')),
+      drain: () => Promise.resolve(drainResult(3)),
+      completeConversions: () => Promise.reject(new Error('no')),
+    });
+
+    const report = await engine.runOnce();
+
+    expect(report.crewErrors).toBe(1);
+    expect(report.crewConversionsCompleted).toBe(0);
+    expect(report.processed).toBe(3);
+  });
+});

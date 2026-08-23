@@ -288,6 +288,13 @@ airframes ground on the worker's tick, so on a production world a booked check w
 finish and nothing would ever be grounded — an aeroplane put into a C-check there stays in it
 for ever. `checksCompleted`, `airframesGrounded` and `maintenanceErrors` are the counters.
 
+**Crew type conversions are the same story again (M5-01).** A conversion completes on the
+worker's tick, against the world's game clock, so on a production world crew sent to convert
+onto a new family would sit in `unavailable` for ever — visible on the Crew page, counted
+against the airline, and never coming back. `crewConversionsCompleted` and `crewErrors` are the
+counters. The reason it is game time rather than real weeks is that training happens _inside_
+the world; §7.2's factory lead time is the one deliberate exception in the fleet.
+
 **And since M4-07 there is a page where all of that is visible at once.** The fleet table
 reads its location, utilisation and next check from flights that only the worker produces, so
 on a production world every aeroplane sits at its delivery airport at `0.0 h/day` with a check
