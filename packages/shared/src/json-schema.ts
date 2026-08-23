@@ -20,7 +20,11 @@ import {
   AdminWorldStatusResponse,
   AdminWorldListResponse,
 } from './admin';
-import { AircraftAcquisitionResponse, AircraftOrderListResponse } from './aircraft-acquisition';
+import {
+  AircraftAcquisitionQuoteResponse,
+  AircraftAcquisitionResponse,
+  AircraftOrderListResponse,
+} from './aircraft-acquisition';
 import { FleetCatalogueResponse } from './aircraft-catalogue';
 import {
   AirlineFoundingAirportListResponse,
@@ -43,7 +47,7 @@ import { WorldClock } from './world';
 
 /**
  * JSON Schema versions of the wire schemas, for consumers that speak JSON
- * Schema rather than zod — principally Fastify, whose validation and
+ * Schema rather than zod â€” principally Fastify, whose validation and
  * serialisation are JSON-Schema based.
  *
  * These are **derived, not written**. `z.toJSONSchema` converts the same zod
@@ -119,6 +123,9 @@ export const adminPinEconomyConfigResponseJsonSchema = z.toJSONSchema(
 export const adminNpcResponseJsonSchema = z.toJSONSchema(AdminNpcResponse);
 
 export const fleetCatalogueResponseJsonSchema = z.toJSONSchema(FleetCatalogueResponse);
+export const aircraftAcquisitionQuoteResponseJsonSchema = z.toJSONSchema(
+  AircraftAcquisitionQuoteResponse,
+);
 export const aircraftAcquisitionResponseJsonSchema = z.toJSONSchema(AircraftAcquisitionResponse);
 export const aircraftOrderListResponseJsonSchema = z.toJSONSchema(AircraftOrderListResponse);
 export const usedMarketResponseJsonSchema = z.toJSONSchema(UsedMarketResponse);

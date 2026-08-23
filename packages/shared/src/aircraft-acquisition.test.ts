@@ -1,11 +1,55 @@
 import { describe, expect, it } from 'vitest';
 
-import { AircraftAcquisitionInput, AircraftOrder } from './aircraft-acquisition';
+import {
+  AircraftAcquisitionInput,
+  AircraftAcquisitionQuoteInput,
+  AircraftAcquisitionQuoteResponse,
+  AircraftOrder,
+} from './aircraft-acquisition';
 import { AIRCRAFT_CATALOGUE_V1 } from './aircraft-catalogue';
 
 const requestId = '11111111-2222-4333-8444-555555555555';
 
 describe('aircraft acquisition wire contracts', () => {
+  it('keeps quote inputs price-free and quote outputs explicit about cash and delivery', () => {
+    expect(
+      AircraftAcquisitionQuoteInput.parse({
+        kind: 'new',
+        typeDesignation: 'A320neo',
+        optionIds: ['aux-tanks'],
+      }),
+    ).toEqual({ kind: 'new', typeDesignation: 'A320neo', optionIds: ['aux-tanks'] });
+
+    expect(() =>
+      AircraftAcquisitionQuoteInput.parse({
+        kind: 'new',
+        typeDesignation: 'A320neo',
+        optionIds: [],
+        priceMinor: 1,
+      }),
+    ).toThrow();
+
+    const effectiveSpec = AIRCRAFT_CATALOGUE_V1.types[0]!.baseSpec;
+    expect(
+      AircraftAcquisitionQuoteResponse.parse({
+        kind: 'new',
+        catalogueVersion: 'v1',
+        typeDesignation: 'A320neo',
+        buildOptionIds: [],
+        effectiveSpec,
+        chargedMinor: 10_000,
+        monthlyLeaseRateMinor: null,
+        baseLeadTimeWeeks: 4,
+        optionLeadTimeWeeks: 0,
+        totalLeadTimeWeeks: 4,
+        cashMinor: 50_000,
+        resultingCashMinor: 40_000,
+        quotedAt: '2026-08-23T12:00:00.000Z',
+        estimatedDeliveryAt: '2026-09-20T12:00:00.000Z',
+      }),
+    ).toMatchObject({ chargedMinor: 10_000, resultingCashMinor: 40_000 });
+  });
+
   it('derives airline and world from the session rather than admitting either id', () => {
     expect(
       AircraftAcquisitionInput.safeParse({

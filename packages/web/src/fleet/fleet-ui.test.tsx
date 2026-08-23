@@ -73,8 +73,7 @@ const entry = (over: Partial<FleetCatalogueResponse['types'][number]> = {}) => (
   baseDeliveryLeadWeeks: 4,
   restrictions: [],
   restrictionCostPerDepartureMinor: 0,
-  // M4-03. The page does not render the configurator — that is M4-07's detail
-  // view — but the response carries it, so the fixture does too.
+  // M4-03. The marketplace resolves these ids through the shared option set.
   availableOptionIds: [],
   ...over,
 });
@@ -353,6 +352,7 @@ function stubApi(
       if (url === '/api/fleet/airframes') {
         return fleet === null ? failure(500) : json(fleet);
       }
+      if (url === '/api/fleet/used-market') return json({ listings: [], slots: 24 });
       if (url === `/api/fleet/airframes/${AIRFRAME_ID}`) return json(DETAIL);
       // Every other airframe id is a 404, which is what a cross-owner id gets
       // (ADR-0020) as well as one that does not exist.
@@ -372,14 +372,6 @@ async function openFleet(): Promise<void> {
   await waitForSignInCheck();
 }
 
-/** The catalogue table, told apart from the fleet table by a column only it has. */
-async function catalogueTable(): Promise<HTMLElement> {
-  const tables = await screen.findAllByRole('table');
-  const found = tables.find((table) => within(table).queryByText('Range (nm)') !== null);
-  if (!found) throw new Error('No catalogue table rendered');
-  return found;
-}
-
 async function fleetTable(): Promise<HTMLElement> {
   const tables = await screen.findAllByRole('table');
   const found = tables.find((table) => within(table).queryByText('Registration') !== null);
@@ -392,9 +384,8 @@ describe('the fleet catalogue', () => {
     stubApi();
     await openFleet();
 
-    const catalogue = await catalogueTable();
-    expect(within(catalogue).getByText('A320neo')).toBeInTheDocument();
-    expect(within(catalogue).getByText('737-800')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /View Airbus A320neo/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /View Boeing 737-800/i })).toBeInTheDocument();
   });
 
   it('shows an arriving type with the date it arrives', async () => {
@@ -403,8 +394,9 @@ describe('the fleet catalogue', () => {
 
     // M4-02's second acceptance criterion. The date is what turns a locked row
     // from a wall into a plan.
-    expect(await screen.findByText('arrives 2024-11-11')).toBeInTheDocument();
-    expect(screen.getByText('A321XLR')).toBeInTheDocument();
+    const xlr = await screen.findByRole('button', { name: /View Airbus A321XLR/i });
+    fireEvent.click(xlr);
+    expect(await screen.findByText('11 Nov 2024')).toBeInTheDocument();
   });
 
   it('renders the server’s sentence rather than deciding for itself', async () => {
@@ -414,6 +406,7 @@ describe('the fleet catalogue', () => {
     // §21: a browser must not reach a different conclusion about whether an
     // aircraft exists than the world did. Lint already stops the client
     // importing `@tailfin/sim`; this proves it renders what it was told.
+    fireEvent.click(await screen.findByRole('button', { name: /View Airbus A321XLR/i }));
     expect(
       await screen.findByText(
         'Flying as a prototype. Enters service on 2024-11-11, and can be ordered from then.',
@@ -425,9 +418,8 @@ describe('the fleet catalogue', () => {
     stubApi();
     await openFleet();
 
-    const catalogue = await catalogueTable();
-    expect(within(catalogue).getByText('In testing')).toBeInTheDocument();
-    expect(within(catalogue).getByText('Used only')).toBeInTheDocument();
+    expect((await screen.findAllByText('In testing')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Used only').length).toBeGreaterThan(0);
   });
 
   it('shows a dash where a used-only type has no list price', async () => {
@@ -435,8 +427,9 @@ describe('the fleet catalogue', () => {
     await openFleet();
 
     // Not a zero. An aircraft you cannot buy new does not cost nothing.
-    const catalogue = await catalogueTable();
-    expect(within(catalogue).getAllByText('—').length).toBeGreaterThan(0);
+    fireEvent.click(await screen.findByRole('button', { name: /View Boeing 737-800/i }));
+    const detail = screen.getByLabelText('Selected aircraft');
+    expect(within(detail).getAllByText('Unavailable').length).toBeGreaterThan(0);
   });
 
   it('says so plainly when the world is too early for any aircraft', async () => {

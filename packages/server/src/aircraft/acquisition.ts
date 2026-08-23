@@ -2,6 +2,10 @@ import { and, asc, desc, eq, lte } from 'drizzle-orm';
 
 import {
   Airframe as AirframeSchema,
+  type AircraftAcquisitionQuoteInput,
+  type AircraftAcquisitionQuoteResponse,
+  type AircraftSpec,
+  AircraftSpec as AircraftSpecSchema,
   AircraftOrder as AircraftOrderSchema,
   type AircraftAcquisitionInput,
   type AircraftAcquisitionResponse,
@@ -52,6 +56,18 @@ export type AircraftAcquisitionRefusal =
 
 export type AircraftAcquisitionResult =
   ({ ok: true } & AircraftAcquisitionResponse) | AircraftAcquisitionRefusal;
+
+export type AircraftAcquisitionQuoteResult =
+  | { ok: true; quote: AircraftAcquisitionQuoteResponse }
+  | Extract<
+      AircraftAcquisitionRefusal,
+      | { kind: 'request-id-conflict' }
+      | { kind: 'airline-not-active' }
+      | { kind: 'type-not-found' }
+      | { kind: 'type-not-orderable' }
+      | { kind: 'lease-not-offered' }
+      | { kind: 'invalid-build' }
+    >;
 
 function clockOf(row: { epoch: Date; launchDate: Date; speedMultiplier: string }): WorldClock {
   return {
@@ -166,7 +182,7 @@ interface OrderFacts {
   catalogueVersion: string;
   typeDesignation: string;
   buildOptionIds: readonly string[];
-  effectiveSpec: unknown;
+  effectiveSpec: AircraftSpec;
   cabinConfigId: string | null;
   liveryId: string | null;
   ownerHistory: readonly unknown[];
@@ -191,12 +207,127 @@ interface OrderFacts {
   usedListingId: string | null;
 }
 
+type CatalogueOfferFacts = Omit<OrderFacts, 'deliveryAirportIcao'>;
+
+type CatalogueSelection =
+  | { kind: 'lease'; typeDesignation: string }
+  | { kind: 'new'; typeDesignation: string; optionIds: readonly string[] };
+
+type CatalogueOfferResult =
+  | { ok: true; facts: CatalogueOfferFacts }
+  | Extract<
+      AircraftAcquisitionRefusal,
+      | { kind: 'type-not-found' }
+      | { kind: 'type-not-orderable' }
+      | { kind: 'lease-not-offered' }
+      | { kind: 'invalid-build' }
+    >;
+
+/**
+ * Resolve the type-level commercial/build offer once for both quote and spend.
+ *
+ * This is the important anti-drift boundary for FLEET-MARKET: the preview and
+ * the transaction use the same M4 availability rule, option resolver and
+ * effective-spec fold. The browser never receives a formula to reproduce.
+ */
+function catalogueOffer(
+  catalogue: Awaited<ReturnType<typeof loadCatalogueVersion>>,
+  input: CatalogueSelection,
+  inGameNow: Date,
+): CatalogueOfferResult {
+  const type = catalogue.types.get(input.typeDesignation);
+  if (!type) return { ok: false, kind: 'type-not-found', designation: input.typeDesignation };
+
+  const availability = availabilityOf(type.eraDates, inGameNow);
+  const permitted =
+    input.kind === 'new'
+      ? availability === 'orderable'
+      : availability === 'orderable' || availability === 'used_only';
+  if (!permitted) {
+    return {
+      ok: false,
+      kind: 'type-not-orderable',
+      designation: input.typeDesignation,
+      availability,
+    };
+  }
+
+  if (input.kind === 'lease') {
+    if (type.monthlyLeaseRate === null) {
+      return { ok: false, kind: 'lease-not-offered', designation: type.designation };
+    }
+    const build = computeEffectiveBuild({ baseSpec: type.baseSpec });
+    return {
+      ok: true,
+      facts: {
+        catalogueVersion: catalogue.version,
+        typeDesignation: type.designation,
+        buildOptionIds: [],
+        effectiveSpec: build.spec,
+        cabinConfigId: null,
+        liveryId: null,
+        ownerHistory: [],
+        hours: 0,
+        cycles: 0,
+        // A lease is an aircraft off the lessor's shelf, and the design says
+        // nothing about its age. Unknown is more truthful than "new today".
+        builtAt: null,
+        chargedMinor: type.monthlyLeaseRate * LEASE_DEPOSIT_MONTHS,
+        monthlyLeaseRateMinor: type.monthlyLeaseRate,
+        baseLeadTimeWeeks: 0,
+        optionLeadTimeWeeks: 0,
+        usedListingId: null,
+      },
+    };
+  }
+
+  if (type.listPrice === null) {
+    return {
+      ok: false,
+      kind: 'type-not-orderable',
+      designation: type.designation,
+      availability,
+    };
+  }
+  const resolved = resolveOptions({
+    type,
+    catalogue: catalogue.options,
+    optionIds: input.optionIds,
+  });
+  if (!resolved.ok) return { ok: false, kind: 'invalid-build', refusals: resolved.refusals };
+  const build = computeEffectiveBuild({
+    baseSpec: type.baseSpec,
+    options: resolved.options,
+    listPriceMinor: type.listPrice,
+  });
+  return {
+    ok: true,
+    facts: {
+      catalogueVersion: catalogue.version,
+      typeDesignation: type.designation,
+      buildOptionIds: build.optionIds,
+      effectiveSpec: build.spec,
+      cabinConfigId: null,
+      liveryId: null,
+      ownerHistory: [],
+      hours: 0,
+      cycles: 0,
+      builtAt: null,
+      chargedMinor: build.priceMinor,
+      monthlyLeaseRateMinor: null,
+      baseLeadTimeWeeks: type.baseDeliveryLeadWeeks,
+      optionLeadTimeWeeks: build.leadTimeWeeks,
+      usedListingId: null,
+    },
+  };
+}
+
 function factsFromUsed(listing: UsedAircraftListingRow): OrderFacts {
   return {
     catalogueVersion: listing.catalogueVersion,
     typeDesignation: listing.typeDesignation,
     buildOptionIds: jsonArray(listing.buildOptionIds) as string[],
-    effectiveSpec: JSON.parse(listing.effectiveSpec) as unknown,
+    effectiveSpec: AircraftSpecSchema.parse(JSON.parse(listing.effectiveSpec) as unknown),
     cabinConfigId: listing.cabinConfigId,
     liveryId: listing.liveryId,
     ownerHistory: jsonArray(listing.ownerHistory),
@@ -209,6 +340,73 @@ function factsFromUsed(listing: UsedAircraftListingRow): OrderFacts {
     optionLeadTimeWeeks: 0,
     deliveryAirportIcao: listing.locationIcao,
     usedListingId: listing.id,
+  };
+}
+
+/**
+ * Preview a new or lease acquisition through the same authoritative resolver
+ * the spending transaction calls. Cash is deliberately an unlocked snapshot:
+ * the final transaction locks the airline and independently validates it.
+ */
+export async function quoteAircraftAcquisition(
+  db: Database,
+  own: ResolvedPlayerAirline,
+  input: AircraftAcquisitionQuoteInput,
+  realNow: Date = new Date(),
+): Promise<AircraftAcquisitionQuoteResult> {
+  const [airlines, worlds] = await Promise.all([
+    db
+      .select({ status: airline.status, worldId: airline.worldId, cash: airline.cashMinor })
+      .from(airline)
+      .where(eq(airline.id, own.id))
+      .limit(1),
+    db
+      .select({
+        epoch: world.epoch,
+        launchDate: world.launchDate,
+        speedMultiplier: world.speedMultiplier,
+        catalogueVersion: world.aircraftCatalogueVersion,
+      })
+      .from(world)
+      .where(eq(world.id, own.worldId))
+      .limit(1),
+  ]);
+
+  const currentAirline = airlines[0];
+  if (currentAirline?.worldId !== own.worldId) {
+    return { ok: false, kind: 'request-id-conflict' };
+  }
+  if (currentAirline.status !== 'active') {
+    return { ok: false, kind: 'airline-not-active', status: currentAirline.status };
+  }
+  const selectedWorld = worlds[0];
+  if (!selectedWorld) throw new Error(`No world ${own.worldId}`);
+
+  const catalogue = await loadCatalogueVersion(db, selectedWorld.catalogueVersion);
+  const offer = catalogueOffer(catalogue, input, gameTime(clockOf(selectedWorld), realNow));
+  if (!offer.ok) return offer;
+
+  const totalLeadTimeWeeks = offer.facts.baseLeadTimeWeeks + offer.facts.optionLeadTimeWeeks;
+  return {
+    ok: true,
+    quote: {
+      kind: input.kind,
+      catalogueVersion: offer.facts.catalogueVersion,
+      typeDesignation: offer.facts.typeDesignation,
+      buildOptionIds: [...offer.facts.buildOptionIds],
+      effectiveSpec: offer.facts.effectiveSpec,
+      chargedMinor: offer.facts.chargedMinor,
+      monthlyLeaseRateMinor: offer.facts.monthlyLeaseRateMinor,
+      baseLeadTimeWeeks: offer.facts.baseLeadTimeWeeks,
+      optionLeadTimeWeeks: offer.facts.optionLeadTimeWeeks,
+      totalLeadTimeWeeks,
+      cashMinor: currentAirline.cash,
+      resultingCashMinor: currentAirline.cash - offer.facts.chargedMinor,
+      quotedAt: realNow.toISOString(),
+      estimatedDeliveryAt: new Date(
+        realNow.getTime() + totalLeadTimeWeeks * REAL_WEEK_MS,
+      ).toISOString(),
+    },
   };
 }
 
@@ -369,97 +567,12 @@ export async function acquireAircraft(
         usedRegistration = listing.registration;
       } else {
         const catalogue = await loadCatalogueVersion(db, selectedWorld.catalogueVersion);
-        const type = catalogue.types.get(input.typeDesignation);
-        if (!type) {
-          return { ok: false, kind: 'type-not-found', designation: input.typeDesignation };
-        }
-        const availability = availabilityOf(type.eraDates, inGameNow);
-        const permitted =
-          input.kind === 'new'
-            ? availability === 'orderable'
-            : availability === 'orderable' || availability === 'used_only';
-        if (!permitted) {
-          return {
-            ok: false,
-            kind: 'type-not-orderable',
-            designation: input.typeDesignation,
-            availability,
-          };
-        }
         if (!(await airportExists(tx, input.deliveryAirportIcao))) {
           return { ok: false, kind: 'airport-not-found', icao: input.deliveryAirportIcao };
         }
-
-        if (input.kind === 'lease') {
-          if (type.monthlyLeaseRate === null) {
-            return { ok: false, kind: 'lease-not-offered', designation: type.designation };
-          }
-          const build = computeEffectiveBuild({ baseSpec: type.baseSpec });
-          facts = {
-            catalogueVersion: catalogue.version,
-            typeDesignation: type.designation,
-            buildOptionIds: [],
-            effectiveSpec: build.spec,
-            cabinConfigId: null,
-            liveryId: null,
-            ownerHistory: [],
-            hours: 0,
-            cycles: 0,
-            // A lease is an aircraft off the lessor's shelf, and the design says
-            // nothing about its age. Null rather than "today" — an unknown build
-            // date is a fact, and a fabricated one would make every leased
-            // airframe eternally brand new. Lessor counterparties and lease terms
-            // are §24 design debt.
-            builtAt: null,
-            chargedMinor: type.monthlyLeaseRate * LEASE_DEPOSIT_MONTHS,
-            monthlyLeaseRateMinor: type.monthlyLeaseRate,
-            baseLeadTimeWeeks: 0,
-            optionLeadTimeWeeks: 0,
-            deliveryAirportIcao: input.deliveryAirportIcao,
-            usedListingId: null,
-          };
-        } else {
-          if (type.listPrice === null) {
-            return {
-              ok: false,
-              kind: 'type-not-orderable',
-              designation: type.designation,
-              availability,
-            };
-          }
-          const resolved = resolveOptions({
-            type,
-            catalogue: catalogue.options,
-            optionIds: input.optionIds,
-          });
-          if (!resolved.ok)
-            return { ok: false, kind: 'invalid-build', refusals: resolved.refusals };
-          const build = computeEffectiveBuild({
-            baseSpec: type.baseSpec,
-            options: resolved.options,
-            listPriceMinor: type.listPrice,
-          });
-          facts = {
-            catalogueVersion: catalogue.version,
-            typeDesignation: type.designation,
-            buildOptionIds: build.optionIds,
-            effectiveSpec: build.spec,
-            cabinConfigId: null,
-            liveryId: null,
-            ownerHistory: [],
-            hours: 0,
-            cycles: 0,
-            // A factory order has no build date until it is built. The delivery
-            // sweep is where that becomes known, and M4-05 does not reach into it.
-            builtAt: null,
-            chargedMinor: build.priceMinor,
-            monthlyLeaseRateMinor: null,
-            baseLeadTimeWeeks: type.baseDeliveryLeadWeeks,
-            optionLeadTimeWeeks: build.leadTimeWeeks,
-            deliveryAirportIcao: input.deliveryAirportIcao,
-            usedListingId: null,
-          };
-        }
+        const offer = catalogueOffer(catalogue, input, inGameNow);
+        if (!offer.ok) return offer;
+        facts = { ...offer.facts, deliveryAirportIcao: input.deliveryAirportIcao };
       }
 
       const immediate = input.kind !== 'new';
