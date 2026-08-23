@@ -373,18 +373,43 @@ Culling buys nothing here in any case. There is one quad per layer, the depth bu
 hides the far side, and the cost of drawing it is a few thousand fragments that fail the depth
 test. Both world-sized bitmaps now use `none`, and `layers.test.ts` asserts it.
 
-### The night field is equirectangular, and deck.gl has to be told
+### The night field's rows are generated per projection, and deck.gl converts nothing
 
-`BitmapLayer` interpolates texture coordinates in whatever coordinate system the viewport
-uses unless `_imageCoordinateSystem` says otherwise. On the globe that is already lng/lat. On
-the **flat map it is Web Mercator**, which stretches towards the poles — so a field sampled at
-equal degrees of latitude per row had its night boundary drifting from the true latitude,
-further the closer to the poles.
+`BitmapLayer` interpolates texture coordinates linearly in whatever coordinate system the
+viewport uses. On the globe that is lng/lat. On the **flat map it is Web Mercator**, which
+stretches towards the poles — so a field sampled at equal degrees of latitude per row has its
+night boundary drifting from the true latitude, further the closer to the poles.
 
-Declaring `_imageCoordinateSystem: 'lnglat'` makes deck.gl convert on the way in. It is
-observable: on `MapView` the layer's `coordinateConversion` becomes `-1`, and on `GlobeView` it
-stays `0` because no conversion is needed. The ocean does not declare it — a single-colour fill
-samples the same whatever the coordinates mean.
+deck.gl's own answer is `_imageCoordinateSystem: 'lnglat'`, which converts in the shader. That
+was here, and it is observable that it engages: on `MapView` the layer's `coordinateConversion`
+becomes `-1`, `0` on `GlobeView`. **It does not survive a world-sized quad.** Measured on the
+deployed build:
+
+- on the **flat map**, with `bounds: [-180, -90, 180, 90]`, the entire field was squashed into a
+  tapering horizontal wedge across the equator — the day lens compressed into a band a few
+  degrees tall, everything else full night;
+- on the **globe**, hard-edged rectangular blocks of full night over land that was in daylight.
+  A scanline across the Mediterranean read alpha `0` for most land and `120` — the palette's
+  full night — in isolated blocks, with no intermediate values between them.
+
+The root of it is that Web Mercator has no latitude ±90: `y` runs to infinity there, so a flat
+quad cannot be given the poles in the first place. So the fix is on both sides at once, and the
+two halves have to agree:
+
+|          | `worldBounds` north                       | `createDarknessField` spacing             |
+| -------- | ----------------------------------------- | ----------------------------------------- |
+| globe    | `90`                                      | `equirectangular` — equal degrees per row |
+| flat map | `85.051129` (`WEB_MERCATOR_MAX_LATITUDE`) | `mercator` — equal mercator units per row |
+
+The mapping is then exactly linear in each viewport and there is nothing to convert;
+`_imageCoordinateSystem` is left at `'default'`, and `layers.test.ts` asserts that value rather
+than merely "not lnglat", because any other value re-enters the shader path. `DarknessField`
+carries its own `northLatitude` so the two cannot silently drift apart, and
+`terminator.test.ts` reconstructs the latitude each mercator row is drawn at from the
+projection and requires the field's value there to match.
+
+The ocean bitmap takes the same bounds, which is free: a single-colour fill samples the same
+whatever the coordinates mean, and ±85.051129 already covers the whole renderable sheet.
 
 ### Renaming a grid area renames it everywhere, including inside a media query
 

@@ -136,10 +136,19 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   // Sampled once a minute, at the quality the device is coping with. Half the
   // resolution is still far finer than the twilight band it has to describe: the
   // gradient spans twelve degrees of solar elevation, and a reduced texel is two.
+  // `projection` is in here because the *rows* differ between the two views, not
+  // just the bounds: the flat map spaces them in Web Mercator and the globe in
+  // degrees. `layers.ts` explains why that is done in the field rather than in a
+  // shader.
   const darkness = useMemo(
     () =>
-      quality === 'full' ? createDarknessField(now, 512, 256) : createDarknessField(now, 256, 128),
-    [now, quality],
+      createDarknessField(
+        now,
+        quality === 'full' ? 512 : 256,
+        quality === 'full' ? 256 : 128,
+        projection === 'globe' ? 'equirectangular' : 'mercator',
+      ),
+    [now, quality, projection],
   );
   // `projection` is a dependency, and not because the layer list differs between
   // the views — it does not. Switching projection has to rebuild the layers so the
