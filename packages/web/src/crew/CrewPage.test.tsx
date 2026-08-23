@@ -164,6 +164,25 @@ describe('the crew page', () => {
     );
   });
 
+  it('keeps its heading when the body is not a crew payload', async () => {
+    /*
+     * The regression CI found. The shell's routing test stubs every unrecognised
+     * URL with `{}`, so a page that trusts the shape crashes on the first nested
+     * property and takes its own heading down with it — which passed locally only
+     * because the promise had not resolved before the assertion.
+     */
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) } as Response),
+      ),
+    );
+    render(<CrewPage />);
+
+    expect(await screen.findByText(/Could not load your crew/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Crew' })).toBeInTheDocument();
+  });
+
   it('tells a player with no airline what to do first', async () => {
     respondWith(null);
     render(<CrewPage />);

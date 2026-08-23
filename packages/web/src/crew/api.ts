@@ -51,6 +51,28 @@ async function send(path: string, body: unknown): Promise<CrewOutcome> {
 }
 
 /**
+ * Is this actually a crew payload?
+ *
+ * The same shape-check `fetchOwnAirline` does, and it earns its keep: a `200`
+ * carrying the wrong body reaches the page as `undefined` two property accesses
+ * later, and the render throws rather than the fetch failing. CI found exactly
+ * that — the shell's routing test stubs every unrecognised URL with `{}`, the
+ * page crashed on `fragmentation.families`, and locally the promise had simply
+ * not resolved before the assertion so it passed.
+ */
+function isCrewResponse(value: unknown): value is CrewResponse {
+  if (typeof value !== 'object' || value === null) return false;
+  const body = value as Record<string, unknown>;
+  return (
+    Array.isArray(body.bases) &&
+    typeof body.fragmentation === 'object' &&
+    body.fragmentation !== null &&
+    typeof body.costs === 'object' &&
+    body.costs !== null
+  );
+}
+
+/**
  * Read the airline's crew.
  *
  * `null` for a player with no airline yet, which the World page's clock also
@@ -64,7 +86,9 @@ export async function fetchCrew(): Promise<CrewResponse | null> {
   });
   if (response.status === 401 || response.status === 409) return null;
   if (!response.ok) throw new Error(`GET /api/crew failed with ${String(response.status)}`);
-  return (await response.json()) as CrewResponse;
+  const body: unknown = await response.json();
+  if (!isCrewResponse(body)) throw new Error('GET /api/crew returned an unexpected body');
+  return body;
 }
 
 export function openCrewBase(input: OpenCrewBaseInput): Promise<CrewOutcome> {
