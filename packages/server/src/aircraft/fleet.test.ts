@@ -566,28 +566,34 @@ describeDb('the fleet', () => {
       const b = await makeAirport();
       const { airframeId } = await acquire(fixture, 'ATR 72-600', { deliverTo: a });
 
-      const saved = await createSchedule(db.db, {
-        worldId: fixture.world.id,
-        airlineId: fixture.airline.id,
-        airframeId,
-        legs: [
-          {
-            originIcao: a,
-            destinationIcao: b,
-            departureMinute: 480,
-            blockMinutes: 90,
-            turnaroundMinutes: 40,
-          },
-          {
-            originIcao: b,
-            destinationIcao: a,
-            departureMinute: 660,
-            blockMinutes: 90,
-            turnaroundMinutes: 40,
-          },
-        ],
-        repeat: { kind: 'daily' },
-      });
+      const saved = await createSchedule(
+        db.db,
+        {
+          worldId: fixture.world.id,
+          airlineId: fixture.airline.id,
+          airframeId,
+          legs: [
+            {
+              originIcao: a,
+              destinationIcao: b,
+              departureMinute: 480,
+              blockMinutes: 90,
+              turnaroundMinutes: 40,
+            },
+            {
+              originIcao: b,
+              destinationIcao: a,
+              departureMinute: 660,
+              blockMinutes: 90,
+              turnaroundMinutes: 40,
+            },
+          ],
+          repeat: { kind: 'daily' },
+        },
+        // Crew legality asserted: these are maintenance and fleet tests, and the
+        // airlines in them were never going to have crew pools (M5-01).
+        { crewLegal: true },
+      );
       if (!saved.ok) throw new Error(`schedule refused: ${saved.problem}`);
 
       const detail = await airframeDetail(db.db, own(fixture), airframeId);
@@ -607,28 +613,34 @@ describeDb('the fleet', () => {
       const b = await makeAirport();
       const { airframeId } = await acquire(fixture, 'ATR 72-600', { deliverTo: a });
 
-      const saved = await createSchedule(db.db, {
-        worldId: fixture.world.id,
-        airlineId: fixture.airline.id,
-        airframeId,
-        legs: [
-          {
-            originIcao: a,
-            destinationIcao: b,
-            departureMinute: 480,
-            blockMinutes: 90,
-            turnaroundMinutes: 40,
-          },
-          {
-            originIcao: b,
-            destinationIcao: a,
-            departureMinute: 660,
-            blockMinutes: 90,
-            turnaroundMinutes: 40,
-          },
-        ],
-        repeat: { kind: 'weekdays', days: [2, 5] },
-      });
+      const saved = await createSchedule(
+        db.db,
+        {
+          worldId: fixture.world.id,
+          airlineId: fixture.airline.id,
+          airframeId,
+          legs: [
+            {
+              originIcao: a,
+              destinationIcao: b,
+              departureMinute: 480,
+              blockMinutes: 90,
+              turnaroundMinutes: 40,
+            },
+            {
+              originIcao: b,
+              destinationIcao: a,
+              departureMinute: 660,
+              blockMinutes: 90,
+              turnaroundMinutes: 40,
+            },
+          ],
+          repeat: { kind: 'weekdays', days: [2, 5] },
+        },
+        // Crew legality asserted: these are maintenance and fleet tests, and the
+        // airlines in them were never going to have crew pools (M5-01).
+        { crewLegal: true },
+      );
       if (!saved.ok) throw new Error(`schedule refused: ${saved.problem}`);
 
       const detail = await airframeDetail(db.db, own(fixture), airframeId);

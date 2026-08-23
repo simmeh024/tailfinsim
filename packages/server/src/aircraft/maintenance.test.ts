@@ -367,28 +367,34 @@ describeDb('maintenance', () => {
 
       const a = await makeAirport();
       const b = await makeAirport();
-      const saved = await createSchedule(db.db, {
-        worldId: fixture.world.id,
-        airlineId: fixture.airline.id,
-        airframeId,
-        legs: [
-          {
-            originIcao: a,
-            destinationIcao: b,
-            departureMinute: 480,
-            blockMinutes: 90,
-            turnaroundMinutes: 40,
-          },
-          {
-            originIcao: b,
-            destinationIcao: a,
-            departureMinute: 660,
-            blockMinutes: 90,
-            turnaroundMinutes: 40,
-          },
-        ],
-        repeat: { kind: 'daily' },
-      });
+      const saved = await createSchedule(
+        db.db,
+        {
+          worldId: fixture.world.id,
+          airlineId: fixture.airline.id,
+          airframeId,
+          legs: [
+            {
+              originIcao: a,
+              destinationIcao: b,
+              departureMinute: 480,
+              blockMinutes: 90,
+              turnaroundMinutes: 40,
+            },
+            {
+              originIcao: b,
+              destinationIcao: a,
+              departureMinute: 660,
+              blockMinutes: 90,
+              turnaroundMinutes: 40,
+            },
+          ],
+          repeat: { kind: 'daily' },
+        },
+        // Crew legality asserted: these are maintenance and fleet tests, and the
+        // airlines in them were never going to have crew pools (M5-01).
+        { crewLegal: true },
+      );
 
       expect(saved.ok).toBe(false);
       if (saved.ok) return;
@@ -402,28 +408,34 @@ describeDb('maintenance', () => {
       const a = await makeAirport();
       const b = await makeAirport();
 
-      const saved = await createSchedule(db.db, {
-        worldId: fixture.world.id,
-        airlineId: fixture.airline.id,
-        airframeId,
-        legs: [
-          {
-            originIcao: a,
-            destinationIcao: b,
-            departureMinute: 480,
-            blockMinutes: 90,
-            turnaroundMinutes: 40,
-          },
-          {
-            originIcao: b,
-            destinationIcao: a,
-            departureMinute: 660,
-            blockMinutes: 90,
-            turnaroundMinutes: 40,
-          },
-        ],
-        repeat: { kind: 'daily' },
-      });
+      const saved = await createSchedule(
+        db.db,
+        {
+          worldId: fixture.world.id,
+          airlineId: fixture.airline.id,
+          airframeId,
+          legs: [
+            {
+              originIcao: a,
+              destinationIcao: b,
+              departureMinute: 480,
+              blockMinutes: 90,
+              turnaroundMinutes: 40,
+            },
+            {
+              originIcao: b,
+              destinationIcao: a,
+              departureMinute: 660,
+              blockMinutes: 90,
+              turnaroundMinutes: 40,
+            },
+          ],
+          repeat: { kind: 'daily' },
+        },
+        // Crew legality asserted: these are maintenance and fleet tests, and the
+        // airlines in them were never going to have crew pools (M5-01).
+        { crewLegal: true },
+      );
       expect(saved.ok).toBe(true);
     });
   });

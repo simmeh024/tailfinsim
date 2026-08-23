@@ -100,9 +100,48 @@ destination.
 ## Where it plugs in
 
 `validateRotation` has carried a `crewLegal` input since M2-07, with a comment saying crew
-legality is M5's to fill. That is the seam: `RotationContext.crewLegal` defaults permissive, so
-the rule arrives by the server computing it from real pools rather than by the sim growing a
-new check.
+legality is M5's to fill. That seam is now filled from the other side: **`createSchedule`
+computes it from the airline's real pools** when the caller does not assert it.
+
+The check lives beside `airframeUnavailability` and for the same reason — the pools are rows,
+and the rotation rules are pure — but it is reported as `crew_illegal`, a `RotationProblem`,
+because to the player that is exactly what it is: the schedule cannot run, for a reason about
+the crew rather than the aeroplane.
+
+Two details worth knowing:
+
+- **The longest leg decides.** Relief crew are a function of block time, so a rotation's
+  requirement is set by its longest sector. Checking each leg separately would ask the same
+  question repeatedly and answer it most permissively on the shortest.
+- **`crewLegal: true` is an assertion, and skips the read.** It exists for callers that have
+  already answered the question, and for the fleet and maintenance suites, whose airlines were
+  never going to have crew pools and which are not about crew. Leaving it undefined — what
+  production does — means the database decides.
+
+The refusal names the ranks and the numbers, which is the whole reason `checkComplement`
+reports every shortfall rather than the first: _"short 1 captain, 1 first officer"_ is
+actionable in one reading.
+
+### An airline with no crew cannot schedule
+
+That is the intended consequence, not an oversight. A new airline must open a base and hire
+before it can put a flight on the books, which is §9.2's structure arriving as a gate rather
+than as a page of numbers.
+
+Note that **nothing departs yet**: `FLIGHT_DEPART` has no handler (SCALE-05), so the moment a
+flight comes into existence is `createSchedule`, and that is where the acceptance criterion's
+"before departure" can honestly be enforced today. There is also no HTTP scheduling API yet, so
+in production this rule currently guards a path only tests reach — it is ready for the API
+rather than waiting on it.
+
+## What the legality check does not know
+
+Nothing about **duty, rest or positioning**. §9.2 calls those the flagship crew mechanic and
+they are not M5-01, so the question answered is narrower: does the airline hold enough crew, at
+the right ranks, rated on this aeroplane's family, to staff its longest leg. An airline that
+passes can still be building a rotation no real crew could fly. The field is named `crewLegal`
+rather than `crewExists` precisely so that duty limits tighten it rather than needing a second
+one.
 
 ## Not built yet
 
