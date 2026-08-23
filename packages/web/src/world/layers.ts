@@ -1,5 +1,7 @@
 import { ArcLayer, BitmapLayer, GeoJsonLayer, PathLayer } from '@deck.gl/layers';
 
+import { WEB_MERCATOR_MAX_LATITUDE } from './terminator';
+
 import type { LandGeometry } from './land';
 import type { WorldPalette } from './palette';
 import type { WorldProjection } from './projection';
@@ -98,11 +100,25 @@ const GRATICULE = graticulePaths();
  */
 const WORLD_BOUNDS = new Map<string, [number, number, number, number]>();
 
+/**
+ * The rectangle the world-sized bitmaps cover, per projection.
+ *
+ * Two different rectangles, and that is the fix for the day/night wedge. Web
+ * Mercator runs to infinity at the poles, so a flat-map quad cannot be given
+ * `±90` — the sheet stops at {@link WEB_MERCATOR_MAX_LATITUDE}, and so does the
+ * bitmap that covers it. The globe has no such limit and uses the whole sphere.
+ *
+ * The darkness field is generated to match: `createDarknessField`'s `spacing`
+ * decides both the row distribution and the `northLatitude` these bounds have to
+ * agree with. Change one without the other and the terminator lands at the wrong
+ * latitude again.
+ */
 function worldBounds(projection: WorldProjection, quality: RendererQuality) {
   const key = `${projection}:${quality}`;
   let bounds = WORLD_BOUNDS.get(key);
   if (bounds === undefined) {
-    bounds = [-180, -90, 180, 90];
+    const north = projection === 'globe' ? 90 : WEB_MERCATOR_MAX_LATITUDE;
+    bounds = [-180, -north, 180, north];
     WORLD_BOUNDS.set(key, bounds);
   }
   return bounds;
@@ -275,17 +291,23 @@ export function createWorldLayers({
         image: nightTexture(darkness, palette.night),
         textureParameters: DATA_TEXTURE_SAMPLER,
         /*
-         * The field is sampled on an equirectangular grid — equal degrees of
-         * latitude per row — and `BitmapLayer`'s *default* is to interpolate texture
-         * coordinates in whatever the viewport uses. On the globe that is already
-         * lng/lat, but on the flat map it is **Web Mercator**, which stretches
-         * towards the poles. Left on the default, the night boundary sat at the
-         * wrong latitude on the flat map, increasingly so away from the equator.
+         * No `_imageCoordinateSystem`, deliberately.
          *
-         * Saying `lnglat` tells deck.gl what the image actually is, and its shader
-         * converts on the way in.
+         * `BitmapLayer` interpolates texture coordinates linearly in whatever the
+         * viewport uses — lng/lat on the globe, **Web Mercator** on the flat map,
+         * which stretches towards the poles. So the field is generated the same
+         * way for each: `createDarknessField`'s `spacing` puts equal degrees per
+         * row for the globe and equal mercator units per row for the flat map, and
+         * `worldBounds` gives each the matching northern edge. The mapping is then
+         * exactly linear in both, and there is nothing to convert.
+         *
+         * `_imageCoordinateSystem: 'lnglat'` is deck.gl's own answer to this and it
+         * was here until it was looked at on a real deploy: on the flat map, with a
+         * world-sized quad, it squashed the whole field into a tapering horizontal
+         * wedge across the equator, and on the globe it left hard-edged blocks of
+         * full night across land that was in daylight. Its shader path is not built
+         * for a quad this size.
          */
-        _imageCoordinateSystem: 'lnglat',
         // See the ocean layer: a full-sphere quad must not be back-face culled.
         parameters: { cullMode: 'none' },
       }),

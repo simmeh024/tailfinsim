@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { COARSE_LAND, unwrapAntimeridian } from './land';
 import { createWorldLayers } from './layers';
-import { createDarknessField } from './terminator';
+import { createDarknessField, WEB_MERCATOR_MAX_LATITUDE } from './terminator';
 
 import type { WorldRoute } from './layers';
 import type { WorldPalette } from './palette';
@@ -126,11 +126,9 @@ describe('projection-independent world layers', () => {
     expect(flat).toHaveLength(2);
     expect(globe).toHaveLength(2);
 
-    // Equal in value, different in identity. Both halves matter: the same numbers,
-    // so the two views cover the same world, and a different reference, so deck.gl
-    // knows to rebuild.
-    expect(flat[0]).toEqual([-180, -90, 180, 90]);
-    expect(globe[0]).toEqual([-180, -90, 180, 90]);
+    // Different in identity, which is what makes deck.gl rebuild the mesh. They
+    // are no longer equal in value either — see the bounds test below, which owns
+    // that half — so this asserts only the reference.
     expect(flat[0]).not.toBe(globe[0]);
     expect(flat[1]).not.toBe(globe[1]);
 
@@ -193,7 +191,34 @@ describe('projection-independent world layers', () => {
     }
   });
 
-  it('tells deck.gl the night field is equirectangular', () => {
+  it('bounds each projection where its own coordinate system stops', () => {
+    const boundsOf = (projection: 'flat' | 'globe') => {
+      const layers = createWorldLayers({
+        palette,
+        quality: 'full',
+        routes: [],
+        darkness: DARKNESS,
+        land: COARSE_LAND,
+        projection,
+        visibility: { graticule: false, routes: false, terminator: true },
+      }).filter((layer): layer is Layer => layer !== false);
+      const terminator = layers.find((layer) => layer.id === 'world-terminator');
+      return (terminator?.props as unknown as { bounds: number[] }).bounds;
+    };
+
+    // Web Mercator runs to infinity at the poles, so a flat quad cannot reach
+    // +-90. Given it anyway, deck.gl squashed the whole night field into a
+    // tapering wedge across the equator on the deployed flat map.
+    expect(boundsOf('flat')).toEqual([
+      -180,
+      -WEB_MERCATOR_MAX_LATITUDE,
+      180,
+      WEB_MERCATOR_MAX_LATITUDE,
+    ]);
+    expect(boundsOf('globe')).toEqual([-180, -90, 180, 90]);
+  });
+
+  it('converts no texture coordinates, because the field already matches', () => {
     const layers = createWorldLayers({
       palette,
       quality: 'full',
@@ -204,14 +229,22 @@ describe('projection-independent world layers', () => {
       visibility: { graticule: false, routes: false, terminator: true },
     }).filter((layer): layer is Layer => layer !== false);
 
-    // The field is sampled at equal degrees of latitude per row. `BitmapLayer`
-    // otherwise interpolates texture coordinates in the viewport's own system,
-    // which on the flat map is Web Mercator — so the night boundary drifted from
-    // its true latitude, further the closer to the poles.
+    /*
+     * `_imageCoordinateSystem: 'lnglat'` is deck.gl's shader-side answer to an
+     * equirectangular image on a mercator viewport, and on a world-sized quad it
+     * does not work: the flat map showed a tapering wedge and the globe showed
+     * hard-edged blocks of full night over land in daylight.
+     *
+     * The rows are generated to match the projection instead, so there is nothing
+     * left to convert. This asserts the prop is *absent* rather than that some
+     * other value is set, because any value at all re-enters that shader path.
+     */
+    // deck.gl defaults the prop to `'default'` rather than leaving it unset, so
+    // the assertion is on that value: anything else re-enters the shader path.
     const terminator = layers.find((layer) => layer.id === 'world-terminator');
     expect(
       (terminator?.props as unknown as { _imageCoordinateSystem?: string })._imageCoordinateSystem,
-    ).toBe('lnglat');
+    ).toBe('default');
   });
 
   /**
