@@ -185,6 +185,50 @@ The graticule is the one world layer the contrast tests do not gate. One flat ov
 cannot contrast strongly with both a dark sea and a light landmass; its colour favours the
 ocean, where most of a meridian runs, and it is toggleable.
 
+### The land data has to be unwrapped across the antimeridian
+
+`land-110m` stores longitudes in `[-180, 180]`, so a coastline crossing the antimeridian has
+two consecutive vertices like `179.99` and `-180`. Neighbours on a sphere; **360 degrees apart
+in the coordinate space the layers tessellate in.** The coastline `PathLayer` drew that as a
+segment sweeping the entire way round the world, which on the globe appears as a large smooth
+arc across the Arctic with no coastline under it.
+
+There are seven such jumps in the dataset: Eurasia twice at Chukotka (65N, 69N), Wrangel
+Island, Fiji twice, and Antarctica. The northern three are why the artefact shows around the
+North Pole.
+
+`unwrapAntimeridian` carries a multiple of 360 along each ring so no step exceeds 180 degrees.
+A ring may then legitimately run past 180 — `179.99, 180.01` rather than `179.99, -179.99` —
+which is the same point on a sphere, and on the flat map `repeat: true` already draws the
+neighbouring world copy. `layers.test.ts` asserts no ring jumps.
+
+`wrapLongitude` on the layer does **not** fix this, which was worth finding out by trying it:
+it shifts whole paths for Web Mercator and leaves the jump inside the ring untouched.
+
+Isolating it took toggling one layer at a time on the live page — the arc survived hiding the
+atmosphere, the graticule and the day/night layer, and vanished with the land layer. Then
+`filled: false` showed it was in the stroke rather than the fill.
+
+### Twilight spans the real elevations
+
+Full daylight above **+6 degrees** of solar elevation, full night below **-18** — astronomical
+twilight, where the sky is genuinely dark. The band was originally +3 to -9: twelve degrees,
+narrow enough that the edge read as a line rather than as dusk, and both numbers invented.
+
+The band is deliberately **asymmetric about the geometric terminator**, because the sky is.
+At elevation 0 — sunset — the shading is only about 16% of full night, and the _perceived_
+edge lands near -6, the end of civil twilight, which is where it actually gets dark.
+
+### The atmosphere ring is only for a whole globe
+
+`.world-renderer__atmosphere` is a CSS ellipse inset 5% of the container, with a radial glow.
+It knows nothing about where the globe is, which is fine while the planet sits small and
+centred — that is what makes it read as a planet in space.
+
+Zoom in far enough that the sphere overflows the frame and the ring tracks nothing: it becomes
+a bright arc laid across the map, most obviously over a pole. So it is gated on
+`data-atmosphere`, set from the camera's zoom against `ATMOSPHERE_MAX_ZOOM`.
+
 ### The globe's mesh resolution is the terminator's edge quality
 
 `GlobeView`'s `resolution` is degrees per mesh vertex, and it decides more than geometry

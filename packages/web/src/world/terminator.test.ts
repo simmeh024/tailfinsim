@@ -35,9 +35,9 @@ describe('day/night terminator geometry', () => {
   });
 
   it('puts the north pole in row zero', () => {
-    // The row order is not a detail: `BitmapLayer` maps an image's top edge to
-    // the northern bound, so getting it backwards swaps day and night — which
-    // looks like a palette bug and is not one.
+    // The row order is not a detail: `BitmapLayer` maps an image's top edge to the
+    // northern bound, so getting it backwards swaps day and night — which looks
+    // like a palette bug and is not one.
     const northernSummer = createDarknessField(new Date('2026-06-21T12:00:00.000Z'), 8, 8);
     const southernSummer = createDarknessField(new Date('2026-12-21T12:00:00.000Z'), 8, 8);
     const topRow = (field: { alpha: Uint8Array; width: number }) => [
@@ -46,8 +46,44 @@ describe('day/night terminator geometry', () => {
 
     // Midsummer above the Arctic circle: lit all the way round.
     expect(topRow(northernSummer).every((alpha) => alpha === 0)).toBe(true);
-    // Midwinter: dark all the way round.
-    expect(topRow(southernSummer).every((alpha) => alpha === 255)).toBe(true);
+    // Midwinter: dark all the way round — though not *pitch* dark. Row zero samples
+    // 78.75N, where the midwinter sun sits about twelve degrees down: nautical
+    // twilight, inside the band rather than past it.
+    expect(topRow(southernSummer).every((alpha) => alpha > 200)).toBe(true);
+  });
+
+  it('spreads twilight across the real elevation band', () => {
+    /*
+     * With the sun overhead at (0, 0), a point on the equator at longitude L sees
+     * the sun at an elevation of `90 - L` degrees. That makes the band directly
+     * addressable, which is clearer than picking latitudes and hoping.
+     */
+    const sun = { longitude: 0, latitude: 0 };
+    const atElevation = (degrees: number) => darknessAt(90 - degrees, 0, sun);
+
+    // Full day from +6 up, full night from -18 down: astronomical twilight, not an
+    // invented pair of numbers.
+    // Exactly on an edge the smoothstep lands a denormal away from its limit, so
+    // the boundary itself is checked to tolerance and the interior exactly.
+    expect(atElevation(6)).toBeLessThan(1e-9);
+    expect(atElevation(20)).toBe(0);
+    expect(atElevation(-18)).toBeGreaterThan(1 - 1e-9);
+    expect(atElevation(-40)).toBe(1);
+
+    // The geometric terminator — sunset — is still mostly lit, which is what a sky
+    // at sunset is. The perceived edge sits later, at civil twilight.
+    expect(atElevation(0)).toBeGreaterThan(0.1);
+    expect(atElevation(0)).toBeLessThan(0.25);
+    expect(atElevation(-6)).toBeGreaterThan(0.4);
+    expect(atElevation(-6)).toBeLessThan(0.6);
+
+    // And it only ever gets darker on the way down.
+    let previous = -1;
+    for (let elevation = 20; elevation >= -30; elevation -= 1) {
+      const value = atElevation(elevation);
+      expect(value).toBeGreaterThanOrEqual(previous);
+      previous = value;
+    }
   });
 
   it('produces a gradient rather than a step across the terminator', () => {
