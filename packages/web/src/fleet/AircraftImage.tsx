@@ -29,7 +29,7 @@ export function AircraftImage({
     setFailed(asset === null);
   }, [asset]);
 
-  const label = `${manufacturer} ${designation} in a neutral white catalogue finish`;
+  const label = `${manufacturer} ${designation} in a neutral catalogue finish`;
   if (asset === null || failed) {
     return (
       <span

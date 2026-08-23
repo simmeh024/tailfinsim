@@ -359,7 +359,7 @@ describe('the aircraft marketplace', () => {
     renderMarket();
     const card = screen.getByRole('button', { name: /View Airbus A320neo/i });
     const image = within(card).getByRole('img', {
-      name: /Airbus A320neo in a neutral white/i,
+      name: /Airbus A320neo in a neutral catalogue finish/i,
     });
     fireEvent.error(image);
     expect(
