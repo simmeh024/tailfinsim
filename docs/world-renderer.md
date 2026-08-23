@@ -180,10 +180,40 @@ This is also why `projection` is a dependency of the layer `useMemo` in `WorldRe
 though the layer _list_ is identical for both views: switching projection has to rebuild the
 layers for the meshes to re-tessellate.
 
+### `image` must be an `ImageData`, or the texture arrives empty
+
+**This is what actually made the world black**, and it is the failure worth reading first
+because every cheap diagnostic said the layer was fine.
+
+`BitmapLayer` accepts `image` as an object. Handed `{ data: Uint8Array, width, height }` it
+builds a texture of **exactly the right dimensions containing nothing at all**. The size is
+read off the object; the pixels are never uploaded. So:
+
+| what a diagnostic reported |                                     |
+| -------------------------- | ----------------------------------- |
+| mesh built                 | yes, 5,184 triangles on the globe   |
+| model present              | yes                                 |
+| texture                    | `Texture(rgba8unorm, 512x256)`      |
+| **texture contents**       | **0 non-zero bytes out of 524,288** |
+
+Only the last line is the truth, and only a readback finds it:
+
+```js
+const bytes = texture.readDataSyncWebGL(); // all zeros == nothing was uploaded
+```
+
+`ImageData` is a real image source, so deck.gl uploads it — and it needs no 2D canvas context,
+which matters because jsdom has neither. Both world bitmaps build one. After the change the
+same readback returns `[13, 32, 56, 255]` for the ocean, the palette's navy at full alpha.
+
+jsdom ships without `ImageData`, so `test-setup.ts` defines a data-only stand-in. That is not
+test convenience: the _shape_ is load-bearing in production, so the tests have to be able to
+construct it.
+
 ### A data texture must not be left on a mipmapping filter
 
-**This is the one that was actually making the world black**, and it is worth reading before
-the two below it, which were real bugs found while hunting it but were not the cause.
+A second, independent way the same texture renders black — real, and it would have bitten the
+moment the upload was fixed.
 
 luma.gl's default sampler is `minFilter: linear, mipmapFilter: linear`, which
 `convertMinFilterMode` turns into WebGL's `LINEAR_MIPMAP_LINEAR`. A texture uploaded from a

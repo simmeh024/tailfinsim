@@ -219,4 +219,85 @@ describe('projection-independent world layers', () => {
       expect(sampler?.minFilter, id).toBe('linear');
     }
   });
+
+  /**
+   * The bug that actually made the world black, and the one every other
+   * diagnostic missed.
+   *
+   * `BitmapLayer` accepts `image` as an object, and handed
+   * `{ data: Uint8Array, width, height }` it builds a texture of exactly the right
+   * dimensions **containing nothing** — `readDataSyncWebGL` came back all zeros
+   * across 524,288 bytes. Everything short of a texture readback said the layer was
+   * healthy: mesh built, model present, texture reporting `rgba8unorm 512x256`.
+   *
+   * `ImageData` is a real image source, so deck.gl uploads it. Asserting the type
+   * is the cheap proxy for "the pixels will actually reach the GPU".
+   */
+  it('hands deck.gl an image source it will upload, not a bag of numbers', () => {
+    const layers = createWorldLayers({
+      palette,
+      quality: 'full',
+      routes: [],
+      darkness: DARKNESS,
+      projection: 'flat',
+      visibility: { graticule: false, routes: false, terminator: true },
+    }).filter((layer): layer is Layer => layer !== false);
+
+    for (const id of ['world-ocean', 'world-terminator']) {
+      const image = (
+        layers.find((layer) => layer.id === id)?.props as unknown as {
+          image?: unknown;
+        }
+      ).image;
+      expect(image, `${id} must be an ImageData`).toBeInstanceOf(ImageData);
+    }
+  });
+
+  it('fills the ocean texture with the palette colour, opaque', () => {
+    const layers = createWorldLayers({
+      palette,
+      quality: 'full',
+      routes: [],
+      darkness: DARKNESS,
+      projection: 'flat',
+      visibility: { graticule: false, routes: false, terminator: false },
+    }).filter((layer): layer is Layer => layer !== false);
+
+    const image = (
+      layers.find((layer) => layer.id === 'world-ocean')?.props as unknown as {
+        image: ImageData;
+      }
+    ).image;
+
+    // Every texel, so a half-filled buffer cannot pass.
+    for (let texel = 0; texel < image.width * image.height; texel += 1) {
+      expect([...image.data.slice(texel * 4, texel * 4 + 4)]).toEqual(palette.ocean);
+    }
+  });
+
+  it('scales the night field by the palette alpha and leaves day transparent', () => {
+    const layers = createWorldLayers({
+      palette,
+      quality: 'full',
+      routes: [],
+      darkness: DARKNESS,
+      projection: 'flat',
+      visibility: { graticule: false, routes: false, terminator: true },
+    }).filter((layer): layer is Layer => layer !== false);
+
+    const image = (
+      layers.find((layer) => layer.id === 'world-terminator')?.props as unknown as {
+        image: ImageData;
+      }
+    ).image;
+
+    const alphas: number[] = [];
+    for (let texel = 0; texel < image.width * image.height; texel += 1) {
+      // The colour is the palette's everywhere; only the alpha varies.
+      expect([...image.data.slice(texel * 4, texel * 4 + 3)]).toEqual(palette.night.slice(0, 3));
+      alphas.push(image.data[texel * 4 + 3] ?? -1);
+    }
+    expect(Math.min(...alphas)).toBe(0);
+    expect(Math.max(...alphas)).toBe(palette.night[3]);
+  });
 });
