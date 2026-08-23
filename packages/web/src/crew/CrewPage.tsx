@@ -291,13 +291,22 @@ export function CrewPage(): ReactNode {
     };
   }, []);
 
-  /** Every mutation answers with the whole state, so this is the only writer. */
-  const apply = useCallback(async (run: () => Promise<Awaited<ReturnType<typeof fetchCrew>>>) => {
+  /**
+   * Every mutation answers with the whole state, so this is the only writer.
+   *
+   * `undefined` means **leave the state alone**, which is what a refusal wants.
+   * The first version returned the `crew` captured in the render closure
+   * instead, and that is a stale value the moment anything has succeeded since:
+   * opening a base and then asking for the same one again reverted the page to
+   * "no crew yet" while the base sat happily in the database. Found by using it
+   * on dev, not by a test.
+   */
+  const apply = useCallback(async (run: () => Promise<CrewResponse | undefined>) => {
     setBusy(true);
     setRefusal(null);
     try {
-      const state = await run();
-      setLoad({ state: 'ready', value: state });
+      const next = await run();
+      if (next !== undefined) setLoad({ state: 'ready', value: next });
     } finally {
       setBusy(false);
     }
@@ -349,7 +358,7 @@ export function CrewPage(): ReactNode {
       const outcome = await call;
       if (outcome.ok) return outcome.state;
       setRefusal(outcome.refusal);
-      return crew;
+      return undefined;
     });
 
   return (
