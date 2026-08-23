@@ -138,6 +138,32 @@ async function main(): Promise<void> {
       return;
     }
 
+    /*
+     * Before the player lookup, because a cash adjustment names an *airline* and
+     * has no player to resolve. Placed after it originally, and the first run on
+     * dev failed with "No account with the sign-in address ." -- the resolution
+     * step ran on an empty --email and threw before the command was reached.
+     */
+    if (args.command === 'cash') {
+      const major = Number(args.amount);
+      if (!Number.isFinite(major) || major === 0) {
+        throw new Error(`--amount must be a non-zero number, got ${args.amount}`);
+      }
+      // Two decimal places, like every other minor-unit figure in the game.
+      const amountMinor = Math.round(major * 100);
+
+      const result = await adjustAirlineCash(db.db, BOOTSTRAP_ACTOR, {
+        airlineId: args.airlineId,
+        amountMinor,
+        reason: args.reason,
+      });
+      if (!result.ok) throw new Error(`refused: ${result.code}`);
+
+      out(`adjusted by ${args.amount}; balance is now ${String(result.balanceAfterMinor / 100)}`);
+      out(`movement ${result.movementId}, cause admin_adjustment, audited`);
+      return;
+    }
+
     let playerId = args.playerId;
     if (!playerId) {
       const found = await db.db
@@ -161,26 +187,6 @@ async function main(): Promise<void> {
       .where(eq(player.id, playerId))
       .limit(1);
     const displayName = named[0]?.displayName ?? playerId;
-
-    if (args.command === 'cash') {
-      const major = Number(args.amount);
-      if (!Number.isFinite(major) || major === 0) {
-        throw new Error(`--amount must be a non-zero number, got ${args.amount}`);
-      }
-      // Two decimal places, like every other minor-unit figure in the game.
-      const amountMinor = Math.round(major * 100);
-
-      const result = await adjustAirlineCash(db.db, BOOTSTRAP_ACTOR, {
-        airlineId: args.airlineId,
-        amountMinor,
-        reason: args.reason,
-      });
-      if (!result.ok) throw new Error(`refused: ${result.code}`);
-
-      out(`adjusted by ${args.amount}; balance is now ${String(result.balanceAfterMinor / 100)}`);
-      out(`movement ${result.movementId}, cause admin_adjustment, audited`);
-      return;
-    }
 
     if (args.command === 'grant') {
       const { changed } = await grantAdmin(db.db, playerId, BOOTSTRAP_ACTOR);
