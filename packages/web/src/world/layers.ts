@@ -38,11 +38,11 @@ export interface CreateWorldLayersOptions {
    *
    * `BitmapLayer.updateState` rebuilds its mesh only when `props.bounds` changes by
    * **reference**, and `createMesh` tessellates according to the viewport's
-   * `resolution` — absent on `MapView`, so a flat two-triangle quad; five degrees on
-   * `GlobeView`, so a mesh that follows the sphere. Hand both views one frozen
-   * constant and the quad built for the flat map survives the switch: two triangles
-   * cutting straight through the planet, ending up inside it and occluded by
-   * `GlobeView`'s own opaque backdrop.
+   * `resolution` — absent on `MapView`, so a flat two-triangle quad; a fixed number
+   * of degrees on `GlobeView`, so a mesh that follows the sphere. Hand both views
+   * one frozen constant and the quad built for the flat map survives the switch:
+   * two triangles cutting straight through the planet, ending up inside it and
+   * occluded by `GlobeView`'s own opaque backdrop.
    *
    * The symptom is a **black globe with land floating on it**, because the land is
    * drawn from real multi-vertex coastlines and tessellates on its own, while the
@@ -81,16 +81,29 @@ function graticulePaths(): GraticulePath[] {
 const GRATICULE = graticulePaths();
 
 /**
- * West, south, east, north — the whole sphere, once per projection.
+ * West, south, east, north — the whole sphere, one array per mesh shape.
  *
- * Two arrays with identical values, deliberately. See `projection` above: the
- * *identity* is what tells `BitmapLayer` to rebuild its mesh, and each view needs
- * a different tessellation of the same bounds.
+ * Several arrays with identical values, deliberately. `BitmapLayer` rebuilds its
+ * mesh only when `bounds` changes by **reference**, and the mesh it builds depends
+ * on the viewport's `resolution`: absent on `MapView`, so a flat two-triangle
+ * quad; a fixed number of degrees on `GlobeView`, so a sphere-following grid.
+ *
+ * So the key is everything that changes the tessellation — the projection **and**
+ * the quality tier, because a drop to reduced quality coarsens the globe's
+ * resolution. Keyed on projection alone, a full-to-reduced switch left the fine
+ * mesh in place and the coarsening silently did nothing.
  */
-const WORLD_BOUNDS: Record<WorldProjection, [number, number, number, number]> = {
-  flat: [-180, -90, 180, 90],
-  globe: [-180, -90, 180, 90],
-};
+const WORLD_BOUNDS = new Map<string, [number, number, number, number]>();
+
+function worldBounds(projection: WorldProjection, quality: RendererQuality) {
+  const key = `${projection}:${quality}`;
+  let bounds = WORLD_BOUNDS.get(key);
+  if (bounds === undefined) {
+    bounds = [-180, -90, 180, 90];
+    WORLD_BOUNDS.set(key, bounds);
+  }
+  return bounds;
+}
 
 /**
  * Sampler settings every data texture here needs.
@@ -204,7 +217,7 @@ export function createWorldLayers({
   routes,
   visibility,
 }: CreateWorldLayersOptions): (Layer | false)[] {
-  const bounds = WORLD_BOUNDS[projection];
+  const bounds = worldBounds(projection, quality);
   return [
     new BitmapLayer({
       id: 'world-ocean',

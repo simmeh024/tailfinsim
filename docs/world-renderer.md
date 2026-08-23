@@ -185,11 +185,28 @@ The graticule is the one world layer the contrast tests do not gate. One flat ov
 cannot contrast strongly with both a dark sea and a light landmass; its colour favours the
 ocean, where most of a meridian runs, and it is toggleable.
 
-### One `bounds` array per projection, and why that is not a micro-optimisation
+### The globe's mesh resolution is the terminator's edge quality
+
+`GlobeView`'s `resolution` is degrees per mesh vertex, and it decides more than geometry
+smoothness. The night field is a **texture**, and `BitmapLayer` interpolates texture
+coordinates across each flat facet of that mesh — so the mesh is the finest the shading can
+possibly be.
+
+At five degrees the facets are large enough that a diagonal terminator breaks into a visible
+staircase of five-degree steps. The field is smooth, the filtering is linear, the texture is
+512x256 — none of that matters, because the mesh cannot express a curve finer than its own
+cells. Toggling **Day/night** off makes the staircase vanish while the coarse `110m`
+coastlines stay, which is how the two were told apart.
+
+Full quality is now `2`, roughly six times the triangles for a boundary that reads as a curve;
+reduced stays at `5`. The land and route geometry are tessellated by the same number, so
+coastlines gain from it too.
+
+### One `bounds` array per mesh shape, and why that is not a micro-optimisation
 
 The world-sized layers — the ocean fill and the night texture — are `BitmapLayer`s covering
-`[-180, -90, 180, 90]`. Each projection gets its **own array instance** of those same four
-numbers, which looks like pointless duplication and is the opposite.
+`[-180, -90, 180, 90]`. Each **projection and quality tier** gets its own array instance of
+those same four numbers, which looks like pointless duplication and is the opposite.
 
 `BitmapLayer.updateState` rebuilds its mesh only when `props.bounds` changes by **reference**,
 and `createMesh` tessellates according to the viewport's `resolution`: absent on `MapView`, so

@@ -133,6 +133,29 @@ describe('projection-independent world layers', () => {
     expect(boundsFor('flat')[0]).toBe(flat[0]);
   });
 
+  it('gives each quality tier its own bounds instance too', () => {
+    // Reduced quality coarsens the globe's mesh resolution, so it is a different
+    // tessellation of the same bounds — and `BitmapLayer` only notices a new
+    // reference. Keyed on projection alone, dropping to reduced quality left the
+    // fine mesh in place and the coarsening silently did nothing.
+    const at = (quality: 'full' | 'reduced') =>
+      createWorldLayers({
+        palette,
+        quality,
+        routes: [],
+        darkness: DARKNESS,
+        projection: 'globe',
+        visibility: { graticule: false, routes: false, terminator: true },
+      })
+        .filter((layer): layer is Layer => layer !== false)
+        .find((layer) => layer.id === 'world-terminator');
+
+    const full = (at('full')?.props as unknown as { bounds: unknown }).bounds;
+    const reduced = (at('reduced')?.props as unknown as { bounds: unknown }).bounds;
+    expect(full).toEqual(reduced);
+    expect(full).not.toBe(reduced);
+  });
+
   /**
    * The other half of the black globe, and the one I could not see.
    *

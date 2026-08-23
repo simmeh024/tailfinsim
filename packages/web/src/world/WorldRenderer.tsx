@@ -112,7 +112,22 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
         ? new GlobeView({
             id: 'world-renderer',
             controller: CONTROLLER,
-            resolution: quality === 'full' ? 5 : 10,
+            /*
+             * Degrees per mesh vertex on the sphere, and it is the day/night
+             * layer's edge quality more than anything else.
+             *
+             * The night field is a texture, and `BitmapLayer` interpolates its
+             * texture coordinates **across each flat facet** of this mesh. At five
+             * degrees the facets are large enough that a diagonal terminator breaks
+             * into a visible staircase of five-degree steps — the smooth field is
+             * there, the mesh cannot express it. Two degrees is roughly six times
+             * the triangles for a boundary that reads as a curve.
+             *
+             * It also tessellates the land and route geometry on the globe, so the
+             * coastlines gain from it too. Reduced quality keeps five, which is what
+             * a device that could not hold the frame budget was already getting.
+             */
+            resolution: quality === 'full' ? 2 : 5,
           })
         : new MapView({
             id: 'world-renderer',
