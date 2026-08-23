@@ -27,6 +27,7 @@ const CAUSE_LABEL: Record<AdminCashMovementCause, string> = {
   crew_base_opening: 'Crew base opening',
   crew_hiring: 'Crew hiring',
   crew_conversion: 'Crew type conversion',
+  admin_adjustment: 'Operator adjustment',
   flight_settlement: 'Flight settlement',
   migration_opening_balance: 'Migration opening balance',
 };
