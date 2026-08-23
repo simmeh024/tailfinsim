@@ -127,16 +127,30 @@ describeDb('crew legality when a schedule is written', () => {
     return acquired.airframe.id;
   }
 
-  function rotation(fixture: FoundedAirlineFixture, airframeId: string, icao: string) {
+  /**
+   * An out-and-back, which is what a rotation has to be.
+   *
+   * A single leg from an airport to itself is refused as `not_positioned` before
+   * the crew rule is ever reached -- the first version of this test wrote one and
+   * measured the wrong refusal.
+   */
+  function rotation(fixture: FoundedAirlineFixture, airframeId: string, from: string, to: string) {
     return {
       worldId: fixture.world.id,
       airlineId: fixture.airline.id,
       airframeId,
       legs: [
         {
-          originIcao: icao,
-          destinationIcao: icao,
+          originIcao: from,
+          destinationIcao: to,
           departureMinute: 480,
+          blockMinutes: 90,
+          turnaroundMinutes: 40,
+        },
+        {
+          originIcao: to,
+          destinationIcao: from,
+          departureMinute: 660,
           blockMinutes: 90,
           turnaroundMinutes: 40,
         },
@@ -147,10 +161,11 @@ describeDb('crew legality when a schedule is written', () => {
 
   it('refuses a rotation from an airline with no crew, and says what is short', async () => {
     const hub = await makeIcaoHub();
+    const away = await makeIcaoHub();
     const fixture = await fixtures.create({ hubIdent: hub.ident });
     const airframeId = await leaseAtr(fixture, hub.icao);
 
-    const saved = await createSchedule(db.db, rotation(fixture, airframeId, hub.icao));
+    const saved = await createSchedule(db.db, rotation(fixture, airframeId, hub.icao, away.icao));
     expect(saved.ok).toBe(false);
     if (saved.ok) return;
     expect(saved.problem).toBe('crew_illegal');
@@ -161,13 +176,14 @@ describeDb('crew legality when a schedule is written', () => {
 
   it('lets a caller assert legality, for tests that are not about crew', async () => {
     const hub = await makeIcaoHub();
+    const away = await makeIcaoHub();
     const fixture = await fixtures.create({ hubIdent: hub.ident });
     const airframeId = await leaseAtr(fixture, hub.icao);
 
     // The escape hatch the fleet and maintenance suites use. It must skip the
     // read rather than pass it, or those suites would need crew pools to test
     // something else entirely.
-    const saved = await createSchedule(db.db, rotation(fixture, airframeId, hub.icao), {
+    const saved = await createSchedule(db.db, rotation(fixture, airframeId, hub.icao, away.icao), {
       crewLegal: true,
     });
     expect(saved.ok).toBe(true);
@@ -175,6 +191,7 @@ describeDb('crew legality when a schedule is written', () => {
 
   it('accepts the rotation once the airline holds a legal complement', async () => {
     const hub = await makeIcaoHub();
+    const away = await makeIcaoHub();
     const fixture = await fixtures.create({ hubIdent: hub.ident });
     const airframeId = await leaseAtr(fixture, hub.icao);
 
@@ -200,12 +217,13 @@ describeDb('crew legality when a schedule is written', () => {
       });
     }
 
-    const saved = await createSchedule(db.db, rotation(fixture, airframeId, hub.icao));
+    const saved = await createSchedule(db.db, rotation(fixture, airframeId, hub.icao, away.icao));
     expect(saved.ok).toBe(true);
   });
 
   it('still refuses when the crew are rated on another family', async () => {
     const hub = await makeIcaoHub();
+    const away = await makeIcaoHub();
     const fixture = await fixtures.create({ hubIdent: hub.ident });
     const airframeId = await leaseAtr(fixture, hub.icao);
 
@@ -234,7 +252,7 @@ describeDb('crew legality when a schedule is written', () => {
     // Plenty of crew, every one rated on the wrong aeroplane. This is §9.2's
     // commonality mechanic arriving at the scheduler rather than staying a
     // number on a page.
-    const saved = await createSchedule(db.db, rotation(fixture, airframeId, hub.icao));
+    const saved = await createSchedule(db.db, rotation(fixture, airframeId, hub.icao, away.icao));
     expect(saved.ok).toBe(false);
     if (saved.ok) return;
     expect(saved.problem).toBe('crew_illegal');
