@@ -2,7 +2,7 @@ import { ArcLayer, BitmapLayer, GeoJsonLayer, PathLayer } from '@deck.gl/layers'
 
 import { WEB_MERCATOR_MAX_LATITUDE } from './terminator';
 
-import type { LandGeometry } from './land';
+import type { BorderGeometry, LandGeometry } from './land';
 import type { WorldPalette } from './palette';
 import type { WorldProjection } from './projection';
 import type { DarknessField, LngLat } from './terminator';
@@ -14,6 +14,7 @@ export interface WorldLayerVisibility {
   graticule: boolean;
   routes: boolean;
   terminator: boolean;
+  borders: boolean;
 }
 
 export interface WorldRoute {
@@ -35,6 +36,14 @@ export interface CreateWorldLayersOptions {
    * `land.ts`. The layer list has no opinion about it.
    */
   land: LandGeometry;
+  /**
+   * The country borders, sharing the coastline's arcs.
+   *
+   * A separate geometry from `land` and not a styling of it: the borders are the
+   * arcs *between* two countries, which is a different set of lines from the
+   * outline of the landmass. `land.ts` explains how the two are cut from one file.
+   */
+  borders: BorderGeometry;
   visibility: WorldLayerVisibility;
   /**
    * The projection these layers are about to be drawn into.
@@ -316,6 +325,7 @@ export function createWorldLayers({
   quality,
   darkness,
   land,
+  borders,
   projection,
   routes,
   visibility,
@@ -355,6 +365,29 @@ export function createWorldLayers({
       lineWidthMinPixels: 0.5,
       parameters: { cullMode: 'back' },
     }),
+    /*
+     * Country borders, over the land fill and under everything else.
+     *
+     * A `GeoJsonLayer` rather than a `PathLayer`, because `mesh` hands back one
+     * `MultiLineString` and `GeoJsonLayer` is the layer that knows how to walk a
+     * GeoJSON geometry into paths. It draws nothing but lines here — the geometry
+     * has no rings, so `filled` never applies.
+     *
+     * Thinner than the coastline on purpose. A border and a coastline at the same
+     * weight makes a continent read as a mesh of equal cells, and the coastline is
+     * the one that says where the land stops.
+     */
+    visibility.borders &&
+      new GeoJsonLayer({
+        id: 'world-borders',
+        data: borders,
+        stroked: true,
+        filled: false,
+        getLineColor: palette.border,
+        lineWidthMinPixels: 0.5,
+        lineWidthMaxPixels: 1,
+        parameters: { cullMode: 'back' },
+      }),
     visibility.graticule &&
       new PathLayer<GraticulePath>({
         id: 'world-graticule',

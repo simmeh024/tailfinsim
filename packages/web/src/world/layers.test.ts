@@ -1,7 +1,7 @@
 import { ArcLayer } from '@deck.gl/layers';
 import { describe, expect, it } from 'vitest';
 
-import { COARSE_LAND } from './land';
+import { COARSE_WORLD } from './land';
 import { createWorldLayers } from './layers';
 import { createDarknessField, WEB_MERCATOR_MAX_LATITUDE } from './terminator';
 
@@ -13,6 +13,7 @@ const palette: WorldPalette = {
   ocean: [1, 2, 3, 255],
   land: [4, 5, 6, 255],
   landLine: [7, 8, 9, 180],
+  border: [19, 20, 21, 160],
   grid: [10, 11, 12, 80],
   night: [13, 14, 15, 215],
   route: [16, 17, 18, 230],
@@ -34,9 +35,10 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [antimeridianRoute],
       darkness: DARKNESS,
-      land: COARSE_LAND,
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
       projection: 'flat',
-      visibility: { graticule: true, routes: true, terminator: true },
+      visibility: { graticule: true, routes: true, terminator: true, borders: false },
     });
     const routes = layers.find(
       (layer): layer is ArcLayer<WorldRoute> =>
@@ -54,9 +56,10 @@ describe('projection-independent world layers', () => {
       quality: 'reduced',
       routes: [],
       darkness: DARKNESS,
-      land: COARSE_LAND,
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
       projection: 'flat',
-      visibility: { graticule: false, routes: true, terminator: false },
+      visibility: { graticule: false, routes: true, terminator: false, borders: false },
     });
     expect(layers.filter((layer) => layer !== false).map((layer) => layer.id)).toEqual([
       'world-ocean',
@@ -71,18 +74,20 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [antimeridianRoute],
       darkness: DARKNESS,
-      land: COARSE_LAND,
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
       projection: 'flat',
-      visibility: { graticule: false, routes: true, terminator: false },
+      visibility: { graticule: false, routes: true, terminator: false, borders: false },
     });
     const reduced = createWorldLayers({
       palette,
       quality: 'reduced',
       routes: [antimeridianRoute],
       darkness: DARKNESS,
-      land: COARSE_LAND,
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
       projection: 'flat',
-      visibility: { graticule: false, routes: true, terminator: false },
+      visibility: { graticule: false, routes: true, terminator: false, borders: false },
     });
     const fullRoutes = full.find(
       (layer): layer is ArcLayer<WorldRoute> =>
@@ -112,8 +117,9 @@ describe('projection-independent world layers', () => {
       quality: 'full' as const,
       routes: [],
       darkness: DARKNESS,
-      land: COARSE_LAND,
-      visibility: { graticule: true, routes: true, terminator: true },
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
+      visibility: { graticule: true, routes: true, terminator: true, borders: false },
     };
     const boundsFor = (projection: 'flat' | 'globe') =>
       createWorldLayers({ ...options, projection })
@@ -148,9 +154,10 @@ describe('projection-independent world layers', () => {
         quality,
         routes: [],
         darkness: DARKNESS,
-        land: COARSE_LAND,
+        land: COARSE_WORLD.land,
+        borders: COARSE_WORLD.borders,
         projection: 'globe',
-        visibility: { graticule: false, routes: false, terminator: true },
+        visibility: { graticule: false, routes: false, terminator: true, borders: false },
       })
         .filter((layer): layer is Layer => layer !== false)
         .find((layer) => layer.id === 'world-terminator');
@@ -178,9 +185,10 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [antimeridianRoute],
       darkness: DARKNESS,
-      land: COARSE_LAND,
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
       projection: 'globe',
-      visibility: { graticule: true, routes: true, terminator: true },
+      visibility: { graticule: true, routes: true, terminator: true, borders: false },
     }).filter((layer): layer is Layer => layer !== false);
 
     for (const id of ['world-ocean', 'world-terminator']) {
@@ -208,9 +216,10 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       darkness: DARKNESS,
-      land: COARSE_LAND,
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
       projection: 'globe',
-      visibility: { graticule: false, routes: false, terminator: true },
+      visibility: { graticule: false, routes: false, terminator: true, borders: false },
     }).filter((layer): layer is Layer => layer !== false);
 
     const terminator = layers.find((layer) => layer.id === 'world-terminator');
@@ -255,9 +264,10 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       darkness: DARKNESS,
-      land: COARSE_LAND,
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
       projection: 'globe',
-      visibility: { graticule: false, routes: false, terminator: true },
+      visibility: { graticule: false, routes: false, terminator: true, borders: false },
     }).filter((layer): layer is Layer => layer !== false);
 
     const worldSized = layers.filter((layer) =>
@@ -286,6 +296,51 @@ describe('projection-independent world layers', () => {
     }
   });
 
+  it('draws country borders only when asked, and under its own colour', () => {
+    const idsWith = (borders: boolean) =>
+      createWorldLayers({
+        palette,
+        quality: 'full',
+        routes: [],
+        darkness: DARKNESS,
+        land: COARSE_WORLD.land,
+        borders: COARSE_WORLD.borders,
+        projection: 'globe',
+        visibility: { graticule: false, routes: false, terminator: false, borders },
+      })
+        .filter((layer): layer is Layer => layer !== false)
+        .map((layer) => layer.id);
+
+    expect(idsWith(true)).toContain('world-borders');
+    expect(idsWith(false)).not.toContain('world-borders');
+
+    const layer = createWorldLayers({
+      palette,
+      quality: 'full',
+      routes: [],
+      darkness: DARKNESS,
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
+      projection: 'globe',
+      visibility: { graticule: false, routes: false, terminator: false, borders: true },
+    })
+      .filter((l): l is Layer => l !== false)
+      .find((l) => l.id === 'world-borders');
+
+    const props = layer?.props as unknown as {
+      getLineColor: number[];
+      filled: boolean;
+      data: unknown;
+    };
+    // Its own token, not the coastline's: the two must be distinguishable, and
+    // `palette.test.ts` holds the contrast either way.
+    expect(props.getLineColor).toEqual(palette.border);
+    expect(props.getLineColor).not.toEqual(palette.landLine);
+    // A line mesh has no rings; filling it would be meaningless work.
+    expect(props.filled).toBe(false);
+    expect(props.data).toBe(COARSE_WORLD.borders);
+  });
+
   it('bounds each projection where its own coordinate system stops', () => {
     const boundsOf = (projection: 'flat' | 'globe') => {
       const layers = createWorldLayers({
@@ -293,9 +348,10 @@ describe('projection-independent world layers', () => {
         quality: 'full',
         routes: [],
         darkness: DARKNESS,
-        land: COARSE_LAND,
+        land: COARSE_WORLD.land,
+        borders: COARSE_WORLD.borders,
         projection,
-        visibility: { graticule: false, routes: false, terminator: true },
+        visibility: { graticule: false, routes: false, terminator: true, borders: false },
       }).filter((layer): layer is Layer => layer !== false);
       const terminator = layers.find((layer) => layer.id === 'world-terminator');
       return (terminator?.props as unknown as { bounds: number[] }).bounds;
@@ -319,9 +375,10 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       darkness: DARKNESS,
-      land: COARSE_LAND,
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
       projection: 'flat',
-      visibility: { graticule: false, routes: false, terminator: true },
+      visibility: { graticule: false, routes: false, terminator: true, borders: false },
     }).filter((layer): layer is Layer => layer !== false);
 
     /*
@@ -361,9 +418,10 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       darkness: DARKNESS,
-      land: COARSE_LAND,
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
       projection: 'globe',
-      visibility: { graticule: true, routes: true, terminator: true },
+      visibility: { graticule: true, routes: true, terminator: true, borders: false },
     }).filter((layer): layer is Layer => layer !== false);
 
     for (const id of ['world-ocean', 'world-terminator']) {
@@ -400,9 +458,10 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       darkness: DARKNESS,
-      land: COARSE_LAND,
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
       projection: 'flat',
-      visibility: { graticule: false, routes: false, terminator: true },
+      visibility: { graticule: false, routes: false, terminator: true, borders: false },
     }).filter((layer): layer is Layer => layer !== false);
 
     for (const id of ['world-ocean', 'world-terminator']) {
@@ -421,9 +480,10 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       darkness: DARKNESS,
-      land: COARSE_LAND,
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
       projection: 'flat',
-      visibility: { graticule: false, routes: false, terminator: false },
+      visibility: { graticule: false, routes: false, terminator: false, borders: false },
     }).filter((layer): layer is Layer => layer !== false);
 
     const image = (
@@ -444,9 +504,10 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       darkness: DARKNESS,
-      land: COARSE_LAND,
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
       projection: 'flat',
-      visibility: { graticule: false, routes: false, terminator: true },
+      visibility: { graticule: false, routes: false, terminator: true, borders: false },
     }).filter((layer): layer is Layer => layer !== false);
 
     const image = (
@@ -489,9 +550,10 @@ describe('projection-independent world layers', () => {
         quality: 'full',
         routes: [],
         darkness: DARKNESS,
-        land: COARSE_LAND,
+        land: COARSE_WORLD.land,
+        borders: COARSE_WORLD.borders,
         projection: 'globe',
-        visibility: { graticule: false, routes: false, terminator: false },
+        visibility: { graticule: false, routes: false, terminator: false, borders: false },
       }).find((layer) => layer !== false && layer.id === 'world-land') as Layer
     ).props.data as { features?: { geometry: { type: string; coordinates: unknown } }[] };
 

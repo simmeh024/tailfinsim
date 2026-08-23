@@ -92,6 +92,7 @@ describe('the fallback palette', () => {
     expect(fallback.ocean).toEqual(tokens.ocean);
     expect(fallback.land).toEqual(tokens.land);
     expect(fallback.landLine).toEqual(tokens['land-line']);
+    expect(fallback.border).toEqual(tokens.border);
     expect(fallback.grid).toEqual(tokens.grid);
     expect(fallback.night).toEqual(tokens.night);
     expect(fallback.route).toEqual(tokens.route);
@@ -126,6 +127,22 @@ describe.each(['dark', 'light'] as const)('the %s world meets WCAG AA', (theme) 
   it('keeps a coastline visible against its own land, day and night', () => {
     expect(contrastRatio(plain('land-line'), plain('land'))).toBeGreaterThanOrEqual(3);
     expect(contrastRatio(atNight('land-line'), atNight('land'))).toBeGreaterThanOrEqual(3);
+  });
+
+  it('keeps a country border visible on the land it divides, day and night', () => {
+    // A border carries information, so H.7's 3:1 for a meaningful graphic applies
+    // to it exactly as it does to a coastline.
+    expect(contrastRatio(plain('border'), plain('land'))).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(atNight('border'), atNight('land'))).toBeGreaterThanOrEqual(3);
+  });
+
+  it('keeps the border subordinate to the coastline', () => {
+    // Equal weight makes a continent read as a mesh of equal cells, and the
+    // coastline is the line that says where the land stops. Contrast is the half
+    // of that which can be measured; width is the other half, in `layers.ts`.
+    expect(contrastRatio(plain('border'), plain('land'))).toBeLessThan(
+      contrastRatio(plain('land-line'), plain('land')),
+    );
   });
 
   it('keeps a route visible over the sea it crosses, day and night', () => {
