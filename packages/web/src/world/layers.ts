@@ -141,16 +141,12 @@ const DATA_TEXTURE_SAMPLER = {
  * file's whole contract; forking the ocean per projection would break it to fix a
  * fill.
  */
-function solidTexture(colour: readonly [number, number, number, number]): {
-  data: Uint8Array;
-  width: number;
-  height: number;
-} {
-  const data = new Uint8Array(2 * 2 * 4);
+function solidTexture(colour: readonly [number, number, number, number]): ImageData {
+  const data = new Uint8ClampedArray(2 * 2 * 4);
   for (let texel = 0; texel < 4; texel += 1) {
     data.set([colour[0], colour[1], colour[2], colour[3]], texel * 4);
   }
-  return { data, width: 2, height: 2 };
+  return new ImageData(data, 2, 2);
 }
 
 /**
@@ -161,16 +157,25 @@ function solidTexture(colour: readonly [number, number, number, number]): {
  * the field is the sun's; keeping them apart means a theme change re-colours the
  * night without recomputing any astronomy.
  *
- * The shape matters. luma.gl wants `data` flat with `width` and `height` beside
- * it — handed `{ data: { data, width, height } }` it silently produces a 1x1
- * texture, which renders as a single flat wash over the entire world and looks
- * like a palette bug rather than a shape bug.
+ * ## Why `ImageData` and not a plain object
+ *
+ * `BitmapLayer` accepts `image` as an object, and handed
+ * `{ data: Uint8Array, width, height }` it produces a texture of **exactly the
+ * right dimensions containing nothing at all** — `readDataSyncWebGL` comes back
+ * all zeros. The size is read from the object; the pixels are not uploaded. So it
+ * renders as a flat transparent-black rectangle and every diagnostic short of a
+ * texture readback says the layer is healthy: the mesh is built, the model exists,
+ * the texture reports `rgba8unorm 512x256`.
+ *
+ * `ImageData` is a real image source, so deck.gl uploads it. It also needs no 2D
+ * canvas context, which matters because jsdom has `ImageData` but no working
+ * `getContext('2d')`.
  */
 function nightTexture(
   field: DarknessField,
   night: readonly [number, number, number, number],
-): { data: Uint8Array; width: number; height: number } {
-  const data = new Uint8Array(field.width * field.height * 4);
+): ImageData {
+  const data = new Uint8ClampedArray(field.width * field.height * 4);
   // Indexed rather than destructured: `tokens.test.ts` forbids CSS colour names
   // outside the theme file, and `const [red, green, blue] = night` is three of
   // them. The guard is right to be blunt about it — a stray literal is exactly
@@ -184,7 +189,7 @@ function nightTexture(
     // The palette's own alpha is the ceiling; the field scales it.
     data[offset + 3] = Math.round((opacity * (field.alpha[texel] ?? 0)) / 255);
   }
-  return { data, width: field.width, height: field.height };
+  return new ImageData(data, field.width, field.height);
 }
 
 /**

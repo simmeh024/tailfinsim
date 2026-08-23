@@ -84,3 +84,33 @@ if (!globalThis.matchMedia) {
     }),
   });
 }
+
+/**
+ * jsdom ships without `ImageData`, which belongs to the canvas API it stubs out.
+ *
+ * The world renderer builds its ocean fill and its day/night field as `ImageData`
+ * because that is the one image source deck.gl will actually **upload**: handed a
+ * plain `{ data, width, height }` it creates a texture of the right dimensions
+ * containing nothing at all, and the world renders black. So the shape matters in
+ * production and has to exist here.
+ *
+ * Data only — no decoding, no colour management, nothing jsdom would need a real
+ * canvas for. `layers.test.ts` reads `width`, `height` and `data` and no more.
+ */
+if (!globalThis.ImageData) {
+  Object.defineProperty(globalThis, 'ImageData', {
+    writable: true,
+    value: class {
+      readonly data: Uint8ClampedArray;
+      readonly width: number;
+      readonly height: number;
+      readonly colorSpace = 'srgb' as const;
+
+      constructor(data: Uint8ClampedArray, width: number, height?: number) {
+        this.data = data;
+        this.width = width;
+        this.height = height ?? data.length / 4 / width;
+      }
+    },
+  });
+}
