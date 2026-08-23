@@ -3466,3 +3466,866 @@ body {
   font-size: var(--text-xs);
   color: var(--text-secondary);
 }
+
+/* ---------------------------------------------------------------------------
+   Fleet marketplace (FLEET-MARKET)
+
+   Type imagery lives on a deep, quiet ground so geometry remains the signal.
+   The cards stay compact; selection puts the decision-making detail in a
+   persistent right column. No image state can cover or disable an action.
+   --------------------------------------------------------------------------- */
+
+.market {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  margin-top: var(--space-2);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.market__header,
+.market-compare__head,
+.market-detail__title,
+.market-detail__topbar,
+.used-listing__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.market__header h2,
+.market-compare h3,
+.market-detail h3,
+.market-detail h4,
+.market-detail h5 {
+  margin: 0;
+}
+
+.market__header h2 {
+  font-size: clamp(1.35rem, 2vw, 2rem);
+}
+
+.market__header p {
+  max-width: 72ch;
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.market__eyebrow,
+.market-detail__topbar > span,
+.market-card__manufacturer {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.market__count {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 7rem;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--console-card-raised);
+}
+
+.market__count strong {
+  color: var(--accent);
+  font-size: var(--text-lg);
+}
+
+.market__count span {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.market-toolbar {
+  display: grid;
+  grid-template-columns: minmax(13rem, 1.8fr) repeat(6, minmax(8rem, 1fr)) auto;
+  gap: var(--space-2);
+  align-items: end;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--console-card-raised);
+}
+
+.market-toolbar label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.market-toolbar label > span,
+.delivery-field > span {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.market-toolbar input,
+.market-toolbar select,
+.delivery-field input {
+  width: 100%;
+  min-height: 2.35rem;
+  padding: var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.market-toolbar__clear,
+.market-card__compare,
+.market-detail button,
+.market-compare button {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.market-toolbar__clear {
+  min-height: 2.35rem;
+  padding: var(--space-2) var(--space-3);
+  white-space: nowrap;
+}
+
+.market-toolbar__clear:hover,
+.market-card__compare:hover,
+.market-detail button:hover,
+.market-compare button:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.market__announcer {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.market__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(22rem, 27rem);
+  gap: var(--space-4);
+  align-items: start;
+  min-width: 0;
+}
+
+.market__catalogue {
+  min-width: 0;
+}
+
+.market-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15.5rem), 1fr));
+  gap: var(--space-3);
+}
+
+.market-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+  transition:
+    border-color var(--motion-fast) var(--ease),
+    transform var(--motion-fast) var(--ease);
+}
+
+.market-card:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+.market-card[data-selected='yes'] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.market-card__select {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  padding: 0 0 var(--space-3);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.market-card__visual {
+  position: relative;
+  display: block;
+  aspect-ratio: 3 / 2;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-inset);
+}
+
+.aircraft-visual {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.aircraft-visual--fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  background: var(--bg-inset);
+  color: var(--text-muted);
+}
+
+.aircraft-visual--fallback > span {
+  font-size: 2.5rem;
+}
+
+.aircraft-visual--fallback small {
+  font-size: var(--text-xs);
+}
+
+.market-card__status,
+.market-detail__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.market-card__status {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-panel);
+  backdrop-filter: blur(8px);
+}
+
+.market-card__status::before,
+.market-detail__status::before {
+  content: '●';
+}
+
+.market-card__status[data-status='orderable'],
+.market-detail__status[data-status='orderable'] {
+  color: var(--status-ontime);
+}
+
+.market-card__status[data-status='prototype'],
+.market-card__status[data-status='used_only'],
+.market-detail__status[data-status='prototype'],
+.market-detail__status[data-status='used_only'] {
+  color: var(--status-delayed);
+}
+
+.market-card__status[data-status='retired'],
+.market-card__status[data-status='unannounced'],
+.market-detail__status[data-status='retired'],
+.market-detail__status[data-status='unannounced'] {
+  color: var(--text-muted);
+}
+
+.market-card__manufacturer,
+.market-card__name,
+.market-card__class,
+.market-card__figures,
+.market-card__inventory {
+  margin-inline: var(--space-3);
+}
+
+.market-card__manufacturer {
+  margin-top: var(--space-3);
+}
+
+.market-card__name {
+  margin-top: var(--space-1);
+  font-size: var(--text-lg);
+}
+
+.market-card__class {
+  margin-top: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.market-card__figures {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.market-card__figures > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.market-card__figures > span > span {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.market-card__figures strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.market-card__inventory {
+  margin-top: var(--space-3);
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.market-card__compare {
+  margin: 0 var(--space-3) var(--space-3);
+  padding: var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.market-card__compare[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-quiet);
+  color: var(--accent);
+}
+
+.market-card__compare:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.market__empty,
+.market-detail__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 14rem;
+  padding: var(--space-6);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.market__empty span,
+.market-detail__empty p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.market-detail {
+  position: sticky;
+  top: var(--space-3);
+  max-height: calc(100vh - var(--strip-height) - 2 * var(--space-3));
+  min-height: 24rem;
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--console-card-raised);
+  box-shadow: 0 1rem 3rem var(--bg-scrim);
+}
+
+.market-detail__topbar {
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.market-detail__topbar button,
+.market-detail__back {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.market-detail__image {
+  aspect-ratio: 3 / 2;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.market-detail__title {
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+}
+
+.market-detail__title > div > span {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.market-detail__title h3 {
+  font-size: 1.45rem;
+}
+
+.market-detail__status {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+
+.market-detail__tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.market-detail__tabs button {
+  padding: var(--space-2);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+}
+
+.market-detail__tabs button[aria-selected='true'] {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+
+.market-detail__body,
+.market-detail__spec-grid,
+.market-detail__actions {
+  padding: var(--space-4);
+}
+
+.market-detail__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.market-detail__summary {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.market-detail__overview,
+.market-detail__spec-grid,
+.used-listing dl,
+.acquisition-quote dl,
+.acquisition-review dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.market-detail__overview > div,
+.market-detail__spec-grid > div,
+.used-listing dl > div,
+.acquisition-quote dl > div,
+.acquisition-review dl > div {
+  min-width: 0;
+}
+
+.market-detail__overview dt,
+.market-detail__spec-grid dt,
+.used-listing dt,
+.acquisition-quote dt,
+.acquisition-review dt {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.market-detail__overview dd,
+.market-detail__spec-grid dd,
+.used-listing dd,
+.acquisition-quote dd,
+.acquisition-review dd {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+  font-size: var(--text-sm);
+}
+
+.market-detail__restrictions {
+  padding: var(--space-3);
+  border-left: 3px solid var(--status-delayed);
+  background: var(--status-delayed-quiet);
+  font-size: var(--text-sm);
+}
+
+.market-detail__restrictions ul {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
+}
+
+.market-detail__actions {
+  display: grid;
+  gap: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.market-detail__actions p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.market-action {
+  min-height: 2.6rem;
+  padding: var(--space-2) var(--space-3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: var(--text-xs) !important;
+  font-weight: 700 !important;
+}
+
+.market-action--primary {
+  border-color: var(--accent) !important;
+  background: var(--accent) !important;
+  color: var(--text-on-accent) !important;
+}
+
+.market-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.market-action span {
+  float: right;
+}
+
+.market-compare {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--console-card-raised);
+}
+
+.market-compare__head {
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.market-compare__head > span {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.market-compare__scroll {
+  overflow-x: auto;
+}
+
+.market-compare table {
+  width: 100%;
+  min-width: 42rem;
+  border-collapse: collapse;
+}
+
+.market-compare th,
+.market-compare td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+}
+
+.market-compare thead th:not(:first-child) {
+  min-width: 10rem;
+}
+
+.market-compare thead span,
+.market-compare thead strong {
+  display: block;
+}
+
+.market-compare thead span,
+.market-compare tbody th {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.market-compare thead button {
+  margin-top: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.used-market__intro,
+.acquisition-heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.used-market__intro span {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.used-listing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--console-card);
+}
+
+.used-listing__head > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.used-listing__head span,
+.used-listing__config,
+.used-listing__valuation {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.used-listing__config,
+.used-listing__valuation {
+  margin: 0;
+}
+
+.used-listing__valuation {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.factory-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.factory-options legend {
+  margin-bottom: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.factory-options label {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.factory-options label[data-selected='yes'] {
+  border-color: var(--accent);
+  background: var(--accent-quiet);
+}
+
+.factory-options input {
+  margin-top: var(--space-1);
+  accent-color: var(--accent);
+}
+
+.factory-options label > span {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.factory-options small {
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.acquisition-loading,
+.acquisition-error,
+.acquisition-result {
+  margin: 0;
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.acquisition-loading {
+  color: var(--text-muted);
+}
+
+.acquisition-error {
+  border-left: 3px solid var(--status-cancelled);
+  background: var(--status-cancelled-quiet);
+  color: var(--status-cancelled);
+}
+
+.acquisition-error span {
+  display: block;
+  margin-top: var(--space-1);
+}
+
+.acquisition-result {
+  border-left: 3px solid var(--status-ontime);
+  background: var(--status-ontime-quiet);
+}
+
+.acquisition-result p {
+  margin: var(--space-2) 0 0;
+}
+
+.acquisition-quote,
+.acquisition-review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--console-card);
+}
+
+.acquisition-quote dd[data-negative='yes'] {
+  color: var(--status-cancelled);
+}
+
+.delivery-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.delivery-field input {
+  max-width: 10rem;
+  text-transform: uppercase;
+}
+
+.delivery-field small {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.acquisition-review__buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+@media (max-width: 92rem) {
+  .market-toolbar {
+    grid-template-columns: repeat(4, minmax(9rem, 1fr));
+  }
+
+  .market-toolbar__search {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 72rem) {
+  .market__layout {
+    display: block;
+  }
+
+  .market-detail[data-open='yes'] {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    width: min(34rem, 100%);
+    max-height: none;
+    min-height: 100%;
+    margin-left: auto;
+    border-radius: 0;
+    background: var(--bg-raised);
+  }
+
+  .market-detail[data-open='no'] {
+    display: none;
+  }
+
+  .market-detail__topbar {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--bg-raised);
+  }
+}
+
+@media (max-width: 48rem) {
+  .market__header {
+    flex-direction: column;
+  }
+
+  .market__count {
+    align-items: flex-start;
+  }
+
+  .market-toolbar,
+  .market-toolbar__search {
+    grid-template-columns: 1fr 1fr;
+    grid-column: auto;
+  }
+
+  .market-toolbar__search,
+  .market-toolbar__clear {
+    grid-column: 1 / -1;
+  }
+
+  .market-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  }
+
+  .market-detail[data-open='yes'] {
+    width: 100%;
+  }
+
+  .market-detail__overview,
+  .market-detail__spec-grid,
+  .used-listing dl,
+  .acquisition-quote dl,
+  .acquisition-review dl,
+  .acquisition-review__buttons {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 32rem) {
+  .market-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .market-toolbar label,
+  .market-toolbar__search,
+  .market-toolbar__clear {
+    grid-column: 1;
+  }
+
+  .market-grid {
+    grid-template-columns: 1fr;
+  }
+}

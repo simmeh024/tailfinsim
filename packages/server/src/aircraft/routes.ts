@@ -1,5 +1,7 @@
 import {
   AircraftAcquisitionInput,
+  AircraftAcquisitionQuoteInput,
+  aircraftAcquisitionQuoteResponseJsonSchema,
   aircraftAcquisitionResponseJsonSchema,
   aircraftOrderListResponseJsonSchema,
   apiErrorJsonSchema,
@@ -20,6 +22,7 @@ import { type DatabaseHandle } from '../db/client';
 import {
   acquireAircraft,
   listAircraftOrders,
+  quoteAircraftAcquisition,
   type AircraftAcquisitionRefusal,
 } from './acquisition';
 import { fleetCatalogue } from './era';
@@ -51,6 +54,48 @@ export function registerAircraftRoutes(app: FastifyInstance, { db }: { db: Datab
     async (request: FastifyRequest, reply: FastifyReply) => {
       const own = resolvedAirlineOf(request);
       return reply.code(200).send(await fleetCatalogue(db.db, own.worldId));
+    },
+  );
+
+  /**
+   * Authoritative, non-mutating preview for the catalogue configurator.
+   *
+   * The response is calculated by the same resolver used by the spending
+   * transaction. It carries current cash only as a snapshot; POST acquisitions
+   * locks the airline and validates funds again.
+   */
+  app.post<{ Body: unknown }>(
+    '/api/fleet/acquisition-quotes',
+    {
+      onRequest: app.requireAirline,
+      schema: {
+        response: {
+          200: aircraftAcquisitionQuoteResponseJsonSchema,
+          400: apiErrorJsonSchema,
+          404: apiErrorJsonSchema,
+          409: apiErrorJsonSchema,
+          422: apiErrorJsonSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const parsed = AircraftAcquisitionQuoteInput.safeParse(request.body);
+      if (!parsed.success) {
+        const fields: Record<string, string[]> = {};
+        for (const issue of parsed.error.issues) {
+          const field = issue.path.length === 0 ? 'form' : String(issue.path[0]);
+          (fields[field] ??= []).push(issue.message);
+        }
+        return reply.code(400).send({
+          code: 'invalid_aircraft_acquisition_quote',
+          message: 'The aircraft acquisition quote request is not valid',
+          fields,
+        });
+      }
+
+      const result = await quoteAircraftAcquisition(db.db, resolvedAirlineOf(request), parsed.data);
+      if (!result.ok) return sendAcquisitionRefusal(reply, result);
+      return reply.code(200).send(result.quote);
     },
   );
 

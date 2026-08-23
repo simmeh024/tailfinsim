@@ -1,7 +1,13 @@
 import type {
+  ApiError,
+  AircraftAcquisitionInput,
+  AircraftAcquisitionQuoteInput,
+  AircraftAcquisitionQuoteResponse,
+  AircraftAcquisitionResponse,
   AirframeDetailResponse,
   FleetAirframesResponse,
   FleetCatalogueResponse,
+  UsedMarketResponse,
 } from '@tailfin/shared';
 
 /**
@@ -24,6 +30,35 @@ async function readJson(path: string): Promise<unknown> {
   return response.json();
 }
 
+export interface FleetApiRefusal extends ApiError {
+  status: number;
+}
+
+export type FleetApiOutcome<T> = { ok: true; value: T } | { ok: false; refusal: FleetApiRefusal };
+
+async function postJson<T>(path: string, input: unknown): Promise<FleetApiOutcome<T>> {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { accept: 'application/json', 'content-type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify(input),
+  });
+  const body: unknown = await response.json();
+  if (response.ok) return { ok: true, value: body as T };
+  if (
+    (response.status === 400 ||
+      response.status === 404 ||
+      response.status === 409 ||
+      response.status === 422) &&
+    typeof (body as Partial<ApiError>).code === 'string' &&
+    typeof (body as Partial<ApiError>).message === 'string'
+  ) {
+    const refusal = body as ApiError;
+    return { ok: false, refusal: { ...refusal, status: response.status } };
+  }
+  throw new Error(`POST ${path} failed with ${String(response.status)}`);
+}
+
 export async function fetchFleetCatalogue(): Promise<FleetCatalogueResponse> {
   const body = await readJson('/api/fleet/catalogue');
 
@@ -44,6 +79,27 @@ export async function fetchFleetAirframes(): Promise<FleetAirframesResponse> {
     throw new Error('GET /api/fleet/airframes did not return a list of aircraft');
   }
   return body as FleetAirframesResponse;
+}
+
+export async function fetchUsedMarket(): Promise<UsedMarketResponse> {
+  const body = await readJson('/api/fleet/used-market');
+  const listings = (body as { listings?: unknown }).listings;
+  if (!Array.isArray(listings)) {
+    throw new Error('GET /api/fleet/used-market did not return a list of aircraft');
+  }
+  return body as UsedMarketResponse;
+}
+
+export function quoteAircraft(
+  input: AircraftAcquisitionQuoteInput,
+): Promise<FleetApiOutcome<AircraftAcquisitionQuoteResponse>> {
+  return postJson('/api/fleet/acquisition-quotes', input);
+}
+
+export function acquireAircraft(
+  input: AircraftAcquisitionInput,
+): Promise<FleetApiOutcome<AircraftAcquisitionResponse>> {
+  return postJson('/api/fleet/acquisitions', input);
 }
 
 export async function fetchAirframeDetail(airframeId: string): Promise<AirframeDetailResponse> {

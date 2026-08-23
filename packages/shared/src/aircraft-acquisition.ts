@@ -46,6 +46,55 @@ export const AircraftAcquisitionInput = z.discriminatedUnion('kind', [
 ]);
 export type AircraftAcquisitionInput = z.infer<typeof AircraftAcquisitionInput>;
 
+/**
+ * A non-mutating preview of the two type-level acquisition paths.
+ *
+ * Used aircraft are already individually priced physical listings, so their
+ * preview is the listing itself. New and lease offers need this contract: it
+ * lets the browser show the authoritative M4-03 fold, price and lead time
+ * without importing simulation code or trying to reproduce the acquisition
+ * engine.
+ */
+export const AircraftAcquisitionQuoteInput = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('lease'),
+      typeDesignation: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('new'),
+      typeDesignation: z.string().min(1),
+      optionIds: z.array(z.string().min(1)).default([]),
+    })
+    .strict(),
+]);
+export type AircraftAcquisitionQuoteInput = z.infer<typeof AircraftAcquisitionQuoteInput>;
+
+/** The server-owned commercial/build preview rendered by the acquisition UI. */
+export const AircraftAcquisitionQuoteResponse = z
+  .object({
+    kind: z.enum(['lease', 'new']),
+    catalogueVersion: z.string().min(1),
+    typeDesignation: z.string().min(1),
+    buildOptionIds: z.array(z.string()),
+    effectiveSpec: AircraftSpec,
+    chargedMinor: MinorUnits.nonnegative(),
+    monthlyLeaseRateMinor: MinorUnits.nonnegative().nullable(),
+    baseLeadTimeWeeks: z.number().int().nonnegative(),
+    optionLeadTimeWeeks: z.number().int().nonnegative(),
+    totalLeadTimeWeeks: z.number().int().nonnegative(),
+    /** Informational only. The acquisition transaction reads and locks cash again. */
+    cashMinor: MinorUnits,
+    /** May be negative; the quote explains affordability but does not authorise it. */
+    resultingCashMinor: MinorUnits,
+    quotedAt: Timestamp,
+    estimatedDeliveryAt: Timestamp,
+  })
+  .strict();
+export type AircraftAcquisitionQuoteResponse = z.infer<typeof AircraftAcquisitionQuoteResponse>;
+
 /** The immutable commercial and build snapshot created when the order is accepted. */
 export const AircraftOrder = z
   .object({
