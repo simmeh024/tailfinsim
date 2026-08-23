@@ -180,6 +180,36 @@ This is also why `projection` is a dependency of the layer `useMemo` in `WorldRe
 though the layer _list_ is identical for both views: switching projection has to rebuild the
 layers for the meshes to re-tessellate.
 
+### A full-sphere quad must not be back-face culled
+
+The other half of the black globe, and the harder half to see.
+
+A world-sized quad wraps the entire sphere, so its near and far halves have **opposite
+apparent winding** once projected. `cullMode: 'back'` discards one of them — and when that is
+the near one, all that remains sits behind `GlobeView`'s own opaque backdrop and is rejected
+by the depth test. Nothing reaches the screen.
+
+The layers that kept rendering on the globe throughout were exactly the ones already using
+`cullMode: 'none'`: the graticule and the routes. The ocean and the night texture used
+`'back'`, and neither appeared.
+
+Culling buys nothing here in any case. There is one quad per layer, the depth buffer already
+hides the far side, and the cost of drawing it is a few thousand fragments that fail the depth
+test. Both world-sized bitmaps now use `none`, and `layers.test.ts` asserts it.
+
+### The night field is equirectangular, and deck.gl has to be told
+
+`BitmapLayer` interpolates texture coordinates in whatever coordinate system the viewport
+uses unless `_imageCoordinateSystem` says otherwise. On the globe that is already lng/lat. On
+the **flat map it is Web Mercator**, which stretches towards the poles — so a field sampled at
+equal degrees of latitude per row had its night boundary drifting from the true latitude,
+further the closer to the poles.
+
+Declaring `_imageCoordinateSystem: 'lnglat'` makes deck.gl convert on the way in. It is
+observable: on `MapView` the layer's `coordinateConversion` becomes `-1`, and on `GlobeView` it
+stays `0` because no conversion is needed. The ocean does not declare it — a single-colour fill
+samples the same whatever the coordinates mean.
+
 ### The ocean is a bitmap, not a polygon
 
 It was a `SolidPolygonLayer` holding one six-vertex rectangle, which is exactly right on a flat
