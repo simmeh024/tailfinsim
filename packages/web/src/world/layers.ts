@@ -93,6 +93,33 @@ const WORLD_BOUNDS: Record<WorldProjection, [number, number, number, number]> = 
 };
 
 /**
+ * Sampler settings every data texture here needs.
+ *
+ * **`mipmapFilter: 'none'` is the load-bearing one, and its absence renders black.**
+ * luma.gl's default sampler is `minFilter: linear, mipmapFilter: linear`, which
+ * `convertMinFilterMode` turns into WebGL's `LINEAR_MIPMAP_LINEAR`. A texture
+ * uploaded from a typed array has one mip level and no mipmap chain, so that
+ * filter makes it an **incomplete texture** — and an incomplete texture samples as
+ * opaque black, silently, with no warning and no GL error.
+ *
+ * That is what a black sea and a missing terminator were: not culling, not
+ * tessellation, not the palette. Both bitmap layers were sampling a texture the
+ * driver considered unusable. Setting `minFilter: 'linear'` alone does not help,
+ * because the mipmap half of the pair comes from the default and stays.
+ *
+ * Linear filtering is otherwise the point of using a texture at all: it is what
+ * turns the sampled darkness field into a smooth gradient. Clamped rather than
+ * repeated, so the poles do not sample across to the opposite pole.
+ */
+const DATA_TEXTURE_SAMPLER = {
+  minFilter: 'linear',
+  magFilter: 'linear',
+  mipmapFilter: 'none',
+  addressModeU: 'clamp-to-edge',
+  addressModeV: 'clamp-to-edge',
+} as const;
+
+/**
  * A solid fill covering the whole world, as a texture.
  *
  * The ocean used to be a `SolidPolygonLayer` holding one six-vertex rectangle in
@@ -178,6 +205,7 @@ export function createWorldLayers({
       id: 'world-ocean',
       bounds,
       image: solidTexture(palette.ocean),
+      textureParameters: DATA_TEXTURE_SAMPLER,
       // `cullMode: 'none'`, and this is the second half of the black globe.
       //
       // A world-sized quad wraps the entire sphere, so its near and far halves
@@ -223,16 +251,7 @@ export function createWorldLayers({
         // northern bound, which is why `createDarknessField` puts +90° in row 0.
         bounds,
         image: nightTexture(darkness, palette.night),
-        // Linear filtering is the entire point: it is what turns a sampled field
-        // into a smooth gradient instead of the staircase 5-degree flat-shaded
-        // cells produced. Clamped rather than repeated, so the poles do not
-        // sample across to the opposite pole.
-        textureParameters: {
-          minFilter: 'linear',
-          magFilter: 'linear',
-          addressModeU: 'clamp-to-edge',
-          addressModeV: 'clamp-to-edge',
-        },
+        textureParameters: DATA_TEXTURE_SAMPLER,
         /*
          * The field is sampled on an equirectangular grid — equal degrees of
          * latitude per row — and `BitmapLayer`'s *default* is to interpolate texture
