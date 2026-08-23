@@ -1,7 +1,7 @@
 import { ArcLayer } from '@deck.gl/layers';
 import { describe, expect, it } from 'vitest';
 
-import { COARSE_LAND, unwrapAntimeridian } from './land';
+import { COARSE_LAND } from './land';
 import { createWorldLayers } from './layers';
 import { createDarknessField, WEB_MERCATOR_MAX_LATITUDE } from './terminator';
 
@@ -411,52 +411,5 @@ describe('projection-independent world layers', () => {
         .filter((delta) => delta > 180),
     );
     expect(jumps, 'consecutive coastline vertices 360 degrees apart').toEqual([]);
-  });
-
-  it('unwraps a ring that crosses the antimeridian, and leaves others alone', () => {
-    const crossing = {
-      type: 'Feature',
-      geometry: {
-        type: 'Polygon',
-        coordinates: [
-          [
-            [179, 60],
-            [-180, 61],
-            [-179, 62],
-            [179, 60],
-          ],
-        ],
-      },
-    };
-    unwrapAntimeridian(crossing);
-    // -180 becomes 180, -179 becomes 181: the same points, contiguous.
-    expect(crossing.geometry.coordinates[0]).toEqual([
-      [179, 60],
-      [180, 61],
-      [181, 62],
-      [179, 60],
-    ]);
-
-    const ordinary = {
-      type: 'Feature',
-      geometry: {
-        type: 'Polygon',
-        coordinates: [
-          [
-            [10, 50],
-            [12, 51],
-            [11, 52],
-            [10, 50],
-          ],
-        ],
-      },
-    };
-    unwrapAntimeridian(ordinary);
-    expect(ordinary.geometry.coordinates[0]).toEqual([
-      [10, 50],
-      [12, 51],
-      [11, 52],
-      [10, 50],
-    ]);
   });
 });

@@ -26,6 +26,18 @@ function ringsOf(geojson: unknown): number[][][] {
   return rings;
 }
 
+/** Every ring's midpoint, which recentring has to keep inside the real world. */
+const midpointsOf = (rings: number[][][]) =>
+  rings.map((ring) => {
+    let min = Infinity;
+    let max = -Infinity;
+    for (const point of ring) {
+      min = Math.min(min, point[0] ?? 0);
+      max = Math.max(max, point[0] ?? 0);
+    }
+    return (min + max) / 2;
+  });
+
 const jumpsIn = (rings: number[][][]) =>
   rings.flatMap((ring) =>
     ring
@@ -87,6 +99,53 @@ describe('unwrapping the antimeridian', () => {
     const rings = ringsOf(COARSE_LAND);
     expect(rings.length).toBeGreaterThan(100);
     expect(jumpsIn(rings), 'consecutive coastline vertices 360 degrees apart').toEqual([]);
+  });
+
+  it('recentres a ring whose carry displaced it by a whole world', () => {
+    /*
+     * The regression this exists for. Unwrapping starts its carry at zero on the
+     * *first* vertex, so where a ring happens to begin decides where it lands.
+     * Afro-Eurasia's outline starts just west of the antimeridian, and without
+     * recentring the whole landmass came out at -377.6..-169.9 — contiguous, no
+     * jumps, and a whole world west of where it belongs. The globe did not care;
+     * the flat map lost Africa, Europe and Asia.
+     */
+    const crossingFirst = {
+      type: 'Feature',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [-179, 60],
+            [179, 61],
+            [170, 62],
+            [-179, 60],
+          ],
+        ],
+      },
+    };
+    unwrapAntimeridian(crossingFirst);
+    const ring = crossingFirst.geometry.coordinates[0] ?? [];
+    // Contiguous...
+    expect(jumpsIn([ring])).toEqual([]);
+    // ...and back in the world it came from, rather than one to the west.
+    expect(ring).toEqual([
+      [181, 60],
+      [179, 61],
+      [170, 62],
+      [181, 60],
+    ]);
+  });
+
+  it('leaves every ring of both tiers centred on the real world', async () => {
+    for (const [name, geometry] of [
+      ['coarse', COARSE_LAND],
+      ['detailed', await loadDetailedLand()],
+    ] as const) {
+      const midpoints = midpointsOf(ringsOf(geometry));
+      const stray = midpoints.filter((m) => m < -180 || m > 180);
+      expect(stray, `${name} rings displaced by whole worlds`).toEqual([]);
+    }
   });
 });
 
