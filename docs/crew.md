@@ -143,6 +143,22 @@ passes can still be building a rotation no real crew could fly. The field is nam
 rather than `crewExists` precisely so that duty limits tighten it rather than needing a second
 one.
 
+## Conversions finish on the worker, or not at all
+
+A conversion completes on the worker's tick, against the world's **game** clock — a fortnight
+of training is a span in the world's calendar, so a world at 4× returns its crew twice as fast
+in real time as one at 2×. §7.2's real weeks on factory deliveries are the one deliberate
+exception in the fleet; training is not one.
+
+**Production has no worker.** A production world would therefore put crew into a conversion and
+never take them out: visibly `unavailable` on the Crew page, counted against the airline, and
+never coming back. That reads as a broken feature rather than a missing process, which is the
+same trap as `ticks: 0, errors: 0` and as the used market's empty inventory.
+`crewConversionsCompleted` and `crewErrors` are the counters that tell the two apart.
+
+The sweep is idempotent: it claims each row with an `in_training` filter before touching a
+pool, so a re-run or a second worker racing a handover completes nothing twice.
+
 ## Not built yet
 
 Duty, rest and fatigue (§9.2 calls them the flagship crew mechanic), positioning and

@@ -5,6 +5,7 @@ import { gameTime, type WorldClock } from '@tailfin/sim';
 import { deliverDueAircraftOrders } from '../aircraft/acquisition';
 import { sweepMaintenance } from '../aircraft/maintenance';
 import { refreshUsedAircraftMarket } from '../aircraft/used-market';
+import { completeDueConversions } from '../crew/store';
 import { type Database } from '../db/client';
 import { world, type WorldRow } from '../db/schema';
 import { reviewNpcCarriers } from '../npc/operate';
@@ -74,6 +75,16 @@ export interface TickReport {
   /** Checks finished on this tick, and airframes grounded for deferring one (M4-06). */
   checksCompleted: number;
   airframesGrounded: number;
+  /**
+   * Type-rating conversions finished this run (M5-01).
+   *
+   * A counter for the same reason the maintenance ones exist: without a
+   * worker, crew put into conversion never come out, and a Crew page showing
+   * everybody permanently in a classroom reads as a broken feature rather
+   * than a missing process.
+   */
+  crewConversionsCompleted: number;
+  crewErrors: number;
 }
 
 export interface EngineLog {
@@ -119,6 +130,8 @@ export interface SimulationEngineOptions {
   refreshUsedMarket?: typeof refreshUsedAircraftMarket;
   /** Check completion and maintenance grounding (M4-06), injected in engine tests. */
   sweepChecks?: typeof sweepMaintenance;
+  /** Injected like the sweeps above, so the tick can be tested without Postgres. */
+  completeConversions?: typeof completeDueConversions;
   depth?: typeof queueDepth;
 }
 
@@ -179,6 +192,16 @@ export interface EngineSnapshot {
   /** Checks finished and airframes grounded since start, and sweeps that threw (M4-06). */
   checksCompleted: number;
   airframesGrounded: number;
+  /**
+   * Type-rating conversions finished this run (M5-01).
+   *
+   * A counter for the same reason the maintenance ones exist: without a
+   * worker, crew put into conversion never come out, and a Crew page showing
+   * everybody permanently in a classroom reads as a broken feature rather
+   * than a missing process.
+   */
+  crewConversionsCompleted: number;
+  crewErrors: number;
   maintenanceErrors: number;
 }
 
@@ -258,6 +281,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     deliverAircraft = deliverDueAircraftOrders,
     refreshUsedMarket = refreshUsedAircraftMarket,
     sweepChecks = sweepMaintenance,
+    completeConversions = completeDueConversions,
   } = options;
 
   const unhandledEventTypes = ALL_EVENT_TYPES.filter((type) => handlers[type] === undefined);
@@ -278,6 +302,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let usedMarketErrors = 0;
   let checksCompleted = 0;
   let airframesGrounded = 0;
+  let crewConversionsCompleted = 0;
+  let crewErrors = 0;
   let maintenanceErrors = 0;
 
   async function tick(context: { tickedAt: Date; tickNumber: number }): Promise<TickReport> {
@@ -289,6 +315,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     let tickListingsCreated = 0;
     let tickListingsWithdrawn = 0;
     let tickChecksCompleted = 0;
+    let tickCrewConversions = 0;
+    let tickCrewErrors = 0;
     let tickAirframesGrounded = 0;
 
     for (const entry of worlds) {
@@ -360,6 +388,30 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         log?.warn?.(`[${entry.name}] maintenance sweep failed: ${String(error)}`);
       }
 
+      /*
+       * Crew conversions (M5-01, section 9.2), on this world's game clock for
+       * the same reason: a fortnight of training is a span in the world's
+       * calendar, so a world at 4x returns its crew to the roster twice as fast
+       * in real time as one at 2x. Section 7.2's real weeks on factory
+       * deliveries remain the exception.
+       *
+       * Isolated like the sweeps above. Crew who could not be released this tick
+       * are released the next one; they stay in the classroom a second longer,
+       * which is cosmetic rather than lost money.
+       */
+      try {
+        const converted = await completeConversions(db, entry.id, gameTime(entry.clock, now()));
+        tickCrewConversions += converted.completed;
+        if (converted.completed > 0) {
+          log?.info?.(
+            `[${entry.name}] crew: ${String(converted.completed)} conversion(s) finished`,
+          );
+        }
+      } catch (error) {
+        tickCrewErrors += 1;
+        log?.warn?.(`[${entry.name}] crew conversion sweep failed: ${String(error)}`);
+      }
+
       // Each world is drained against its own clock: `fire_at` is a game-time
       // instant, so what is due depends on where that world's clock has got to,
       // and two worlds at different speeds disagree about the same moment.
@@ -405,6 +457,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     usedListingsWithdrawn += tickListingsWithdrawn;
     checksCompleted += tickChecksCompleted;
     airframesGrounded += tickAirframesGrounded;
+    crewConversionsCompleted += tickCrewConversions;
+    crewErrors += tickCrewErrors;
     lastTickAt = context.tickedAt;
     lastTickDurationMs = durationMs;
     lastWorldCount = worlds.length;
@@ -422,6 +476,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       usedListingsWithdrawn: tickListingsWithdrawn,
       checksCompleted: tickChecksCompleted,
       airframesGrounded: tickAirframesGrounded,
+      crewConversionsCompleted: tickCrewConversions,
+      crewErrors: tickCrewErrors,
     };
   }
 
@@ -480,6 +536,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         usedMarketErrors,
         checksCompleted,
         airframesGrounded,
+        crewConversionsCompleted,
+        crewErrors,
         maintenanceErrors,
       };
     },
