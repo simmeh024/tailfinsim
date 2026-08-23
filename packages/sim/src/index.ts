@@ -47,3 +47,5 @@ export * from './weather';
 export * from './demand';
 
 export * from './npc';
+
+export * from './crew';
