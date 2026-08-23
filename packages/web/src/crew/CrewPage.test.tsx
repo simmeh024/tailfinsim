@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { CrewResponse } from '@tailfin/shared';
@@ -181,6 +181,43 @@ describe('the crew page', () => {
 
     expect(await screen.findByText(/Could not load your crew/)).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Crew' })).toBeInTheDocument();
+  });
+
+  it('keeps what it is showing when a mutation is refused', async () => {
+    /*
+     * Found on dev rather than here. Opening a base and then asking for the same
+     * one again reverted the whole page to "no crew yet" while the base sat
+     * happily in the database — the refusal path wrote back the state captured in
+     * the render closure, which is stale the moment anything has succeeded.
+     */
+    let call = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => {
+        call += 1;
+        // First the GET, then a refused POST.
+        return Promise.resolve(
+          call === 1
+            ? ({ ok: true, status: 200, json: () => Promise.resolve(mixedFleet) } as Response)
+            : ({
+                ok: false,
+                status: 409,
+                json: () => Promise.resolve({ code: 'base_exists', message: 'Already there' }),
+              } as Response),
+        );
+      }),
+    );
+    render(<CrewPage />);
+    await screen.findByText(/cannot fly it/);
+
+    // The field is `required`, so an empty submit never leaves the form.
+    fireEvent.change(screen.getByLabelText('Airport'), { target: { value: 'EHAM' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+
+    expect(await screen.findByText('Already there')).toBeInTheDocument();
+    // Still showing the crew it had. The refusal is news, not an erasure.
+    expect(screen.getByText(/cannot fly it/)).toBeInTheDocument();
+    expect(screen.getByText('EHAM')).toBeInTheDocument();
   });
 
   it('tells a player with no airline what to do first', async () => {
