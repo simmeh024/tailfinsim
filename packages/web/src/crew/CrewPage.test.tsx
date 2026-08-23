@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { CrewResponse } from '@tailfin/shared';
@@ -36,6 +36,8 @@ function state(overrides: Partial<CrewResponse> = {}): CrewResponse {
       largestFamilyAvailable: 0,
       strandedHeads: 0,
     },
+    demand: { rows: [], totalRequired: 0, metRequired: 0, covered: true, uncoveredFamilies: [] },
+    families: ['A320neo', '737 MAX', 'ATR 72'],
     costs,
     ...overrides,
   };
@@ -98,6 +100,17 @@ const mixedFleet = state({
     largestFamilyAvailable: 4,
     strandedHeads: 3,
   },
+  demand: {
+    rows: [
+      { family: 'A320neo', rank: 'captain', required: 3, available: 4, delta: 1 },
+      { family: '737 MAX', rank: 'captain', required: 5, available: 3, delta: -2 },
+    ],
+    totalRequired: 8,
+    metRequired: 6,
+    covered: false,
+    uncoveredFamilies: [],
+  },
+  families: ['A320neo', '737 MAX', 'ATR 72'],
 });
 
 describe('the crew page', () => {
@@ -129,7 +142,10 @@ describe('the crew page', () => {
     respondWith(mixedFleet);
     render(<CrewPage />);
 
-    const rows = await screen.findAllByRole('row');
+    // Scoped to the base's own table: the page now leads with fleet cover, so
+    // "the first table" is no longer the pools.
+    const table = await screen.findByRole('table', { name: 'Crew at EHAM' });
+    const rows = within(table).getAllByRole('row');
     const a320 = rows.find((row) => row.textContent?.includes('A320neo'));
     // 6 on strength, 2 in a classroom, 4 available. Netting them off would hide
     // the entire point of a conversion taking a fortnight.
@@ -153,8 +169,8 @@ describe('the crew page', () => {
      * which says a conversion costs fourteen days *off the roster*. Prose about
      * rostering is fine; a column of people is not.
      */
-    const table = screen.getAllByRole('table')[0];
-    const headers = [...(table?.querySelectorAll('th') ?? [])].map((th) => th.textContent);
+    const table = screen.getByRole('table', { name: 'Crew at EHAM' });
+    const headers = [...table.querySelectorAll('th')].map((th) => th.textContent);
     expect(headers).toEqual(['Family', 'Rank', 'On strength', 'In training', 'Available']);
 
     // And nothing renders an identifier. A pool id reaching the page would be
@@ -212,12 +228,62 @@ describe('the crew page', () => {
 
     // The field is `required`, so an empty submit never leaves the form.
     fireEvent.change(screen.getByLabelText('Airport'), { target: { value: 'EHAM' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open base' }));
 
     expect(await screen.findByText('Already there')).toBeInTheDocument();
     // Still showing the crew it had. The refusal is news, not an erasure.
     expect(screen.getByText(/cannot fly it/)).toBeInTheDocument();
-    expect(screen.getByText('EHAM')).toBeInTheDocument();
+    // The heading specifically: 'EHAM' is now also an option in the base picker.
+    expect(screen.getByRole('heading', { name: /EHAM/ })).toBeInTheDocument();
+  });
+
+  it('swaps the banner when the rank picker changes', async () => {
+    /*
+     * The banner illustrates the rank being hired. It is the one place the page
+     * shows a person and that is allowed — an illustration of a rank is not a
+     * member of staff who exists.
+     */
+    respondWith(mixedFleet);
+    render(<CrewPage />);
+    await screen.findByRole('img', { name: /^Captain\./ });
+
+    fireEvent.change(screen.getByLabelText('Rank'), { target: { value: 'purser' } });
+
+    expect(await screen.findByRole('img', { name: /^Purser\./ })).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /^Captain\./ })).not.toBeInTheDocument();
+  });
+
+  it('offers families as a picker, never as free text', async () => {
+    /*
+     * The free-text version put a pool rated on a family called `test` into the
+     * dev database. A rating that matches no aeroplane can never be used and no
+     * amount of money can undo it.
+     */
+    respondWith(mixedFleet);
+    render(<CrewPage />);
+    const family = await screen.findByLabelText('Family');
+
+    expect(family.tagName).toBe('SELECT');
+    const options = [...family.querySelectorAll('option')].map((option) => option.value);
+    expect(options).toContain('A320neo');
+    expect(options).toContain('ATR 72');
+    expect(options).not.toContain('test');
+  });
+
+  it('never reads fully covered while a rank is short', async () => {
+    /*
+     * Seen in a sandbox: 24 available against 23 required rendered "100%
+     * covered" directly above "not enough crew to launch your whole fleet",
+     * because a surplus of A320neo cabin crew was filling in for a shortage of
+     * 737 MAX captains. Crew are not fungible, so cover is summed per rank.
+     */
+    respondWith(mixedFleet);
+    render(<CrewPage />);
+
+    // metRequired 6 of 8 -> 75%, and never 100% while `covered` is false.
+    expect(await screen.findByText('75%')).toBeInTheDocument();
+    expect(screen.queryByText('100%')).not.toBeInTheDocument();
+    expect(screen.getByText(/Not enough crew/)).toBeInTheDocument();
   });
 
   it('tells a player with no airline what to do first', async () => {

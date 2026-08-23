@@ -4336,7 +4336,10 @@ body {
    Follows the fleet page's vocabulary rather than inventing a second one: the
    two are the same kind of screen — an operational inventory with controls
    attached — and a player moving between them should not have to relearn what a
-   table or a hint looks like.
+   table, a hint or a panel looks like.
+
+   Everything is on the theme tokens. Nothing here hard-codes a colour, so the
+   page follows the light theme without a second set of rules.
    --------------------------------------------------------------------------- */
 
 .crew {
@@ -4346,21 +4349,24 @@ body {
   padding: var(--space-4);
 }
 
+.crew__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
 .crew__title {
   font-size: var(--text-lg);
   color: var(--text-primary);
 }
 
+.crew__subtitle {
+  color: var(--text-secondary);
+}
+
 .crew__heading {
   font-size: var(--text-base);
   color: var(--text-primary);
-}
-
-.crew__subheading {
-  font-size: var(--text-sm);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
 }
 
 .crew__note {
@@ -4369,18 +4375,9 @@ body {
 }
 
 .crew__hint {
-  max-width: 72ch;
+  max-width: 76ch;
   font-size: var(--text-sm);
   color: var(--text-secondary);
-}
-
-/* The cost of a mixed fleet, said once and at the top. §9.2's complaint is that
-   fragmentation is *quiet*, so the panel that reports it is the loud thing on
-   the page rather than a figure at the bottom of a table. */
-.crew__fragmentation {
-  padding: var(--space-3);
-  border-left: 3px solid var(--accent);
-  background: var(--console-card-raised);
 }
 
 .crew__refusal {
@@ -4391,13 +4388,21 @@ body {
   font-size: var(--text-sm);
 }
 
-.crew__base {
+.crew__panel {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-3);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
+  background: var(--console-card-raised);
+}
+
+/* Readiness beside commonality: two short answers that are read together. */
+.crew__split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: var(--space-4);
 }
 
 .crew__table {
@@ -4413,6 +4418,203 @@ body {
   vertical-align: top;
 }
 
+.crew__table tbody tr[data-cover='short'] {
+  background: color-mix(in srgb, var(--status-cancelled) 12%, transparent);
+}
+
+.crew__notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: var(--space-4);
+  max-width: 76ch;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* --- the four figures across the top ------------------------------------- */
+
+.crew-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-3);
+}
+
+.crew-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--console-card-raised);
+}
+
+.crew-stat__label {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.crew-stat__value {
+  font-size: var(--text-lg);
+  line-height: 1.1;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.crew-stat__detail {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* Never colour alone: the sign is in the text as well (App. H.7). */
+.crew-delta {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.crew-delta[data-cover='ok'] {
+  background: color-mix(in srgb, var(--status-on-time, var(--accent)) 20%, transparent);
+  color: var(--text-primary);
+}
+
+.crew-delta[data-cover='short'] {
+  background: color-mix(in srgb, var(--status-cancelled) 24%, transparent);
+  color: var(--text-primary);
+}
+
+/* --- readiness ring ------------------------------------------------------- */
+
+.crew-readiness {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.crew-readiness__ring {
+  width: 8rem;
+  height: 8rem;
+}
+
+.crew-readiness__track,
+.crew-readiness__arc {
+  fill: none;
+  stroke-width: 10;
+}
+
+.crew-readiness__track {
+  stroke: var(--border-subtle);
+}
+
+.crew-readiness__arc {
+  /* Start the arc at twelve o'clock rather than three. */
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  stroke-linecap: round;
+}
+
+.crew-readiness__arc[data-cover='ok'] {
+  stroke: var(--accent);
+}
+
+.crew-readiness__arc[data-cover='short'] {
+  stroke: var(--status-cancelled);
+}
+
+.crew-readiness__figure {
+  fill: var(--text-primary);
+  font-size: 1.5rem;
+  text-anchor: middle;
+  font-variant-numeric: tabular-nums;
+}
+
+.crew-readiness__caption {
+  fill: var(--text-muted);
+  font-size: 0.7rem;
+  text-anchor: middle;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.crew-readiness__legend {
+  display: flex;
+  gap: var(--space-4);
+  margin: 0;
+}
+
+.crew-readiness__legend div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.crew-readiness__legend dt {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.crew-readiness__legend dd {
+  margin: 0;
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.crew-readiness__verdict {
+  max-width: 40ch;
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* --- the three numbered actions ------------------------------------------ */
+
+.crew__actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: var(--space-4);
+}
+
+.crew-action {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--console-card-raised);
+}
+
+.crew-action__title {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: var(--text-base);
+  color: var(--text-primary);
+}
+
+.crew-action__step {
+  display: inline-flex;
+  width: 1.5rem;
+  height: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
 .crew__form {
   display: flex;
   flex-wrap: wrap;
@@ -4422,13 +4624,28 @@ body {
 
 .crew__form label {
   display: flex;
+  flex: 1 1 8rem;
   flex-direction: column;
   gap: var(--space-1);
   font-size: var(--text-sm);
   color: var(--text-secondary);
 }
 
-.crew__form h3,
+.crew__form button,
 .crew__form .crew__hint {
   flex-basis: 100%;
+}
+
+/* --- the rank banner ------------------------------------------------------
+   Shown whole. The nine images carry their own headline and body copy baked
+   into the pixels, so any crop eats the text — `object-fit: cover` rendered
+   "ommand the aircraft" before this was fixed. Height follows each image's own
+   aspect ratio. */
+
+.crew-banner {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
 }
