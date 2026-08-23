@@ -994,7 +994,7 @@ body {
     grid-template-columns: 1fr;
     grid-template-rows: 1fr auto var(--strip-height) auto;
     grid-template-areas:
-      'world'
+      'stage'
       'panel'
       'strip'
       'rail';
