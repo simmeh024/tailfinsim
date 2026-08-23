@@ -395,6 +395,31 @@ Culling buys nothing here in any case. There is one quad per layer, the depth bu
 hides the far side, and the cost of drawing it is a few thousand fragments that fail the depth
 test. Both world-sized bitmaps now use `none`, and `layers.test.ts` asserts it.
 
+### The bitmap mesh has to track the viewport, not just the bounds
+
+Giving each projection its own `bounds` instance makes `BitmapLayer` rebuild its mesh, and it
+is **not sufficient**. `createMesh(bounds, viewport.resolution)` reads the resolution off
+whatever viewport is in context at that moment, and on a projection switch the view and the
+layers change in the same React render — deck.gl updates layers **before** it activates the new
+viewport. So switching flat to globe built the flat map's two-triangle quad and kept it.
+
+On a sphere those two triangles are a chord straight through the planet, occluded by
+`GlobeView`'s own backdrop: the ocean and the day/night shading both render black while the
+land, the graticule and the routes carry on drawing normally. Measured on the deployed build
+immediately after switching flat to globe — viewport `resolution: 2`, `bounds` correct at
+±90, and a mesh of **six indices**.
+
+A fresh page load never hits it, because there the globe's viewport is in context from the
+first update. That is why it survived being looked at repeatedly: every check started with a
+reload.
+
+`WorldBitmapLayer` records the resolution its mesh was actually built at, opts in to viewport
+changes through `shouldUpdateState` (a stock `BitmapLayer` ignores them), and on any update
+where the viewport disagrees presents the base class with a changed `bounds` so it takes its
+own rebuilding branch. `layers.test.ts` asserts both world-sized bitmaps use it and that a
+viewport-only change is enough to update them — and that test fails against a stock
+`BitmapLayer`, which was checked by reverting it rather than assumed.
+
 ### The night field's rows are generated per projection, and deck.gl converts nothing
 
 `BitmapLayer` interpolates texture coordinates linearly in whatever coordinate system the
