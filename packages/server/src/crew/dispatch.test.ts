@@ -280,22 +280,45 @@ describeDb('dispatching crew', () => {
     expect(second.cause).toBe('no_crew');
   });
 
+  /**
+   * A day that uses itself up, and a short leg the crew can no longer take.
+   *
+   * The shape matters, and the first version got it wrong in a way worth
+   * recording: it staged a **single 13-hour sector**, which with an hour's
+   * report is fourteen hours — longer than a completely fresh crew's thirteen.
+   * So dispatch refused the standby set too, entirely correctly, and the reserve
+   * test read that as the reserve mechanism being broken. A timeout scenario has
+   * to be one the *incumbent* cannot fly and a fresh crew can, or it proves
+   * nothing about who is asked second.
+   *
+   * Report 07:00Z, a long sector landing 19:00Z, then a one-hour hop:
+   *
+   *   - the incumbent would reach 13h45 of flight duty across two sectors,
+   *     against a 13h00 ceiling — 45 minutes over;
+   *   - a crew reporting at 18:45Z would fly one sector in two hours.
+   *
+   * The block times are longer than an ATR would really fly. Dispatch takes the
+   * instants it is given and does not opine on them; plausibility is the
+   * schedule's job.
+   */
+  const LONG_FIRST_SECTOR = 11 * 60;
+  const SECOND_DEPARTURE_MS = (12 * 60 + 45) * 60_000;
+
   it('times the crew out rather than flying them past the limit', async () => {
     const setup = await crewedAirline();
 
-    /*
-     * A first sector at 06:00 local, then a monstrous one that would land 14
-     * hours after report. Two sectors allows 13:00 of flight duty, so the second
-     * leg cannot legally be flown — and nothing about the aeroplane or the
-     * airline has changed, only the clock.
-     */
-    await dispatchCrew(db.db, request(setup, { departAt: morning(0, 5), blockMinutes: 60 }));
+    const first = await dispatchCrew(
+      db.db,
+      request(setup, { departAt: morning(), blockMinutes: LONG_FIRST_SECTOR }),
+    );
+    // The long sector itself is legal: one sector allows 13h00 and it uses 12h00.
+    expect(first.status).toBe('go');
 
     const late = await dispatchCrew(
       db.db,
       request(setup, {
-        departAt: new Date(morning(0, 5).getTime() + 120 * 60_000),
-        blockMinutes: 13 * 60,
+        departAt: new Date(morning().getTime() + SECOND_DEPARTURE_MS),
+        blockMinutes: 60,
         from: setup.away.icao,
         to: setup.hub.icao,
       }),
@@ -314,19 +337,22 @@ describeDb('dispatching crew', () => {
   });
 
   it('calls out a reserve set when one is designated, and records that it did', async () => {
-    // Double the crew, half of them on standby: enough for a second set.
+    // Twice the crew, half of them on standby: enough for a second set.
     const setup = await crewedAirline({ captains: 4 });
     await db.db
       .update(crewPool)
       .set({ reserve: 2 })
       .where(eq(crewPool.crewBaseId, setup.crewBaseId));
 
-    await dispatchCrew(db.db, request(setup, { departAt: morning(0, 5) }));
+    await dispatchCrew(
+      db.db,
+      request(setup, { departAt: morning(), blockMinutes: LONG_FIRST_SECTOR }),
+    );
     const late = await dispatchCrew(
       db.db,
       request(setup, {
-        departAt: new Date(morning(0, 5).getTime() + 120 * 60_000),
-        blockMinutes: 13 * 60,
+        departAt: new Date(morning().getTime() + SECOND_DEPARTURE_MS),
+        blockMinutes: 60,
         from: setup.away.icao,
         to: setup.hub.icao,
       }),
@@ -334,13 +360,32 @@ describeDb('dispatching crew', () => {
 
     expect(late.status).toBe('go');
     if (late.status !== 'go') return;
-    // The whole point of §9.2's *"deliberately a hard call"*: the standby crew
-    // did nothing all morning and then saved the afternoon.
+    // The whole point of section 9.2's *"deliberately a hard call"*: the standby
+    // crew did nothing all day and then saved the evening.
     expect(late.usedReserve).toBe(true);
 
     const periods = await periodsFor(setup.airframeId);
     expect(periods).toHaveLength(2);
     expect(periods.filter((p) => p.fromReserve)).toHaveLength(1);
+  });
+
+  it('cannot conjure a legal crew for a sector longer than a legal day', async () => {
+    // The mistake above, kept as a rule. Thirteen hours of block plus an hour of
+    // report is past the maximum for a crew who have done nothing at all, and no
+    // amount of standby fixes that - the schedule is wrong, not the roster.
+    const setup = await crewedAirline({ captains: 4 });
+    await db.db
+      .update(crewPool)
+      .set({ reserve: 2 })
+      .where(eq(crewPool.crewBaseId, setup.crewBaseId));
+
+    const impossible = await dispatchCrew(
+      db.db,
+      request(setup, { departAt: morning(), blockMinutes: 13 * 60 }),
+    );
+    expect(impossible.status).toBe('cancel');
+    if (impossible.status !== 'cancel') return;
+    expect(impossible.cause).toBe('no_crew');
   });
 
   it('refuses when the airline has no crew base at all', async () => {
