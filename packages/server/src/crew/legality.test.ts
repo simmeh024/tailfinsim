@@ -27,6 +27,8 @@ import { hireCrew, openCrewBase } from './store';
  * Requires `DATABASE_URL` against a migrated database; CI provides both.
  */
 
+const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
 const url = process.env.DATABASE_URL;
 if (!url) console.warn('\n  [crew/legality.test] DATABASE_URL not set — skipping.\n');
 const describeDb = url ? describe : describe.skip;
@@ -55,7 +57,9 @@ describeDb('crew legality when a schedule is written', () => {
   async function makeIcaoHub(): Promise<{ ident: string; icao: string }> {
     const n = sequence++;
     const ident = `TFL-${String(n)}`;
-    const icao = `TL${String(n).padStart(2, '0')}`;
+    // Four letters: `AircraftAcquisitionInput` requires a real ICAO shape, and a
+    // digit in a test code fails validation rather than the thing under test.
+    const icao = `T${LETTERS[Math.floor(n / 26) % 26]}${LETTERS[n % 26]}X`;
     const rows = await db.db
       .insert(airport)
       .values({
