@@ -140,7 +140,11 @@ describe('what this build says it handles', () => {
     // The one failure mode that would make the gate worse than useless: a build
     // whose probe and whose engine disagree. Asserted against the registry
     // itself so that adding a handler cannot leave the probe behind.
-    expect(handledEventTypes()).toEqual(['FLIGHT_ARRIVE']);
+    //
+    // `FLIGHT_DEPART` joined the list with M5-02, which needed a departure to
+    // enforce crew legality at. `TURNAROUND_COMPLETE` is still handled by
+    // nothing, and this list saying so is the point of it.
+    expect(handledEventTypes()).toEqual(['FLIGHT_ARRIVE', 'FLIGHT_DEPART']);
   });
 
   it('is sorted, so a deploy log is comparable across runs', () => {

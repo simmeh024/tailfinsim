@@ -381,6 +381,18 @@ describe('queue depth', () => {
 });
 
 describe('crew conversions on the tick', () => {
+  /*
+   * M5-02 put two more crew sweeps on the tick. They are stubbed here rather
+   * than left to the real ones because the real ones read the world's economy
+   * config, which this fake database does not have -- and the resulting failure
+   * would be counted in `crewErrors`, which is exactly what these tests assert
+   * on. `duty-store.test.ts` proves what the sweeps do.
+   */
+  const quietDuty = {
+    standDownCrew: () => Promise.resolve({ stoodDown: 0 }),
+    returnCrew: () => Promise.resolve({ returned: 0 }),
+  };
+
   /**
    * M5-01. Crew put into a type conversion come back out on the worker's tick,
    * against the world's own clock — so this proves the engine calls the sweep at
@@ -397,6 +409,7 @@ describe('crew conversions on the tick', () => {
       listWorlds: () => Promise.resolve(worldsFixture('Flagship', 'Second')),
       drain: () => Promise.resolve(drainResult(0)),
       completeConversions,
+      ...quietDuty,
     });
 
     const report = await engine.runOnce();
@@ -416,6 +429,7 @@ describe('crew conversions on the tick', () => {
       listWorlds: () => Promise.resolve(worldsFixture('Flagship')),
       drain: () => Promise.resolve(drainResult(0)),
       completeConversions,
+      ...quietDuty,
     });
 
     await engine.runOnce();
@@ -437,6 +451,7 @@ describe('crew conversions on the tick', () => {
       listWorlds: () => Promise.resolve(worldsFixture('Flagship')),
       drain: () => Promise.resolve(drainResult(3)),
       completeConversions: () => Promise.reject(new Error('no')),
+      ...quietDuty,
     });
 
     const report = await engine.runOnce();

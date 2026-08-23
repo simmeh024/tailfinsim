@@ -1,3 +1,4 @@
+import { createFlightDepartHandler } from '../flight/depart';
 import { createFlightArriveHandler } from '../flight/settle';
 import { type HandlerRegistry, type WorldEventType } from '../sim/event-queue';
 
@@ -15,23 +16,30 @@ import { type HandlerRegistry, type WorldEventType } from '../sim/event-queue';
  * the keys of the same object `createSimulationEngine` is handed. Drift is not
  * unlikely here; it is impossible.
  *
- * ## One entry today
+ * ## Two entries
  *
- * `FLIGHT_DEPART` is scheduled by `schedule/store.ts` when flights are
- * materialised and `TURNAROUND_COMPLETE` by nothing yet, and neither has a
- * handler — departure is M2/M4 behaviour and inventing one here would be exactly
- * the accidental decision ADR-0019's boundary exists to prevent.
+ * `FLIGHT_DEPART` arrived with M5-02, which is the milestone that finally needed
+ * it: *"legality is a hard rule at departure"* requires a departure to be hard
+ * at. It is a **dispatch gate** rather than a flight-operations model, and
+ * `flight/depart.ts` says at length what it deliberately does not do. Adding it
+ * was a decision rather than a drift — this comment previously said inventing a
+ * departure would be *"the accidental decision ADR-0019's boundary exists to
+ * prevent"*, and that remains true of an accidental one.
+ *
+ * `TURNAROUND_COMPLETE` is still scheduled by nothing and handled by nothing.
  *
  * Since SCALE-05 that gap is survivable at runtime: `drainDueEvents` marks an
  * event of an unhandled type `unsupported` rather than `failed`, nothing is
  * attempted and nothing is destroyed, and the first Worker that ships the
- * handler puts the rows back. SCALE-06 is the other end of the same problem —
- * survivable is not the same as intended, and a Worker that will park a queue
- * full of real work should be refused at deploy time rather than explained
- * afterwards.
+ * handler puts the rows back — which is exactly what the first Worker carrying
+ * this build will do with every parked `FLIGHT_DEPART`. SCALE-06 is the other
+ * end of the same problem: survivable is not the same as intended, and a Worker
+ * that will park a queue full of real work should be refused at deploy time
+ * rather than explained afterwards.
  */
 export function createHandlerRegistry(): HandlerRegistry {
   return {
+    FLIGHT_DEPART: createFlightDepartHandler(),
     FLIGHT_ARRIVE: createFlightArriveHandler(),
   };
 }

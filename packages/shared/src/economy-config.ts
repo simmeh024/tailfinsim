@@ -1499,6 +1499,19 @@ export const CrewDutyBalance = z
      */
     timeoutWarningMarginMinutes: z.number().int().nonnegative(),
 
+    /**
+     * How long a timed-out flight may wait for its crew before it is cancelled
+     * instead.
+     *
+     * Section 9.2 says a timeout *"cancels or delays until legal rest is
+     * served"* and does not say which, because the answer depends on how long
+     * the rest is. A crew that needs twenty more minutes is a delay; one that
+     * needs eleven hours is a cancellation with extra steps, and holding the
+     * aeroplane for it would strand the passengers overnight *and* lose the rest
+     * of the day's rotation. This is where the line falls.
+     */
+    crewTimeoutMaxDelayMinutes: z.number().int().nonnegative(),
+
     /** Per head, per night, when a duty period ends away from a crew base. */
     hotelCostPerHeadPerNightMinor: MinorUnits.nonnegative(),
     /**
@@ -1553,6 +1566,10 @@ export const SHIPPED_CREW_DUTY_BALANCE = {
   // delay: enough that a rotation planned to it is genuinely at risk, and not so
   // much that every schedule is permanently warned about.
   timeoutWarningMarginMinutes: 60,
+
+  // Three hours. Long enough that a short rest is worth waiting out, short
+  // enough that it is never the cheap answer to a crew that needs a night.
+  crewTimeoutMaxDelayMinutes: 180,
 
   // Also this game's. A hotel night sits near a cabin crew member's weekly pay,
   // so night-stopping a wide cabin away from base is a real line in the accounts

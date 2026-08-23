@@ -1419,6 +1419,30 @@ export const flightDisruption = pgEnum('flight_disruption', [
 ]);
 
 /**
+ * Why a flight went wrong (M2-08, M5-02).
+ *
+ * M2-08 modelled these in `packages/sim` as `DisruptionCause` and `flight`
+ * stored only the outcome, so until now the reason was computed and thrown
+ * away. Section 14.1 forbids a number a player cannot interrogate, and
+ * *"delayed 40 minutes"* is not information in the way *"delayed 40 minutes
+ * because the crew were out of hours"* is - the second one names something the
+ * player can change.
+ *
+ * The values mirror `DisruptionCause` exactly. Two enums that must agree is one
+ * more than ideal; the alternative is a text column that agrees with nothing,
+ * and the pairing is asserted by a test rather than by memory.
+ */
+export const flightDisruptionCause = pgEnum('flight_disruption_cause', [
+  'weather_origin',
+  'weather_destination',
+  'atc_flow',
+  'technical',
+  'crew_timeout',
+  'ground_vendor',
+  'airport_closure',
+]);
+
+/**
  * A concrete flight, dated and assigned.
  *
  * §21 requires flight state to be **computed, not stored per tick**: what is
@@ -1478,6 +1502,23 @@ export const flight = pgTable(
 
     phase: flightPhase('phase').notNull().default('scheduled'),
     disruption: flightDisruption('disruption'),
+    /**
+     * Null when nothing went wrong, and also null for a disruption recorded
+     * before M5-02 added the column. Those are different facts and the column
+     * cannot tell them apart, which is the honest cost of adding it late; a
+     * disruption with no cause is old, not causeless.
+     */
+    disruptionCause: flightDisruptionCause('disruption_cause'),
+    /**
+     * The duty period whose crew operated this flight (M5-02).
+     *
+     * Nullable, and stays nullable: a ferry positioned before the crew model
+     * existed has none, and neither does a flight in a world that has not yet
+     * opened a crew base. `set null` rather than `cascade` for the reason
+     * `schedule_id` gives - the operational record outlives the thing that
+     * caused it.
+     */
+    crewDutyPeriodId: uuid('crew_duty_period_id'),
 
     /** All four are **game-time** instants, like `world_event.fire_at`. */
     scheduledDeparture: timestamp('scheduled_departure', { withTimezone: true }).notNull(),
@@ -2643,6 +2684,33 @@ export const crewPool = pgTable(
     headcount: integer('headcount').notNull().default(0),
     unavailable: integer('unavailable').notNull().default(0),
 
+    /**
+     * Heads inside an open duty period, or serving the rest that follows one
+     * (M5-02).
+     *
+     * Separate from `unavailable` because the two are different answers to the
+     * player's question. A crew member in a classroom is gone for a fortnight
+     * and the fix is to wait; one who is resting is back tonight and the fix is
+     * to hire, or to keep a reserve. Folding them together would leave the Crew
+     * page unable to tell those apart, and they are the two halves of section
+     * 9.2's *"cost money and do nothing most days"* trade.
+     */
+    onDuty: integer('on_duty').notNull().default(0),
+    /**
+     * Heads the player has designated standby (section 9.2).
+     *
+     * A **designation, not a separate pool**: reserves are ordinary crew of this
+     * rank and rating who are held back from the roster, so they draw the same
+     * salary and can cover any flight the rest of the pool could. Modelling them
+     * as their own pool would have meant a second set of ranks, a second set of
+     * ratings and a second conversion path, all to express "not rostered today".
+     *
+     * They are what a timed-out crew is replaced from, which is the whole point:
+     * section 9.2 calls the reserve *"deliberately a hard call"* because the
+     * money is spent whether or not the day goes wrong.
+     */
+    reserve: integer('reserve').notNull().default(0),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -2650,10 +2718,18 @@ export const crewPool = pgTable(
     unique('crew_pool_base_family_rank_key').on(t.crewBaseId, t.family, t.rank),
     index('crew_pool_base_idx').on(t.crewBaseId),
     check('crew_pool_headcount_nonneg', sql`${t.headcount} >= 0`),
-    // The two together: never more people in a classroom than on strength.
+    // The three together: never more people committed than there are on strength.
     check(
       'crew_pool_unavailable_within_headcount',
       sql`${t.unavailable} >= 0 AND ${t.unavailable} <= ${t.headcount}`,
+    ),
+    check(
+      'crew_pool_on_duty_within_headcount',
+      sql`${t.onDuty} >= 0 AND ${t.unavailable} + ${t.onDuty} <= ${t.headcount}`,
+    ),
+    check(
+      'crew_pool_reserve_within_headcount',
+      sql`${t.reserve} >= 0 AND ${t.reserve} <= ${t.headcount}`,
     ),
   ],
 );
@@ -2711,5 +2787,135 @@ export const crewConversion = pgTable(
     check('crew_conversion_heads_positive', sql`${t.heads} > 0`),
     check('crew_conversion_families_differ', sql`${t.fromFamily} <> ${t.toFamily}`),
     check('crew_conversion_completes_after_start', sql`${t.completesAt} > ${t.startedAt}`),
+  ],
+);
+
+export const crewDutyStatus = pgEnum('crew_duty_status', ['open', 'resting', 'closed']);
+
+/**
+ * A duty period: one crew set, one airframe, report to off duty (M5-02, section 9.2).
+ *
+ * ## What has a duty period, when nobody has a name
+ *
+ * M5-01's invariant is that the player never touches an individual roster, and
+ * this does not break it. The regulation does not constrain *people* either - it
+ * constrains **a duty**, which is a span of time with a report and an off-duty
+ * and some flying in the middle. So that is the row. Heads are drawn from the
+ * pools as a count and returned as a count; which particular cabin crew member
+ * worked Tuesday is a question the game still cannot answer, and still does not
+ * need to.
+ *
+ * It hangs off the **airframe** because that is what physically carries the crew
+ * from one sector to the next. A crew set exists as long as an aeroplane keeps
+ * flying inside one duty period, and a new one opens when the last has rested.
+ *
+ * ## Game time throughout
+ *
+ * `report_at`, `off_duty_at` and `rest_until` are game time, like
+ * `world_event.fire_at` and `crew_conversion.completes_at` - a duty period
+ * happens inside the world, so a world at 4x rests twice as fast in real time as
+ * one at 2x. Section 7.2's factory lead time remains the one deliberate
+ * exception in the fleet.
+ *
+ * ## Why `sectors` and `block_minutes` are stored rather than derived
+ *
+ * They could be summed from the flights pointing at this row. They are stored
+ * because the *limit* reads them on the next dispatch, on the hot path, once per
+ * departure - and because a flight cancelled after the crew reported still cost
+ * the crew their report. The counters are what happened to the crew; the flights
+ * are what happened to the passengers, and those are not always the same story.
+ */
+export const crewDutyPeriod = pgTable(
+  'crew_duty_period',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    /** No foreign key, for the same reason as `flight.airframe_id`. */
+    airframeId: uuid('airframe_id').notNull(),
+    crewBaseId: uuid('crew_base_id')
+      .notNull()
+      .references(() => crewBase.id, { onDelete: 'cascade' }),
+
+    /** The rating the set holds. A duty period cannot change family mid-day. */
+    family: text('family').notNull(),
+    /** Complement size. Derivable from `complement`, kept for the per-head costs. */
+    heads: integer('heads').notNull(),
+    /**
+     * The rank breakdown actually taken from the pools, as JSON.
+     *
+     * `[{ "rank": "captain", "count": 2 }, ...]`. Stored rather than recomputed
+     * because releasing the heads has to be the **exact inverse** of taking
+     * them: the complement depends on the block time of the sector that opened
+     * the period, and a set that flew a short sector and then a long one would
+     * be credited back more heads than it borrowed if the release recomputed
+     * from the wrong leg. JSON text, like `flight.load`; nothing queries inside
+     * it.
+     */
+    complement: text('complement').notNull().default('[]'),
+    /**
+     * True when this set was called out from the standby designation.
+     *
+     * Recorded rather than inferred, so that *"reserve crew measurably improve
+     * on-time performance"* is a query and not an argument.
+     */
+    fromReserve: boolean('from_reserve').notNull().default(false),
+
+    status: crewDutyStatus('status').notNull().default('open'),
+
+    /** Game time. */
+    reportAt: timestamp('report_at', { withTimezone: true }).notNull(),
+    /** Null while the set is still working. */
+    offDutyAt: timestamp('off_duty_at', { withTimezone: true }),
+    /** Game time the rest ends and the heads return to the pool. */
+    restUntil: timestamp('rest_until', { withTimezone: true }),
+
+    /** Operating sectors flown. Deadheads are not counted, per ORO.FTL.205(e). */
+    sectors: integer('sectors').notNull().default(0),
+    blockMinutes: integer('block_minutes').notNull().default(0),
+    /**
+     * Game time the last sector was due to land. Null before the first one.
+     *
+     * What tells an idle crew set from a busy one. A period stays open between
+     * sectors because a 45-minute turnaround is not a rest - so something has to
+     * decide when the day is simply over, and the answer is *nothing was
+     * dispatched before the crew could have gone home*. Without this column that
+     * question needs a scan of the flights pointing at the row, once per tick,
+     * per open period.
+     */
+    lastArrivalAt: timestamp('last_arrival_at', { withTimezone: true }),
+
+    /** Where the crew physically are. The positioning question, answered. */
+    locationIcao: text('location_icao')
+      .notNull()
+      .references(() => airport.icaoCode),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /*
+     * The dispatch lookup: the open set for this aeroplane. Partial, because
+     * only one duty period per airframe may be open at a time, and the closed
+     * ones are history that grows without bound.
+     */
+    uniqueIndex('crew_duty_period_open_airframe_key')
+      .on(t.airframeId)
+      .where(sql`status = 'open'`),
+    index('crew_duty_period_airline_idx').on(t.airlineId, t.reportAt),
+    // The worker's claim: sets whose rest is due to finish.
+    index('crew_duty_period_resting_idx').on(t.status, t.restUntil),
+    index('crew_duty_period_world_idx').on(t.worldId),
+    check('crew_duty_period_heads_positive', sql`${t.heads} > 0`),
+    check('crew_duty_period_sectors_nonneg', sql`${t.sectors} >= 0`),
+    check('crew_duty_period_block_nonneg', sql`${t.blockMinutes} >= 0`),
+    check(
+      'crew_duty_period_off_duty_after_report',
+      sql`${t.offDutyAt} IS NULL OR ${t.offDutyAt} >= ${t.reportAt}`,
+    ),
   ],
 );
