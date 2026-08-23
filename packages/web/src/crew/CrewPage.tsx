@@ -93,8 +93,11 @@ function Fragmentation({ crew }: { crew: CrewResponse }): ReactNode {
       </p>
       {families.length > 1 && (
         <p className="crew__hint">
-          Not a penalty: crew are rated per family, so those {strandedHeads} fly their own
-          aeroplanes and no others. Fleet commonality is what buys them back.
+          {/* No count in this sentence: the number is already in the line above,
+              and repeating it here read as "those 1 fly their own aeroplanes"
+              whenever exactly one crew member was stranded. */}
+          Not a penalty: crew are rated per family, so the rest fly their own aeroplanes and no
+          others. Fleet commonality is what buys them back.
         </p>
       )}
     </div>
