@@ -44,6 +44,7 @@ export const AdminAction = z.enum([
   'player.viewed',
   'sessions.revoked',
   'airline.identity_changed',
+  'airline.cash_adjusted',
   'economy.version_created',
   'world.economy_pinned',
   'events.requeued',
@@ -536,6 +537,7 @@ export const AdminCashMovementCause = z.enum([
   'crew_base_opening',
   'crew_hiring',
   'crew_conversion',
+  'admin_adjustment',
   'flight_settlement',
   'migration_opening_balance',
 ]);

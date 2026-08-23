@@ -265,17 +265,18 @@ Everything below runs from anywhere in the repo and needs the package **built** 
 (`pnpm build`), because each is a bundled entry point rather than a source file —
 `tsc` is the typechecker here, not the compiler (ADR-0001).
 
-| Command                | What it does                                              |
-| ---------------------- | --------------------------------------------------------- |
-| `pnpm data:airports`   | Import the OurAirports dataset (M1-01)                    |
-| `pnpm data:classify`   | Assign tiers over the imported set (M1-02)                |
-| `pnpm data:catchment`  | Derive catchment population and the three indices (M1-03) |
-| `pnpm data:timezones`  | Give every airport a timezone and an offset (M3-04a)      |
-| `pnpm data:distances`  | Pack the great-circle distance matrix (M1-04)             |
-| `pnpm world:seed`      | Create the flagship world from config (M1-09)             |
-| `pnpm demand:generate` | Size every viable city pair's demand pool (M3-01)         |
-| `pnpm npc:seed`        | Populate a world with NPC incumbents (M3-12)              |
-| `pnpm admin`           | Grant and revoke admin from a shell (M1A-01)              |
+| Command                                                            | What it does                                                                        |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| `pnpm data:airports`                                               | Import the OurAirports dataset (M1-01)                                              |
+| `pnpm data:classify`                                               | Assign tiers over the imported set (M1-02)                                          |
+| `pnpm data:catchment`                                              | Derive catchment population and the three indices (M1-03)                           |
+| `pnpm data:timezones`                                              | Give every airport a timezone and an offset (M3-04a)                                |
+| `pnpm data:distances`                                              | Pack the great-circle distance matrix (M1-04)                                       |
+| `pnpm world:seed`                                                  | Create the flagship world from config (M1-09)                                       |
+| `pnpm demand:generate`                                             | Size every viable city pair's demand pool (M3-01)                                   |
+| `pnpm npc:seed`                                                    | Populate a world with NPC incumbents (M3-12)                                        |
+| `pnpm admin`                                                       | Grant and revoke admin from a shell (M1A-01)                                        |
+| `pnpm admin cash --airline <uuid> --amount <major> --reason "why"` | Adjust a balance through AIR-06, audited. No HTTP route exists for this on purpose. |
 
 They run in that order for a new world: the demand model reads the catchment the importer
 derived, and the catchment needs the airports. `demand:generate` is the only one that is

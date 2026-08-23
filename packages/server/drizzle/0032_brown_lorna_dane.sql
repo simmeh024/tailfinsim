@@ -1,0 +1,22 @@
+-- tailfin:migration-strategy expand
+-- One new cash_movement_cause: 'admin_adjustment' (AIR-06, section 22).
+--
+-- Additive and nothing else. No table, column, index or default changes, so the
+-- previous release keeps working against the result -- it simply never writes or
+-- reads the new label.
+--
+-- Rolling-compatible in both directions:
+--
+--   * old code, new schema: the label exists and no row carries it.
+--   * new code, old schema: refused by the deploy's migration preflight before
+--     the service restarts.
+--
+-- Safe inside the migration's transaction on PostgreSQL 12+ because nothing here
+-- *uses* the new label -- the same shape 0030 and 0031 used. A row citing it can
+-- only be written by the build that comes with it.
+--
+-- The cause exists so an operator grant is not recorded as something it is not.
+-- The ledger is the account of what happened; a compensating payment filed as a
+-- flight settlement is a lie nobody can later untangle from the real ones.
+
+ALTER TYPE "public"."cash_movement_cause" ADD VALUE 'admin_adjustment' BEFORE 'flight_settlement';

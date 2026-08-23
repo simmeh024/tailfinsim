@@ -451,6 +451,7 @@ export const cashMovementCause = pgEnum('cash_movement_cause', [
   'crew_base_opening',
   'crew_hiring',
   'crew_conversion',
+  'admin_adjustment',
   'flight_settlement',
   'migration_opening_balance',
 ]);
