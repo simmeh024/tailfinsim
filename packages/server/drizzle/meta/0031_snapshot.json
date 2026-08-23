@@ -125,12 +125,8 @@
           "name": "admin_grant_player_id_player_id_fk",
           "tableFrom": "admin_grant",
           "tableTo": "player",
-          "columnsFrom": [
-            "player_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["player_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -138,12 +134,8 @@
           "name": "admin_grant_granted_by_player_id_player_id_fk",
           "tableFrom": "admin_grant",
           "tableTo": "player",
-          "columnsFrom": [
-            "granted_by_player_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["granted_by_player_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -243,10 +235,7 @@
       "compositePrimaryKeys": {
         "aircraft_option_catalogue_version_option_id_pk": {
           "name": "aircraft_option_catalogue_version_option_id_pk",
-          "columns": [
-            "catalogue_version",
-            "option_id"
-          ]
+          "columns": ["catalogue_version", "option_id"]
         }
       },
       "uniqueConstraints": {},
@@ -473,12 +462,8 @@
           "name": "aircraft_order_world_id_world_id_fk",
           "tableFrom": "aircraft_order",
           "tableTo": "world",
-          "columnsFrom": [
-            "world_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["world_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -486,12 +471,8 @@
           "name": "aircraft_order_airline_id_airline_id_fk",
           "tableFrom": "aircraft_order",
           "tableTo": "airline",
-          "columnsFrom": [
-            "airline_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["airline_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -499,12 +480,8 @@
           "name": "aircraft_order_delivery_airport_icao_airport_icao_code_fk",
           "tableFrom": "aircraft_order",
           "tableTo": "airport",
-          "columnsFrom": [
-            "delivery_airport_icao"
-          ],
-          "columnsTo": [
-            "icao_code"
-          ],
+          "columnsFrom": ["delivery_airport_icao"],
+          "columnsTo": ["icao_code"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -512,12 +489,8 @@
           "name": "aircraft_order_used_listing_id_used_aircraft_listing_id_fk",
           "tableFrom": "aircraft_order",
           "tableTo": "used_aircraft_listing",
-          "columnsFrom": [
-            "used_listing_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["used_listing_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -527,9 +500,7 @@
         "aircraft_order_used_listing_id_unique": {
           "name": "aircraft_order_used_listing_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "used_listing_id"
-          ]
+          "columns": ["used_listing_id"]
         }
       },
       "policies": {},
@@ -705,10 +676,7 @@
       "compositePrimaryKeys": {
         "aircraft_type_catalogue_version_designation_pk": {
           "name": "aircraft_type_catalogue_version_designation_pk",
-          "columns": [
-            "catalogue_version",
-            "designation"
-          ]
+          "columns": ["catalogue_version", "designation"]
         }
       },
       "uniqueConstraints": {},
@@ -779,11 +747,7 @@
       "compositePrimaryKeys": {
         "aircraft_type_option_catalogue_version_designation_option_id_pk": {
           "name": "aircraft_type_option_catalogue_version_designation_option_id_pk",
-          "columns": [
-            "catalogue_version",
-            "designation",
-            "option_id"
-          ]
+          "columns": ["catalogue_version", "designation", "option_id"]
         }
       },
       "uniqueConstraints": {},
@@ -992,12 +956,8 @@
           "name": "airframe_world_id_world_id_fk",
           "tableFrom": "airframe",
           "tableTo": "world",
-          "columnsFrom": [
-            "world_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["world_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1005,12 +965,8 @@
           "name": "airframe_airline_id_airline_id_fk",
           "tableFrom": "airframe",
           "tableTo": "airline",
-          "columnsFrom": [
-            "airline_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["airline_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1018,12 +974,8 @@
           "name": "airframe_source_order_id_aircraft_order_id_fk",
           "tableFrom": "airframe",
           "tableTo": "aircraft_order",
-          "columnsFrom": [
-            "source_order_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["source_order_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -1031,12 +983,8 @@
           "name": "airframe_delivered_to_icao_airport_icao_code_fk",
           "tableFrom": "airframe",
           "tableTo": "airport",
-          "columnsFrom": [
-            "delivered_to_icao"
-          ],
-          "columnsTo": [
-            "icao_code"
-          ],
+          "columnsFrom": ["delivered_to_icao"],
+          "columnsTo": ["icao_code"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1046,17 +994,12 @@
         "airframe_source_order_id_unique": {
           "name": "airframe_source_order_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "source_order_id"
-          ]
+          "columns": ["source_order_id"]
         },
         "airframe_world_registration_key": {
           "name": "airframe_world_registration_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "world_id",
-            "registration"
-          ]
+          "columns": ["world_id", "registration"]
         }
       },
       "policies": {},
@@ -1276,12 +1219,8 @@
           "name": "airline_world_id_world_id_fk",
           "tableFrom": "airline",
           "tableTo": "world",
-          "columnsFrom": [
-            "world_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["world_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1289,12 +1228,8 @@
           "name": "airline_player_id_player_id_fk",
           "tableFrom": "airline",
           "tableTo": "player",
-          "columnsFrom": [
-            "player_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["player_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -1304,10 +1239,7 @@
         "airline_world_id_player_id_key": {
           "name": "airline_world_id_player_id_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "world_id",
-            "player_id"
-          ]
+          "columns": ["world_id", "player_id"]
         }
       },
       "policies": {},
@@ -1430,12 +1362,8 @@
           "name": "airline_hub_airline_id_airline_id_fk",
           "tableFrom": "airline_hub",
           "tableTo": "airline",
-          "columnsFrom": [
-            "airline_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["airline_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1443,12 +1371,8 @@
           "name": "airline_hub_airport_id_airport_id_fk",
           "tableFrom": "airline_hub",
           "tableTo": "airport",
-          "columnsFrom": [
-            "airport_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["airport_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -1458,10 +1382,7 @@
         "airline_hub_airline_id_airport_id_key": {
           "name": "airline_hub_airline_id_airport_id_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "airline_id",
-            "airport_id"
-          ]
+          "columns": ["airline_id", "airport_id"]
         }
       },
       "policies": {},
@@ -1569,12 +1490,8 @@
           "name": "airline_identity_change_airline_id_airline_id_fk",
           "tableFrom": "airline_identity_change",
           "tableTo": "airline",
-          "columnsFrom": [
-            "airline_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["airline_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1673,12 +1590,8 @@
           "name": "airline_status_transition_airline_id_airline_id_fk",
           "tableFrom": "airline_status_transition",
           "tableTo": "airline",
-          "columnsFrom": [
-            "airline_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["airline_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1974,30 +1887,22 @@
         "airport_ident_key": {
           "name": "airport_ident_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "ident"
-          ]
+          "columns": ["ident"]
         },
         "airport_source_id_key": {
           "name": "airport_source_id_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "source_id"
-          ]
+          "columns": ["source_id"]
         },
         "airport_icao_code_key": {
           "name": "airport_icao_code_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "icao_code"
-          ]
+          "columns": ["icao_code"]
         },
         "airport_iata_code_key": {
           "name": "airport_iata_code_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "iata_code"
-          ]
+          "columns": ["iata_code"]
         }
       },
       "policies": {},
@@ -2145,12 +2050,8 @@
           "name": "cash_movement_airline_id_airline_id_fk",
           "tableFrom": "cash_movement",
           "tableTo": "airline",
-          "columnsFrom": [
-            "airline_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["airline_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2160,10 +2061,7 @@
         "cash_movement_cause_reference_key": {
           "name": "cash_movement_cause_reference_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "cause",
-            "reference"
-          ]
+          "columns": ["cause", "reference"]
         }
       },
       "policies": {},
@@ -2277,12 +2175,8 @@
           "name": "crew_base_world_id_world_id_fk",
           "tableFrom": "crew_base",
           "tableTo": "world",
-          "columnsFrom": [
-            "world_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["world_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2290,12 +2184,8 @@
           "name": "crew_base_airline_id_airline_id_fk",
           "tableFrom": "crew_base",
           "tableTo": "airline",
-          "columnsFrom": [
-            "airline_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["airline_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2303,12 +2193,8 @@
           "name": "crew_base_airport_icao_airport_icao_code_fk",
           "tableFrom": "crew_base",
           "tableTo": "airport",
-          "columnsFrom": [
-            "airport_icao"
-          ],
-          "columnsTo": [
-            "icao_code"
-          ],
+          "columnsFrom": ["airport_icao"],
+          "columnsTo": ["icao_code"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2318,10 +2204,7 @@
         "crew_base_airline_airport_key": {
           "name": "crew_base_airline_airport_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "airline_id",
-            "airport_icao"
-          ]
+          "columns": ["airline_id", "airport_icao"]
         }
       },
       "policies": {},
@@ -2447,12 +2330,8 @@
           "name": "crew_conversion_crew_base_id_crew_base_id_fk",
           "tableFrom": "crew_conversion",
           "tableTo": "crew_base",
-          "columnsFrom": [
-            "crew_base_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["crew_base_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2557,12 +2436,8 @@
           "name": "crew_pool_crew_base_id_crew_base_id_fk",
           "tableFrom": "crew_pool",
           "tableTo": "crew_base",
-          "columnsFrom": [
-            "crew_base_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["crew_base_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2572,11 +2447,7 @@
         "crew_pool_base_family_rank_key": {
           "name": "crew_pool_base_family_rank_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "crew_base_id",
-            "family",
-            "rank"
-          ]
+          "columns": ["crew_base_id", "family", "rank"]
         }
       },
       "policies": {},
@@ -2670,10 +2541,7 @@
         "dataset_version_dataset_checksum_key": {
           "name": "dataset_version_dataset_checksum_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "dataset",
-            "checksum"
-          ]
+          "columns": ["dataset", "checksum"]
         }
       },
       "policies": {},
@@ -2834,12 +2702,8 @@
           "name": "demand_pool_world_id_world_id_fk",
           "tableFrom": "demand_pool",
           "tableTo": "world",
-          "columnsFrom": [
-            "world_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["world_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2847,12 +2711,8 @@
           "name": "demand_pool_origin_icao_airport_icao_code_fk",
           "tableFrom": "demand_pool",
           "tableTo": "airport",
-          "columnsFrom": [
-            "origin_icao"
-          ],
-          "columnsTo": [
-            "icao_code"
-          ],
+          "columnsFrom": ["origin_icao"],
+          "columnsTo": ["icao_code"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -2860,12 +2720,8 @@
           "name": "demand_pool_destination_icao_airport_icao_code_fk",
           "tableFrom": "demand_pool",
           "tableTo": "airport",
-          "columnsFrom": [
-            "destination_icao"
-          ],
-          "columnsTo": [
-            "icao_code"
-          ],
+          "columnsFrom": ["destination_icao"],
+          "columnsTo": ["icao_code"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2875,11 +2731,7 @@
         "demand_pool_world_id_pair_key": {
           "name": "demand_pool_world_id_pair_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "world_id",
-            "origin_icao",
-            "destination_icao"
-          ]
+          "columns": ["world_id", "origin_icao", "destination_icao"]
         }
       },
       "policies": {},
@@ -3167,12 +3019,8 @@
           "name": "flight_world_id_world_id_fk",
           "tableFrom": "flight",
           "tableTo": "world",
-          "columnsFrom": [
-            "world_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["world_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3180,12 +3028,8 @@
           "name": "flight_airline_id_airline_id_fk",
           "tableFrom": "flight",
           "tableTo": "airline",
-          "columnsFrom": [
-            "airline_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["airline_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3193,12 +3037,8 @@
           "name": "flight_schedule_id_schedule_id_fk",
           "tableFrom": "flight",
           "tableTo": "schedule",
-          "columnsFrom": [
-            "schedule_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["schedule_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -3206,12 +3046,8 @@
           "name": "flight_origin_icao_airport_icao_code_fk",
           "tableFrom": "flight",
           "tableTo": "airport",
-          "columnsFrom": [
-            "origin_icao"
-          ],
-          "columnsTo": [
-            "icao_code"
-          ],
+          "columnsFrom": ["origin_icao"],
+          "columnsTo": ["icao_code"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -3219,12 +3055,8 @@
           "name": "flight_destination_icao_airport_icao_code_fk",
           "tableFrom": "flight",
           "tableTo": "airport",
-          "columnsFrom": [
-            "destination_icao"
-          ],
-          "columnsTo": [
-            "icao_code"
-          ],
+          "columnsFrom": ["destination_icao"],
+          "columnsTo": ["icao_code"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -3232,12 +3064,8 @@
           "name": "flight_diversion_icao_airport_icao_code_fk",
           "tableFrom": "flight",
           "tableTo": "airport",
-          "columnsFrom": [
-            "diversion_icao"
-          ],
-          "columnsTo": [
-            "icao_code"
-          ],
+          "columnsFrom": ["diversion_icao"],
+          "columnsTo": ["icao_code"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -3247,10 +3075,7 @@
         "flight_world_id_materialisation_key": {
           "name": "flight_world_id_materialisation_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "world_id",
-            "materialisation_key"
-          ]
+          "columns": ["world_id", "materialisation_key"]
         }
       },
       "policies": {},
@@ -3439,12 +3264,8 @@
           "name": "flight_result_world_id_world_id_fk",
           "tableFrom": "flight_result",
           "tableTo": "world",
-          "columnsFrom": [
-            "world_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["world_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3452,12 +3273,8 @@
           "name": "flight_result_flight_id_flight_id_fk",
           "tableFrom": "flight_result",
           "tableTo": "flight",
-          "columnsFrom": [
-            "flight_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["flight_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3465,12 +3282,8 @@
           "name": "flight_result_airline_id_airline_id_fk",
           "tableFrom": "flight_result",
           "tableTo": "airline",
-          "columnsFrom": [
-            "airline_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["airline_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3480,9 +3293,7 @@
         "flight_result_flight_id_unique": {
           "name": "flight_result_flight_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "flight_id"
-          ]
+          "columns": ["flight_id"]
         }
       },
       "policies": {},
@@ -3771,12 +3582,8 @@
           "name": "npc_decision_world_id_world_id_fk",
           "tableFrom": "npc_decision",
           "tableTo": "world",
-          "columnsFrom": [
-            "world_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["world_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3784,12 +3591,8 @@
           "name": "npc_decision_airline_id_airline_id_fk",
           "tableFrom": "npc_decision",
           "tableTo": "airline",
-          "columnsFrom": [
-            "airline_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["airline_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3916,12 +3719,8 @@
           "name": "player_identity_player_id_player_id_fk",
           "tableFrom": "player_identity",
           "tableTo": "player",
-          "columnsFrom": [
-            "player_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["player_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3931,10 +3730,7 @@
         "player_identity_provider_subject_key": {
           "name": "player_identity_provider_subject_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "provider",
-            "subject"
-          ]
+          "columns": ["provider", "subject"]
         }
       },
       "policies": {},
@@ -4055,12 +3851,8 @@
           "name": "route_world_id_world_id_fk",
           "tableFrom": "route",
           "tableTo": "world",
-          "columnsFrom": [
-            "world_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["world_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -4068,12 +3860,8 @@
           "name": "route_airline_id_airline_id_fk",
           "tableFrom": "route",
           "tableTo": "airline",
-          "columnsFrom": [
-            "airline_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["airline_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -4081,12 +3869,8 @@
           "name": "route_origin_icao_airport_icao_code_fk",
           "tableFrom": "route",
           "tableTo": "airport",
-          "columnsFrom": [
-            "origin_icao"
-          ],
-          "columnsTo": [
-            "icao_code"
-          ],
+          "columnsFrom": ["origin_icao"],
+          "columnsTo": ["icao_code"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -4094,12 +3878,8 @@
           "name": "route_destination_icao_airport_icao_code_fk",
           "tableFrom": "route",
           "tableTo": "airport",
-          "columnsFrom": [
-            "destination_icao"
-          ],
-          "columnsTo": [
-            "icao_code"
-          ],
+          "columnsFrom": ["destination_icao"],
+          "columnsTo": ["icao_code"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -4109,11 +3889,7 @@
         "route_airline_pair_key": {
           "name": "route_airline_pair_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "airline_id",
-            "origin_icao",
-            "destination_icao"
-          ]
+          "columns": ["airline_id", "origin_icao", "destination_icao"]
         }
       },
       "policies": {},
@@ -4218,12 +3994,8 @@
           "name": "runway_airport_id_airport_id_fk",
           "tableFrom": "runway",
           "tableTo": "airport",
-          "columnsFrom": [
-            "airport_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["airport_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -4233,9 +4005,7 @@
         "runway_source_id_key": {
           "name": "runway_source_id_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "source_id"
-          ]
+          "columns": ["source_id"]
         }
       },
       "policies": {},
@@ -4373,12 +4143,8 @@
           "name": "schedule_world_id_world_id_fk",
           "tableFrom": "schedule",
           "tableTo": "world",
-          "columnsFrom": [
-            "world_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["world_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -4386,12 +4152,8 @@
           "name": "schedule_airline_id_airline_id_fk",
           "tableFrom": "schedule",
           "tableTo": "airline",
-          "columnsFrom": [
-            "airline_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["airline_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -4483,12 +4245,8 @@
           "name": "schedule_leg_schedule_id_schedule_id_fk",
           "tableFrom": "schedule_leg",
           "tableTo": "schedule",
-          "columnsFrom": [
-            "schedule_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["schedule_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -4496,12 +4254,8 @@
           "name": "schedule_leg_origin_icao_airport_icao_code_fk",
           "tableFrom": "schedule_leg",
           "tableTo": "airport",
-          "columnsFrom": [
-            "origin_icao"
-          ],
-          "columnsTo": [
-            "icao_code"
-          ],
+          "columnsFrom": ["origin_icao"],
+          "columnsTo": ["icao_code"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -4509,12 +4263,8 @@
           "name": "schedule_leg_destination_icao_airport_icao_code_fk",
           "tableFrom": "schedule_leg",
           "tableTo": "airport",
-          "columnsFrom": [
-            "destination_icao"
-          ],
-          "columnsTo": [
-            "icao_code"
-          ],
+          "columnsFrom": ["destination_icao"],
+          "columnsTo": ["icao_code"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -4524,10 +4274,7 @@
         "schedule_leg_schedule_id_leg_index_key": {
           "name": "schedule_leg_schedule_id_leg_index_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "schedule_id",
-            "leg_index"
-          ]
+          "columns": ["schedule_id", "leg_index"]
         }
       },
       "policies": {},
@@ -4636,12 +4383,8 @@
           "name": "session_player_id_player_id_fk",
           "tableFrom": "session",
           "tableTo": "player",
-          "columnsFrom": [
-            "player_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["player_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -4651,9 +4394,7 @@
         "session_token_hash_key": {
           "name": "session_token_hash_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "token_hash"
-          ]
+          "columns": ["token_hash"]
         }
       },
       "policies": {},
@@ -4873,12 +4614,8 @@
           "name": "used_aircraft_listing_world_id_world_id_fk",
           "tableFrom": "used_aircraft_listing",
           "tableTo": "world",
-          "columnsFrom": [
-            "world_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["world_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -4886,12 +4623,8 @@
           "name": "used_aircraft_listing_location_icao_airport_icao_code_fk",
           "tableFrom": "used_aircraft_listing",
           "tableTo": "airport",
-          "columnsFrom": [
-            "location_icao"
-          ],
-          "columnsTo": [
-            "icao_code"
-          ],
+          "columnsFrom": ["location_icao"],
+          "columnsTo": ["icao_code"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -4901,11 +4634,7 @@
         "used_aircraft_listing_slot_generation_key": {
           "name": "used_aircraft_listing_slot_generation_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "world_id",
-            "slot_index",
-            "generation_index"
-          ]
+          "columns": ["world_id", "slot_index", "generation_index"]
         }
       },
       "policies": {},
@@ -5044,9 +4773,7 @@
         "world_name_key": {
           "name": "world_name_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "name"
-          ]
+          "columns": ["name"]
         }
       },
       "policies": {},
@@ -5173,12 +4900,8 @@
           "name": "world_event_world_id_world_id_fk",
           "tableFrom": "world_event",
           "tableTo": "world",
-          "columnsFrom": [
-            "world_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["world_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -5188,10 +4911,7 @@
         "world_event_world_id_idempotency_key": {
           "name": "world_event_world_id_idempotency_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "world_id",
-            "idempotency_key"
-          ]
+          "columns": ["world_id", "idempotency_key"]
         }
       },
       "policies": {},
@@ -5212,54 +4932,32 @@
     "public.aircraft_acquisition_kind": {
       "name": "aircraft_acquisition_kind",
       "schema": "public",
-      "values": [
-        "lease",
-        "used",
-        "new"
-      ]
+      "values": ["lease", "used", "new"]
     },
     "public.aircraft_order_status": {
       "name": "aircraft_order_status",
       "schema": "public",
-      "values": [
-        "pending",
-        "delivered"
-      ]
+      "values": ["pending", "delivered"]
     },
     "public.airframe_ownership": {
       "name": "airframe_ownership",
       "schema": "public",
-      "values": [
-        "owned",
-        "leased",
-        "financed"
-      ]
+      "values": ["owned", "leased", "financed"]
     },
     "public.airframe_status": {
       "name": "airframe_status",
       "schema": "public",
-      "values": [
-        "in_service",
-        "in_check",
-        "grounded"
-      ]
+      "values": ["in_service", "in_check", "grounded"]
     },
     "public.airline_kind": {
       "name": "airline_kind",
       "schema": "public",
-      "values": [
-        "player",
-        "npc"
-      ]
+      "values": ["player", "npc"]
     },
     "public.airline_status": {
       "name": "airline_status",
       "schema": "public",
-      "values": [
-        "active",
-        "restricted",
-        "ceased"
-      ]
+      "values": ["active", "restricted", "ceased"]
     },
     "public.airport_kind": {
       "name": "airport_kind",
@@ -5277,20 +4975,12 @@
     "public.airport_tier": {
       "name": "airport_tier",
       "schema": "public",
-      "values": [
-        "flagship",
-        "large",
-        "medium",
-        "small",
-        "regional"
-      ]
+      "values": ["flagship", "large", "medium", "small", "regional"]
     },
     "public.auth_provider": {
       "name": "auth_provider",
       "schema": "public",
-      "values": [
-        "google"
-      ]
+      "values": ["google"]
     },
     "public.cash_movement_cause": {
       "name": "cash_movement_cause",
@@ -5312,19 +5002,12 @@
     "public.crew_base_status": {
       "name": "crew_base_status",
       "schema": "public",
-      "values": [
-        "open",
-        "closed"
-      ]
+      "values": ["open", "closed"]
     },
     "public.crew_conversion_status": {
       "name": "crew_conversion_status",
       "schema": "public",
-      "values": [
-        "in_training",
-        "completed",
-        "cancelled"
-      ]
+      "values": ["in_training", "completed", "cancelled"]
     },
     "public.crew_rank": {
       "name": "crew_rank",
@@ -5344,21 +5027,12 @@
     "public.flight_disruption": {
       "name": "flight_disruption",
       "schema": "public",
-      "values": [
-        "delayed",
-        "cancelled",
-        "returned_to_stand",
-        "air_return",
-        "diverted"
-      ]
+      "values": ["delayed", "cancelled", "returned_to_stand", "air_return", "diverted"]
     },
     "public.flight_kind": {
       "name": "flight_kind",
       "schema": "public",
-      "values": [
-        "scheduled",
-        "ferry"
-      ]
+      "values": ["scheduled", "ferry"]
     },
     "public.flight_phase": {
       "name": "flight_phase",
@@ -5382,88 +5056,47 @@
     "public.node_role": {
       "name": "node_role",
       "schema": "public",
-      "values": [
-        "web",
-        "worker"
-      ]
+      "values": ["web", "worker"]
     },
     "public.npc_archetype": {
       "name": "npc_archetype",
       "schema": "public",
-      "values": [
-        "flag",
-        "lcc",
-        "regional",
-        "charter"
-      ]
+      "values": ["flag", "lcc", "regional", "charter"]
     },
     "public.npc_decision_kind": {
       "name": "npc_decision_kind",
       "schema": "public",
-      "values": [
-        "route_opened",
-        "route_closed",
-        "fare_changed",
-        "entry_declined"
-      ]
+      "values": ["route_opened", "route_closed", "fare_changed", "entry_declined"]
     },
     "public.repeat_kind": {
       "name": "repeat_kind",
       "schema": "public",
-      "values": [
-        "daily",
-        "weekdays"
-      ]
+      "values": ["daily", "weekdays"]
     },
     "public.runway_surface": {
       "name": "runway_surface",
       "schema": "public",
-      "values": [
-        "asphalt",
-        "concrete",
-        "gravel",
-        "grass",
-        "water",
-        "other"
-      ]
+      "values": ["asphalt", "concrete", "gravel", "grass", "water", "other"]
     },
     "public.used_aircraft_listing_status": {
       "name": "used_aircraft_listing_status",
       "schema": "public",
-      "values": [
-        "available",
-        "sold",
-        "withdrawn"
-      ]
+      "values": ["available", "sold", "withdrawn"]
     },
     "public.world_event_status": {
       "name": "world_event_status",
       "schema": "public",
-      "values": [
-        "pending",
-        "done",
-        "failed",
-        "unsupported"
-      ]
+      "values": ["pending", "done", "failed", "unsupported"]
     },
     "public.world_event_type": {
       "name": "world_event_type",
       "schema": "public",
-      "values": [
-        "FLIGHT_DEPART",
-        "FLIGHT_ARRIVE",
-        "TURNAROUND_COMPLETE"
-      ]
+      "values": ["FLIGHT_DEPART", "FLIGHT_ARRIVE", "TURNAROUND_COMPLETE"]
     },
     "public.world_status": {
       "name": "world_status",
       "schema": "public",
-      "values": [
-        "staging",
-        "open",
-        "locked",
-        "archived"
-      ]
+      "values": ["staging", "open", "locked", "archived"]
     }
   },
   "schemas": {},
