@@ -152,6 +152,36 @@ const DATA_TEXTURE_SAMPLER = {
 } as const;
 
 /**
+ * Depth bias that keeps the day/night wash in front of the land it shades.
+ *
+ * **This is the fix for the angular patches of undimmed land.** The terminator is
+ * a quad tessellated to the sphere, so it sits essentially *on* the surface. The
+ * land is a `GeoJsonLayer` fill, and `SolidPolygonLayer` does not subdivide for
+ * the globe: earcut joins distant coastline vertices, so a single triangle can
+ * span nearly three degrees and its flat interior chords **below** the sphere by
+ * up to about two kilometres, while the small triangles near a coastline hug it.
+ *
+ * Land therefore crosses the terminator's depth in patches — in front of it near
+ * the coast, behind it inland — and the shading was being depth-rejected exactly
+ * where the land happened to be nearer. What that draws is straight-edged
+ * facets of *undimmed* land, following the triangulation rather than any
+ * geography, appearing only once zoomed in far enough for a couple of kilometres
+ * of chord sag to matter. Measured across one such patch: a clean alpha ramp
+ * either side, and a flat zero across the facet.
+ *
+ * deck.gl's default offset is `-layerIndex * 100`, which gives the terminator
+ * only a few hundred units over the land and is not enough. This is deliberately
+ * far larger than the gap needs, because the sag depends on the coastline's
+ * triangulation and nothing bounds it usefully.
+ *
+ * It is safe against the far side of the globe: the offset is uniform, so the
+ * near and far halves keep their order and the far half stays hidden. Turning the
+ * depth test off instead also clears the patches, and is **wrong** — both halves
+ * then composite, and the day side comes out darkened by its own antipode.
+ */
+const TERMINATOR_POLYGON_OFFSET = (): [number, number] => [0, -20000];
+
+/**
  * A `BitmapLayer` that rebuilds its mesh when the viewport that draws it changes.
  *
  * **This is what keeps the globe from going black after a projection switch.**
@@ -363,6 +393,7 @@ export function createWorldLayers({
          */
         // See the ocean layer: a full-sphere quad must not be back-face culled.
         parameters: { cullMode: 'none' },
+        getPolygonOffset: TERMINATOR_POLYGON_OFFSET,
       }),
     visibility.routes &&
       new ArcLayer<WorldRoute>({
