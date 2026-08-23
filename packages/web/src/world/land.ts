@@ -1,5 +1,5 @@
-import { feature } from 'topojson-client';
-import coarseTopology from 'world-atlas/land-110m.json';
+import { feature, mesh } from 'topojson-client';
+import coarseTopology from 'world-atlas/countries-110m.json';
 
 import type { GeometryCollection, Topology } from 'topojson-specification';
 
@@ -24,10 +24,33 @@ import type { GeometryCollection, Topology } from 'topojson-specification';
  * goes past {@link LAND_DETAIL_ZOOM}, and kept for the rest of the session.
  *
  * `10m` exists and is 3 MB. That is a tile service's job, not a bundle's.
+ *
+ * ## One file per tier, carrying both the coastline and the borders
+ *
+ * `countries-*.json` holds a `countries` collection **and** the same `land` union
+ * that `land-*.json` ships on its own, built from one shared set of arcs. So a
+ * tier is one download rather than two, and — the part that actually matters —
+ * a border and the coastline it meets are the same arc, so they cannot disagree
+ * by a hairline the way two independently simplified files would.
+ *
+ * The cost is real and modest. Measured on a production build, carrying every
+ * country as well as the coastline takes the main bundle from 376 to **395 KB
+ * gzip**, and the on-demand tier from 179 to **243 KB gzip**.
  */
 
 /** Any GeoJSON the land layer can render. Deliberately loose; only deck.gl reads it. */
 export type LandGeometry = ReturnType<typeof feature>;
+
+/** The country borders, as one line geometry. */
+export type BorderGeometry = ReturnType<typeof mesh>;
+
+/** A tier: the coastline and the borders that share its arcs. */
+export interface WorldGeometry {
+  land: LandGeometry;
+  borders: BorderGeometry;
+}
+
+type CountriesTopology = Topology<{ countries: GeometryCollection; land: GeometryCollection }>;
 
 /**
  * The zoom at which the coarse outline stops being good enough.
@@ -115,59 +138,104 @@ function unwrapRing(ring: number[][]): number[][] {
   return unwrapped;
 }
 
-/** Exported for the test that asserts no ring jumps the antimeridian. */
+/**
+ * Exported for the test that asserts nothing jumps the antimeridian.
+ *
+ * Handles lines as well as rings, because the country borders arrive as a
+ * `MultiLineString` and have exactly the same problem — Russia's eastern border
+ * meets the antimeridian, and an unwrapped border draws a line round the world
+ * just as an unwrapped coastline does. `unwrapRing` does not care that a border
+ * is not closed; it carries the offset along whatever sequence it is given.
+ */
 export function unwrapAntimeridian<T>(geojson: T): T {
   const walk = (geometry: { type: string; coordinates: unknown }): void => {
-    if (geometry.type === 'Polygon') {
-      geometry.coordinates = (geometry.coordinates as number[][][]).map(unwrapRing);
-    } else if (geometry.type === 'MultiPolygon') {
-      geometry.coordinates = (geometry.coordinates as number[][][][]).map((polygon) =>
-        polygon.map(unwrapRing),
-      );
+    switch (geometry.type) {
+      case 'LineString':
+        geometry.coordinates = unwrapRing(geometry.coordinates as number[][]);
+        break;
+      case 'Polygon':
+      case 'MultiLineString':
+        geometry.coordinates = (geometry.coordinates as number[][][]).map(unwrapRing);
+        break;
+      case 'MultiPolygon':
+        geometry.coordinates = (geometry.coordinates as number[][][][]).map((polygon) =>
+          polygon.map(unwrapRing),
+        );
+        break;
+      default:
+        break;
     }
   };
 
   const value = geojson as unknown as {
     features?: { geometry: { type: string; coordinates: unknown } }[];
     geometry?: { type: string; coordinates: unknown };
+    type?: string;
+    coordinates?: unknown;
   };
   if (value.features) for (const shape of value.features) walk(shape.geometry);
   else if (value.geometry) walk(value.geometry);
+  // A bare geometry, which is what `mesh` returns — no `Feature` wrapper.
+  else if (value.coordinates !== undefined && value.type !== undefined) {
+    walk(value as { type: string; coordinates: unknown });
+  }
   return geojson;
 }
 
-function land(topology: unknown): LandGeometry {
-  const typed = topology as Topology<{ land: GeometryCollection }>;
+/**
+ * The country borders, as one `MultiLineString`.
+ *
+ * `mesh` with `(a, b) => a !== b` keeps only arcs shared by **two different**
+ * countries, which is the whole trick: a coastline arc belongs to one country
+ * and is dropped, so the borders never draw over the coastline the land layer
+ * already strokes. Drawing every country outline instead would double every
+ * coast — twice the geometry, and a visibly heavier line wherever the two
+ * happened not to land on the same pixel.
+ *
+ * One geometry rather than 177 features, because nothing here is per-country:
+ * there are no labels, no picking and no fills, so a single path saves deck.gl
+ * the work of tessellating each border twice, once for each side.
+ */
+function borders(typed: CountriesTopology): BorderGeometry {
+  return unwrapAntimeridian(mesh(typed, typed.objects.countries, (a, b) => a !== b));
+}
+
+function land(typed: CountriesTopology): LandGeometry {
   return unwrapAntimeridian(feature(typed, typed.objects.land));
 }
 
-/** Always available, and what every first paint draws. */
-export const COARSE_LAND: LandGeometry = land(coarseTopology);
+function worldGeometry(topology: unknown): WorldGeometry {
+  const typed = topology as CountriesTopology;
+  return { land: land(typed), borders: borders(typed) };
+}
 
-let detailed: LandGeometry | undefined;
-let inFlight: Promise<LandGeometry> | undefined;
+/** Always available, and what every first paint draws. */
+export const COARSE_WORLD: WorldGeometry = worldGeometry(coarseTopology);
+
+let detailed: WorldGeometry | undefined;
+let inFlight: Promise<WorldGeometry> | undefined;
 
 /**
- * The finer coastline, fetched from this origin as a code-split chunk.
+ * The finer coastline and borders, fetched from this origin as a code-split chunk.
  *
  * Idempotent and cached: the promise is shared, so a camera that crosses the zoom
- * threshold repeatedly downloads once. A failure resolves to the coarse outline
+ * threshold repeatedly downloads once. A failure resolves to the coarse geometry
  * rather than rejecting — a chunk that will not load should cost detail, not the
  * whole world view, and the renderer has no way to tell a player to retry.
  */
-export async function loadDetailedLand(): Promise<LandGeometry> {
+export async function loadDetailedWorld(): Promise<WorldGeometry> {
   if (detailed) return detailed;
-  inFlight ??= import('world-atlas/land-50m.json')
+  inFlight ??= import('world-atlas/countries-50m.json')
     .then((module) => {
-      detailed = land(module.default);
+      detailed = worldGeometry(module.default);
       return detailed;
     })
-    .catch(() => COARSE_LAND);
+    .catch(() => COARSE_WORLD);
   return inFlight;
 }
 
 /** For tests; there is no reason to call this in the app. */
-export function resetDetailedLand(): void {
+export function resetDetailedWorld(): void {
   detailed = undefined;
   inFlight = undefined;
 }

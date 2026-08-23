@@ -185,6 +185,40 @@ The graticule is the one world layer the contrast tests do not gate. One flat ov
 cannot contrast strongly with both a dark sea and a light landmass; its colour favours the
 ocean, where most of a meridian runs, and it is toggleable.
 
+### Country borders come from the same file and the same arcs as the coastline
+
+The tiers are now `countries-*.json` rather than `land-*.json`. Each holds a `countries`
+collection **and** the same `land` union the land-only file ships, built from one shared set of
+arcs — so a tier is one download instead of two, and a border and the coastline it meets cannot
+disagree by a hairline the way two independently simplified files would.
+
+Measured on a production build, the cost of carrying every country as well as the coastline:
+
+|                |         before |              after |
+| -------------- | -------------: | -----------------: |
+| main bundle    | 376.25 kB gzip | **395.32 kB gzip** |
+| on-demand tier | 179.08 kB gzip | **242.87 kB gzip** |
+
+The borders are `mesh(topology, objects.countries, (a, b) => a !== b)`. That filter is the
+whole trick: it keeps only arcs shared by **two different** countries, so a coastline arc —
+which belongs to one country — is dropped. Drawing 177 country outlines instead would draw
+every coast twice, at twice the geometry and with a visibly heavier line wherever the two
+copies failed to land on the same pixel. One `MultiLineString` also saves deck.gl tessellating
+each internal border twice, once from each side; nothing here is per-country, since there are
+no labels, no picking and no fills.
+
+`unwrapAntimeridian` had to learn lines to make this work. Russia's eastern border reaches the
+antimeridian and an unwrapped border draws a line round the world exactly as an unwrapped
+coastline did — the same bug, in a geometry the original only knew how to skip. It now handles
+`LineString` and `MultiLineString`, and a bare geometry with no `Feature` wrapper, which is
+what `mesh` returns.
+
+The border is **deliberately subordinate to the coastline**: 7.2:1 against land in the dark
+theme where the coast is 10.6:1, and thinner. Equal weight makes a continent read as a mesh of
+equal cells, and the coastline is the line that says where the land stops. Both still clear
+AA's 3:1 for a meaningful graphic, day and night, in both themes; `palette.test.ts` measures
+each pairing and also asserts the border is the _weaker_ of the two.
+
 ### An unwrapped ring has to be recentred, or the flat map loses a continent
 
 Unwrapping starts its carry at zero on the ring's **first** vertex, so where a ring happens to

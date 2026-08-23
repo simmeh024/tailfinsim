@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { COARSE_LAND, LAND_DETAIL_ZOOM, loadDetailedLand, unwrapAntimeridian } from './land';
+import { COARSE_WORLD, LAND_DETAIL_ZOOM, loadDetailedWorld, unwrapAntimeridian } from './land';
 
 /**
  * The coastline data (App. H.2).
@@ -96,7 +96,7 @@ describe('unwrapping the antimeridian', () => {
   });
 
   it('leaves no jump in the coarse tier', () => {
-    const rings = ringsOf(COARSE_LAND);
+    const rings = ringsOf(COARSE_WORLD.land);
     expect(rings.length).toBeGreaterThan(100);
     expect(jumpsIn(rings), 'consecutive coastline vertices 360 degrees apart').toEqual([]);
   });
@@ -139,8 +139,8 @@ describe('unwrapping the antimeridian', () => {
 
   it('leaves every ring of both tiers centred on the real world', async () => {
     for (const [name, geometry] of [
-      ['coarse', COARSE_LAND],
-      ['detailed', await loadDetailedLand()],
+      ['coarse', COARSE_WORLD.land],
+      ['detailed', (await loadDetailedWorld()).land],
     ] as const) {
       const midpoints = midpointsOf(ringsOf(geometry));
       const stray = midpoints.filter((m) => m < -180 || m > 180);
@@ -151,8 +151,11 @@ describe('unwrapping the antimeridian', () => {
 
 describe('the detailed tier', () => {
   it('is finer than the coarse one, and unwrapped the same way', async () => {
-    const detailed = await loadDetailedLand();
-    const coarseVertices = ringsOf(COARSE_LAND).reduce((total, ring) => total + ring.length, 0);
+    const detailed = (await loadDetailedWorld()).land;
+    const coarseVertices = ringsOf(COARSE_WORLD.land).reduce(
+      (total, ring) => total + ring.length,
+      0,
+    );
     const detailedVertices = ringsOf(detailed).reduce((total, ring) => total + ring.length, 0);
 
     // The whole reason it exists. If a dependency bump ever pointed both tiers at
@@ -163,14 +166,60 @@ describe('the detailed tier', () => {
 
   it('is fetched once and shared', async () => {
     // The camera crosses the zoom threshold repeatedly; the chunk downloads once.
-    const [first, second] = await Promise.all([loadDetailedLand(), loadDetailedLand()]);
+    const [first, second] = await Promise.all([loadDetailedWorld(), loadDetailedWorld()]);
     expect(first).toBe(second);
-    expect(await loadDetailedLand()).toBe(first);
+    expect(await loadDetailedWorld()).toBe(first);
   });
 
   it('does not load before the camera needs it', () => {
     // A threshold above the default camera, or the split buys nothing: every first
     // paint would pull the larger file anyway.
     expect(LAND_DETAIL_ZOOM).toBeGreaterThan(0.35);
+  });
+});
+
+/**
+ * The country borders (App. H.2).
+ *
+ * Cut from the same file and the same arcs as the coastline, so the two cannot
+ * drift apart by a hairline. What is worth holding is that they are the arcs
+ * *between* countries and not every country's outline — otherwise every coast
+ * would be drawn twice.
+ */
+describe('country borders', () => {
+  const linesOf = (geometry: unknown): number[][][] => {
+    const g = geometry as { type: string; coordinates: unknown };
+    if (g.type === 'MultiLineString') return g.coordinates as number[][][];
+    if (g.type === 'LineString') return [g.coordinates as number[][]];
+    return [];
+  };
+
+  it('exists in both tiers, and the finer one is finer', async () => {
+    const coarse = linesOf(COARSE_WORLD.borders);
+    const detailed = linesOf((await loadDetailedWorld()).borders);
+    expect(coarse.length).toBeGreaterThan(50);
+
+    const count = (lines: number[][][]) => lines.reduce((n, line) => n + line.length, 0);
+    // Same guard as the coastline's: a dependency bump pointing both tiers at one
+    // file would silently stop the borders sharpening on zoom.
+    expect(count(detailed)).toBeGreaterThan(count(coarse) * 2);
+  });
+
+  it('leaves no border jumping the antimeridian', async () => {
+    // Russia's eastern border reaches it, and an unwrapped line draws straight
+    // across the map exactly as an unwrapped coastline did.
+    for (const [name, geometry] of [
+      ['coarse', COARSE_WORLD.borders],
+      ['detailed', (await loadDetailedWorld()).borders],
+    ] as const) {
+      expect(jumpsIn(linesOf(geometry)), `${name} borders`).toEqual([]);
+    }
+  });
+
+  it('is one line geometry rather than a feature per country', () => {
+    // 177 country outlines would draw every coastline twice over the land layer's
+    // own stroke, at twice the geometry.
+    const g = COARSE_WORLD.borders as { type: string };
+    expect(g.type).toBe('MultiLineString');
   });
 });

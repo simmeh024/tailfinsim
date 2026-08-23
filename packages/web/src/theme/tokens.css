@@ -89,6 +89,10 @@
   /* Eight digits where the alpha is not 255: the opacity belongs beside the
      colour, and it has to differ between the themes. */
   --world-land-line: #0c1c2bb4;
+  /* Country borders. Deliberately a step below the coastline — 7.2:1 against land
+     where the coast is 10.6:1 — so a continent does not read as a mesh of equal
+     cells. Still over AA's 3:1, day and night; `palette.test.ts` measures both. */
+  --world-border: #1f3a52a0;
   --world-grid: #dcecf750;
   --world-night: #02050978;
   --world-route: #7fd4ffe6;
@@ -172,6 +176,7 @@
   --world-ocean: #e6f1f7;
   --world-land: #4f6d63;
   --world-land-line: #e3ede8b4;
+  --world-border: #d6e4dda0;
   --world-grid: #0e1a1f50;
   /* Weaker than the dark theme's: washing a light palette toward night compresses
      it much faster, and 0x78 there costs this one its AA contrast at night. */

@@ -16,6 +16,7 @@ export interface WorldPalette {
   ocean: RgbaColor;
   land: RgbaColor;
   landLine: RgbaColor;
+  border: RgbaColor;
   grid: RgbaColor;
   night: RgbaColor;
   route: RgbaColor;
@@ -33,6 +34,7 @@ const FALLBACK_PALETTE: WorldPalette = {
   ocean: [22, 64, 102, 255],
   land: [179, 207, 223, 255],
   landLine: [12, 28, 43, 180],
+  border: [31, 58, 82, 160],
   grid: [220, 236, 247, 80],
   night: [2, 5, 9, 120],
   route: [127, 212, 255, 230],
@@ -64,6 +66,7 @@ export function readWorldPalette(): WorldPalette {
     ocean: read('--world-ocean', FALLBACK_PALETTE.ocean),
     land: read('--world-land', FALLBACK_PALETTE.land),
     landLine: read('--world-land-line', FALLBACK_PALETTE.landLine),
+    border: read('--world-border', FALLBACK_PALETTE.border),
     grid: read('--world-grid', FALLBACK_PALETTE.grid),
     night: read('--world-night', FALLBACK_PALETTE.night),
     route: read('--world-route', FALLBACK_PALETTE.route),

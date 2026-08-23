@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTheme } from '../theme/ThemeProvider';
 
 import { clampViewState, focusViewState } from './camera';
-import { COARSE_LAND, LAND_DETAIL_ZOOM, loadDetailedLand, type LandGeometry } from './land';
+import { COARSE_WORLD, LAND_DETAIL_ZOOM, loadDetailedWorld, type WorldGeometry } from './land';
 import {
   createWorldLayers,
   type RendererQuality,
@@ -63,6 +63,7 @@ const DEFAULT_VISIBILITY: WorldLayerVisibility = {
   graticule: true,
   routes: true,
   terminator: true,
+  borders: true,
 };
 
 export interface WorldRendererProps {
@@ -82,7 +83,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   const [performanceOfferDismissed, setPerformanceOfferDismissed] = useState(false);
   const [rendererFailed, setRendererFailed] = useState(false);
   const [palette, setPalette] = useState<WorldPalette>(() => readWorldPalette());
-  const [land, setLand] = useState<LandGeometry>(COARSE_LAND);
+  const [geometry, setGeometry] = useState<WorldGeometry>(COARSE_WORLD);
   const transitionTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const frameRateMonitor = useRef(new SustainedFrameRateMonitor());
   const deckRef = useRef<DeckGLRef<MapView | GlobeView> | null>(null);
@@ -127,15 +128,15 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
    * stays drawn either way.
    */
   useEffect(() => {
-    if (viewState.zoom < LAND_DETAIL_ZOOM || land !== COARSE_LAND) return;
+    if (viewState.zoom < LAND_DETAIL_ZOOM || geometry !== COARSE_WORLD) return;
     let live = true;
-    void loadDetailedLand().then((detailed) => {
-      if (live) setLand(detailed);
+    void loadDetailedWorld().then((detailed) => {
+      if (live) setGeometry(detailed);
     });
     return () => {
       live = false;
     };
-  }, [viewState.zoom, land]);
+  }, [viewState.zoom, geometry]);
 
   /*
    * Which instant the day/night field describes.
@@ -183,8 +184,18 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   // the views — it does not. Switching projection has to rebuild the layers so the
   // world-sized bitmaps re-tessellate for the new viewport; see `layers.ts`.
   const layers = useMemo(
-    () => createWorldLayers({ palette, projection, quality, routes, darkness, land, visibility }),
-    [palette, projection, quality, routes, darkness, land, visibility],
+    () =>
+      createWorldLayers({
+        palette,
+        projection,
+        quality,
+        routes,
+        darkness,
+        land: geometry.land,
+        borders: geometry.borders,
+        visibility,
+      }),
+    [palette, projection, quality, routes, darkness, geometry, visibility],
   );
   const view = useMemo(
     () =>
@@ -351,6 +362,13 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
             onClick={() => toggleLayer('routes')}
           >
             Routes
+          </button>
+          <button
+            type="button"
+            aria-pressed={visibility.borders}
+            onClick={() => toggleLayer('borders')}
+          >
+            Borders
           </button>
           <button
             type="button"
