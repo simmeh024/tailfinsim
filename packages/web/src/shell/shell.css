@@ -133,6 +133,63 @@ body {
   gap: var(--space-2);
 }
 
+/*
+ * The world clock, opposite the controls.
+ *
+ * Top right because the controls own the top left and the two must not collide
+ * on a narrow viewport — see the media query below, where the controls are
+ * allowed to wrap across the full width and the clock goes back above them.
+ */
+.world-clock {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 4;
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 0 var(--space-2);
+  align-items: baseline;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  backdrop-filter: blur(10px);
+  text-align: right;
+}
+
+.world-clock__label {
+  grid-column: 1 / -1;
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.world-clock__time {
+  grid-column: 1 / -1;
+  font-size: var(--text-lg);
+  line-height: 1.1;
+  color: var(--text-primary);
+  /* Tabular figures, so the minute changing does not shuffle the digits. */
+  font-variant-numeric: tabular-nums;
+}
+
+.world-clock__zone {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.world-clock__date {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.world-clock__speed {
+  font-size: var(--text-sm);
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
 .world-renderer__control-group {
   display: flex;
   padding: var(--space-1);
@@ -1008,6 +1065,17 @@ body {
     right: var(--space-2);
     top: var(--space-2);
     left: var(--space-2);
+  }
+
+  /*
+   * The controls span the full width here and are allowed to wrap, so their
+   * height is not knowable — anything anchored under them would collide on some
+   * viewport. The clock goes to the bottom instead, where nothing else sits.
+   */
+  .world-clock {
+    top: auto;
+    right: var(--space-2);
+    bottom: var(--space-2);
   }
 
   .world-renderer__control-group button,

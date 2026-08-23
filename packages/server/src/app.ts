@@ -23,6 +23,7 @@ import { readDeployInfo } from './deploy-info';
 import { type ServerEnv } from './env';
 import { createEconomicsProvider } from './network/economics';
 import { registerNetworkRoutes } from './network/routes';
+import { registerWorldRoutes } from './world/routes';
 
 /**
  * The Fastify application (M0-08).
@@ -136,6 +137,9 @@ export function buildApp({
   // half of it is real.
   registerNetworkRoutes(app, { db, economicsFor: createEconomicsProvider(db.db) });
   registerAircraftRoutes(app, { db });
+  // The world's own clock. Behind the same airline boundary, because which world
+  // a player is in is what decides whose clock they get.
+  registerWorldRoutes(app, { db });
 
   const startedAt = Date.now();
 

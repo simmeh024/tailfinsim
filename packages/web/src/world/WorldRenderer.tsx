@@ -16,6 +16,8 @@ import { readWorldPalette } from './palette';
 import { SustainedFrameRateMonitor, type FrameRateSample } from './performance';
 import { persistProjection, readInitialProjection, type WorldProjection } from './projection';
 import { createDarknessField } from './terminator';
+import { useWorldClock } from './useWorldClock';
+import { WorldClockDisplay } from './WorldClockDisplay';
 
 import type { WorldPalette } from './palette';
 import type { ReactNode } from 'react';
@@ -91,6 +93,8 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     return () => globalThis.clearInterval(timer);
   }, []);
 
+  const { inGameTime, speedMultiplier } = useWorldClock();
+
   useEffect(() => {
     // ThemeProvider applies its root data attribute after rendering. Resample on
     // the next task so deck.gl sees the committed CSS tokens, not the old theme.
@@ -133,9 +137,34 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     };
   }, [viewState.zoom, land]);
 
-  // Sampled once a minute, at the quality the device is coping with. Half the
-  // resolution is still far finer than the twilight band it has to describe: the
-  // gradient spans twelve degrees of solar elevation, and a reduced texel is two.
+  /*
+   * Which instant the day/night field describes.
+   *
+   * **The world's clock, not the reader's.** A world runs from its own epoch at
+   * its own speed — the flagship one begins in October 2024 and advances at 2× —
+   * so shading it by wall-clock time draws the terminator for the wrong date
+   * entirely, and it drifts further every day the world runs. `null` before the
+   * first sync, and for a player who has not founded an airline and so has no
+   * world; wall-clock time is the only thing left to draw then, and it is better
+   * than a globe with no terminator on it at all.
+   */
+  const shadingTime = inGameTime ?? now;
+
+  /*
+   * Bucketed to the in-game minute rather than memoised on the instant.
+   *
+   * `useWorldClock` re-renders once a second so the displayed time is not late,
+   * and rebuilding a 512x256 field of trigonometry at that rate would be absurd.
+   * A minute of game time moves the terminator a quarter of a degree, and a texel
+   * is seven tenths of one, so the bucket is well inside a texel and nothing is
+   * visibly quantised. At the flagship 2x that is a rebuild every thirty real
+   * seconds, which is what the wall-clock version cost before.
+   */
+  const shadingMinute = Math.floor(shadingTime.getTime() / 60_000);
+
+  // Sampled at the quality the device is coping with. Half the resolution is
+  // still far finer than the twilight band it has to describe: the gradient spans
+  // twelve degrees of solar elevation, and a reduced texel is two.
   // `projection` is in here because the *rows* differ between the two views, not
   // just the bounds: the flat map spaces them in Web Mercator and the globe in
   // degrees. `layers.ts` explains why that is done in the field rather than in a
@@ -143,12 +172,12 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   const darkness = useMemo(
     () =>
       createDarknessField(
-        now,
+        new Date(shadingMinute * 60_000),
         quality === 'full' ? 512 : 256,
         quality === 'full' ? 256 : 128,
         projection === 'globe' ? 'equirectangular' : 'mercator',
       ),
-    [now, quality, projection],
+    [shadingMinute, quality, projection],
   );
   // `projection` is a dependency, and not because the layer list differs between
   // the views — it does not. Switching projection has to rebuild the layers so the
@@ -287,6 +316,8 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       </div>
 
       <div className="world-renderer__atmosphere" aria-hidden="true" />
+
+      <WorldClockDisplay inGameTime={inGameTime} speedMultiplier={speedMultiplier} />
 
       <div className="world-renderer__controls">
         <div className="world-renderer__control-group" role="group" aria-label="Projection">

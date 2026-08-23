@@ -39,6 +39,7 @@ import { MaintenanceResponse, BookCheckResponse } from './maintenance';
 import { AdminNpcResponse } from './npc';
 import { UsedMarketResponse } from './used-market';
 import { VersionResponse } from './version';
+import { WorldClock } from './world';
 
 /**
  * JSON Schema versions of the wire schemas, for consumers that speak JSON
@@ -127,3 +128,4 @@ export const airframeDetailResponseJsonSchema = z.toJSONSchema(AirframeDetailRes
 export const bookCheckResponseJsonSchema = z.toJSONSchema(BookCheckResponse);
 
 export const adminRequeueEventsResponseJsonSchema = z.toJSONSchema(AdminRequeueEventsResponse);
+export const worldClockJsonSchema = z.toJSONSchema(WorldClock);
