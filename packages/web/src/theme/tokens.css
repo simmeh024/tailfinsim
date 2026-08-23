@@ -84,12 +84,14 @@
    * edge — which is why that ring exists.
    */
   --world-space: #02040a;
-  --world-ocean: #0d2038;
-  --world-land: #7799b0;
-  --world-land-line: #0f1e2e;
-  --world-grid: #dcecf7;
-  --world-night: #0b1a2e;
-  --world-route: #5eb8ff;
+  --world-ocean: #164066;
+  --world-land: #b3cfdf;
+  /* Eight digits where the alpha is not 255: the opacity belongs beside the
+     colour, and it has to differ between the themes. */
+  --world-land-line: #0c1c2bb4;
+  --world-grid: #dcecf750;
+  --world-night: #02050978;
+  --world-route: #7fd4ffe6;
   --world-atmosphere: #5eb8ff;
 
   /*
@@ -169,10 +171,12 @@
   --world-space: #9fb4c2;
   --world-ocean: #e6f1f7;
   --world-land: #4f6d63;
-  --world-land-line: #e3ede8;
-  --world-grid: #0e1a1f;
-  --world-night: #1a2b40;
-  --world-route: #0a63b0;
+  --world-land-line: #e3ede8b4;
+  --world-grid: #0e1a1f50;
+  /* Weaker than the dark theme's: washing a light palette toward night compresses
+     it much faster, and 0x78 there costs this one its AA contrast at night. */
+  --world-night: #16283c50;
+  --world-route: #0a63b0e6;
   --world-atmosphere: #0a63b0;
 
   /* See the dark set for why the console has its own ground. */
