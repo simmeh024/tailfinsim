@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { useOutletContext } from 'react-router';
 
@@ -27,6 +35,7 @@ import {
   type LiveryEditorAction,
   type LiveryEditorHistory,
 } from './editor-model';
+import { fleetPreviewBlendMode, fleetPreviewPaint, liveryFamilyVisual } from './fleet-preview';
 import { renderLiverySvg } from './render';
 import { AIRCRAFT_LIVERY_TEMPLATES, aircraftLiveryTemplate } from './templates';
 
@@ -48,6 +57,7 @@ interface EyeDropperWindow extends Window {
 }
 
 type AutosaveState = 'saving' | 'saved' | 'failed';
+type PreviewMode = 'fleet' | 'paint-map';
 
 function formatZone(zone: string): string {
   return zone
@@ -391,6 +401,155 @@ function LayerPanel({
   );
 }
 
+const FLEET_ZONE_CLIPS: Readonly<Record<LiveryZone, string>> = Object.freeze({
+  fuselage: '0,0.39 0.17,0.33 0.72,0.33 0.88,0.42 0.84,0.64 0.07,0.70 0,0.62',
+  nose: '0,0.38 0.25,0.34 0.27,0.68 0,0.70',
+  belly: '0,0.54 0.88,0.49 0.82,0.70 0.06,0.73',
+  tail_fin: '0.64,0.07 0.88,0.07 0.91,0.55 0.64,0.52',
+  winglets: '0.12,0.08 0.29,0.08 0.32,0.39 0.21,0.49 0.88,0.58 1,0.56 1,0.77 0.72,0.74',
+  engine_nacelles: '0.34,0.55 0.60,0.53 0.62,0.88 0.36,0.88',
+  wings: '0.12,0.08 0.30,0.08 0.45,0.45 1,0.57 1,0.80 0.43,0.70 0.25,0.48',
+  cheatline_band: '0,0.43 0.88,0.38 0.88,0.54 0,0.59',
+  door_surrounds: '0.08,0.36 0.78,0.34 0.82,0.65 0.08,0.68',
+  registration_area: '0.53,0.34 0.78,0.33 0.81,0.54 0.52,0.56',
+});
+
+function FleetAircraftPreview({
+  family,
+  layers,
+}: {
+  family: string;
+  layers: readonly LiveryLayer[];
+}): ReactNode {
+  const visual = liveryFamilyVisual(family);
+  const idPrefix = `livery-fleet-${useId().replaceAll(':', '')}`;
+  if (visual === null) {
+    return <p role="alert">No fleet render exists for this family.</p>;
+  }
+
+  return (
+    <div
+      className="livery-fleet-preview"
+      role="img"
+      aria-label={`${family} three-dimensional livery preview`}
+    >
+      <picture>
+        <source srcSet={visual.srcSet} sizes="(max-width: 768px) 100vw, 70vw" />
+        <img
+          src={visual.src}
+          width={visual.width}
+          height={visual.height}
+          alt=""
+          draggable={false}
+        />
+      </picture>
+      <svg
+        className="livery-fleet-preview__paint"
+        viewBox={`0 0 ${String(visual.width)} ${String(visual.height)}`}
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <defs>
+          <filter
+            id={`${idPrefix}-threshold`}
+            x="0"
+            y="0"
+            width={visual.width}
+            height={visual.height}
+            filterUnits="userSpaceOnUse"
+            colorInterpolationFilters="sRGB"
+          >
+            <feColorMatrix type="luminanceToAlpha" />
+            <feComponentTransfer>
+              <feFuncA type="linear" slope="3" intercept="-0.45" />
+            </feComponentTransfer>
+          </filter>
+          <mask
+            className="livery-fleet-preview__mask"
+            id={`${idPrefix}-aircraft`}
+            x="0"
+            y="0"
+            width={visual.width}
+            height={visual.height}
+            maskUnits="userSpaceOnUse"
+            maskContentUnits="userSpaceOnUse"
+          >
+            <image
+              href={visual.src}
+              width={visual.width}
+              height={visual.height}
+              filter={`url(#${idPrefix}-threshold)`}
+            />
+          </mask>
+          {LiveryZone.options.map((zone) => (
+            <clipPath key={zone} id={`${idPrefix}-zone-${zone}`} clipPathUnits="objectBoundingBox">
+              <polygon points={FLEET_ZONE_CLIPS[zone]} />
+            </clipPath>
+          ))}
+          {layers.map((layer) => {
+            if (!layer.visible || layer.type !== 'gradient') return null;
+            const gradientId = `${idPrefix}-paint-${layer.id}`;
+            const stops = layer.gradient.stops.map((stop) => (
+              <stop
+                key={`${String(stop.offset)}-${stop.color}`}
+                offset={stop.offset}
+                stopColor={stop.color}
+              />
+            ));
+            return layer.gradient.kind === 'radial' ? (
+              <radialGradient
+                key={layer.id}
+                id={gradientId}
+                cx={layer.gradient.center.x}
+                cy={layer.gradient.center.y}
+                fx={layer.gradient.focal.x}
+                fy={layer.gradient.focal.y}
+                r={layer.gradient.radius}
+              >
+                {stops}
+              </radialGradient>
+            ) : (
+              <linearGradient
+                key={layer.id}
+                id={gradientId}
+                x1={layer.gradient.from.x}
+                y1={layer.gradient.from.y}
+                x2={layer.gradient.to.x}
+                y2={layer.gradient.to.y}
+              >
+                {stops}
+              </linearGradient>
+            );
+          })}
+        </defs>
+        <g mask={`url(#${idPrefix}-aircraft)`}>
+          {layers.map((layer) => {
+            const paint = fleetPreviewPaint(layer);
+            if (!layer.visible || paint === null) return null;
+            return (
+              <rect
+                key={layer.id}
+                className="livery-fleet-preview__coat"
+                data-zone={layer.zone}
+                width={visual.width}
+                height={visual.height}
+                fill={layer.type === 'gradient' ? `url(#${idPrefix}-paint-${layer.id})` : paint}
+                clipPath={`url(#${idPrefix}-zone-${layer.zone})`}
+                opacity={layer.opacity}
+                style={{
+                  mixBlendMode: fleetPreviewBlendMode(layer) as CSSProperties['mixBlendMode'],
+                }}
+              />
+            );
+          })}
+        </g>
+      </svg>
+      <span className="livery-fleet-preview__specular" aria-hidden="true" />
+      <span className="livery-fleet-preview__asset-label">Fleet render · {visual.version}</span>
+    </div>
+  );
+}
+
 export function LiveryBuilder({
   storageKey,
   airlineName,
@@ -406,6 +565,7 @@ export function LiveryBuilder({
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(
     history.present.document.layers.at(-1)?.id ?? null,
   );
+  const [previewMode, setPreviewMode] = useState<PreviewMode>('fleet');
   const [toolsOpen, setToolsOpen] = useState(initiallyShowTools);
   const [newZone, setNewZone] = useState<LiveryZone>('fuselage');
   const [newMode, setNewMode] = useState<BaseFillMode>('solid');
@@ -524,7 +684,22 @@ export function LiveryBuilder({
             ))}
           </select>
         </label>
-        <span className="livery-builder__projection">Side profile</span>
+        <div className="livery-builder__preview-switch" aria-label="Aircraft preview mode">
+          <button
+            type="button"
+            aria-pressed={previewMode === 'fleet'}
+            onClick={() => setPreviewMode('fleet')}
+          >
+            3D preview
+          </button>
+          <button
+            type="button"
+            aria-pressed={previewMode === 'paint-map'}
+            onClick={() => setPreviewMode('paint-map')}
+          >
+            Paint map
+          </button>
+        </div>
         <div className="livery-builder__history" aria-label="Edit history">
           <button
             type="button"
@@ -724,13 +899,17 @@ export function LiveryBuilder({
           )}
         </aside>
 
-        <div className="livery-canvas" data-family={snapshot.family}>
+        <div className="livery-canvas" data-family={snapshot.family} data-view={previewMode}>
           <div className="livery-canvas__measure">
             <span>{snapshot.family}</span>
-            <span className="figure">1200 × 400</span>
+            <span className="figure">
+              {previewMode === 'fleet' ? 'Material preview' : '1200 × 400 paint map'}
+            </span>
           </div>
-          {renderedSvg === null ? (
-            <p role="alert">No side-profile template exists for this family.</p>
+          {previewMode === 'fleet' ? (
+            <FleetAircraftPreview family={snapshot.family} layers={snapshot.document.layers} />
+          ) : renderedSvg === null ? (
+            <p role="alert">No side-profile paint map exists for this family.</p>
           ) : (
             <div
               className="livery-canvas__aircraft"
@@ -739,7 +918,9 @@ export function LiveryBuilder({
             />
           )}
           <p className="livery-canvas__caption">
-            One document · family preview · side-profile authoring
+            {previewMode === 'fleet'
+              ? 'Fleet render · illustrative material preview · paint map remains canonical'
+              : 'Exact zone clipping · canonical side-profile authoring'}
           </p>
         </div>
 

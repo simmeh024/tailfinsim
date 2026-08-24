@@ -45,7 +45,16 @@ describe('M6-03 livery builder UI', () => {
     expect(screen.getByRole('heading', { name: 'Northwind' })).toBeInTheDocument();
     expect(screen.getByText('Saved locally')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('img', { name: 'A320neo three-dimensional livery preview' }),
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector('.livery-fleet-preview__coat[data-zone="fuselage"]'),
+    ).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Paint map' }));
     expect(document.querySelector('svg[data-rendered-layers="3"]')).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '3D preview' }));
 
     fireEvent.change(screen.getByLabelText('Aircraft family'), { target: { value: 'A380' } });
     fireEvent.change(screen.getByLabelText('Zone'), { target: { value: 'engine_nacelles' } });
@@ -127,6 +136,10 @@ describe('M6-03 livery builder UI', () => {
       'aria-expanded',
       'false',
     );
+    expect(
+      screen.getByRole('img', { name: 'A320neo three-dimensional livery preview' }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Paint map' }));
     expect(document.querySelector('.livery-canvas__aircraft svg')).not.toBeNull();
     expect(screen.getByRole('button', { name: 'Select Tail gradient' })).toBeInTheDocument();
   });
