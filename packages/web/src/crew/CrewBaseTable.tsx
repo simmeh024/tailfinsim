@@ -36,6 +36,8 @@ export interface CrewBaseTableProps {
   crew: CrewResponse;
   selectedKey: string | null;
   onSelect: (selection: { baseId: string; family: string; rank: CrewRank }) => void;
+  onSelectFamily: (family: string) => void;
+  selectedFamily: string | null;
 }
 
 export function poolKey(baseId: string, family: string, rank: CrewRank): string {
@@ -47,7 +49,13 @@ interface Group {
   families: { family: string; pools: readonly CrewPoolView[] }[];
 }
 
-export function CrewBaseTable({ crew, selectedKey, onSelect }: CrewBaseTableProps): ReactNode {
+export function CrewBaseTable({
+  crew,
+  selectedKey,
+  onSelect,
+  onSelectFamily,
+  selectedFamily,
+}: CrewBaseTableProps): ReactNode {
   const [baseFilter, setBaseFilter] = useState('all');
   const [familyFilter, setFamilyFilter] = useState('all');
   const [shortagesOnly, setShortagesOnly] = useState(false);
@@ -182,9 +190,28 @@ export function CrewBaseTable({ crew, selectedKey, onSelect }: CrewBaseTableProp
               </thead>
               {group.families.map((family) => (
                 <tbody key={family.family}>
-                  <tr className="crew__group">
+                  <tr
+                    className={
+                      selectedFamily === family.family
+                        ? 'crew__group crew__group--on'
+                        : 'crew__group'
+                    }
+                  >
                     <th scope="colgroup" colSpan={6}>
-                      <span className="figure">{family.family}</span>
+                      <button
+                        type="button"
+                        className="crew__familybutton"
+                        aria-pressed={selectedFamily === family.family}
+                        onClick={() => {
+                          onSelectFamily(family.family);
+                        }}
+                      >
+                        <span className="figure">{family.family}</span>
+                        <span className="visually-hidden">
+                          {' '}
+                          — show what this family is crewed with
+                        </span>
+                      </button>
                     </th>
                   </tr>
                   {family.pools.map((pool) => {

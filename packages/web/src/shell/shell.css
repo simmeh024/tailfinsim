@@ -4687,6 +4687,41 @@ body {
   }
 }
 
+/* Commonality and the actions, stacked in the narrow column. */
+.crew-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* A family name is a control wherever it appears. Styled as the heading it sits
+   in, because it is the heading -- not a link bolted beside one. */
+.crew__familybutton {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.crew__familybutton:hover {
+  color: var(--accent);
+}
+
+.crew__familybutton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.crew__group--on th {
+  background: var(--accent-quiet);
+}
+
 .crew__caption {
   caption-side: bottom;
   padding-top: var(--space-2);
@@ -4821,7 +4856,30 @@ body {
   grid-template-columns: minmax(4rem, 8rem) 1fr 2.5rem;
   align-items: center;
   gap: var(--space-2);
+  width: 100%;
+  padding: 2px var(--space-1);
+  margin: 0 calc(-1 * var(--space-1));
+  font: inherit;
   font-size: var(--text-xs);
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.crew-bars__row:hover {
+  background: var(--accent-quiet);
+}
+
+.crew-bars__row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.crew-bars__row[aria-pressed='true'] {
+  background: var(--accent-quiet);
 }
 
 .crew-bars__track {
@@ -5048,6 +5106,48 @@ body {
   margin: 0;
   text-align: right;
   color: var(--text-primary);
+}
+
+.crew-context__table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: var(--space-3);
+  font-size: var(--text-xs);
+}
+
+.crew-context__table th,
+.crew-context__table td {
+  padding: 3px 0;
+  text-align: right;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.crew-context__table th[scope='row'],
+.crew-context__table thead th:first-child {
+  text-align: left;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.crew-context__table thead th {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* Short ranks are marked in the row, and the sentence under the table says the
+   same thing in words -- the tint is a scan aid, never the only signal. */
+.crew-context__table tr[data-cover='short'] th[scope='row'] {
+  color: var(--status-loss);
+}
+
+.crew-context__total th,
+.crew-context__total td {
+  border-bottom: none;
+  color: var(--text-primary);
+}
+
+.crew-context__note[data-cover='short'] {
+  color: var(--status-loss);
 }
 
 .crew-context__heading {

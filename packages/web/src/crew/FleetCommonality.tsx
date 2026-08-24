@@ -33,7 +33,17 @@ import type { ReactNode } from 'react';
  * aid to comparison and never the only way to read the value.
  */
 
-export function FleetCommonality({ crew }: { crew: CrewResponse }): ReactNode {
+export interface FleetCommonalityProps {
+  crew: CrewResponse;
+  onSelectFamily: (family: string) => void;
+  selectedFamily: string | null;
+}
+
+export function FleetCommonality({
+  crew,
+  onSelectFamily,
+  selectedFamily,
+}: FleetCommonalityProps): ReactNode {
   const summary = commonalitySummary(crew);
 
   return (
@@ -62,22 +72,37 @@ export function FleetCommonality({ crew }: { crew: CrewResponse }): ReactNode {
 
           <ul className="crew-bars">
             {summary.bars.map((bar) => (
-              <li className="crew-bars__row" key={bar.family}>
-                <span className="crew-bars__label figure">{bar.family}</span>
-                <span className="crew-bars__track">
-                  {/*
-                   * `aria-hidden`: the bar is a second rendering of the number
-                   * beside it, and a screen reader reading both would say
-                   * everything twice.
-                   */}
-                  <span
-                    className="crew-bars__fill"
-                    data-largest={bar.largest}
-                    style={{ width: `${String(Math.round(bar.share * 100))}%` }}
-                    aria-hidden="true"
-                  />
-                </span>
-                <span className="crew-bars__value figure">{bar.available}</span>
+              <li key={bar.family}>
+                {/*
+                 * The whole row is the control. This is the most natural place
+                 * to ask *"what have I got on that one"* — the bar has already
+                 * made the reader compare the families, and the next question is
+                 * always about one of them.
+                 */}
+                <button
+                  type="button"
+                  className="crew-bars__row"
+                  aria-pressed={selectedFamily === bar.family}
+                  onClick={() => {
+                    onSelectFamily(bar.family);
+                  }}
+                >
+                  <span className="crew-bars__label figure">{bar.family}</span>
+                  <span className="crew-bars__track">
+                    {/*
+                     * `aria-hidden`: the bar is a second rendering of the number
+                     * beside it, and a screen reader reading both would say
+                     * everything twice.
+                     */}
+                    <span
+                      className="crew-bars__fill"
+                      data-largest={bar.largest}
+                      style={{ width: `${String(Math.round(bar.share * 100))}%` }}
+                      aria-hidden="true"
+                    />
+                  </span>
+                  <span className="crew-bars__value figure">{bar.available}</span>
+                </button>
               </li>
             ))}
           </ul>
