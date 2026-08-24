@@ -181,6 +181,73 @@ describeDb('crew payroll', () => {
     expect(await movementsOf(fixture.airline.id, 'crew_payroll')).toHaveLength(1);
   });
 
+  it('bills once when the tick runs it at a different instant', async () => {
+    /*
+     * The test the first version should have had. It reused one `NOVEMBER`
+     * constant for all three calls, so it proved the movement was not
+     * duplicated and never exercised AIR-06's replay guard -- which does not
+     * merely dedupe, it asserts the *same facts*, `occurred_at` included.
+     *
+     * On dev the real tick passed `gameNow`, a different instant every second,
+     * and the sweep threw `replayed with different facts` once a second from
+     * the moment it deployed.
+     */
+    const { fixture } = await airlineWithCrew();
+    await runCrewPayroll(db.db, fixture.world.id, NOVEMBER);
+    const afterFirst = await cashOf(fixture.airline.id);
+
+    const laterSameMonth = new Date(Date.UTC(2024, 10, 19, 14, 37, 12));
+    const again = await runCrewPayroll(db.db, fixture.world.id, laterSameMonth);
+
+    expect(again.airlinesBilled).toBe(0);
+    expect(await cashOf(fixture.airline.id)).toBe(afterFirst);
+  });
+
+  it('bills once even when the headcount changed since the first attempt', async () => {
+    /*
+     * The other half of the same guard, and the one that would have bitten
+     * weeks later for a reason nobody would have connected to a hire: the
+     * amount is headcount times salary, so hiring between two ticks in the same
+     * month changes the facts as surely as the clock does.
+     */
+    const { fixture, crewBaseId } = await airlineWithCrew();
+    await runCrewPayroll(db.db, fixture.world.id, NOVEMBER);
+    const afterFirst = await cashOf(fixture.airline.id);
+
+    const hired = await hireCrew(db.db, {
+      worldId: fixture.world.id,
+      airlineId: fixture.airline.id,
+      crewBaseId,
+      family: 'A320neo',
+      rank: 'captain',
+      heads: 2,
+    });
+    if (!hired.ok) throw new Error(`Could not hire: ${hired.refusal}`);
+    const afterHire = await cashOf(fixture.airline.id);
+
+    const again = await runCrewPayroll(db.db, fixture.world.id, NOVEMBER);
+    expect(again.airlinesBilled).toBe(0);
+    // The hire cost money; the second payroll attempt did not.
+    expect(afterHire).toBeLessThan(afterFirst);
+    expect(await cashOf(fixture.airline.id)).toBe(afterHire);
+    expect(await movementsOf(fixture.airline.id, 'crew_payroll')).toHaveLength(1);
+  });
+
+  it('dates the movement at the instant the billed month closed', async () => {
+    const { fixture } = await airlineWithCrew();
+    await runCrewPayroll(db.db, fixture.world.id, NOVEMBER);
+
+    const rows = await db.db
+      .select({ occurredAt: cashMovement.occurredAt, reference: cashMovement.reference })
+      .from(cashMovement)
+      .where(
+        and(eq(cashMovement.airlineId, fixture.airline.id), eq(cashMovement.cause, 'crew_payroll')),
+      );
+    // Fixed for the period, not "whenever the tick noticed" -- which is what
+    // makes a retry replay identical facts, and reads better in the ledger.
+    expect(rows[0]?.occurredAt.toISOString()).toBe('2024-11-01T00:00:00.000Z');
+  });
+
   it('bills again the following month', async () => {
     const { fixture } = await airlineWithCrew();
     await runCrewPayroll(db.db, fixture.world.id, NOVEMBER);
