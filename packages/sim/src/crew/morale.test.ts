@@ -48,6 +48,34 @@ describe('the target, and why it is itemised', () => {
     expect(summed).toBeCloseTo(target.score, 10);
   });
 
+  it('says there is no evidence rather than inventing a finding', () => {
+    /*
+     * Found on dev. A brand-new base's two measured inputs return the neutral
+     * value, and the sentence beside them described *the number* — so an airline
+     * whose crew had never flown a sector was told its rosters were "somewhat
+     * irregular" and its rest "regularly cut short".
+     *
+     * Neutral is an absence of evidence, and the honest sentence says so.
+     */
+    const fresh = moraleTarget({ ...HAPPY, hasDutyHistory: false }, M);
+    const measured = fresh.contributions.filter(
+      (entry) => entry.factor === 'rosterStability' || entry.factor === 'rest',
+    );
+    expect(measured.map((entry) => entry.detail)).toEqual([
+      'No duty flown yet',
+      'No duty flown yet',
+    ]);
+
+    // The chosen inputs still describe themselves: those are facts either way.
+    expect(fresh.contributions[0]?.detail).toContain('Generous');
+  });
+
+  it('describes the measured inputs once there is something to measure', () => {
+    const flown = moraleTarget({ ...GRIM, hasDutyHistory: true }, M);
+    expect(flown.contributions[1]?.detail).not.toContain('No duty flown');
+    expect(flown.contributions[3]?.detail).not.toContain('No duty flown');
+  });
+
   it('names all four of §9.2’s inputs, with a sentence each', () => {
     const target = moraleTarget(GRIM, M);
     expect(target.contributions.map((entry) => entry.factor)).toEqual([

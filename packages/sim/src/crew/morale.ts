@@ -72,6 +72,20 @@ export interface MoraleInputs {
    * compliance.
    */
   restRatio: number;
+  /**
+   * Whether there are duty periods to judge the two measured inputs on.
+   *
+   * Both `rosterStability` and `restRatio` return a **neutral** value when there
+   * is no evidence — a base that has not flown has not mistreated anybody. But
+   * neutral is a *number*, and the sentence beside it was describing it as
+   * though it were a finding: a brand-new base was told its rosters were
+   * "somewhat irregular" and its rest "regularly cut short", about crew who had
+   * never flown a sector.
+   *
+   * Optional and defaulting to true, so a caller that does not know says
+   * something rather than nothing.
+   */
+  hasDutyHistory?: boolean;
 }
 
 export interface MoraleContribution {
@@ -118,7 +132,7 @@ export function moraleTarget(
     },
     {
       factor: 'rosterStability' as const,
-      detail: describeStability(inputs.rosterStability),
+      detail: describeStability(inputs.rosterStability, inputs.hasDutyHistory ?? true),
       value: clamp01(inputs.rosterStability),
       weight: balance.weights.rosterStability,
     },
@@ -130,7 +144,7 @@ export function moraleTarget(
     },
     {
       factor: 'rest' as const,
-      detail: describeRest(inputs.restRatio),
+      detail: describeRest(inputs.restRatio, inputs.hasDutyHistory ?? true),
       value: clamp01(inputs.restRatio),
       weight: balance.weights.rest,
     },
@@ -301,16 +315,21 @@ const HOTEL_LABEL: Record<HotelTier, string> = {
   premium: 'Premium',
 };
 
-function describeStability(value: number): string {
+function describeStability(value: number, hasHistory: boolean): string {
+  // A finding needs evidence. Without it the honest sentence is that there is
+  // none, not the description that the neutral number happens to fall into.
+  if (!hasHistory) return 'No duty flown yet';
   if (value >= 0.8) return 'Steady sign-on times';
   if (value >= 0.5) return 'Somewhat irregular rosters';
   return 'Unpredictable rosters';
 }
 
-function describeRest(value: number): string {
-  if (value >= 0.99) return 'Full legal rest served';
-  if (value >= 0.9) return 'Rest occasionally cut short';
-  return 'Rest regularly cut short';
+function describeRest(value: number, hasHistory: boolean): string {
+  if (!hasHistory) return 'No duty flown yet';
+  if (value >= 0.99) return 'Plenty of rest between duties';
+  if (value >= 0.75) return 'Rest keeping pace with duty';
+  if (value >= 0.4) return 'Rest tight against duty';
+  return 'Worked hard between rests';
 }
 
 /** Linear between the zero-morale and full-morale ends. */
