@@ -431,6 +431,36 @@ describe('actions', () => {
   });
 });
 
+describe('without the context rail', () => {
+  it('renders completely when there is no provider at all', async () => {
+    /*
+     * The rail is a desktop affordance. Below 48rem the shell stacks the panel
+     * under the stage, and a page rendered in isolation has no provider — so the
+     * page has to be whole without one, and selecting a row must be a no-op
+     * rather than a crash.
+     *
+     * `useContextSelection` returns an inert store off-provider precisely for
+     * this; the test that matters is the one proving the *page* survives it, not
+     * only the hook.
+     */
+    respondWith(MIXED);
+    render(<CrewPage />);
+
+    const table = await screen.findByRole('table', { name: /Required is/ });
+    expect(screen.getByRole('table', { name: 'Crew at EHAM' })).toBeInTheDocument();
+    expect(screen.getByText(/Mixed fleet/)).toBeInTheDocument();
+
+    const row = within(table).getAllByRole('button', { name: /Captain/ })[0];
+    expect(() => {
+      fireEvent.click(row!);
+    }).not.toThrow();
+
+    // Everything the player needs is still on the page; only the detail panel
+    // is absent, and it was never where a decision was made.
+    expect(screen.getByRole('button', { name: /Hire crew/ })).toBeInTheDocument();
+  });
+});
+
 describe('the invariant that outlives every redesign', () => {
   it('never names a person, in any table on the page', async () => {
     respondWith(MIXED);
