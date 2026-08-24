@@ -41,13 +41,6 @@ export const CrewPage = (): ReactNode => (
   />
 );
 
-export const DesignPage = (): ReactNode => (
-  <Placeholder
-    title="Design"
-    note="The livery and cabin builders — the signature surfaces. M6-03 through M6-08."
-  />
-);
-
 export const BoardPage = (): ReactNode => (
   <Placeholder
     title="Board"

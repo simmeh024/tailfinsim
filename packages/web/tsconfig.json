@@ -12,6 +12,6 @@
     "types": ["vite/client", "node"],
     "allowImportingTsExtensions": false
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.json"],
   "references": [{ "path": "../shared" }]
 }

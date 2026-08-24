@@ -138,8 +138,8 @@ The versioned layered JSON contract ([M6-01](https://github.com/simmeh024/tailfi
 and paired per-family SVG templates
 ([M6-02](https://github.com/simmeh024/tailfinsim/issues/58)) now exist and are documented in
 [`livery-document.md`](livery-document.md) and [`livery-templates.md`](livery-templates.md).
-There is still no saved livery: it needs a builder
-([M6-03](https://github.com/simmeh024/tailfinsim/issues/59) onward), and fleet application by
+The M6-03 builder now keeps a validated browser-local base-fill draft, but there is still no
+server-saved livery. It needs the remaining authoring and rendering milestones, then fleet application by
 [M6-07](https://github.com/simmeh024/tailfinsim/issues/63). There is no `livery` table;
 `airframe.livery_id` exists and nothing writes it. A bulk action that set a column no builder
 can populate would be a button that does nothing.

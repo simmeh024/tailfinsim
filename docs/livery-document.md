@@ -51,9 +51,10 @@ Authoritative persisted reads go through `migrateLiveryDocument` in `@tailfin/si
 documents loaded for server rendering. It validates v1, refuses a newer version rather than
 misrendering it, and walks a registry of consecutive `N → N+1` pure migrations for older
 data. A new version therefore adds its new shared schema and one migration step; authoritative
-callers do not branch on versions themselves. The web package cannot import sim by design;
-M6-03 must resolve how browser-local autosave drafts are upgraded when it defines that storage
-boundary, rather than duplicating this registry in the client.
+callers do not branch on versions themselves. The web package cannot import sim by design.
+M6-03 resolves its browser-local boundary with a separately versioned draft envelope and still
+parses the contained document through the shared current schema; it does not duplicate sim's
+authoritative persisted migration registry. See [`livery-builder.md`](livery-builder.md).
 
 ## Ownership and application boundary
 
@@ -74,6 +75,7 @@ The explicit set avoids inventing a persistent `subfleet` entity before its mech
 M6-07 may resolve a family or a saved UI selection to that set, but ownership validation,
 repaint cost, hangar downtime and writing `airframe.livery_id` belong to that milestone.
 
-M6-01 adds no database table, API, builder screen or raster pipeline. M6-02 supplies the
-paired family templates; M6-03 through M6-06 supply the builder and renderers. Until M6-07
-applies a saved livery, fleet thumbnail URLs honestly remain null.
+M6-01 adds no database table, API, builder screen or raster pipeline. M6-02 supplies the paired
+family templates and M6-03 supplies the local base-fill builder. M6-04 through M6-06 complete
+authoring and rendering. Until M6-07 persists and applies a saved livery, fleet thumbnail URLs
+honestly remain null.

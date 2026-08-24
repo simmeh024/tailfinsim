@@ -57,6 +57,6 @@ catalogue and verifies all 26 assets. It checks safe plain SVG structure, root m
 identical zone identifiers, positive zone coordinate maps, registry coverage and that one
 valid M6-01 document resolves every layer in both projections of every family.
 
-M6-02 supplies templates, not a renderer. Applying fill, gradient, path, text and logo
-instructions is owned by M6-03 through M6-06; saving and applying a livery to an airframe is
-owned by M6-07.
+M6-02 supplies templates, not a renderer. M6-03 now applies fill and gradient layers in the
+browser builder; path, text, logo and authoritative raster output remain M6-04 through M6-06.
+Saving and applying a livery to an airframe is owned by M6-07.
