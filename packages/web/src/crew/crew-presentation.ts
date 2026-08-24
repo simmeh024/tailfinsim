@@ -292,3 +292,119 @@ function rankOrder(rank: CrewRank): number {
   // something new than something important.
   return index < 0 ? RANK_ORDER.length : index;
 }
+
+export interface FamilyCompositionRow {
+  rank: CrewRank;
+  headcount: number;
+  available: number;
+  inTraining: number;
+  onDuty: number;
+  reserve: number;
+  /** From the demand fold. `null` when the fleet asks nothing of this rank. */
+  required: number | null;
+  delta: number | null;
+}
+
+export interface FamilyComposition {
+  family: string;
+  rows: readonly FamilyCompositionRow[];
+  /** ICAO codes of the bases holding crew rated on this family. */
+  bases: readonly string[];
+  totals: {
+    headcount: number;
+    available: number;
+    inTraining: number;
+    onDuty: number;
+    reserve: number;
+    required: number;
+  };
+  /** True when any rank on this family is below its minimum. */
+  short: boolean;
+}
+
+/**
+ * Everything the airline holds for one aircraft family, by rank.
+ *
+ * The answer to *"what have I actually got rated on this thing"*, which neither
+ * table above gives whole: the coverage table shows only ranks the fleet asks
+ * for, and the base table splits the family across however many bases hold it.
+ * A family with four captains at Schiphol and two at Heathrow reads as two
+ * unrelated rows in one and does not appear at all in the other if nothing
+ * requires it.
+ *
+ * ## Ranks with no requirement are still listed
+ *
+ * `required` is `null` rather than `0` for a rank the fleet does not ask for,
+ * because the two mean different things: *"you need none of these"* and *"the
+ * demand fold has nothing to say about them"*. Crew rated on a family the
+ * airline no longer flies are the clearest case — they exist, they are paid, and
+ * a composition that silently dropped them would hide a bill.
+ *
+ * Pools with no heads at all are dropped, because a rank nobody was ever hired
+ * into is not a fact about the airline.
+ */
+export function familyComposition(crew: CrewResponse, family: string): FamilyComposition {
+  const byRank = new Map<CrewRank, FamilyCompositionRow>();
+  const bases = new Set<string>();
+
+  for (const base of crew.bases) {
+    for (const pool of base.pools) {
+      if (pool.family !== family) continue;
+      bases.add(base.airportIcao);
+
+      const row = byRank.get(pool.rank) ?? {
+        rank: pool.rank,
+        headcount: 0,
+        available: 0,
+        inTraining: 0,
+        onDuty: 0,
+        reserve: 0,
+        required: null,
+        delta: null,
+      };
+      row.headcount += pool.headcount;
+      row.available += pool.available;
+      row.inTraining += pool.unavailable;
+      row.onDuty += pool.onDuty;
+      row.reserve += pool.reserve;
+      byRank.set(pool.rank, row);
+    }
+  }
+
+  // The demand fold's figures, joined in rather than recomputed.
+  for (const demand of crew.demand.rows) {
+    if (demand.family !== family) continue;
+    const row = byRank.get(demand.rank) ?? {
+      rank: demand.rank,
+      headcount: 0,
+      available: 0,
+      inTraining: 0,
+      onDuty: 0,
+      reserve: 0,
+      required: null,
+      delta: null,
+    };
+    row.required = demand.required;
+    row.delta = demand.delta;
+    byRank.set(demand.rank, row);
+  }
+
+  const rows = [...byRank.values()]
+    .filter((row) => row.headcount > 0 || (row.required ?? 0) > 0)
+    .sort((a, b) => rankOrder(a.rank) - rankOrder(b.rank));
+
+  return {
+    family,
+    rows,
+    bases: [...bases].sort((a, b) => a.localeCompare(b)),
+    totals: {
+      headcount: rows.reduce((n, row) => n + row.headcount, 0),
+      available: rows.reduce((n, row) => n + row.available, 0),
+      inTraining: rows.reduce((n, row) => n + row.inTraining, 0),
+      onDuty: rows.reduce((n, row) => n + row.onDuty, 0),
+      reserve: rows.reduce((n, row) => n + row.reserve, 0),
+      required: rows.reduce((n, row) => n + (row.required ?? 0), 0),
+    },
+    short: rows.some((row) => (row.delta ?? 0) < 0),
+  };
+}

@@ -33,13 +33,23 @@ export interface CrewCoverageProps {
   /** `family/rank`, or null. Kept by the page so the panel and table agree. */
   selectedKey: string | null;
   onSelect: (selection: { family: string; rank: CrewRank }) => void;
+  /** Selecting the family itself, which shows what the airline holds on it. */
+  onSelectFamily: (family: string) => void;
+  /** The family whose composition is in the panel, if any. */
+  selectedFamily: string | null;
 }
 
 export function coverageKey(family: string, rank: CrewRank): string {
   return `${family}/${rank}`;
 }
 
-export function CrewCoverage({ crew, selectedKey, onSelect }: CrewCoverageProps): ReactNode {
+export function CrewCoverage({
+  crew,
+  selectedKey,
+  onSelect,
+  onSelectFamily,
+  selectedFamily,
+}: CrewCoverageProps): ReactNode {
   const coverage = coverageSummary(crew);
   const heads = headcountSummary(crew);
   const families = familyCoverage(crew);
@@ -84,15 +94,34 @@ export function CrewCoverage({ crew, selectedKey, onSelect }: CrewCoverageProps)
           </thead>
           {families.map((group) => (
             <tbody key={group.family}>
-              <tr className="crew__group">
+              <tr
+                className={
+                  selectedFamily === group.family ? 'crew__group crew__group--on' : 'crew__group'
+                }
+              >
                 {/*
                  * A group heading inside the table rather than a table per
                  * family: one header row, one tab stop, and a screen reader
                  * reads "Family, A320neo" once instead of meeting a fresh table
                  * for every aeroplane type the airline owns.
+                 *
+                 * The name is a button, so the family itself can be inspected —
+                 * the rows below it only cover ranks the *fleet asks for*, and
+                 * what the airline actually holds on a family is a different
+                 * question.
                  */}
                 <th scope="colgroup" colSpan={5}>
-                  <span className="figure">{group.family}</span>
+                  <button
+                    type="button"
+                    className="crew__familybutton"
+                    aria-pressed={selectedFamily === group.family}
+                    onClick={() => {
+                      onSelectFamily(group.family);
+                    }}
+                  >
+                    <span className="figure">{group.family}</span>
+                    <span className="visually-hidden"> — show what this family is crewed with</span>
+                  </button>
                   {group.short && <span className="crew-tag crew-tag--short">short</span>}
                 </th>
               </tr>

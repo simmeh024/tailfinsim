@@ -23,6 +23,7 @@ function ContextProbe(): ReactNode {
   return (
     <aside aria-label="Context">
       <h2>{selection.title}</h2>
+      {selection.subtitle !== undefined && <p>{selection.subtitle}</p>}
       {selection.body}
     </aside>
   );
@@ -428,6 +429,145 @@ describe('actions', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Hire crew/ }));
     expect(screen.getByLabelText('Heads')).toBeInTheDocument();
+  });
+});
+
+describe('selecting an aircraft family', () => {
+  /*
+   * A family name is a button in three places now — the commonality bars, the
+   * coverage headings and the base headings — so every query here is scoped. An
+   * unscoped `getByRole('button', { name: /ATR 72/ })` is ambiguous, and that
+   * ambiguity is the feature rather than a bug in it.
+   */
+  /**
+   * The family heading inside a table.
+   *
+   * Matched on the hidden suffix rather than the name alone, because a rank
+   * button's accessible name mentions its family too ("Captain on A320neo: 2
+   * spare") — which is deliberate, so a row says what it is about without
+   * relying on the heading above it.
+   */
+  function familyButton(scope: HTMLElement, family: string): HTMLElement {
+    const match = within(scope)
+      .getAllByRole('button', { name: /crewed with/ })
+      .find((button) => (button.textContent ?? '').startsWith(family));
+    if (!match) throw new Error(`no family button for ${family}`);
+    return match;
+  }
+
+  async function commonalityBar(family: RegExp): Promise<HTMLElement> {
+    const panel = await screen.findByRole('region', { name: 'Fleet commonality' });
+    return within(panel).getByRole('button', { name: family });
+  }
+
+  it('shows what the airline holds on it, rank by rank', async () => {
+    respondWith(MIXED);
+    renderPage();
+
+    // The commonality bar is the most natural place to ask: it has already made
+    // the reader compare the families.
+    fireEvent.click(await commonalityBar(/ATR 72/));
+
+    const table = await screen.findByRole('table', { name: /Crew rated on ATR 72/ });
+    const rows = within(table).getAllByRole('row');
+    // Header, one captain row, and the total.
+    expect(within(rows[1]!).getByRole('rowheader').textContent).toBe('Captain');
+    expect(screen.getByRole('heading', { name: 'ATR 72' })).toBeInTheDocument();
+  });
+
+  it('names the bases the family is crewed at', async () => {
+    respondWith(MIXED);
+    renderPage();
+    fireEvent.click(await commonalityBar(/ATR 72/));
+    // Four captains at one base and two at another read as unrelated rows in the
+    // base table; here they are one family with two bases.
+    await waitFor(() => {
+      expect(screen.getByText('Crewed at EHAM')).toBeInTheDocument();
+    });
+  });
+
+  it('is reachable from the coverage table and the base table too', async () => {
+    respondWith(MIXED);
+    renderPage();
+
+    /*
+     * `crewed with` rather than the bare family name: a rank button's accessible
+     * name mentions its family too ("Captain on A320neo: 2 spare"), which is
+     * deliberate — the row has to say what it is about without relying on the
+     * heading above it.
+     */
+    const coverage = await screen.findByRole('table', { name: /Required is/ });
+    fireEvent.click(familyButton(coverage, 'A320neo'));
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'A320neo' })).toBeInTheDocument();
+    });
+
+    const bases = screen.getByRole('table', { name: 'Crew at EHAM' });
+    fireEvent.click(familyButton(bases, 'ATR 72'));
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'ATR 72' })).toBeInTheDocument();
+    });
+  });
+
+  it('closes when the same family is clicked again', async () => {
+    respondWith(MIXED);
+    renderPage();
+
+    const bar = await commonalityBar(/ATR 72/);
+    fireEvent.click(bar);
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'ATR 72' })).toBeInTheDocument();
+    });
+
+    // The same control opens and closes it — the panel is not somewhere you have
+    // to escape from.
+    fireEvent.click(bar);
+    await waitFor(() => {
+      expect(screen.queryByRole('table', { name: /Crew rated on/ })).not.toBeInTheDocument();
+    });
+  });
+
+  it('marks the chosen family as pressed, not merely tinted', async () => {
+    respondWith(MIXED);
+    renderPage();
+    const bar = await commonalityBar(/ATR 72/);
+    expect(bar.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(bar);
+    await waitFor(() => {
+      expect(bar.getAttribute('aria-pressed')).toBe('true');
+    });
+  });
+
+  it('lists a rank the fleet asks nothing of, with a dash rather than a zero', async () => {
+    /*
+     * Crew rated on a family the airline no longer flies still exist and are
+     * still paid. "You need none of these" and "the demand fold has nothing to
+     * say about them" are different facts, and hiding the second would hide a
+     * bill.
+     */
+    respondWith(
+      state({
+        bases: [
+          base({
+            pools: [
+              pool({ id: 'p9', family: 'ATR 72', rank: 'purser', headcount: 2, available: 2 }),
+            ],
+          }),
+        ],
+        fragmentation: {
+          families: ['ATR 72'],
+          totalAvailable: 2,
+          largestFamilyAvailable: 2,
+          strandedHeads: 0,
+        },
+      }),
+    );
+    renderPage();
+
+    fireEvent.click(await commonalityBar(/ATR 72/));
+    const table = await screen.findByRole('table', { name: /Crew rated on ATR 72/ });
+    const row = within(table).getByRole('row', { name: /Purser/ });
+    expect(within(row).getByText('—')).toBeInTheDocument();
   });
 });
 

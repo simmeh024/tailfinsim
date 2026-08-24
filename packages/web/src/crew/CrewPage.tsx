@@ -13,7 +13,11 @@ import {
   startCrewConversion,
   type CrewFailure,
 } from './api';
-import { bannerPriorityRanks } from './crew-presentation';
+import {
+  bannerPriorityRanks,
+  familyComposition,
+  type FamilyComposition,
+} from './crew-presentation';
 import { CrewActions, type CrewActionKind } from './CrewActions';
 import { CrewBaseTable, poolKey } from './CrewBaseTable';
 import { CrewCoverage, coverageKey } from './CrewCoverage';
@@ -64,13 +68,24 @@ import type { ReactNode } from 'react';
 type Load =
   { state: 'loading' } | { state: 'ready'; value: CrewResponse | null } | { state: 'failed' };
 
-/** What the player has clicked, in whichever table. */
-interface Selection {
-  /** Absent for a coverage row, which is about the whole airline's fleet. */
-  baseId?: string;
-  family: string;
-  rank: CrewRank;
-}
+/**
+ * What the player has clicked, in whichever table.
+ *
+ * Two shapes, because there are two questions. A **pool** is one rank on one
+ * family — *"am I short of ATR captains"*. A **family** is everything the airline
+ * holds rated on an aeroplane type — *"what have I actually got on the ATR"*,
+ * which neither table answers whole: coverage lists only ranks the fleet asks
+ * for, and the base table splits a family across however many bases hold it.
+ */
+type Selection =
+  | {
+      kind: 'pool';
+      /** Absent for a coverage row, which is about the whole airline's fleet. */
+      baseId?: string;
+      family: string;
+      rank: CrewRank;
+    }
+  | { kind: 'family'; family: string };
 
 export function CrewPage(): ReactNode {
   const [load, setLoad] = useState<Load>({ state: 'loading' });
@@ -139,7 +154,41 @@ export function CrewPage(): ReactNode {
   /* The panel is rebuilt whenever the numbers move, so it cannot show a stale
      headcount for a row that has just been hired into. */
   useEffect(() => {
-    if (crew === null || selection === null) return;
+    if (crew === null) return;
+
+    /*
+     * Deselecting has to empty the panel, not merely stop updating it. Without
+     * this the last body stays painted after the row that produced it is
+     * unselected — so the toggle appears to do nothing, and the panel goes on
+     * describing a family the player has just dismissed.
+     */
+    if (selection === null) {
+      clear();
+      return;
+    }
+
+    if (selection.kind === 'family') {
+      const composition = familyComposition(crew, selection.family);
+      select({
+        kind: 'crew-family',
+        id: selection.family,
+        title: selection.family,
+        subtitle:
+          composition.bases.length === 0
+            ? 'No crew rated on this family'
+            : `Crewed at ${composition.bases.join(', ')}`,
+        body: (
+          <CrewFamilyBody
+            composition={composition}
+            onAction={(kind) => {
+              setOpenAction(kind);
+            }}
+          />
+        ),
+      });
+      return;
+    }
+
     select({
       kind: 'crew-pool',
       id: `${selection.baseId ?? 'fleet'}/${selection.family}/${selection.rank}`,
@@ -158,7 +207,7 @@ export function CrewPage(): ReactNode {
         />
       ),
     });
-  }, [crew, selection, select]);
+  }, [crew, selection, select, clear]);
 
   const priorityRanks = useMemo(() => (crew === null ? [] : bannerPriorityRanks(crew)), [crew]);
 
@@ -191,14 +240,20 @@ export function CrewPage(): ReactNode {
     );
   }
 
+  const pool = selection?.kind === 'pool' ? selection : null;
   const selectedCoverage =
-    selection && selection.baseId === undefined
-      ? coverageKey(selection.family, selection.rank)
-      : null;
+    pool && pool.baseId === undefined ? coverageKey(pool.family, pool.rank) : null;
   const selectedPool =
-    selection?.baseId !== undefined
-      ? poolKey(selection.baseId, selection.family, selection.rank)
-      : null;
+    pool?.baseId !== undefined ? poolKey(pool.baseId, pool.family, pool.rank) : null;
+  const selectedFamily = selection?.kind === 'family' ? selection.family : null;
+
+  const chooseFamily = (family: string): void => {
+    // Clicking the family already in the panel puts it away, so the same control
+    // both opens and closes — the panel is not a place you have to escape from.
+    setSelection((current) =>
+      current?.kind === 'family' && current.family === family ? null : { kind: 'family', family },
+    );
+  };
 
   return (
     <div className="crew">
@@ -217,55 +272,71 @@ export function CrewPage(): ReactNode {
 
       <CrewRoleBanner priorityRanks={priorityRanks} />
 
+      {/*
+       * Commonality and the actions share the narrow column, stacked. Coverage
+       * is much the tallest panel on the page, so the right column had room
+       * going spare — and it puts the controls next to the thing that most often
+       * sends a player to them, rather than at the bottom past two tables.
+       */}
       <div className="crew-split">
         <CrewCoverage
           crew={crew}
           selectedKey={selectedCoverage}
           onSelect={(next) => {
-            setSelection(next);
+            setSelection({ kind: 'pool', ...next });
           }}
+          onSelectFamily={chooseFamily}
+          selectedFamily={selectedFamily}
         />
-        <FleetCommonality crew={crew} />
+        <div className="crew-stack">
+          <FleetCommonality
+            crew={crew}
+            onSelectFamily={chooseFamily}
+            selectedFamily={selectedFamily}
+          />
+          <CrewActions
+            crew={crew}
+            busy={busy}
+            open={openAction}
+            onOpenChange={setOpenAction}
+            prefill={
+              pool === null
+                ? selectedFamily === null
+                  ? undefined
+                  : { family: selectedFamily }
+                : {
+                    crewBaseId: pool.baseId,
+                    family: pool.family,
+                    rank: pool.rank,
+                  }
+            }
+            onHire={(input) => {
+              run(hireCrew(input));
+            }}
+            onConvert={(input) => {
+              run(startCrewConversion(input));
+            }}
+            onOpenBase={(input) => {
+              run(openCrewBase(input));
+            }}
+            onSetReserve={(input) => {
+              run(setCrewReserve(input));
+            }}
+          />
+        </div>
       </div>
 
       <CrewBaseTable
         crew={crew}
         selectedKey={selectedPool}
         onSelect={(next) => {
-          setSelection(next);
+          setSelection({ kind: 'pool', ...next });
         }}
+        onSelectFamily={chooseFamily}
+        selectedFamily={selectedFamily}
       />
 
-      <div className="crew-split">
-        <TrainingPipeline crew={crew} inGameTime={inGameTime} />
-        <CrewActions
-          crew={crew}
-          busy={busy}
-          open={openAction}
-          onOpenChange={setOpenAction}
-          prefill={
-            selection === null
-              ? undefined
-              : {
-                  crewBaseId: selection.baseId,
-                  family: selection.family,
-                  rank: selection.rank,
-                }
-          }
-          onHire={(input) => {
-            run(hireCrew(input));
-          }}
-          onConvert={(input) => {
-            run(startCrewConversion(input));
-          }}
-          onOpenBase={(input) => {
-            run(openCrewBase(input));
-          }}
-          onSetReserve={(input) => {
-            run(setCrewReserve(input));
-          }}
-        />
-      </div>
+      <TrainingPipeline crew={crew} inGameTime={inGameTime} />
 
       <HowCrewWork />
     </div>
@@ -286,7 +357,7 @@ function CrewContextBody({
   onAction,
 }: {
   crew: CrewResponse;
-  selection: Selection;
+  selection: Extract<Selection, { kind: 'pool' }>;
   onAction: (kind: CrewActionKind) => void;
 }): ReactNode {
   const demand = crew.demand.rows.find(
@@ -379,6 +450,129 @@ function CrewContextBody({
       </div>
     </div>
   );
+}
+
+/**
+ * What the airline holds on one aircraft family.
+ *
+ * The question the two tables cannot answer between them: coverage lists only
+ * the ranks the fleet asks for, and the base table splits a family across
+ * however many bases hold it. Four captains at Schiphol and two at Heathrow read
+ * as two unrelated rows there and as one number here.
+ *
+ * Ranks the fleet requires nothing of still appear, with a dash rather than a
+ * zero. *"You need none of these"* and *"the demand fold has nothing to say"*
+ * are different facts, and crew rated on a family the airline no longer flies
+ * are the case that matters — they exist, they are paid, and hiding them would
+ * hide a bill.
+ */
+function CrewFamilyBody({
+  composition,
+  onAction,
+}: {
+  composition: FamilyComposition;
+  onAction: (kind: CrewActionKind) => void;
+}): ReactNode {
+  if (composition.rows.length === 0) {
+    return (
+      <div className="crew-context">
+        <p className="crew-context__note">
+          No crew rated on <span className="figure">{composition.family}</span>, and nothing in the
+          fleet asking for any. Convert a rating or hire into it to fly this family.
+        </p>
+        <div className="crew-context__actions">
+          <button
+            type="button"
+            onClick={() => {
+              onAction('convert');
+            }}
+          >
+            Convert rating
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="crew-context">
+      <table className="crew-context__table">
+        <caption className="visually-hidden">Crew rated on {composition.family}, by rank</caption>
+        <thead>
+          <tr>
+            <th scope="col">Rank</th>
+            <th scope="col">Held</th>
+            <th scope="col">Free</th>
+            <th scope="col">Need</th>
+          </tr>
+        </thead>
+        <tbody>
+          {composition.rows.map((row) => (
+            <tr key={row.rank} data-cover={coverOf(row.delta)}>
+              <th scope="row">{CREW_RANK_LABEL[row.rank]}</th>
+              <td className="figure">{row.headcount}</td>
+              <td className="figure">{row.available}</td>
+              {/* A dash, not a zero: "you need none" and "nothing is asking"
+                  are different facts, and only one of them is a requirement. */}
+              <td className="figure">{row.required ?? '—'}</td>
+            </tr>
+          ))}
+          <tr className="crew-context__total">
+            <th scope="row">Total</th>
+            <td className="figure">{composition.totals.headcount}</td>
+            <td className="figure">{composition.totals.available}</td>
+            <td className="figure">{composition.totals.required}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <dl className="crew-context__facts">
+        <div>
+          <dt>In training</dt>
+          <dd className="figure">{composition.totals.inTraining}</dd>
+        </div>
+        <div>
+          <dt>On duty</dt>
+          <dd className="figure">{composition.totals.onDuty}</dd>
+        </div>
+        <div>
+          <dt>Standby</dt>
+          <dd className="figure">{composition.totals.reserve}</dd>
+        </div>
+      </dl>
+
+      <p className="crew-context__note" data-cover={composition.short ? 'short' : 'ok'}>
+        {composition.short
+          ? 'Below the minimum on at least one rank. These crew cannot fly another family until they are converted.'
+          : 'Every rank this fleet asks for is covered. These crew cannot fly another family until they are converted.'}
+      </p>
+
+      <h3 className="crew-context__heading">Actions</h3>
+      <div className="crew-context__actions">
+        <button
+          type="button"
+          onClick={() => {
+            onAction('hire');
+          }}
+        >
+          Hire onto {composition.family}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            onAction('convert');
+          }}
+        >
+          Convert rating
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function coverOf(delta: number | null): 'short' | 'ok' | 'none' {
+  if (delta === null) return 'none';
+  return delta < 0 ? 'short' : 'ok';
 }
 
 /**
