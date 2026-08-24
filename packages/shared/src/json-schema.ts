@@ -134,7 +134,7 @@ export const usedMarketResponseJsonSchema = z.toJSONSchema(UsedMarketResponse);
 export const maintenanceResponseJsonSchema = z.toJSONSchema(MaintenanceResponse);
 export const fleetAirframesResponseJsonSchema = z.toJSONSchema(FleetAirframesResponse);
 export const airframeDetailResponseJsonSchema = z.toJSONSchema(AirframeDetailResponse);
-/** Derived from the same schema the SVG builder and raster renderer import (M6-01). */
+/** Derived from the same v2 schema authoring, persistence and render boundaries import. */
 export const liveryDocumentJsonSchema = z.toJSONSchema(LiveryDocument);
 export const bookCheckResponseJsonSchema = z.toJSONSchema(BookCheckResponse);
 

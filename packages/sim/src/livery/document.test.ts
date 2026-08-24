@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   LIVERY_DOCUMENT_FORMAT,
   LIVERY_DOCUMENT_FORMAT_VERSION,
+  migrateLiveryDocumentV1ToV2,
   type LiveryDocument,
 } from '@tailfin/shared';
 
@@ -17,6 +18,15 @@ function currentDocument(): LiveryDocument {
   return {
     format: LIVERY_DOCUMENT_FORMAT,
     formatVersion: LIVERY_DOCUMENT_FORMAT_VERSION,
+    artwork: {
+      coordinateSpace: 'tailfin-aircraft-artwork',
+      coordinateSpaceVersion: 1,
+      viewBox: { x: 0, y: 0, width: 1, height: 1 },
+      sideMode: 'mirrored',
+    },
+    renderMode: 'legacy_svg',
+    assetBindings: [],
+    familyOverrides: [],
     palette: ['#10233FFF'],
     layers: [],
   };
@@ -63,6 +73,22 @@ describe('livery document migrations', () => {
     expect(error.message).toContain('v0');
   });
 
+  it('migrates stored v1 documents through the registered legacy fallback', () => {
+    const legacy = {
+      format: LIVERY_DOCUMENT_FORMAT,
+      formatVersion: 1,
+      palette: ['#10233FFF'],
+      layers: [],
+    };
+
+    expect(migrateLiveryDocument(legacy)).toMatchObject({
+      formatVersion: 2,
+      renderMode: 'legacy_svg',
+      assetBindings: [],
+      palette: legacy.palette,
+    });
+  });
+
   it('walks consecutive migrations and leaves the stored input untouched', () => {
     const stored = {
       format: LIVERY_DOCUMENT_FORMAT,
@@ -80,6 +106,11 @@ describe('livery document migrations', () => {
           palette: document.brandColors,
           layers: [],
         }),
+      },
+      {
+        fromVersion: 1,
+        toVersion: 2,
+        migrate: migrateLiveryDocumentV1ToV2,
       },
     ];
 

@@ -1,6 +1,7 @@
 import {
   LIVERY_DOCUMENT_FORMAT_VERSION,
   LiveryDocument,
+  migrateLiveryDocumentV1ToV2,
   type LiveryDocument as LiveryDocumentValue,
 } from '@tailfin/shared';
 
@@ -66,8 +67,8 @@ function migrationMap(
 /**
  * Build the one supported read path for persisted documents.
  *
- * The registry is intentionally linear. When v2 lands it adds a 1 → 2 step;
- * when v3 lands it adds 2 → 3, and a v1 document walks both. Skipping a version
+ * The registry is intentionally linear. When v3 lands it adds a 2 → 3 step,
+ * and a v1 document walks both. Skipping a version
  * would make old saved work dependent on which build happened to read it.
  */
 export function createLiveryDocumentMigrator(
@@ -121,7 +122,13 @@ export function createLiveryDocumentMigrator(
 }
 
 /** Add consecutive migration steps here when a new format version ships. */
-const LIVERY_DOCUMENT_MIGRATIONS: readonly LiveryDocumentMigration[] = [];
+const LIVERY_DOCUMENT_MIGRATIONS: readonly LiveryDocumentMigration[] = [
+  {
+    fromVersion: 1,
+    toVersion: 2,
+    migrate: migrateLiveryDocumentV1ToV2,
+  },
+];
 
 /** Every authoritative persisted livery read must enter through this function. */
 export const migrateLiveryDocument = createLiveryDocumentMigrator(LIVERY_DOCUMENT_MIGRATIONS);

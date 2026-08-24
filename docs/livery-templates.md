@@ -1,10 +1,12 @@
 # Aircraft livery templates (M6-02)
 
-Tailfin's livery templates are versioned, plain SVG assets under
+Tailfin's legacy livery templates are versioned, plain SVG assets under
 `packages/shared/assets/livery/templates/v1`. Every launch-catalogue aircraft family has a
 side-profile asset and a top-down asset. Both projections use the same `1200 × 400`
 coordinate system and the same zone contract, so a single M6-01 `LiveryDocument` can be
-projected onto either view without rewriting its layers.
+projected onto either compatibility view without rewriting its layers. They are retained for
+`legacy_svg` documents; v2 `uv3d` documents instead resolve exact versioned model, UV, material
+and anchor resources.
 
 ## Asset contract
 
@@ -37,7 +39,7 @@ The required zone identifiers are:
 
 Assets contain only SVG geometry and presentation attributes. Scripts, embedded raster
 images, external resources and house liveries are deliberately excluded. This keeps the
-same source usable by the browser builder and the future M6-06 headless raster renderer.
+same source usable by the browser builder and retained SVG fallback renderer.
 
 ## Family coverage
 
@@ -57,6 +59,6 @@ catalogue and verifies all 26 assets. It checks safe plain SVG structure, root m
 identical zone identifiers, positive zone coordinate maps, registry coverage and that one
 valid M6-01 document resolves every layer in both projections of every family.
 
-M6-02 supplies templates, not a renderer. M6-03 now applies fill and gradient layers in the
-browser builder; path, text, logo and authoritative raster output remain M6-04 through M6-06.
-Saving and applying a livery to an airframe is owned by M6-07.
+M6-02 supplies compatibility templates, not the true-3D asset manifest. M6-03 applies fill and
+gradient layers in the browser builder. The M6 true-3D epic (#716) owns the versioned asset
+manifest, UV-aware renderer, richer authoring, publication and airframe application.

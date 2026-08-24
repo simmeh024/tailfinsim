@@ -3,13 +3,18 @@ import { describe, expect, it } from 'vitest';
 import {
   LIVERY_DOCUMENT_FORMAT,
   LIVERY_DOCUMENT_FORMAT_VERSION,
+  LIVERY_DOCUMENT_LEGACY_VERSION,
   LIVERY_DOCUMENT_MAX_BYTES,
   Livery,
   LiveryApplication,
   LiveryApplicationTarget,
   LiveryDocument,
+  LiveryDraft,
+  PublishedLiveryVersion,
   LiveryZone,
+  canonicalLiveryDocumentJson,
   liveryDocumentJsonSchema,
+  migrateLiveryDocumentV1ToV2,
   serializedLiveryDocumentSize,
 } from './index';
 
@@ -42,6 +47,7 @@ function common(id: string, fill: string | null = '#0B1F3AFF') {
     opacity: 1,
     blendMode: 'normal',
     mask: null,
+    placement: { side: 'both', symmetry: 'repeat', anchorId: null },
   };
 }
 
@@ -105,38 +111,108 @@ function layer(type: string, id: string) {
           },
         ],
       };
+    case 'brush':
+      return {
+        ...common(id, '#FFFFFFFF'),
+        type,
+        strokes: [
+          {
+            points: [
+              { x: 0.1, y: 0.2, pressure: 0.5 },
+              { x: 0.8, y: 0.7, pressure: 1 },
+            ],
+            width: 0.04,
+            hardness: 0.8,
+            spacing: 0.01,
+          },
+        ],
+      };
     case 'text':
       return {
         ...common(id, '#FFFFFFFF'),
         type,
         text: 'TAILFIN AIR',
         fontFamily: 'Inter',
+        fontVersion: '1.0.0',
         fontSize: 0.12,
         letterSpacing: 0.01,
         align: 'middle',
         arc: { radius: 1.8, startAngleDeg: -8 },
       };
     case 'logo':
-      return { ...common(id, '#31D7CFFF'), type, logoId: 'tailfin-chevron', mirrored: false };
+      return {
+        ...common(id, '#31D7CFFF'),
+        type,
+        logoId: 'tailfin-chevron',
+        logoVersion: '1.0.0',
+        mirrored: false,
+      };
     case 'decal':
-      return { ...common(id, null), type, decalId: 'founder-mark', mirrored: false };
+      return {
+        ...common(id, null),
+        type,
+        decalId: 'founder-mark',
+        decalVersion: '1.0.0',
+        mirrored: false,
+      };
+    case 'registration':
+      return {
+        ...common(id, '#0B1F3AFF'),
+        type,
+        source: 'airframe.registration',
+        fontFamily: 'Inter',
+        fontVersion: '1.0.0',
+        fontSize: 0.08,
+        letterSpacing: 0.01,
+        align: 'middle',
+      };
     default:
       throw new Error(`unknown fixture layer type ${type}`);
   }
+}
+
+function assetBinding(compatibilityId = 'a320neo-v1') {
+  return {
+    compatibilityId,
+    aircraftAsset: { id: 'aircraft/a320neo', version: '1.0.0' },
+    liveryUv: { id: 'livery-uv/a320neo', version: '1.0.0' },
+    materialBinding: { id: 'materials/airliner-v1', version: '1.0.0' },
+    anchorSet: { id: 'anchors/a320neo', version: '1.0.0' },
+  };
 }
 
 function document(layers: unknown[]) {
   return {
     format: LIVERY_DOCUMENT_FORMAT,
     formatVersion: LIVERY_DOCUMENT_FORMAT_VERSION,
+    artwork: {
+      coordinateSpace: 'tailfin-aircraft-artwork',
+      coordinateSpaceVersion: 1,
+      viewBox: { x: 0, y: 0, width: 1, height: 1 },
+      sideMode: 'mirrored',
+    },
+    renderMode: 'legacy_svg',
+    assetBindings: [],
+    familyOverrides: [],
     palette: ['#0B1F3AFF', '#31D7CFFF', '#FFFFFFFF', '#F4B942FF'],
     layers,
   };
 }
 
-describe('livery document v1', () => {
+describe('livery document v2', () => {
   it('admits every M6-01 layer type and preserves array paint order', () => {
-    const types = ['fill', 'gradient', 'cheatline', 'shape', 'path', 'text', 'logo', 'decal'];
+    const types = [
+      'fill',
+      'gradient',
+      'cheatline',
+      'shape',
+      'path',
+      'brush',
+      'text',
+      'logo',
+      'decal',
+      'registration',
+    ];
     const parsed = LiveryDocument.parse(
       document(types.map((type, index) => layer(type, `${String(index)}-${type}`))),
     );
@@ -166,6 +242,98 @@ describe('livery document v1', () => {
     });
   });
 
+  it('binds true-3D documents to exact versioned resources and scoped family overrides', () => {
+    const uv3d = {
+      ...document([layer('logo', 'tail-logo')]),
+      renderMode: 'uv3d',
+      assetBindings: [assetBinding()],
+      familyOverrides: [
+        {
+          compatibilityId: 'a320neo-v1',
+          layerOverrides: [
+            {
+              layerId: 'tail-logo',
+              placement: { side: 'starboard', symmetry: 'none', anchorId: 'tail-logo-safe' },
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(LiveryDocument.safeParse(uv3d).success).toBe(true);
+    expect(LiveryDocument.safeParse({ ...uv3d, assetBindings: [] }).success).toBe(false);
+    expect(
+      LiveryDocument.safeParse({
+        ...uv3d,
+        familyOverrides: [{ ...uv3d.familyOverrides[0], compatibilityId: 'unbound-family' }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('models port and starboard placement without aircraft-name conditionals', () => {
+    const starboard = layer('registration', 'registration') as Record<string, unknown>;
+    starboard.placement = { side: 'starboard', symmetry: 'none', anchorId: 'registration-safe' };
+    expect(LiveryDocument.safeParse(document([starboard])).success).toBe(true);
+
+    starboard.placement = { side: 'starboard', symmetry: 'reflect', anchorId: null };
+    expect(LiveryDocument.safeParse(document([starboard])).success).toBe(false);
+  });
+
+  it('rejects renderer payloads and canonicalizes object-key order for stable identity', () => {
+    const parsed = LiveryDocument.parse(document([layer('fill', 'base')]));
+    const reordered = {
+      layers: parsed.layers,
+      palette: parsed.palette,
+      familyOverrides: parsed.familyOverrides,
+      assetBindings: parsed.assetBindings,
+      renderMode: parsed.renderMode,
+      artwork: parsed.artwork,
+      formatVersion: parsed.formatVersion,
+      format: parsed.format,
+    };
+
+    expect(JSON.stringify(reordered)).not.toBe(JSON.stringify(parsed));
+    expect(canonicalLiveryDocumentJson(reordered)).toBe(canonicalLiveryDocumentJson(parsed));
+    expect(
+      LiveryDocument.safeParse({
+        ...parsed,
+        rendererPayload: { glb: 'data:model/gltf;base64,...' },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('lifts v1 documents losslessly into the explicit legacy renderer fallback', () => {
+    const { placement: _placement, ...legacyBase } = common('legacy-text', '#FFFFFFFF');
+    const legacy = {
+      format: LIVERY_DOCUMENT_FORMAT,
+      formatVersion: LIVERY_DOCUMENT_LEGACY_VERSION,
+      palette: ['#FFFFFFFF'],
+      layers: [
+        {
+          ...legacyBase,
+          type: 'text',
+          text: 'TAILFIN AIR',
+          fontFamily: 'Inter',
+          fontSize: 0.12,
+          letterSpacing: 0.01,
+          align: 'middle',
+          arc: null,
+        },
+      ],
+    };
+    const migrated = migrateLiveryDocumentV1ToV2(legacy);
+
+    expect(migrated.renderMode).toBe('legacy_svg');
+    expect(migrated.assetBindings).toEqual([]);
+    expect(migrated.layers[0]).toMatchObject({
+      type: 'text',
+      text: 'TAILFIN AIR',
+      fontVersion: 'legacy-v1',
+      placement: { side: 'both', symmetry: 'repeat', anchorId: null },
+    });
+    expect(legacy.formatVersion).toBe(1);
+  });
+
   it('rejects ambiguous order, invalid masks and out-of-order gradients', () => {
     const duplicate = document([layer('fill', 'base'), layer('fill', 'base')]);
     expect(LiveryDocument.safeParse(duplicate).success).toBe(false);
@@ -183,7 +351,18 @@ describe('livery document v1', () => {
   });
 
   it('keeps a representative 30-layer complex scheme below the 20KB budget', () => {
-    const types = ['fill', 'gradient', 'cheatline', 'shape', 'path', 'text', 'logo', 'decal'];
+    const types = [
+      'fill',
+      'gradient',
+      'cheatline',
+      'shape',
+      'path',
+      'brush',
+      'text',
+      'logo',
+      'decal',
+      'registration',
+    ];
     const complex = document(
       Array.from({ length: 30 }, (_, index) => {
         const type = types[index % types.length];
@@ -230,6 +409,33 @@ describe('saved livery ownership and application scope', () => {
 
     expect(saved.airlineId).toBe(AIRLINE_ID);
     expect(Livery.safeParse({ ...saved, airlineId: undefined }).success).toBe(false);
+  });
+
+  it('separates mutable draft revisions from immutable publication snapshots', () => {
+    const visualDocument = document([layer('fill', 'base')]);
+    const draft = LiveryDraft.parse({
+      id: LIVERY_ID,
+      airlineId: AIRLINE_ID,
+      name: 'Tailfin standard',
+      variant: 'standard',
+      revision: 3,
+      updatedAt: '2026-08-24T18:30:00+02:00',
+      document: visualDocument,
+    });
+    const published = PublishedLiveryVersion.parse({
+      liveryId: draft.id,
+      airlineId: draft.airlineId,
+      publishedVersion: 1,
+      publishedAt: '2026-08-24T18:31:00+02:00',
+      contentSha256: 'a'.repeat(64),
+      document: draft.document,
+    });
+
+    expect(draft.revision).toBe(3);
+    expect(published.publishedVersion).toBe(1);
+    expect(
+      PublishedLiveryVersion.safeParse({ ...published, contentSha256: 'mutable' }).success,
+    ).toBe(false);
   });
 
   it('represents fleet, explicit sub-fleet and single-airframe targets without a fake entity', () => {
