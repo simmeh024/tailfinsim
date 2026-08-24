@@ -378,16 +378,52 @@ The nine supplied PNGs were 1.82 MB together; re-encoded to webp at two widths t
 downloads one banner rather than nine. `crewBanner` is a `Record<CrewRank, …>`, so adding a rank
 without artwork is a type error rather than a broken image nobody notices.
 
+## Payday, and why reserves are a decision
+
+§9.2 says reserve crew _"cost money and do nothing most days — until they save your on-time
+performance. Deliberately a hard call."_ Both halves are needed, and the second is not
+dressing: a standby crew that is free is not a hard call, it is an obvious one.
+
+So crew are billed monthly, on the world's game clock, by the worker:
+
+| cause                | what it pays for                                       |
+| -------------------- | ------------------------------------------------------ |
+| `crew_payroll`       | every head on strength, at its rank's salary           |
+| `crew_base_overhead` | each open base, whether or not anybody is posted there |
+| `crew_positioning`   | hotels for a crew set that stopped away from base      |
+
+Two movements rather than one, because _"why did I pay this"_ has two answers — the people and
+the buildings — and §14.1 forbids a figure a player cannot interrogate.
+
+A **reserve costs exactly what a line crew member costs**, because a reserve is a designation
+and not a separate pool. Designating one changes the roster and not the bill, which is the
+whole trade.
+
+### Idempotent by reference, with no bookkeeping table
+
+The reference is `<cause>:<airlineId>:<YYYY-MM>` in the world's own calendar, and AIR-06
+already refuses a second movement with the same cause and reference. So payroll is attempted on
+**every tick** and bills once, and no "last billed" column exists — which matters more than it
+saves, because ADR-0005 would require resetting such a column on a world reset and forgetting
+would leave a fresh world believing it had already paid. It also self-heals: the month just
+ended is retried for as long as the next month lasts.
+
+### Insolvency is not modelled, and payroll can cause it
+
+Every other spend in the game is player-initiated and refuses when the money is not there.
+Payroll cannot refuse — the crew worked — so **an airline that cannot make payroll goes
+negative, and nothing yet acts on that**. §11's bankruptcy is not built. The gap is deliberate
+and the alternative is worse: payroll that silently skipped would make "run out of money" the
+cheapest strategy in the game.
+
 ## Not built yet
 
 **Morale** and the **service-quality link** into §6.4 are described in §9.2 and are not built.
-Neither is **payroll**: salaries are tuned in the economy config and nothing charges them, so
-reserve crew currently cost an airline nothing to keep — which is half of §9.2's _"deliberately
-a hard call"_ missing, and the half that makes the call hard.
 
-**Positioning is modelled and not yet billed.** `positioningFor` and `positioningCostMinor`
-compute the hotel nights a night-stop owes and the deadhead seats a displaced crew needs, and
-no cash movement uses them. The pure model is right and the money is not connected.
+**Deadheading is modelled and not billed.** `positioningFor` reports the deadhead seats a
+displaced crew needs and `deadheadCostPerHeadMinor` prices them; only the hotel half is
+charged, because nothing yet _puts_ crew on a flight as passengers. Hotels are the cost §9.2
+names and the one a player creates by accident.
 
 **Nothing surfaces duty on the Crew page yet.** The rows are written and the API does not read
 them, so a player can trip a crew timeout and see only that a flight cancelled.
