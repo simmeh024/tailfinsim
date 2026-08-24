@@ -4558,14 +4558,46 @@ body {
   gap: var(--space-2);
 }
 
+/* A two-column grid rather than a flex column: the glyph sits in the corner and
+   the label, figure and detail keep one left edge. Floating the glyph or putting
+   it inline would indent the number, and a row of KPI figures that do not line
+   up is harder to scan than one with no glyphs at all. */
 .crew-kpi {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-content: start;
+  gap: 2px var(--space-2);
   padding: var(--space-3);
   background: var(--bg-raised);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
+}
+
+.crew-kpi__glyph {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: start;
+  font-size: var(--text-lg);
+  line-height: 1;
+  /* Quiet by default. It labels the card; the figure is what is being read. */
+  color: var(--text-muted);
+}
+
+/* The tone the card already carries, so the corner agrees with the border
+   rather than arguing with it. Never the only signal -- the detail line under
+   every figure says the same thing in words (App. H.7). */
+.crew-kpi[data-tone='alert'] .crew-kpi__glyph {
+  color: var(--status-loss);
+}
+
+.crew-kpi[data-tone='good'] .crew-kpi__glyph {
+  color: var(--status-profit);
+}
+
+.crew-kpi__label,
+.crew-kpi__value,
+.crew-kpi__detail {
+  grid-column: 1;
 }
 
 .crew-kpi__label {

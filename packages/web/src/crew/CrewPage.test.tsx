@@ -431,6 +431,79 @@ describe('actions', () => {
   });
 });
 
+describe('the KPI glyphs', () => {
+  it('gives every card one, and hides all of them from assistive tech', async () => {
+    respondWith(MIXED);
+    renderPage();
+
+    const strip = await screen.findByRole('group', { name: 'Crew summary' });
+    const cards = strip.querySelectorAll('.crew-kpi');
+    expect(cards).toHaveLength(6);
+
+    for (const card of cards) {
+      const glyph = card.querySelector('.crew-kpi__glyph');
+      expect(glyph).not.toBeNull();
+      expect(glyph?.textContent?.trim()).toBeTruthy();
+      /*
+       * The label beside it already says what the card is. A screen reader that
+       * also announced "three-quarter circle" would be worse off, not better —
+       * which is why every glyph in this codebase is `aria-hidden`, from the nav
+       * rail to the admin console's tone markers.
+       */
+      expect(glyph?.getAttribute('aria-hidden')).toBe('true');
+    }
+  });
+
+  it('does not let a glyph become the accessible name of a card', async () => {
+    respondWith(MIXED);
+    renderPage();
+
+    // The strip reads as its labels and figures, with no stray symbols in the
+    // text an assistive tech user hears.
+    const strip = await screen.findByRole('group', { name: 'Crew summary' });
+    const spoken = [...strip.querySelectorAll('.crew-kpi')].map((card) =>
+      [...card.querySelectorAll(':scope > *:not([aria-hidden="true"])')]
+        .map((el) => el.textContent)
+        .join(' '),
+    );
+    expect(spoken[0]).toContain('Crew coverage');
+    expect(spoken.join(' ')).not.toMatch(/[◕△✔◷⌂↻]/u);
+  });
+
+  it('keeps the same glyph whatever the numbers say', async () => {
+    /*
+     * The glyph names the metric, not the state. One that changed with the
+     * numbers would be a second signal encoding what the tone and the sentence
+     * already carry, and the reader's first job would be deciding which of the
+     * three to trust.
+     */
+    respondWith(MIXED);
+    const { unmount } = render(
+      <ContextSelectionProvider>
+        <CrewPage />
+      </ContextSelectionProvider>,
+    );
+    const shortStrip = await screen.findByRole('group', { name: 'Crew summary' });
+    const whenShort = shortStrip
+      .querySelectorAll('.crew-kpi')[1]
+      ?.querySelector('.crew-kpi__glyph')?.textContent;
+    unmount();
+
+    respondWith(state());
+    render(
+      <ContextSelectionProvider>
+        <CrewPage />
+      </ContextSelectionProvider>,
+    );
+    const calmStrip = await screen.findByRole('group', { name: 'Crew summary' });
+    const whenCalm = calmStrip
+      .querySelectorAll('.crew-kpi')[1]
+      ?.querySelector('.crew-kpi__glyph')?.textContent;
+
+    expect(whenShort).toBe(whenCalm);
+  });
+});
+
 describe('without the context rail', () => {
   it('renders completely when there is no provider at all', async () => {
     /*
