@@ -8,6 +8,8 @@ import { AccountBadge } from '../auth/AccountBadge';
 import { useTheme } from '../theme/ThemeProvider';
 import { BuildBadge } from '../version/BuildBadge';
 
+import { ContextSelectionProvider, useContextSelection } from './context-selection';
+
 import type { ReactNode } from 'react';
 
 /**
@@ -96,7 +98,18 @@ function Stage({ children }: { children: ReactNode }): ReactNode {
   return <main className="stage">{children}</main>;
 }
 
+/**
+ * The context panel (App. H.4), now with an occupant.
+ *
+ * Two dismissals, and they are different. The × closes the *panel*, which is a
+ * layout preference and survives navigation. "Clear" drops the *selection* and
+ * leaves the panel open — the player wanted the panel, they just finished with
+ * that row. Collapsing the panel because a selection ended would take away
+ * something they did not ask to lose.
+ */
 function ContextPanel({ open, onToggle }: { open: boolean; onToggle: () => void }): ReactNode {
+  const { selection, clear } = useContextSelection();
+
   if (!open) {
     return (
       <button type="button" className="panel__reopen" onClick={onToggle}>
@@ -108,7 +121,22 @@ function ContextPanel({ open, onToggle }: { open: boolean; onToggle: () => void 
   return (
     <aside className="panel" aria-label="Context">
       <div className="panel__header">
-        <h2 className="panel__title">Context</h2>
+        <div className="panel__heading">
+          <h2 className="panel__title">{selection?.title ?? 'Context'}</h2>
+          {selection?.subtitle !== undefined && (
+            <p className="panel__subtitle">{selection.subtitle}</p>
+          )}
+        </div>
+        {selection !== null && (
+          <button
+            type="button"
+            className="panel__dismiss"
+            onClick={clear}
+            aria-label="Clear selection"
+          >
+            ⌫
+          </button>
+        )}
         <button
           type="button"
           className="panel__dismiss"
@@ -119,10 +147,14 @@ function ContextPanel({ open, onToggle }: { open: boolean; onToggle: () => void 
         </button>
       </div>
       <div className="panel__body">
-        <p>
-          Selection detail appears here — a flight, an airframe, a route. Empty until there is
-          something to select.
-        </p>
+        {selection === null ? (
+          <p>
+            Selection detail appears here — a flight, an airframe, a route. Empty until there is
+            something to select.
+          </p>
+        ) : (
+          selection.body
+        )}
       </div>
     </aside>
   );
@@ -196,14 +228,16 @@ export function AppShell(): ReactNode {
   };
 
   return (
-    <div className="shell">
-      <LeftRail ownAirline={ownAirline} />
-      <Stage>
-        <Outlet context={outletContext} />
-      </Stage>
-      <ContextPanel open={panelOpen} onToggle={() => setPanelOpen((open) => !open)} />
-      <StatusStrip ownAirline={ownAirline} />
-    </div>
+    <ContextSelectionProvider>
+      <div className="shell">
+        <LeftRail ownAirline={ownAirline} />
+        <Stage>
+          <Outlet context={outletContext} />
+        </Stage>
+        <ContextPanel open={panelOpen} onToggle={() => setPanelOpen((open) => !open)} />
+        <StatusStrip ownAirline={ownAirline} />
+      </div>
+    </ContextSelectionProvider>
   );
 }
 
