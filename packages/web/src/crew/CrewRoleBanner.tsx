@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { CrewRank } from '@tailfin/shared';
 
-import { crewBanner } from './crew-banners';
+import { CREW_BANNER_ASPECT, crewBanner } from './crew-banners';
 
 import type { ReactNode } from 'react';
 
@@ -31,13 +31,18 @@ import type { ReactNode } from 'react';
  * for a visible layer. That is not a lesser job: the alt text is the only way a
  * screen reader learns the rank at all.
  *
- * ## Nine ratios, one box
+ * ## One ratio, one box
  *
- * The artwork is 880 wide and between 126 and 217 tall, rank by rank. Sizing to
- * each image would make the page jump on every rotation, which is exactly the
- * movement this is supposed to avoid. So the box is fixed at the **tallest**
- * ratio and the image is `contain`ed inside it: shorter banners sit centred with
- * a band of surface above and below, and nothing is cropped and nothing shifts.
+ * The v2 artwork is 2048 x 409 for all nine ranks, so the box is exactly the
+ * artwork's own shape: nothing is letterboxed and nothing shifts as the rotation
+ * moves between ranks.
+ *
+ * It was not always so. The first set was 880 wide and between 126 and 217 tall,
+ * nine different ratios in one slot, which forced the box to the tallest and the
+ * images to sit in a band of empty surface. `object-fit: contain` survives from
+ * that compromise and stays on purpose: it is now a no-op for artwork that fits
+ * exactly, and the guarantee that a future set which does not fit will be
+ * letterboxed rather than cropped.
  *
  * ## Rotation is weighted by the airline's actual problem
  *
@@ -187,10 +192,17 @@ export function CrewRoleBanner({
         className="crew-banner__image"
         src={banner.src}
         srcSet={banner.srcSet}
-        sizes="(max-width: 720px) 100vw, 880px"
+        /*
+         * The banner is the stage's full width, and the stage is the viewport
+         * less the rail and the context panel. `100vw` overstates it on a
+         * desktop and understates nothing, which is the safe direction: the
+         * browser may fetch a slightly larger file than it needed, never a
+         * blurrier one than it wanted.
+         */
+        sizes="100vw"
         alt={`${CREW_RANK_LABEL[rank]}. ${description}`}
-        width={880}
-        height={217}
+        width={CREW_BANNER_ASPECT.width}
+        height={CREW_BANNER_ASPECT.height}
         loading="eager"
         decoding="async"
       />

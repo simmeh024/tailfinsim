@@ -368,15 +368,29 @@ person, and that is allowed: it illustrates the rank being hired, not a member o
 exists.
 
 The artwork carries its own headline and body copy **baked into the pixels**, which decides two
-things. It is never cropped — `object-fit: cover` ate the first letter of every line and
-rendered _"ommand the aircraft"_ — so the height follows each image's own aspect ratio and moves
-a little between ranks. And the `alt` carries the rank and its one-line description, because
+things. It is never cropped — `object-fit: cover` ate the first letter of every line and rendered
+_"ommand the aircraft"_ — and the `alt` carries the rank and its one-line description, because
 text inside a picture is text a screen reader cannot reach.
 
-The nine supplied PNGs were 1.82 MB together; re-encoded to webp at two widths they are
-**229 KB**, matching the fleet assets' convention. They are separate emitted files, so a visit
-downloads one banner rather than nine. `crewBanner` is a `Record<CrewRank, …>`, so adding a rank
-without artwork is a type error rather than a broken image nobody notices.
+**The v2 set is 2048 × 409 for all nine ranks**, so the box is exactly the artwork's shape and
+nothing is letterboxed. The first set was not: 880 wide and between 126 and 217 tall, nine
+different ratios in one slot, which forced the box to the tallest and left eight of the nine
+sitting in a band of empty surface — the alternative being a page that jumped on every rotation.
+`object-fit: contain` survives from that compromise on purpose, as the guarantee that a future
+set which does not fit is letterboxed rather than cropped.
+
+`CREW_BANNER_ASPECT` is the single place the ratio is written down, and a test asserts the
+stylesheet agrees with it. Artwork and box drifting apart is the kind of thing nobody notices
+until a rotation looks wrong, by which point the cause is three files from the symptom.
+
+The nine supplied PNGs are 8.7 MB together; re-encoded to webp at quality 82 and two widths
+(1024 for a 1× display, 2048 for a 2×) the whole set is **890 KB**. They are separate emitted
+files, so a visit downloads one banner plus one warmed for the next rotation, never nine.
+Quality 82 rather than lower because text is what webp gives up first, and lettering gone soft
+is the one artefact a reader will notice.
+
+`crewBanner` is a `Record<CrewRank, …>`, so adding a rank without artwork is a type error rather
+than a broken image nobody notices.
 
 ## Payday, and why reserves are a decision
 
