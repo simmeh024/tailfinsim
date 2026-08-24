@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" data-template-version="v1" data-aircraft-family="A350" data-projection="top" aria-labelledby="title desc">
+  <title id="title">A350 top-down livery template</title>
+  <desc id="desc">Neutral swept long-range widebody planform with curved winglets divided into Tailfin livery zones.</desc>
+  <g id="zone-wings" data-livery-zone="wings" data-zone-viewbox="280 0 640 400" fill="#CAD4DE" stroke="#34495E" stroke-width="2"><path d="m410 170-130-132 42-38 370 170L920 45v55l-182 100 182 100v55L692 230 322 400l-42-38 130-132Z" /></g>
+  <g id="zone-engine_nacelles" data-livery-zone="engine_nacelles" data-zone-viewbox="478 28 250 344" fill="#B8C4CF" stroke="#34495E" stroke-width="2"><rect x="478" y="28" width="115" height="142" rx="55" /><rect x="478" y="230" width="115" height="142" rx="55" /></g>
+  <g id="zone-fuselage" data-livery-zone="fuselage" data-zone-viewbox="152 145 910 110" fill="#E7ECF2" stroke="#34495E" stroke-width="2"><path d="M152 162q195-17 710-17 142 0 200 55-58 55-200 55H152Z" /></g>
+  <g id="zone-nose" data-livery-zone="nose" data-zone-viewbox="24 148 195 104" fill="#F4F6F8" stroke="#34495E" stroke-width="2"><path d="M24 200q57-52 195-52v104q-138 0-195-52Z" /></g>
+  <g id="zone-belly" data-livery-zone="belly" data-zone-viewbox="219 181 763 38" opacity="0"><path d="M219 181h763v38H219Z" /></g>
+  <g id="zone-tail_fin" data-livery-zone="tail_fin" data-zone-viewbox="880 118 178 164" fill="#DCE4EB" stroke="#34495E" stroke-width="2"><path d="m880 200 178-82v164Z" /></g>
+  <g id="zone-winglets" data-livery-zone="winglets" data-zone-viewbox="270 0 70 400" fill="#DCE4EB" stroke="#34495E" stroke-width="2"><path d="m280 38 32-38 28 8-18 50Zm0 324 32 38 28-8-18-50Z" /></g>
+  <g id="zone-cheatline_band" data-livery-zone="cheatline_band" data-zone-viewbox="128 154 880 92" fill="#000" fill-opacity="0"><path d="M128 154h880v92H128Z" /></g>
+  <g id="zone-door_surrounds" data-livery-zone="door_surrounds" data-zone-viewbox="230 145 700 110" opacity="0"><path d="M230 145h45v110h-45Zm608 0h45v110h-45Zm47 0h45v110h-45Z" /></g>
+  <g id="zone-registration_area" data-livery-zone="registration_area" data-zone-viewbox="745 154 205 92" fill="#000" fill-opacity="0"><path d="M745 154h205v92H745Z" /></g>
+</svg>

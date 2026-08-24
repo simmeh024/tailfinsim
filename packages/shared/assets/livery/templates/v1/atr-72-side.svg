@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" data-template-version="v1" data-aircraft-family="ATR 72" data-projection="side" aria-labelledby="title desc">
+  <title id="title">ATR 72 side-profile livery template</title>
+  <desc id="desc">Neutral high-wing twin-turboprop geometry divided into Tailfin livery zones.</desc>
+  <g id="zone-wings" data-livery-zone="wings" data-zone-viewbox="430 135 360 145" fill="#CAD4DE" stroke="#34495E" stroke-width="2"><path d="M445 170 685 135 790 153 575 185 700 269 650 280 505 190Z" /></g>
+  <g id="zone-engine_nacelles" data-livery-zone="engine_nacelles" data-zone-viewbox="475 174 275 58" fill="#B8C4CF" stroke="#34495E" stroke-width="2"><path d="M475 180h96q21 0 25 18-4 18-25 18h-96Z" /><path d="M650 181h78q18 0 22 17-4 17-22 17h-78Z" /></g>
+  <g id="zone-fuselage" data-livery-zone="fuselage" data-zone-viewbox="215 164 780 72" fill="#E7ECF2" stroke="#34495E" stroke-width="2"><path d="M215 175q120-12 330-11h380q48 1 70 24v22q-31 22-89 25H270q-38-2-55-22Z" /></g>
+  <g id="zone-nose" data-livery-zone="nose" data-zone-viewbox="105 174 170 61" fill="#F4F6F8" stroke="#34495E" stroke-width="2"><path d="M105 208q32-25 110-33l60 1-1 58H164q-44-3-59-15Z" /></g>
+  <g id="zone-belly" data-livery-zone="belly" data-zone-viewbox="215 209 735 28" fill="#D5DEE7"><path d="M215 209h735q-22 24-75 28H270q-38-2-55-18Z" /></g>
+  <g id="zone-tail_fin" data-livery-zone="tail_fin" data-zone-viewbox="875 80 145 112" fill="#DCE4EB" stroke="#34495E" stroke-width="2"><path d="m885 174 57-94h35l43 112-132-2Z" /></g>
+  <g id="zone-winglets" data-livery-zone="winglets" data-zone-viewbox="640 258 68 26" fill="#DCE4EB" stroke="#34495E" stroke-width="2"><path d="m650 280 50-18 8 10-58 12Z" /></g>
+  <g id="zone-cheatline_band" data-livery-zone="cheatline_band" data-zone-viewbox="190 184 785 20" fill="#000" fill-opacity="0"><path d="M190 184h785v20H190Z" /></g>
+  <g id="zone-door_surrounds" data-livery-zone="door_surrounds" data-zone-viewbox="270 177 590 50" fill="#000" fill-opacity="0"><path d="M270 177h30v50h-30Zm560 0h30v50h-30Z" /></g>
+  <g id="zone-registration_area" data-livery-zone="registration_area" data-zone-viewbox="700 180 150 28" fill="#000" fill-opacity="0"><path d="M700 180h150v28H700Z" /></g>
+</svg>

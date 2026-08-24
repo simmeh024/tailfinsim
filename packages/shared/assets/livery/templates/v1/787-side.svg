@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" data-template-version="v1" data-aircraft-family="787" data-projection="side" aria-labelledby="title desc">
+  <title id="title">787 side-profile livery template</title>
+  <desc id="desc">Neutral long-range twin-engine widebody geometry divided into Tailfin livery zones.</desc>
+  <g id="zone-wings" data-livery-zone="wings" data-zone-viewbox="365 178 530 160" fill="#CAD4DE" stroke="#34495E" stroke-width="2"><path d="m390 205 345-27 160 28-298 38 190 76-94 18-245-87Z" /></g>
+  <g id="zone-engine_nacelles" data-livery-zone="engine_nacelles" data-zone-viewbox="420 224 405 100" fill="#B8C4CF" stroke="#34495E" stroke-width="2"><path d="M420 233h145q44 3 53 36-9 35-53 42H420q-22-40 0-78Z" /><path d="M700 235h90q29 3 35 29-6 28-35 33h-90q-17-32 0-62Z" /></g>
+  <g id="zone-fuselage" data-livery-zone="fuselage" data-zone-viewbox="170 135 880 128" fill="#E7ECF2" stroke="#34495E" stroke-width="2"><path d="M170 164q165-29 585-29h195q68 2 100 38v42q-46 39-127 47H232q-46-2-62-31Z" /></g>
+  <g id="zone-nose" data-livery-zone="nose" data-zone-viewbox="42 161 200 101" fill="#F4F6F8" stroke="#34495E" stroke-width="2"><path d="M42 207q42-38 128-45l72 3-1 96H105q-47-6-63-28Z" /></g>
+  <g id="zone-belly" data-livery-zone="belly" data-zone-viewbox="170 216 815 48" fill="#D5DEE7"><path d="M170 216h815q-39 41-108 48H232q-46-2-62-33Z" /></g>
+  <g id="zone-tail_fin" data-livery-zone="tail_fin" data-zone-viewbox="900 35 185 175" fill="#DCE4EB" stroke="#34495E" stroke-width="2"><path d="m912 165 90-130h38l45 175-170-8Z" /></g>
+  <g id="zone-winglets" data-livery-zone="winglets" data-zone-viewbox="684 304 112 45" fill="#DCE4EB" stroke="#34495E" stroke-width="2"><path d="m693 338 93-34 10 15-99 30Z" /></g>
+  <g id="zone-cheatline_band" data-livery-zone="cheatline_band" data-zone-viewbox="145 172 880 32" fill="#000" fill-opacity="0"><path d="M145 172h880v32H145Z" /></g>
+  <g id="zone-door_surrounds" data-livery-zone="door_surrounds" data-zone-viewbox="245 148 670 94" fill="#000" fill-opacity="0"><path d="M245 148h42v94h-42Zm625 0h45v94h-45Z" /></g>
+  <g id="zone-registration_area" data-livery-zone="registration_area" data-zone-viewbox="740 164 185 45" fill="#000" fill-opacity="0"><path d="M740 164h185v45H740Z" /></g>
+</svg>

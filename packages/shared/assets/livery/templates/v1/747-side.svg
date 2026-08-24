@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" data-template-version="v1" data-aircraft-family="747" data-projection="side" aria-labelledby="title desc">
+  <title id="title">747 side-profile livery template</title>
+  <desc id="desc">Neutral hump-backed four-engine widebody geometry divided into Tailfin livery zones.</desc>
+  <g id="zone-wings" data-livery-zone="wings" data-zone-viewbox="320 174 630 180" fill="#CAD4DE" stroke="#34495E" stroke-width="2"><path d="m350 205 390-31 210 32-338 47 225 80-125 21-295-94Z" /></g>
+  <g id="zone-engine_nacelles" data-livery-zone="engine_nacelles" data-zone-viewbox="375 220 500 122" fill="#B8C4CF" stroke="#34495E" stroke-width="2"><path d="M375 230h108q37 3 45 34-8 33-45 40H375q-21-39 0-74Z" /><path d="M510 227h122q42 3 50 37-8 37-50 44H510q-23-42 0-81Z" /><path d="M695 229h98q33 3 40 32-7 31-40 38h-98q-20-37 0-70Z" /><path d="M810 232h65v61h-65q-17-31 0-61Z" /></g>
+  <g id="zone-fuselage" data-livery-zone="fuselage" data-zone-viewbox="135 118 935 156" fill="#E7ECF2" stroke="#34495E" stroke-width="2"><path d="M135 155q105-35 245-37l185 25h400q72 2 105 42v36q-50 42-136 51H205q-51-2-70-34Z" /></g>
+  <g id="zone-nose" data-livery-zone="nose" data-zone-viewbox="5 153 215 119" fill="#F4F6F8" stroke="#34495E" stroke-width="2"><path d="M5 207q47-47 130-53l85 4-1 113H70q-49-7-65-34Z" /></g>
+  <g id="zone-belly" data-livery-zone="belly" data-zone-viewbox="135 220 870 54" fill="#D5DEE7"><path d="M135 220h870q-44 46-117 54H205q-51-2-70-36Z" /></g>
+  <g id="zone-tail_fin" data-livery-zone="tail_fin" data-zone-viewbox="910 12 205 205" fill="#DCE4EB" stroke="#34495E" stroke-width="2"><path d="m924 157 99-145h42l50 205-188-11Z" /></g>
+  <g id="zone-winglets" data-livery-zone="winglets" data-zone-viewbox="702 321 145 44" fill="#DCE4EB" stroke="#34495E" stroke-width="2"><path d="m712 354 125-33 10 16-131 28Z" /></g>
+  <g id="zone-cheatline_band" data-livery-zone="cheatline_band" data-zone-viewbox="112 164 930 38" fill="#000" fill-opacity="0"><path d="M112 164h930v38H112Z" /></g>
+  <g id="zone-door_surrounds" data-livery-zone="door_surrounds" data-zone-viewbox="225 132 715 112" fill="#000" fill-opacity="0"><path d="M225 132h48v112h-48Zm610 0h48v112h-48Zm667 0h48v112h-48Z" /></g>
+  <g id="zone-registration_area" data-livery-zone="registration_area" data-zone-viewbox="770 153 205 54" fill="#000" fill-opacity="0"><path d="M770 153h205v54H770Z" /></g>
+</svg>

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" data-template-version="v1" data-aircraft-family="737 MAX" data-projection="side" aria-labelledby="title desc">
+  <title id="title">737 MAX side-profile livery template</title>
+  <desc id="desc">Neutral narrowbody jet with split-tip winglets divided into Tailfin livery zones.</desc>
+  <g id="zone-wings" data-livery-zone="wings" data-zone-viewbox="415 188 435 138" fill="#CAD4DE" stroke="#34495E" stroke-width="2"><path d="m435 201 270-13 145 28-245 21 150 73-75 16-188-82Z" /></g>
+  <g id="zone-engine_nacelles" data-livery-zone="engine_nacelles" data-zone-viewbox="458 218 335 83" fill="#B8C4CF" stroke="#34495E" stroke-width="2"><path d="M458 226h124q35 2 42 31-7 29-42 34H458q-18-33 0-65Z" /><path d="M690 228h78q21 2 25 26-4 25-25 30h-78q-13-29 0-56Z" /></g>
+  <g id="zone-fuselage" data-livery-zone="fuselage" data-zone-viewbox="195 146 830 106" fill="#E7ECF2" stroke="#34495E" stroke-width="2"><path d="M195 168q148-22 552-22h192q59 2 86 35v33q-41 32-112 37H250q-40-2-55-25Z" /></g>
+  <g id="zone-nose" data-livery-zone="nose" data-zone-viewbox="72 166 188 85" fill="#F4F6F8" stroke="#34495E" stroke-width="2"><path d="M72 207q39-32 123-40l65 2-1 81H133q-45-4-61-23Z" /></g>
+  <g id="zone-belly" data-livery-zone="belly" data-zone-viewbox="195 214 775 39" fill="#D5DEE7"><path d="M195 214h775q-33 34-94 39H250q-40-2-55-27Z" /></g>
+  <g id="zone-tail_fin" data-livery-zone="tail_fin" data-zone-viewbox="885 55 172 145" fill="#DCE4EB" stroke="#34495E" stroke-width="2"><path d="m895 176 82-121h36l44 145-159-4Z" /></g>
+  <g id="zone-winglets" data-livery-zone="winglets" data-zone-viewbox="670 296 99 49" fill="#DCE4EB" stroke="#34495E" stroke-width="2"><path d="m680 326 72-30 17 11-48 23 42 8-7 7-76-14Z" /></g>
+  <g id="zone-cheatline_band" data-livery-zone="cheatline_band" data-zone-viewbox="170 176 830 28" fill="#000" fill-opacity="0"><path d="M170 176h830v28H170Z" /></g>
+  <g id="zone-door_surrounds" data-livery-zone="door_surrounds" data-zone-viewbox="258 161 635 75" fill="#000" fill-opacity="0"><path d="M258 161h37v75h-37Zm598 0h37v75h-37Z" /></g>
+  <g id="zone-registration_area" data-livery-zone="registration_area" data-zone-viewbox="720 171 168 38" fill="#000" fill-opacity="0"><path d="M720 171h168v38H720Z" /></g>
+</svg>

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" data-template-version="v1" data-aircraft-family="777X" data-projection="side" aria-labelledby="title desc">
+  <title id="title">777X side-profile livery template</title>
+  <desc id="desc">Neutral next-generation large twin-engine widebody with folding tips divided into Tailfin livery zones.</desc>
+  <g id="zone-wings" data-livery-zone="wings" data-zone-viewbox="315 172 620 180" fill="#CAD4DE" stroke="#34495E" stroke-width="2"><path d="m342 204 390-32 203 32-335 48 225 79-121 21-285-92Z" /></g>
+  <g id="zone-engine_nacelles" data-livery-zone="engine_nacelles" data-zone-viewbox="375 218 480 120" fill="#B8C4CF" stroke="#34495E" stroke-width="2"><path d="M375 227h175q54 3 65 43-11 43-65 51H375q-27-49 0-94Z" /><path d="M710 230h105q34 3 40 34-6 34-40 41H710q-20-39 0-75Z" /></g>
+  <g id="zone-fuselage" data-livery-zone="fuselage" data-zone-viewbox="132 126 940 146" fill="#E7ECF2" stroke="#34495E" stroke-width="2"><path d="M132 159q182-33 635-33h202q71 2 103 41v48q-49 45-137 55H198q-49-2-66-34Z" /></g>
+  <g id="zone-nose" data-livery-zone="nose" data-zone-viewbox="2 156 210 114" fill="#F4F6F8" stroke="#34495E" stroke-width="2"><path d="M2 207q46-43 130-50l80 3-1 109H66q-49-7-64-31Z" /></g>
+  <g id="zone-belly" data-livery-zone="belly" data-zone-viewbox="132 215 875 57" fill="#D5DEE7"><path d="M132 215h875q-43 49-118 57H198q-49-2-66-36Z" /></g>
+  <g id="zone-tail_fin" data-livery-zone="tail_fin" data-zone-viewbox="925 18 200 202" fill="#DCE4EB" stroke="#34495E" stroke-width="2"><path d="m937 160 98-142h41l49 202-185-10Z" /></g>
+  <g id="zone-winglets" data-livery-zone="winglets" data-zone-viewbox="696 316 142 52" fill="#DCE4EB" stroke="#34495E" stroke-width="2"><path d="m704 352 110-36 24 8-5 25-126 19Z" /></g>
+  <g id="zone-cheatline_band" data-livery-zone="cheatline_band" data-zone-viewbox="108 168 940 38" fill="#000" fill-opacity="0"><path d="M108 168h940v38H108Z" /></g>
+  <g id="zone-door_surrounds" data-livery-zone="door_surrounds" data-zone-viewbox="218 139 725 110" fill="#000" fill-opacity="0"><path d="M218 139h47v110h-47Zm625 0h47v110h-47Zm678 0h47v110h-47Z" /></g>
+  <g id="zone-registration_area" data-livery-zone="registration_area" data-zone-viewbox="770 157 205 52" fill="#000" fill-opacity="0"><path d="M770 157h205v52H770Z" /></g>
+</svg>
