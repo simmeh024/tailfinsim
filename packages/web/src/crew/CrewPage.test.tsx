@@ -64,6 +64,7 @@ function base(overrides: Partial<CrewBaseView> = {}): CrewBaseView {
     pools: [],
     conversions: [],
     duty: [],
+    morale: null,
     ...overrides,
   };
 }
@@ -88,6 +89,7 @@ function pool(over: Partial<CrewResponse['bases'][number]['pools'][number]> = {}
     unavailable: 0,
     onDuty: 0,
     reserve: 0,
+    sick: 0,
     available: 4,
     ...over,
   };
@@ -97,6 +99,37 @@ function pool(over: Partial<CrewResponse['bases'][number]['pools'][number]> = {}
 const MIXED = state({
   bases: [
     base({
+      morale: {
+        score: 0.42,
+        target: 0.31,
+        payBand: 'lean',
+        hotelTier: 'budget',
+        reviewedAt: '2024-10-21T09:00:00.000Z',
+        factors: [
+          { factor: 'pay', detail: 'Lean pay band', value: 0.25, weight: 0.4, weighted: 0.1 },
+          {
+            factor: 'rosterStability',
+            detail: 'Unpredictable rosters',
+            value: 0.3,
+            weight: 0.2,
+            weighted: 0.06,
+          },
+          {
+            factor: 'hotel',
+            detail: 'Budget hotels away from base',
+            value: 0.2,
+            weight: 0.15,
+            weighted: 0.03,
+          },
+          {
+            factor: 'rest',
+            detail: 'Rest regularly cut short',
+            value: 0.48,
+            weight: 0.25,
+            weighted: 0.12,
+          },
+        ],
+      },
       pools: [
         pool({ id: 'p1', family: 'A320neo', rank: 'captain', headcount: 4, available: 4 }),
         pool({
@@ -568,6 +601,93 @@ describe('selecting an aircraft family', () => {
     const table = await screen.findByRole('table', { name: /Crew rated on ATR 72/ });
     const row = within(table).getByRole('row', { name: /Purser/ });
     expect(within(row).getByText('—')).toBeInTheDocument();
+  });
+});
+
+describe('morale', () => {
+  it('itemises all four of §9.2’s factors with a sentence each', async () => {
+    respondWith(MIXED);
+    renderPage();
+
+    /*
+     * M5-03's second acceptance criterion. A base losing crew with nothing on
+     * screen explaining why reads as the game being arbitrary — and a player who
+     * concludes that stops making the decision the mechanic exists to offer.
+     */
+    const table = await screen.findByRole('table', { name: /What morale at EHAM is made of/ });
+    const rows = within(table).getAllByRole('row').slice(1);
+    expect(rows.map((row) => within(row).getByRole('rowheader').textContent)).toEqual([
+      'Pay',
+      'Rosters',
+      'Hotels',
+      'Rest',
+      'Target',
+    ]);
+    expect(within(table).getByText('Lean pay band')).toBeInTheDocument();
+    expect(within(table).getByText('Rest regularly cut short')).toBeInTheDocument();
+  });
+
+  it('shows where morale is and where it is heading, because the gap is the mechanic', async () => {
+    respondWith(MIXED);
+    renderPage();
+    // Showing only the score hides the thing the player can act on; showing only
+    // the target promises a consequence that has not arrived.
+    expect(await screen.findByText('42%')).toBeInTheDocument();
+    expect(screen.getByText(/Falling toward 31%/)).toBeInTheDocument();
+  });
+
+  it('says the mood in words, not only in colour', async () => {
+    respondWith(MIXED);
+    renderPage();
+    // App. H.7. A red number and a green number are the same number to a good
+    // proportion of players.
+    expect(await screen.findByText('Getting by')).toBeInTheDocument();
+  });
+
+  it('sends only the band that changed', async () => {
+    // Typed arguments, so the assertions below can read the call back: a mock
+    // declaring only `path` gives a one-element tuple and indexing it is a type
+    // error rather than a runtime one.
+    const fetchMock = vi.fn((path: string, _init?: RequestInit) => {
+      if (path.includes('/api/world/clock')) {
+        return Promise.resolve({
+          ok: false,
+          status: 404,
+          json: () => Promise.resolve({}),
+        } as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(MIXED),
+      } as Response);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderPage();
+
+    const pay = await screen.findByLabelText('Pay band');
+    fireEvent.change(pay, { target: { value: 'generous' } });
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([p]) => p === '/api/crew/policies')).toBe(true);
+    });
+    const call = fetchMock.mock.calls.find(([p]) => p === '/api/crew/policies');
+    const init = call?.[1];
+    const body: unknown = JSON.parse(typeof init?.body === 'string' ? init.body : '{}');
+    /*
+     * Absent means *leave it alone*. Restating the hotel tier would make two
+     * tabs race each other over a value neither of them changed.
+     */
+    expect(body).toEqual({
+      crewBaseId: '00000000-0000-4000-8000-000000000001',
+      payBand: 'generous',
+    });
+  });
+
+  it('says so plainly when there are no bases to have a mood', async () => {
+    respondWith(state());
+    renderPage();
+    expect(await screen.findByText(/nowhere for it to be/)).toBeInTheDocument();
   });
 });
 

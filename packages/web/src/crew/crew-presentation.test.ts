@@ -123,6 +123,7 @@ describe('headcount', () => {
           openedAt: '2024-10-20T00:00:00.000Z',
           conversions: [],
           duty: [],
+          morale: null,
           pools: [
             {
               id: 'p1',
@@ -132,6 +133,7 @@ describe('headcount', () => {
               unavailable: 2,
               onDuty: 1,
               reserve: 2,
+              sick: 0,
               available: 3,
             },
           ],
@@ -186,6 +188,7 @@ describe('commonality', () => {
             openedAt: '2024-10-20T00:00:00.000Z',
             conversions: [],
             duty: [],
+            morale: null,
             pools: [
               {
                 id: 'p1',
@@ -195,6 +198,7 @@ describe('commonality', () => {
                 unavailable: 0,
                 onDuty: 0,
                 reserve: 0,
+                sick: 0,
                 available: 4,
               },
             ],

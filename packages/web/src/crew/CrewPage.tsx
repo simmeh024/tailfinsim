@@ -9,6 +9,7 @@ import {
   fetchCrew,
   hireCrew,
   openCrewBase,
+  setCrewPolicies,
   setCrewReserve,
   startCrewConversion,
   type CrewFailure,
@@ -22,6 +23,7 @@ import { CrewActions, type CrewActionKind } from './CrewActions';
 import { CrewBaseTable, poolKey } from './CrewBaseTable';
 import { CrewCoverage, coverageKey } from './CrewCoverage';
 import { CrewKpiStrip } from './CrewKpiStrip';
+import { CrewMorale } from './CrewMorale';
 import { CREW_RANK_LABEL, CrewRoleBanner } from './CrewRoleBanner';
 import { FleetCommonality } from './FleetCommonality';
 import { TrainingPipeline } from './TrainingPipeline';
@@ -334,6 +336,18 @@ export function CrewPage(): ReactNode {
         }}
         onSelectFamily={chooseFamily}
         selectedFamily={selectedFamily}
+      />
+
+      {/*
+       * Morale sits under the base table because it is *about* those bases, and
+       * above training because a base losing crew is the more urgent of the two.
+       */}
+      <CrewMorale
+        crew={crew}
+        busy={busy}
+        onSetPolicies={(input) => {
+          run(setCrewPolicies(input));
+        }}
       />
 
       <TrainingPipeline crew={crew} inGameTime={inGameTime} />

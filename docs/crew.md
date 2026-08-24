@@ -416,6 +416,116 @@ negative, and nothing yet acts on that**. §11's bankruptcy is not built. The ga
 and the alternative is worse: payroll that silently skipped would make "run out of money" the
 cheapest strategy in the game.
 
+---
+
+# Morale, pay bands and attrition (M5-03)
+
+§9.2's wellbeing layer, and its whole promise is one sentence: _"cost-cutting on
+crew is a viable strategy with a delayed, visible bill."_ Three words, three
+requirements that pull against each other.
+
+## Viable
+
+Paying badly has to save real money, or it is a trap with a warning sign rather
+than a decision. Each base carries a **pay band** and a **hotel tier**, and both
+multiply real bills:
+
+| policy                                   | cost                         | morale             |
+| ---------------------------------------- | ---------------------------- | ------------------ |
+| pay `lean` / `market` / `generous`       | ×0.85 / ×1 / ×1.2 payroll    | 0.25 / 0.65 / 1.00 |
+| hotels `budget` / `standard` / `premium` | ×0.6 / ×1 / ×1.8 positioning | 0.20 / 0.65 / 1.00 |
+
+A well-run base on lean pay still scores 0.63 — liveable. A pay band that floored
+morale by itself would make the other three inputs decorative.
+
+**Bands, not a slider.** A continuous multiplier invites hunting for the exact
+figure that buys the most morale per unit of cash, which is homework rather than
+a choice.
+
+## Delayed
+
+Morale is a **stored state that eases toward a target**, not a formula over the
+inputs. That gap is the mechanic.
+
+| after     | gap closed |
+| --------- | ---------- |
+| 1 week    | 12%        |
+| 5.4 weeks | 50%        |
+| 13 weeks  | 81%        |
+
+At the flagship world's 2× clock the half-life is under three real weeks: long
+enough to bank the saving and stop thinking about it, short enough that the
+player is still recognisably the person who made the decision.
+
+Drift compounds, so two half-weeks equal one week — a tick that ran twice as
+often must not sour a base twice as fast.
+
+## Visible
+
+The four factors are itemised on the Crew page, each with a bar and a sentence,
+and the weighted values **sum to the target exactly**. A mood the player cannot
+argue with is a bug: a base losing crew with nothing explaining why reads as the
+game being arbitrary, and a player who concludes that stops making the decision.
+
+## The four inputs
+
+Two are chosen and two are measured, both from the duty periods M5-02 writes,
+over 28 days of game time.
+
+- **Pay band** and **hotel tier** — the player's.
+- **Roster stability** — the spread of _report times_. There is no roster object
+  and this does not pretend there is. Circular mean, because 23:00 and 01:00 are
+  two hours apart and a night operation is not the least stable thing in the game.
+- **Rest ratio** — rest hours against **duty** hours. Not rest served against
+  rest required, which is structurally 1: the dispatcher refuses to grant short
+  rest in the first place, so that reading could never be anything else. This
+  measures wear, not compliance — a base flying thirteen-hour days on twelve-hour
+  rests scores badly even though every rest was legal.
+
+Both measurements return **neutral, not zero**, with no duty periods to judge. A
+base that has not flown yet has not mistreated anybody.
+
+## What the bill is
+
+**Attrition** removes heads permanently; **sickness** takes them out for a few
+game days. Both deterministic — rate × headcount — because §14.1 forbids a figure
+a player cannot interrogate, and _"why did I lose two captains"_ is much harder
+to argue with when the answer is a die.
+
+`crew_pool.sick` is a fourth bucket beside training, duty and standby, because
+the fixes differ: a classroom is a fortnight and you wait, a duty is a night, and
+sickness is a _symptom_ whose fix is upstream of the roster entirely.
+
+## `crew_base.morale` is nullable, and that is load-bearing
+
+**Null means never reviewed**, not zero. A base opened a minute ago reads as the
+economy config's `startingMorale`; a base reading 0 has been run into the ground.
+
+Defaulting it in the schema would also have put a balance literal in a migration,
+unmovable by a retune. Same shape as `airframe.maintenance_state`, and the same
+warning: do not tidy it into a zero.
+
+## Worker, and the usual edge
+
+`reviewCrewMorale` runs per world per tick and skips a base reviewed inside the
+week — the tick calls it every second and the review _rolls the bill_, so without
+that guard a week of attrition would land sixty times a minute. It claims its row
+on `morale_reviewed_at`, so two workers racing produce one winner.
+
+**Production has no worker**, so there morale would sit at its starting value for
+ever: no drift, no sickness, no attrition, and the delayed bill would never
+arrive. `moraleReviews`, `crewResignations` and `crewSickened` are the counters.
+
+## Service execution is exposed, not consumed
+
+`serviceExecution(morale)` returns the multiplier §9.2 promises as an input to
+the product score — and **nothing multiplies it into anything**. App. D.1's rule
+that _the weakest input dominates_ is a decision about four inputs together and
+belongs to M8-04, which is open. Consuming it here would be taking M8-04's
+decision for it.
+
+Industrial action is explicitly out of scope.
+
 ## Not built yet
 
 **Morale** and the **service-quality link** into §6.4 are described in §9.2 and are not built.

@@ -2,7 +2,13 @@ import { randomUUID } from 'node:crypto';
 
 import { and, desc, eq, inArray, lte, ne, sql } from 'drizzle-orm';
 
-import type { CrewBalance, CrewDemand, CrewResponse, SetCrewReserveInput } from '@tailfin/shared';
+import type {
+  CrewBalance,
+  CrewDemand,
+  CrewResponse,
+  SetCrewPoliciesInput,
+  SetCrewReserveInput,
+} from '@tailfin/shared';
 import {
   availableHeads,
   checkComplement,
@@ -24,6 +30,8 @@ import {
   world,
 } from '../db/schema';
 import { loadWorldEconomyConfig } from '../economy/loader';
+
+import { readBaseMorale } from './morale';
 
 import type { Database } from '../db/client';
 import type { CrewRankValue } from '../db/schema';
@@ -115,7 +123,12 @@ export interface CrewBaseView {
   airportIcao: string;
   status: 'open' | 'closed';
   openedAt: Date;
-  pools: readonly (CrewPool & { id: string; onDuty: number; reserve: number })[];
+  pools: readonly (CrewPool & {
+    id: string;
+    onDuty: number;
+    reserve: number;
+    sick: number;
+  })[];
 }
 
 /** Every base an airline holds, with its pools. Empty is the normal new state. */
@@ -152,6 +165,7 @@ export async function readCrewBases(
       unavailable: crewPool.unavailable,
       onDuty: crewPool.onDuty,
       reserve: crewPool.reserve,
+      sick: crewPool.sick,
     })
     .from(crewPool)
     .where(
@@ -162,7 +176,10 @@ export async function readCrewBases(
     )
     .orderBy(crewPool.family, crewPool.rank);
 
-  const byBase = new Map<string, (CrewPool & { id: string; onDuty: number; reserve: number })[]>();
+  const byBase = new Map<
+    string,
+    (CrewPool & { id: string; onDuty: number; reserve: number; sick: number })[]
+  >();
   for (const pool of pools) {
     const list = byBase.get(pool.crewBaseId) ?? [];
     list.push({
@@ -178,9 +195,10 @@ export async function readCrewBases(
        * why. The wire shape reports the two separately, because the player needs
        * to tell "in training" from "flying".
        */
-      unavailable: pool.unavailable + pool.onDuty,
+      unavailable: pool.unavailable + pool.onDuty + pool.sick,
       onDuty: pool.onDuty,
       reserve: pool.reserve,
+      sick: pool.sick,
     });
     byBase.set(pool.crewBaseId, list);
   }
@@ -308,6 +326,17 @@ export async function readCrewState(
   const demand = await crewDemand(db, worldId, airlineId, openPools, balance);
 
   /*
+   * Morale, per base (M5-03). Read against the world's *game* clock, because
+   * everything about crew is -- and the target is recomputed here rather than
+   * stored, so a pay band changed a minute ago shows its new target beside a
+   * score that has not moved yet. That gap is the mechanic, and hiding it would
+   * be hiding the only part a player can act on.
+   */
+  const clock = await worldClock(db, worldId);
+  const morale = await readBaseMorale(db, worldId, airlineId, gameTime(clock, new Date()));
+  const moraleByBase = new Map(morale.map((entry) => [entry.crewBaseId, entry]));
+
+  /*
    * Sets working or resting (M5-02). Closed ones are excluded: they are history,
    * and the page's question is *where are my crew right now*. Unbounded is safe
    * for the same reason -- a base has as many open periods as it has aeroplanes
@@ -366,13 +395,15 @@ export async function readCrewState(
         family: pool.family,
         rank: pool.rank,
         headcount: pool.headcount,
-        // Back out `on_duty`, which `readCrewBases` folded in for the sim's
-        // benefit. On the wire the two are separate, because "in a classroom for
-        // a fortnight" and "back tonight" are different problems with different
-        // fixes.
-        unavailable: pool.unavailable - pool.onDuty,
+        // Back out `on_duty` and `sick`, which `readCrewBases` folds in for the
+        // sim's benefit. On the wire all three are separate, because "in a
+        // classroom for a fortnight", "back tonight" and "off ill" are different
+        // problems with different fixes -- and the last one's fix is upstream of
+        // the roster entirely.
+        unavailable: pool.unavailable - pool.onDuty - pool.sick,
         onDuty: pool.onDuty,
         reserve: pool.reserve,
+        sick: pool.sick,
         // Computed here rather than left as a subtraction the browser does: the
         // rule for "available" is the server's, and M5-02 changed it.
         available: availableHeads(pool),
@@ -388,6 +419,18 @@ export async function readCrewState(
           startedAt: conversion.startedAt.toISOString(),
           completesAt: conversion.completesAt.toISOString(),
         })),
+      morale: (() => {
+        const entry = moraleByBase.get(base.id);
+        if (entry === undefined) return null;
+        return {
+          score: entry.morale,
+          target: entry.target,
+          payBand: entry.payBand,
+          hotelTier: entry.hotelTier,
+          factors: entry.contributions.map((c) => ({ ...c })),
+          reviewedAt: entry.reviewedAt?.toISOString() ?? null,
+        };
+      })(),
       duty: duty
         .filter((period) => period.crewBaseId === base.id)
         .map((period) => ({
@@ -855,6 +898,63 @@ export async function setCrewReserve(
   const row = updated[0];
   if (!row) return { ok: false, refusal: 'not_enough_heads' };
   return { ok: true, value: { reserve: row.reserve } };
+}
+
+/**
+ * Set a base's pay band and hotel tier (M5-03, section 9.2).
+ *
+ * ## Free to change, expensive to live with
+ *
+ * Neither costs anything to set, and that is deliberate: the cost is what the
+ * band *does* to the monthly bill, not a fee for touching the control. A charge
+ * here would make the player hesitate over the decision rather than over its
+ * consequence, which is the wrong hesitation.
+ *
+ * ## Absent means leave it alone
+ *
+ * Both fields are optional, so changing pay does not restate the hotel tier. A
+ * required field would make "change one thing" impossible to express without the
+ * client reading the current value first and writing it back -- which races
+ * itself the moment two tabs are open.
+ *
+ * Morale is deliberately **not** touched. The new band changes the *target* at
+ * once and the score moves toward it over game weeks; writing the score here
+ * would erase the delay section 9.2 asks for, and with it the whole mechanic.
+ */
+export async function setCrewPolicies(
+  db: Database,
+  input: SetCrewPoliciesInput & { airlineId: string },
+): Promise<CrewResult<{ payBand: string; hotelTier: string }>> {
+  if (input.payBand === undefined && input.hotelTier === undefined) {
+    const current = await db
+      .select({ payBand: crewBase.payBand, hotelTier: crewBase.hotelTier })
+      .from(crewBase)
+      .where(and(eq(crewBase.id, input.crewBaseId), eq(crewBase.airlineId, input.airlineId)))
+      .limit(1);
+    const row = current[0];
+    // Nothing asked for is not an error, but a base that is not theirs is.
+    return row ? { ok: true, value: row } : { ok: false, refusal: 'base_absent' };
+  }
+
+  const updated = await db
+    .update(crewBase)
+    .set({
+      ...(input.payBand === undefined ? {} : { payBand: input.payBand }),
+      ...(input.hotelTier === undefined ? {} : { hotelTier: input.hotelTier }),
+    })
+    .where(
+      and(
+        eq(crewBase.id, input.crewBaseId),
+        // Scoped by the session-resolved owner, never verified afterwards
+        // (ADR-0020).
+        eq(crewBase.airlineId, input.airlineId),
+        eq(crewBase.status, 'open'),
+      ),
+    )
+    .returning({ payBand: crewBase.payBand, hotelTier: crewBase.hotelTier });
+
+  const row = updated[0];
+  return row ? { ok: true, value: row } : { ok: false, refusal: 'base_absent' };
 }
 
 // ---------------------------------------------------------------------------

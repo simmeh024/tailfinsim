@@ -5085,6 +5085,138 @@ body {
   cursor: not-allowed;
 }
 
+/* Morale, per base (M5-03). */
+.crew-morale + .crew-morale {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.crew-morale__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.crew-morale__base {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.crew-morale__score {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.crew-morale__score .figure {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+/* Colour agrees with the word beside it and never carries the meaning alone. */
+.crew-morale__score[data-mood='poor'] .figure {
+  color: var(--status-loss);
+}
+
+.crew-morale__score[data-mood='good'] .figure {
+  color: var(--status-profit);
+}
+
+.crew-morale__mood {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.crew-morale__trend {
+  margin: 2px 0 var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.crew-morale__factors {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+}
+
+.crew-morale__factors th,
+.crew-morale__factors td {
+  padding: 4px var(--space-2) 4px 0;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.crew-morale__factors thead th {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.crew-morale__factors th[scope='row'] {
+  color: var(--text-primary);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.crew-morale__bar-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 7rem;
+}
+
+.crew-morale__bar {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-inset);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.crew-morale__fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.crew-morale__total th,
+.crew-morale__total td {
+  border-bottom: none;
+  color: var(--text-primary);
+}
+
+.crew-morale__policies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: var(--space-3) 0 var(--space-2);
+}
+
+.crew-morale__policies label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.crew-morale__policies select {
+  font: inherit;
+  padding: 4px var(--space-2);
+  color: var(--text-primary);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.crew-morale__policies select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* The context panel's crew body. */
 .crew-context__facts {
   display: grid;

@@ -3,6 +3,7 @@ import {
   crewResponseJsonSchema,
   HireCrewInput,
   OpenCrewBaseInput,
+  SetCrewPoliciesInput,
   SetCrewReserveInput,
   StartCrewConversionInput,
   type CrewRefusal,
@@ -14,6 +15,7 @@ import {
   hireCrew,
   openCrewBase,
   readCrewState,
+  setCrewPolicies,
   setCrewReserve,
   startCrewConversion,
 } from './store';
@@ -161,6 +163,30 @@ export function registerCrewRoutes(app: FastifyInstance, { db }: { db: DatabaseH
       }
       const own = resolvedAirlineOf(request);
       const result = await setCrewReserve(db.db, { airlineId: own.id, ...parsed.data });
+      if (!result.ok) return reply.code(409).send(refusalBody(result.refusal));
+      return reply.code(200).send(await readCrewState(db.db, own.worldId, own.id));
+    },
+  );
+
+  /*
+   * PUT, for the reason the reserves route is: a pay band is a value the player
+   * sets, and sending the same request twice leaves the same band.
+   */
+  app.put<{ Body: unknown }>(
+    '/api/crew/policies',
+    {
+      onRequest: app.requireActiveAirline,
+      schema: {
+        response: { 200: crewResponseJsonSchema, 400: apiErrorJsonSchema, 409: apiErrorJsonSchema },
+      },
+    },
+    async (request, reply) => {
+      const parsed = SetCrewPoliciesInput.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ code: 'invalid_input', message: 'Malformed policy' });
+      }
+      const own = resolvedAirlineOf(request);
+      const result = await setCrewPolicies(db.db, { airlineId: own.id, ...parsed.data });
       if (!result.ok) return reply.code(409).send(refusalBody(result.refusal));
       return reply.code(200).send(await readCrewState(db.db, own.worldId, own.id));
     },
