@@ -9,12 +9,9 @@ import type { ReactNode } from 'react';
  *
  * H.4 asks for *"a context panel that never covers the world"*, and the shell has
  * had one since the beginning — as a hardcoded paragraph saying selection detail
- * *would* appear there. Nothing ever selected into it. `FleetPage` grew its own
- * inline detail panel underneath its table instead, which is a perfectly good
- * pattern and is not this one.
- *
- * So this is the first real occupant, built for the Crew page and deliberately
- * not shaped around it.
+ * *would* appear there. Crew became its first real occupant; the aircraft marketplace
+ * now uses the same contract for its stateful type and acquisition flow. The owned-airframe
+ * diagnostic below the fleet table remains a separate inline pattern.
  *
  * ## A rendered node, not a discriminated union of every entity
  *
@@ -54,18 +51,27 @@ export interface ContextSelection {
   subtitle?: string;
   /** The detail itself, rendered by whichever page owns the thing. */
   body: ReactNode;
+  /** Lets the owning page clear its local row/card state when the shell clears the panel. */
+  onClear?: () => void;
 }
 
 interface ContextSelectionStore {
   selection: ContextSelection | null;
   select: (selection: ContextSelection) => void;
   clear: () => void;
+  /**
+   * A shell-owned portal host. Pages normally publish `body`; stateful surfaces may publish
+   * `null` and portal into this target so their controls stay with the component owning state.
+   */
+  panelBody: HTMLElement | null;
+  attachPanelBody: (node: HTMLElement | null) => void;
 }
 
 const ContextSelectionContext = createContext<ContextSelectionStore | null>(null);
 
 export function ContextSelectionProvider({ children }: { children: ReactNode }): ReactNode {
   const [selection, setSelection] = useState<ContextSelection | null>(null);
+  const [panelBody, setPanelBody] = useState<HTMLElement | null>(null);
 
   const clear = useCallback(() => {
     setSelection(null);
@@ -73,10 +79,13 @@ export function ContextSelectionProvider({ children }: { children: ReactNode }):
   const select = useCallback((next: ContextSelection) => {
     setSelection(next);
   }, []);
+  const attachPanelBody = useCallback((node: HTMLElement | null) => {
+    setPanelBody(node);
+  }, []);
 
   const value = useMemo<ContextSelectionStore>(
-    () => ({ selection, select, clear }),
-    [selection, select, clear],
+    () => ({ selection, select, clear, panelBody, attachPanelBody }),
+    [selection, select, clear, panelBody, attachPanelBody],
   );
 
   return (
@@ -101,4 +110,6 @@ const FALLBACK: ContextSelectionStore = {
   selection: null,
   select: () => undefined,
   clear: () => undefined,
+  panelBody: null,
+  attachPanelBody: () => undefined,
 };

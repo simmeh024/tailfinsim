@@ -11,7 +11,11 @@ import type {
   UsedMarketListing,
 } from '@tailfin/shared';
 
+import { ContextSelectionProvider, useContextSelection } from '../shell/context-selection';
+
 import { FleetMarket } from './FleetMarket';
+
+import type { ReactNode } from 'react';
 
 const SPEC: AircraftSpec = {
   maxSeats: 180,
@@ -284,11 +288,46 @@ function stubMarketApi() {
   return posts;
 }
 
+function ContextProbe(): ReactNode {
+  const { selection, clear, attachPanelBody } = useContextSelection();
+  return (
+    <aside aria-label="Context">
+      <h2 id="context-panel-title" tabIndex={selection === null ? undefined : -1}>
+        {selection?.title ?? 'Context'}
+      </h2>
+      {selection?.subtitle !== undefined && <p>{selection.subtitle}</p>}
+      {selection !== null && (
+        <button
+          type="button"
+          onClick={() => {
+            selection.onClear?.();
+            clear();
+          }}
+        >
+          Clear selection
+        </button>
+      )}
+      <div>
+        {selection === null ? (
+          <p>Selection detail appears here.</p>
+        ) : selection.body === null ? (
+          <div ref={attachPanelBody} />
+        ) : (
+          selection.body
+        )}
+      </div>
+    </aside>
+  );
+}
+
 function renderMarket(onAcquired = vi.fn()) {
   render(
-    <MemoryRouter initialEntries={['/fleet']}>
-      <FleetMarket catalogue={CATALOGUE} onAcquired={onAcquired} />
-    </MemoryRouter>,
+    <ContextSelectionProvider>
+      <MemoryRouter initialEntries={['/fleet']}>
+        <FleetMarket catalogue={CATALOGUE} onAcquired={onAcquired} />
+      </MemoryRouter>
+      <ContextProbe />
+    </ContextSelectionProvider>,
   );
   return onAcquired;
 }
@@ -423,18 +462,35 @@ describe('the aircraft marketplace', () => {
     expect(await screen.findByRole('button', { name: /Order new/i })).toBeInTheDocument();
   });
 
-  it('moves focus into a selected detail and restores it when Escape closes the drawer', async () => {
+  it('moves focus into the context detail and restores it when Escape clears selection', async () => {
     stubMarketApi();
     renderMarket();
     const xlrCard = screen.getByRole('button', { name: /View Airbus A321XLR/i });
 
     fireEvent.click(xlrCard);
     const heading = await screen.findByRole('heading', { name: 'A321XLR' });
+    const context = screen.getByRole('complementary', { name: 'Context' });
+    expect(within(context).getByLabelText('Selected aircraft')).toBeInTheDocument();
     await waitFor(() => expect(heading).toHaveFocus());
 
     fireEvent.keyDown(screen.getByLabelText('Selected aircraft'), { key: 'Escape' });
     await waitFor(() => expect(xlrCard).toHaveFocus());
-    expect(screen.getByText('Select an aircraft')).toBeInTheDocument();
+    expect(within(context).getByRole('heading', { name: 'Context' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Selected aircraft')).toBeNull();
+  });
+
+  it('lets the shell clear the aircraft selection without leaving the card selected', async () => {
+    stubMarketApi();
+    renderMarket();
+    const card = screen.getByRole('button', { name: /View Boeing 737-800/i });
+
+    fireEvent.click(card);
+    expect(await screen.findByRole('heading', { name: '737-800' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear selection' }));
+
+    await waitFor(() => expect(card).toHaveFocus());
+    expect(card).not.toHaveAttribute('aria-current');
+    expect(screen.queryByLabelText('Selected aircraft')).toBeNull();
   });
 
   it('compares a bounded set using canonical values', async () => {
