@@ -1,4 +1,4 @@
-import { randomInt, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -36,6 +36,8 @@ import { seedAircraftCatalogue } from './catalogue';
  *   3. a used airframe carries its prior owner's exact configuration and history.
  */
 
+const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
 const url = process.env.DATABASE_URL;
 if (!url) console.warn('\n  [acquisition.test] DATABASE_URL not set — skipping.\n');
 const describeDb = url ? describe : describe.skip;
@@ -62,6 +64,7 @@ describeDb('aircraft acquisition', () => {
   let db: DatabaseHandle;
   let fixtures: FoundedAirlineFixtureHarness;
   const madeAirports: string[] = [];
+  let sequence = 0;
 
   beforeAll(async () => {
     db = createDatabase();
@@ -80,13 +83,36 @@ describeDb('aircraft acquisition', () => {
     await db.close();
   });
 
+  /*
+   * A counter, not a random tag.
+   *
+   * These four suites each drew a random three-letter tag from 26^3, and a suite
+   * making twenty airports has a ~1% chance of drawing the same one twice --
+   * which lands as `Failed query: insert into "airport"` on a PR that touched
+   * nothing near it. It bit `maintenance.test.ts` (VPEO) and `fleet.test.ts` on
+   * unrelated branches before it was diagnosed.
+   *
+   * `sourceId` was random over the whole negative int range too, which is a
+   * second, rarer instance of the same bug.
+   *
+   * The crew suites already do it this way, and CLAUDE.md records why they had
+   * to: a prefix per suite and a counter for the rest, so a collision is a
+   * counting fact rather than a probability.
+   *
+   * The one prefix worth checking is `acquisition`'s `T`, which shares a letter
+   * with the crew suites' `TC`, `TD`, `TL`, `TM`, `TP` and `TY`. A counter
+   * starting at `AAA` reaches `CAA` only after 1,352 airports, and these suites
+   * make tens -- so it is bounded rather than impossible, which is worth knowing
+   * before anyone writes a loop that makes thousands.
+   */
   async function makeDeliveryAirport(): Promise<string> {
-    const tag = Array.from({ length: 3 }, () => String.fromCharCode(randomInt(65, 91))).join('');
+    const n = sequence++;
+    const tag = `${LETTERS[Math.floor(n / 676) % 26]}${LETTERS[Math.floor(n / 26) % 26]}${LETTERS[n % 26]}`;
     const icao = `T${tag}`;
     const [created] = await db.db
       .insert(airport)
       .values({
-        sourceId: randomInt(-2_147_483_648, 0),
+        sourceId: -(8_700_000 + n),
         ident: icao,
         icaoCode: icao,
         name: `Aircraft delivery test ${tag}`,
