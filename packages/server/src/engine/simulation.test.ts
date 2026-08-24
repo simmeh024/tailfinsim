@@ -392,6 +392,8 @@ describe('crew conversions on the tick', () => {
     standDownCrew: () => Promise.resolve({ stoodDown: 0, hotelledMinor: 0 }),
     returnCrew: () => Promise.resolve({ returned: 0 }),
     payCrew: () => Promise.resolve({ airlinesBilled: 0, totalMinor: 0 }),
+    reviewMorale: () => Promise.resolve({ basesReviewed: 0, resignations: 0, sickened: 0 }),
+    returnSick: () => Promise.resolve({ returned: 0 }),
   };
 
   /**

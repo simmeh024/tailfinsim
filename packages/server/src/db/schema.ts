@@ -2616,6 +2616,18 @@ export type CrewRankValue = (typeof crewRank.enumValues)[number];
 export const crewBaseStatus = pgEnum('crew_base_status', ['open', 'closed']);
 
 /**
+ * What a base pays, relative to the book rate (M5-03, section 9.2).
+ *
+ * Bands rather than a multiplier the player types. Section 9.2 wants a decision
+ * -- pay under the odds, pay the rate, or pay up -- and a slider turns that into
+ * a hunt for the figure that buys the most morale per unit of cash.
+ */
+export const payBand = pgEnum('pay_band', ['lean', 'market', 'generous']);
+
+/** What the crew sleep in when a duty period ends away from base (M5-03). */
+export const hotelTier = pgEnum('hotel_tier', ['budget', 'standard', 'premium']);
+
+/**
  * A crew base: an airline's presence at an airport, with its own hiring pool.
  *
  * Section 9.2 calls it an unlockable facility with its own hiring pool and cost
@@ -2642,6 +2654,31 @@ export const crewBase = pgTable(
       .references(() => airport.icaoCode),
 
     status: crewBaseStatus('status').notNull().default('open'),
+
+    /** The two policies M5-03 gives the player. Both cost money and buy morale. */
+    payBand: payBand('pay_band').notNull().default('market'),
+    hotelTier: hotelTier('hotel_tier').notNull().default('standard'),
+
+    /**
+     * Morale, 0-1. **Null means never reviewed**, not zero.
+     *
+     * A state rather than a formula: the four inputs give a *target* and this
+     * eases toward it over game weeks, which is the delay section 9.2 asks for.
+     * Without the gap there is no delayed bill and no decision worth making.
+     *
+     * Null rather than a default of 0.65, and the distinction is load-bearing
+     * twice over. A base opened a minute ago has no morale history and reads as
+     * its balance's `startingMorale`; a base reading 0 has been run into the
+     * ground. And putting 0.65 in the schema would be a **balance literal in a
+     * migration** -- retuning `startingMorale` afterwards would not move it, and
+     * CLAUDE.md's rule is that the economy is a row and not a constant.
+     *
+     * The same shape as `airframe.maintenance_state`, and the same warning: do
+     * not tidy this into a zero.
+     */
+    morale: doublePrecision('morale'),
+    /** Game time of the last morale review. Null alongside `morale`. */
+    moraleReviewedAt: timestamp('morale_reviewed_at', { withTimezone: true }),
 
     /** Game time, so a reset moves it with everything else (ADR-0005). */
     openedAt: timestamp('opened_at', { withTimezone: true }).notNull(),
@@ -2714,12 +2751,26 @@ export const crewPool = pgTable(
      */
     reserve: integer('reserve').notNull().default(0),
 
+    /**
+     * Heads off sick (M5-03, section 9.2).
+     *
+     * A fourth bucket rather than a flavour of `unavailable`, for the reason
+     * `on_duty` is a third: the fixes differ. A classroom is a fortnight and you
+     * wait; a duty is a night and you hire or keep a reserve; sickness is a
+     * symptom, and the fix is upstream of the roster entirely.
+     */
+    sick: integer('sick').notNull().default(0),
+    /** Game time the sick heads come back. Null when nobody is off. */
+    sickUntil: timestamp('sick_until', { withTimezone: true }),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     unique('crew_pool_base_family_rank_key').on(t.crewBaseId, t.family, t.rank),
     index('crew_pool_base_idx').on(t.crewBaseId),
+    // The worker's claim: pools whose sick leave has run out.
+    index('crew_pool_sick_idx').on(t.sickUntil),
     check('crew_pool_headcount_nonneg', sql`${t.headcount} >= 0`),
     // The three together: never more people committed than there are on strength.
     check(
@@ -2733,6 +2784,16 @@ export const crewPool = pgTable(
     check(
       'crew_pool_reserve_within_headcount',
       sql`${t.reserve} >= 0 AND ${t.reserve} <= ${t.headcount}`,
+    ),
+    /*
+     * Sick heads sit alongside the classroom and the aeroplane rather than
+     * inside either, so all three together still cannot exceed the payroll.
+     * Without this an unlucky week could take a pool's committed heads past its
+     * headcount and the arithmetic would stop meaning anything.
+     */
+    check(
+      'crew_pool_sick_within_headcount',
+      sql`${t.sick} >= 0 AND ${t.unavailable} + ${t.onDuty} + ${t.sick} <= ${t.headcount}`,
     ),
   ],
 );

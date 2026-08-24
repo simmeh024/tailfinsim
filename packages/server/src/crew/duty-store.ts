@@ -392,6 +392,7 @@ export async function standDownIdleCrew(
       locationIcao: crewDutyPeriod.locationIcao,
       lastArrivalAt: crewDutyPeriod.lastArrivalAt,
       baseIcao: crewBase.airportIcao,
+      hotelTier: crewBase.hotelTier,
     })
     .from(crewDutyPeriod)
     .innerJoin(crewBase, eq(crewBase.id, crewDutyPeriod.crewBaseId))
@@ -446,6 +447,8 @@ export async function standDownIdleCrew(
           ),
           occurredAt: offDutyAt,
           duty,
+          // The tier the player chose for this base, not a flat rate.
+          hotelCostMultiplier: economy.crew.morale.hotelTiers[period.hotelTier].costMultiplier,
         });
       }
     });

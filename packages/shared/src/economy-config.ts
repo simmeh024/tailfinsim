@@ -1666,6 +1666,22 @@ export const CrewMoraleBalance = z
     /** Game days a sick crew member is unavailable. */
     sicknessDays: z.number().int().positive(),
 
+    /**
+     * Rest-to-duty ratios at which crew are content, and at which they are not.
+     *
+     * The rest *ratio* is rest hours against duty hours across recent duty
+     * periods - not rest served against rest required, which is structurally 1
+     * because the dispatcher refuses to grant short rest in the first place. An
+     * input that can only ever read 1 is not an input.
+     *
+     * What this measures is whether the crew are being *worked hard*: a base
+     * flying thirteen-hour days on twelve-hour rests scores badly even though
+     * every one of those rests was legal, and that is exactly section 9.2's
+     * complaint.
+     */
+    restToDutyForFull: z.number().positive(),
+    restToDutyForZero: z.number().nonnegative(),
+
     /** Fraction of a pool who resign per week, at zero and at full morale. */
     attritionAtZero: z.number().min(0).max(1),
     attritionAtFull: z.number().min(0).max(1),
@@ -1734,6 +1750,12 @@ export const SHIPPED_CREW_MORALE_BALANCE = {
   sicknessAtZero: 0.08,
   sicknessAtFull: 0.01,
   sicknessDays: 3,
+
+  // Equal rest and duty is comfortable; two hours of rest for every three of
+  // duty is where it stops being. Both are legal -- ORO.FTL's floors are lower
+  // than either -- which is the point: this measures wear, not compliance.
+  restToDutyForFull: 1,
+  restToDutyForZero: 0.66,
 
   // 4% a week at zero morale empties a pool in roughly half a game year -- slow
   // enough to be a bill rather than a collapse, fast enough to notice.
