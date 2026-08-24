@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { COARSE_WORLD } from './land';
 import { createWorldLayers } from './layers';
+import { reliefImage } from './relief';
 import { createDarknessField, WEB_MERCATOR_MAX_LATITUDE } from './terminator';
 
 import type { WorldRoute } from './layers';
@@ -38,7 +39,13 @@ describe('projection-independent world layers', () => {
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
       projection: 'flat',
-      visibility: { graticule: true, routes: true, terminator: true, borders: false },
+      visibility: {
+        graticule: true,
+        routes: true,
+        terminator: true,
+        borders: false,
+        relief: false,
+      },
     });
     const routes = layers.find(
       (layer): layer is ArcLayer<WorldRoute> =>
@@ -59,13 +66,90 @@ describe('projection-independent world layers', () => {
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
       projection: 'flat',
-      visibility: { graticule: false, routes: true, terminator: false, borders: false },
+      visibility: {
+        graticule: false,
+        routes: true,
+        terminator: false,
+        borders: false,
+        relief: false,
+      },
     });
     expect(layers.filter((layer) => layer !== false).map((layer) => layer.id)).toEqual([
       'world-ocean',
       'world-land',
       'world-routes',
     ]);
+  });
+
+  it('draws the relief over the land fill and under the borders', () => {
+    /*
+     * Order is the whole of this layer's correctness. It is an overlay on the
+     * land *colour*, not a picture of the ground: beneath the fill it is
+     * invisible, and above the borders it greys out the one line on the map that
+     * has to stay crisp.
+     */
+    const ids = createWorldLayers({
+      palette,
+      quality: 'full',
+      routes: [],
+      darkness: DARKNESS,
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
+      projection: 'flat',
+      visibility: {
+        graticule: false,
+        routes: false,
+        terminator: false,
+        borders: true,
+        relief: true,
+      },
+    })
+      .filter((layer): layer is Layer => layer !== false)
+      .map((layer) => layer.id);
+
+    expect(ids).toEqual(['world-ocean', 'world-land', 'world-relief', 'world-borders']);
+  });
+
+  it('gives each projection its own relief, because the warp is baked in', () => {
+    /*
+     * Asserted on `reliefImage` rather than through the layer, and that is not a
+     * shortcut. `BitmapLayer.image` is an **async prop**: `layer.props.image`
+     * reads as the *resolved* value, which is null until deck.gl has fetched it,
+     * so a test reading it off an uninitialised layer proves nothing either way.
+     *
+     * The claim that matters is here anyway. `BitmapLayer` interpolates texture
+     * coordinates linearly in whatever the viewport uses, so one image cannot
+     * serve both projections; `_imageCoordinateSystem` is deck.gl's answer and
+     * this codebase reverted it (see the terminator). The warp is baked into the
+     * asset instead, which only works if each projection gets its own.
+     */
+    expect(reliefImage('globe')).not.toBe(reliefImage('flat'));
+    expect(reliefImage('globe')).toBeTruthy();
+    expect(reliefImage('flat')).toBeTruthy();
+  });
+
+  it('omits the relief entirely when it is switched off', () => {
+    const ids = createWorldLayers({
+      palette,
+      quality: 'full',
+      routes: [],
+      darkness: DARKNESS,
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
+      projection: 'flat',
+      visibility: {
+        graticule: false,
+        routes: false,
+        terminator: false,
+        borders: false,
+        relief: false,
+      },
+    })
+      .filter((layer): layer is Layer => layer !== false)
+      .map((layer) => layer.id);
+
+    // Not merely hidden: a switched-off layer must not cost a 600 KB fetch.
+    expect(ids).not.toContain('world-relief');
   });
 
   it('halves route tessellation in reduced mode', () => {
@@ -77,7 +161,13 @@ describe('projection-independent world layers', () => {
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
       projection: 'flat',
-      visibility: { graticule: false, routes: true, terminator: false, borders: false },
+      visibility: {
+        graticule: false,
+        routes: true,
+        terminator: false,
+        borders: false,
+        relief: false,
+      },
     });
     const reduced = createWorldLayers({
       palette,
@@ -87,7 +177,13 @@ describe('projection-independent world layers', () => {
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
       projection: 'flat',
-      visibility: { graticule: false, routes: true, terminator: false, borders: false },
+      visibility: {
+        graticule: false,
+        routes: true,
+        terminator: false,
+        borders: false,
+        relief: false,
+      },
     });
     const fullRoutes = full.find(
       (layer): layer is ArcLayer<WorldRoute> =>
@@ -119,7 +215,13 @@ describe('projection-independent world layers', () => {
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
-      visibility: { graticule: true, routes: true, terminator: true, borders: false },
+      visibility: {
+        graticule: true,
+        routes: true,
+        terminator: true,
+        borders: false,
+        relief: false,
+      },
     };
     const boundsFor = (projection: 'flat' | 'globe') =>
       createWorldLayers({ ...options, projection })
@@ -157,7 +259,13 @@ describe('projection-independent world layers', () => {
         land: COARSE_WORLD.land,
         borders: COARSE_WORLD.borders,
         projection: 'globe',
-        visibility: { graticule: false, routes: false, terminator: true, borders: false },
+        visibility: {
+          graticule: false,
+          routes: false,
+          terminator: true,
+          borders: false,
+          relief: false,
+        },
       })
         .filter((layer): layer is Layer => layer !== false)
         .find((layer) => layer.id === 'world-terminator');
@@ -188,10 +296,22 @@ describe('projection-independent world layers', () => {
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
       projection: 'globe',
-      visibility: { graticule: true, routes: true, terminator: true, borders: false },
+      visibility: {
+        graticule: true,
+        routes: true,
+        terminator: true,
+        borders: false,
+        relief: true,
+      },
     }).filter((layer): layer is Layer => layer !== false);
 
-    for (const id of ['world-ocean', 'world-terminator']) {
+    /*
+     * The relief belongs in this list for exactly the reason the other two do:
+     * it is a world-sized quad, so its near and far halves project with opposite
+     * apparent winding and back-face culling discards one of them. When it
+     * discards the near one the planet goes black.
+     */
+    for (const id of ['world-ocean', 'world-terminator', 'world-relief']) {
       const layer = layers.find((candidate) => candidate.id === id);
       const parameters = (layer?.props as unknown as { parameters?: { cullMode?: string } })
         .parameters;
@@ -219,7 +339,13 @@ describe('projection-independent world layers', () => {
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
       projection: 'globe',
-      visibility: { graticule: false, routes: false, terminator: true, borders: false },
+      visibility: {
+        graticule: false,
+        routes: false,
+        terminator: true,
+        borders: false,
+        relief: false,
+      },
     }).filter((layer): layer is Layer => layer !== false);
 
     const terminator = layers.find((layer) => layer.id === 'world-terminator');
@@ -267,7 +393,13 @@ describe('projection-independent world layers', () => {
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
       projection: 'globe',
-      visibility: { graticule: false, routes: false, terminator: true, borders: false },
+      visibility: {
+        graticule: false,
+        routes: false,
+        terminator: true,
+        borders: false,
+        relief: false,
+      },
     }).filter((layer): layer is Layer => layer !== false);
 
     const worldSized = layers.filter((layer) =>
@@ -306,7 +438,7 @@ describe('projection-independent world layers', () => {
         land: COARSE_WORLD.land,
         borders: COARSE_WORLD.borders,
         projection: 'globe',
-        visibility: { graticule: false, routes: false, terminator: false, borders },
+        visibility: { graticule: false, routes: false, terminator: false, borders, relief: false },
       })
         .filter((layer): layer is Layer => layer !== false)
         .map((layer) => layer.id);
@@ -322,7 +454,13 @@ describe('projection-independent world layers', () => {
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
       projection: 'globe',
-      visibility: { graticule: false, routes: false, terminator: false, borders: true },
+      visibility: {
+        graticule: false,
+        routes: false,
+        terminator: false,
+        borders: true,
+        relief: false,
+      },
     })
       .filter((l): l is Layer => l !== false)
       .find((l) => l.id === 'world-borders');
@@ -351,7 +489,13 @@ describe('projection-independent world layers', () => {
         land: COARSE_WORLD.land,
         borders: COARSE_WORLD.borders,
         projection,
-        visibility: { graticule: false, routes: false, terminator: true, borders: false },
+        visibility: {
+          graticule: false,
+          routes: false,
+          terminator: true,
+          borders: false,
+          relief: false,
+        },
       }).filter((layer): layer is Layer => layer !== false);
       const terminator = layers.find((layer) => layer.id === 'world-terminator');
       return (terminator?.props as unknown as { bounds: number[] }).bounds;
@@ -378,7 +522,13 @@ describe('projection-independent world layers', () => {
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
       projection: 'flat',
-      visibility: { graticule: false, routes: false, terminator: true, borders: false },
+      visibility: {
+        graticule: false,
+        routes: false,
+        terminator: true,
+        borders: false,
+        relief: false,
+      },
     }).filter((layer): layer is Layer => layer !== false);
 
     /*
@@ -421,7 +571,13 @@ describe('projection-independent world layers', () => {
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
       projection: 'globe',
-      visibility: { graticule: true, routes: true, terminator: true, borders: false },
+      visibility: {
+        graticule: true,
+        routes: true,
+        terminator: true,
+        borders: false,
+        relief: false,
+      },
     }).filter((layer): layer is Layer => layer !== false);
 
     for (const id of ['world-ocean', 'world-terminator']) {
@@ -461,7 +617,13 @@ describe('projection-independent world layers', () => {
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
       projection: 'flat',
-      visibility: { graticule: false, routes: false, terminator: true, borders: false },
+      visibility: {
+        graticule: false,
+        routes: false,
+        terminator: true,
+        borders: false,
+        relief: false,
+      },
     }).filter((layer): layer is Layer => layer !== false);
 
     for (const id of ['world-ocean', 'world-terminator']) {
@@ -483,7 +645,13 @@ describe('projection-independent world layers', () => {
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
       projection: 'flat',
-      visibility: { graticule: false, routes: false, terminator: false, borders: false },
+      visibility: {
+        graticule: false,
+        routes: false,
+        terminator: false,
+        borders: false,
+        relief: false,
+      },
     }).filter((layer): layer is Layer => layer !== false);
 
     const image = (
@@ -507,7 +675,13 @@ describe('projection-independent world layers', () => {
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
       projection: 'flat',
-      visibility: { graticule: false, routes: false, terminator: true, borders: false },
+      visibility: {
+        graticule: false,
+        routes: false,
+        terminator: true,
+        borders: false,
+        relief: false,
+      },
     }).filter((layer): layer is Layer => layer !== false);
 
     const image = (
@@ -553,7 +727,13 @@ describe('projection-independent world layers', () => {
         land: COARSE_WORLD.land,
         borders: COARSE_WORLD.borders,
         projection: 'globe',
-        visibility: { graticule: false, routes: false, terminator: false, borders: false },
+        visibility: {
+          graticule: false,
+          routes: false,
+          terminator: false,
+          borders: false,
+          relief: false,
+        },
       }).find((layer) => layer !== false && layer.id === 'world-land') as Layer
     ).props.data as { features?: { geometry: { type: string; coordinates: unknown } }[] };
 

@@ -1,5 +1,6 @@
 import { ArcLayer, BitmapLayer, GeoJsonLayer, PathLayer } from '@deck.gl/layers';
 
+import { reliefImage } from './relief';
 import { WEB_MERCATOR_MAX_LATITUDE } from './terminator';
 
 import type { BorderGeometry, LandGeometry } from './land';
@@ -15,6 +16,8 @@ export interface WorldLayerVisibility {
   routes: boolean;
   terminator: boolean;
   borders: boolean;
+  /** Shaded relief over the land (App. H.2). */
+  relief: boolean;
 }
 
 export interface WorldRoute {
@@ -377,6 +380,28 @@ export function createWorldLayers({
      * weight makes a continent read as a mesh of equal cells, and the coastline is
      * the one that says where the land stops.
      */
+    visibility.relief &&
+      new WorldBitmapLayer({
+        id: 'world-relief',
+        // The same world-sized quad the ocean and terminator use.
+        bounds,
+        /*
+         * Above the land fill and below the borders, because it is an overlay on
+         * the land colour rather than a picture of the ground. Under the fill it
+         * would be invisible; over the borders it would grey out the one line on
+         * the map that has to stay crisp.
+         */
+        image: reliefImage(projection),
+        /*
+         * No `_imageCoordinateSystem`, for the reason the terminator gives at
+         * length below: it is deck.gl's own answer to exactly this and it does
+         * not survive a quad this size. The warp is baked into the asset instead
+         * — one image per projection, each matching the bounds its projection is
+         * given.
+         */
+        // See the ocean layer: a full-sphere quad must not be back-face culled.
+        parameters: { cullMode: 'none' },
+      }),
     visibility.borders &&
       new GeoJsonLayer({
         id: 'world-borders',

@@ -80,16 +80,56 @@ global zero-duration motion tokens.
 
 ## Layers
 
-The baseline layers are:
+The baseline layers are, in draw order:
 
 1. ocean polygon;
-2. Natural Earth land from the bundled `world-atlas` 110 m TopoJSON asset;
-3. optional graticule;
-4. optional day/night shading;
-5. optional routes.
+2. Natural Earth land from the bundled `world-atlas` TopoJSON asset;
+3. optional shaded relief;
+4. optional country borders;
+5. optional graticule;
+6. optional day/night shading;
+7. optional routes.
 
-No basemap or tile service is contacted at runtime. This keeps the first renderer usable
+No basemap or tile service is contacted at runtime. This keeps the renderer usable
 without an API key or a third-party availability dependency.
+
+### Shaded relief
+
+An **overlay, not a basemap**. The image is transparent over the sea, black where a slope is in
+shadow and white where it catches the light, drawn over whatever colour the palette gives the
+land — so one asset serves both themes and neither can be fought by it.
+
+It sits above the land fill and below the borders. Beneath the fill it would be invisible; above
+the borders it would grey out the one line on the map that has to stay crisp.
+
+Generated offline by `tools/world/build-relief.py` from Natural Earth's public-domain 50 m
+shaded relief, masked by the **same land polygons the map already draws** — so the shading can
+never bleed past the coastline on screen. The mask cannot come from the raster itself: Natural
+Earth renders open ocean at luminance 206 and flat desert at 199, which is not a distinction.
+
+Flat ground shades to alpha 0, which composites to exactly the land colour. Worth knowing before
+anyone tries to recover a land mask from the asset's alpha channel — level desert and open ocean
+are both fully transparent there, and only the polygons say which is which.
+
+**Two images, because the projection is baked in.** `BitmapLayer` interpolates texture
+coordinates linearly in whatever the viewport uses, and `_imageCoordinateSystem: 'lnglat'` is
+deck.gl's answer to that — one this renderer already tried and reverted, because on a
+world-sized quad it wedged the terminator across the equator on the flat map and left hard-edged
+blocks on the globe. So the warp is done offline, exactly as `createDarknessField` does it at
+runtime: equal degrees per row for the globe, equal mercator units per row for the flat map,
+each matching the northern edge `worldBounds` gives its projection. Only the projection in use
+is ever fetched.
+
+|                        |   size | when                             |
+| ---------------------- | -----: | -------------------------------- |
+| `relief-equirect-2048` | 603 KB | globe, once, if terrain is on    |
+| `relief-mercator-2048` | 610 KB | flat map, once, if terrain is on |
+
+2048 × 1024 is about **20 km per pixel at the equator** — honest at world and continent zoom and
+visibly soft if you go looking at a city. Tiles are the answer to that, and they are the answer
+this project has deliberately not taken; see the note on `land-10m` below. The Terrain toggle
+turns the layer off entirely rather than hiding it, so a session that does not want it never
+pays the fetch.
 
 Routes are `ArcLayer` instances with `greatCircle: true`. That one implementation is used in
 both projections. In flat mode deck.gl splits/wraps the great-circle arc at the antimeridian;
