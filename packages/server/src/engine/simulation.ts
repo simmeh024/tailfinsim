@@ -6,6 +6,7 @@ import { deliverDueAircraftOrders } from '../aircraft/acquisition';
 import { sweepMaintenance } from '../aircraft/maintenance';
 import { refreshUsedAircraftMarket } from '../aircraft/used-market';
 import { returnRestedCrew, standDownIdleCrew } from '../crew/duty-store';
+import { runCrewPayroll } from '../crew/payroll';
 import { completeDueConversions } from '../crew/store';
 import { type Database } from '../db/client';
 import { world, type WorldRow } from '../db/schema';
@@ -89,6 +90,8 @@ export interface TickReport {
   crewStoodDown: number;
   /** M5-02. Crew sets whose rest finished and whose heads went back. */
   crewRested: number;
+  /** M5-02. Airlines billed for a month of crew. */
+  crewPaid: number;
   crewErrors: number;
 }
 
@@ -141,6 +144,8 @@ export interface SimulationEngineOptions {
   standDownCrew?: typeof standDownIdleCrew;
   /** M5-02. Returns rested heads to their pools. */
   returnCrew?: typeof returnRestedCrew;
+  /** M5-02. Bills the month's salaries and base overheads. */
+  payCrew?: typeof runCrewPayroll;
   depth?: typeof queueDepth;
 }
 
@@ -214,6 +219,8 @@ export interface EngineSnapshot {
   crewStoodDown: number;
   /** M5-02. Crew sets whose rest finished and whose heads went back. */
   crewRested: number;
+  /** M5-02. Airlines billed for a month of crew. */
+  crewPaid: number;
   crewErrors: number;
   maintenanceErrors: number;
 }
@@ -297,6 +304,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     completeConversions = completeDueConversions,
     standDownCrew = standDownIdleCrew,
     returnCrew = returnRestedCrew,
+    payCrew = runCrewPayroll,
   } = options;
 
   const unhandledEventTypes = ALL_EVENT_TYPES.filter((type) => handlers[type] === undefined);
@@ -320,6 +328,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let crewConversionsCompleted = 0;
   let crewStoodDown = 0;
   let crewRested = 0;
+  let crewPaid = 0;
   let crewErrors = 0;
   let maintenanceErrors = 0;
 
@@ -335,6 +344,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     let tickCrewConversions = 0;
     let tickCrewStoodDown = 0;
     let tickCrewRested = 0;
+    let tickCrewPaid = 0;
     let tickCrewErrors = 0;
     let tickAirframesGrounded = 0;
 
@@ -452,6 +462,22 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
               `${String(back.returned)} rested`,
           );
         }
+
+        /*
+         * Payday (M5-02). Attempted every tick and billed once: the reference
+         * carries the world's own calendar month and AIR-06 refuses a second
+         * movement with the same cause and reference, so this is a no-op for all
+         * but the first tick of a month -- and self-heals if the worker was down
+         * across the boundary.
+         */
+        const paid = await payCrew(db, entry.id, worldNow);
+        tickCrewPaid += paid.airlinesBilled;
+        if (paid.airlinesBilled > 0) {
+          log?.info?.(
+            `[${entry.name}] crew payroll: ${String(paid.airlinesBilled)} airline(s), ` +
+              `${String(Math.round(paid.totalMinor / 100))}`,
+          );
+        }
       } catch (error) {
         tickCrewErrors += 1;
         log?.warn?.(`[${entry.name}] crew duty sweep failed: ${String(error)}`);
@@ -505,6 +531,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     crewConversionsCompleted += tickCrewConversions;
     crewStoodDown += tickCrewStoodDown;
     crewRested += tickCrewRested;
+    crewPaid += tickCrewPaid;
     crewErrors += tickCrewErrors;
     lastTickAt = context.tickedAt;
     lastTickDurationMs = durationMs;
@@ -526,6 +553,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       crewConversionsCompleted: tickCrewConversions,
       crewStoodDown: tickCrewStoodDown,
       crewRested: tickCrewRested,
+      crewPaid: tickCrewPaid,
       crewErrors: tickCrewErrors,
     };
   }
@@ -588,6 +616,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         crewConversionsCompleted,
         crewStoodDown,
         crewRested,
+        crewPaid,
         crewErrors,
         maintenanceErrors,
       };

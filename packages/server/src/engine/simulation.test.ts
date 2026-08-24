@@ -389,8 +389,9 @@ describe('crew conversions on the tick', () => {
    * on. `duty-store.test.ts` proves what the sweeps do.
    */
   const quietDuty = {
-    standDownCrew: () => Promise.resolve({ stoodDown: 0 }),
+    standDownCrew: () => Promise.resolve({ stoodDown: 0, hotelledMinor: 0 }),
     returnCrew: () => Promise.resolve({ returned: 0 }),
+    payCrew: () => Promise.resolve({ airlinesBilled: 0, totalMinor: 0 }),
   };
 
   /**

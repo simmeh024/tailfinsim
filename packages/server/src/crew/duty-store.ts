@@ -6,6 +6,8 @@ import { restRequiredMinutes, type DutyHistoryEntry } from '@tailfin/sim';
 import { airport, crewBase, crewDutyPeriod, crewPool } from '../db/schema';
 import { loadWorldEconomyConfig } from '../economy/loader';
 
+import { chargePositioning } from './payroll';
+
 import type { Database } from '../db/client';
 
 /**
@@ -376,7 +378,7 @@ export async function standDownIdleCrew(
   db: Database,
   worldId: string,
   now: Date,
-): Promise<{ stoodDown: number }> {
+): Promise<{ stoodDown: number; hotelledMinor: number }> {
   const economy = await loadWorldEconomyConfig(db, worldId);
   const duty = economy.crew.duty;
   const idleAfterMs =
@@ -385,6 +387,8 @@ export async function standDownIdleCrew(
   const candidates = await db
     .select({
       id: crewDutyPeriod.id,
+      airlineId: crewDutyPeriod.airlineId,
+      heads: crewDutyPeriod.heads,
       locationIcao: crewDutyPeriod.locationIcao,
       lastArrivalAt: crewDutyPeriod.lastArrivalAt,
       baseIcao: crewBase.airportIcao,
@@ -402,14 +406,36 @@ export async function standDownIdleCrew(
     .limit(200);
 
   let stoodDown = 0;
+  let hotelledMinor = 0;
   for (const period of candidates) {
     const offDutyAt = new Date(
       (period.lastArrivalAt ?? now).getTime() + duty.offDutyAfterArrivalMinutes * 60_000,
     );
-    await endDutyPeriod(db, period.id, offDutyAt, period.locationIcao === period.baseIcao, duty);
+    const atBase = period.locationIcao === period.baseIcao;
+    const { restUntil } = await endDutyPeriod(db, period.id, offDutyAt, atBase, duty);
+
+    /*
+     * The bill section 9.2 names: *"an aircraft night-stopping away from base
+     * needs crew hotelling"*. Charged when the set stops, not when it flies,
+     * because until it stops nobody knows whether it is going home.
+     *
+     * Nights are counted from the rest the duty earned, which is the span the
+     * crew are actually somewhere - a ten-hour minimum rest is one night, and a
+     * set left away over a slow weekend is more.
+     */
+    if (!atBase) {
+      hotelledMinor += await chargePositioning(db, {
+        airlineId: period.airlineId,
+        dutyPeriodId: period.id,
+        heads: period.heads,
+        nights: Math.max(1, Math.ceil((restUntil.getTime() - offDutyAt.getTime()) / 86_400_000)),
+        occurredAt: offDutyAt,
+        duty,
+      });
+    }
     stoodDown += 1;
   }
-  return { stoodDown };
+  return { stoodDown, hotelledMinor };
 }
 
 /**
