@@ -1,21 +1,46 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { CrewResponse } from '@tailfin/shared';
+import type { CrewBaseView, CrewResponse } from '@tailfin/shared';
+
+import { ContextSelectionProvider, useContextSelection } from '../shell/context-selection';
 
 import { CrewPage } from './CrewPage';
 
+import type { ReactNode } from 'react';
+
 /**
- * The Crew page (M5-01, §9.2).
+ * Stands in for the shell's context panel.
  *
- * Two acceptance criteria are visible here rather than in the server, and this
- * is where they are held:
+ * The provider stores a selection; `AppShell` is what renders it. A page test
+ * that mounted the whole shell to see the panel would be a shell test, so this
+ * renders the same two things the panel does — the title and the body — and
+ * nothing else.
+ */
+function ContextProbe(): ReactNode {
+  const { selection } = useContextSelection();
+  if (selection === null) return null;
+  return (
+    <aside aria-label="Context">
+      <h2>{selection.title}</h2>
+      {selection.body}
+    </aside>
+  );
+}
+
+/**
+ * The Crew operations centre (M5-01, M5-02, §9.2).
  *
- *   - *"the player interacts with pool sizes and policies, never with individual
- *     rosters"* — so the page must not grow a person, ever;
- *   - *"a mixed fleet visibly fragments the crew pool and reduces availability"*
- *     — and **visibly** is the word, because §9.2's complaint is that
- *     fragmentation is quiet.
+ * Three claims are worth more than the rest and each has a test that fails if it
+ * stops being true:
+ *
+ *   - **the page never overstates the simulation.** Coverage is a *minimum
+ *     requirement*, never "all flights covered today", and an airline with
+ *     nothing to cover gets a dash rather than 100%;
+ *   - **no crew member has a name.** M5-01: *"if they have to hand-roster 400
+ *     flight attendants, the feature has failed"*;
+ *   - **nothing on the page decides anything.** Every figure is the server's, and
+ *     an action calls the existing mutation rather than a new one.
  */
 
 const costs: CrewResponse['costs'] = {
@@ -25,19 +50,27 @@ const costs: CrewResponse['costs'] = {
   conversionPerHeadMinor: 200_000,
   conversionDurationDays: 14,
   weeklyHiringCapacity: 12,
-  monthlyPayrollMinor: 4_200_000,
+  monthlyPayrollMinor: 6_500_000,
   hotelPerHeadPerNightMinor: 15_000,
 };
+
+function base(overrides: Partial<CrewBaseView> = {}): CrewBaseView {
+  return {
+    id: '00000000-0000-4000-8000-000000000001',
+    airportIcao: 'EHAM',
+    status: 'open',
+    openedAt: '2024-10-20T00:00:00.000Z',
+    pools: [],
+    conversions: [],
+    duty: [],
+    ...overrides,
+  };
+}
 
 function state(overrides: Partial<CrewResponse> = {}): CrewResponse {
   return {
     bases: [],
-    fragmentation: {
-      families: [],
-      totalAvailable: 0,
-      largestFamilyAvailable: 0,
-      strandedHeads: 0,
-    },
+    fragmentation: { families: [], totalAvailable: 0, largestFamilyAvailable: 0, strandedHeads: 0 },
     demand: { rows: [], totalRequired: 0, metRequired: 0, covered: true, uncoveredFamilies: [] },
     families: ['A320neo', '737 MAX', 'ATR 72'],
     costs,
@@ -45,434 +78,390 @@ function state(overrides: Partial<CrewResponse> = {}): CrewResponse {
   };
 }
 
-function respondWith(value: CrewResponse | null): void {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(() =>
-      Promise.resolve({
-        ok: value !== null,
-        status: value === null ? 409 : 200,
-        json: () => Promise.resolve(value ?? { code: 'active_world_required', message: 'no' }),
-      } as Response),
-    ),
-  );
+function pool(over: Partial<CrewResponse['bases'][number]['pools'][number]> = {}) {
+  return {
+    id: '00000000-0000-4000-8000-0000000000aa',
+    family: 'A320neo',
+    rank: 'captain' as const,
+    headcount: 4,
+    unavailable: 0,
+    onDuty: 0,
+    reserve: 0,
+    available: 4,
+    ...over,
+  };
 }
 
-const mixedFleet = state({
+/** An airline short of captains on one family and comfortable on another. */
+const MIXED = state({
   bases: [
-    {
-      id: '00000000-0000-4000-8000-000000000001',
-      airportIcao: 'EHAM',
-      status: 'open',
-      openedAt: '2024-10-20T00:00:00.000Z',
+    base({
       pools: [
-        {
-          id: '00000000-0000-4000-8000-000000000010',
-          family: 'A320neo',
-          rank: 'captain',
-          headcount: 6,
-          unavailable: 2,
-          onDuty: 0,
-          reserve: 0,
-          available: 4,
-        },
-        {
-          id: '00000000-0000-4000-8000-000000000011',
-          family: '737 MAX',
+        pool({ id: 'p1', family: 'A320neo', rank: 'captain', headcount: 4, available: 4 }),
+        pool({
+          id: 'p2',
+          family: 'ATR 72',
           rank: 'captain',
           headcount: 3,
-          unavailable: 0,
-          onDuty: 0,
-          reserve: 0,
-          available: 3,
-        },
+          unavailable: 1,
+          onDuty: 1,
+          reserve: 1,
+          available: 1,
+        }),
       ],
-      conversions: [
-        {
-          id: '00000000-0000-4000-8000-000000000020',
-          fromFamily: 'A320neo',
-          toFamily: '737 MAX',
-          rank: 'captain',
-          heads: 2,
-          startedAt: '2024-10-20T00:00:00.000Z',
-          completesAt: '2024-11-03T00:00:00.000Z',
-        },
-      ],
-      duty: [
-        {
-          id: '00000000-0000-4000-8000-000000000030',
-          family: 'A320neo',
-          heads: 4,
-          status: 'open',
-          fromReserve: false,
-          reportAt: '2024-10-21T06:00:00.000Z',
-          offDutyAt: null,
-          restUntil: null,
-          sectors: 2,
-          locationIcao: 'EGLL',
-          awayFromBase: true,
-        },
-        {
-          id: '00000000-0000-4000-8000-000000000031',
-          family: '737 MAX',
-          heads: 4,
-          status: 'resting',
-          fromReserve: true,
-          reportAt: '2024-10-20T06:00:00.000Z',
-          offDutyAt: '2024-10-20T18:30:00.000Z',
-          restUntil: '2024-10-21T06:30:00.000Z',
-          sectors: 4,
-          locationIcao: 'EHAM',
-          awayFromBase: false,
-        },
-      ],
-    },
+    }),
   ],
   fragmentation: {
-    families: ['737 MAX', 'A320neo'],
-    totalAvailable: 7,
+    families: ['A320neo', 'ATR 72'],
+    totalAvailable: 5,
     largestFamilyAvailable: 4,
-    strandedHeads: 3,
+    strandedHeads: 1,
   },
   demand: {
     rows: [
-      { family: 'A320neo', rank: 'captain', required: 3, available: 4, delta: 1 },
-      { family: '737 MAX', rank: 'captain', required: 5, available: 3, delta: -2 },
+      { family: 'A320neo', rank: 'captain', required: 2, available: 4, delta: 2 },
+      { family: 'ATR 72', rank: 'captain', required: 3, available: 1, delta: -2 },
     ],
-    totalRequired: 8,
-    metRequired: 6,
+    totalRequired: 5,
+    metRequired: 3,
     covered: false,
     uncoveredFamilies: [],
   },
-  families: ['A320neo', '737 MAX', 'ATR 72'],
 });
 
-describe('the crew page', () => {
-  /* ------------------------------------------------------------------ *
-   * M5-02: duty, rest and standby
-   * ------------------------------------------------------------------ */
+function respondWith(value: CrewResponse | null, status = 200): void {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((path: string) => {
+      // The page also asks for the world clock. Answering 404 exercises the
+      // branch where progress cannot be computed, which is the honest default.
+      if (typeof path === 'string' && path.includes('/api/world/clock')) {
+        return Promise.resolve({
+          ok: false,
+          status: 404,
+          json: () => Promise.resolve({}),
+        } as Response);
+      }
+      return Promise.resolve({
+        ok: value !== null && status === 200,
+        status: value === null ? 409 : status,
+        json: () => Promise.resolve(value ?? { code: 'active_world_required', message: 'no' }),
+      } as Response);
+    }),
+  );
+}
 
-  it('says where the crew are, which the game could not answer before', async () => {
-    respondWith(mixedFleet);
-    render(<CrewPage />);
+function renderPage(): void {
+  render(
+    <ContextSelectionProvider>
+      <CrewPage />
+      <ContextProbe />
+    </ContextSelectionProvider>,
+  );
+}
 
-    const table = await screen.findByRole('table', { name: 'Crew sets on duty or resting' });
-    // One set flying, one resting. Both are counts on an aeroplane, not people.
-    const rows = within(table).getAllByRole('row').slice(1);
-    expect(rows).toHaveLength(2);
-    expect(rows[0]?.textContent).toContain('EGLL');
-    expect(rows[1]?.textContent).toContain('Resting until');
-  });
+beforeEach(() => {
+  vi.unstubAllGlobals();
+});
 
-  it('marks a set that stopped away from base, in words', async () => {
-    respondWith(mixedFleet);
-    render(<CrewPage />);
+describe('what the page claims', () => {
+  it('calls coverage a minimum requirement, never a day of flights', async () => {
+    respondWith(MIXED);
+    renderPage();
 
-    const table = await screen.findByRole('table', { name: 'Crew sets on duty or resting' });
-    // §9.2's hotel bill, findable. Colour is never the only signal (App. H.7),
-    // so it is the word "hotel" rather than a red cell — and a rotation that
-    // ends away looks almost identical on a map to one that gets home.
-    expect(within(table).getByText(/hotel/)).toBeInTheDocument();
-    expect(within(table).getByText(/standby/)).toBeInTheDocument();
-  });
-
-  it('tells duty apart from training in the pool table', async () => {
     /*
-     * The two have different fixes, which is the whole reason they are separate
-     * columns: a classroom is a fortnight and you wait, a duty is a night and
-     * you hire or you keep a reserve. One column would make them look like one
-     * problem.
+     * The wording is load-bearing. Required is one departure per aeroplane owned
+     * — a floor. Duty and rest are modelled as of M5-02; rostering is not, so
+     * the page cannot say anything about "today's flights" and must not try.
      */
+    expect(await screen.findByText(/Below minimum requirement/)).toBeInTheDocument();
+    expect(screen.queryByText(/all flights covered/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps the floor explanation on the page, not buried in a tooltip', async () => {
+    respondWith(MIXED);
+    renderPage();
+    // `textContent` rather than a text matcher: the sentence is broken up by a
+    // `<strong>`, which testing-library treats as three separate text nodes.
+    const table = await screen.findByRole('table', { name: /Required is/ });
+    const caption = table.querySelector('caption')?.textContent ?? '';
+    expect(caption).toMatch(/one departure per aeroplane you own/i);
+    expect(caption).toMatch(/floor, not a roster/i);
+    expect(caption).toMatch(/rostering is not/i);
+  });
+
+  it('shows a dash rather than 100% when there is nothing to cover', async () => {
+    // A new airline requires nothing. "0%" and "100%" are both claims about an
+    // airline that has nothing to be ready for.
+    respondWith(state());
+    renderPage();
+    expect(await screen.findByText('Nothing to cover yet')).toBeInTheDocument();
+    expect(screen.queryByText('100%')).not.toBeInTheDocument();
+  });
+
+  it('says coverage is unknown when the crew API fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new Error('offline'))),
+    );
+    renderPage();
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toMatch(/unknown/i);
+    expect(screen.queryByText(/%/)).not.toBeInTheDocument();
+  });
+});
+
+describe('coverage', () => {
+  it('groups by family and marks the short one', async () => {
+    respondWith(MIXED);
+    renderPage();
+
+    const table = await screen.findByRole('table', { name: /Required is/ });
+    expect(within(table).getByText('A320neo')).toBeInTheDocument();
+    expect(within(table).getByText('ATR 72')).toBeInTheDocument();
+    expect(within(table).getByText('short')).toBeInTheDocument();
+  });
+
+  it('says surplus, exact and shortage in words as well as colour', async () => {
     respondWith(
       state({
-        bases: [
-          {
-            id: '00000000-0000-4000-8000-000000000001',
-            airportIcao: 'EHAM',
-            status: 'open',
-            openedAt: '2024-10-20T00:00:00.000Z',
-            pools: [
-              {
-                id: '00000000-0000-4000-8000-000000000010',
-                family: 'A320neo',
-                rank: 'captain',
-                headcount: 9,
-                unavailable: 2,
-                onDuty: 3,
-                reserve: 1,
-                available: 4,
-              },
-            ],
-            conversions: [],
-            duty: [],
-          },
-        ],
+        demand: {
+          rows: [
+            { family: 'A320neo', rank: 'captain', required: 2, available: 4, delta: 2 },
+            { family: 'A320neo', rank: 'first_officer', required: 2, available: 2, delta: 0 },
+            { family: 'A320neo', rank: 'cabin_crew', required: 4, available: 1, delta: -3 },
+          ],
+          totalRequired: 8,
+          metRequired: 5,
+          covered: false,
+          uncoveredFamilies: [],
+        },
       }),
     );
-    render(<CrewPage />);
+    renderPage();
+
+    // App. H.7: a red cell and a green cell are the same cell to a good
+    // proportion of players.
+    const table = await screen.findByRole('table', { name: /Required is/ });
+    expect(within(table).getByText('+2')).toBeInTheDocument();
+    expect(within(table).getByText('Exact')).toBeInTheDocument();
+    expect(within(table).getByText('-3')).toBeInTheDocument();
+  });
+
+  it('counts the ranks that are short, not the heads', async () => {
+    respondWith(MIXED);
+    renderPage();
+    const shortages = await screen.findByText('1 rank below its minimum');
+    expect(shortages).toBeInTheDocument();
+  });
+});
+
+describe('commonality', () => {
+  it('reports where the crew are, without inventing a score', async () => {
+    respondWith(MIXED);
+    renderPage();
+
+    // 4 of 5 available crew are on the largest family. The percentage is that
+    // division and nothing else — there is no penalty coefficient behind it.
+    expect(await screen.findByText('80%')).toBeInTheDocument();
+    expect(screen.getByText(/4 of 5 available crew/)).toBeInTheDocument();
+    expect(screen.getByText(/Mixed fleet: focused/)).toBeInTheDocument();
+    expect(screen.getByText(/Not a penalty/)).toBeInTheDocument();
+  });
+
+  it('says so plainly when one family covers everything', async () => {
+    respondWith(
+      state({
+        bases: [base({ pools: [pool()] })],
+        fragmentation: {
+          families: ['A320neo'],
+          totalAvailable: 4,
+          largestFamilyAvailable: 4,
+          strandedHeads: 0,
+        },
+      }),
+    );
+    renderPage();
+    expect(await screen.findByText('Single family')).toBeInTheDocument();
+  });
+});
+
+describe('the base table', () => {
+  it('shows duty and standby beside training, because the fixes differ', async () => {
+    respondWith(MIXED);
+    renderPage();
 
     const table = await screen.findByRole('table', { name: 'Crew at EHAM' });
-    const cells = within(table).getAllByRole('row')[1]?.querySelectorAll('td');
-    // family, rank, on strength, in training, on duty, standby, available
-    expect([...(cells ?? [])].map((cell) => cell.textContent)).toEqual([
-      'A320neo',
-      'Captain',
-      '9',
-      '2',
-      '3',
-      '1',
-      '4',
-    ]);
+    const headers = [...table.querySelectorAll('th[scope="col"]')].map((th) => th.textContent);
+    expect(headers).toEqual(['Rank', 'On strength', 'Training', 'On duty', 'Standby', 'Available']);
   });
 
-  it('offers a standby level rather than a standby purchase', async () => {
-    respondWith(mixedFleet);
-    render(<CrewPage />);
+  it('filters to shortages using the server’s own verdict', async () => {
+    respondWith(MIXED);
+    renderPage();
 
-    // A reserve is a designation and not a hire: the heads are already paid for.
-    // So the control sets a number, and there is no price beside it.
-    const button = await screen.findByRole('button', { name: 'Set standby' });
-    expect(button).toBeInTheDocument();
-    const card = button.closest('section');
-    expect(card?.textContent).toContain('paid exactly like everyone else');
+    await screen.findByRole('table', { name: 'Crew at EHAM' });
+    fireEvent.click(screen.getByLabelText('Shortages only'));
+
+    const table = screen.getByRole('table', { name: 'Crew at EHAM' });
+    // Only the ATR captains are short. A filter that disagreed with the coverage
+    // table above would be worse than no filter.
+    expect(within(table).getByText('ATR 72')).toBeInTheDocument();
+    expect(within(table).queryByText('A320neo')).not.toBeInTheDocument();
   });
 
-  it('sends the standby level as a level, not a change', async () => {
-    // Typed arguments, so the assertions below can read the call back. A bare
-    // `vi.fn(() => ...)` gives an empty parameter tuple and indexing it is a
-    // type error rather than a runtime one.
-    const fetchMock = vi.fn((_path: string, _init?: RequestInit) =>
-      Promise.resolve({
+  it('offers a base to open when there are none', async () => {
+    respondWith(state());
+    renderPage();
+    expect(await screen.findByText(/No crew bases yet/)).toBeInTheDocument();
+  });
+});
+
+describe('the context panel', () => {
+  it('fills when a coverage row is chosen, without navigating', async () => {
+    respondWith(MIXED);
+    renderPage();
+
+    const table = await screen.findByRole('table', { name: /Required is/ });
+    const rows = within(table).getAllByRole('button', { name: /Captain/ });
+    fireEvent.click(rows[0]!);
+
+    await waitFor(() => {
+      expect(screen.getByText('Minimum required')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Rated on/)).toBeInTheDocument();
+  });
+
+  it('shows no forecast, because there is no forecast', async () => {
+    respondWith(MIXED);
+    renderPage();
+    const table = await screen.findByRole('table', { name: /Required is/ });
+    fireEvent.click((within(table).getAllByRole('button', { name: /Captain/ })[0] ?? null)!);
+
+    await waitFor(() => {
+      expect(screen.getByText('Minimum required')).toBeInTheDocument();
+    });
+    /*
+     * A "next 7 days" strip would need schedule-aware crew demand, which does
+     * not exist — and a fabricated one would be the most convincing wrong number
+     * on the page.
+     */
+    expect(screen.queryByText(/next 7 days/i)).not.toBeInTheDocument();
+  });
+
+  it('is reachable by keyboard, because a row is not a widget', async () => {
+    respondWith(MIXED);
+    renderPage();
+    const table = await screen.findByRole('table', { name: /Required is/ });
+    const button = within(table).getAllByRole('button', { name: /Captain/ })[0];
+    expect(button?.tagName).toBe('BUTTON');
+  });
+});
+
+describe('actions', () => {
+  it('calls the existing hire mutation', async () => {
+    const fetchMock = vi.fn((path: string) => {
+      if (path.includes('/api/world/clock')) {
+        return Promise.resolve({
+          ok: false,
+          status: 404,
+          json: () => Promise.resolve({}),
+        } as Response);
+      }
+      return Promise.resolve({
         ok: true,
         status: 200,
-        json: () => Promise.resolve(mixedFleet),
-      } as Response),
-    );
+        json: () => Promise.resolve(MIXED),
+      } as Response);
+    });
     vi.stubGlobal('fetch', fetchMock);
-    render(<CrewPage />);
+    renderPage();
 
-    const input = await screen.findByLabelText('Standby heads');
-    fireEvent.change(input, { target: { value: '3' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Set standby' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Hire crew/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Hire crew' }));
 
-    const call = fetchMock.mock.calls.find(
-      ([path]) => typeof path === 'string' && path === '/api/crew/reserves',
-    );
-    expect(call).toBeDefined();
-    const init = call?.[1];
-    /*
-     * PUT and an absolute number. A delta would race: two tabs both sending
-     * "+2" produce four reserves and neither screen can explain it.
-     */
-    expect(init?.method).toBe('PUT');
-    const body: unknown = JSON.parse(typeof init?.body === 'string' ? init.body : '{}');
-    expect(body).toMatchObject({ reserve: 3 });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([p]) => p === '/api/crew/hires')).toBe(true);
+    });
   });
 
-  it('does not name a person in the duty board either', async () => {
-    respondWith(mixedFleet);
-    render(<CrewPage />);
+  it('calls the existing conversion and base mutations', async () => {
+    const fetchMock = vi.fn((path: string) => {
+      if (path.includes('/api/world/clock')) {
+        return Promise.resolve({
+          ok: false,
+          status: 404,
+          json: () => Promise.resolve({}),
+        } as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(MIXED),
+      } as Response);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderPage();
 
-    // M5-01's invariant, extended. A duty period is a span of time with a head
-    // count on it; the regulation constrains a duty, not a person, and the page
-    // must never grow one.
-    const table = await screen.findByRole('table', { name: 'Crew sets on duty or resting' });
-    const headers = [...table.querySelectorAll('th')].map((th) => th.textContent);
-    expect(headers).toEqual(['Base', 'Family', 'Heads', 'Sectors', 'Where', 'State']);
-    expect(table.textContent).not.toContain('00000000-0000-4000-8000-000000000030');
-  });
+    fireEvent.click(await screen.findByRole('button', { name: /Convert rating/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start conversion' }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([p]) => p === '/api/crew/conversions')).toBe(true);
+    });
 
-  it('leads with what a mixed fleet is costing', async () => {
-    respondWith(mixedFleet);
-    render(<CrewPage />);
-
-    // The numbers, not a mood: "3 cannot fly it" is the acceptance criterion
-    // made visible, where a coloured badge would not be. Asserted on the
-    // sentence rather than the bare digits, because "4" is also an availability
-    // cell and matching that would pass for the wrong reason.
-    // and asserting on a bare number would pass for the wrong reason.
-    const headline = await screen.findByText(/cannot fly it/);
-    expect(headline.textContent).toContain('7');
-    expect(headline.textContent).toContain('4');
-    expect(headline.textContent).toContain('3');
-  });
-
-  it('says fragmentation is not a penalty, because it is not one', async () => {
-    respondWith(mixedFleet);
-    render(<CrewPage />);
-
-    // A figure that reads as a fine invites "how do I avoid the fine?", and the
-    // answer is not a payment — it is flying one family.
-    expect(await screen.findByText(/Not a penalty/)).toBeInTheDocument();
-  });
-
-  it('shows crew in training as still on strength', async () => {
-    respondWith(mixedFleet);
-    render(<CrewPage />);
-
-    // Scoped to the base's own table: the page now leads with fleet cover, so
-    // "the first table" is no longer the pools.
-    const table = await screen.findByRole('table', { name: 'Crew at EHAM' });
-    const rows = within(table).getAllByRole('row');
-    const a320 = rows.find((row) => row.textContent?.includes('A320neo'));
-    // 6 on strength, 2 in a classroom, 4 available. Netting them off would hide
-    // the entire point of a conversion taking a fortnight.
-    expect(a320?.textContent).toContain('6');
-    expect(a320?.textContent).toContain('2');
-    expect(a320?.textContent).toContain('4');
-  });
-
-  it('never names a person', async () => {
-    respondWith(mixedFleet);
-    render(<CrewPage />);
-    await screen.findByText(/cannot fly it/);
-
-    /*
-     * The guard on the acceptance criterion. Every column is a count, a rank or
-     * a family — the moment one is an identity, the page has started down the
-     * road the issue exists to prevent.
-     *
-     * Asserted on the columns rather than by grepping the page for words like
-     * "roster": the first version did that and failed on this page's own copy,
-     * which says a conversion costs fourteen days *off the roster*. Prose about
-     * rostering is fine; a column of people is not.
-     */
-    const table = screen.getByRole('table', { name: 'Crew at EHAM' });
-    const headers = [...table.querySelectorAll('th')].map((th) => th.textContent);
-    expect(headers).toEqual([
-      'Family',
-      'Rank',
-      'On strength',
-      'In training',
-      'On duty',
-      'Standby',
-      'Available',
-    ]);
-
-    // And nothing renders an identifier. A pool id reaching the page would be
-    // the first crack in "counts, never people".
-    expect(document.body.textContent).not.toMatch(
-      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
-    );
-  });
-
-  it('keeps its heading when the body is not a crew payload', async () => {
-    /*
-     * The regression CI found. The shell's routing test stubs every unrecognised
-     * URL with `{}`, so a page that trusts the shape crashes on the first nested
-     * property and takes its own heading down with it — which passed locally only
-     * because the promise had not resolved before the assertion.
-     */
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() =>
-        Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) } as Response),
-      ),
-    );
-    render(<CrewPage />);
-
-    expect(await screen.findByText(/Could not load your crew/)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 1, name: 'Crew' })).toBeInTheDocument();
-  });
-
-  it('keeps what it is showing when a mutation is refused', async () => {
-    /*
-     * Found on dev rather than here. Opening a base and then asking for the same
-     * one again reverted the whole page to "no crew yet" while the base sat
-     * happily in the database — the refusal path wrote back the state captured in
-     * the render closure, which is stale the moment anything has succeeded.
-     */
-    let call = 0;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => {
-        call += 1;
-        // First the GET, then a refused POST.
-        return Promise.resolve(
-          call === 1
-            ? ({ ok: true, status: 200, json: () => Promise.resolve(mixedFleet) } as Response)
-            : ({
-                ok: false,
-                status: 409,
-                json: () => Promise.resolve({ code: 'base_exists', message: 'Already there' }),
-              } as Response),
-        );
-      }),
-    );
-    render(<CrewPage />);
-    await screen.findByText(/cannot fly it/);
-
-    // The field is `required`, so an empty submit never leaves the form.
-    fireEvent.change(screen.getByLabelText('Airport'), { target: { value: 'EHAM' } });
+    fireEvent.click(screen.getByRole('button', { name: /Open crew base/ }));
+    fireEvent.change(screen.getByLabelText('Airport'), { target: { value: 'EGLL' } });
     fireEvent.click(screen.getByRole('button', { name: 'Open base' }));
-
-    expect(await screen.findByText('Already there')).toBeInTheDocument();
-    // Still showing the crew it had. The refusal is news, not an erasure.
-    expect(screen.getByText(/cannot fly it/)).toBeInTheDocument();
-    // The heading specifically: 'EHAM' is now also an option in the base picker.
-    expect(screen.getByRole('heading', { name: /EHAM/ })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([p]) => p === '/api/crew/bases')).toBe(true);
+    });
   });
 
-  it('swaps the banner when the rank picker changes', async () => {
+  it('opens one form at a time rather than showing them all', async () => {
+    respondWith(MIXED);
+    renderPage();
+
+    // The previous page kept every form expanded and spent most of a screen on
+    // controls nobody was using.
+    expect(await screen.findByRole('button', { name: /Hire crew/ })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Heads')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Hire crew/ }));
+    expect(screen.getByLabelText('Heads')).toBeInTheDocument();
+  });
+});
+
+describe('the invariant that outlives every redesign', () => {
+  it('never names a person, in any table on the page', async () => {
+    respondWith(MIXED);
+    renderPage();
+    await screen.findByRole('table', { name: 'Crew at EHAM' });
+
     /*
-     * The banner illustrates the rank being hired. It is the one place the page
-     * shows a person and that is allowed — an illustration of a rank is not a
-     * member of staff who exists.
+     * M5-01: *"if they have to hand-roster 400 flight attendants, the feature
+     * has failed."* Every control moves a number. The surest way to make
+     * hand-rostering inevitable later is to ship something today that looks like
+     * a name — so no table may grow a column for one.
      */
-    respondWith(mixedFleet);
-    render(<CrewPage />);
-    await screen.findByRole('img', { name: /^Captain\./ });
-
-    fireEvent.change(screen.getByLabelText('Rank'), { target: { value: 'purser' } });
-
-    expect(await screen.findByRole('img', { name: /^Purser\./ })).toBeInTheDocument();
-    expect(screen.queryByRole('img', { name: /^Captain\./ })).not.toBeInTheDocument();
+    for (const table of screen.getAllByRole('table')) {
+      const headers = [...table.querySelectorAll('th[scope="col"]')].map((th) =>
+        (th.textContent ?? '').toLowerCase(),
+      );
+      expect(headers).not.toContain('name');
+      expect(headers).not.toContain('crew member');
+    }
   });
 
-  it('offers families as a picker, never as free text', async () => {
-    /*
-     * The free-text version put a pool rated on a family called `test` into the
-     * dev database. A rating that matches no aeroplane can never be used and no
-     * amount of money can undo it.
-     */
-    respondWith(mixedFleet);
-    render(<CrewPage />);
-    const family = await screen.findByLabelText('Family');
+  it('offers every rank the enum holds, not the three the old page knew', async () => {
+    respondWith(MIXED);
+    renderPage();
 
-    expect(family.tagName).toBe('SELECT');
-    const options = [...family.querySelectorAll('option')].map((option) => option.value);
-    expect(options).toContain('A320neo');
-    expect(options).toContain('ATR 72');
-    expect(options).not.toContain('test');
-  });
-
-  it('never reads fully covered while a rank is short', async () => {
-    /*
-     * Seen in a sandbox: 24 available against 23 required rendered "100%
-     * covered" directly above "not enough crew to launch your whole fleet",
-     * because a surplus of A320neo cabin crew was filling in for a shortage of
-     * 737 MAX captains. Crew are not fungible, so cover is summed per rank.
-     */
-    respondWith(mixedFleet);
-    render(<CrewPage />);
-
-    // metRequired 6 of 8 -> 75%, and never 100% while `covered` is false.
-    expect(await screen.findByText('75%')).toBeInTheDocument();
-    expect(screen.queryByText('100%')).not.toBeInTheDocument();
-    expect(screen.getByText(/Not enough crew/)).toBeInTheDocument();
-  });
-
-  it('tells a player with no airline what to do first', async () => {
-    respondWith(null);
-    render(<CrewPage />);
-    expect(await screen.findByText(/Found an airline first/)).toBeInTheDocument();
-  });
-
-  it('says an airline with no crew cannot schedule', async () => {
-    respondWith(state());
-    render(<CrewPage />);
-    // The consequence of the legality rule, said where a player will meet it
-    // rather than only in a refusal after they try.
-    expect(await screen.findByText(/cannot put one on the books/)).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: /Hire crew/ }));
+    const options = [...screen.getByLabelText('Rank').querySelectorAll('option')].map(
+      (option) => option.textContent,
+    );
+    expect(options).toHaveLength(9);
+    expect(options).toContain('Training Captain');
+    expect(options).toContain('Cabin Service Manager');
   });
 });
