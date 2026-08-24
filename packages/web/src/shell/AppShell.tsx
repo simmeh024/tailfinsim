@@ -108,7 +108,7 @@ function Stage({ children }: { children: ReactNode }): ReactNode {
  * something they did not ask to lose.
  */
 function ContextPanel({ open, onToggle }: { open: boolean; onToggle: () => void }): ReactNode {
-  const { selection, clear } = useContextSelection();
+  const { selection, clear, attachPanelBody } = useContextSelection();
 
   if (!open) {
     return (
@@ -122,7 +122,13 @@ function ContextPanel({ open, onToggle }: { open: boolean; onToggle: () => void 
     <aside className="panel" aria-label="Context">
       <div className="panel__header">
         <div className="panel__heading">
-          <h2 className="panel__title">{selection?.title ?? 'Context'}</h2>
+          <h2
+            id="context-panel-title"
+            className="panel__title"
+            tabIndex={selection === null ? undefined : -1}
+          >
+            {selection?.title ?? 'Context'}
+          </h2>
           {selection?.subtitle !== undefined && (
             <p className="panel__subtitle">{selection.subtitle}</p>
           )}
@@ -131,7 +137,10 @@ function ContextPanel({ open, onToggle }: { open: boolean; onToggle: () => void 
           <button
             type="button"
             className="panel__dismiss"
-            onClick={clear}
+            onClick={() => {
+              selection.onClear?.();
+              clear();
+            }}
             aria-label="Clear selection"
           >
             ⌫
@@ -152,6 +161,8 @@ function ContextPanel({ open, onToggle }: { open: boolean; onToggle: () => void 
             Selection detail appears here — a flight, an airframe, a route. Empty until there is
             something to select.
           </p>
+        ) : selection.body === null ? (
+          <div className="panel__portal" ref={attachPanelBody} />
         ) : (
           selection.body
         )}

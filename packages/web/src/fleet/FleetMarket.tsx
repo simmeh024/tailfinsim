@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router';
 
 import type {
@@ -15,6 +16,7 @@ import type {
 } from '@tailfin/shared';
 
 import { fetchOwnAirline } from '../airline/api';
+import { useContextSelection } from '../shell/context-selection';
 
 import { AircraftImage } from './AircraftImage';
 import { acquireAircraft, fetchUsedMarket, quoteAircraft, type FleetApiRefusal } from './api';
@@ -354,6 +356,12 @@ export function FleetMarket({
   onAcquired: (result: AircraftAcquisitionResponse) => void;
 }): ReactNode {
   const [searchParams, setSearchParams] = useSearchParams();
+  const {
+    selection: contextSelection,
+    select: selectContext,
+    clear: clearContext,
+    panelBody: contextPanelBody,
+  } = useContextSelection();
   const [filters, setFilters] = useState<MarketFilters>(DEFAULT_FILTERS);
   const [selectedDesignation, setSelectedDesignation] = useState<string | null>(null);
   const [compareIds, setCompareIds] = useState<string[]>([]);
@@ -376,7 +384,6 @@ export function FleetMarket({
   const [submissionRefusal, setSubmissionRefusal] = useState<FleetApiRefusal | null>(null);
   const [result, setResult] = useState<AircraftAcquisitionResponse | null>(null);
   const [compareNotice, setCompareNotice] = useState('');
-  const detailTitle = useRef<HTMLHeadingElement>(null);
   const initialSelectionApplied = useRef(false);
 
   const manufacturers = useMemo(
@@ -423,6 +430,67 @@ export function FleetMarket({
     : [];
   const activeAirline = ownAirline?.airline?.status === 'active';
 
+  const closeDetail = useCallback(
+    (previous: string) => {
+      setSelectedDesignation(null);
+      setPanelMode('detail');
+      setSearchParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          next.delete('market');
+          next.delete('type');
+          return next;
+        },
+        { replace: true },
+      );
+      requestAnimationFrame(() => {
+        document.getElementById(cardId(previous))?.focus();
+      });
+    },
+    [setSearchParams],
+  );
+
+  const publishSelection = useCallback(
+    (entry: CatalogueEntry) => {
+      selectContext({
+        kind: 'fleet-market-type',
+        id: entry.designation,
+        title: entry.designation,
+        subtitle: entry.manufacturer,
+        body: null,
+        onClear: () => closeDetail(entry.designation),
+      });
+    },
+    [closeDetail, selectContext],
+  );
+
+  const selectType = useCallback(
+    (entry: CatalogueEntry) => {
+      setSelectedDesignation(entry.designation);
+      setPanelMode('detail');
+      setTab('overview');
+      setSelectedOptionIds([]);
+      setAcquisitionKind(null);
+      setReviewing(false);
+      setUsedReview(null);
+      setRequestId(null);
+      setResult(null);
+      setSubmissionRefusal(null);
+      setSearchParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          next.delete('market');
+          next.delete('type');
+          return next;
+        },
+        { replace: true },
+      );
+      publishSelection(entry);
+      requestAnimationFrame(() => document.getElementById('context-panel-title')?.focus());
+    },
+    [publishSelection, setSearchParams],
+  );
+
   useEffect(() => {
     let live = true;
     void fetchUsedMarket()
@@ -449,9 +517,13 @@ export function FleetMarket({
     initialSelectionApplied.current = true;
     const linkedType = searchParams.get('type');
     const linked = catalogue.types.find((entry) => entry.designation === linkedType);
-    setSelectedDesignation(linked?.designation ?? catalogue.types[0]!.designation);
+    const initial = linked ?? catalogue.types[0]!;
+    setSelectedDesignation(initial.designation);
+    publishSelection(initial);
     if (linked && searchParams.get('market') === 'used') setPanelMode('used');
-  }, [catalogue.types, searchParams]);
+  }, [catalogue.types, publishSelection, searchParams]);
+
+  useEffect(() => clearContext, [clearContext]);
 
   useEffect(() => {
     if (panelMode !== 'acquire' || acquisitionKind === null || selected === null) {
@@ -495,39 +567,6 @@ export function FleetMarket({
       live = false;
     };
   }, [acquisitionKind, panelMode, selected, selectedOptionIds]);
-
-  function selectType(entry: CatalogueEntry): void {
-    setSelectedDesignation(entry.designation);
-    setPanelMode('detail');
-    setTab('overview');
-    setSelectedOptionIds([]);
-    setAcquisitionKind(null);
-    setReviewing(false);
-    setUsedReview(null);
-    setRequestId(null);
-    setResult(null);
-    setSubmissionRefusal(null);
-    if (searchParams.has('market') || searchParams.has('type')) {
-      const next = new URLSearchParams(searchParams);
-      next.delete('market');
-      next.delete('type');
-      setSearchParams(next, { replace: true });
-    }
-    requestAnimationFrame(() => detailTitle.current?.focus());
-  }
-
-  function closeDetail(): void {
-    const previous = selectedDesignation;
-    setSelectedDesignation(null);
-    setPanelMode('detail');
-    const next = new URLSearchParams(searchParams);
-    next.delete('market');
-    next.delete('type');
-    setSearchParams(next, { replace: true });
-    requestAnimationFrame(() => {
-      if (previous) document.getElementById(cardId(previous))?.focus();
-    });
-  }
 
   function toggleCompare(designation: string): void {
     setCompareIds((current) => {
@@ -811,54 +850,29 @@ export function FleetMarket({
           )}
         </div>
 
-        <aside
-          className="market-detail"
-          data-open={selected ? 'yes' : 'no'}
-          aria-label="Selected aircraft"
-          onKeyDown={(event) => {
-            if (event.key === 'Escape' && selected !== null) {
-              event.preventDefault();
-              closeDetail();
-            }
-          }}
-        >
-          {selected === null ? (
-            <div className="market-detail__empty">
-              <span aria-hidden="true">✈</span>
-              <strong>Select an aircraft</strong>
-              <p>Its operational trade-offs and available acquisition paths will appear here.</p>
-            </div>
-          ) : (
-            <>
-              <div className="market-detail__topbar">
-                <span>
-                  {panelMode === 'used'
-                    ? 'Used aircraft'
-                    : panelMode === 'acquire'
-                      ? 'Acquisition'
-                      : 'Type detail'}
-                </span>
-                <button
-                  type="button"
-                  onClick={closeDetail}
-                  aria-label={`Close ${selected.designation} details`}
-                >
-                  Close
-                </button>
-              </div>
+        {contextPanelBody !== null &&
+          contextSelection?.kind === 'fleet-market-type' &&
+          contextSelection.id === selected?.designation &&
+          selected !== null &&
+          createPortal(
+            <div
+              className="market-detail"
+              aria-label="Selected aircraft"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  closeDetail(selected.designation);
+                  clearContext();
+                }
+              }}
+            >
               <AircraftImage
                 designation={selected.designation}
                 manufacturer={selected.manufacturer}
                 priority
                 className="market-detail__image"
               />
-              <div className="market-detail__title">
-                <div>
-                  <span>{selected.manufacturer}</span>
-                  <h3 id="market-detail-title" ref={detailTitle} tabIndex={-1}>
-                    {selected.designation}
-                  </h3>
-                </div>
+              <div className="market-detail__status-row">
                 <span className="market-detail__status" data-status={selected.availability}>
                   {AVAILABILITY_LABEL[selected.availability]}
                 </span>
@@ -1371,9 +1385,9 @@ export function FleetMarket({
                   )}
                 </div>
               )}
-            </>
+            </div>,
+            contextPanelBody,
           )}
-        </aside>
       </div>
     </section>
   );

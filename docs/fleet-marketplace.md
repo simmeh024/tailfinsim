@@ -7,10 +7,12 @@ contracts.
 
 ## Player journey
 
-The catalogue is a responsive card grid with a persistent desktop detail panel and a
-full-width drawer on narrower viewports. A player can search manufacturer/type, filter by
-canonical class, role, availability and server-authored acquisition method, sort by real
-price/range/seats/runway, and compare at most three types.
+The catalogue is a responsive card grid. Type detail and the complete acquisition flow render
+in the shell's shared Context rail, so selection never creates a second panel inside the Fleet
+page; on narrow viewports the shell turns that same rail into its standard bottom sheet. A
+player can search manufacturer/type, filter by canonical class, role, availability and
+server-authored acquisition method, sort by real price/range/seats/runway, and compare at most
+three types.
 
 Selecting a type exposes overview and specification views. The actions are not reconstructed
 from labels in React: `CatalogueEntry.acquisitionMethods` is produced by
@@ -51,7 +53,7 @@ and used acquisitions refresh the existing M4-07 owned-fleet list.
 | HIST                                     | Later supplies physical-airframe history and provenance, not type identity                    |
 | M8 finance                               | Later expands lease economics without replacing M4's current truthful terms                   |
 | SEC                                      | Session-derived ownership, active-airline mutation guard and server-side financial validation |
-| UX                                       | Responsive drawer, keyboard controls, visible focus, semantic status and image fallback       |
+| UX                                       | Shared Context rail, keyboard controls, visible focus, semantic status and image fallback     |
 
 ## Type visuals, not airframe visuals
 
