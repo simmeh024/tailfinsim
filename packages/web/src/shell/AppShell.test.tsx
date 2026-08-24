@@ -168,7 +168,7 @@ describe('context panel is dismissible', () => {
 describe('routing', () => {
   it.each([
     ['/world', 'World'],
-    ['/airline', 'Your airline'],
+    ['/airline', 'Shell Air'],
     ['/fleet', 'Fleet'],
     ['/network', 'Network'],
     ['/finance', 'Finance'],
@@ -177,12 +177,7 @@ describe('routing', () => {
     ['/board', 'Board'],
   ])('%s renders its page', async (path, title) => {
     await renderAt(path);
-    // The airline route resolves two mocked resources after the shell mounts.
-    // Under the fully concurrent coverage run that can exceed Testing Library's
-    // one-second default even though the route is healthy and deterministic.
-    expect(
-      await screen.findByRole('heading', { level: 1, name: title }, { timeout: 5_000 }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: title })).toBeInTheDocument();
   });
 
   it('redirects / to /world rather than duplicating the view', async () => {
