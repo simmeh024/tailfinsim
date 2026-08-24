@@ -3,6 +3,7 @@ import type {
   CrewResponse,
   HireCrewInput,
   OpenCrewBaseInput,
+  SetCrewPoliciesInput,
   SetCrewReserveInput,
   StartCrewConversionInput,
 } from '@tailfin/shared';
@@ -113,4 +114,15 @@ export function startCrewConversion(input: StartCrewConversionInput): Promise<Cr
  */
 export function setCrewReserve(input: SetCrewReserveInput): Promise<CrewOutcome> {
   return send('/api/crew/reserves', input, 'PUT');
+}
+
+/**
+ * Set a base's pay band or hotel tier (M5-03).
+ *
+ * `PUT` and partial: absent means *leave it alone*, so changing pay does not
+ * restate the hotel tier. A client that had to read the current value and write
+ * it back would race itself the moment two tabs were open.
+ */
+export function setCrewPolicies(input: SetCrewPoliciesInput): Promise<CrewOutcome> {
+  return send('/api/crew/policies', input, 'PUT');
 }

@@ -304,6 +304,15 @@ and the pool unable to staff anything else. Not a degradation: a fleet that flie
 world, because game time is a per-world quantity and a sweep that is not would measure one
 world's rest against another world's clock.
 
+**Crew morale is a third worker story (M5-03).** Morale is a stored state that
+eases toward a target, so something has to move it — `reviewCrewMorale`, weekly on
+the world's game clock. Without a worker a base sits at `startingMorale` for ever:
+no drift, no sickness, no attrition, and §9.2's _delayed bill_ never arrives, so
+paying crew badly looks free. `moraleReviews`, `crewResignations` and
+`crewSickened` are the counters. `crew_base.morale` is **nullable and means never
+reviewed** — not zero, which would mean the crew hate a base on opening day, and
+a schema default would have been a balance literal in a migration.
+
 **`FLIGHT_DEPART` has a handler as of M5-02, and that was a decision.** `handlers.ts` had said
 for two milestones that inventing a departure would be _"the accidental decision ADR-0019's
 boundary exists to prevent"_, and that remains true of an accidental one. M5-02's _"legality is

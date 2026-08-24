@@ -47,6 +47,14 @@ export const CrewPoolView = z.object({
    * anything the rest of the pool could.
    */
   reserve: z.number().int().nonnegative(),
+  /**
+   * Off sick (M5-03).
+   *
+   * A fourth bucket rather than a flavour of any other, because the fixes
+   * differ: a classroom is a fortnight and you wait, a duty is a night, and
+   * sickness is a *symptom* -- the fix is upstream of the roster entirely.
+   */
+  sick: z.number().int().nonnegative().default(0),
   /** `headcount - unavailable - onDuty`, decided by the server. */
   available: z.number().int().nonnegative(),
 });
@@ -92,6 +100,50 @@ export const CrewDutyView = z.object({
 });
 export type CrewDutyView = z.infer<typeof CrewDutyView>;
 
+export const PayBandValue = z.enum(['lean', 'market', 'generous']);
+export type PayBandValue = z.infer<typeof PayBandValue>;
+
+export const HotelTierValue = z.enum(['budget', 'standard', 'premium']);
+export type HotelTierValue = z.infer<typeof HotelTierValue>;
+
+/** One of the four things section 9.2 says morale is made of. */
+export const MoraleFactor = z.object({
+  factor: z.enum(['pay', 'rosterStability', 'hotel', 'rest']),
+  /** A sentence naming what the player chose, or what happened to the crew. */
+  detail: z.string().min(1),
+  /** This input's own score, 0-1, before weighting. */
+  value: z.number().min(0).max(1),
+  /** Its share of the total, 0-1. */
+  weight: z.number().min(0).max(1),
+  /** `value x weight`. These sum to `target`. */
+  weighted: z.number().min(0).max(1),
+});
+export type MoraleFactor = z.infer<typeof MoraleFactor>;
+
+/**
+ * How a base feels, and why (M5-03, section 9.2).
+ *
+ * `score` is where morale **is**; `target` is where it is heading. They differ
+ * on purpose and the gap is the mechanic: section 9.2 asks for a *delayed* bill,
+ * and without a lag between choosing badly and suffering for it there is no
+ * decision to make.
+ *
+ * `factors` is not commentary beside the number. The weighted values sum to
+ * `target` exactly, which is what makes the second acceptance criterion -
+ * *"morale is shown per base with its contributing factors itemised"* - mean
+ * something more than a tooltip.
+ */
+export const CrewBaseMorale = z.object({
+  score: z.number().min(0).max(1),
+  target: z.number().min(0).max(1),
+  payBand: PayBandValue,
+  hotelTier: HotelTierValue,
+  factors: z.array(MoraleFactor),
+  /** Game time of the last review. Null before the worker has ever run one. */
+  reviewedAt: Timestamp.nullable(),
+});
+export type CrewBaseMorale = z.infer<typeof CrewBaseMorale>;
+
 export const CrewBaseView = z.object({
   id: Uuid,
   airportIcao: z.string().length(4),
@@ -107,6 +159,12 @@ export const CrewBaseView = z.object({
    * closed ones are history the page has no question for.
    */
   duty: z.array(CrewDutyView).default([]),
+  /**
+   * Null for a closed base, which has no crew to have a mood (M5-03).
+   *
+   * Defaulted, so a client built against an older payload keeps parsing.
+   */
+  morale: CrewBaseMorale.nullable().default(null),
 });
 export type CrewBaseView = z.infer<typeof CrewBaseView>;
 
@@ -258,6 +316,22 @@ export const SetCrewReserveInput = z
   })
   .strict();
 export type SetCrewReserveInput = z.infer<typeof SetCrewReserveInput>;
+
+/**
+ * The two policies that buy morale (M5-03).
+ *
+ * Both optional, so a player changing one need not restate the other - and
+ * absent means *leave it alone* rather than *reset it*, which a required field
+ * would have made impossible to express.
+ */
+export const SetCrewPoliciesInput = z
+  .object({
+    crewBaseId: Uuid,
+    payBand: PayBandValue.optional(),
+    hotelTier: HotelTierValue.optional(),
+  })
+  .strict();
+export type SetCrewPoliciesInput = z.infer<typeof SetCrewPoliciesInput>;
 
 export const CrewRefusal = z.enum([
   'base_exists',
