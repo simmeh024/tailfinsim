@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import type { CrewBaseView, CrewPoolView, CrewRank, CrewResponse } from '@tailfin/shared';
+import type { CrewRank, CrewResponse } from '@tailfin/shared';
+
+import { useContextSelection } from '../shell/context-selection';
+import { useWorldClock } from '../world/useWorldClock';
 
 import {
   fetchCrew,
@@ -10,339 +13,74 @@ import {
   startCrewConversion,
   type CrewFailure,
 } from './api';
-import { crewBanner } from './crew-banners';
-import { CrewReadiness } from './CrewReadiness';
+import { bannerPriorityRanks } from './crew-presentation';
+import { CrewActions, type CrewActionKind } from './CrewActions';
+import { CrewBaseTable, poolKey } from './CrewBaseTable';
+import { CrewCoverage, coverageKey } from './CrewCoverage';
+import { CrewKpiStrip } from './CrewKpiStrip';
+import { CREW_RANK_LABEL, CrewRoleBanner } from './CrewRoleBanner';
+import { FleetCommonality } from './FleetCommonality';
+import { TrainingPipeline } from './TrainingPipeline';
 
 import type { ReactNode } from 'react';
 
 /**
- * Crew (M5-01, §9.2).
+ * Crew operations (M5-01, M5-02, §9.2).
  *
- * ## Pools, and no way to reach a person
+ * ## The order is the argument
  *
- * There is no roster on this page and no row for a crew member, because there is
- * no crew member. The issue is blunt about the failure mode: *"if they have to
- * hand-roster 400 flight attendants, the feature has failed."* Every control here
- * moves a **number**, and the hardest way to build hand-rostering later is to
- * have shipped nothing that looks like a name.
+ * Status, then problem, then cause, then action. Coverage and shortages first,
+ * because they are the only figures that are a verdict; then which family is
+ * short; then why one qualification does not cover the fleet; then the controls.
+ * The previous version gave a table, three permanent forms and four paragraphs
+ * of explanation equal weight, so the page had to be read rather than glanced at.
  *
- * ## Cover first, inventory second
+ * ## Pools, and still no way to reach a person
  *
- * The page opens with whether the crew can fly the fleet, not with how many there
- * are. A headcount is a fact; *"short two Captains on the 737 MAX"* is a
- * decision, and the decision is what somebody opened this page for.
+ * There is no roster here and no row for a crew member, because there is no crew
+ * member. M5-01 is blunt about the failure mode: *"if they have to hand-roster
+ * 400 flight attendants, the feature has failed."* Every control moves a
+ * **number**, and the surest way to make hand-rostering inevitable later is to
+ * ship something today that looks like a name.
  *
- * **"Required" is a floor and says so wherever it appears.** It is one departure
- * per aeroplane — a single aircraft flying a day of rotations needs several
- * crews, and working that out is duty and rest, which §9.2 defers. A number that
- * quietly pretended to be a rostering answer would be worse than no number.
+ * ## "Required" is a floor and every surface says so
  *
- * ## Fragmentation is stated, because §9.2's complaint is that it is quiet
+ * It is one departure per aeroplane owned. A single aircraft flying a day of
+ * rotations needs several crews, and working out how many is duty-aware
+ * rostering — which does not exist. Duty and rest **are** modelled as of M5-02;
+ * rosters are not, so nothing here may say *"all flights covered today"*. The
+ * wording throughout is "minimum requirement", and it is chosen so that it stays
+ * true rather than needing a redesign when rostering lands.
  *
- * A mixed fleet *"quietly wrecks your utilisation"*. There is no penalty
- * coefficient behind the figure — crew rated on one family are simply not in
- * another's pool — and the page says so, because a number that reads as a fine
- * invites "how do I avoid the fine?" when the answer is "fly one family".
+ * ## Nothing on this page decides anything
  *
- * Every figure is the server's. `packages/web` may not import `@tailfin/sim`, so
- * `available` and the whole demand fold arrive computed (§21).
+ * Every figure arrives from `/api/crew`. `packages/web` may not import
+ * `@tailfin/sim` (§21), and `crew-presentation.ts` holds the folds — regroupings,
+ * counts and ratios of numbers the server already decided. No component here
+ * works out what an aeroplane needs, what a hire costs, or whether a head is
+ * qualified.
  */
-
-const RANK_LABEL: Record<CrewRank, string> = {
-  cadet: 'Cadet',
-  first_officer: 'First Officer',
-  senior_first_officer: 'Senior First Officer',
-  captain: 'Captain',
-  training_captain: 'Training Captain',
-  cabin_crew: 'Cabin Crew',
-  senior_cabin_crew: 'Senior Cabin Crew',
-  purser: 'Purser',
-  cabin_service_manager: 'Cabin Service Manager',
-};
-
-/**
- * One line per rank, shown on the banner.
- *
- * Says what the rank *does* rather than restating the ladder: the promotion
- * order is already visible in the picker, and repeating it here would be a
- * caption that adds nothing.
- */
-const RANK_BLURB: Record<CrewRank, string> = {
-  cadet: 'In training for the right-hand seat. Cannot yet operate a flight.',
-  first_officer: 'The right-hand seat. Every flight needs one.',
-  senior_first_officer: 'A first officer with the hours to cover a captain’s slot.',
-  captain: 'Commands the aircraft. Grown over weeks, never bought in a hurry.',
-  training_captain: 'Commands, and makes the next captain.',
-  cabin_crew: 'One for every fifty seats fitted, by regulation.',
-  senior_cabin_crew: 'Experienced cabin crew, able to lead a smaller cabin.',
-  purser: 'Leads the cabin from a hundred seats up.',
-  cabin_service_manager: 'Runs the cabin on the widebodies.',
-};
-
-const FLIGHT_DECK_RANKS: readonly CrewRank[] = [
-  'cadet',
-  'first_officer',
-  'senior_first_officer',
-  'captain',
-  'training_captain',
-];
-
-/**
- * Integer minor units, and **no currency symbol**.
- *
- * The currency is deliberately unnamed until M8-02 and every other surface shows
- * cash bare. A `$` here would be inventing the answer to an open question on the
- * strength of a mockup.
- */
-function formatCash(minor: number): string {
-  return (minor / 100).toLocaleString('en-GB', { maximumFractionDigits: 0 });
-}
-
-/** `2024-10-28` — UTC, as everywhere else that shows a world date. */
-function formatDate(iso: string): string {
-  return iso.slice(0, 10);
-}
 
 type Load =
   { state: 'loading' } | { state: 'ready'; value: CrewResponse | null } | { state: 'failed' };
 
-function Stat({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-}): ReactNode {
-  return (
-    <div className="crew-stat">
-      <span className="crew-stat__label">{label}</span>
-      <span className="crew-stat__value figure">{value}</span>
-      <span className="crew-stat__detail">{detail}</span>
-    </div>
-  );
-}
-
-function DemandRows({ crew }: { crew: CrewResponse }): ReactNode {
-  const { rows } = crew.demand;
-  if (rows.length === 0) {
-    return (
-      <p className="crew__note">
-        No aircraft and no crew yet. Cover appears here once you own an aeroplane or hire somebody.
-      </p>
-    );
-  }
-
-  return (
-    <table className="crew__table">
-      <caption className="visually-hidden">Fleet cover by family and rank</caption>
-      <thead>
-        <tr>
-          <th scope="col">Family</th>
-          <th scope="col">Rank</th>
-          <th scope="col">Required</th>
-          <th scope="col">Available</th>
-          <th scope="col">Surplus / shortage</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => (
-          <tr key={`${row.family}-${row.rank}`} data-cover={row.delta < 0 ? 'short' : 'ok'}>
-            <td className="figure">{row.family}</td>
-            <td>{RANK_LABEL[row.rank]}</td>
-            <td className="figure">{row.required}</td>
-            <td className="figure">{row.available}</td>
-            <td>
-              <span className="crew-delta" data-cover={row.delta < 0 ? 'short' : 'ok'}>
-                {row.delta > 0 ? `+${String(row.delta)}` : String(row.delta)}
-              </span>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function PoolRows({
-  pools,
-  airportIcao,
-}: {
-  pools: readonly CrewPoolView[];
-  airportIcao: string;
-}): ReactNode {
-  if (pools.length === 0) return <p className="crew__note">No crew at this base yet.</p>;
-
-  return (
-    <table className="crew__table">
-      <caption className="visually-hidden">Crew at {airportIcao}</caption>
-      <thead>
-        <tr>
-          <th scope="col">Family</th>
-          <th scope="col">Rank</th>
-          <th scope="col">On strength</th>
-          <th scope="col">In training</th>
-          <th scope="col">On duty</th>
-          <th scope="col">Standby</th>
-          <th scope="col">Available</th>
-        </tr>
-      </thead>
-      <tbody>
-        {pools.map((pool) => (
-          <tr key={pool.id}>
-            <td className="figure">{pool.family}</td>
-            <td>{RANK_LABEL[pool.rank]}</td>
-            <td className="figure">{pool.headcount}</td>
-            {/* Shown rather than netted off, so crew in a classroom are visibly
-                still yours — which is the whole point of conversion taking time. */}
-            <td className="figure">{pool.unavailable === 0 ? '—' : pool.unavailable}</td>
-            {/* A separate column from "in training", because the two have
-                different fixes: a classroom is a fortnight and you wait, a duty
-                is a night and you hire or you keep a reserve. */}
-            <td className="figure">{pool.onDuty === 0 ? '—' : pool.onDuty}</td>
-            <td className="figure">{pool.reserve === 0 ? '—' : pool.reserve}</td>
-            <td className="figure">{pool.available}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-/**
- * Who is flying and who is asleep (M5-02, §9.2).
- *
- * The answer to *"where are my crew"*, which before M5-02 the game could not
- * give at all. Still not a roster: every row is a **set** — a count of heads on
- * one aeroplane — because the regulation constrains a duty rather than a person
- * and M5-01's invariant is that the player never touches an individual.
- *
- * The away-from-base marker is the one worth looking for. A set that stops away
- * from home is in a hotel the airline is paying for, and §9.2 makes that a real
- * cost precisely because a rotation that ends away looks almost identical on a
- * map to one that gets home.
- */
-function DutyBoard({ bases }: { bases: readonly CrewBaseView[] }): ReactNode {
-  /*
-   * `?? []` because the two halves of a deploy do not land at the same instant.
-   * `duty` is defaulted on the wire, so a browser holding this bundle can be
-   * talking to a web node that predates the field for a few seconds -- and the
-   * failure mode is not a missing table, it is `undefined.map` and a blank page.
-   * The same lesson `isCrewResponse` records.
-   */
-  const sets = bases.flatMap((base) =>
-    (base.duty ?? []).map((period) => ({ ...period, baseIcao: base.airportIcao })),
-  );
-
-  if (sets.length === 0) {
-    return (
-      <p className="crew__note">
-        Nobody on duty. Crew report an hour before a departure and appear here until they have
-        served their rest.
-      </p>
-    );
-  }
-
-  return (
-    <table className="crew__table">
-      <caption className="visually-hidden">Crew sets on duty or resting</caption>
-      <thead>
-        <tr>
-          <th scope="col">Base</th>
-          <th scope="col">Family</th>
-          <th scope="col">Heads</th>
-          <th scope="col">Sectors</th>
-          <th scope="col">Where</th>
-          <th scope="col">State</th>
-        </tr>
-      </thead>
-      <tbody>
-        {sets.map((period) => (
-          <tr key={period.id}>
-            <td className="figure">{period.baseIcao}</td>
-            <td className="figure">{period.family}</td>
-            <td className="figure">
-              {period.heads}
-              {period.fromReserve && <span className="crew__tag"> standby</span>}
-            </td>
-            <td className="figure">{period.sectors}</td>
-            <td className="figure">
-              {period.locationIcao}
-              {/* Colour is never the only signal (App. H.7), so the hotel is a
-                  word rather than a red cell. */}
-              {period.awayFromBase && <span className="crew__tag"> hotel</span>}
-            </td>
-            <td>
-              {period.status === 'open'
-                ? 'On duty'
-                : period.restUntil === null
-                  ? 'Resting'
-                  : `Resting until ${formatDate(period.restUntil)}`}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function TrainingPipeline({ bases }: { bases: readonly CrewBaseView[] }): ReactNode {
-  const conversions = bases.flatMap((base) =>
-    base.conversions.map((conversion) => ({ ...conversion, airportIcao: base.airportIcao })),
-  );
-
-  if (conversions.length === 0) {
-    return (
-      <p className="crew__note">
-        No training in progress. Convert a type rating and the crew appear here until they qualify.
-      </p>
-    );
-  }
-
-  return (
-    <table className="crew__table">
-      <caption className="visually-hidden">Conversions in progress</caption>
-      <thead>
-        <tr>
-          <th scope="col">Base</th>
-          <th scope="col">Rank</th>
-          <th scope="col">From</th>
-          <th scope="col">To</th>
-          <th scope="col">Heads</th>
-          <th scope="col">Back on</th>
-        </tr>
-      </thead>
-      <tbody>
-        {conversions.map((conversion) => (
-          <tr key={conversion.id}>
-            <td className="figure">{conversion.airportIcao}</td>
-            <td>{RANK_LABEL[conversion.rank]}</td>
-            <td className="figure">{conversion.fromFamily}</td>
-            <td className="figure">{conversion.toFamily}</td>
-            <td className="figure">{conversion.heads}</td>
-            {/* World time: a conversion runs on the world's clock, so this
-                arrives sooner in a faster world. */}
-            <td className="figure">{formatDate(conversion.completesAt)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
+/** What the player has clicked, in whichever table. */
+interface Selection {
+  /** Absent for a coverage row, which is about the whole airline's fleet. */
+  baseId?: string;
+  family: string;
+  rank: CrewRank;
 }
 
 export function CrewPage(): ReactNode {
   const [load, setLoad] = useState<Load>({ state: 'loading' });
   const [refusal, setRefusal] = useState<CrewFailure | null>(null);
   const [busy, setBusy] = useState(false);
+  const [selection, setSelection] = useState<Selection | null>(null);
+  const [openAction, setOpenAction] = useState<CrewActionKind | null>(null);
 
-  const [icao, setIcao] = useState('');
-  const [reserve, setReserve] = useState(0);
-  const [baseId, setBaseId] = useState('');
-  const [family, setFamily] = useState('');
-  const [rank, setRank] = useState<CrewRank>('captain');
-  const [heads, setHeads] = useState(1);
-  const [toFamily, setToFamily] = useState('');
+  const { inGameTime } = useWorldClock();
+  const { select, clear } = useContextSelection();
 
   useEffect(() => {
     let live = true;
@@ -358,13 +96,20 @@ export function CrewPage(): ReactNode {
     };
   }, []);
 
+  /*
+   * A selection outlives the route that made it unless somebody clears it, and a
+   * crew pool shown while the player is looking at their fleet is worse than an
+   * empty panel.
+   */
+  useEffect(() => clear, [clear]);
+
   /**
    * Every mutation answers with the whole state, so this is the only writer.
    *
    * `undefined` means **leave the state alone**, which is what a refusal wants.
    * Returning the state captured in the render closure instead is stale the
-   * moment anything has succeeded, and reverted the page to "no crew" while the
-   * base sat happily in the database.
+   * moment anything has succeeded, and once reverted the page to "no crew" while
+   * the base sat happily in the database.
    */
   const apply = useCallback(async (call: () => Promise<CrewResponse | undefined>) => {
     setBusy(true);
@@ -376,6 +121,46 @@ export function CrewPage(): ReactNode {
       setBusy(false);
     }
   }, []);
+
+  const run = useCallback(
+    (outcome: Promise<{ ok: true; state: CrewResponse } | { ok: false; refusal: CrewFailure }>) => {
+      void apply(async () => {
+        const result = await outcome;
+        if (result.ok) return result.state;
+        setRefusal(result.refusal);
+        return undefined;
+      });
+    },
+    [apply],
+  );
+
+  const crew = load.state === 'ready' ? load.value : null;
+
+  /* The panel is rebuilt whenever the numbers move, so it cannot show a stale
+     headcount for a row that has just been hired into. */
+  useEffect(() => {
+    if (crew === null || selection === null) return;
+    select({
+      kind: 'crew-pool',
+      id: `${selection.baseId ?? 'fleet'}/${selection.family}/${selection.rank}`,
+      title: `${selection.family} · ${CREW_RANK_LABEL[selection.rank]}`,
+      subtitle:
+        selection.baseId === undefined
+          ? 'Across the airline'
+          : (crew.bases.find((base) => base.id === selection.baseId)?.airportIcao ?? undefined),
+      body: (
+        <CrewContextBody
+          crew={crew}
+          selection={selection}
+          onAction={(kind) => {
+            setOpenAction(kind);
+          }}
+        />
+      ),
+    });
+  }, [crew, selection, select]);
+
+  const priorityRanks = useMemo(() => (crew === null ? [] : bannerPriorityRanks(crew)), [crew]);
 
   const title = <h1 className="crew__title">Crew</h1>;
 
@@ -392,12 +177,12 @@ export function CrewPage(): ReactNode {
       <div className="crew">
         {title}
         <p className="crew__note" role="alert">
-          Could not load your crew.
+          Could not load your crew. Coverage is unknown until it loads — nothing here is assumed.
         </p>
       </div>
     );
   }
-  if (load.value === null) {
+  if (crew === null) {
     return (
       <div className="crew">
         {title}
@@ -406,92 +191,21 @@ export function CrewPage(): ReactNode {
     );
   }
 
-  const crew = load.value;
-  const openBases = crew.bases.filter((base) => base.status === 'open');
-  const pools = crew.bases.flatMap((base) => base.pools);
-  const onStrength = pools.reduce((total, pool) => total + pool.headcount, 0);
-  const inTraining = pools.reduce((total, pool) => total + pool.unavailable, 0);
-  const available = crew.fragmentation.totalAvailable;
-  const selectedBase = baseId === '' ? openBases[0]?.id : baseId;
-  const familyOptions = [...new Set([...crew.families, ...pools.map((pool) => pool.family)])];
-
-  const run = (
-    outcome: Promise<{ ok: true; state: CrewResponse } | { ok: false; refusal: CrewFailure }>,
-  ) =>
-    void apply(async () => {
-      const result = await outcome;
-      if (result.ok) return result.state;
-      setRefusal(result.refusal);
-      return undefined;
-    });
+  const selectedCoverage =
+    selection && selection.baseId === undefined
+      ? coverageKey(selection.family, selection.rank)
+      : null;
+  const selectedPool =
+    selection?.baseId !== undefined
+      ? poolKey(selection.baseId, selection.family, selection.rank)
+      : null;
 
   return (
     <div className="crew">
       <header className="crew__header">
         {title}
-        <p className="crew__subtitle">Pools, training and bases across your network.</p>
+        <p className="crew__subtitle">Coverage, qualifications and training across your network.</p>
       </header>
-
-      <div className="crew-stats">
-        <Stat
-          label="Total crew"
-          value={String(onStrength)}
-          detail={
-            openBases.length === 1 ? 'Across 1 base' : `Across ${String(openBases.length)} bases`
-          }
-        />
-        <Stat
-          label="Available"
-          value={String(available)}
-          detail={
-            onStrength === 0
-              ? 'Nobody hired yet'
-              : `${String(Math.round((available / onStrength) * 100))}% of crew`
-          }
-        />
-        <Stat
-          label="In training"
-          value={String(inTraining)}
-          detail={inTraining === 0 ? 'No conversions running' : 'Back when their course ends'}
-        />
-        <Stat
-          label="Open bases"
-          value={String(openBases.length)}
-          detail="Crew are hired at a base"
-        />
-      </div>
-
-      {/*
-       * The banner follows the rank picker below it. It is the one place the page
-       * shows a person, and it can be: it illustrates the rank being hired, not a
-       * member of staff who exists.
-       *
-       * **Shown whole, never cropped.** The artwork carries its own headline and
-       * body copy baked into the pixels, so `object-fit: cover` ate the first
-       * letter of every line — the first version rendered "ommand the aircraft"
-       * and overlaid a caption of its own on top of the one already there. The
-       * height therefore follows each image's aspect ratio, which does move the
-       * page a little when the rank changes; that only happens on a deliberate
-       * click, and it is the price of not mangling the artwork.
-       *
-       * `key` on the rank so React swaps the element rather than mutating the
-       * `src` of the one already painted — without it the browser keeps showing
-       * the previous image until the new one decodes, which reads as the selector
-       * having done nothing.
-       *
-       * The alt carries the baked-in message, because text inside a picture is
-       * text a screen reader cannot reach.
-       */}
-      <img
-        key={rank}
-        className="crew-banner"
-        src={crewBanner(rank).src}
-        srcSet={crewBanner(rank).srcSet}
-        sizes="(max-width: 48rem) 440px, 880px"
-        alt={`${RANK_LABEL[rank]}. ${RANK_BLURB[rank]}`}
-        width={880}
-        height={217}
-      />
 
       {refusal !== null && (
         <p className="crew__refusal" role="alert">
@@ -499,317 +213,212 @@ export function CrewPage(): ReactNode {
         </p>
       )}
 
-      <section className="crew__panel">
-        <h2 className="crew__heading">Fleet cover</h2>
-        <p className="crew__hint">
-          <strong>Required</strong> is one departure per aeroplane you own — a floor, not a roster.
-          A single aircraft flying a day of rotations needs several crews; duty and rest are not
-          modelled yet, so this is the smallest number that can be true.
-        </p>
-        <DemandRows crew={crew} />
-        {crew.demand.uncoveredFamilies.length > 0 && (
-          <p className="crew__refusal" role="status">
-            No crew at all rated on {crew.demand.uncoveredFamilies.join(', ')}. Those aeroplanes
-            cannot be scheduled.
-          </p>
-        )}
-      </section>
+      <CrewKpiStrip crew={crew} />
 
-      <div className="crew__split">
-        <section className="crew__panel">
-          <h2 className="crew__heading">Readiness</h2>
-          <CrewReadiness
-            available={available}
-            inTraining={inTraining}
-            required={crew.demand.totalRequired}
-            met={crew.demand.metRequired}
-            covered={crew.demand.covered}
-          />
-        </section>
+      <CrewRoleBanner priorityRanks={priorityRanks} />
 
-        <section className="crew__panel">
-          <h2 className="crew__heading">Commonality</h2>
-          {crew.fragmentation.families.length === 0 ? (
-            <p className="crew__note">
-              No crew yet. Open a base and hire before scheduling — a flight needs a legal
-              complement, and an airline with none cannot put one on the books.
-            </p>
-          ) : crew.fragmentation.families.length === 1 ? (
-            <p className="crew__note">
-              One family, <span className="figure">{crew.fragmentation.families[0]}</span>: every
-              one of your <span className="figure">{available}</span> available crew can fly every
-              aeroplane you own.
-            </p>
-          ) : (
-            <>
-              <p className="crew__note">
-                <span className="figure">{crew.fragmentation.families.length}</span> families. Of{' '}
-                <span className="figure">{available}</span> available crew, the largest family can
-                call on <span className="figure">{crew.fragmentation.largestFamilyAvailable}</span>{' '}
-                — <span className="figure">{crew.fragmentation.strandedHeads}</span> cannot fly it.
-              </p>
-              <p className="crew__hint">
-                Not a penalty: crew are rated per family, so the rest fly their own aeroplanes and
-                no others. Fleet commonality is what buys them back.
-              </p>
-            </>
-          )}
-        </section>
+      <div className="crew-split">
+        <CrewCoverage
+          crew={crew}
+          selectedKey={selectedCoverage}
+          onSelect={(next) => {
+            setSelection(next);
+          }}
+        />
+        <FleetCommonality crew={crew} />
       </div>
 
-      {crew.bases.map((base) => (
-        <section className="crew__panel" key={base.id}>
-          <h2 className="crew__heading">
-            <span className="figure">{base.airportIcao}</span>
-            {base.status === 'closed' && ' · closed'}
-          </h2>
-          <PoolRows pools={base.pools} airportIcao={base.airportIcao} />
-        </section>
-      ))}
+      <CrewBaseTable
+        crew={crew}
+        selectedKey={selectedPool}
+        onSelect={(next) => {
+          setSelection(next);
+        }}
+      />
 
-      <section className="crew__panel">
-        <h2 className="crew__heading">On duty</h2>
-        <DutyBoard bases={crew.bases} />
-      </section>
-
-      <section className="crew__panel">
-        <h2 className="crew__heading">Training pipeline</h2>
-        <TrainingPipeline bases={crew.bases} />
-      </section>
-
-      <div className="crew__actions">
-        <section className="crew-action">
-          <h2 className="crew-action__title">
-            <span className="crew-action__step">1</span> Hire crew
-          </h2>
-          <p className="crew__hint">Grow a pool at a base you already hold.</p>
-          <form
-            className="crew__form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (selectedBase === undefined) return;
-              run(hireCrew({ crewBaseId: selectedBase, family, rank, heads }));
-            }}
-          >
-            <div className="crew__fields">
-              <label>
-                Base
-                <select
-                  value={selectedBase ?? ''}
-                  onChange={(event) => setBaseId(event.target.value)}
-                >
-                  {openBases.map((base) => (
-                    <option key={base.id} value={base.id}>
-                      {base.airportIcao}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Family
-                {/* A picker, not a text box. The free-text version created a pool
-                  rated on a family called `test`, which no aeroplane matches and
-                  no amount of money can undo. */}
-                <select value={family} onChange={(event) => setFamily(event.target.value)} required>
-                  <option value="">Choose…</option>
-                  {familyOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Rank
-                <select value={rank} onChange={(event) => setRank(event.target.value as CrewRank)}>
-                  {Object.entries(RANK_LABEL).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Heads
-                <input
-                  type="number"
-                  min={1}
-                  max={crew.costs.weeklyHiringCapacity}
-                  value={heads}
-                  onChange={(event) => setHeads(Number(event.target.value))}
-                />
-              </label>
-            </div>
-            <p className="crew__hint">
-              {formatCash(
-                FLIGHT_DECK_RANKS.includes(rank)
-                  ? crew.costs.hireFlightDeckMinor
-                  : crew.costs.hireCabinMinor,
-              )}{' '}
-              each · up to {crew.costs.weeklyHiringCapacity} a week. You cannot buy a Captain
-              instantly; growing one takes time, and time is the constraint money cannot route
-              around.
-            </p>
-            <button type="submit" disabled={busy || openBases.length === 0}>
-              Hire crew
-            </button>
-          </form>
-        </section>
-
-        <section className="crew-action">
-          <h2 className="crew-action__title">
-            <span className="crew-action__step">2</span> Convert type rating
-          </h2>
-          <p className="crew__hint">Re-rate crew you already have onto another family.</p>
-          <form
-            className="crew__form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (selectedBase === undefined) return;
-              run(
-                startCrewConversion({
-                  crewBaseId: selectedBase,
-                  fromFamily: family,
-                  toFamily,
-                  rank,
-                  heads,
-                }),
-              );
-            }}
-          >
-            <div className="crew__fields">
-              <label>
-                To family
-                <select
-                  value={toFamily}
-                  onChange={(event) => setToFamily(event.target.value)}
-                  required
-                >
-                  <option value="">Choose…</option>
-                  {familyOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <p className="crew__hint">
-              Uses the base, family, rank and heads above.{' '}
-              {formatCash(crew.costs.conversionPerHeadMinor)} each ·{' '}
-              {crew.costs.conversionDurationDays} days off the roster, which is the part that hurts.
-            </p>
-            <button type="submit" disabled={busy || openBases.length === 0}>
-              Convert rating
-            </button>
-          </form>
-        </section>
-
-        <section className="crew-action">
-          <h2 className="crew-action__title">
-            <span className="crew-action__step">3</span> Open a crew base
-          </h2>
-          <p className="crew__hint">A base is where crew are hired and held.</p>
-          <form
-            className="crew__form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              run(openCrewBase({ airportIcao: icao.trim().toUpperCase() }));
-            }}
-          >
-            <div className="crew__fields">
-              <label>
-                Airport
-                <input
-                  value={icao}
-                  onChange={(event) => setIcao(event.target.value)}
-                  placeholder="EHAM"
-                  maxLength={4}
-                  required
-                />
-              </label>
-            </div>
-            <p className="crew__hint">
-              {formatCash(crew.costs.baseOpeningMinor)} to open, then a monthly overhead — which is
-              what makes a base per destination the wrong shape.
-            </p>
-            <button type="submit" disabled={busy}>
-              Open base
-            </button>
-          </form>
-        </section>
-
-        <section className="crew-action">
-          <h2 className="crew-action__title">
-            <span className="crew-action__step">4</span> Hold crew on standby
-          </h2>
-          <p className="crew__hint">
-            Keep heads off the roster so they can cover a crew that runs out of hours.
-          </p>
-          <form
-            className="crew__form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (selectedBase === undefined) return;
-              run(setCrewReserve({ crewBaseId: selectedBase, family, rank, reserve }));
-            }}
-          >
-            <div className="crew__fields">
-              <label>
-                Base
-                <select
-                  value={selectedBase ?? ''}
-                  onChange={(event) => setBaseId(event.target.value)}
-                >
-                  {openBases.map((base) => (
-                    <option key={base.id} value={base.id}>
-                      {base.airportIcao}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Standby heads
-                <input
-                  type="number"
-                  min={0}
-                  value={reserve}
-                  onChange={(event) => setReserve(Number(event.target.value))}
-                />
-              </label>
-            </div>
-            <p className="crew__hint">
-              Applies to the family and rank selected above. Standby crew are paid exactly like
-              everyone else and fly nothing — until the day a rotation slips, and they are the
-              difference between a delay and a cancellation.
-            </p>
-            <button type="submit" disabled={busy || openBases.length === 0}>
-              Set standby
-            </button>
-          </form>
-        </section>
+      <div className="crew-split">
+        <TrainingPipeline crew={crew} inGameTime={inGameTime} />
+        <CrewActions
+          crew={crew}
+          busy={busy}
+          open={openAction}
+          onOpenChange={setOpenAction}
+          prefill={
+            selection === null
+              ? undefined
+              : {
+                  crewBaseId: selection.baseId,
+                  family: selection.family,
+                  rank: selection.rank,
+                }
+          }
+          onHire={(input) => {
+            run(hireCrew(input));
+          }}
+          onConvert={(input) => {
+            run(startCrewConversion(input));
+          }}
+          onOpenBase={(input) => {
+            run(openCrewBase(input));
+          }}
+          onSetReserve={(input) => {
+            run(setCrewReserve(input));
+          }}
+        />
       </div>
 
-      <section className="crew__panel">
-        <h2 className="crew__heading">How crew work</h2>
-        <ul className="crew__notes">
-          <li>Captains take time to grow. Hiring is capped per week, not priced per hurry.</li>
-          <li>Crew are pooled by rank and family, and can fly any aircraft in that family.</li>
-          <li>
-            A type rating is per family. Converting costs money and a fortnight of availability.
-          </li>
-          <li>A base carries a monthly overhead, so one per destination is the wrong shape.</li>
-          <li>A flight cannot be scheduled without a legal complement rated on its family.</li>
-          <li>
-            Crew have duty limits. A day that runs long times them out, and the flight delays or
-            cancels until a rested crew is available.
-          </li>
-          <li>
-            Standby crew cost the same as anyone else and fly nothing most days. That is the trade,
-            not a bug.
-          </li>
-        </ul>
-      </section>
+      <HowCrewWork />
     </div>
+  );
+}
+
+/**
+ * What the context panel shows for a selected pool.
+ *
+ * Deliberately **no forecast**. A "next 7 days" strip would need schedule-aware
+ * crew demand, which does not exist — and a fabricated one would be the single
+ * most convincing wrong number on the page. When a forecast is real it slots in
+ * here without moving anything else.
+ */
+function CrewContextBody({
+  crew,
+  selection,
+  onAction,
+}: {
+  crew: CrewResponse;
+  selection: Selection;
+  onAction: (kind: CrewActionKind) => void;
+}): ReactNode {
+  const demand = crew.demand.rows.find(
+    (row) => row.family === selection.family && row.rank === selection.rank,
+  );
+
+  const pools = crew.bases
+    .filter((base) => selection.baseId === undefined || base.id === selection.baseId)
+    .flatMap((base) => base.pools)
+    .filter((pool) => pool.family === selection.family && pool.rank === selection.rank);
+
+  const sum = (pick: (pool: (typeof pools)[number]) => number): number =>
+    pools.reduce((total, pool) => total + pick(pool), 0);
+
+  return (
+    <div className="crew-context">
+      <dl className="crew-context__facts">
+        {demand !== undefined && (
+          <div>
+            <dt>Minimum required</dt>
+            <dd className="figure">{demand.required}</dd>
+          </div>
+        )}
+        <div>
+          <dt>On strength</dt>
+          <dd className="figure">{sum((pool) => pool.headcount)}</dd>
+        </div>
+        <div>
+          <dt>Available</dt>
+          <dd className="figure">{sum((pool) => pool.available)}</dd>
+        </div>
+        <div>
+          <dt>In training</dt>
+          <dd className="figure">{sum((pool) => pool.unavailable)}</dd>
+        </div>
+        <div>
+          <dt>On duty</dt>
+          <dd className="figure">{sum((pool) => pool.onDuty)}</dd>
+        </div>
+        <div>
+          <dt>Standby</dt>
+          <dd className="figure">{sum((pool) => pool.reserve)}</dd>
+        </div>
+        {demand !== undefined && (
+          <div>
+            <dt>Balance</dt>
+            <dd className="figure">
+              {demand.delta === 0
+                ? 'Exact'
+                : demand.delta > 0
+                  ? `+${String(demand.delta)}`
+                  : String(demand.delta)}
+            </dd>
+          </div>
+        )}
+      </dl>
+
+      <h3 className="crew-context__heading">Qualification</h3>
+      <p className="crew-context__note">
+        Rated on <span className="figure">{selection.family}</span> only. Crew are qualified per
+        family, so these cannot fly anything else until they are converted.
+      </p>
+
+      <h3 className="crew-context__heading">Actions</h3>
+      <div className="crew-context__actions">
+        <button
+          type="button"
+          onClick={() => {
+            onAction('hire');
+          }}
+        >
+          Hire crew
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            onAction('convert');
+          }}
+        >
+          Convert rating
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            onAction('reserve');
+          }}
+        >
+          Set standby
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The rules, behind a disclosure.
+ *
+ * They were four paragraphs of permanent page height explaining mechanics a
+ * returning player already knows. Hidden by default and one click away — but
+ * **not** removed: these are game rules, and a rule a player cannot find is a
+ * rule they will discover by losing money.
+ */
+function HowCrewWork(): ReactNode {
+  return (
+    <details className="crew-help">
+      <summary>How crew work</summary>
+      <ul className="crew__notes">
+        <li>
+          Crew are pooled by <strong>rank, family and base</strong>. There are no individuals to
+          roster.
+        </li>
+        <li>
+          A type rating is per aircraft <strong>family</strong>. Converting costs money and takes
+          the crew off the roster for the whole course.
+        </li>
+        <li>Captains take time to grow. Hiring is capped per week, not priced per hurry.</li>
+        <li>A base carries a monthly overhead, so one per destination is the wrong shape.</li>
+        <li>A flight cannot be scheduled without a legal complement rated on its family.</li>
+        <li>
+          <strong>Required is a floor</strong> — one departure per aeroplane you own, not a day of
+          rotations. Duty and rest are modelled; rostering is not, so this figure is the minimum and
+          never a promise about a schedule.
+        </li>
+        <li>
+          Crew have duty limits. A day that runs long times them out, and the flight delays or
+          cancels until a rested crew is available.
+        </li>
+        <li>
+          Standby crew cost the same as anyone else and fly nothing most days. That is the trade,
+          not a bug.
+        </li>
+      </ul>
+    </details>
   );
 }
