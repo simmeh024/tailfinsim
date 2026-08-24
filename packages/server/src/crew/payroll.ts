@@ -97,6 +97,7 @@ export async function runCrewPayroll(
     .select({
       airlineId: crewBase.airlineId,
       crewBaseId: crewBase.id,
+      payBand: crewBase.payBand,
       rank: crewPool.rank,
       headcount: crewPool.headcount,
     })
@@ -116,7 +117,17 @@ export async function runCrewPayroll(
     }
     bill.bases.add(row.crewBaseId);
     if (row.rank !== null && row.headcount !== null) {
-      bill.salaryMinor += salaryFor(row.rank, economy.crew) * row.headcount;
+      /*
+       * The pay band, applied per base (M5-03). This is the whole cost side of
+       * section 9.2's *"cost-cutting on crew is a viable strategy"* -- a lean
+       * base genuinely pays less, and the morale it loses arrives weeks later.
+       * Rounded per line rather than at the end, so the movement equals the sum
+       * of the rows a player would add up themselves.
+       */
+      const band = economy.crew.morale.payBands[row.payBand];
+      bill.salaryMinor += Math.round(
+        salaryFor(row.rank, economy.crew) * row.headcount * band.costMultiplier,
+      );
     }
   }
   for (const bill of bills.values()) {
@@ -210,10 +221,20 @@ export async function chargePositioning(
     nights: number;
     occurredAt: Date;
     duty: CrewBalance['duty'];
+    /**
+     * The base's hotel tier (M5-03). Budget costs less and the crew notice.
+     *
+     * Defaulted to 1 rather than required, so a caller that does not yet know
+     * the tier bills the standard rate instead of nothing.
+     */
+    hotelCostMultiplier?: number;
   },
 ): Promise<number> {
   const amount = Math.round(
-    input.duty.hotelCostPerHeadPerNightMinor * Math.max(1, input.nights) * input.heads,
+    input.duty.hotelCostPerHeadPerNightMinor *
+      Math.max(1, input.nights) *
+      input.heads *
+      (input.hotelCostMultiplier ?? 1),
   );
   if (amount <= 0) return 0;
 

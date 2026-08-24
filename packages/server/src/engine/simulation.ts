@@ -6,6 +6,7 @@ import { deliverDueAircraftOrders } from '../aircraft/acquisition';
 import { sweepMaintenance } from '../aircraft/maintenance';
 import { refreshUsedAircraftMarket } from '../aircraft/used-market';
 import { returnRestedCrew, standDownIdleCrew } from '../crew/duty-store';
+import { returnSickCrew, reviewCrewMorale } from '../crew/morale';
 import { runCrewPayroll } from '../crew/payroll';
 import { completeDueConversions } from '../crew/store';
 import { type Database } from '../db/client';
@@ -92,6 +93,12 @@ export interface TickReport {
   crewRested: number;
   /** M5-02. Airlines billed for a month of crew. */
   crewPaid: number;
+  /** M5-03. Crew bases whose morale was reviewed. */
+  moraleReviews: number;
+  /** M5-03. Heads who resigned. The expensive half of section 9.2's bill. */
+  crewResignations: number;
+  /** M5-03. Heads who went off sick. */
+  crewSickened: number;
   crewErrors: number;
 }
 
@@ -146,6 +153,10 @@ export interface SimulationEngineOptions {
   returnCrew?: typeof returnRestedCrew;
   /** M5-02. Bills the month's salaries and base overheads. */
   payCrew?: typeof runCrewPayroll;
+  /** M5-03. Moves morale toward its target and collects the bill. */
+  reviewMorale?: typeof reviewCrewMorale;
+  /** M5-03. Returns crew whose sick leave has run out. */
+  returnSick?: typeof returnSickCrew;
   depth?: typeof queueDepth;
 }
 
@@ -221,6 +232,12 @@ export interface EngineSnapshot {
   crewRested: number;
   /** M5-02. Airlines billed for a month of crew. */
   crewPaid: number;
+  /** M5-03. Crew bases whose morale was reviewed. */
+  moraleReviews: number;
+  /** M5-03. Heads who resigned. The expensive half of section 9.2's bill. */
+  crewResignations: number;
+  /** M5-03. Heads who went off sick. */
+  crewSickened: number;
   crewErrors: number;
   maintenanceErrors: number;
 }
@@ -305,6 +322,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     standDownCrew = standDownIdleCrew,
     returnCrew = returnRestedCrew,
     payCrew = runCrewPayroll,
+    reviewMorale = reviewCrewMorale,
+    returnSick = returnSickCrew,
   } = options;
 
   const unhandledEventTypes = ALL_EVENT_TYPES.filter((type) => handlers[type] === undefined);
@@ -329,6 +348,9 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let crewStoodDown = 0;
   let crewRested = 0;
   let crewPaid = 0;
+  let moraleReviews = 0;
+  let crewResignations = 0;
+  let crewSickened = 0;
   let crewErrors = 0;
   let maintenanceErrors = 0;
 
@@ -345,6 +367,9 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     let tickCrewStoodDown = 0;
     let tickCrewRested = 0;
     let tickCrewPaid = 0;
+    let tickMoraleReviews = 0;
+    let tickResignations = 0;
+    let tickSickened = 0;
     let tickCrewErrors = 0;
     let tickAirframesGrounded = 0;
 
@@ -478,6 +503,25 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
               `${String(Math.round(paid.totalMinor / 100))}`,
           );
         }
+
+        /*
+         * Morale (M5-03). The review is what makes section 9.2's bill *arrive*:
+         * a base drifts toward the target its pay band, rosters, hotels and rest
+         * imply, and pays for it in sickness and resignations. Weekly in game
+         * time, and it skips a base reviewed inside the week -- running it every
+         * tick would apply a week of attrition sixty times a minute.
+         */
+        const sickBack = await returnSick(db, entry.id, worldNow);
+        const morale = await reviewMorale(db, entry.id, worldNow);
+        tickMoraleReviews += morale.basesReviewed;
+        tickResignations += morale.resignations;
+        tickSickened += morale.sickened;
+        if (morale.resignations > 0 || morale.sickened > 0 || sickBack.returned > 0) {
+          log?.info?.(
+            `[${entry.name}] crew morale: ${String(morale.resignations)} resigned, ` +
+              `${String(morale.sickened)} off sick, ${String(sickBack.returned)} pool(s) recovered`,
+          );
+        }
       } catch (error) {
         tickCrewErrors += 1;
         log?.warn?.(`[${entry.name}] crew duty sweep failed: ${String(error)}`);
@@ -532,6 +576,9 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     crewStoodDown += tickCrewStoodDown;
     crewRested += tickCrewRested;
     crewPaid += tickCrewPaid;
+    moraleReviews += tickMoraleReviews;
+    crewResignations += tickResignations;
+    crewSickened += tickSickened;
     crewErrors += tickCrewErrors;
     lastTickAt = context.tickedAt;
     lastTickDurationMs = durationMs;
@@ -554,6 +601,9 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       crewStoodDown: tickCrewStoodDown,
       crewRested: tickCrewRested,
       crewPaid: tickCrewPaid,
+      moraleReviews: tickMoraleReviews,
+      crewResignations: tickResignations,
+      crewSickened: tickSickened,
       crewErrors: tickCrewErrors,
     };
   }
@@ -617,6 +667,9 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         crewStoodDown,
         crewRested,
         crewPaid,
+        moraleReviews,
+        crewResignations,
+        crewSickened,
         crewErrors,
         maintenanceErrors,
       };

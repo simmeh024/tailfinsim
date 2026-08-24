@@ -58,12 +58,18 @@ export interface MoraleInputs {
    */
   rosterStability: number;
   /**
-   * Rest actually served against rest required, 0–1, capped at 1.
+   * How rested the crew are, 0–1. See {@link restRatioFrom}.
    *
-   * The one input that is measured rather than chosen. An airline rostering to
-   * the legal minimum scores 1 here and no more: exceeding the minimum is not
-   * rewarded, because the minimum is already the regulation's answer to what is
-   * enough. Falling short of it is what this notices.
+   * The one input that is measured rather than chosen — and the one whose
+   * definition took a correction. *Rest served against rest required* is the
+   * obvious reading and it is useless: it is structurally 1, because the
+   * dispatcher refuses to grant short rest in the first place. An input that can
+   * only ever read 1 is not an input.
+   *
+   * So it is rest against **duty**. A base flying thirteen-hour days on
+   * twelve-hour rests scores badly even though every one of those rests was
+   * legal — which is section 9.2's complaint exactly: this measures wear, not
+   * compliance.
    */
   restRatio: number;
 }
@@ -255,6 +261,30 @@ export function rosterStability(
 
   return clamp01(1 - spreadHours / spreadHoursForZero);
 }
+
+/**
+ * Turn hours of rest and hours of duty into the 0–1 morale input.
+ *
+ * Linear between the two calibration points, so a base can be told how far off
+ * comfortable it is rather than merely that it is. No duty at all returns the
+ * neutral value for the same reason {@link rosterStability} does: a base that
+ * has not flown yet has not mistreated anybody.
+ */
+export function restRatioFrom(
+  restHours: number,
+  dutyHours: number,
+  balance: CrewMoraleBalance = DEFAULT_CREW.morale,
+): number {
+  if (dutyHours <= 0) return NEUTRAL_REST;
+
+  const ratio = restHours / dutyHours;
+  const span = balance.restToDutyForFull - balance.restToDutyForZero;
+  if (span <= 0) return ratio >= balance.restToDutyForFull ? 1 : 0;
+  return clamp01((ratio - balance.restToDutyForZero) / span);
+}
+
+/** No duty flown yet is not a badly-run base. */
+export const NEUTRAL_REST = 0.7;
 
 /** No duty periods yet is not a badly-run base. */
 export const NEUTRAL_STABILITY = 0.7;
