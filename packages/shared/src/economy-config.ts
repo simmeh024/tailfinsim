@@ -1581,6 +1581,171 @@ export const SHIPPED_CREW_DUTY_BALANCE = {
   deadheadDutyFraction: 0.5,
 } as const satisfies z.input<typeof CrewDutyBalance>;
 
+/**
+ * Morale, pay bands and attrition (section 9.2, M5-03).
+ *
+ * ## What section 9.2 actually promises
+ *
+ * *"Pay band, roster stability, hotel quality, and rest ratio feed a morale
+ * score per base. Low morale leads to sickness, attrition, worse service scores
+ * ... Cost-cutting on crew is a viable strategy with a delayed, visible bill."*
+ *
+ * Every word of that is load-bearing. **Viable** means paying badly has to be a
+ * real option that saves real money, not a trap with a warning sign on it.
+ * **Delayed** means the saving arrives before the cost, or there is no decision
+ * to make. **Visible** means that when the bill comes the player can see what it
+ * was for - which is why {@link moraleTarget} itemises rather than returning a
+ * number.
+ *
+ * ## Bands, not a slider
+ *
+ * A continuous pay multiplier invites the player to hunt for the exact figure
+ * that buys the most morale per unit of cash, which is arithmetic homework
+ * rather than a decision. Three bands is a choice: pay under the odds, pay the
+ * rate, or pay up. The same reasoning applies to hotels.
+ */
+export const PayBand = z.enum(['lean', 'market', 'generous']);
+export type PayBand = z.infer<typeof PayBand>;
+
+export const HotelTier = z.enum(['budget', 'standard', 'premium']);
+export type HotelTier = z.infer<typeof HotelTier>;
+
+const BandEffect = z
+  .object({
+    /** Multiplies the book rate. `1` is the rate in `flightDeckSalaryMinor`. */
+    costMultiplier: z.number().positive(),
+    /** What this band contributes to morale, 0-1, before weighting. */
+    moraleFactor: z.number().min(0).max(1),
+  })
+  .strict();
+
+export const CrewMoraleBalance = z
+  .object({
+    payBands: z.object({ lean: BandEffect, market: BandEffect, generous: BandEffect }).strict(),
+    hotelTiers: z
+      .object({ budget: BandEffect, standard: BandEffect, premium: BandEffect })
+      .strict(),
+
+    /**
+     * How much each input matters. Summed and normalised, so they need not
+     * total 1 - but they do, because a set of weights that does not is a set
+     * nobody can read.
+     */
+    weights: z
+      .object({
+        pay: z.number().min(0),
+        rosterStability: z.number().min(0),
+        hotel: z.number().min(0),
+        rest: z.number().min(0),
+      })
+      .strict(),
+
+    /**
+     * Where a newly opened base starts.
+     *
+     * Not 1. A crew who have just arrived are neither delighted nor mutinous,
+     * and starting at the top would mean the only direction morale can move is
+     * down - which reads as a punishment mechanic rather than a dial.
+     */
+    startingMorale: z.number().min(0).max(1),
+
+    /**
+     * The fraction of the remaining gap morale closes each game week.
+     *
+     * **This is the "delayed" in section 9.2's delayed bill**, and it is the
+     * single most important number here. Too fast and cutting pay hurts
+     * immediately, so nobody ever does it and the strategy is not viable. Too
+     * slow and the consequence arrives so long after the decision that the
+     * player cannot connect the two, which is worse than no consequence at all.
+     */
+    driftPerWeek: z.number().min(0).max(1),
+
+    /** Heads per week who call in sick, at zero and at full morale. */
+    sicknessAtZero: z.number().min(0).max(1),
+    sicknessAtFull: z.number().min(0).max(1),
+    /** Game days a sick crew member is unavailable. */
+    sicknessDays: z.number().int().positive(),
+
+    /** Fraction of a pool who resign per week, at zero and at full morale. */
+    attritionAtZero: z.number().min(0).max(1),
+    attritionAtFull: z.number().min(0).max(1),
+
+    /**
+     * What morale does to service execution, as a multiplier (App. D.1, M8-04).
+     *
+     * Exposed and **not consumed here**. M8-04 assembles the product score and
+     * owns how the inputs combine - App. D.1 says *"the weakest input
+     * dominates"*, which is a decision about all four inputs and cannot be taken
+     * by the one that happens to be built first. This is the M2-08 seam again:
+     * supply the number, let the owner use it.
+     */
+    serviceExecutionAtZero: z.number().min(0).max(1),
+    serviceExecutionAtFull: z.number().min(0).max(1),
+  })
+  .strict();
+export type CrewMoraleBalance = z.infer<typeof CrewMoraleBalance>;
+
+/**
+ * The shipped morale balance.
+ *
+ * ## How the pay bands are scaled
+ *
+ * Against the one anchor that exists: a Captain's book rate is 1,000,000 a month
+ * and a narrowbody A-check is 1,800,000. Lean saves 15%, generous costs 20%.
+ * On a small airline that is a few hundred thousand a month either way - enough
+ * to matter against a check, not enough to decide the game in a quarter.
+ *
+ * ## Why lean is 0.25 rather than 0
+ *
+ * Paying under the rate is unpopular, not abusive. A base on lean pay with good
+ * rosters, decent hotels and proper rest still lands around 0.6 morale, which is
+ * liveable - and that is the point of section 9.2's *"viable strategy"*. A pay
+ * band that alone floored morale would make the other three inputs decorative.
+ *
+ * ## The drift number
+ *
+ * `0.12` a week closes half the gap in **5.4 game weeks** and 85% of it in
+ * fifteen. On the flagship world's 2x clock that is under three real weeks to
+ * feel a pay cut properly - long enough to bank the saving and stop thinking
+ * about it, which is exactly the trap section 9.2 describes, and short enough
+ * that the player is still recognisably the person who made the decision.
+ */
+export const SHIPPED_CREW_MORALE_BALANCE = {
+  payBands: {
+    lean: { costMultiplier: 0.85, moraleFactor: 0.25 },
+    market: { costMultiplier: 1, moraleFactor: 0.65 },
+    generous: { costMultiplier: 1.2, moraleFactor: 1 },
+  },
+  hotelTiers: {
+    budget: { costMultiplier: 0.6, moraleFactor: 0.2 },
+    standard: { costMultiplier: 1, moraleFactor: 0.65 },
+    premium: { costMultiplier: 1.8, moraleFactor: 1 },
+  },
+
+  // Pay is the largest single input and still under half: an airline cannot buy
+  // its way out of running its crew into the ground.
+  weights: { pay: 0.4, rosterStability: 0.2, hotel: 0.15, rest: 0.25 },
+
+  startingMorale: 0.65,
+  driftPerWeek: 0.12,
+
+  // About one head in twelve out sick at rock bottom, one in a hundred at the
+  // top. Three days, so it disrupts a rotation without emptying a base.
+  sicknessAtZero: 0.08,
+  sicknessAtFull: 0.01,
+  sicknessDays: 3,
+
+  // 4% a week at zero morale empties a pool in roughly half a game year -- slow
+  // enough to be a bill rather than a collapse, fast enough to notice.
+  attritionAtZero: 0.04,
+  attritionAtFull: 0.002,
+
+  // App. D.1: execution never jumps a band, it decides where you sit inside one.
+  // So even a mutinous crew delivers most of what was paid for -- 0.7 of it.
+  serviceExecutionAtZero: 0.7,
+  serviceExecutionAtFull: 1,
+} as const satisfies z.input<typeof CrewMoraleBalance>;
+
 export const CrewBalance = z
   .object({
     regulation: CrewRegulationBalance,
@@ -1593,7 +1758,15 @@ export const CrewBalance = z
      * written before M5-02 unparseable on the first read after the deploy.
      */
     duty: CrewDutyBalance.default(SHIPPED_CREW_DUTY_BALANCE),
-    /** Monthly salary per head, by rank. Pay bands are M5-02; this is the floor. */
+    /** Defaulted, for the reason `duty` is. */
+    morale: CrewMoraleBalance.default(SHIPPED_CREW_MORALE_BALANCE),
+    /**
+     * Monthly salary per head, by rank.
+     *
+     * The **book rate**. What an airline actually pays is this multiplied by
+     * its base's pay band (M5-03), so this is the middle of the scale rather
+     * than a floor - a lean base pays less than these figures.
+     */
     flightDeckSalaryMinor: byFlightDeckRank(MinorUnits.positive()),
     cabinSalaryMinor: byCabinRank(MinorUnits.positive()),
     /** One-off recruitment cost per head, by ladder. */
@@ -1682,6 +1855,7 @@ export const SHIPPED_CREW_BALANCE = {
   // that lives in `weeklyHiringCapacity`.
   hiringCostMinor: { flightDeck: 400_000, cabin: 100_000 },
   duty: SHIPPED_CREW_DUTY_BALANCE,
+  morale: SHIPPED_CREW_MORALE_BALANCE,
 } as const satisfies z.input<typeof CrewBalance>;
 
 export const EconomyConfig = z
