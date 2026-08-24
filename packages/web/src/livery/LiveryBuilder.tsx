@@ -35,7 +35,12 @@ import {
   type LiveryEditorAction,
   type LiveryEditorHistory,
 } from './editor-model';
-import { fleetPreviewBlendMode, fleetPreviewPaint, liveryFamilyVisual } from './fleet-preview';
+import {
+  fleetPreviewBlendMode,
+  fleetPreviewPaint,
+  fleetPreviewZoneShapes,
+  liveryFamilyVisual,
+} from './fleet-preview';
 import { renderLiverySvg } from './render';
 import { AIRCRAFT_LIVERY_TEMPLATES, aircraftLiveryTemplate } from './templates';
 
@@ -401,19 +406,6 @@ function LayerPanel({
   );
 }
 
-const FLEET_ZONE_CLIPS: Readonly<Record<LiveryZone, string>> = Object.freeze({
-  fuselage: '0,0.39 0.17,0.33 0.72,0.33 0.88,0.42 0.84,0.64 0.07,0.70 0,0.62',
-  nose: '0,0.38 0.25,0.34 0.27,0.68 0,0.70',
-  belly: '0,0.54 0.88,0.49 0.82,0.70 0.06,0.73',
-  tail_fin: '0.64,0.07 0.88,0.07 0.91,0.55 0.64,0.52',
-  winglets: '0.12,0.08 0.29,0.08 0.32,0.39 0.21,0.49 0.88,0.58 1,0.56 1,0.77 0.72,0.74',
-  engine_nacelles: '0.34,0.55 0.60,0.53 0.62,0.88 0.36,0.88',
-  wings: '0.12,0.08 0.30,0.08 0.45,0.45 1,0.57 1,0.80 0.43,0.70 0.25,0.48',
-  cheatline_band: '0,0.43 0.88,0.38 0.88,0.54 0,0.59',
-  door_surrounds: '0.08,0.36 0.78,0.34 0.82,0.65 0.08,0.68',
-  registration_area: '0.53,0.34 0.78,0.33 0.81,0.54 0.52,0.56',
-});
-
 function FleetAircraftPreview({
   family,
   layers,
@@ -426,6 +418,33 @@ function FleetAircraftPreview({
   if (visual === null) {
     return <p role="alert">No fleet render exists for this family.</p>;
   }
+
+  const bodyLayers = layers.filter(
+    (layer) =>
+      layer.zone !== 'wings' && layer.zone !== 'winglets' && layer.zone !== 'engine_nacelles',
+  );
+  const wingLayers = layers.filter((layer) => layer.zone === 'wings' || layer.zone === 'winglets');
+  const engineLayers = layers.filter((layer) => layer.zone === 'engine_nacelles');
+
+  const renderPaintLayer = (layer: LiveryLayer): ReactNode => {
+    const paint = fleetPreviewPaint(layer);
+    if (!layer.visible || paint === null) return null;
+    return (
+      <rect
+        key={layer.id}
+        className="livery-fleet-preview__coat"
+        data-zone={layer.zone}
+        width={visual.width}
+        height={visual.height}
+        fill={layer.type === 'gradient' ? `url(#${idPrefix}-paint-${layer.id})` : paint}
+        clipPath={`url(#${idPrefix}-zone-${layer.zone})`}
+        opacity={layer.opacity}
+        style={{
+          mixBlendMode: fleetPreviewBlendMode(layer) as CSSProperties['mixBlendMode'],
+        }}
+      />
+    );
+  };
 
   return (
     <div
@@ -483,9 +502,41 @@ function FleetAircraftPreview({
           </mask>
           {LiveryZone.options.map((zone) => (
             <clipPath key={zone} id={`${idPrefix}-zone-${zone}`} clipPathUnits="objectBoundingBox">
-              <polygon points={FLEET_ZONE_CLIPS[zone]} />
+              {fleetPreviewZoneShapes(family, zone).map((shape, index) =>
+                shape.kind === 'ellipse' ? (
+                  <ellipse key={index} cx={shape.cx} cy={shape.cy} rx={shape.rx} ry={shape.ry} />
+                ) : (
+                  <polygon key={index} points={shape.points} />
+                ),
+              )}
             </clipPath>
           ))}
+          <clipPath id={`${idPrefix}-surface-guard`} clipPathUnits="objectBoundingBox">
+            {(['wings', 'winglets', 'engine_nacelles'] as const).flatMap((zone) =>
+              fleetPreviewZoneShapes(family, zone).map((shape, index) =>
+                shape.kind === 'ellipse' ? (
+                  <ellipse
+                    key={`${zone}-${String(index)}`}
+                    cx={shape.cx}
+                    cy={shape.cy}
+                    rx={shape.rx}
+                    ry={shape.ry}
+                  />
+                ) : (
+                  <polygon key={`${zone}-${String(index)}`} points={shape.points} />
+                ),
+              ),
+            )}
+          </clipPath>
+          <clipPath id={`${idPrefix}-engine-guard`} clipPathUnits="objectBoundingBox">
+            {fleetPreviewZoneShapes(family, 'engine_nacelles').map((shape, index) =>
+              shape.kind === 'ellipse' ? (
+                <ellipse key={index} cx={shape.cx} cy={shape.cy} rx={shape.rx} ry={shape.ry} />
+              ) : (
+                <polygon key={index} points={shape.points} />
+              ),
+            )}
+          </clipPath>
           {layers.map((layer) => {
             if (!layer.visible || layer.type !== 'gradient') return null;
             const gradientId = `${idPrefix}-paint-${layer.id}`;
@@ -523,25 +574,25 @@ function FleetAircraftPreview({
           })}
         </defs>
         <g mask={`url(#${idPrefix}-aircraft)`}>
-          {layers.map((layer) => {
-            const paint = fleetPreviewPaint(layer);
-            if (!layer.visible || paint === null) return null;
-            return (
-              <rect
-                key={layer.id}
-                className="livery-fleet-preview__coat"
-                data-zone={layer.zone}
-                width={visual.width}
-                height={visual.height}
-                fill={layer.type === 'gradient' ? `url(#${idPrefix}-paint-${layer.id})` : paint}
-                clipPath={`url(#${idPrefix}-zone-${layer.zone})`}
-                opacity={layer.opacity}
-                style={{
-                  mixBlendMode: fleetPreviewBlendMode(layer) as CSSProperties['mixBlendMode'],
-                }}
-              />
-            );
-          })}
+          {bodyLayers.map(renderPaintLayer)}
+          <image
+            className="livery-fleet-preview__surface-guard"
+            data-surface-guard="wings"
+            href={visual.src}
+            width={visual.width}
+            height={visual.height}
+            clipPath={`url(#${idPrefix}-surface-guard)`}
+          />
+          {wingLayers.map(renderPaintLayer)}
+          <image
+            className="livery-fleet-preview__surface-guard"
+            data-surface-guard="engines"
+            href={visual.src}
+            width={visual.width}
+            height={visual.height}
+            clipPath={`url(#${idPrefix}-engine-guard)`}
+          />
+          {engineLayers.map(renderPaintLayer)}
         </g>
       </svg>
       <span className="livery-fleet-preview__specular" aria-hidden="true" />

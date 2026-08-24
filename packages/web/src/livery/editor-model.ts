@@ -13,6 +13,7 @@ import { AIRCRAFT_LIVERY_TEMPLATES } from './templates';
 
 export const LIVERY_DRAFT_VERSION = 1 as const;
 export const LIVERY_HISTORY_LIMIT = 100;
+export const DEFAULT_BASE_FILL_OPACITY = 0.72;
 
 export type BaseFillMode = 'solid' | 'linear' | 'radial' | 'split';
 
@@ -108,7 +109,7 @@ export function createBaseFillLayer(
     visible: true,
     locked: false,
     transform: IDENTITY_TRANSFORM,
-    opacity: 1,
+    opacity: DEFAULT_BASE_FILL_OPACITY,
     blendMode: 'normal' as const,
     mask: null,
   };

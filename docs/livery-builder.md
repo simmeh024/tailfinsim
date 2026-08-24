@@ -9,10 +9,17 @@ paint format or recreate aircraft geometry in React.
 The aircraft remains the visual centre of the page. The default **3D preview** reuses the same
 1440px three-quarter aircraft renders as the fleet catalogue. Each authoring family maps to a
 representative catalogue type, and an SVG luminance-threshold mask projects the document's
-visible paint layers over the lit airframe. This preserves windows, panel lines, engine detail
-and specular lighting. Zone placement in this view is illustrative because the catalogue render
-is perspective imagery; the **Paint map** switch shows the exact side-profile zone clipping and
-remains the canonical authoring view.
+visible paint layers over the lit airframe. Normal paint uses colour blending against the fleet
+render rather than an isolated flat coat, preserving windows, panel lines, engine detail,
+highlights and specular lighting. New base fills start at 72% opacity so the first result retains
+material depth while leaving 100% available deliberately.
+
+Zone placement in this view is illustrative because the catalogue render is perspective
+imagery. Broad body regions share one projection; all 13 authoring families register their own
+visible wing, winglet and nacelle shapes against the selected fleet asset. Body paint is
+composited behind those physical surfaces, so an unpainted wing or engine retains the original
+material even where the perspective overlaps the fuselage. The **Paint map** switch shows the
+exact side-profile zone clipping and remains the canonical authoring view.
 
 On wide screens the collapsible base-fill rail sits beside the canvas and the shell context
 window owns the layer stack. At compact desktop and mobile widths the tools start collapsed; on
