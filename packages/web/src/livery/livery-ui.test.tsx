@@ -48,9 +48,20 @@ describe('M6-03 livery builder UI', () => {
     expect(
       screen.getByRole('img', { name: 'A320neo three-dimensional livery preview' }),
     ).toBeInTheDocument();
+    const fuselageCoat = document.querySelector(
+      '.livery-fleet-preview__coat[data-zone="fuselage"]',
+    );
+    const wingGuard = document.querySelector('[data-surface-guard="wings"]');
+    const engineGuard = document.querySelector('[data-surface-guard="engines"]');
+    expect(fuselageCoat).not.toBeNull();
+    expect(wingGuard).not.toBeNull();
+    expect(engineGuard).not.toBeNull();
     expect(
-      document.querySelector('.livery-fleet-preview__coat[data-zone="fuselage"]'),
-    ).not.toBeNull();
+      fuselageCoat!.compareDocumentPosition(wingGuard!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(
+      wingGuard!.compareDocumentPosition(engineGuard!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
 
     fireEvent.click(screen.getByRole('button', { name: 'Paint map' }));
     expect(document.querySelector('svg[data-rendered-layers="3"]')).not.toBeNull();
@@ -62,6 +73,14 @@ describe('M6-03 livery builder UI', () => {
     fireEvent.click(screen.getByRole('button', { name: '+ Add fill layer' }));
 
     const name = screen.getByLabelText('Rename Engine Nacelles base');
+    expect(screen.getByLabelText('Engine Nacelles base opacity')).toHaveValue('0.72');
+    const engineCoat = document.querySelector(
+      '.livery-fleet-preview__coat[data-zone="engine_nacelles"]',
+    );
+    const currentEngineGuard = document.querySelector('[data-surface-guard="engines"]');
+    expect(
+      currentEngineGuard!.compareDocumentPosition(engineCoat!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     fireEvent.change(name, { target: { value: 'Powerplant wash' } });
     fireEvent.blur(name);
     fireEvent.click(screen.getByRole('button', { name: 'Hide Powerplant wash' }));

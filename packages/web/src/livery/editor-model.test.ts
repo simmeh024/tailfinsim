@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { LiveryDocument } from '@tailfin/shared';
 
 import {
+  DEFAULT_BASE_FILL_OPACITY,
   DEFAULT_PRIMARY_COLOR,
   DEFAULT_SECONDARY_COLOR,
   createEditorHistory,
@@ -53,6 +54,9 @@ describe('M6-03 livery editor history', () => {
       'belly',
       'tail_fin',
     ]);
+    expect(
+      history.present.document.layers.every((layer) => layer.opacity === DEFAULT_BASE_FILL_OPACITY),
+    ).toBe(true);
   });
 
   it('undoes and redoes every document mutation, including reorder', () => {

@@ -457,16 +457,12 @@
   mask-type: alpha;
 }
 
-.livery-fleet-preview__coat {
-  isolation: isolate;
-}
-
 .livery-fleet-preview__specular {
   z-index: 2;
   background: linear-gradient(
     118deg,
     transparent 30%,
-    color-mix(in srgb, var(--text-primary) 12%, transparent) 47%,
+    color-mix(in srgb, var(--text-primary) 6%, transparent) 47%,
     transparent 62%
   );
   mix-blend-mode: screen;
