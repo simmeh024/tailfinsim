@@ -332,6 +332,7 @@ async function moraleInputsFor(
   hotelTier: HotelTier;
   rosterStability: number;
   restRatio: number;
+  hasDutyHistory: boolean;
 }> {
   const since = new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000);
 
@@ -376,5 +377,9 @@ async function moraleInputsFor(
     hotelTier: base.hotelTier,
     rosterStability: rosterStability(reportMinutes),
     restRatio: restRatioFrom(restHours, dutyHours, balance),
+    // Whether the two measured inputs have anything to measure. Without it a
+    // brand-new base is told its rosters are irregular and its rest is cut
+    // short, about crew who have never flown a sector.
+    hasDutyHistory: periods.length > 0,
   };
 }
