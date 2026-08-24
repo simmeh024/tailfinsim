@@ -42,14 +42,11 @@ export function exposesMethod(
 ): boolean {
   switch (method) {
     case 'new':
-      return entry.availability === 'orderable' && entry.listPrice !== null;
+      return entry.acquisitionMethods.includes('new');
     case 'lease':
-      return (
-        (entry.availability === 'orderable' || entry.availability === 'used_only') &&
-        entry.monthlyLeaseRate !== null
-      );
+      return entry.acquisitionMethods.includes('lease');
     case 'used':
-      return usedCount > 0;
+      return entry.acquisitionMethods.includes('used') && usedCount > 0;
   }
 }
 

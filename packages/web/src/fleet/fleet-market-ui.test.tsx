@@ -36,6 +36,7 @@ const entry = (
   manufacturer: 'Airbus',
   class: 'narrowbody',
   availability: 'orderable',
+  acquisitionMethods: ['new', 'lease', 'used'],
   detail: 'Available to order new, lease, or buy used.',
   arrivesOn: null,
   seatsTwoClass: 165,
@@ -76,6 +77,7 @@ const CATALOGUE: FleetCatalogueResponse = {
       designation: 'A321XLR',
       family: 'A320',
       availability: 'prototype',
+      acquisitionMethods: [],
       arrivesOn: '2026-11-01',
       detail: 'Flying as a prototype and cannot yet be ordered.',
       rangeNm: 4700,
@@ -86,6 +88,7 @@ const CATALOGUE: FleetCatalogueResponse = {
       family: '737 NG',
       manufacturer: 'Boeing',
       availability: 'used_only',
+      acquisitionMethods: ['lease', 'used'],
       detail: 'Out of production. Available used or by lease.',
       listPrice: null,
       availableOptionIds: [],
@@ -188,29 +191,51 @@ function quote(optionIds: string[]): AircraftAcquisitionQuoteResponse {
   };
 }
 
-function acquisitionResponse(kind: 'new' | 'used'): AircraftAcquisitionResponse {
+function acquisitionResponse(kind: 'new' | 'used' | 'lease'): AircraftAcquisitionResponse {
+  const immediate = kind !== 'new';
+  const typeDesignation = kind === 'used' ? '737-800' : 'A320neo';
   return {
     order: {
       id: '99999999-9999-4999-8999-999999999999',
       worldId: OWN.airline!.worldId,
       airlineId: OWN.airline!.id,
       kind,
-      status: kind === 'new' ? 'pending' : 'delivered',
+      status: immediate ? 'delivered' : 'pending',
       catalogueVersion: 'v1',
-      typeDesignation: kind === 'new' ? 'A320neo' : '737-800',
+      typeDesignation,
       buildOptionIds: kind === 'new' ? ['aux-tanks'] : [],
       effectiveSpec: SPEC,
-      chargedMinor: kind === 'new' ? 11_400_000_000 : 5_000_000_000,
-      monthlyLeaseRateMinor: null,
+      chargedMinor:
+        kind === 'new' ? 11_400_000_000 : kind === 'lease' ? 176_000_000 : 5_000_000_000,
+      monthlyLeaseRateMinor: kind === 'lease' ? 88_000_000 : null,
       baseLeadTimeWeeks: kind === 'new' ? 4 : 0,
       optionLeadTimeWeeks: kind === 'new' ? 2 : 0,
       deliveryAirportIcao: 'EHAM',
       orderedAt: '2026-08-23T12:00:00.000Z',
       deliveryAt: kind === 'new' ? '2026-10-04T12:00:00.000Z' : '2026-08-23T12:00:00.000Z',
-      deliveredAt: kind === 'new' ? null : '2026-08-23T12:00:00.000Z',
-      airframeId: kind === 'new' ? null : '88888888-8888-4888-8888-888888888888',
+      deliveredAt: immediate ? '2026-08-23T12:00:00.000Z' : null,
+      airframeId: immediate ? '88888888-8888-4888-8888-888888888888' : null,
     },
-    airframe: null,
+    airframe: immediate
+      ? {
+          id: '88888888-8888-4888-8888-888888888888',
+          worldId: OWN.airline!.worldId,
+          airlineId: OWN.airline!.id,
+          typeDesignation,
+          catalogueVersion: 'v1',
+          registration: kind === 'used' ? 'TU-7378' : 'TF-LEASE',
+          buildOptionIds: [],
+          cabinConfigId: null,
+          liveryId: null,
+          effectiveSpec: SPEC,
+          hours: kind === 'used' ? 18_000 : 0,
+          cycles: kind === 'used' ? 9_500 : 0,
+          ownership: kind === 'lease' ? 'leased' : 'owned',
+          deliveredToIcao: 'EHAM',
+          deliveredAt: '2026-08-23T12:00:00.000Z',
+          ownerHistory: [],
+        }
+      : null,
     replayed: false,
   };
 }
@@ -251,7 +276,7 @@ function stubMarketApi() {
       }
       if (url === '/api/fleet/acquisitions') {
         posts.push({ url, body });
-        return answer(acquisitionResponse(body.kind as 'new' | 'used'), 201);
+        return answer(acquisitionResponse(body.kind as 'new' | 'used' | 'lease'), 201);
       }
       return Promise.reject(new Error(`Unexpected fetch ${url}`));
     }),
@@ -354,6 +379,36 @@ describe('the aircraft marketplace', () => {
     expect(acquired).toHaveBeenCalledOnce();
   });
 
+  it('distinguishes a lease deposit and monthly obligation without simulating either', async () => {
+    const posts = stubMarketApi();
+    const acquired = renderMarket();
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Lease$/i }));
+    expect(await screen.findByText('Deposit due')).toBeInTheDocument();
+    expect(screen.getByText('Monthly obligation')).toBeInTheDocument();
+    expect(screen.getByText('1,760,000.00')).toBeInTheDocument();
+    expect(screen.getByText('880,000.00')).toBeInTheDocument();
+
+    fireEvent.change(await screen.findByLabelText(/Delivery airport ICAO/i), {
+      target: { value: 'eham' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Review lease/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Confirm lease deposit/i }));
+    await screen.findByText('Lease delivered');
+
+    const lease = posts.find(
+      (post) => post.url === '/api/fleet/acquisitions' && post.body.kind === 'lease',
+    )!;
+    expect(lease.body).toMatchObject({
+      kind: 'lease',
+      typeDesignation: 'A320neo',
+      deliveryAirportIcao: 'EHAM',
+    });
+    expect(lease.body).not.toHaveProperty('price');
+    expect(lease.body).not.toHaveProperty('monthlyLeaseRateMinor');
+    expect(acquired).toHaveBeenCalledOnce();
+  });
+
   it('keeps selection and acquisition usable when an image fails', async () => {
     stubMarketApi();
     renderMarket();
@@ -366,6 +421,20 @@ describe('the aircraft marketplace', () => {
       within(card).getByRole('img', { name: /A320neo.*image unavailable/i }),
     ).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: /Order new/i })).toBeInTheDocument();
+  });
+
+  it('moves focus into a selected detail and restores it when Escape closes the drawer', async () => {
+    stubMarketApi();
+    renderMarket();
+    const xlrCard = screen.getByRole('button', { name: /View Airbus A321XLR/i });
+
+    fireEvent.click(xlrCard);
+    const heading = await screen.findByRole('heading', { name: 'A321XLR' });
+    await waitFor(() => expect(heading).toHaveFocus());
+
+    fireEvent.keyDown(screen.getByLabelText('Selected aircraft'), { key: 'Escape' });
+    await waitFor(() => expect(xlrCard).toHaveFocus());
+    expect(screen.getByText('Select an aircraft')).toBeInTheDocument();
   });
 
   it('compares a bounded set using canonical values', async () => {

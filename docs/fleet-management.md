@@ -2,7 +2,9 @@
 
 The fleet a player owns: a table you scan and a record you open. Two read-only endpoints,
 `GET /api/fleet/airframes` and `GET /api/fleet/airframes/:airframeId`, and the Fleet page
-above the catalogue M4-02 already renders.
+above the marketplace already renders. FLEET-MARKET also keeps accepted factory commitments
+visible through the existing owner-scoped `GET /api/fleet/orders` contract until the Worker
+delivers their physical airframes.
 
 The interesting part is not the table. It is that **three figures on it would be dead ends
 if they were sent alone**, and CONTRIBUTING's fourth invariant says a number a player cannot

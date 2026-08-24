@@ -4,6 +4,7 @@ import type {
   AircraftAcquisitionQuoteInput,
   AircraftAcquisitionQuoteResponse,
   AircraftAcquisitionResponse,
+  AircraftOrderListResponse,
   AirframeDetailResponse,
   FleetAirframesResponse,
   FleetCatalogueResponse,
@@ -88,6 +89,15 @@ export async function fetchUsedMarket(): Promise<UsedMarketResponse> {
     throw new Error('GET /api/fleet/used-market did not return a list of aircraft');
   }
   return body as UsedMarketResponse;
+}
+
+export async function fetchAircraftOrders(): Promise<AircraftOrderListResponse> {
+  const body = await readJson('/api/fleet/orders');
+  const orders = (body as { orders?: unknown }).orders;
+  if (!Array.isArray(orders)) {
+    throw new Error('GET /api/fleet/orders did not return a list of orders');
+  }
+  return body as AircraftOrderListResponse;
 }
 
 export function quoteAircraft(

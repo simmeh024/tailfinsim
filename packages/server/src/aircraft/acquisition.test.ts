@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   AIRCRAFT_CATALOGUE_V1,
+  AircraftAcquisitionQuoteResponse,
   AircraftAcquisitionResponse,
   AircraftOrderListResponse,
 } from '@tailfin/shared';
@@ -23,7 +24,12 @@ import {
   type FoundedAirlineFixtureHarness,
 } from '../test-fixtures/founded-airline';
 
-import { acquireAircraft, deliverDueAircraftOrders, LEASE_DEPOSIT_MONTHS } from './acquisition';
+import {
+  acquireAircraft,
+  deliverDueAircraftOrders,
+  LEASE_DEPOSIT_MONTHS,
+  quoteAircraftAcquisition,
+} from './acquisition';
 import { seedAircraftCatalogue } from './catalogue';
 
 /**
@@ -284,6 +290,53 @@ describeDb('aircraft acquisition', () => {
     ).toBe(JSON.stringify(heavyOptionIds.slice().sort()));
   });
 
+  it('quotes through the exact option fold and commercial facts the transaction stores', async () => {
+    const fixture = await fixtures.create();
+    const deliveryAirportIcao = await makeDeliveryAirport();
+    await topUp(fixture, 50_000_000_000);
+    const now = fixture.world.launchDate;
+
+    const quoted = await quoteAircraftAcquisition(
+      db.db,
+      own(fixture),
+      { kind: 'new', typeDesignation: 'A320neo', optionIds: ['sharklets'] },
+      now,
+    );
+    expect(quoted.ok).toBe(true);
+    if (!quoted.ok) return;
+
+    const acquired = await acquireAircraft(
+      db.db,
+      own(fixture),
+      {
+        requestId: randomUUID(),
+        kind: 'new',
+        typeDesignation: 'A320neo',
+        optionIds: ['sharklets'],
+        deliveryAirportIcao,
+      },
+      now,
+    );
+    expect(acquired.ok).toBe(true);
+    if (!acquired.ok) return;
+
+    expect(quoted.quote).toMatchObject({
+      catalogueVersion: acquired.order.catalogueVersion,
+      typeDesignation: acquired.order.typeDesignation,
+      buildOptionIds: acquired.order.buildOptionIds,
+      effectiveSpec: acquired.order.effectiveSpec,
+      chargedMinor: acquired.order.chargedMinor,
+      baseLeadTimeWeeks: acquired.order.baseLeadTimeWeeks,
+      optionLeadTimeWeeks: acquired.order.optionLeadTimeWeeks,
+    });
+    expect(quoted.quote.totalLeadTimeWeeks).toBe(
+      acquired.order.baseLeadTimeWeeks + acquired.order.optionLeadTimeWeeks,
+    );
+    expect(quoted.quote.resultingCashMinor).toBe(
+      quoted.quote.cashMinor - acquired.order.chargedMinor,
+    );
+  });
+
   it('delivers a used airframe with the prior owner’s configuration intact', async () => {
     const fixture = await fixtures.create();
     const locationIcao = await makeDeliveryAirport();
@@ -379,6 +432,47 @@ describeDb('aircraft acquisition', () => {
     ).toBe(before);
   });
 
+  it('refuses factory orders for prototype and used-only types at the transaction boundary', async () => {
+    const fixture = await fixtures.create();
+    const deliveryAirportIcao = await makeDeliveryAirport();
+
+    const prototype = await acquireAircraft(
+      db.db,
+      own(fixture),
+      {
+        requestId: randomUUID(),
+        kind: 'new',
+        typeDesignation: 'A321XLR',
+        optionIds: [],
+        deliveryAirportIcao,
+      },
+      fixture.world.launchDate,
+    );
+    expect(prototype).toMatchObject({
+      ok: false,
+      kind: 'type-not-orderable',
+      availability: 'prototype',
+    });
+
+    const usedOnly = await acquireAircraft(
+      db.db,
+      own(fixture),
+      {
+        requestId: randomUUID(),
+        kind: 'new',
+        typeDesignation: '737-800',
+        optionIds: [],
+        deliveryAirportIcao,
+      },
+      fixture.world.launchDate,
+    );
+    expect(usedOnly).toMatchObject({
+      ok: false,
+      kind: 'type-not-orderable',
+      availability: 'used_only',
+    });
+  });
+
   it('exposes the typed mutation and owner-scoped order list over HTTP', async () => {
     const fixture = await fixtures.create();
     const deliveryAirportIcao = await makeDeliveryAirport();
@@ -392,6 +486,54 @@ describeDb('aircraft acquisition', () => {
         payload: {},
       });
       expect(anonymous.statusCode).toBe(401);
+
+      const manipulatedQuote = await app.inject({
+        method: 'POST',
+        url: '/api/fleet/acquisition-quotes',
+        headers: {
+          cookie: `${SESSION_COOKIE}=${session.token}`,
+          'x-tailfin-world-id': fixture.world.id,
+        },
+        payload: {
+          kind: 'lease',
+          typeDesignation: 'ATR 72-600',
+          priceMinor: 1,
+        },
+      });
+      expect(manipulatedQuote.statusCode).toBe(400);
+
+      const quoted = await app.inject({
+        method: 'POST',
+        url: '/api/fleet/acquisition-quotes',
+        headers: {
+          cookie: `${SESSION_COOKIE}=${session.token}`,
+          'x-tailfin-world-id': fixture.world.id,
+        },
+        payload: { kind: 'lease', typeDesignation: 'ATR 72-600' },
+      });
+      expect(quoted.statusCode).toBe(200);
+      expect(AircraftAcquisitionQuoteResponse.parse(quoted.json())).toMatchObject({
+        kind: 'lease',
+        chargedMinor: 8_500_000 * LEASE_DEPOSIT_MONTHS,
+        monthlyLeaseRateMinor: 8_500_000,
+      });
+
+      const manipulatedAcquisition = await app.inject({
+        method: 'POST',
+        url: '/api/fleet/acquisitions',
+        headers: {
+          cookie: `${SESSION_COOKIE}=${session.token}`,
+          'x-tailfin-world-id': fixture.world.id,
+        },
+        payload: {
+          requestId: randomUUID(),
+          kind: 'lease',
+          typeDesignation: 'ATR 72-600',
+          deliveryAirportIcao,
+          priceMinor: 1,
+        },
+      });
+      expect(manipulatedAcquisition.statusCode).toBe(400);
 
       const created = await app.inject({
         method: 'POST',

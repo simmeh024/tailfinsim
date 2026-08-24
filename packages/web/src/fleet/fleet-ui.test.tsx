@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type {
   AirframeDetailResponse,
+  AircraftOrderListResponse,
   FleetAirframesResponse,
   FleetCatalogueResponse,
   MeResponse,
@@ -54,12 +55,15 @@ const VERSION: VersionResponse = {
   serverTime: '2026-08-21T12:05:00.000Z',
 };
 
-const entry = (over: Partial<FleetCatalogueResponse['types'][number]> = {}) => ({
+const entry = (
+  over: Partial<FleetCatalogueResponse['types'][number]> = {},
+): FleetCatalogueResponse['types'][number] => ({
   designation: 'A320neo',
   family: 'A320neo',
   manufacturer: 'Airbus',
   class: 'narrowbody' as const,
   availability: 'orderable' as const,
+  acquisitionMethods: ['new', 'lease', 'used'],
   detail: 'Available to order new, lease, or buy used.',
   arrivesOn: null,
   seatsTwoClass: 165,
@@ -87,6 +91,7 @@ const CATALOGUE: FleetCatalogueResponse = {
     entry({
       designation: 'A321XLR',
       availability: 'prototype',
+      acquisitionMethods: [],
       arrivesOn: '2024-11-11',
       detail: 'Flying as a prototype. Enters service on 2024-11-11, and can be ordered from then.',
       seatsTwoClass: 180,
@@ -96,6 +101,7 @@ const CATALOGUE: FleetCatalogueResponse = {
       designation: '737-800',
       manufacturer: 'Boeing',
       availability: 'used_only',
+      acquisitionMethods: ['lease', 'used'],
       detail: 'Out of production since 2020-01-01. Available on the used market and by lease only.',
       listPrice: null,
     }),
@@ -194,6 +200,31 @@ const A320_BASE = {
   wingspanCode: 'C' as const,
   noiseChapter: 14,
   turnaroundBaselineMin: 40,
+};
+
+const ORDERS: AircraftOrderListResponse = {
+  orders: [
+    {
+      id: 'bbbbbbbb-1111-4111-8111-111111111111',
+      worldId: 'aaaaaaaa-1111-4111-8111-111111111111',
+      airlineId: 'aaaaaaaa-2222-4222-8222-222222222222',
+      kind: 'new',
+      status: 'pending',
+      catalogueVersion: 'v1',
+      typeDesignation: 'A320neo',
+      buildOptionIds: ['sharklets'],
+      effectiveSpec: A320_BASE,
+      chargedMinor: 11_200_000_000,
+      monthlyLeaseRateMinor: null,
+      baseLeadTimeWeeks: 4,
+      optionLeadTimeWeeks: 1,
+      deliveryAirportIcao: 'EHAM',
+      orderedAt: '2026-08-23T12:00:00.000Z',
+      deliveryAt: '2026-09-27T12:00:00.000Z',
+      deliveredAt: null,
+      airframeId: null,
+    },
+  ],
 };
 
 /**
@@ -333,6 +364,7 @@ const DETAIL: AirframeDetailResponse = {
 function stubApi(
   catalogue: FleetCatalogueResponse | null = CATALOGUE,
   fleet: FleetAirframesResponse | null = FLEET,
+  orders: AircraftOrderListResponse | null = { orders: [] },
 ) {
   vi.stubGlobal(
     'fetch',
@@ -353,6 +385,9 @@ function stubApi(
         return fleet === null ? failure(500) : json(fleet);
       }
       if (url === '/api/fleet/used-market') return json({ listings: [], slots: 24 });
+      if (url === '/api/fleet/orders') {
+        return orders === null ? failure(500) : json(orders);
+      }
       if (url === `/api/fleet/airframes/${AIRFRAME_ID}`) return json(DETAIL);
       // Every other airframe id is a 404, which is what a cross-owner id gets
       // (ADR-0020) as well as one that does not exist.
@@ -493,6 +528,32 @@ describe('the fleet catalogue', () => {
       await screen.findByText(/Excluded from night noise quotas at EU hubs/),
     ).toBeInTheDocument();
     expect(screen.getByText(/since 2030-01-01/)).toBeInTheDocument();
+  });
+});
+
+describe('open aircraft orders', () => {
+  it('keeps an accepted factory order visible until its airframe is delivered', async () => {
+    stubApi(CATALOGUE, FLEET, ORDERS);
+    await openFleet();
+
+    const orders = await screen.findByLabelText('Aircraft awaiting delivery');
+    expect(within(orders).getByText('A320neo')).toBeInTheDocument();
+    expect(within(orders).getByText('Awaiting delivery')).toBeInTheDocument();
+    expect(within(orders).getByText('EHAM')).toBeInTheDocument();
+    expect(within(orders).getByText('1 factory option')).toBeInTheDocument();
+    expect(within(orders).getByText('27 Sept 2026, 12:00 UTC')).toBeInTheDocument();
+  });
+
+  it('reports an order-list failure without hiding the owned fleet or catalogue', async () => {
+    stubApi(CATALOGUE, FLEET, null);
+    await openFleet();
+
+    expect(await screen.findByText('Could not load your aircraft orders.')).toHaveAttribute(
+      'role',
+      'alert',
+    );
+    expect(screen.getByText('PH-TFB')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /View Airbus A320neo/i })).toBeInTheDocument();
   });
 });
 

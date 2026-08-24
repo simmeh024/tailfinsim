@@ -15,6 +15,13 @@ charge or deliver twice. The authenticated session and active-world header deter
 airline; the body never accepts an airline or world id. Restricted and ceased airlines may
 read `GET /api/fleet/orders` but cannot create another commitment.
 
+`POST /api/fleet/acquisition-quotes` is the non-mutating configurator contract for new and
+lease paths. It accepts only the acquisition kind, type designation and canonical option ids.
+The quote and mutation call the same internal resolver for era eligibility, commercial terms,
+option validation, effective specification, charge and lead time; the UI never receives a
+formula to reproduce. Quote cash and delivery are informational snapshots. The mutation
+reloads and locks the airline and independently validates funds before writing.
+
 ## Stored facts
 
 `aircraft_order` is the immutable commercial/build snapshot: acquisition kind, pinned
@@ -74,6 +81,6 @@ yet periodically debited.
 - M4-05: rolling used inventory, depreciation, unusual-configuration discounts and removal.
 - M4-06: maintenance programmes and their effects.
 - M4-07: the player fleet list and airframe detail UI, including the effective-spec
-  decomposition — see [`fleet-management.md`](fleet-management.md). The order list still has
-  no page of its own; `GET /api/fleet/orders` is the contract for it.
+  decomposition — see [`fleet-management.md`](fleet-management.md). FLEET-MARKET now renders
+  pending factory commitments from `GET /api/fleet/orders` above the catalogue.
 - Peer-to-peer used-aircraft trading remains Post-MVP/out of scope.

@@ -1,4 +1,5 @@
 import {
+  type AircraftAcquisitionMethod,
   type AircraftEraDates,
   type AircraftRestriction,
   ECONOMY_CONFIG_V1,
@@ -75,6 +76,27 @@ export function availabilityOf(era: AircraftEraDates, at: Date): AircraftAvailab
   if (onOrAfter(era.entryIntoService, at)) return 'orderable';
   if (onOrAfter(era.firstFlight, at)) return 'prototype';
   return 'unannounced';
+}
+
+/**
+ * Commercial paths a type may expose in this era.
+ *
+ * This is shared by the catalogue projection and acquisition enforcement so a
+ * client never has to translate an availability label back into permissions.
+ * Used means the type may participate; a physical, live listing is still
+ * required for an actual purchase.
+ */
+export function aircraftAcquisitionMethods(
+  availability: AircraftAvailability,
+  terms: { listPrice: number | null; monthlyLeaseRate: number | null },
+): readonly AircraftAcquisitionMethod[] {
+  if (availability !== 'orderable' && availability !== 'used_only') return [];
+
+  const methods: AircraftAcquisitionMethod[] = [];
+  if (availability === 'orderable' && terms.listPrice !== null) methods.push('new');
+  if (terms.monthlyLeaseRate !== null) methods.push('lease');
+  methods.push('used');
+  return methods;
 }
 
 /**

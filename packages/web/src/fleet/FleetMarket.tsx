@@ -377,6 +377,7 @@ export function FleetMarket({
   const [result, setResult] = useState<AircraftAcquisitionResponse | null>(null);
   const [compareNotice, setCompareNotice] = useState('');
   const detailTitle = useRef<HTMLHeadingElement>(null);
+  const initialSelectionApplied = useRef(false);
 
   const manufacturers = useMemo(
     () => [...new Set(catalogue.types.map((entry) => entry.manufacturer))].sort(),
@@ -444,12 +445,13 @@ export function FleetMarket({
   }, []);
 
   useEffect(() => {
-    if (selectedDesignation !== null || catalogue.types.length === 0) return;
+    if (initialSelectionApplied.current || catalogue.types.length === 0) return;
+    initialSelectionApplied.current = true;
     const linkedType = searchParams.get('type');
     const linked = catalogue.types.find((entry) => entry.designation === linkedType);
     setSelectedDesignation(linked?.designation ?? catalogue.types[0]!.designation);
     if (linked && searchParams.get('market') === 'used') setPanelMode('used');
-  }, [catalogue.types, searchParams, selectedDesignation]);
+  }, [catalogue.types, searchParams]);
 
   useEffect(() => {
     if (panelMode !== 'acquire' || acquisitionKind === null || selected === null) {
@@ -813,6 +815,12 @@ export function FleetMarket({
           className="market-detail"
           data-open={selected ? 'yes' : 'no'}
           aria-label="Selected aircraft"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape' && selected !== null) {
+              event.preventDefault();
+              closeDetail();
+            }
+          }}
         >
           {selected === null ? (
             <div className="market-detail__empty">
@@ -915,7 +923,7 @@ export function FleetMarket({
                         <div>
                           <dt>Factory lead</dt>
                           <dd className="figure">
-                            {selected.availability === 'orderable'
+                            {selected.acquisitionMethods.includes('new')
                               ? `${selected.baseDeliveryLeadWeeks} weeks`
                               : 'Unavailable'}
                           </dd>
