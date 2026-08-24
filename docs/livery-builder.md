@@ -1,17 +1,24 @@
-# Livery builder: canvas, layers and base fills (M6-03)
+# Livery builder: 3D preview, paint map, layers and base fills (M6-03)
 
-The Design route now hosts Tailfin's side-profile livery editor. It consumes the M6-01
-`LiveryDocument` contract and the exact M6-02 SVG template sources; it does not maintain a
-second browser-only paint format or recreate aircraft geometry in React.
+The Design route now hosts Tailfin's livery editor. It consumes the M6-01 `LiveryDocument`
+contract and the exact M6-02 SVG template sources; it does not maintain a second browser-only
+paint format or recreate aircraft geometry in React.
 
 ## Editor surface
 
-The aircraft remains the visual centre of the page. On wide screens the collapsible base-fill
-rail sits beside the canvas and the shell context window owns the layer stack. At compact
-desktop and mobile widths the tools start collapsed; on mobile they open over the canvas while
-the shell context window becomes its existing bottom sheet. The result keeps colour changes and
-light layer edits usable on touch screens without pretending deep vector work is comfortable
-there.
+The aircraft remains the visual centre of the page. The default **3D preview** reuses the same
+1440px three-quarter aircraft renders as the fleet catalogue. Each authoring family maps to a
+representative catalogue type, and an SVG luminance-threshold mask projects the document's
+visible paint layers over the lit airframe. This preserves windows, panel lines, engine detail
+and specular lighting. Zone placement in this view is illustrative because the catalogue render
+is perspective imagery; the **Paint map** switch shows the exact side-profile zone clipping and
+remains the canonical authoring view.
+
+On wide screens the collapsible base-fill rail sits beside the canvas and the shell context
+window owns the layer stack. At compact desktop and mobile widths the tools start collapsed; on
+mobile they open over the canvas while the shell context window becomes its existing bottom
+sheet. The result keeps colour changes and light layer edits usable on touch screens without
+pretending deep vector work is comfortable there.
 
 M6-03 authors four base-fill modes:
 
@@ -57,6 +64,6 @@ airframe application.
 
 The M6-03 tests cover history for every mutation including reorder, redo invalidation, history
 limits, storage round-trips and corruption, HEX/RGB conversion, all four render modes, hidden
-layers, paint order, every launch-family side template and a full UI remount from autosave. A
-30-layer benchmark performs repeated schema-valid mutations and asserts average reducer cost
-stays under one 60 fps frame.
+layers, paint order, every launch-family side template, every fleet-preview family mapping and a
+full UI remount from autosave. A 30-layer benchmark performs repeated schema-valid mutations and
+asserts average reducer cost stays under one 60 fps frame.
