@@ -25,6 +25,8 @@ const costs: CrewResponse['costs'] = {
   conversionPerHeadMinor: 200_000,
   conversionDurationDays: 14,
   weeklyHiringCapacity: 12,
+  monthlyPayrollMinor: 4_200_000,
+  hotelPerHeadPerNightMinor: 15_000,
 };
 
 function state(overrides: Partial<CrewResponse> = {}): CrewResponse {
@@ -70,6 +72,8 @@ const mixedFleet = state({
           rank: 'captain',
           headcount: 6,
           unavailable: 2,
+          onDuty: 0,
+          reserve: 0,
           available: 4,
         },
         {
@@ -78,6 +82,8 @@ const mixedFleet = state({
           rank: 'captain',
           headcount: 3,
           unavailable: 0,
+          onDuty: 0,
+          reserve: 0,
           available: 3,
         },
       ],
@@ -90,6 +96,34 @@ const mixedFleet = state({
           heads: 2,
           startedAt: '2024-10-20T00:00:00.000Z',
           completesAt: '2024-11-03T00:00:00.000Z',
+        },
+      ],
+      duty: [
+        {
+          id: '00000000-0000-4000-8000-000000000030',
+          family: 'A320neo',
+          heads: 4,
+          status: 'open',
+          fromReserve: false,
+          reportAt: '2024-10-21T06:00:00.000Z',
+          offDutyAt: null,
+          restUntil: null,
+          sectors: 2,
+          locationIcao: 'EGLL',
+          awayFromBase: true,
+        },
+        {
+          id: '00000000-0000-4000-8000-000000000031',
+          family: '737 MAX',
+          heads: 4,
+          status: 'resting',
+          fromReserve: true,
+          reportAt: '2024-10-20T06:00:00.000Z',
+          offDutyAt: '2024-10-20T18:30:00.000Z',
+          restUntil: '2024-10-21T06:30:00.000Z',
+          sectors: 4,
+          locationIcao: 'EHAM',
+          awayFromBase: false,
         },
       ],
     },
@@ -114,6 +148,140 @@ const mixedFleet = state({
 });
 
 describe('the crew page', () => {
+  /* ------------------------------------------------------------------ *
+   * M5-02: duty, rest and standby
+   * ------------------------------------------------------------------ */
+
+  it('says where the crew are, which the game could not answer before', async () => {
+    respondWith(mixedFleet);
+    render(<CrewPage />);
+
+    const table = await screen.findByRole('table', { name: 'Crew sets on duty or resting' });
+    // One set flying, one resting. Both are counts on an aeroplane, not people.
+    const rows = within(table).getAllByRole('row').slice(1);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.textContent).toContain('EGLL');
+    expect(rows[1]?.textContent).toContain('Resting until');
+  });
+
+  it('marks a set that stopped away from base, in words', async () => {
+    respondWith(mixedFleet);
+    render(<CrewPage />);
+
+    const table = await screen.findByRole('table', { name: 'Crew sets on duty or resting' });
+    // §9.2's hotel bill, findable. Colour is never the only signal (App. H.7),
+    // so it is the word "hotel" rather than a red cell — and a rotation that
+    // ends away looks almost identical on a map to one that gets home.
+    expect(within(table).getByText(/hotel/)).toBeInTheDocument();
+    expect(within(table).getByText(/standby/)).toBeInTheDocument();
+  });
+
+  it('tells duty apart from training in the pool table', async () => {
+    /*
+     * The two have different fixes, which is the whole reason they are separate
+     * columns: a classroom is a fortnight and you wait, a duty is a night and
+     * you hire or you keep a reserve. One column would make them look like one
+     * problem.
+     */
+    respondWith(
+      state({
+        bases: [
+          {
+            id: '00000000-0000-4000-8000-000000000001',
+            airportIcao: 'EHAM',
+            status: 'open',
+            openedAt: '2024-10-20T00:00:00.000Z',
+            pools: [
+              {
+                id: '00000000-0000-4000-8000-000000000010',
+                family: 'A320neo',
+                rank: 'captain',
+                headcount: 9,
+                unavailable: 2,
+                onDuty: 3,
+                reserve: 1,
+                available: 4,
+              },
+            ],
+            conversions: [],
+            duty: [],
+          },
+        ],
+      }),
+    );
+    render(<CrewPage />);
+
+    const table = await screen.findByRole('table', { name: 'Crew at EHAM' });
+    const cells = within(table).getAllByRole('row')[1]?.querySelectorAll('td');
+    // family, rank, on strength, in training, on duty, standby, available
+    expect([...(cells ?? [])].map((cell) => cell.textContent)).toEqual([
+      'A320neo',
+      'Captain',
+      '9',
+      '2',
+      '3',
+      '1',
+      '4',
+    ]);
+  });
+
+  it('offers a standby level rather than a standby purchase', async () => {
+    respondWith(mixedFleet);
+    render(<CrewPage />);
+
+    // A reserve is a designation and not a hire: the heads are already paid for.
+    // So the control sets a number, and there is no price beside it.
+    const button = await screen.findByRole('button', { name: 'Set standby' });
+    expect(button).toBeInTheDocument();
+    const card = button.closest('section');
+    expect(card?.textContent).toContain('paid exactly like everyone else');
+  });
+
+  it('sends the standby level as a level, not a change', async () => {
+    // Typed arguments, so the assertions below can read the call back. A bare
+    // `vi.fn(() => ...)` gives an empty parameter tuple and indexing it is a
+    // type error rather than a runtime one.
+    const fetchMock = vi.fn((_path: string, _init?: RequestInit) =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(mixedFleet),
+      } as Response),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    render(<CrewPage />);
+
+    const input = await screen.findByLabelText('Standby heads');
+    fireEvent.change(input, { target: { value: '3' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Set standby' }));
+
+    const call = fetchMock.mock.calls.find(
+      ([path]) => typeof path === 'string' && path === '/api/crew/reserves',
+    );
+    expect(call).toBeDefined();
+    const init = call?.[1];
+    /*
+     * PUT and an absolute number. A delta would race: two tabs both sending
+     * "+2" produce four reserves and neither screen can explain it.
+     */
+    expect(init?.method).toBe('PUT');
+    const body: unknown = JSON.parse(typeof init?.body === 'string' ? init.body : '{}');
+    expect(body).toMatchObject({ reserve: 3 });
+  });
+
+  it('does not name a person in the duty board either', async () => {
+    respondWith(mixedFleet);
+    render(<CrewPage />);
+
+    // M5-01's invariant, extended. A duty period is a span of time with a head
+    // count on it; the regulation constrains a duty, not a person, and the page
+    // must never grow one.
+    const table = await screen.findByRole('table', { name: 'Crew sets on duty or resting' });
+    const headers = [...table.querySelectorAll('th')].map((th) => th.textContent);
+    expect(headers).toEqual(['Base', 'Family', 'Heads', 'Sectors', 'Where', 'State']);
+    expect(table.textContent).not.toContain('00000000-0000-4000-8000-000000000030');
+  });
+
   it('leads with what a mixed fleet is costing', async () => {
     respondWith(mixedFleet);
     render(<CrewPage />);
@@ -171,7 +339,15 @@ describe('the crew page', () => {
      */
     const table = screen.getByRole('table', { name: 'Crew at EHAM' });
     const headers = [...table.querySelectorAll('th')].map((th) => th.textContent);
-    expect(headers).toEqual(['Family', 'Rank', 'On strength', 'In training', 'Available']);
+    expect(headers).toEqual([
+      'Family',
+      'Rank',
+      'On strength',
+      'In training',
+      'On duty',
+      'Standby',
+      'Available',
+    ]);
 
     // And nothing renders an identifier. A pool id reaching the page would be
     // the first crack in "counts, never people".

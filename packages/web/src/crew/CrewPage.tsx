@@ -2,7 +2,14 @@ import { useCallback, useEffect, useState } from 'react';
 
 import type { CrewBaseView, CrewPoolView, CrewRank, CrewResponse } from '@tailfin/shared';
 
-import { fetchCrew, hireCrew, openCrewBase, startCrewConversion, type CrewFailure } from './api';
+import {
+  fetchCrew,
+  hireCrew,
+  openCrewBase,
+  setCrewReserve,
+  startCrewConversion,
+  type CrewFailure,
+} from './api';
 import { crewBanner } from './crew-banners';
 import { CrewReadiness } from './CrewReadiness';
 
@@ -176,6 +183,8 @@ function PoolRows({
           <th scope="col">Rank</th>
           <th scope="col">On strength</th>
           <th scope="col">In training</th>
+          <th scope="col">On duty</th>
+          <th scope="col">Standby</th>
           <th scope="col">Available</th>
         </tr>
       </thead>
@@ -188,7 +197,89 @@ function PoolRows({
             {/* Shown rather than netted off, so crew in a classroom are visibly
                 still yours — which is the whole point of conversion taking time. */}
             <td className="figure">{pool.unavailable === 0 ? '—' : pool.unavailable}</td>
+            {/* A separate column from "in training", because the two have
+                different fixes: a classroom is a fortnight and you wait, a duty
+                is a night and you hire or you keep a reserve. */}
+            <td className="figure">{pool.onDuty === 0 ? '—' : pool.onDuty}</td>
+            <td className="figure">{pool.reserve === 0 ? '—' : pool.reserve}</td>
             <td className="figure">{pool.available}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/**
+ * Who is flying and who is asleep (M5-02, §9.2).
+ *
+ * The answer to *"where are my crew"*, which before M5-02 the game could not
+ * give at all. Still not a roster: every row is a **set** — a count of heads on
+ * one aeroplane — because the regulation constrains a duty rather than a person
+ * and M5-01's invariant is that the player never touches an individual.
+ *
+ * The away-from-base marker is the one worth looking for. A set that stops away
+ * from home is in a hotel the airline is paying for, and §9.2 makes that a real
+ * cost precisely because a rotation that ends away looks almost identical on a
+ * map to one that gets home.
+ */
+function DutyBoard({ bases }: { bases: readonly CrewBaseView[] }): ReactNode {
+  /*
+   * `?? []` because the two halves of a deploy do not land at the same instant.
+   * `duty` is defaulted on the wire, so a browser holding this bundle can be
+   * talking to a web node that predates the field for a few seconds -- and the
+   * failure mode is not a missing table, it is `undefined.map` and a blank page.
+   * The same lesson `isCrewResponse` records.
+   */
+  const sets = bases.flatMap((base) =>
+    (base.duty ?? []).map((period) => ({ ...period, baseIcao: base.airportIcao })),
+  );
+
+  if (sets.length === 0) {
+    return (
+      <p className="crew__note">
+        Nobody on duty. Crew report an hour before a departure and appear here until they have
+        served their rest.
+      </p>
+    );
+  }
+
+  return (
+    <table className="crew__table">
+      <caption className="visually-hidden">Crew sets on duty or resting</caption>
+      <thead>
+        <tr>
+          <th scope="col">Base</th>
+          <th scope="col">Family</th>
+          <th scope="col">Heads</th>
+          <th scope="col">Sectors</th>
+          <th scope="col">Where</th>
+          <th scope="col">State</th>
+        </tr>
+      </thead>
+      <tbody>
+        {sets.map((period) => (
+          <tr key={period.id}>
+            <td className="figure">{period.baseIcao}</td>
+            <td className="figure">{period.family}</td>
+            <td className="figure">
+              {period.heads}
+              {period.fromReserve && <span className="crew__tag"> standby</span>}
+            </td>
+            <td className="figure">{period.sectors}</td>
+            <td className="figure">
+              {period.locationIcao}
+              {/* Colour is never the only signal (App. H.7), so the hotel is a
+                  word rather than a red cell. */}
+              {period.awayFromBase && <span className="crew__tag"> hotel</span>}
+            </td>
+            <td>
+              {period.status === 'open'
+                ? 'On duty'
+                : period.restUntil === null
+                  ? 'Resting'
+                  : `Resting until ${formatDate(period.restUntil)}`}
+            </td>
           </tr>
         ))}
       </tbody>
@@ -246,6 +337,7 @@ export function CrewPage(): ReactNode {
   const [busy, setBusy] = useState(false);
 
   const [icao, setIcao] = useState('');
+  const [reserve, setReserve] = useState(0);
   const [baseId, setBaseId] = useState('');
   const [family, setFamily] = useState('');
   const [rank, setRank] = useState<CrewRank>('captain');
@@ -476,6 +568,11 @@ export function CrewPage(): ReactNode {
       ))}
 
       <section className="crew__panel">
+        <h2 className="crew__heading">On duty</h2>
+        <DutyBoard bases={crew.bases} />
+      </section>
+
+      <section className="crew__panel">
         <h2 className="crew__heading">Training pipeline</h2>
         <TrainingPipeline bases={crew.bases} />
       </section>
@@ -641,6 +738,56 @@ export function CrewPage(): ReactNode {
             </button>
           </form>
         </section>
+
+        <section className="crew-action">
+          <h2 className="crew-action__title">
+            <span className="crew-action__step">4</span> Hold crew on standby
+          </h2>
+          <p className="crew__hint">
+            Keep heads off the roster so they can cover a crew that runs out of hours.
+          </p>
+          <form
+            className="crew__form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (selectedBase === undefined) return;
+              run(setCrewReserve({ crewBaseId: selectedBase, family, rank, reserve }));
+            }}
+          >
+            <div className="crew__fields">
+              <label>
+                Base
+                <select
+                  value={selectedBase ?? ''}
+                  onChange={(event) => setBaseId(event.target.value)}
+                >
+                  {openBases.map((base) => (
+                    <option key={base.id} value={base.id}>
+                      {base.airportIcao}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Standby heads
+                <input
+                  type="number"
+                  min={0}
+                  value={reserve}
+                  onChange={(event) => setReserve(Number(event.target.value))}
+                />
+              </label>
+            </div>
+            <p className="crew__hint">
+              Applies to the family and rank selected above. Standby crew are paid exactly like
+              everyone else and fly nothing — until the day a rotation slips, and they are the
+              difference between a delay and a cancellation.
+            </p>
+            <button type="submit" disabled={busy || openBases.length === 0}>
+              Set standby
+            </button>
+          </form>
+        </section>
       </div>
 
       <section className="crew__panel">
@@ -653,6 +800,14 @@ export function CrewPage(): ReactNode {
           </li>
           <li>A base carries a monthly overhead, so one per destination is the wrong shape.</li>
           <li>A flight cannot be scheduled without a legal complement rated on its family.</li>
+          <li>
+            Crew have duty limits. A day that runs long times them out, and the flight delays or
+            cancels until a rested crew is available.
+          </li>
+          <li>
+            Standby crew cost the same as anyone else and fly nothing most days. That is the trade,
+            not a bug.
+          </li>
         </ul>
       </section>
     </div>

@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, eq, inArray, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, lte, ne, sql } from 'drizzle-orm';
 
-import type { CrewBalance, CrewDemand, CrewResponse } from '@tailfin/shared';
+import type { CrewBalance, CrewDemand, CrewResponse, SetCrewReserveInput } from '@tailfin/shared';
 import {
   availableHeads,
   checkComplement,
@@ -14,7 +14,15 @@ import {
 } from '@tailfin/sim';
 
 import { moveAirlineCash } from '../airline/cash';
-import { aircraftType, airframe, crewBase, crewConversion, crewPool, world } from '../db/schema';
+import {
+  aircraftType,
+  airframe,
+  crewBase,
+  crewConversion,
+  crewDutyPeriod,
+  crewPool,
+  world,
+} from '../db/schema';
 import { loadWorldEconomyConfig } from '../economy/loader';
 
 import type { Database } from '../db/client';
@@ -107,7 +115,7 @@ export interface CrewBaseView {
   airportIcao: string;
   status: 'open' | 'closed';
   openedAt: Date;
-  pools: readonly (CrewPool & { id: string })[];
+  pools: readonly (CrewPool & { id: string; onDuty: number; reserve: number })[];
 }
 
 /** Every base an airline holds, with its pools. Empty is the normal new state. */
@@ -142,6 +150,8 @@ export async function readCrewBases(
       rank: crewPool.rank,
       headcount: crewPool.headcount,
       unavailable: crewPool.unavailable,
+      onDuty: crewPool.onDuty,
+      reserve: crewPool.reserve,
     })
     .from(crewPool)
     .where(
@@ -152,7 +162,7 @@ export async function readCrewBases(
     )
     .orderBy(crewPool.family, crewPool.rank);
 
-  const byBase = new Map<string, (CrewPool & { id: string })[]>();
+  const byBase = new Map<string, (CrewPool & { id: string; onDuty: number; reserve: number })[]>();
   for (const pool of pools) {
     const list = byBase.get(pool.crewBaseId) ?? [];
     list.push({
@@ -160,7 +170,17 @@ export async function readCrewBases(
       family: pool.family,
       rank: pool.rank,
       headcount: pool.headcount,
-      unavailable: pool.unavailable,
+      /*
+       * `unavailable` here means *not rosterable*, which since M5-02 is the
+       * classroom **and** the aeroplane. Folding `on_duty` in at the boundary
+       * keeps `packages/sim` ignorant of duty, which it has no rows for -- every
+       * caller of `checkComplement` then gets the right answer without knowing
+       * why. The wire shape reports the two separately, because the player needs
+       * to tell "in training" from "flying".
+       */
+      unavailable: pool.unavailable + pool.onDuty,
+      onDuty: pool.onDuty,
+      reserve: pool.reserve,
     });
     byBase.set(pool.crewBaseId, list);
   }
@@ -288,6 +308,41 @@ export async function readCrewState(
   const demand = await crewDemand(db, worldId, airlineId, openPools, balance);
 
   /*
+   * Sets working or resting (M5-02). Closed ones are excluded: they are history,
+   * and the page's question is *where are my crew right now*. Unbounded is safe
+   * for the same reason -- a base has as many open periods as it has aeroplanes
+   * in the air, and resting ones clear within a day of game time.
+   */
+  const duty =
+    bases.length === 0
+      ? []
+      : await db
+          .select({
+            id: crewDutyPeriod.id,
+            crewBaseId: crewDutyPeriod.crewBaseId,
+            family: crewDutyPeriod.family,
+            heads: crewDutyPeriod.heads,
+            status: crewDutyPeriod.status,
+            fromReserve: crewDutyPeriod.fromReserve,
+            reportAt: crewDutyPeriod.reportAt,
+            offDutyAt: crewDutyPeriod.offDutyAt,
+            restUntil: crewDutyPeriod.restUntil,
+            sectors: crewDutyPeriod.sectors,
+            locationIcao: crewDutyPeriod.locationIcao,
+          })
+          .from(crewDutyPeriod)
+          .where(
+            and(
+              inArray(
+                crewDutyPeriod.crewBaseId,
+                bases.map((base) => base.id),
+              ),
+              ne(crewDutyPeriod.status, 'closed'),
+            ),
+          )
+          .orderBy(desc(crewDutyPeriod.reportAt));
+
+  /*
    * The families this world flies, from its pinned catalogue.
    *
    * Sent so the page can offer a picker instead of a text box. The free-text
@@ -311,10 +366,15 @@ export async function readCrewState(
         family: pool.family,
         rank: pool.rank,
         headcount: pool.headcount,
-        unavailable: pool.unavailable,
+        // Back out `on_duty`, which `readCrewBases` folded in for the sim's
+        // benefit. On the wire the two are separate, because "in a classroom for
+        // a fortnight" and "back tonight" are different problems with different
+        // fixes.
+        unavailable: pool.unavailable - pool.onDuty,
+        onDuty: pool.onDuty,
+        reserve: pool.reserve,
         // Computed here rather than left as a subtraction the browser does: the
-        // rule for "available" is the server's, and duty and rest will make it
-        // more than this.
+        // rule for "available" is the server's, and M5-02 changed it.
         available: availableHeads(pool),
       })),
       conversions: conversions
@@ -327,6 +387,21 @@ export async function readCrewState(
           heads: conversion.heads,
           startedAt: conversion.startedAt.toISOString(),
           completesAt: conversion.completesAt.toISOString(),
+        })),
+      duty: duty
+        .filter((period) => period.crewBaseId === base.id)
+        .map((period) => ({
+          id: period.id,
+          family: period.family,
+          heads: period.heads,
+          status: period.status === 'resting' ? ('resting' as const) : ('open' as const),
+          fromReserve: period.fromReserve,
+          reportAt: period.reportAt.toISOString(),
+          offDutyAt: period.offDutyAt?.toISOString() ?? null,
+          restUntil: period.restUntil?.toISOString() ?? null,
+          sectors: period.sectors,
+          locationIcao: period.locationIcao,
+          awayFromBase: period.locationIcao !== base.airportIcao,
         })),
     })),
     demand,
@@ -343,8 +418,28 @@ export async function readCrewState(
       conversionPerHeadMinor: balance.conversion.costPerHeadMinor,
       conversionDurationDays: balance.conversion.durationDays,
       weeklyHiringCapacity: balance.base.weeklyHiringCapacity,
+      /*
+       * What the crew already hired cost each game month. Section 9.2's reserve
+       * trade is *"cost money and do nothing most days"*, and nobody can weigh
+       * that without seeing the money -- so the page shows the bill beside the
+       * headcount rather than leaving it to be discovered in the ledger.
+       */
+      monthlyPayrollMinor:
+        openPools.reduce(
+          (total, pool) => total + monthlySalaryOf(pool.rank, balance) * pool.headcount,
+          0,
+        ) +
+        balance.base.monthlyOverheadMinor * bases.filter((base) => base.status === 'open').length,
+      hotelPerHeadPerNightMinor: balance.duty.hotelCostPerHeadPerNightMinor,
     },
   };
+}
+
+/** A rank's monthly pay, from whichever ladder it belongs to. */
+function monthlySalaryOf(rank: string, balance: CrewBalance): number {
+  const deck = balance.flightDeckSalaryMinor as Record<string, number | undefined>;
+  const cabin = balance.cabinSalaryMinor as Record<string, number | undefined>;
+  return deck[rank] ?? cabin[rank] ?? 0;
 }
 
 /** Every pool an airline holds, flattened across bases. */
@@ -705,6 +800,61 @@ export async function completeDueConversions(
   }
 
   return { completed };
+}
+
+/**
+ * Set how many of a pool's heads are held back as standby (M5-02, section 9.2).
+ *
+ * ## A level, not a change
+ *
+ * The input is the number the player wants, not a delta. Deltas race: two tabs
+ * open on the Crew page, both sending "+2", produce four reserves and neither
+ * screen can explain it. A level is idempotent, and the last writer wins in a
+ * way the player can see on the next render.
+ *
+ * ## Why it costs nothing to set
+ *
+ * Because a reserve is a **designation and not a hire**. The heads are already
+ * on strength and already paid for; all this does is take them off the line. The
+ * cost of keeping reserves is `crew_payroll`, which charges them exactly as much
+ * as anybody else -- and that is precisely what makes section 9.2's *"cost money
+ * and do nothing most days"* a real trade rather than a fee.
+ *
+ * Reserves above what the pool can spare are refused rather than clamped. A
+ * player who asks for eight standby captains out of six should be told, not
+ * quietly given six and left to wonder why the roster does not match.
+ */
+export async function setCrewReserve(
+  db: Database,
+  input: SetCrewReserveInput & { airlineId: string },
+): Promise<CrewResult<{ reserve: number }>> {
+  const bases = await db
+    .select({ id: crewBase.id, status: crewBase.status })
+    .from(crewBase)
+    .where(and(eq(crewBase.id, input.crewBaseId), eq(crewBase.airlineId, input.airlineId)))
+    .limit(1);
+  const base = bases[0];
+  if (!base) return { ok: false, refusal: 'base_absent' };
+  if (base.status !== 'open') return { ok: false, refusal: 'base_closed' };
+
+  const updated = await db
+    .update(crewPool)
+    .set({ reserve: input.reserve, updatedAt: new Date() })
+    .where(
+      and(
+        eq(crewPool.crewBaseId, input.crewBaseId),
+        eq(crewPool.family, input.family),
+        eq(crewPool.rank, input.rank),
+        // The check constraint would refuse this anyway; refusing here turns a
+        // constraint violation into an answer the interface can act on.
+        sql`${crewPool.headcount} >= ${input.reserve}`,
+      ),
+    )
+    .returning({ reserve: crewPool.reserve });
+
+  const row = updated[0];
+  if (!row) return { ok: false, refusal: 'not_enough_heads' };
+  return { ok: true, value: { reserve: row.reserve } };
 }
 
 // ---------------------------------------------------------------------------
