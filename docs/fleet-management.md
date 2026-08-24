@@ -132,14 +132,16 @@ airframe's movements — a diversion wins, and a flight that has not departed do
 The issue's third task bullet is _"Bulk actions: apply livery, assign to base."_ **Neither
 has a substrate**, and both are recorded here rather than approximated.
 
-### Apply livery — blocked on M6
+### Apply livery — blocked on the remaining M6 tools
 
-There is no livery. A livery is a layered JSON document ([M6-01](https://github.com/simmeh024/tailfinsim/issues/57)),
-drawn on per-family templates ([M6-02](https://github.com/simmeh024/tailfinsim/issues/58)) in
-a builder ([M6-03](https://github.com/simmeh024/tailfinsim/issues/59) onward), and applied
-fleet-wide by [M6-07](https://github.com/simmeh024/tailfinsim/issues/63). There is no
-`livery` table; `airframe.livery_id` exists and nothing writes it. A bulk action that set a
-column no builder can populate would be a button that does nothing.
+The versioned layered JSON contract now exists
+([M6-01](https://github.com/simmeh024/tailfinsim/issues/57)) and is documented in
+[`livery-document.md`](livery-document.md). There is still no saved livery: it needs
+per-family templates ([M6-02](https://github.com/simmeh024/tailfinsim/issues/58)), a builder
+([M6-03](https://github.com/simmeh024/tailfinsim/issues/59) onward), and fleet application by
+[M6-07](https://github.com/simmeh024/tailfinsim/issues/63). There is no `livery` table;
+`airframe.livery_id` exists and nothing writes it. A bulk action that set a column no builder
+can populate would be a button that does nothing.
 
 ### Assign to base — blocked on the base itself
 
@@ -167,7 +169,8 @@ than needing this code changed:
 - The fleet table renders that URL verbatim in an `<img>` when it is set, and a **type mark**
   — the manufacturer's initial and a class abbreviation — when it is not. A type mark is
   deliberately not a livery.
-- The client has no livery document, no template and no renderer, and never composes one.
+- The fleet response carries no livery document, template or renderer, and the client never
+  composes one.
   `fleet-ui.test.tsx` asserts both halves: no `<img>` while the field is null, and the
   server's exact URL when it is set.
 

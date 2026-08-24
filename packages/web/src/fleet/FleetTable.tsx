@@ -9,8 +9,8 @@ import type { ReactNode } from 'react';
  * hours, utilisation, next check"*, and two of them need a word.
  *
  * **The livery thumbnail is a server-rendered image or nothing.** It is nothing
- * today: a livery is a layered document (M6-01) rasterised server-side by M6-06,
- * and neither exists yet. What stands in its place is a type mark — the
+ * today: M6-01 defines the layered document, but no saved document or M6-06
+ * server raster exists yet. What stands in its place is a type mark — the
  * manufacturer's initial and the aircraft class — which is deliberately *not* a
  * livery. The client never composes one, so when M6-06 fills
  * `liveryThumbnailUrl` this file renders it and nothing else changes. That is

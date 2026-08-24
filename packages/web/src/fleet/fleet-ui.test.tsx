@@ -28,8 +28,8 @@ import { waitForSignInCheck } from '../test-gates';
  *   1. **The effective spec shows the base value and the delta per option.** The
  *      first acceptance criterion, and the reason the detail view exists at all.
  *   2. **The livery cell is a server-decided image or nothing.** The second
- *      criterion cannot be *met* — the renderer is M6-06 and there is no livery
- *      document to render — so what is asserted is the property standing in for
+ *      criterion cannot be *met* — the renderer is M6-06 and there is no saved
+ *      livery document to render — so what is asserted is the property standing in for
  *      it: the client never composes a livery, and the moment the server sends a
  *      URL the cell becomes that image.
  */
@@ -625,7 +625,7 @@ describe('the livery cell', () => {
 
     const table = await fleetTable();
     // The second acceptance criterion, held as a property rather than met: the
-    // client has no livery document, no template and no renderer, so it must not
+    // client receives no livery document, template or renderer, so it must not
     // put a picture of an aeroplane on screen. A client-composed approximation
     // would guarantee the fleet table and the world map disagreed.
     expect(within(table).queryByRole('img')).toBeNull();
