@@ -368,18 +368,6 @@ export function createWorldLayers({
       lineWidthMinPixels: 0.5,
       parameters: { cullMode: 'back' },
     }),
-    /*
-     * Country borders, over the land fill and under everything else.
-     *
-     * A `GeoJsonLayer` rather than a `PathLayer`, because `mesh` hands back one
-     * `MultiLineString` and `GeoJsonLayer` is the layer that knows how to walk a
-     * GeoJSON geometry into paths. It draws nothing but lines here — the geometry
-     * has no rings, so `filled` never applies.
-     *
-     * Thinner than the coastline on purpose. A border and a coastline at the same
-     * weight makes a continent read as a mesh of equal cells, and the coastline is
-     * the one that says where the land stops.
-     */
     visibility.relief &&
       new WorldBitmapLayer({
         id: 'world-relief',
@@ -402,6 +390,18 @@ export function createWorldLayers({
         // See the ocean layer: a full-sphere quad must not be back-face culled.
         parameters: { cullMode: 'none' },
       }),
+    /*
+     * Country borders, over the land fill and under everything else.
+     *
+     * A `GeoJsonLayer` rather than a `PathLayer`, because `mesh` hands back one
+     * `MultiLineString` and `GeoJsonLayer` is the layer that knows how to walk a
+     * GeoJSON geometry into paths. It draws nothing but lines here — the geometry
+     * has no rings, so `filled` never applies.
+     *
+     * Thinner than the coastline on purpose. A border and a coastline at the same
+     * weight makes a continent read as a mesh of equal cells, and the coastline is
+     * the one that says where the land stops.
+     */
     visibility.borders &&
       new GeoJsonLayer({
         id: 'world-borders',
