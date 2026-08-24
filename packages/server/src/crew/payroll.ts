@@ -1,9 +1,9 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 
 import type { CrewBalance } from '@tailfin/shared';
 
 import { moveAirlineCash } from '../airline/cash';
-import { crewBase, crewPool } from '../db/schema';
+import { cashMovement, crewBase, crewPool } from '../db/schema';
 import { loadWorldEconomyConfig } from '../economy/loader';
 
 import type { Database } from '../db/client';
@@ -37,6 +37,26 @@ import type { Database } from '../db/client';
  * following month lasts, so a worker that was down over a month boundary bills
  * the moment it comes back rather than skipping a payday.
  *
+ * ## Why the already-billed references are read first
+ *
+ * Because AIR-06's replay guard does not merely dedupe — it asserts the movement
+ * is being replayed with the **same facts**, `occurred_at` and `amount_minor`
+ * included. Two things here are not stable across a month:
+ *
+ *   - the instant, if it were `gameNow`: a different value every tick;
+ *   - the amount, if anybody hires between two ticks.
+ *
+ * Either makes the second attempt throw rather than no-op. The first version did
+ * both, and on dev it failed once a second from the moment it deployed —
+ * `crewErrors` climbing in lockstep with `ticks`, which is exactly the counter
+ * that exists to make that visible. Its test passed because all three calls
+ * shared one instant, so it proved the movement was not duplicated and never
+ * exercised the guard at all.
+ *
+ * So: the month's references are looked up once, the airlines holding them are
+ * skipped, and `occurredAt` is the instant the billed month closed rather than
+ * whenever the tick noticed.
+ *
  * ## Insolvency is not modelled, and payroll can cause it
  *
  * Every other spend in the game is player-initiated and refuses when the money
@@ -66,6 +86,11 @@ export async function runCrewPayroll(
   gameNow: Date,
 ): Promise<PayrollResult> {
   const period = previousMonth(gameNow);
+  /*
+   * Midnight on the first of the following month: the instant the billed month
+   * closed. Fixed for the period, so a retry replays identical facts.
+   */
+  const occurredAt = new Date(`${monthAfter(period)}-01T00:00:00.000Z`);
   const economy = await loadWorldEconomyConfig(db, worldId);
 
   const rows = await db
@@ -98,6 +123,31 @@ export async function runCrewPayroll(
     bill.overheadMinor = economy.crew.base.monthlyOverheadMinor * bill.bases.size;
   }
 
+  /*
+   * What has already been billed for this period. One indexed lookup for the
+   * whole world, rather than letting AIR-06's replay guard discover it — the
+   * guard's job is to catch a *contradiction*, and reaching it on the ordinary
+   * path turns every tick after the first of a month into an exception.
+   */
+  const already = new Set(
+    bills.size === 0
+      ? []
+      : (
+          await db
+            .select({ reference: cashMovement.reference })
+            .from(cashMovement)
+            .where(
+              inArray(
+                cashMovement.reference,
+                [...bills.keys()].flatMap((airlineId) => [
+                  `crew_payroll:${airlineId}:${period}`,
+                  `crew_base_overhead:${airlineId}:${period}`,
+                ]),
+              ),
+            )
+        ).map((row) => row.reference),
+  );
+
   let airlinesBilled = 0;
   let totalMinor = 0;
 
@@ -116,12 +166,15 @@ export async function runCrewPayroll(
         [bill.overheadMinor, 'crew_base_overhead'],
       ] as const) {
         if (amount <= 0) continue;
+        const reference = `${cause}:${airlineId}:${period}`;
+        if (already.has(reference)) continue;
+
         const result = await moveAirlineCash(tx, {
           airlineId,
           amountMinor: -amount,
           cause,
-          reference: `${cause}:${airlineId}:${period}`,
-          occurredAt: gameNow,
+          reference,
+          occurredAt,
         });
         if (result.status !== 'already-applied') moved += amount;
       }
@@ -192,4 +245,13 @@ export function previousMonth(at: Date): string {
   const month = at.getUTCMonth();
   const previous = month === 0 ? { year: year - 1, month: 11 } : { year, month: month - 1 };
   return `${String(previous.year)}-${String(previous.month + 1).padStart(2, '0')}`;
+}
+
+/** `2024-11` for `2024-10`. Used only to name the instant a month closed. */
+function monthAfter(period: string): string {
+  const [year, month] = period.split('-').map(Number);
+  if (year === undefined || month === undefined) return period;
+  return month === 12
+    ? `${String(year + 1)}-01`
+    : `${String(year)}-${String(month + 1).padStart(2, '0')}`;
 }
