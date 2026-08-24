@@ -16,6 +16,7 @@ wall-clock time, that never pauses.
 - **Architecture decisions:** [`docs/adr/`](docs/adr/)
 - **Authorization boundary:** [`docs/authorization-matrix.md`](docs/authorization-matrix.md)
 - **Feature contracts:** [`docs/aircraft-acquisition.md`](docs/aircraft-acquisition.md) ·
+  [`docs/fleet-marketplace.md`](docs/fleet-marketplace.md) ·
   [`docs/used-aircraft-market.md`](docs/used-aircraft-market.md) ·
   [`docs/maintenance.md`](docs/maintenance.md) ·
   [`docs/fleet-management.md`](docs/fleet-management.md) ·

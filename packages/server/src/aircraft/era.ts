@@ -6,6 +6,7 @@ import type {
   FleetCatalogueResponse,
 } from '@tailfin/shared';
 import {
+  aircraftAcquisitionMethods,
   availabilityOf,
   computeEffectiveSpec,
   gameTime,
@@ -140,6 +141,7 @@ export async function fleetCatalogue(
       class: type.class,
 
       availability: state,
+      acquisitionMethods: [...aircraftAcquisitionMethods(state, type)],
       detail: detailFor(state, type.eraDates.entryIntoService, type.eraDates.productionEnd),
       // Only forward-looking. A type already in service has no arrival left to
       // announce, and putting its historical EIS here would read as a countdown.

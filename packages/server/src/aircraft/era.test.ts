@@ -132,6 +132,16 @@ describeDb('the catalogue as a world sees it', () => {
     expect(x?.detail).toMatch(/No entry into service has been announced/);
   });
 
+  it('publishes acquisition methods from the same simulation rule the transaction enforces', async () => {
+    const worldId = await worldAt(FLAGSHIP_CONFIG.epoch);
+    const catalogue = await fleetCatalogue(db.db, worldId);
+    const byType = new Map(catalogue.types.map((entry) => [entry.designation, entry]));
+
+    expect(byType.get('A320neo')?.acquisitionMethods).toEqual(['new', 'lease', 'used']);
+    expect(byType.get('737-800')?.acquisitionMethods).toEqual(['lease', 'used']);
+    expect(byType.get('A321XLR')?.acquisitionMethods).toEqual([]);
+  });
+
   it('does not put an arrival date on something already in service', async () => {
     // A historical EIS in that field would read as a countdown to an aircraft
     // the player can already buy.

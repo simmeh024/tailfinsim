@@ -10,6 +10,7 @@ const entry = (over: Partial<CatalogueEntry> = {}): CatalogueEntry => ({
   manufacturer: 'Airbus',
   class: 'narrowbody',
   availability: 'orderable',
+  acquisitionMethods: ['new', 'lease', 'used'],
   detail: 'Available for factory order.',
   arrivesOn: null,
   seatsTwoClass: 165,
@@ -66,9 +67,17 @@ describe('aircraft marketplace browsing', () => {
     ).toEqual(['Cheap', 'Expensive', 'Used only']);
   });
 
-  it('never presents new for used-only/testing types and requires real used inventory', () => {
-    expect(exposesMethod(entry({ availability: 'used_only' }), 'new', 2)).toBe(false);
-    expect(exposesMethod(entry({ availability: 'prototype' }), 'lease', 2)).toBe(false);
+  it('uses server-authored methods and still requires real used inventory', () => {
+    expect(
+      exposesMethod(
+        entry({ availability: 'used_only', acquisitionMethods: ['lease', 'used'] }),
+        'new',
+        2,
+      ),
+    ).toBe(false);
+    expect(
+      exposesMethod(entry({ availability: 'prototype', acquisitionMethods: [] }), 'lease', 2),
+    ).toBe(false);
     expect(exposesMethod(entry(), 'used', 0)).toBe(false);
     expect(exposesMethod(entry(), 'used', 1)).toBe(true);
   });

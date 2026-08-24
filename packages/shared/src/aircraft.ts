@@ -244,6 +244,10 @@ export const AircraftAvailabilityState = z.enum([
 ]);
 export type AircraftAvailabilityState = z.infer<typeof AircraftAvailabilityState>;
 
+/** Type-level acquisition paths the authoritative catalogue currently permits. */
+export const AircraftAcquisitionMethod = z.enum(['new', 'lease', 'used']);
+export type AircraftAcquisitionMethod = z.infer<typeof AircraftAcquisitionMethod>;
+
 export const CatalogueEntry = z.object({
   designation: z.string().min(1),
   family: z.string().min(1),
@@ -251,6 +255,11 @@ export const CatalogueEntry = z.object({
   class: AircraftClass,
 
   availability: AircraftAvailabilityState,
+  /**
+   * Server-authored type-level paths. Physical used inventory is still required
+   * before the browser exposes a specific used-aircraft action.
+   */
+  acquisitionMethods: z.array(AircraftAcquisitionMethod),
   /** One sentence, server-written: what this state means for this type. */
   detail: z.string().min(1),
   /**

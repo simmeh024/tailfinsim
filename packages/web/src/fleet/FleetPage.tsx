@@ -2,13 +2,20 @@ import { useEffect, useState } from 'react';
 
 import type {
   AirframeDetailResponse,
+  AircraftOrderListResponse,
   FleetAirframesResponse,
   FleetCatalogueResponse,
 } from '@tailfin/shared';
 
 import { AirframeDetail } from './AirframeDetail';
-import { fetchAirframeDetail, fetchFleetAirframes, fetchFleetCatalogue } from './api';
+import {
+  fetchAircraftOrders,
+  fetchAirframeDetail,
+  fetchFleetAirframes,
+  fetchFleetCatalogue,
+} from './api';
 import { FleetMarket } from './FleetMarket';
+import { FleetOrders } from './FleetOrders';
 import { FleetTable } from './FleetTable';
 
 import type { ReactNode } from 'react';
@@ -54,6 +61,8 @@ export function FleetPage(): ReactNode {
   const [catalogueFailed, setCatalogueFailed] = useState(false);
   const [fleet, setFleet] = useState<FleetAirframesResponse | null>(null);
   const [fleetFailed, setFleetFailed] = useState(false);
+  const [orders, setOrders] = useState<AircraftOrderListResponse | null>(null);
+  const [ordersFailed, setOrdersFailed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<AirframeDetailResponse | null>(null);
   const [detailFailed, setDetailFailed] = useState(false);
@@ -73,6 +82,13 @@ export function FleetPage(): ReactNode {
       })
       .catch(() => {
         if (live) setFleetFailed(true);
+      });
+    void fetchAircraftOrders()
+      .then((value) => {
+        if (live) setOrders(value);
+      })
+      .catch(() => {
+        if (live) setOrdersFailed(true);
       });
     return () => {
       live = false;
@@ -133,6 +149,17 @@ export function FleetPage(): ReactNode {
           />
         ))}
 
+      <h2 className="fleet__section-heading">Open orders</h2>
+      {ordersFailed ? (
+        <p className="admin__note" role="alert">
+          Could not load your aircraft orders.
+        </p>
+      ) : orders === null ? (
+        <p className="admin__note">Loading your aircraft orders…</p>
+      ) : (
+        <FleetOrders orders={orders.orders} />
+      )}
+
       <h2 className="fleet__section-heading">Catalogue</h2>
       {catalogueFailed ? (
         <p className="admin__note" role="alert">
@@ -159,6 +186,12 @@ export function FleetPage(): ReactNode {
                 .then(setFleet)
                 .catch(() => setFleetFailed(true));
             }
+            void fetchAircraftOrders()
+              .then((value) => {
+                setOrders(value);
+                setOrdersFailed(false);
+              })
+              .catch(() => setOrdersFailed(true));
           }}
         />
       )}

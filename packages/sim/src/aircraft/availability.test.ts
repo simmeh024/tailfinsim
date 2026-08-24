@@ -4,6 +4,7 @@ import { AIRCRAFT_CATALOGUE_V1, type AircraftEraDates, FLAGSHIP_CONFIG } from '@
 
 import {
   AIRCRAFT_AVAILABILITY_STATES,
+  aircraftAcquisitionMethods,
   availabilityOf,
   existsInWorld,
   isOperable,
@@ -83,6 +84,18 @@ describe('the five states a type moves through', () => {
 });
 
 describe('what each state permits', () => {
+  it('publishes the exact type-level acquisition paths the server enforces', () => {
+    const terms = { listPrice: 10_000, monthlyLeaseRate: 500 };
+    expect(aircraftAcquisitionMethods('unannounced', terms)).toEqual([]);
+    expect(aircraftAcquisitionMethods('prototype', terms)).toEqual([]);
+    expect(aircraftAcquisitionMethods('orderable', terms)).toEqual(['new', 'lease', 'used']);
+    expect(aircraftAcquisitionMethods('used_only', terms)).toEqual(['lease', 'used']);
+    expect(aircraftAcquisitionMethods('retired', terms)).toEqual([]);
+    expect(
+      aircraftAcquisitionMethods('orderable', { listPrice: null, monthlyLeaseRate: null }),
+    ).toEqual(['used']);
+  });
+
   it('lets a player order new only while the line is open', () => {
     const dates = era();
     expect(isOrderableNew(dates, day('2011-06-01'))).toBe(false);

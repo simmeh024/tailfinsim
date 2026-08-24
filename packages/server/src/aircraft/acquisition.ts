@@ -13,6 +13,7 @@ import {
   type Airframe,
 } from '@tailfin/shared';
 import {
+  aircraftAcquisitionMethods,
   availabilityOf,
   computeEffectiveBuild,
   gameTime,
@@ -239,11 +240,15 @@ function catalogueOffer(
   if (!type) return { ok: false, kind: 'type-not-found', designation: input.typeDesignation };
 
   const availability = availabilityOf(type.eraDates, inGameNow);
-  const permitted =
-    input.kind === 'new'
-      ? availability === 'orderable'
-      : availability === 'orderable' || availability === 'used_only';
-  if (!permitted) {
+  const methods = aircraftAcquisitionMethods(availability, type);
+  if (!methods.includes(input.kind)) {
+    if (
+      input.kind === 'lease' &&
+      (availability === 'orderable' || availability === 'used_only') &&
+      type.monthlyLeaseRate === null
+    ) {
+      return { ok: false, kind: 'lease-not-offered', designation: type.designation };
+    }
     return {
       ok: false,
       kind: 'type-not-orderable',
@@ -253,9 +258,8 @@ function catalogueOffer(
   }
 
   if (input.kind === 'lease') {
-    if (type.monthlyLeaseRate === null) {
-      return { ok: false, kind: 'lease-not-offered', designation: type.designation };
-    }
+    // `methods` can only contain lease when this authored term exists.
+    if (type.monthlyLeaseRate === null) throw new Error('Lease method has no authored rate');
     const build = computeEffectiveBuild({ baseSpec: type.baseSpec });
     return {
       ok: true,

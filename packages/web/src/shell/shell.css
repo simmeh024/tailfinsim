@@ -3190,6 +3190,59 @@ body {
   color: var(--text-muted);
 }
 
+.fleet-orders {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+}
+
+.fleet-order {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.fleet-order__heading {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.fleet-order__heading h3 {
+  margin: var(--space-1) 0 0;
+}
+
+.fleet-order__status {
+  background: var(--status-delayed-quiet);
+  border: 1px solid var(--status-delayed);
+  border-radius: var(--radius-sm);
+  color: var(--status-delayed);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  white-space: nowrap;
+}
+
+.fleet-order dl {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  margin: var(--space-4) 0 0;
+}
+
+.fleet-order dt {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  margin-block-end: var(--space-1);
+}
+
+.fleet-order dd {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  margin: 0;
+}
+
 .fleet__hint {
   max-width: 68ch;
   font-size: var(--text-sm);
