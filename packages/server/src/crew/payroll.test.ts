@@ -254,28 +254,34 @@ describeDb('crew payroll', () => {
     const dutyPeriodId = randomUUID();
     const before = await cashOf(fixture.airline.id);
 
-    const charged = await chargePositioning(db.db, {
-      airlineId: fixture.airline.id,
-      dutyPeriodId,
-      heads: 4,
-      nights: 2,
-      occurredAt: NOVEMBER,
-      duty: CREW.duty,
-    });
+    // In a transaction: `airline_cash_reconciles` is deferrable, so the movement
+    // and the balance it implies have to commit together.
+    const charged = await db.db.transaction((tx) =>
+      chargePositioning(tx, {
+        airlineId: fixture.airline.id,
+        dutyPeriodId,
+        heads: 4,
+        nights: 2,
+        occurredAt: NOVEMBER,
+        duty: CREW.duty,
+      }),
+    );
 
     expect(charged).toBe(CREW.duty.hotelCostPerHeadPerNightMinor * 2 * 4);
     expect(await cashOf(fixture.airline.id)).toBe(before - charged);
 
     // Idempotent by the duty period id: a retry or two workers racing bill one
     // night, not two.
-    await chargePositioning(db.db, {
-      airlineId: fixture.airline.id,
-      dutyPeriodId,
-      heads: 4,
-      nights: 2,
-      occurredAt: NOVEMBER,
-      duty: CREW.duty,
-    });
+    await db.db.transaction((tx) =>
+      chargePositioning(tx, {
+        airlineId: fixture.airline.id,
+        dutyPeriodId,
+        heads: 4,
+        nights: 2,
+        occurredAt: NOVEMBER,
+        duty: CREW.duty,
+      }),
+    );
     expect(await movementsOf(fixture.airline.id, 'crew_positioning')).toHaveLength(1);
   });
 });
