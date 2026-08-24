@@ -1,9 +1,13 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CrewRank } from '@tailfin/shared';
 
-import { crewBanner } from './crew-banners';
+import { CREW_BANNER_ASPECT, crewBanner } from './crew-banners';
 import {
   CREW_RANK_LABEL,
   CREW_ROLE_DESCRIPTION,
@@ -46,11 +50,43 @@ describe('the role banner', () => {
      */
     for (const rank of ALL_RANKS) {
       expect(crewBanner(rank).src).toBeTruthy();
-      expect(crewBanner(rank).srcSet).toContain('440w');
+      expect(crewBanner(rank).srcSet).toContain('1024w');
+      expect(crewBanner(rank).srcSet).toContain('2048w');
       expect(CREW_RANK_LABEL[rank]).toBeTruthy();
       expect(CREW_ROLE_DESCRIPTION[rank]).toBeTruthy();
     }
     expect(rotationOrder([])).toHaveLength(ALL_RANKS.length);
+  });
+
+  it('declares the artwork’s own shape, so the box never letterboxes it', () => {
+    /*
+     * The v2 set is 2048 x 409 for all nine, which is what let the letterbox go.
+     * If a v3 arrives at a different shape this pair has to move with it — and
+     * the next test is what stops the CSS being forgotten when it does.
+     */
+    expect(CREW_BANNER_ASPECT).toEqual({ width: 2048, height: 409 });
+
+    render(<CrewRoleBanner reducedMotion />);
+    const image = bannerImage();
+    expect(image.getAttribute('width')).toBe('2048');
+    expect(image.getAttribute('height')).toBe('409');
+  });
+
+  it('and the stylesheet agrees with it', () => {
+    /*
+     * Two places have to know the ratio: the box in CSS and the artwork in TS.
+     * Artwork and box drifting apart is exactly the kind of thing nobody notices
+     * until a rotation looks wrong — and by then the cause is three files away
+     * from the symptom.
+     */
+    const css = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), '../shell/shell.css'),
+      'utf8',
+    );
+    const declared = /\.crew-banner\s*\{[^}]*aspect-ratio:\s*(\d+)\s*\/\s*(\d+)/.exec(css);
+    expect(declared).not.toBeNull();
+    expect(Number(declared?.[1])).toBe(CREW_BANNER_ASPECT.width);
+    expect(Number(declared?.[2])).toBe(CREW_BANNER_ASPECT.height);
   });
 
   it('names the rank in the alt text, because that is the only place it exists', () => {

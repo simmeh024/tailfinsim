@@ -5344,17 +5344,17 @@ body {
   }
 }
 
-/* The nine banners are 880 wide and 126-217 tall, rank by rank. Sizing the box
-   to each one would make the page jump on every rotation, which is the movement
-   the rotation is supposed to avoid -- so the box is fixed at the tallest ratio
-   and the image is contained inside it. Shorter banners get a band of surface
-   above and below; nothing is cropped, and nothing shifts. */
+/* The v2 banners are 2048 x 409 for all nine ranks, so this is the artwork's own
+   ratio and nothing is letterboxed. `CREW_BANNER_ASPECT` is where that pair is
+   written down, and a test asserts this rule agrees with it -- artwork and box
+   drifting apart is exactly the kind of thing nobody notices until a rotation
+   looks wrong. */
 
 .crew-banner {
   position: relative;
   display: block;
   width: 100%;
-  aspect-ratio: 880 / 217;
+  aspect-ratio: 2048 / 409;
   overflow: hidden;
   background: var(--bg-raised);
   border: 1px solid var(--border-subtle);
