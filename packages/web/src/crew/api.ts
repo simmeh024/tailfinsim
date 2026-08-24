@@ -3,6 +3,7 @@ import type {
   CrewResponse,
   HireCrewInput,
   OpenCrewBaseInput,
+  SetCrewReserveInput,
   StartCrewConversionInput,
 } from '@tailfin/shared';
 
@@ -27,9 +28,9 @@ export interface CrewFailure extends ApiError {
 
 export type CrewOutcome = { ok: true; state: CrewResponse } | { ok: false; refusal: CrewFailure };
 
-async function send(path: string, body: unknown): Promise<CrewOutcome> {
+async function send(path: string, body: unknown, method = 'POST'): Promise<CrewOutcome> {
   const response = await fetch(path, {
-    method: 'POST',
+    method,
     headers: { accept: 'application/json', 'content-type': 'application/json' },
     credentials: 'same-origin',
     body: JSON.stringify(body),
@@ -45,7 +46,7 @@ async function send(path: string, body: unknown): Promise<CrewOutcome> {
     refusal: {
       status: response.status,
       code: error.code ?? 'unknown',
-      message: error.message ?? `POST ${path} failed with ${String(response.status)}`,
+      message: error.message ?? `${method} ${path} failed with ${String(response.status)}`,
     },
   };
 }
@@ -101,4 +102,15 @@ export function hireCrew(input: HireCrewInput): Promise<CrewOutcome> {
 
 export function startCrewConversion(input: StartCrewConversionInput): Promise<CrewOutcome> {
   return send('/api/crew/conversions', input);
+}
+
+/**
+ * Set how many of a pool's heads are held back as standby.
+ *
+ * `PUT`, because a reserve level is a value rather than an event: sending the
+ * same request twice leaves the same standby crew. The others are `POST` because
+ * hiring twice hires twice.
+ */
+export function setCrewReserve(input: SetCrewReserveInput): Promise<CrewOutcome> {
+  return send('/api/crew/reserves', input, 'PUT');
 }

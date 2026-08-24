@@ -425,5 +425,16 @@ displaced crew needs and `deadheadCostPerHeadMinor` prices them; only the hotel 
 charged, because nothing yet _puts_ crew on a flight as passengers. Hotels are the cost §9.2
 names and the one a player creates by accident.
 
-**Nothing surfaces duty on the Crew page yet.** The rows are written and the API does not read
-them, so a player can trip a crew timeout and see only that a flight cancelled.
+## The page shows it
+
+The pool table gained two columns and the page gained a board:
+
+- **On duty** is separate from **In training**, because the two have different fixes. A crew
+  member in a classroom is gone for a fortnight and you wait; one who is resting is back
+  tonight, and you hire or you keep a reserve. One column would make them look like one problem.
+- **Standby** is the reserve designation, set from the fourth action card. A level, not a
+  change — two tabs both sending "+2" would produce four reserves and neither screen could
+  explain it, so `PUT /api/crew/reserves` takes the number the player wants.
+- **On duty**, the board, answers _where are my crew_, which before M5-02 the game could not
+  answer at all. Still no person on it: a row is a **set**, a head count on one aeroplane.
+  A set stopped away from base is marked `hotel` in words rather than in colour (App. H.7).

@@ -3,13 +3,20 @@ import {
   crewResponseJsonSchema,
   HireCrewInput,
   OpenCrewBaseInput,
+  SetCrewReserveInput,
   StartCrewConversionInput,
   type CrewRefusal,
 } from '@tailfin/shared';
 
 import { resolvedAirlineOf } from '../airline/context';
 
-import { hireCrew, openCrewBase, readCrewState, startCrewConversion } from './store';
+import {
+  hireCrew,
+  openCrewBase,
+  readCrewState,
+  setCrewReserve,
+  startCrewConversion,
+} from './store';
 
 import type { DatabaseHandle } from '../db/client';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -129,6 +136,31 @@ export function registerCrewRoutes(app: FastifyInstance, { db }: { db: DatabaseH
         airlineId: own.id,
         ...parsed.data,
       });
+      if (!result.ok) return reply.code(409).send(refusalBody(result.refusal));
+      return reply.code(200).send(await readCrewState(db.db, own.worldId, own.id));
+    },
+  );
+
+  /*
+   * PUT rather than POST, because a reserve level is a value the player sets
+   * rather than an event they cause -- the same request sent twice leaves the
+   * same standby crew, which is exactly what PUT promises and POST does not.
+   */
+  app.put<{ Body: unknown }>(
+    '/api/crew/reserves',
+    {
+      onRequest: app.requireActiveAirline,
+      schema: {
+        response: { 200: crewResponseJsonSchema, 400: apiErrorJsonSchema, 409: apiErrorJsonSchema },
+      },
+    },
+    async (request, reply) => {
+      const parsed = SetCrewReserveInput.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ code: 'invalid_input', message: 'Malformed reserve' });
+      }
+      const own = resolvedAirlineOf(request);
+      const result = await setCrewReserve(db.db, { airlineId: own.id, ...parsed.data });
       if (!result.ok) return reply.code(409).send(refusalBody(result.refusal));
       return reply.code(200).send(await readCrewState(db.db, own.worldId, own.id));
     },

@@ -30,7 +30,24 @@ export const CrewPoolView = z.object({
   headcount: z.number().int().nonnegative(),
   /** In conversion training, and therefore not rosterable. */
   unavailable: z.number().int().nonnegative(),
-  /** `headcount - unavailable`, decided by the server. */
+  /**
+   * Flying, or serving the rest that follows a duty (M5-02).
+   *
+   * Kept apart from `unavailable` because the two are different answers to the
+   * same question. A crew member in a classroom is gone for a fortnight and the
+   * fix is to wait; one who is resting is back tonight and the fix is to hire,
+   * or to keep a reserve.
+   */
+  onDuty: z.number().int().nonnegative(),
+  /**
+   * Held back from the roster as standby (M5-02, section 9.2).
+   *
+   * A subset of `headcount`, not an addition to it: a reserve is an ordinary
+   * crew member who is not rostered, draws the same salary, and can cover
+   * anything the rest of the pool could.
+   */
+  reserve: z.number().int().nonnegative(),
+  /** `headcount - unavailable - onDuty`, decided by the server. */
   available: z.number().int().nonnegative(),
 });
 export type CrewPoolView = z.infer<typeof CrewPoolView>;
@@ -47,6 +64,34 @@ export const CrewConversionView = z.object({
 });
 export type CrewConversionView = z.infer<typeof CrewConversionView>;
 
+/**
+ * A crew set currently working or resting (M5-02).
+ *
+ * There is still no person here. A duty period is a span of time with a report
+ * and an off-duty, which is what the regulation actually constrains, and the
+ * heads on it are a count drawn from the pools.
+ */
+export const CrewDutyView = z.object({
+  id: Uuid,
+  family: z.string().min(1),
+  heads: z.number().int().positive(),
+  status: z.enum(['open', 'resting']),
+  /** True when this set was called out from the standby designation. */
+  fromReserve: z.boolean(),
+  /** Game time, like everything else a world schedules. */
+  reportAt: Timestamp,
+  /** Null while the set is still working. */
+  offDutyAt: Timestamp.nullable(),
+  /** Game time the heads return to the pool. Null while still working. */
+  restUntil: Timestamp.nullable(),
+  sectors: z.number().int().nonnegative(),
+  /** Where the crew are, which is the positioning question answered. */
+  locationIcao: z.string().length(4),
+  /** True when they are not at their own base, and so in a hotel. */
+  awayFromBase: z.boolean(),
+});
+export type CrewDutyView = z.infer<typeof CrewDutyView>;
+
 export const CrewBaseView = z.object({
   id: Uuid,
   airportIcao: z.string().length(4),
@@ -54,6 +99,14 @@ export const CrewBaseView = z.object({
   openedAt: Timestamp,
   pools: z.array(CrewPoolView),
   conversions: z.array(CrewConversionView),
+  /**
+   * Sets currently on duty or resting, newest first (M5-02).
+   *
+   * Bounded by the server rather than paginated: a base has as many open duty
+   * periods as it has aeroplanes flying, which is a small number, and the
+   * closed ones are history the page has no question for.
+   */
+  duty: z.array(CrewDutyView).default([]),
 });
 export type CrewBaseView = z.infer<typeof CrewBaseView>;
 
@@ -150,6 +203,16 @@ export const CrewResponse = z.object({
     conversionPerHeadMinor: MinorUnits,
     conversionDurationDays: z.number().int().positive(),
     weeklyHiringCapacity: z.number().int().positive(),
+    /**
+     * What the crew already hired cost each game month (M5-02).
+     *
+     * Salaries plus base overhead, at today's headcount. The number section 9.2
+     * wants a player to feel before they hire: *"cost money and do nothing most
+     * days"* is not a trade anybody can weigh without seeing the money.
+     */
+    monthlyPayrollMinor: MinorUnits.default(0),
+    /** Per head per night, when a rotation ends away from base. */
+    hotelPerHeadPerNightMinor: MinorUnits.default(0),
   }),
 });
 export type CrewResponse = z.infer<typeof CrewResponse>;
@@ -185,6 +248,17 @@ export type StartCrewConversionInput = z.infer<typeof StartCrewConversionInput>;
  * the interface has to be able to offer the fix. "Not enough heads" points at a
  * pool; "hiring capacity" points at next week.
  */
+export const SetCrewReserveInput = z
+  .object({
+    crewBaseId: Uuid,
+    family: z.string().min(1).max(64),
+    rank: CrewRank,
+    /** Absolute, not a delta. The player sets a level, not a change. */
+    reserve: z.number().int().nonnegative().max(1000),
+  })
+  .strict();
+export type SetCrewReserveInput = z.infer<typeof SetCrewReserveInput>;
+
 export const CrewRefusal = z.enum([
   'base_exists',
   'base_absent',
