@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" data-template-version="v1" data-aircraft-family="A350" data-projection="side" aria-labelledby="title desc">
+  <title id="title">A350 side-profile livery template</title>
+  <desc id="desc">Neutral long-range twin-engine widebody with swept winglets divided into Tailfin livery zones.</desc>
+  <g id="zone-wings" data-livery-zone="wings" data-zone-viewbox="350 175 560 170" fill="#CAD4DE" stroke="#34495E" stroke-width="2"><path d="m375 204 360-29 175 29-310 42 205 78-104 21-260-92Z" /></g>
+  <g id="zone-engine_nacelles" data-livery-zone="engine_nacelles" data-zone-viewbox="405 222 430 106" fill="#B8C4CF" stroke="#34495E" stroke-width="2"><path d="M405 231h154q47 3 56 38-9 37-56 44H405q-24-42 0-82Z" /><path d="M705 234h94q30 3 36 30-6 30-36 36h-94q-18-34 0-66Z" /></g>
+  <g id="zone-fuselage" data-livery-zone="fuselage" data-zone-viewbox="158 132 900 134" fill="#E7ECF2" stroke="#34495E" stroke-width="2"><path d="M158 163q172-31 602-31h196q69 2 102 39v44q-47 41-130 50H222q-47-2-64-32Z" /></g>
+  <g id="zone-nose" data-livery-zone="nose" data-zone-viewbox="28 160 205 105" fill="#F4F6F8" stroke="#34495E" stroke-width="2"><path d="M28 207q44-40 130-46l75 3-1 100H92q-48-6-64-29Z" /></g>
+  <g id="zone-belly" data-livery-zone="belly" data-zone-viewbox="158 215 835 52" fill="#D5DEE7"><path d="M158 215h835q-41 44-111 52H222q-47-2-64-34Z" /></g>
+  <g id="zone-tail_fin" data-livery-zone="tail_fin" data-zone-viewbox="910 28 190 185" fill="#DCE4EB" stroke="#34495E" stroke-width="2"><path d="m922 163 92-135h39l47 185-175-9Z" /></g>
+  <g id="zone-winglets" data-livery-zone="winglets" data-zone-viewbox="692 299 126 58" fill="#DCE4EB" stroke="#34495E" stroke-width="2"><path d="m701 345 98-46 19 12-112 46Z" /></g>
+  <g id="zone-cheatline_band" data-livery-zone="cheatline_band" data-zone-viewbox="132 171 900 34" fill="#000" fill-opacity="0"><path d="M132 171h900v34H132Z" /></g>
+  <g id="zone-door_surrounds" data-livery-zone="door_surrounds" data-zone-viewbox="235 145 690 100" fill="#000" fill-opacity="0"><path d="M235 145h44v100h-44Zm643 0h47v100h-47Z" /></g>
+  <g id="zone-registration_area" data-livery-zone="registration_area" data-zone-viewbox="750 161 190 48" fill="#000" fill-opacity="0"><path d="M750 161h190v48H750Z" /></g>
+</svg>

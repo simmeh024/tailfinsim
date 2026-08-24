@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" data-template-version="v1" data-aircraft-family="777" data-projection="top" aria-labelledby="title desc">
+  <title id="title">777 top-down livery template</title>
+  <desc id="desc">Neutral large twin-engine widebody planform divided into Tailfin livery zones.</desc>
+  <g id="zone-wings" data-livery-zone="wings" data-zone-viewbox="255 0 675 400" fill="#CAD4DE" stroke="#34495E" stroke-width="2"><path d="m400 168-145-130 45-38 392 168L930 42v56L740 200l190 102v56L692 232 300 400l-45-38 145-130Z" /></g>
+  <g id="zone-engine_nacelles" data-livery-zone="engine_nacelles" data-zone-viewbox="468 22 270 356" fill="#B8C4CF" stroke="#34495E" stroke-width="2"><rect x="468" y="22" width="125" height="148" rx="60" /><rect x="468" y="230" width="125" height="148" rx="60" /></g>
+  <g id="zone-fuselage" data-livery-zone="fuselage" data-zone-viewbox="140 142 930 116" fill="#E7ECF2" stroke="#34495E" stroke-width="2"><path d="M140 159q200-17 720-17 150 0 210 58-60 58-210 58H140Z" /></g>
+  <g id="zone-nose" data-livery-zone="nose" data-zone-viewbox="12 145 198 110" fill="#F4F6F8" stroke="#34495E" stroke-width="2"><path d="M12 200q58-55 198-55v110q-140 0-198-55Z" /></g>
+  <g id="zone-belly" data-livery-zone="belly" data-zone-viewbox="210 180 790 40" opacity="0"><path d="M210 180h790v40H210Z" /></g>
+  <g id="zone-tail_fin" data-livery-zone="tail_fin" data-zone-viewbox="890 112 185 176" fill="#DCE4EB" stroke="#34495E" stroke-width="2"><path d="m890 200 185-88v176Z" /></g>
+  <g id="zone-winglets" data-livery-zone="winglets" data-zone-viewbox="245 0 70 400" fill="#DCE4EB" stroke="#34495E" stroke-width="2"><path d="m255 38 35-38 25 9-15 48Zm0 324 35 38 25-9-15-48Z" /></g>
+  <g id="zone-cheatline_band" data-livery-zone="cheatline_band" data-zone-viewbox="115 151 910 98" fill="#000" fill-opacity="0"><path d="M115 151h910v98H115Z" /></g>
+  <g id="zone-door_surrounds" data-livery-zone="door_surrounds" data-zone-viewbox="220 142 720 116" opacity="0"><path d="M220 142h46v116h-46Zm615 0h46v116h-46Zm674 0h46v116h-46Z" /></g>
+  <g id="zone-registration_area" data-livery-zone="registration_area" data-zone-viewbox="755 151 215 98" fill="#000" fill-opacity="0"><path d="M755 151h215v98H755Z" /></g>
+</svg>

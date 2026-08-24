@@ -134,10 +134,11 @@ has a substrate**, and both are recorded here rather than approximated.
 
 ### Apply livery — blocked on the remaining M6 tools
 
-The versioned layered JSON contract now exists
-([M6-01](https://github.com/simmeh024/tailfinsim/issues/57)) and is documented in
-[`livery-document.md`](livery-document.md). There is still no saved livery: it needs
-per-family templates ([M6-02](https://github.com/simmeh024/tailfinsim/issues/58)), a builder
+The versioned layered JSON contract ([M6-01](https://github.com/simmeh024/tailfinsim/issues/57))
+and paired per-family SVG templates
+([M6-02](https://github.com/simmeh024/tailfinsim/issues/58)) now exist and are documented in
+[`livery-document.md`](livery-document.md) and [`livery-templates.md`](livery-templates.md).
+There is still no saved livery: it needs a builder
 ([M6-03](https://github.com/simmeh024/tailfinsim/issues/59) onward), and fleet application by
 [M6-07](https://github.com/simmeh024/tailfinsim/issues/63). There is no `livery` table;
 `airframe.livery_id` exists and nothing writes it. A bulk action that set a column no builder
@@ -158,8 +159,8 @@ it in the milestone that does not own the subject.
 **This is not met, and it cannot be from here.** The server-side renderer it names is
 [M6-06](https://github.com/simmeh024/tailfinsim/issues/62) — a headless SVG rasteriser, a
 cache keyed on livery version and projection, and content-addressed immutable URLs. It does
-not exist, it has nothing to render, and building a stand-in raster pipeline would be
-answering M6's question with M6's design decisions still open.
+not exist, and building a stand-in raster pipeline would be answering M6's question with
+M6's rendering decisions still open.
 
 What is built is the **seam**, so the criterion becomes true the moment M6-06 lands rather
 than needing this code changed:

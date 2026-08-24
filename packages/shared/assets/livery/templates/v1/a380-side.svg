@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" data-template-version="v1" data-aircraft-family="A380" data-projection="side" aria-labelledby="title desc">
+  <title id="title">A380 side-profile livery template</title>
+  <desc id="desc">Neutral full-length double-deck four-engine widebody geometry divided into Tailfin livery zones.</desc>
+  <g id="zone-wings" data-livery-zone="wings" data-zone-viewbox="310 170 640 185" fill="#CAD4DE" stroke="#34495E" stroke-width="2"><path d="m340 205 395-35 215 35-342 50 230 78-132 22-300-92Z" /></g>
+  <g id="zone-engine_nacelles" data-livery-zone="engine_nacelles" data-zone-viewbox="365 218 510 126" fill="#B8C4CF" stroke="#34495E" stroke-width="2"><path d="M365 228h112q38 3 46 35-8 34-46 41H365q-22-40 0-76Z" /><path d="M505 225h128q43 3 52 39-9 38-52 46H505q-24-44 0-85Z" /><path d="M695 227h102q34 3 41 33-7 32-41 39H695q-20-37 0-72Z" /><path d="M815 230h60v63h-60q-17-32 0-63Z" /></g>
+  <g id="zone-fuselage" data-livery-zone="fuselage" data-zone-viewbox="128 112 950 166" fill="#E7ECF2" stroke="#34495E" stroke-width="2"><path d="M128 153q190-41 650-41h190q75 3 110 46v55q-53 51-145 63H200q-53-3-72-38Z" /></g>
+  <g id="zone-nose" data-livery-zone="nose" data-zone-viewbox="0 150 220 126" fill="#F4F6F8" stroke="#34495E" stroke-width="2"><path d="M0 207q48-50 128-56l92 4-1 120H66q-50-8-66-36Z" /></g>
+  <g id="zone-belly" data-livery-zone="belly" data-zone-viewbox="128 213 880 65" fill="#D5DEE7"><path d="M128 213h880q-47 56-125 65H200q-53-3-72-40Z" /></g>
+  <g id="zone-tail_fin" data-livery-zone="tail_fin" data-zone-viewbox="918 4 215 218" fill="#DCE4EB" stroke="#34495E" stroke-width="2"><path d="m932 153 105-149h43l53 218-198-12Z" /></g>
+  <g id="zone-winglets" data-livery-zone="winglets" data-zone-viewbox="696 317 154 52" fill="#DCE4EB" stroke="#34495E" stroke-width="2"><path d="m706 355 124-38 20 11-139 41Z" /></g>
+  <g id="zone-cheatline_band" data-livery-zone="cheatline_band" data-zone-viewbox="105 160 945 42" fill="#000" fill-opacity="0"><path d="M105 160h945v42H105Z" /></g>
+  <g id="zone-door_surrounds" data-livery-zone="door_surrounds" data-zone-viewbox="220 126 730 128" fill="#000" fill-opacity="0"><path d="M220 126h50v128h-50Zm615 0h50v128h-50Zm690 0h50v128h-50Z" /></g>
+  <g id="zone-registration_area" data-livery-zone="registration_area" data-zone-viewbox="775 148 210 58" fill="#000" fill-opacity="0"><path d="M775 148h210v58H775Z" /></g>
+</svg>

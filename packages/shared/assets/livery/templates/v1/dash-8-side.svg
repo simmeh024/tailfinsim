@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" data-template-version="v1" data-aircraft-family="Dash 8" data-projection="side" aria-labelledby="title desc">
+  <title id="title">Dash 8 side-profile livery template</title>
+  <desc id="desc">Neutral long high-wing twin-turboprop geometry divided into Tailfin livery zones.</desc>
+  <g id="zone-wings" data-livery-zone="wings" data-zone-viewbox="420 132 390 155" fill="#CAD4DE" stroke="#34495E" stroke-width="2"><path d="m435 169 245-37 130 20-222 38 155 86-65 11-175-92Z" /></g>
+  <g id="zone-engine_nacelles" data-livery-zone="engine_nacelles" data-zone-viewbox="465 170 300 62" fill="#B8C4CF" stroke="#34495E" stroke-width="2"><path d="M465 178h110q24 0 29 20-5 20-29 20H465Z" /><path d="M665 178h78q18 0 22 18-4 18-22 18h-78Z" /></g>
+  <g id="zone-fuselage" data-livery-zone="fuselage" data-zone-viewbox="205 160 805 80" fill="#E7ECF2" stroke="#34495E" stroke-width="2"><path d="M205 174q170-14 530-14h200q53 2 75 27v25q-34 25-98 28H258q-38-2-53-23Z" /></g>
+  <g id="zone-nose" data-livery-zone="nose" data-zone-viewbox="95 173 175 66" fill="#F4F6F8" stroke="#34495E" stroke-width="2"><path d="M95 209q38-28 110-35l65 1-1 63H154q-43-4-59-17Z" /></g>
+  <g id="zone-belly" data-livery-zone="belly" data-zone-viewbox="205 211 750 30" fill="#D5DEE7"><path d="M205 211h750q-27 27-78 30H258q-38-2-53-20Z" /></g>
+  <g id="zone-tail_fin" data-livery-zone="tail_fin" data-zone-viewbox="885 70 150 122" fill="#DCE4EB" stroke="#34495E" stroke-width="2"><path d="m895 178 57-108h39l44 122-137-2Z" /></g>
+  <g id="zone-winglets" data-livery-zone="winglets" data-zone-viewbox="675 267 76 26" fill="#DCE4EB" stroke="#34495E" stroke-width="2"><path d="m678 287 64-20 9 11-72 15Z" /></g>
+  <g id="zone-cheatline_band" data-livery-zone="cheatline_band" data-zone-viewbox="180 183 810 22" fill="#000" fill-opacity="0"><path d="M180 183h810v22H180Z" /></g>
+  <g id="zone-door_surrounds" data-livery-zone="door_surrounds" data-zone-viewbox="260 175 610 54" fill="#000" fill-opacity="0"><path d="M260 175h30v54h-30Zm580 0h30v54h-30Z" /></g>
+  <g id="zone-registration_area" data-livery-zone="registration_area" data-zone-viewbox="710 179 150 30" fill="#000" fill-opacity="0"><path d="M710 179h150v30H710Z" /></g>
+</svg>

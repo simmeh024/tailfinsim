@@ -2,8 +2,10 @@
 
 Tailfin stores a livery as vector instructions, never as a source bitmap. The canonical
 contract is the `LiveryDocument` Zod schema in `packages/shared/src/livery.ts`; the derived
-`liveryDocumentJsonSchema` exists for non-Zod consumers. The future SVG builder and server
-raster renderer must import one of those exports rather than restating the shape.
+`liveryDocumentJsonSchema` exists for non-Zod consumers. The SVG templates are documented in
+[`livery-templates.md`](livery-templates.md). The future builder and server raster renderer
+must import the shared document contract and consume those shared assets rather than
+restating either shape.
 
 ## Stored shape
 
@@ -31,8 +33,8 @@ survive autosave. The `type` discriminator selects one payload:
 Coordinates are measured in zone units: `(0, 0)` is the zone origin and `(1, 1)` its full
 extent. Geometry may extend outside that interval and is clipped by the target template.
 That makes one document projection- and family-independent while preserving intentional
-bleed. The ten zone ids come directly from design §5.1 and must also be used by both
-side-profile and top-down SVG templates in M6-02.
+bleed. The ten zone ids come directly from design §5.1 and are used verbatim by both the
+side-profile and top-down SVG templates delivered in M6-02.
 
 Zone clipping is implicit. A layer can additionally mask through another zone or an earlier
 layer. Earlier-only references make a mask graph acyclic without a second ordering field;
@@ -72,6 +74,6 @@ The explicit set avoids inventing a persistent `subfleet` entity before its mech
 M6-07 may resolve a family or a saved UI selection to that set, but ownership validation,
 repaint cost, hangar downtime and writing `airframe.livery_id` belong to that milestone.
 
-M6-01 adds no database table, API, SVG template, builder screen or raster pipeline. M6-02
-through M6-06 supply those consumers; until M6-07 applies a saved livery, fleet thumbnail
-URLs honestly remain null.
+M6-01 adds no database table, API, builder screen or raster pipeline. M6-02 supplies the
+paired family templates; M6-03 through M6-06 supply the builder and renderers. Until M6-07
+applies a saved livery, fleet thumbnail URLs honestly remain null.

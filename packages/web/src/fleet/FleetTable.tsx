@@ -9,8 +9,8 @@ import type { ReactNode } from 'react';
  * hours, utilisation, next check"*, and two of them need a word.
  *
  * **The livery thumbnail is a server-rendered image or nothing.** It is nothing
- * today: M6-01 defines the layered document, but no saved document or M6-06
- * server raster exists yet. What stands in its place is a type mark — the
+ * today: M6-01 defines the layered document and M6-02 the templates, but no
+ * saved document or M6-06 server raster exists yet. What stands in its place is a type mark — the
  * manufacturer's initial and the aircraft class — which is deliberately *not* a
  * livery. The client never composes one, so when M6-06 fills
  * `liveryThumbnailUrl` this file renders it and nothing else changes. That is
@@ -69,8 +69,8 @@ function nextCheckLabel(view: FleetAirframeView): string {
  * The livery cell.
  *
  * An `<img>` when the server has a sprite, and a type mark when it has not.
- * Never a composed livery: the client has no livery document, no template and no
- * renderer, and building a client-side approximation of one would guarantee the
+ * Never a composed livery: this fleet response has no livery document or template and the
+ * client has no renderer. Building a client-side approximation would guarantee the
  * fleet table and the world map disagreed about what a player's aircraft looks
  * like.
  */
