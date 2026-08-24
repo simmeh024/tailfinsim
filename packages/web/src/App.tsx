@@ -16,8 +16,9 @@ import { CrewPage } from './crew/CrewPage';
 import { FleetPage } from './fleet/FleetPage';
 import { fetchFoundingOptions } from './founding/api';
 import { FoundingPage } from './founding/FoundingPage';
+import { LiveryBuilderPage } from './livery/LiveryBuilder';
 import { NetworkPage } from './network/NetworkPage';
-import { BoardPage, DesignPage, FinancePage } from './routes/Placeholder';
+import { BoardPage, FinancePage } from './routes/Placeholder';
 import { AppShell } from './shell/AppShell';
 import { ThemeProvider } from './theme/ThemeProvider';
 import { WorldPage } from './world/WorldPage';
@@ -103,7 +104,7 @@ export function App(): ReactNode {
               <Route path="network" element={<NetworkPage />} />
               <Route path="finance" element={<FinancePage />} />
               <Route path="crew" element={<CrewPage />} />
-              <Route path="design" element={<DesignPage />} />
+              <Route path="design" element={<LiveryBuilderPage />} />
               <Route path="board" element={<BoardPage />} />
               {/*
                 The console is a layout with its own navigation, not a single

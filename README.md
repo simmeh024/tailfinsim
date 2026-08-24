@@ -240,8 +240,9 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   registration, booking a check from the page, and the used-market and order screens all
   remain to be built. Crew, ground handling, and the livery and cabin builders are future
   work. The versioned livery document contract and paired SVG templates for every launch
-  aircraft family exist, but no builder saves or applies one — so an aircraft has no livery
-  to show and no cabin fitted, and the fleet table says so rather than inventing either.
+  aircraft family exist. The base-fill builder autosaves a validated airline-scoped local draft,
+  but no livery is server-saved or applied yet — so an aircraft has no livery to show and no
+  cabin fitted, and the fleet table says so rather than inventing either.
 - **Most of the player client.** The standalone founding desk, private airline/rebrand desk,
   network/fare pages, aircraft catalogue, and dual-projection world surface are real. The
   world does not yet receive live aircraft/route data; finance, crew, design and board remain

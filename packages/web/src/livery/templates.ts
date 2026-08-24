@@ -1,28 +1,54 @@
+import b737MaxSideSource from '../../../shared/assets/livery/templates/v1/737-max-side.svg?raw';
 import b737MaxSide from '../../../shared/assets/livery/templates/v1/737-max-side.svg?url';
+import b737MaxTopSource from '../../../shared/assets/livery/templates/v1/737-max-top.svg?raw';
 import b737MaxTop from '../../../shared/assets/livery/templates/v1/737-max-top.svg?url';
+import b737ngSideSource from '../../../shared/assets/livery/templates/v1/737ng-side.svg?raw';
 import b737ngSide from '../../../shared/assets/livery/templates/v1/737ng-side.svg?url';
+import b737ngTopSource from '../../../shared/assets/livery/templates/v1/737ng-top.svg?raw';
 import b737ngTop from '../../../shared/assets/livery/templates/v1/737ng-top.svg?url';
+import b747SideSource from '../../../shared/assets/livery/templates/v1/747-side.svg?raw';
 import b747Side from '../../../shared/assets/livery/templates/v1/747-side.svg?url';
+import b747TopSource from '../../../shared/assets/livery/templates/v1/747-top.svg?raw';
 import b747Top from '../../../shared/assets/livery/templates/v1/747-top.svg?url';
+import b777SideSource from '../../../shared/assets/livery/templates/v1/777-side.svg?raw';
 import b777Side from '../../../shared/assets/livery/templates/v1/777-side.svg?url';
+import b777TopSource from '../../../shared/assets/livery/templates/v1/777-top.svg?raw';
 import b777Top from '../../../shared/assets/livery/templates/v1/777-top.svg?url';
+import b777xSideSource from '../../../shared/assets/livery/templates/v1/777x-side.svg?raw';
 import b777xSide from '../../../shared/assets/livery/templates/v1/777x-side.svg?url';
+import b777xTopSource from '../../../shared/assets/livery/templates/v1/777x-top.svg?raw';
 import b777xTop from '../../../shared/assets/livery/templates/v1/777x-top.svg?url';
+import b787SideSource from '../../../shared/assets/livery/templates/v1/787-side.svg?raw';
 import b787Side from '../../../shared/assets/livery/templates/v1/787-side.svg?url';
+import b787TopSource from '../../../shared/assets/livery/templates/v1/787-top.svg?raw';
 import b787Top from '../../../shared/assets/livery/templates/v1/787-top.svg?url';
+import a220SideSource from '../../../shared/assets/livery/templates/v1/a220-side.svg?raw';
 import a220Side from '../../../shared/assets/livery/templates/v1/a220-side.svg?url';
+import a220TopSource from '../../../shared/assets/livery/templates/v1/a220-top.svg?raw';
 import a220Top from '../../../shared/assets/livery/templates/v1/a220-top.svg?url';
+import a320neoSideSource from '../../../shared/assets/livery/templates/v1/a320neo-side.svg?raw';
 import a320neoSide from '../../../shared/assets/livery/templates/v1/a320neo-side.svg?url';
+import a320neoTopSource from '../../../shared/assets/livery/templates/v1/a320neo-top.svg?raw';
 import a320neoTop from '../../../shared/assets/livery/templates/v1/a320neo-top.svg?url';
+import a350SideSource from '../../../shared/assets/livery/templates/v1/a350-side.svg?raw';
 import a350Side from '../../../shared/assets/livery/templates/v1/a350-side.svg?url';
+import a350TopSource from '../../../shared/assets/livery/templates/v1/a350-top.svg?raw';
 import a350Top from '../../../shared/assets/livery/templates/v1/a350-top.svg?url';
+import a380SideSource from '../../../shared/assets/livery/templates/v1/a380-side.svg?raw';
 import a380Side from '../../../shared/assets/livery/templates/v1/a380-side.svg?url';
+import a380TopSource from '../../../shared/assets/livery/templates/v1/a380-top.svg?raw';
 import a380Top from '../../../shared/assets/livery/templates/v1/a380-top.svg?url';
+import atr72SideSource from '../../../shared/assets/livery/templates/v1/atr-72-side.svg?raw';
 import atr72Side from '../../../shared/assets/livery/templates/v1/atr-72-side.svg?url';
+import atr72TopSource from '../../../shared/assets/livery/templates/v1/atr-72-top.svg?raw';
 import atr72Top from '../../../shared/assets/livery/templates/v1/atr-72-top.svg?url';
+import dash8SideSource from '../../../shared/assets/livery/templates/v1/dash-8-side.svg?raw';
 import dash8Side from '../../../shared/assets/livery/templates/v1/dash-8-side.svg?url';
+import dash8TopSource from '../../../shared/assets/livery/templates/v1/dash-8-top.svg?raw';
 import dash8Top from '../../../shared/assets/livery/templates/v1/dash-8-top.svg?url';
+import eJetE2SideSource from '../../../shared/assets/livery/templates/v1/e-jet-e2-side.svg?raw';
 import eJetE2Side from '../../../shared/assets/livery/templates/v1/e-jet-e2-side.svg?url';
+import eJetE2TopSource from '../../../shared/assets/livery/templates/v1/e-jet-e2-top.svg?raw';
 import eJetE2Top from '../../../shared/assets/livery/templates/v1/e-jet-e2-top.svg?url';
 
 export const LIVERY_TEMPLATE_VERSION = 'v1' as const;
@@ -40,6 +66,8 @@ export interface AircraftLiveryTemplate {
   width: typeof LIVERY_TEMPLATE_WIDTH;
   height: typeof LIVERY_TEMPLATE_HEIGHT;
   src: string;
+  /** Trusted plain SVG source used by the interactive browser renderer. */
+  source: string;
 }
 
 export interface AircraftLiveryTemplatePair {
@@ -54,6 +82,7 @@ function asset(
   slug: string,
   projection: LiveryTemplateProjection,
   src: string,
+  source: string,
 ): AircraftLiveryTemplate {
   return Object.freeze({
     id: `${slug}-${projection}-${LIVERY_TEMPLATE_VERSION}`,
@@ -64,15 +93,23 @@ function asset(
     width: LIVERY_TEMPLATE_WIDTH,
     height: LIVERY_TEMPLATE_HEIGHT,
     src,
+    source,
   });
 }
 
-function pair(family: string, slug: string, side: string, top: string): AircraftLiveryTemplatePair {
+function pair(
+  family: string,
+  slug: string,
+  side: string,
+  sideSource: string,
+  top: string,
+  topSource: string,
+): AircraftLiveryTemplatePair {
   return Object.freeze({
     family,
     slug,
-    side: asset(family, slug, 'side', side),
-    top: asset(family, slug, 'top', top),
+    side: asset(family, slug, 'side', side, sideSource),
+    top: asset(family, slug, 'top', top, topSource),
   });
 }
 
@@ -84,19 +121,19 @@ function pair(family: string, slug: string, side: string, top: string): Aircraft
  * same files without importing the web package.
  */
 export const AIRCRAFT_LIVERY_TEMPLATES: readonly AircraftLiveryTemplatePair[] = Object.freeze([
-  pair('ATR 72', 'atr-72', atr72Side, atr72Top),
-  pair('Dash 8', 'dash-8', dash8Side, dash8Top),
-  pair('E-Jet E2', 'e-jet-e2', eJetE2Side, eJetE2Top),
-  pair('A220', 'a220', a220Side, a220Top),
-  pair('737NG', '737ng', b737ngSide, b737ngTop),
-  pair('737 MAX', '737-max', b737MaxSide, b737MaxTop),
-  pair('A320neo', 'a320neo', a320neoSide, a320neoTop),
-  pair('787', '787', b787Side, b787Top),
-  pair('A350', 'a350', a350Side, a350Top),
-  pair('777', '777', b777Side, b777Top),
-  pair('777X', '777x', b777xSide, b777xTop),
-  pair('A380', 'a380', a380Side, a380Top),
-  pair('747', '747', b747Side, b747Top),
+  pair('ATR 72', 'atr-72', atr72Side, atr72SideSource, atr72Top, atr72TopSource),
+  pair('Dash 8', 'dash-8', dash8Side, dash8SideSource, dash8Top, dash8TopSource),
+  pair('E-Jet E2', 'e-jet-e2', eJetE2Side, eJetE2SideSource, eJetE2Top, eJetE2TopSource),
+  pair('A220', 'a220', a220Side, a220SideSource, a220Top, a220TopSource),
+  pair('737NG', '737ng', b737ngSide, b737ngSideSource, b737ngTop, b737ngTopSource),
+  pair('737 MAX', '737-max', b737MaxSide, b737MaxSideSource, b737MaxTop, b737MaxTopSource),
+  pair('A320neo', 'a320neo', a320neoSide, a320neoSideSource, a320neoTop, a320neoTopSource),
+  pair('787', '787', b787Side, b787SideSource, b787Top, b787TopSource),
+  pair('A350', 'a350', a350Side, a350SideSource, a350Top, a350TopSource),
+  pair('777', '777', b777Side, b777SideSource, b777Top, b777TopSource),
+  pair('777X', '777x', b777xSide, b777xSideSource, b777xTop, b777xTopSource),
+  pair('A380', 'a380', a380Side, a380SideSource, a380Top, a380TopSource),
+  pair('747', '747', b747Side, b747SideSource, b747Top, b747TopSource),
 ]);
 
 const templatesByFamily = new Map(

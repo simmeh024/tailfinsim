@@ -173,11 +173,11 @@ describe('routing', () => {
     ['/network', 'Network'],
     ['/finance', 'Finance'],
     ['/crew', 'Crew'],
-    ['/design', 'Design'],
+    ['/design', 'Shell Air'],
     ['/board', 'Board'],
   ])('%s renders its page', async (path, title) => {
     await renderAt(path);
-    expect(screen.getByRole('heading', { level: 1, name: title })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: title })).toBeInTheDocument();
   });
 
   it('redirects / to /world rather than duplicating the view', async () => {
