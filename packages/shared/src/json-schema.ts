@@ -40,6 +40,7 @@ import { ApiError, HealthResponse } from './api';
 import { LogoutResponse, MeResponse, RevokeSessionsResponse } from './auth';
 import { CrewResponse } from './crew';
 import { AirframeDetailResponse, FleetAirframesResponse } from './fleet';
+import { LiveryDocument } from './livery';
 import { MaintenanceResponse, BookCheckResponse } from './maintenance';
 import { AdminNpcResponse } from './npc';
 import { UsedMarketResponse } from './used-market';
@@ -133,6 +134,8 @@ export const usedMarketResponseJsonSchema = z.toJSONSchema(UsedMarketResponse);
 export const maintenanceResponseJsonSchema = z.toJSONSchema(MaintenanceResponse);
 export const fleetAirframesResponseJsonSchema = z.toJSONSchema(FleetAirframesResponse);
 export const airframeDetailResponseJsonSchema = z.toJSONSchema(AirframeDetailResponse);
+/** Derived from the same schema the SVG builder and raster renderer import (M6-01). */
+export const liveryDocumentJsonSchema = z.toJSONSchema(LiveryDocument);
 export const bookCheckResponseJsonSchema = z.toJSONSchema(BookCheckResponse);
 
 export const adminRequeueEventsResponseJsonSchema = z.toJSONSchema(AdminRequeueEventsResponse);

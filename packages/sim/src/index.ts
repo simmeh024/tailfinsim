@@ -42,6 +42,8 @@ export * from './economy';
 
 export * from './fleet';
 
+export * from './livery';
+
 export * from './weather';
 
 export * from './demand';

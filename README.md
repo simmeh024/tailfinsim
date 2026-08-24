@@ -239,8 +239,9 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   effective spec apart option by option. It is **read-only**: reconfiguring a build, editing a
   registration, booking a check from the page, and the used-market and order screens all
   remain to be built. Crew, ground handling, and the livery and cabin builders are future
-  work — so an aircraft has no livery to show and no cabin fitted, and the fleet table says so
-  rather than inventing either.
+  work. The versioned livery document contract exists, but no builder saves or applies one —
+  so an aircraft has no livery to show and no cabin fitted, and the fleet table says so rather
+  than inventing either.
 - **Most of the player client.** The standalone founding desk, private airline/rebrand desk,
   network/fare pages, aircraft catalogue, and dual-projection world surface are real. The
   world does not yet receive live aircraft/route data; finance, crew, design and board remain

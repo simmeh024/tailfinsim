@@ -210,8 +210,9 @@ export const FleetAirframeView = z
      * The livery sprite for this airframe, rendered **server-side**.
      *
      * Always `null` today, and that is the honest answer rather than a stub: a
-     * livery is a layered document (M6-01) rendered to a cached raster by M6-06,
-     * and neither exists — nothing writes `airframe.livery_id`. The field is here
+     * livery is an M6-01 layered document rendered to a cached raster by M6-06.
+     * The contract now exists, but saved documents and that renderer do not —
+     * nothing writes `airframe.livery_id`. The field is here
      * so the client renders a URL the server decided rather than composing a
      * livery itself, which is M4-07's second acceptance criterion as a property
      * of the contract instead of a convention. M6-06 fills it and the client does
