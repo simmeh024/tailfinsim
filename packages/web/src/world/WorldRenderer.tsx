@@ -64,7 +64,7 @@ const DEFAULT_VISIBILITY: WorldLayerVisibility = {
   routes: true,
   terminator: true,
   borders: true,
-  relief: true,
+  terrain: true,
 };
 
 export interface WorldRendererProps {
@@ -366,8 +366,8 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
           </button>
           <button
             type="button"
-            aria-pressed={visibility.relief}
-            onClick={() => toggleLayer('relief')}
+            aria-pressed={visibility.terrain}
+            onClick={() => toggleLayer('terrain')}
           >
             Terrain
           </button>

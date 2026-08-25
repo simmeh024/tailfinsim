@@ -11,6 +11,7 @@ import {
   readWorldPalette,
   type RgbaColor,
 } from './palette';
+import { TERRAIN_MEAN_LAND } from './terrain';
 
 /**
  * The world palette (App. H.7).
@@ -96,8 +97,16 @@ describe('the fallback palette', () => {
     expect(fallback.grid).toEqual(tokens.grid);
     expect(fallback.night).toEqual(tokens.night);
     expect(fallback.route).toEqual(tokens.route);
+    expect(fallback.terrain).toEqual(tokens.terrain);
   });
 });
+
+/** The terrain basemap under a theme's tint: the rgb multiplies the image. */
+function tintedTerrain(tint: RgbaColor): [number, number, number] {
+  return [0, 1, 2].map((channel) =>
+    Math.round(((TERRAIN_MEAN_LAND[channel] ?? 0) * (tint[channel] ?? 0)) / 255),
+  ) as [number, number, number];
+}
 
 describe.each(['dark', 'light'] as const)('the %s world meets WCAG AA', (theme) => {
   const tokens = worldTokens(theme);
@@ -171,6 +180,87 @@ describe.each(['dark', 'light'] as const)('the %s world meets WCAG AA', (theme) 
      */
     const dimming = contrastRatio(plain('ocean'), atNight('ocean'));
     expect(dimming).toBeGreaterThan(1.35);
+  });
+
+  it('separates the terrain basemap from the ocean in daylight', () => {
+    /*
+     * The pairing the terrain layer created, and the one it can silently break.
+     *
+     * With terrain on, the basemap covers every land texel — so `--world-land`
+     * stops describing what a reader sees, and the land-against-ocean guarantee
+     * above stops applying to the screen. This is that guarantee, restated
+     * against what is actually drawn.
+     *
+     * It is the light theme this catches. That theme's ocean is nearly white and
+     * the raster is a pale sage; untinted, the land comes out *lighter than the
+     * sea*, the polarity of the whole palette inverts and the coastline stops
+     * existing. `--world-terrain` multiplies it down, and this measures that it
+     * multiplied it down far enough. Measured: 5.11 dark, 3.68 light.
+     *
+     * `TERRAIN_MEAN_LAND` is a mean over the shipped image, so this is a floor
+     * rather than a claim about the Sahara or the Greenland ice.
+     */
+    expect(contrastRatio(tintedTerrain(token('terrain')), plain('ocean'))).toBeGreaterThanOrEqual(
+      3,
+    );
+  });
+
+  it('makes the terminator visible over the terrain', () => {
+    // The same window this file already applies to the flat fill, on the surface
+    // that replaced it: night has to be a visible step, and not so deep that the
+    // basemap goes black and takes the map with it.
+    const dimming = contrastRatio(
+      tintedTerrain(token('terrain')),
+      compositeOver(token('night'), [...tintedTerrain(token('terrain')), 255]),
+    );
+    expect(dimming).toBeGreaterThan(1.2);
+    expect(dimming).toBeLessThan(3.4);
+  });
+
+  it('keeps the coastline and the borders legible over the terrain in daylight', () => {
+    /*
+     * The lines carry the information, and the basemap is a far busier surface
+     * than the flat fill they were tuned against — so the pairings measured
+     * above against `--world-land` are re-measured against what is now actually
+     * underneath them. Measured: coastline 8.23 dark and 3.53 light, border 5.61
+     * and 3.22.
+     *
+     * **Daylight only, and that is a shortfall rather than an oversight.** Under
+     * full night none of these reaches 3:1 over the terrain — the border gets to
+     * 2.65 dark and 2.56 light, against 3.19 and 3.20 over the fill — and no
+     * choice of `--world-terrain` fixes it: even an untinted basemap only
+     * reaches 2.83. The cost is the mean image being darker than a token picked
+     * to maximise this exact ratio, and the fix is retuning `--world-border` and
+     * `--world-night`, which is a decision about every border on the map and not
+     * one the terrain layer should make on its way past.
+     *
+     * The light theme's tint is pinned by the daylight border figure: one step
+     * lighter takes it to 2.88.
+     */
+    const terrain = tintedTerrain(token('terrain'));
+    expect(contrastRatio(plain('land-line'), terrain)).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(plain('border'), terrain)).toBeGreaterThanOrEqual(3);
+  });
+
+  it('leaves a route no less visible than the flat fill did', () => {
+    /*
+     * **This one documents a weakness rather than a guarantee, and the weakness
+     * predates the terrain.**
+     *
+     * A route over open sea is fine and is asserted above. A route over *land*
+     * never was, and measured against the fill it is 1.01:1 in the dark theme —
+     * a pale cyan arc on a pale blue continent, which is not a low ratio so much
+     * as no ratio at all. The basemap does not cause that and slightly improves
+     * it, to 1.26.
+     *
+     * So the bar here is non-regression, and it is written down rather than
+     * quietly left out: fixing it means retuning `--world-route`, which is a
+     * palette decision about every route on the map and not something the
+     * terrain layer should make on its way past.
+     */
+    expect(contrastRatio(plain('route'), tintedTerrain(token('terrain')))).toBeGreaterThanOrEqual(
+      contrastRatio(plain('route'), plain('land')),
+    );
   });
 
   it('gives the globe a silhouette against space', () => {

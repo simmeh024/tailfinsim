@@ -1,7 +1,7 @@
 import { ArcLayer, BitmapLayer, GeoJsonLayer, PathLayer } from '@deck.gl/layers';
 
-import { reliefImage } from './relief';
 import { WEB_MERCATOR_MAX_LATITUDE } from './terminator';
+import { terrainImage } from './terrain';
 
 import type { BorderGeometry, LandGeometry } from './land';
 import type { WorldPalette } from './palette';
@@ -16,8 +16,8 @@ export interface WorldLayerVisibility {
   routes: boolean;
   terminator: boolean;
   borders: boolean;
-  /** Shaded relief over the land (App. H.2). */
-  relief: boolean;
+  /** The terrain basemap over the land (App. H.2). */
+  terrain: boolean;
 }
 
 export interface WorldRoute {
@@ -361,25 +361,80 @@ export function createWorldLayers({
     new GeoJsonLayer({
       id: 'world-land',
       data: land,
-      filled: true,
+      /*
+       * **Not filled while the terrain is on, and this is what removes the pale
+       * halo around every coastline.**
+       *
+       * The fill is a vector polygon, tessellated and drawn by the GPU at screen
+       * resolution. The terrain is a raster whose alpha edge is a texel wide. So
+       * the polygon's edge sits *outside* the point where the image becomes
+       * opaque, by up to one texel — and at any zoom past a texel-per-pixel that
+       * sliver is several screen pixels of `--world-land`, which in the dark
+       * theme is a pale blue. It reads as a deliberate coastal shelf. Small
+       * islands, where the raster carries only partial alpha, came out as pale
+       * blobs entirely.
+       *
+       * Painting nothing there instead lets the image's own alpha ramp blend
+       * into the ocean, which is what antialiasing a coastline is supposed to
+       * look like. Nothing is lost: the basemap is opaque across the land it
+       * covers, so the fill was only ever visible in the sliver where it did
+       * not.
+       *
+       * The stroke stays either way — it is the coastline, and it is what still
+       * outlines an island the raster is too coarse to resolve.
+       */
+      filled: !visibility.terrain,
       stroked: true,
       getFillColor: palette.land,
       getLineColor: palette.landLine,
       lineWidthMinPixels: 0.5,
       parameters: { cullMode: 'back' },
     }),
-    visibility.relief &&
+    visibility.terrain &&
       new WorldBitmapLayer({
-        id: 'world-relief',
+        id: 'world-terrain',
         // The same world-sized quad the ocean and terminator use.
         bounds,
         /*
-         * Above the land fill and below the borders, because it is an overlay on
-         * the land colour rather than a picture of the ground. Under the fill it
-         * would be invisible; over the borders it would grey out the one line on
-         * the map that has to stay crisp.
+         * Above the land fill and below the borders.
+         *
+         * Over the fill because it *replaces* it: the basemap is opaque across
+         * every land texel, so the land layer beneath is reduced to the thing
+         * that draws the coastline and the thing that shows through at whatever
+         * opacity the theme asks for. Under the borders because a country line
+         * has to stay crisp over a busy image — putting the terrain on top would
+         * bury the one line on the map that carries information.
          */
-        image: reliefImage(projection),
+        image: terrainImage(projection),
+        /*
+         * **No `textureParameters` here, and that is the opposite of what the
+         * ocean and the terminator need.**
+         *
+         * Those two are data textures built from typed arrays: one mip level and
+         * no chain, so `DATA_TEXTURE_SAMPLER` has to turn mipmap filtering off or
+         * the driver treats them as incomplete and samples them as opaque black.
+         * See the note on that constant — it cost a black sea to find.
+         *
+         * This one is a URL. deck.gl allocates `getMipLevelCount(width, height)`
+         * levels for an image source and calls `generateMipmapsWebGL`, and its
+         * default sampler is trilinear, so the layer gets a full mip chain for
+         * free. That is what makes a 4096-wide basemap safe: the whole-globe view
+         * minifies it by a factor of eight, and without the chain that is not a
+         * soft image but a shimmering one. Copying the data-texture sampler onto
+         * this layer would silently take that away.
+         */
+        /*
+         * Tint and opacity, from the theme rather than from the asset.
+         *
+         * One image serves both themes, which is only possible because the
+         * palette gets to pull it towards its own ground: `tintColor` multiplies
+         * the texels and `opacity` blends what is left over the land fill. The
+         * light theme needs that badly — untinted, this raster is *lighter than
+         * that theme's ocean*, and the coastline disappears. See
+         * `--world-terrain` in `tokens.css`.
+         */
+        tintColor: [palette.terrain[0], palette.terrain[1], palette.terrain[2]],
+        opacity: palette.terrain[3] / 255,
         /*
          * No `_imageCoordinateSystem`, for the reason the terminator gives at
          * length below: it is deck.gl's own answer to exactly this and it does

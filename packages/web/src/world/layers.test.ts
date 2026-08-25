@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 
 import { COARSE_WORLD } from './land';
 import { createWorldLayers } from './layers';
-import { reliefImage } from './relief';
 import { createDarknessField, WEB_MERCATOR_MAX_LATITUDE } from './terminator';
+import { terrainImage } from './terrain';
 
 import type { WorldRoute } from './layers';
 import type { WorldPalette } from './palette';
@@ -18,6 +18,7 @@ const palette: WorldPalette = {
   grid: [10, 11, 12, 80],
   night: [13, 14, 15, 215],
   route: [16, 17, 18, 230],
+  terrain: [200, 210, 220, 204],
 };
 
 /** Small enough to keep the test fast; the field's own tests own its contents. */
@@ -44,7 +45,7 @@ describe('projection-independent world layers', () => {
         routes: true,
         terminator: true,
         borders: false,
-        relief: false,
+        terrain: false,
       },
     });
     const routes = layers.find(
@@ -71,7 +72,7 @@ describe('projection-independent world layers', () => {
         routes: true,
         terminator: false,
         borders: false,
-        relief: false,
+        terrain: false,
       },
     });
     expect(layers.filter((layer) => layer !== false).map((layer) => layer.id)).toEqual([
@@ -81,12 +82,12 @@ describe('projection-independent world layers', () => {
     ]);
   });
 
-  it('draws the relief over the land fill and under the borders', () => {
+  it('draws the terrain over the land fill and under the borders', () => {
     /*
-     * Order is the whole of this layer's correctness. It is an overlay on the
-     * land *colour*, not a picture of the ground: beneath the fill it is
-     * invisible, and above the borders it greys out the one line on the map that
-     * has to stay crisp.
+     * Order is the whole of this layer's correctness. The basemap is opaque
+     * across every land texel, so beneath the fill it would be invisible, and
+     * above the borders it would bury the one line on the map that carries
+     * information.
      */
     const ids = createWorldLayers({
       palette,
@@ -101,18 +102,18 @@ describe('projection-independent world layers', () => {
         routes: false,
         terminator: false,
         borders: true,
-        relief: true,
+        terrain: true,
       },
     })
       .filter((layer): layer is Layer => layer !== false)
       .map((layer) => layer.id);
 
-    expect(ids).toEqual(['world-ocean', 'world-land', 'world-relief', 'world-borders']);
+    expect(ids).toEqual(['world-ocean', 'world-land', 'world-terrain', 'world-borders']);
   });
 
-  it('gives each projection its own relief, because the warp is baked in', () => {
+  it('gives each projection its own terrain image, because the warp is baked in', () => {
     /*
-     * Asserted on `reliefImage` rather than through the layer, and that is not a
+     * Asserted on `terrainImage` rather than through the layer, and that is not a
      * shortcut. `BitmapLayer.image` is an **async prop**: `layer.props.image`
      * reads as the *resolved* value, which is null until deck.gl has fetched it,
      * so a test reading it off an uninitialised layer proves nothing either way.
@@ -123,12 +124,12 @@ describe('projection-independent world layers', () => {
      * this codebase reverted it (see the terminator). The warp is baked into the
      * asset instead, which only works if each projection gets its own.
      */
-    expect(reliefImage('globe')).not.toBe(reliefImage('flat'));
-    expect(reliefImage('globe')).toBeTruthy();
-    expect(reliefImage('flat')).toBeTruthy();
+    expect(terrainImage('globe')).not.toBe(terrainImage('flat'));
+    expect(terrainImage('globe')).toBeTruthy();
+    expect(terrainImage('flat')).toBeTruthy();
   });
 
-  it('omits the relief entirely when it is switched off', () => {
+  it('omits the terrain entirely when it is switched off', () => {
     const ids = createWorldLayers({
       palette,
       quality: 'full',
@@ -142,14 +143,89 @@ describe('projection-independent world layers', () => {
         routes: false,
         terminator: false,
         borders: false,
-        relief: false,
+        terrain: false,
       },
     })
       .filter((layer): layer is Layer => layer !== false)
       .map((layer) => layer.id);
 
-    // Not merely hidden: a switched-off layer must not cost a 600 KB fetch.
-    expect(ids).not.toContain('world-relief');
+    // Not merely hidden: a switched-off layer must not cost the image fetch.
+    expect(ids).not.toContain('world-terrain');
+  });
+
+  it('stops filling the land polygon while the terrain covers it', () => {
+    /*
+     * The pale halo that hugged every coastline, and the reason small islands
+     * came out as pale blobs.
+     *
+     * The fill is a vector polygon drawn at screen resolution; the terrain is a
+     * raster whose alpha edge is a texel wide. The polygon's edge therefore sits
+     * outside the point where the image goes opaque, and that sliver — several
+     * screen pixels once zoomed — was painted `--world-land`, a pale blue in the
+     * dark theme.
+     *
+     * So the assertion is about a *prop*, not a colour: with terrain on the land
+     * layer must not fill, and with it off it must, because then the fill is the
+     * only thing drawing the land at all.
+     */
+    const landLayer = (terrain: boolean) =>
+      createWorldLayers({
+        palette,
+        quality: 'full',
+        routes: [],
+        darkness: DARKNESS,
+        land: COARSE_WORLD.land,
+        borders: COARSE_WORLD.borders,
+        projection: 'globe',
+        visibility: {
+          graticule: false,
+          routes: false,
+          terminator: false,
+          borders: false,
+          terrain,
+        },
+      })
+        .filter((layer): layer is Layer => layer !== false)
+        .find((layer) => layer.id === 'world-land');
+
+    expect(landLayer(true)?.props).toMatchObject({ filled: false, stroked: true });
+    expect(landLayer(false)?.props).toMatchObject({ filled: true, stroked: true });
+  });
+
+  it('takes the terrain tint and opacity from the theme, not from the asset', () => {
+    /*
+     * One image serves both themes, and this is the only thing that makes that
+     * possible. The raster is authored at one brightness; the light theme's sea
+     * is nearly white, so untinted the basemap is *lighter than the ocean it
+     * sits in* and the coastline stops reading. Hard-coding the tint on the
+     * layer would put that decision somewhere `tokens.css` cannot reach it, and
+     * the light theme is the one that would silently lose.
+     */
+    const terrain = createWorldLayers({
+      palette,
+      quality: 'full',
+      routes: [],
+      darkness: DARKNESS,
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
+      projection: 'globe',
+      visibility: {
+        graticule: false,
+        routes: false,
+        terminator: false,
+        borders: false,
+        terrain: true,
+      },
+    })
+      .filter((layer): layer is Layer => layer !== false)
+      .find((layer) => layer.id === 'world-terrain');
+
+    expect(terrain?.props).toMatchObject({
+      tintColor: [palette.terrain[0], palette.terrain[1], palette.terrain[2]],
+    });
+    // The alpha is the layer's opacity, so it lives beside the colour in the
+    // token rather than as a constant nowhere near the theme.
+    expect(terrain?.props.opacity).toBeCloseTo(palette.terrain[3] / 255, 5);
   });
 
   it('halves route tessellation in reduced mode', () => {
@@ -166,7 +242,7 @@ describe('projection-independent world layers', () => {
         routes: true,
         terminator: false,
         borders: false,
-        relief: false,
+        terrain: false,
       },
     });
     const reduced = createWorldLayers({
@@ -182,7 +258,7 @@ describe('projection-independent world layers', () => {
         routes: true,
         terminator: false,
         borders: false,
-        relief: false,
+        terrain: false,
       },
     });
     const fullRoutes = full.find(
@@ -220,7 +296,7 @@ describe('projection-independent world layers', () => {
         routes: true,
         terminator: true,
         borders: false,
-        relief: false,
+        terrain: false,
       },
     };
     const boundsFor = (projection: 'flat' | 'globe') =>
@@ -264,7 +340,7 @@ describe('projection-independent world layers', () => {
           routes: false,
           terminator: true,
           borders: false,
-          relief: false,
+          terrain: false,
         },
       })
         .filter((layer): layer is Layer => layer !== false)
@@ -301,17 +377,17 @@ describe('projection-independent world layers', () => {
         routes: true,
         terminator: true,
         borders: false,
-        relief: true,
+        terrain: true,
       },
     }).filter((layer): layer is Layer => layer !== false);
 
     /*
-     * The relief belongs in this list for exactly the reason the other two do:
+     * The terrain belongs in this list for exactly the reason the other two do:
      * it is a world-sized quad, so its near and far halves project with opposite
      * apparent winding and back-face culling discards one of them. When it
      * discards the near one the planet goes black.
      */
-    for (const id of ['world-ocean', 'world-terminator', 'world-relief']) {
+    for (const id of ['world-ocean', 'world-terminator', 'world-terrain']) {
       const layer = layers.find((candidate) => candidate.id === id);
       const parameters = (layer?.props as unknown as { parameters?: { cullMode?: string } })
         .parameters;
@@ -344,7 +420,7 @@ describe('projection-independent world layers', () => {
         routes: false,
         terminator: true,
         borders: false,
-        relief: false,
+        terrain: false,
       },
     }).filter((layer): layer is Layer => layer !== false);
 
@@ -398,7 +474,7 @@ describe('projection-independent world layers', () => {
         routes: false,
         terminator: true,
         borders: false,
-        relief: false,
+        terrain: false,
       },
     }).filter((layer): layer is Layer => layer !== false);
 
@@ -438,7 +514,7 @@ describe('projection-independent world layers', () => {
         land: COARSE_WORLD.land,
         borders: COARSE_WORLD.borders,
         projection: 'globe',
-        visibility: { graticule: false, routes: false, terminator: false, borders, relief: false },
+        visibility: { graticule: false, routes: false, terminator: false, borders, terrain: false },
       })
         .filter((layer): layer is Layer => layer !== false)
         .map((layer) => layer.id);
@@ -459,7 +535,7 @@ describe('projection-independent world layers', () => {
         routes: false,
         terminator: false,
         borders: true,
-        relief: false,
+        terrain: false,
       },
     })
       .filter((l): l is Layer => l !== false)
@@ -494,7 +570,7 @@ describe('projection-independent world layers', () => {
           routes: false,
           terminator: true,
           borders: false,
-          relief: false,
+          terrain: false,
         },
       }).filter((layer): layer is Layer => layer !== false);
       const terminator = layers.find((layer) => layer.id === 'world-terminator');
@@ -527,7 +603,7 @@ describe('projection-independent world layers', () => {
         routes: false,
         terminator: true,
         borders: false,
-        relief: false,
+        terrain: false,
       },
     }).filter((layer): layer is Layer => layer !== false);
 
@@ -576,7 +652,7 @@ describe('projection-independent world layers', () => {
         routes: true,
         terminator: true,
         borders: false,
-        relief: false,
+        terrain: false,
       },
     }).filter((layer): layer is Layer => layer !== false);
 
@@ -622,7 +698,7 @@ describe('projection-independent world layers', () => {
         routes: false,
         terminator: true,
         borders: false,
-        relief: false,
+        terrain: false,
       },
     }).filter((layer): layer is Layer => layer !== false);
 
@@ -650,7 +726,7 @@ describe('projection-independent world layers', () => {
         routes: false,
         terminator: false,
         borders: false,
-        relief: false,
+        terrain: false,
       },
     }).filter((layer): layer is Layer => layer !== false);
 
@@ -680,7 +756,7 @@ describe('projection-independent world layers', () => {
         routes: false,
         terminator: true,
         borders: false,
-        relief: false,
+        terrain: false,
       },
     }).filter((layer): layer is Layer => layer !== false);
 
@@ -732,7 +808,7 @@ describe('projection-independent world layers', () => {
           routes: false,
           terminator: false,
           borders: false,
-          relief: false,
+          terrain: false,
         },
       }).find((layer) => layer !== false && layer.id === 'world-land') as Layer
     ).props.data as { features?: { geometry: { type: string; coordinates: unknown } }[] };
