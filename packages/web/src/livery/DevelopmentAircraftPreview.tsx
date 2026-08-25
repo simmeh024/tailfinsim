@@ -10,6 +10,7 @@ import type {
   Object3D,
   PerspectiveCamera,
   Scene,
+  Side,
   WebGLRenderer,
 } from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -24,6 +25,29 @@ const MATERIAL_ZONE = Object.freeze({
   'mat-winglets': 'winglets',
   'mat-nacelle-exteriors': 'engine_nacelles',
 } satisfies Readonly<Record<string, LiveryZone>>);
+
+/**
+ * The salvaged candidate contains a small number of exterior triangles whose
+ * winding is reversed. Rendering those materials single-sided makes the hull
+ * appear transparent as the camera moves around it. Keep the correction scoped
+ * to paintable aircraft skin so glass and engine internals retain their authored
+ * material behaviour.
+ */
+export function configureA320neoDevelopmentExteriorMaterial(
+  material: MeshStandardMaterial,
+  doubleSide: Side,
+): boolean {
+  if (!Object.hasOwn(MATERIAL_ZONE, material.name)) return false;
+
+  material.transparent = false;
+  material.opacity = 1;
+  material.alphaTest = 0;
+  material.depthTest = true;
+  material.depthWrite = true;
+  material.side = doubleSide;
+  material.needsUpdate = true;
+  return true;
+}
 
 type Rgb = readonly [number, number, number];
 
@@ -232,6 +256,7 @@ export function DevelopmentAircraftPreview({
           const color = colorsRef.current[material.name];
           if (color !== undefined) material.color.set(color);
           material.envMapIntensity = 0.65;
+          configureA320neoDevelopmentExteriorMaterial(material, THREE.DoubleSide);
         });
         scene.add(model);
 
