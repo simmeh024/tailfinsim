@@ -1,8 +1,12 @@
+import { DoubleSide, FrontSide, MeshStandardMaterial } from 'three';
 import { describe, expect, it } from 'vitest';
 
 import { LiveryColor, LiveryDocument, type LiveryLayer } from '@tailfin/shared';
 
-import { a320neoDevelopmentMaterialColors } from './DevelopmentAircraftPreview';
+import {
+  a320neoDevelopmentMaterialColors,
+  configureA320neoDevelopmentExteriorMaterial,
+} from './DevelopmentAircraftPreview';
 import { createBaseFillLayer } from './editor-model';
 
 function paintStyle(color: string) {
@@ -57,5 +61,35 @@ describe('A320neo dev material preview', () => {
     expect(colors['mat-fuselage']).toBe('#808080');
     expect(colors['mat-cockpit-glass']).toBeUndefined();
     expect(colors['mat-cabin-windows']).toBeUndefined();
+  });
+
+  it('makes only paintable exterior materials opaque and double-sided', () => {
+    const exterior = new MeshStandardMaterial({
+      name: 'mat-fuselage',
+      opacity: 0.25,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      side: FrontSide,
+    });
+    const glass = new MeshStandardMaterial({
+      name: 'mat-cockpit-glass',
+      opacity: 0.4,
+      transparent: true,
+      side: FrontSide,
+    });
+
+    expect(configureA320neoDevelopmentExteriorMaterial(exterior, DoubleSide)).toBe(true);
+    expect(exterior).toMatchObject({
+      alphaTest: 0,
+      depthTest: true,
+      depthWrite: true,
+      opacity: 1,
+      side: DoubleSide,
+      transparent: false,
+    });
+
+    expect(configureA320neoDevelopmentExteriorMaterial(glass, DoubleSide)).toBe(false);
+    expect(glass).toMatchObject({ opacity: 0.4, side: FrontSide, transparent: true });
   });
 });
