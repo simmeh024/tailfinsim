@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -39,6 +39,18 @@ const here = dirname(fileURLToPath(import.meta.url));
 /** Both resolve the same from `src` (dev) and `dist` (built) — each sits one level under packages/server. */
 const HOLDING_PAGE = resolve(here, '..', '..', 'web', 'holding', 'index.html');
 const CLIENT_DIR = resolve(here, '..', '..', 'web', 'dist', 'client');
+const DEV_A320NEO_CANDIDATE = resolve(
+  here,
+  '..',
+  '..',
+  '..',
+  'assets',
+  'aircraft',
+  'candidates',
+  'a320neo',
+  '1.0.0',
+  'aircraft.glb',
+);
 
 export interface BuildAppOptions {
   env: ServerEnv;
@@ -216,6 +228,37 @@ export function buildApp({
           serverTime: new Date().toISOString(),
         }),
   );
+
+  /**
+   * Review-only bridge for the rights-pending A320neo candidate.
+   *
+   * The candidate deliberately remains outside the runtime registry. Serving it
+   * here is keyed to the server's explicit environment label, so a production
+   * process cannot expose it even if the repository checkout contains the file.
+   * No public cache may retain the candidate while its licence pack is pending.
+   */
+  if (env.environmentLabel === 'dev') {
+    app.get(
+      '/api/dev/assets/aircraft/a320neo.glb',
+      { logLevel: 'warn' },
+      async (_request, reply) => {
+        if (!existsSync(DEV_A320NEO_CANDIDATE)) {
+          return reply.code(404).send({
+            code: 'candidate_not_found',
+            message: 'A320neo review candidate is not available',
+          });
+        }
+        const { size } = statSync(DEV_A320NEO_CANDIDATE);
+        return reply
+          .code(200)
+          .type('model/gltf-binary')
+          .header('cache-control', 'private, no-store')
+          .header('content-length', String(size))
+          .header('x-content-type-options', 'nosniff')
+          .send(createReadStream(DEV_A320NEO_CANDIDATE));
+      },
+    );
+  }
 
   /**
    * The public surface at `/` — one of two, chosen by `WEB_SURFACE`.

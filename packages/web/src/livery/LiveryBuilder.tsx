@@ -13,7 +13,9 @@ import { useOutletContext } from 'react-router';
 import { LiveryBlendMode, LiveryZone, type LiveryLayer } from '@tailfin/shared';
 
 import { useContextSelection } from '../shell/context-selection';
+import { useBuildInfo } from '../version/BuildBadge';
 
+import { DevelopmentAircraftPreview } from './DevelopmentAircraftPreview';
 import {
   DEFAULT_PRIMARY_COLOR,
   DEFAULT_SECONDARY_COLOR,
@@ -605,10 +607,12 @@ export function LiveryBuilder({
   storageKey,
   airlineName,
   storage = browserStorage(),
+  developmentPreview = false,
 }: {
   storageKey: string;
   airlineName: string;
   storage?: DraftStorage | null;
+  developmentPreview?: boolean;
 }): ReactNode {
   const [history, dispatch] = useReducer(liveryEditorReducer, undefined, (): LiveryEditorHistory =>
     createEditorHistory(storage === null ? undefined : loadLiveryDraft(storage, storageKey)),
@@ -954,11 +958,27 @@ export function LiveryBuilder({
           <div className="livery-canvas__measure">
             <span>{snapshot.family}</span>
             <span className="figure">
-              {previewMode === 'fleet' ? 'Material preview' : '1200 × 400 paint map'}
+              {previewMode === 'fleet'
+                ? developmentPreview && snapshot.family === 'A320neo'
+                  ? 'True 3D dev review'
+                  : 'Material preview'
+                : '1200 × 400 paint map'}
             </span>
           </div>
           {previewMode === 'fleet' ? (
-            <FleetAircraftPreview family={snapshot.family} layers={snapshot.document.layers} />
+            developmentPreview && snapshot.family === 'A320neo' ? (
+              <DevelopmentAircraftPreview
+                layers={snapshot.document.layers}
+                fallback={
+                  <FleetAircraftPreview
+                    family={snapshot.family}
+                    layers={snapshot.document.layers}
+                  />
+                }
+              />
+            ) : (
+              <FleetAircraftPreview family={snapshot.family} layers={snapshot.document.layers} />
+            )
           ) : renderedSvg === null ? (
             <p role="alert">No side-profile paint map exists for this family.</p>
           ) : (
@@ -970,7 +990,9 @@ export function LiveryBuilder({
           )}
           <p className="livery-canvas__caption">
             {previewMode === 'fleet'
-              ? 'Fleet render · illustrative material preview · paint map remains canonical'
+              ? developmentPreview && snapshot.family === 'A320neo'
+                ? 'Interactive candidate model · whole-surface coats preview live · paint map remains canonical'
+                : 'Fleet render · illustrative material preview · paint map remains canonical'
               : 'Exact zone clipping · canonical side-profile authoring'}
           </p>
         </div>
@@ -988,6 +1010,7 @@ export function LiveryBuilder({
 export function LiveryBuilderPage(): ReactNode {
   const { ownAirline, ownAirlineLoading, ownAirlineError, reloadOwnAirline } =
     useOutletContext<OwnAirlineShellContext>();
+  const build = useBuildInfo();
 
   if (ownAirlineLoading) {
     return (
@@ -1021,6 +1044,7 @@ export function LiveryBuilderPage(): ReactNode {
     <LiveryBuilder
       storageKey={liveryDraftStorageKey(ownAirline.airline.id)}
       airlineName={ownAirline.airline.name}
+      developmentPreview={build?.environment === 'dev'}
     />
   );
 }
