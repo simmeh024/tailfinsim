@@ -8,8 +8,8 @@ Neither of those licences applies to third-party material. This file records
 what Tailfin depends on, and on what terms, so that adopting a copyleft licence
 does not accidentally read as a claim over somebody else's work.
 
-Checked against the dependency graph on 22 August 2026, at the commit that
-introduced this file.
+Checked against the dependency graph on 25 August 2026, including the M6-12
+aircraft-asset authoring toolchain.
 
 ## Dependencies
 
@@ -17,21 +17,24 @@ Tailfin declares no runtime dependency of its own beyond the workspace packages;
 everything below arrives through the lockfile. `pnpm-lock.yaml` is the exact
 record, and `pnpm licenses list` reproduces this table.
 
-| Licence       | Packages | Compatible with AGPL-3.0                                                                                                                                                                  |
-| ------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| MIT           | 258      | Yes — permissive                                                                                                                                                                          |
-| Apache-2.0    | 18       | Yes, one-way: Apache-2.0 code may be combined into an AGPL-3.0 work. Includes `typescript` and `drizzle-orm`                                                                              |
-| ISC           | 15       | Yes — permissive                                                                                                                                                                          |
-| BSD-3-Clause  | 10       | Yes — permissive                                                                                                                                                                          |
-| BSD-2-Clause  | 8        | Yes — permissive                                                                                                                                                                          |
-| BlueOak-1.0.0 | 5        | Yes — permissive                                                                                                                                                                          |
-| MIT-0         | 2        | Yes — permissive                                                                                                                                                                          |
-| MPL-2.0       | 2        | Yes. `lightningcss` and its Windows binary, both build-time only. MPL-2.0 §3.3 permits combination with a secondary licence, and neither is marked "Incompatible With Secondary Licenses" |
-| CC0-1.0       | 1        | Yes. `mdn-data`, a public-domain dedication                                                                                                                                               |
+| Licence                          | Packages | Compatible with AGPL-3.0                                                                                                                                                                              |
+| -------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MIT                              | 308      | Yes — permissive. Includes glTF-Transform and Meshoptimizer                                                                                                                                           |
+| Apache-2.0                       | 22       | Yes, one-way: Apache-2.0 code may be combined into an AGPL-3.0 work. Includes `typescript`, `drizzle-orm` and Khronos glTF Validator                                                                  |
+| ISC                              | 18       | Yes — permissive                                                                                                                                                                                      |
+| BSD-3-Clause                     | 10       | Yes — permissive                                                                                                                                                                                      |
+| BSD-2-Clause                     | 9        | Yes — permissive                                                                                                                                                                                      |
+| BlueOak-1.0.0                    | 5        | Yes — permissive                                                                                                                                                                                      |
+| MIT-0                            | 2        | Yes — permissive                                                                                                                                                                                      |
+| MPL-2.0                          | 2        | Yes. `lightningcss` and its Windows binary, both build-time only. MPL-2.0 §3.3 permits combination with a secondary licence, and neither is marked "Incompatible With Secondary Licenses"             |
+| CC0-1.0                          | 1        | Yes. `mdn-data`, a public-domain dedication                                                                                                                                                           |
+| 0BSD                             | 1        | Yes — permissive. `tslib`                                                                                                                                                                             |
+| Apache-2.0 AND LGPL-3.0-or-later | 1        | Yes. The platform-specific Sharp package contains separately replaceable libvips and is reached only by the build-time glTF authoring dependency; the running Tailfin server does not ship or load it |
 
-**No dependency is copyleft, and none is licence-incompatible.** That is worth
-stating plainly, because the usual objection to adopting the AGPL is that some
-dependency will not permit it, and here none does.
+**No dependency is licence-incompatible.** One build-tool binary now carries LGPL-3.0-or-later
+alongside Apache-2.0; it remains a separately packaged, replaceable library and is not linked into
+the deployed server bundle. That distinction is recorded rather than flattening it into the
+permissive rows.
 
 Two notes on the compatibility column. Apache-2.0 is compatible with GPLv3 and
 AGPLv3 but not with GPLv2 — Tailfin is on v3, so this does not arise. And the

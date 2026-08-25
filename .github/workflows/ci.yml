@@ -101,6 +101,12 @@ jobs:
         # and Vite compile from source rather than from `tsc -b` output.
         run: pnpm build
 
+      - name: Validate aircraft runtime assets
+        # M6-12: the registry owns every runtime GLB path. This also builds the
+        # intake CLI, so a dependency/API change cannot leave CI running stale
+        # generated output while the authoring tool itself is broken.
+        run: pnpm assets:validate
+
       - name: Test the running Caddy security policy
         # Exercise the committed Caddyfile itself in report-only and enforced
         # modes. The release archive is pinned and verified before execution;

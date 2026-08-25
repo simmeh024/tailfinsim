@@ -1,0 +1,26 @@
+{
+  "name": "@tailfin/assets",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -b",
+    "build": "node build.mjs",
+    "intake": "pnpm build && node dist/cli.js intake",
+    "validate": "pnpm build && node dist/cli.js validate --root ../../assets/aircraft",
+    "rollback": "pnpm build && node dist/cli.js rollback"
+  },
+  "dependencies": {
+    "@gltf-transform/core": "^4.4.2",
+    "@gltf-transform/extensions": "^4.4.2",
+    "@gltf-transform/functions": "^4.4.2",
+    "@tailfin/shared": "workspace:*",
+    "gltf-validator": "2.0.0-dev.3.10",
+    "meshoptimizer": "^1.2.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "esbuild": "^0.28.2"
+  }
+}

@@ -70,6 +70,15 @@ into `world_event.fire_at`, which is game time and changes meaning with world sp
 complete boundary and its current exclusions are in
 [`docs/aircraft-acquisition.md`](docs/aircraft-acquisition.md).
 
+**Aircraft runtime assets are generated identities, never hand-written paths.** An M6-11 source
+GLB is immutable and enters only through `pnpm assets:intake`; the M6-12 pipeline binds its source,
+manifest, optimisation decision and pinned tool versions into one content identity, then revalidates
+the derived GLB before updating `assets/aircraft/registry.json`. `pnpm assets:validate` rejects an
+orphan GLB or a changed hash. Rollback changes `activeAssetVersions` and retains every exact version,
+because published liveries never resolve through `latest`. The full boundary, including budget
+exceptions and the separation from VIS object storage/CDN work, is in
+[`docs/aircraft-asset-pipeline.md`](docs/aircraft-asset-pipeline.md).
+
 **A world pins two versions, and they are not the same version.** `economy_config_version`
 is §22.3's balance payload; `aircraft_catalogue_version` is §22.5's eighteen aircraft, stored
 as immutable `aircraft_type` rows keyed by `(catalogue_version, designation)`. Both are seeded

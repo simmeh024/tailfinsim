@@ -105,6 +105,11 @@ to redistribute their marks or trade dress.
 The test fixtures exercise all four outcomes, including an invalid-axis model, incomplete
 “Pro licence,” denied redistribution and embedded airline/trademark content.
 
+An `accepted` manifest is source admission, not a browser-ready asset. M6-12's
+[deterministic asset pipeline](aircraft-asset-pipeline.md) validates the GLB bytes with the official
+validator and Tailfin rules, performs evidence-gated optimisation, revalidates the output and emits
+the versioned runtime registry. CI admits no committed runtime GLB outside that registry.
+
 ## Catalogue-derived coverage matrix
 
 `AIRCRAFT_ASSET_COVERAGE_V1` iterates `AIRCRAFT_CATALOGUE_V1.types` in canonical order. Authored
