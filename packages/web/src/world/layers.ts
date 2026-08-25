@@ -385,6 +385,23 @@ export function createWorldLayers({
          */
         image: terrainImage(projection),
         /*
+         * **No `textureParameters` here, and that is the opposite of what the
+         * ocean and the terminator need.**
+         *
+         * Those two are data textures built from typed arrays: one mip level and
+         * no chain, so `DATA_TEXTURE_SAMPLER` has to turn mipmap filtering off or
+         * the driver treats them as incomplete and samples them as opaque black.
+         * See the note on that constant — it cost a black sea to find.
+         *
+         * This one is a URL. deck.gl allocates `getMipLevelCount(width, height)`
+         * levels for an image source and calls `generateMipmapsWebGL`, and its
+         * default sampler is trilinear, so the layer gets a full mip chain for
+         * free. That is what makes a 4096-wide basemap safe: the whole-globe view
+         * minifies it by a factor of eight, and without the chain that is not a
+         * soft image but a shimmering one. Copying the data-texture sampler onto
+         * this layer would silently take that away.
+         */
+        /*
          * Tint and opacity, from the theme rather than from the asset.
          *
          * One image serves both themes, which is only possible because the

@@ -149,18 +149,40 @@ is ever fetched.
 
 |                         |   size | when                             |
 | ----------------------- | -----: | -------------------------------- |
-| `terrain-equirect-2048` | 141 KB | globe, once, if terrain is on    |
-| `terrain-mercator-2048` | 136 KB | flat map, once, if terrain is on |
+| `terrain-equirect-4096` | 501 KB | globe, once, if terrain is on    |
+| `terrain-mercator-4096` | 460 KB | flat map, once, if terrain is on |
 
-Both are a quarter of the greyscale overlay they replace, which is not a paradox: the hillshade
-carried its detail in an alpha channel full of high-frequency noise, and smooth colour compresses
-far better than that did.
+Both still come in under the greyscale overlay they replace, at twice the grid, which is not a
+paradox: the hillshade carried its detail in an alpha channel full of high-frequency noise, and
+smooth colour compresses far better than that did.
 
-2048 × 1024 is about **20 km per pixel at the equator** — honest at world and continent zoom and
-visibly soft if you go looking at a city. Tiles are the answer to that, and they are the answer
-this project has deliberately not taken; see the note on `land-10m` below. The Terrain toggle
-turns the layer off entirely rather than hiding it, so a session that does not want it never
-pays the fetch.
+4096 × 2048 is about **10 km per pixel at the equator** — honest from the whole globe down to a
+country and visibly soft if you go looking at a city. Tiles are the answer to that, and they are
+the answer this project has deliberately not taken; see the note on `land-10m` below. The
+Terrain toggle turns the layer off entirely rather than hiding it, so a session that does not
+want it never pays the fetch.
+
+**A 4096 texture is only safe because deck.gl mipmaps it.** An image-sourced `BitmapLayer`
+texture gets `getMipLevelCount` levels, `generateMipmapsWebGL` and a trilinear default sampler,
+so the whole-globe view — which minifies it eightfold — is filtered rather than sampled. This is
+the exact opposite of what the ocean and terminator layers need: those are typed-array data
+textures with one level, and `DATA_TEXTURE_SAMPLER` must turn mipmap filtering _off_ for them or
+the driver treats them as incomplete and samples them as opaque black. Do not copy that sampler
+onto the terrain layer.
+
+### Why the coastline in the asset is smooth
+
+Two things in the generator, both of which were wrong in the first version and visibly so.
+
+The mask is rasterised at **4×** the output and boxed down. A 2× box yields only five alpha
+levels, so a coastline at a shallow angle still lands as a staircase with a soft nose on each
+step; 4× gives seventeen.
+
+More importantly, a polygon vertex now lands at a **fractional row**. The row lookup is a binary
+search over a latitude table, and returning the row index alone quantised every vertex to a whole
+scanline _before_ the supersampled grid could smooth anything — so the shape being rasterised was
+already a staircase and no amount of supersampling recovered it. Longitude never had the problem,
+which is why the artefact read as horizontal steps rather than as general roughness.
 
 Routes are `ArcLayer` instances with `greatCircle: true`. That one implementation is used in
 both projections. In flat mode deck.gl splits/wraps the great-circle arc at the antimeridian;

@@ -1,5 +1,5 @@
-import equirectTerrain from './assets/terrain-equirect-2048.webp';
-import mercatorTerrain from './assets/terrain-mercator-2048.webp';
+import equirectTerrain from './assets/terrain-equirect-4096.webp';
+import mercatorTerrain from './assets/terrain-mercator-4096.webp';
 
 import type { WorldProjection } from './projection';
 
@@ -54,10 +54,17 @@ import type { WorldProjection } from './projection';
  * public-domain raster, masked by the same land polygons the map already draws —
  * so the terrain can never bleed past the coastline on screen.
  *
- * The ceiling that buys is resolution: 2048 x 1024 is about 20 km per pixel at
- * the equator, which is honest at world and continent zoom and visibly soft if
- * you go looking at a city. Tiles are the answer to that, and they are the
- * answer this project has deliberately not taken yet.
+ * The ceiling that buys is resolution: 4096 x 2048 is about 10 km per pixel at
+ * the equator, which is honest from the whole globe down to a country and
+ * visibly soft if you go looking at a city. Tiles are the answer to that, and
+ * they are the answer this project has deliberately not taken yet.
+ *
+ * That is twice the grid the first version shipped at, and it cost nothing that
+ * was not already being spent: 501 and 460 KB against the 603 and 610 KB of the
+ * greyscale hillshade these replaced. It is safe to minify because deck.gl
+ * builds a full mip chain for an image-sourced texture — see the note on the
+ * layer in `layers.ts`, which is the opposite of what the two data textures
+ * beside it need.
  *
  * Only the projection in use is ever fetched. These are URLs at module scope,
  * not image data — the bytes arrive when a layer first asks for them.
@@ -74,7 +81,7 @@ export function terrainImage(projection: WorldProjection): string {
  * Exported so a test can assert the generator, the layer and the bounds have not
  * drifted apart — three places that have to agree about one grid.
  */
-export const TERRAIN_SIZE = { width: 2048, height: 1024 } as const;
+export const TERRAIN_SIZE = { width: 4096, height: 2048 } as const;
 
 /**
  * The mean colour of the land in the shipped asset, measured rather than chosen.
@@ -95,4 +102,4 @@ export const TERRAIN_SIZE = { width: 2048, height: 1024 } as const;
  * a guard against a retune that sinks the whole basemap into the sea, not a
  * claim about any one pixel.
  */
-export const TERRAIN_MEAN_LAND: readonly [number, number, number] = [179, 190, 185];
+export const TERRAIN_MEAN_LAND: readonly [number, number, number] = [179, 189, 184];

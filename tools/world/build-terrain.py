@@ -21,10 +21,10 @@ coastline on screen. Inland water is left as the raster drew it: a lake is part
 of the land polygon, and a terrain map that paints over the Caspian is worse.
 
 **The mask is supersampled and the colour is area-averaged.** A hard 1-bit mask
-at 2048 px puts a stair-step on every coast, and picking one source row per
-output row aliases a 10800 px raster into speckle. So the mask is rasterised at
-2x and boxed down, and each output row averages the source rows it actually
-spans.
+puts a stair-step on every coast, and picking one source row per output row
+aliases a 10800 px raster into speckle. So the mask is rasterised at 4x and
+boxed down, each vertex lands at a *fractional* row rather than snapping to a
+scanline, and each output row averages the source rows it actually spans.
 
 **The projection has to be baked in.** `BitmapLayer` interpolates texture
 coordinates linearly in whatever the viewport uses, and
@@ -57,9 +57,16 @@ HEIGHT_OF = lambda w: w // 2
 MAX_MERCATOR_LAT = 85.051129
 
 # The mask is rasterised at this multiple of the output and boxed down, so a
-# coastline arrives as a soft alpha edge rather than a stair-step. 2x is where
-# the improvement stops being visible at 2048.
-MASK_SUPERSAMPLE = 2
+# coastline arrives as a soft alpha edge rather than a stair-step.
+#
+# **4x rather than 2x, because 2x is not enough and it shows.** A 2x2 box can
+# only produce five alpha levels -- 0, 63, 127, 191, 255 -- so a coastline
+# running at a shallow angle still lands as a visible staircase with a slightly
+# soft nose on each step. 4x4 gives seventeen levels, which is the difference
+# between an edge that reads as a line and one that reads as pixels. Measured on
+# the western Mediterranean: 506 partially-transparent texels at 2x against
+# roughly four times that at 4x, spread over the same coastline.
+MASK_SUPERSAMPLE = 4
 
 # WebP settings. The alpha channel is the coastline, so it is kept near-lossless
 # while the colour is allowed to compress: a smeared coast is visible at a glance
@@ -170,7 +177,18 @@ def land_mask(polys, width, height, lat_of_row):
                 lo = mid + 1
             else:
                 hi = mid
-        return (x, float(lo))
+        # **Interpolated between the two rows, not snapped to one.** Returning
+        # the row index alone quantises every vertex's latitude to a whole
+        # scanline *before* the supersampled grid gets to smooth anything, so
+        # the polygon being rasterised is already a staircase and no amount of
+        # supersampling recovers the coastline that was thrown away. Longitude
+        # never had this problem, which is why the artefact reads as horizontal
+        # steps rather than as general roughness.
+        if lo == 0:
+            return (x, 0.0)
+        upper, lower = lats[lo - 1], lats[lo]
+        span = upper - lower
+        return (x, (lo - 1) + (0.0 if span <= 0 else (upper - lat) / span))
 
     for rings in polys:
         for index, ring in enumerate(rings):
@@ -270,7 +288,7 @@ def equirect_lat_edge(y, height):
 
 def main():
     src, land, out_dir = sys.argv[1], sys.argv[2], sys.argv[3]
-    width = int(sys.argv[4]) if len(sys.argv) > 4 else 2048
+    width = int(sys.argv[4]) if len(sys.argv) > 4 else 4096
     height = HEIGHT_OF(width)
     os.makedirs(out_dir, exist_ok=True)
 

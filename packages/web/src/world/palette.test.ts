@@ -195,7 +195,7 @@ describe.each(['dark', 'light'] as const)('the %s world meets WCAG AA', (theme) 
      * the raster is a pale sage; untinted, the land comes out *lighter than the
      * sea*, the polarity of the whole palette inverts and the coastline stops
      * existing. `--world-terrain` multiplies it down, and this measures that it
-     * multiplied it down far enough. Measured: 5.16 dark, 3.68 light.
+     * multiplied it down far enough. Measured: 5.11 dark, 3.68 light.
      *
      * `TERRAIN_MEAN_LAND` is a mean over the shipped image, so this is a floor
      * rather than a claim about the Sahara or the Greenland ice.
@@ -222,7 +222,7 @@ describe.each(['dark', 'light'] as const)('the %s world meets WCAG AA', (theme) 
      * The lines carry the information, and the basemap is a far busier surface
      * than the flat fill they were tuned against — so the pairings measured
      * above against `--world-land` are re-measured against what is now actually
-     * underneath them. Measured: coastline 8.31 dark and 3.53 light, border 5.66
+     * underneath them. Measured: coastline 8.23 dark and 3.53 light, border 5.61
      * and 3.22.
      *
      * **Daylight only, and that is a shortfall rather than an oversight.** Under
