@@ -54,8 +54,9 @@ contain aircraft-name conditionals.
 
 The material-binding manifest classifies paintable materials and protected materials such as
 glass, lamps, tyres and engine interiors. Those classifications belong to the versioned asset
-manifest, not to hard-coded names in the document or renderer. The manifest and asset files are
-delivered by the asset-pipeline follow-up (#718).
+manifest, not to hard-coded names in the document or renderer. The intake contract and
+catalogue-derived coverage matrix are documented in
+[`aircraft-3d-assets.md`](../aircraft-3d-assets.md) and implemented by M6-11 (#718).
 
 ### 3. Canonical bytes define livery content identity
 

@@ -26,7 +26,8 @@ document must contain at least one complete binding. A legacy document must cont
 model, UV map or material manifest upgrade therefore creates a new compatibility tuple; it
 cannot silently change a previously published livery.
 
-The material-binding resource owns paintable and protected material semantics. The livery
+The material-binding resource owns paintable and protected material semantics. Its intake
+contract is documented in [`aircraft-3d-assets.md`](aircraft-3d-assets.md). The livery
 document does not name cockpit glass, lights, tyres or aircraft families itself. Likewise,
 anchors are stable ids resolved through the bound anchor-set resource rather than coordinates
 hard-coded for an A320, ATR or any other family.
