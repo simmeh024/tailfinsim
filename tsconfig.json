@@ -3,6 +3,7 @@
   "files": [],
   "references": [
     { "path": "./packages/shared" },
+    { "path": "./packages/assets" },
     { "path": "./packages/sim" },
     { "path": "./packages/server" },
     { "path": "./packages/web" }

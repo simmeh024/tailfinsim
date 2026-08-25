@@ -27,6 +27,7 @@ import {
 } from './aircraft-acquisition';
 import { AircraftAssetManifest } from './aircraft-asset';
 import { FleetCatalogueResponse } from './aircraft-catalogue';
+import { AircraftRuntimeRegistry } from './aircraft-runtime';
 import {
   AirlineFoundingAirportListResponse,
   AirlineFoundingOptionsResponse,
@@ -132,6 +133,7 @@ export const aircraftAcquisitionQuoteResponseJsonSchema = z.toJSONSchema(
 export const aircraftAcquisitionResponseJsonSchema = z.toJSONSchema(AircraftAcquisitionResponse);
 export const aircraftOrderListResponseJsonSchema = z.toJSONSchema(AircraftOrderListResponse);
 export const aircraftAssetManifestJsonSchema = z.toJSONSchema(AircraftAssetManifest);
+export const aircraftRuntimeRegistryJsonSchema = z.toJSONSchema(AircraftRuntimeRegistry);
 export const usedMarketResponseJsonSchema = z.toJSONSchema(UsedMarketResponse);
 export const maintenanceResponseJsonSchema = z.toJSONSchema(MaintenanceResponse);
 export const fleetAirframesResponseJsonSchema = z.toJSONSchema(FleetAirframesResponse);

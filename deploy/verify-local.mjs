@@ -17,6 +17,7 @@ const STAGES = [
   { key: 'types', label: 'Types', script: 'typecheck' },
   { key: 'lint', label: 'Lint', script: 'lint' },
   { key: 'formatting', label: 'Formatting', script: 'format:check' },
+  { key: 'assets', label: 'Aircraft assets', script: 'assets:validate' },
   { key: 'build', label: 'Production build', script: 'build' },
   { key: 'tests', label: 'Tests', script: 'test:coverage' },
   { key: 'performance', label: 'Performance', script: 'test:perf' },
@@ -26,6 +27,7 @@ const SUMMARY_ORDER = [
   ...STAGES.slice(0, 5).map(({ key, label }) => ({ key, label })),
   { key: 'database', label: 'Database tests' },
   STAGES[5],
+  STAGES[6],
 ];
 
 const serverRequire = createRequire(new URL('../packages/server/package.json', import.meta.url));

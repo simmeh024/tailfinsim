@@ -16,6 +16,8 @@ wall-clock time, that never pauses.
 - **Architecture decisions:** [`docs/adr/`](docs/adr/)
 - **Authorization boundary:** [`docs/authorization-matrix.md`](docs/authorization-matrix.md)
 - **Feature contracts:** [`docs/aircraft-acquisition.md`](docs/aircraft-acquisition.md) ·
+  [`docs/aircraft-3d-assets.md`](docs/aircraft-3d-assets.md) ·
+  [`docs/aircraft-asset-pipeline.md`](docs/aircraft-asset-pipeline.md) ·
   [`docs/fleet-marketplace.md`](docs/fleet-marketplace.md) ·
   [`docs/used-aircraft-market.md`](docs/used-aircraft-market.md) ·
   [`docs/maintenance.md`](docs/maintenance.md) ·
@@ -40,7 +42,7 @@ pnpm install
 pnpm verify
 ```
 
-`pnpm verify` runs typecheck, lint, formatting, the production build, coverage tests and an
+`pnpm verify` runs typecheck, lint, formatting, aircraft-asset validation, the production build, coverage tests and an
 indicative performance pass in CI's cheap-fails-first order. It prints what passed and what
 was skipped; CI remains authoritative for the protected merge checks. Its typecheck stage
 also emits the declaration files that packages resolve each other through.
@@ -54,6 +56,7 @@ distinguishes a refused URL from a disposable database it cannot reach.
 
 ```
 packages/
+  assets/   deterministic aircraft intake  — depends on shared + glTF tooling
   shared/   types and zod schemas          — depends on nothing
   sim/      pure deterministic simulation  — depends on shared only
   server/   Fastify web + Worker, database  — depends on shared, sim
@@ -226,6 +229,13 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   meant every opaque page hid it while still paying for its WebGL context, and page content
   took every drag aimed at the map. Its contract and performance policy are documented in
   [`docs/world-renderer.md`](docs/world-renderer.md).
+- **A deterministic 3D aircraft intake pipeline.** Licensed source GLBs pass the official glTF
+  Validator plus Tailfin's transform, naming, material, UV, LOD, budget and no-external-resource
+  rules. Lossless optimisation is revalidated against the source contract; generated registry
+  paths, hashes, GPU estimates, review reports and projected source/runtime comparisons are
+  reproducible. CI rejects orphan runtime GLBs, while rollback changes the active version without
+  rewriting exact published livery bindings. The registry remains empty until the first licensed
+  asset is actually admitted — see [`docs/aircraft-asset-pipeline.md`](docs/aircraft-asset-pipeline.md).
 
 ### What does not exist yet
 
@@ -238,8 +248,8 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   airline owns beside the world's era-gated catalogue, and the aircraft detail takes an
   effective spec apart option by option. It is **read-only**: reconfiguring a build, editing a
   registration, booking a check from the page, and the used-market and order screens all
-  remain to be built. Crew, ground handling, and the livery and cabin builders are future
-  work. The versioned livery document contract and paired SVG templates for every launch
+  remain to be built. Crew, ground handling, server-applied liveries and cabin management are
+  future work. The versioned livery document contract and paired SVG templates for every launch
   aircraft family exist. The base-fill builder autosaves a validated airline-scoped local draft,
   but no livery is server-saved or applied yet — so an aircraft has no livery to show and no
   cabin fitted, and the fleet table says so rather than inventing either.

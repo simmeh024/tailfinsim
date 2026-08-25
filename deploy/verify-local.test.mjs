@@ -28,6 +28,7 @@ describe('the local verification summary', () => {
       'typecheck',
       'lint',
       'format:check',
+      'assets:validate',
       'build',
       'test:coverage',
       'test:perf',
@@ -57,6 +58,7 @@ describe('the local verification summary', () => {
       'Types',
       'Lint',
       'Formatting',
+      'Aircraft assets',
       'Production build',
       'Tests',
       'Database tests',
@@ -84,7 +86,7 @@ describe('the local verification summary', () => {
     });
 
     expect(exitCode).toBe(1);
-    expect(scripts).toEqual(['typecheck', 'lint', 'format:check', 'build']);
+    expect(scripts).toEqual(['typecheck', 'lint', 'format:check', 'assets:validate', 'build']);
     expect(output).toContain('Tests                SKIPPED — database preflight failed');
     expect(output).toContain(
       'Database tests       FAIL — DATABASE_URL selects non-disposable database "tailfin_dev"',
