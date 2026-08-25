@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -51,6 +51,11 @@ const DEV_A320NEO_CANDIDATE = resolve(
   '1.0.0',
   'aircraft.glb',
 );
+
+function readDevA320neoCandidate(environment: ServerEnv['environmentLabel']): Buffer | null {
+  if (environment !== 'dev' || !existsSync(DEV_A320NEO_CANDIDATE)) return null;
+  return readFileSync(DEV_A320NEO_CANDIDATE);
+}
 
 export interface BuildAppOptions {
   env: ServerEnv;
@@ -209,6 +214,7 @@ export function buildApp({
   // process lives — a redeploy restarts it.
   const deployInfo = readDeployInfo();
   const startedAtIso = new Date().toISOString();
+  const devA320neoCandidate = readDevA320neoCandidate(env.environmentLabel);
 
   app.get(
     '/api/version',
@@ -242,20 +248,19 @@ export function buildApp({
       '/api/dev/assets/aircraft/a320neo.glb',
       { logLevel: 'warn' },
       async (_request, reply) => {
-        if (!existsSync(DEV_A320NEO_CANDIDATE)) {
+        if (devA320neoCandidate === null) {
           return reply.code(404).send({
             code: 'candidate_not_found',
             message: 'A320neo review candidate is not available',
           });
         }
-        const { size } = statSync(DEV_A320NEO_CANDIDATE);
         return reply
           .code(200)
           .type('model/gltf-binary')
           .header('cache-control', 'private, no-store')
-          .header('content-length', String(size))
+          .header('content-length', String(devA320neoCandidate.byteLength))
           .header('x-content-type-options', 'nosniff')
-          .send(createReadStream(DEV_A320NEO_CANDIDATE));
+          .send(devA320neoCandidate);
       },
     );
   }
