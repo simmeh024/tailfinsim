@@ -210,6 +210,25 @@ describe('GET /api/version', () => {
     expect(res.headers['cache-control']).toBe('no-store');
   });
 
+  it('serves the rights-pending A320neo candidate only from dev', async () => {
+    const dev = await devApp.inject({
+      method: 'HEAD',
+      url: '/api/dev/assets/aircraft/a320neo.glb',
+    });
+    expect(dev.statusCode).toBe(200);
+    expect(dev.headers['content-type']).toMatch(/^model\/gltf-binary/);
+    expect(dev.headers['cache-control']).toBe('private, no-store');
+    expect(dev.headers['x-content-type-options']).toBe('nosniff');
+    expect(Number(dev.headers['content-length'])).toBeGreaterThan(20_000_000);
+    expect(dev.body).toBe('');
+
+    const production = await productionApp.inject({
+      method: 'HEAD',
+      url: '/api/dev/assets/aircraft/a320neo.glb',
+    });
+    expect(production.statusCode).toBe(404);
+  });
+
   it('reports the same start time across requests', async () => {
     // It is process start, not request time — a value that changed every call
     // would say nothing about whether the box restarted.

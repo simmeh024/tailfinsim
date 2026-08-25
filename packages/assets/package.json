@@ -7,6 +7,7 @@
     "typecheck": "tsc -b",
     "build": "node build.mjs",
     "intake": "pnpm build && node dist/cli.js intake",
+    "salvage:a320neo": "pnpm build && node dist/cli.js salvage-a320neo",
     "validate": "pnpm build && node dist/cli.js validate --root ../../assets/aircraft",
     "rollback": "pnpm build && node dist/cli.js rollback"
   },
@@ -17,6 +18,8 @@
     "@tailfin/shared": "workspace:*",
     "gltf-validator": "2.0.0-dev.3.10",
     "meshoptimizer": "^1.2.0",
+    "sharp": "^0.35.3",
+    "watlas": "1.0.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {

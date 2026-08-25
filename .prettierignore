@@ -3,6 +3,12 @@ dist/
 coverage/
 *.tsbuildinfo
 pnpm-lock.yaml
+.claude/worktrees/
+
+# Pipeline evidence is emitted through canonicalJson: recursively sorted keys,
+# two-space indentation and stable multiline arrays are part of its byte-level
+# reproducibility contract rather than authored JSON style.
+assets/aircraft/candidates/**/*.json
 
 # Authored prose — keep the original formatting so diffs against the source
 # document stay readable.

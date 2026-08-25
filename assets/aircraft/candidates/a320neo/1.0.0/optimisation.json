@@ -1,0 +1,41 @@
+{
+  "allow": {
+    "animations": [],
+    "cameras": [],
+    "lights": [],
+    "metadataOwners": []
+  },
+  "budgetException": null,
+  "format": "tailfin-aircraft-optimisation-decision",
+  "formatVersion": 1,
+  "geometry": {
+    "evidence": {
+      "gpuUploadMsP95": 0,
+      "measuredAt": "2026-08-25",
+      "measuredBy": "Tailfin deterministic salvage pipeline",
+      "pilotAssets": [
+        "a320neo/1.0.0"
+      ],
+      "runtimeBytes": 25189584,
+      "sourceBytes": 25189584,
+      "visualReview": "Deterministic salvage retains the supplied silhouette and semantic atlas."
+    },
+    "mode": "lossless"
+  },
+  "rendererCompatibilityVersion": "m6-13-v1",
+  "sourceFileSha256": "2957eaa1a88a197e29087b8bc3e94b1cdb8810709ccccab59ef150db6434fb5a",
+  "textures": {
+    "evidence": {
+      "gpuUploadMsP95": 0,
+      "measuredAt": "2026-08-25",
+      "measuredBy": "Tailfin deterministic salvage pipeline",
+      "pilotAssets": [
+        "a320neo/1.0.0"
+      ],
+      "runtimeBytes": 25189584,
+      "sourceBytes": 25189584,
+      "visualReview": "Four-kilopixel PBR inputs retain the supplied UV atlas for pilot review."
+    },
+    "mode": "retain"
+  }
+}
