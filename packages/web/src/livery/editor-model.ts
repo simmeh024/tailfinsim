@@ -3,6 +3,8 @@ import {
   LIVERY_DOCUMENT_FORMAT_VERSION,
   LiveryColor,
   LiveryDocument,
+  LiveryDocumentV1,
+  migrateLiveryDocumentV1ToV2,
   type LiveryBlendMode,
   type LiveryLayer,
   type LiveryZone,
@@ -112,6 +114,7 @@ export function createBaseFillLayer(
     opacity: DEFAULT_BASE_FILL_OPACITY,
     blendMode: 'normal' as const,
     mask: null,
+    placement: { side: 'both', symmetry: 'repeat', anchorId: null } as const,
   };
 
   if (mode === 'solid') {
@@ -174,6 +177,15 @@ export function createDefaultLiverySnapshot(): LiveryEditorSnapshot {
   const document = LiveryDocument.parse({
     format: LIVERY_DOCUMENT_FORMAT,
     formatVersion: LIVERY_DOCUMENT_FORMAT_VERSION,
+    artwork: {
+      coordinateSpace: 'tailfin-aircraft-artwork',
+      coordinateSpaceVersion: 1,
+      viewBox: { x: 0, y: 0, width: 1, height: 1 },
+      sideMode: 'mirrored',
+    },
+    renderMode: 'legacy_svg',
+    assetBindings: [],
+    familyOverrides: [],
     palette: DEFAULT_PALETTE,
     layers: [
       createBaseFillLayer(
@@ -358,6 +370,7 @@ function mutateSnapshot(
           opacity: current.opacity,
           blendMode: current.blendMode,
           mask: current.mask,
+          placement: current.placement,
         })),
       };
     }
@@ -463,8 +476,16 @@ export function loadLiveryDraft(
       return fallback;
     }
     if (!AIRCRAFT_LIVERY_TEMPLATES.some((pair) => pair.family === envelope.family)) return fallback;
-    const document = LiveryDocument.safeParse(envelope.document);
-    return document.success ? { family: envelope.family, document: document.data } : fallback;
+    const currentDocument = LiveryDocument.safeParse(envelope.document);
+    if (currentDocument.success) {
+      return { family: envelope.family, document: currentDocument.data };
+    }
+    const legacyDocument = LiveryDocumentV1.safeParse(envelope.document);
+    if (!legacyDocument.success) return fallback;
+    return {
+      family: envelope.family,
+      document: migrateLiveryDocumentV1ToV2(legacyDocument.data),
+    };
   } catch {
     return fallback;
   }

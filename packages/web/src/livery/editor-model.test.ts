@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { LiveryDocument } from '@tailfin/shared';
+import { LIVERY_DOCUMENT_FORMAT, LiveryDocument } from '@tailfin/shared';
 
 import {
   DEFAULT_BASE_FILL_OPACITY,
@@ -182,6 +182,31 @@ describe('M6-03 draft persistence and colour entry', () => {
     storage.setItem('invalid-document', JSON.stringify({ version: 1, family: 'A320neo' }));
     expect(loadLiveryDraft(storage, 'broken-json').family).toBe('A320neo');
     expect(loadLiveryDraft(storage, 'invalid-document').document.layers).toHaveLength(3);
+  });
+
+  it('preserves browser-local v1 drafts through the explicit legacy fallback', () => {
+    const storage = new MemoryStorage();
+    storage.setItem(
+      'legacy-airline',
+      JSON.stringify({
+        version: 1,
+        family: 'ATR 72',
+        document: {
+          format: LIVERY_DOCUMENT_FORMAT,
+          formatVersion: 1,
+          palette: ['#10233FFF'],
+          layers: [],
+        },
+      }),
+    );
+
+    const migrated = loadLiveryDraft(storage, 'legacy-airline');
+    expect(migrated.family).toBe('ATR 72');
+    expect(migrated.document).toMatchObject({
+      formatVersion: 2,
+      renderMode: 'legacy_svg',
+      assetBindings: [],
+    });
   });
 
   it('canonicalizes HEX and RGB input without losing alpha', () => {

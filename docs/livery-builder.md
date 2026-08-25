@@ -1,8 +1,9 @@
 # Livery builder: 3D preview, paint map, layers and base fills (M6-03)
 
-The Design route now hosts Tailfin's livery editor. It consumes the M6-01 `LiveryDocument`
-contract and the exact M6-02 SVG template sources; it does not maintain a second browser-only
-paint format or recreate aircraft geometry in React.
+The Design route hosts Tailfin's existing base-fill editor. It now saves the v2
+`LiveryDocument` contract in explicit `legacy_svg` mode and consumes the exact M6-02 SVG
+template sources; it does not maintain a second browser-only paint format. True-3D authoring
+uses the same document after exact asset/UV/material/anchor bindings are available.
 
 ## Editor surface
 
@@ -19,7 +20,8 @@ imagery. Broad body regions share one projection; all 13 authoring families regi
 visible wing, winglet and nacelle shapes against the selected fleet asset. Body paint is
 composited behind those physical surfaces, so an unpainted wing or engine retains the original
 material even where the perspective overlaps the fuselage. The **Paint map** switch shows the
-exact side-profile zone clipping and remains the canonical authoring view.
+exact side-profile zone clipping and remains the canonical legacy authoring view. It is a
+compatibility renderer, not the future UV-aware source of model placement truth.
 
 On wide screens the collapsible base-fill rail sits beside the canvas and the shell context
 window owns the layer stack. At compact desktop and mobile widths the tools start collapsed; on
@@ -58,19 +60,20 @@ committed state change to an airline-scoped browser key:
 `tailfin:livery-draft:v1:<airline id>`
 
 The envelope stores its own draft version, selected preview family and the canonical
-`LiveryDocument`. Loading validates the family against the template registry and parses the
-document through the shared Zod schema. Invalid, corrupt or newer local data is ignored in
-favour of a valid starter document. Storage failure is visible as `Autosave unavailable`; there
-is intentionally no Save button.
+`LiveryDocument`. Loading validates the family against the template registry and parses a v2
+document through the shared Zod schema. A valid v1 document is losslessly lifted into
+`legacy_svg` by the shared migration; invalid, corrupt or newer local data is ignored in favour
+of a valid starter document. Storage failure is visible as `Autosave unavailable`; there is
+intentionally no Save button.
 
-This is local durability, not a claim of server persistence. M6-04 and M6-05 add the remaining
-authoring tools, M6-06 adds authoritative raster output, and M6-07 owns server persistence and
-airframe application.
+This is local durability, not a claim of server persistence. The M6 true-3D epic (#716) owns
+asset manifests, UV-aware rendering, richer authoring tools, deterministic output and server
+publication/application.
 
 ## Verification
 
 The M6-03 tests cover history for every mutation including reorder, redo invalidation, history
-limits, storage round-trips and corruption, HEX/RGB conversion, all four render modes, hidden
+limits, v1/v2 storage round-trips and corruption, HEX/RGB conversion, all four render modes, hidden
 layers, paint order, every launch-family side template, every fleet-preview family mapping and a
 full UI remount from autosave. A 30-layer benchmark performs repeated schema-valid mutations and
 asserts average reducer cost stays under one 60 fps frame.

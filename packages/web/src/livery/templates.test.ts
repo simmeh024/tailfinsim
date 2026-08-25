@@ -114,6 +114,15 @@ describe('M6-02 aircraft livery templates', () => {
     const livery = LiveryDocument.parse({
       format: LIVERY_DOCUMENT_FORMAT,
       formatVersion: LIVERY_DOCUMENT_FORMAT_VERSION,
+      artwork: {
+        coordinateSpace: 'tailfin-aircraft-artwork',
+        coordinateSpaceVersion: 1,
+        viewBox: { x: 0, y: 0, width: 1, height: 1 },
+        sideMode: 'mirrored',
+      },
+      renderMode: 'legacy_svg',
+      assetBindings: [],
+      familyOverrides: [],
       palette: ['#10233FFF'],
       layers: LiveryZone.options.map((zone, index) => ({
         id: `zone-paint-${String(index)}`,
@@ -139,6 +148,7 @@ describe('M6-02 aircraft livery templates', () => {
         opacity: 1,
         blendMode: 'normal',
         mask: null,
+        placement: { side: 'both', symmetry: 'repeat', anchorId: null },
       })),
     });
 
