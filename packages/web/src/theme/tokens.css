@@ -96,6 +96,17 @@
   --world-grid: #dcecf750;
   --world-night: #02050978;
   --world-route: #7fd4ffe6;
+  /*
+   * The terrain basemap's tint and opacity (App. H.2).
+   *
+   * The rgb multiplies the image and the alpha is the layer's opacity over the
+   * land fill under it — so this says how hard the basemap asserts itself, not
+   * what colour it is. Nearly neutral here, very slightly cooled: this theme
+   * already puts pale land on a navy sea, so a natural-brightness terrain keeps
+   * the polarity the coastline is read by. The light theme has to do the
+   * opposite; see its value for why.
+   */
+  --world-terrain: #f0f6faff;
   --world-atmosphere: #5eb8ff;
 
   /*
@@ -182,6 +193,18 @@
      it much faster, and 0x78 there costs this one its AA contrast at night. */
   --world-night: #16283c50;
   --world-route: #0a63b0e6;
+  /* Darkened, where the dark theme leaves the terrain alone. This theme's sea is
+     nearly white and its land is a deep green, so an untinted basemap — pale
+     sage, pale tan, white ice — is *lighter than the ocean it sits in* and the
+     coastline stops existing. Multiplying it down restores the dark-land,
+     light-sea polarity the rest of the light palette is built on.
+
+     Chosen as the lightest value that still clears AA on all three daylight
+     pairings, because darker than this the terrain stops reading as terrain and
+     turns to olive mud. Measured: ocean 3.68, coastline 3.53, border 3.22. One
+     step lighter (#aab5ad) takes the border to 2.88 and is the reason this is
+     not lighter still. */
+  --world-terrain: #9eaba2ff;
   --world-atmosphere: #0a63b0;
 
   /* See the dark set for why the console has its own ground. */

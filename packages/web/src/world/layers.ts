@@ -1,7 +1,7 @@
 import { ArcLayer, BitmapLayer, GeoJsonLayer, PathLayer } from '@deck.gl/layers';
 
-import { reliefImage } from './relief';
 import { WEB_MERCATOR_MAX_LATITUDE } from './terminator';
+import { terrainImage } from './terrain';
 
 import type { BorderGeometry, LandGeometry } from './land';
 import type { WorldPalette } from './palette';
@@ -16,8 +16,8 @@ export interface WorldLayerVisibility {
   routes: boolean;
   terminator: boolean;
   borders: boolean;
-  /** Shaded relief over the land (App. H.2). */
-  relief: boolean;
+  /** The terrain basemap over the land (App. H.2). */
+  terrain: boolean;
 }
 
 export interface WorldRoute {
@@ -368,18 +368,34 @@ export function createWorldLayers({
       lineWidthMinPixels: 0.5,
       parameters: { cullMode: 'back' },
     }),
-    visibility.relief &&
+    visibility.terrain &&
       new WorldBitmapLayer({
-        id: 'world-relief',
+        id: 'world-terrain',
         // The same world-sized quad the ocean and terminator use.
         bounds,
         /*
-         * Above the land fill and below the borders, because it is an overlay on
-         * the land colour rather than a picture of the ground. Under the fill it
-         * would be invisible; over the borders it would grey out the one line on
-         * the map that has to stay crisp.
+         * Above the land fill and below the borders.
+         *
+         * Over the fill because it *replaces* it: the basemap is opaque across
+         * every land texel, so the land layer beneath is reduced to the thing
+         * that draws the coastline and the thing that shows through at whatever
+         * opacity the theme asks for. Under the borders because a country line
+         * has to stay crisp over a busy image — putting the terrain on top would
+         * bury the one line on the map that carries information.
          */
-        image: reliefImage(projection),
+        image: terrainImage(projection),
+        /*
+         * Tint and opacity, from the theme rather than from the asset.
+         *
+         * One image serves both themes, which is only possible because the
+         * palette gets to pull it towards its own ground: `tintColor` multiplies
+         * the texels and `opacity` blends what is left over the land fill. The
+         * light theme needs that badly — untinted, this raster is *lighter than
+         * that theme's ocean*, and the coastline disappears. See
+         * `--world-terrain` in `tokens.css`.
+         */
+        tintColor: [palette.terrain[0], palette.terrain[1], palette.terrain[2]],
+        opacity: palette.terrain[3] / 255,
         /*
          * No `_imageCoordinateSystem`, for the reason the terminator gives at
          * length below: it is deck.gl's own answer to exactly this and it does

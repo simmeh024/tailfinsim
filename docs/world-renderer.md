@@ -84,7 +84,7 @@ The baseline layers are, in draw order:
 
 1. ocean polygon;
 2. Natural Earth land from the bundled `world-atlas` TopoJSON asset;
-3. optional shaded relief;
+3. optional terrain basemap;
 4. optional country borders;
 5. optional graticule;
 6. optional day/night shading;
@@ -93,23 +93,50 @@ The baseline layers are, in draw order:
 No basemap or tile service is contacted at runtime. This keeps the renderer usable
 without an API key or a third-party availability dependency.
 
-### Shaded relief
+### Terrain basemap
 
-An **overlay, not a basemap**. The image is transparent over the sea, black where a slope is in
-shadow and white where it catches the light, drawn over whatever colour the palette gives the
-land — so one asset serves both themes and neither can be fought by it.
+A **colour basemap for the land**. Cross-blended hypsometric tints with the shaded relief
+already composited in, so it carries elevation _and_ climate — green in wet lowlands, tan in dry
+ones, brown and then bare rock and ice with altitude. That blend is what makes it read as
+terrain rather than as a coloured height ramp, and it is why this is a raster rather than a
+gradient over a DEM.
 
-It sits above the land fill and below the borders. Beneath the fill it would be invisible; above
-the borders it would grey out the one line on the map that has to stay crisp.
+It replaced a greyscale hillshade overlay, which was theme-proof and, as a map, almost nothing:
+flat ground shaded to alpha 0, so a plain, a rainforest and a desert all came out as one
+identical blue-grey continent. The hillshade is not lost — `HYP_50M_SR_W` has it composited in
+already, so there is one image where there were two.
 
-Generated offline by `tools/world/build-relief.py` from Natural Earth's public-domain 50 m
-shaded relief, masked by the **same land polygons the map already draws** — so the shading can
-never bleed past the coastline on screen. The mask cannot come from the raster itself: Natural
-Earth renders open ocean at luminance 206 and flat desert at 199, which is not a distinction.
+It sits above the land fill and below the borders. Over the fill because it _replaces_ it: the
+image is opaque across every land texel, so the land layer beneath is reduced to the thing that
+draws the coastline. Under the borders because a country line has to stay crisp over a busy
+image.
 
-Flat ground shades to alpha 0, which composites to exactly the land colour. Worth knowing before
-anyone tries to recover a land mask from the asset's alpha channel — level desert and open ocean
-are both fully transparent there, and only the polygons say which is which.
+**Transparent over the sea, deliberately.** The source raster draws its own ocean; it is masked
+out, because the palette owns the sea — the day/night wash is measured against `--world-ocean`
+and so is every contrast pairing in `palette.test.ts`. A basemap painting its own ocean would
+silently invalidate all of it. Inland water is left as the raster drew it: a lake is inside the
+land polygon, and a terrain map that paints over the Caspian is the worse map.
+
+Generated offline by `tools/world/build-terrain.py` from Natural Earth's public-domain 50 m
+raster, masked by the **same land polygons the map already draws** — so the terrain can never
+bleed past the coastline on screen. The source is fetched at build time and never committed;
+only the two derived images are.
+
+**Tinted per theme, not per asset.** One image serves both themes because the palette pulls it
+towards its own ground: `--world-terrain`'s rgb is a `tintColor` multiplier and its alpha is the
+layer's opacity. The two themes need opposite things. The dark theme puts pale land on a navy
+sea, so it leaves the raster nearly alone. The light theme puts dark land on a near-white sea,
+and an untinted basemap there is _lighter than the ocean it sits in_ — the polarity of the whole
+palette inverts and the coastline stops existing — so it multiplies the image down.
+
+The light theme's value is the lightest that clears AA on all three daylight pairings: ocean
+3.68, coastline 3.53, border 3.22. One step lighter takes the border to 2.88.
+
+**A known shortfall.** Under full night no line pairing reaches 3:1 over the terrain — the
+border gets to 2.65 dark and 2.56 light, against 3.19 and 3.20 over the flat fill — and no
+choice of `--world-terrain` fixes it, since even an untinted basemap only reaches 2.83. The mean
+image is darker than a token picked to maximise that exact ratio. The fix is retuning
+`--world-border` and `--world-night`, which is a decision about every border on the map.
 
 **Two images, because the projection is baked in.** `BitmapLayer` interpolates texture
 coordinates linearly in whatever the viewport uses, and `_imageCoordinateSystem: 'lnglat'` is
@@ -120,10 +147,14 @@ runtime: equal degrees per row for the globe, equal mercator units per row for t
 each matching the northern edge `worldBounds` gives its projection. Only the projection in use
 is ever fetched.
 
-|                        |   size | when                             |
-| ---------------------- | -----: | -------------------------------- |
-| `relief-equirect-2048` | 603 KB | globe, once, if terrain is on    |
-| `relief-mercator-2048` | 610 KB | flat map, once, if terrain is on |
+|                         |   size | when                             |
+| ----------------------- | -----: | -------------------------------- |
+| `terrain-equirect-2048` | 141 KB | globe, once, if terrain is on    |
+| `terrain-mercator-2048` | 136 KB | flat map, once, if terrain is on |
+
+Both are a quarter of the greyscale overlay they replace, which is not a paradox: the hillshade
+carried its detail in an alpha channel full of high-frequency noise, and smooth colour compresses
+far better than that did.
 
 2048 × 1024 is about **20 km per pixel at the equator** — honest at world and continent zoom and
 visibly soft if you go looking at a city. Tiles are the answer to that, and they are the answer

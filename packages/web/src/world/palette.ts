@@ -20,6 +20,20 @@ export interface WorldPalette {
   grid: RgbaColor;
   night: RgbaColor;
   route: RgbaColor;
+  /**
+   * How hard the terrain basemap asserts itself, per theme.
+   *
+   * The rgb is a `tintColor` — a multiplier over the image — and the alpha is the
+   * layer's opacity over the land fill beneath it. Not a colour the terrain *is*:
+   * a colour the terrain is *pulled towards*.
+   *
+   * It has to differ between the themes for the same reason the night wash does,
+   * and the reason is figure/ground rather than taste. The dark theme puts pale
+   * land on a navy sea; the light theme puts dark land on a pale one. A basemap at
+   * one fixed brightness keeps the polarity of exactly one of them and dissolves
+   * the other's coastline into its ocean, so each theme tints towards its own side.
+   */
+  terrain: RgbaColor;
 }
 
 /**
@@ -38,6 +52,7 @@ const FALLBACK_PALETTE: WorldPalette = {
   grid: [220, 236, 247, 80],
   night: [2, 5, 9, 120],
   route: [127, 212, 255, 230],
+  terrain: [240, 246, 250, 255],
 };
 /**
  * Read a theme token as deck.gl channels.
@@ -70,6 +85,7 @@ export function readWorldPalette(): WorldPalette {
     grid: read('--world-grid', FALLBACK_PALETTE.grid),
     night: read('--world-night', FALLBACK_PALETTE.night),
     route: read('--world-route', FALLBACK_PALETTE.route),
+    terrain: read('--world-terrain', FALLBACK_PALETTE.terrain),
   };
 }
 
