@@ -32,6 +32,34 @@ The tool never enables network reads. A source GLB may refer only to safe relati
 declared by the manifest. Runtime output embeds every dependency; an external runtime URI is a hard
 failure.
 
+### Hi3D A320neo salvage candidate
+
+The supplied Hi3D A320neo is a valid but monolithic reconstruction: one unnamed mesh, one primitive
+and one material. Its 100 connected components are capture chunks rather than aircraft parts, so a
+generic “split by loose parts” operation still produces no useful fuselage/wing/engine contract.
+
+`assets:salvage:a320neo` is a deterministic, asset-specific preparation step before intake. It
+samples the original base-colour atlas and classifies triangles with normalized A320neo spatial
+rules, then emits named paintable/protected materials, three LODs, `TEXCOORD_1`, identity transforms,
+metre-scale bounds, the complete anchor/light-socket set, 4096-pixel PBR inputs and a z-buffered
+three-view semantic audit image. It also runs Khronos' validator and refuses to emit a candidate
+with any error or warning.
+
+```bash
+pnpm assets:salvage:a320neo -- \
+  --input path/to/A320neo.glb \
+  --output assets/aircraft/candidates/a320neo/1.0.0 \
+  --date YYYY-MM-DD
+```
+
+The current pinned input is SHA-256
+`4421977f9f3ee6539f50d8ba20fd0a5f371d70cfffc946b58d639887cb676cd2`. The command writes
+`manifest.draft.json`, not an accepted manifest. The draft deliberately has no licence object and
+remains outside `assets/aircraft/registry.json` until proof of the applicable Pro-plan acquisition,
+the applicable licence/vendor-terms snapshot, confirmation of source-image rights and human
+approval of `salvage-preview.png` are attached. Semantic inference is reviewable; it is not treated
+as artist-authored truth or rights evidence.
+
 ## Pipeline stages
 
 1. `evaluateAircraftAssetSubmission` separates technical invalidity, missing evidence and blocked

@@ -1,0 +1,255 @@
+{
+  "blockers": [
+    "Attach proof of Pro-plan acquisition for this generation.",
+    "Attach the applicable licence text and vendor-terms snapshot.",
+    "Confirm source-image rights and approve the semantic preview before intake."
+  ],
+  "classification": {
+    "fallbackAssignments": [],
+    "method": "connected-component spatial rules plus base-colour atlas sampling; protected groups require human preview review",
+    "sourceTriangles": {
+      "cabin_windows": 36002,
+      "cockpit_glass": 11640,
+      "engine_interiors": 234300,
+      "fin": 31968,
+      "fuselage": 848630,
+      "horizontal_stabilisers": 108405,
+      "lights": 9333,
+      "nacelle_exteriors": 503173,
+      "rubber_tyres": 1708,
+      "winglets": 7773,
+      "wings": 184308
+    }
+  },
+  "derived": {
+    "bounds": {
+      "max": [
+        17.899999618530273,
+        11.760000228881836,
+        18.79700469970703
+      ],
+      "min": [
+        -17.895694732666016,
+        0.0023720336612313986,
+        -18.77204704284668
+      ]
+    },
+    "byteSize": 25189584,
+    "lodTriangles": [
+      237047,
+      98772,
+      35636
+    ],
+    "materialTriangles": [
+      {
+        "mat-cabin-windows": 4320,
+        "mat-cockpit-glass": 1396,
+        "mat-engine-interiors": 28105,
+        "mat-fin": 3831,
+        "mat-fuselage": 101617,
+        "mat-horizontal-stabilisers": 12993,
+        "mat-lights": 1119,
+        "mat-nacelle-exteriors": 60294,
+        "mat-rubber-tyres": 368,
+        "mat-winglets": 931,
+        "mat-wings": 22073
+      },
+      {
+        "mat-cabin-windows": 1800,
+        "mat-cockpit-glass": 580,
+        "mat-engine-interiors": 11704,
+        "mat-fin": 1594,
+        "mat-fuselage": 42315,
+        "mat-horizontal-stabilisers": 5407,
+        "mat-lights": 465,
+        "mat-nacelle-exteriors": 25072,
+        "mat-rubber-tyres": 284,
+        "mat-winglets": 382,
+        "mat-wings": 9169
+      },
+      {
+        "mat-cabin-windows": 646,
+        "mat-cockpit-glass": 209,
+        "mat-engine-interiors": 4211,
+        "mat-fin": 571,
+        "mat-fuselage": 15183,
+        "mat-horizontal-stabilisers": 1946,
+        "mat-lights": 167,
+        "mat-nacelle-exteriors": 8991,
+        "mat-rubber-tyres": 284,
+        "mat-winglets": 135,
+        "mat-wings": 3293
+      }
+    ],
+    "sha256": "2957eaa1a88a197e29087b8bc3e94b1cdb8810709ccccab59ef150db6434fb5a",
+    "targetDimensionsM": {
+      "height": 11.76,
+      "length": 37.57,
+      "width": 35.8
+    },
+    "textureBytes": {
+      "baseColour": 1017662,
+      "metallicRoughness": 1344622,
+      "normal": 90
+    }
+  },
+  "format": "tailfin-a320neo-salvage-report",
+  "formatVersion": 1,
+  "liveryUvCleanup": {
+    "lod0.fin": {
+      "degenerateUvFaces": 0,
+      "duplicateFaces": 1,
+      "overlappingUvFaces": 3
+    },
+    "lod0.fuselage": {
+      "degenerateUvFaces": 152,
+      "duplicateFaces": 43,
+      "overlappingUvFaces": 22
+    },
+    "lod0.horizontal_stabilisers": {
+      "degenerateUvFaces": 2,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 13
+    },
+    "lod0.nacelle_exteriors": {
+      "degenerateUvFaces": 7,
+      "duplicateFaces": 35,
+      "overlappingUvFaces": 42
+    },
+    "lod0.winglets": {
+      "degenerateUvFaces": 0,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 0
+    },
+    "lod0.wings": {
+      "degenerateUvFaces": 0,
+      "duplicateFaces": 10,
+      "overlappingUvFaces": 32
+    },
+    "lod1.cabin_windows": {
+      "degenerateUvFaces": 0,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 0
+    },
+    "lod1.cockpit_glass": {
+      "degenerateUvFaces": 0,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 0
+    },
+    "lod1.engine_interiors": {
+      "degenerateUvFaces": 0,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 0
+    },
+    "lod1.fin": {
+      "degenerateUvFaces": 0,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 1
+    },
+    "lod1.fuselage": {
+      "degenerateUvFaces": 11,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 5
+    },
+    "lod1.horizontal_stabilisers": {
+      "degenerateUvFaces": 1,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 5
+    },
+    "lod1.lights": {
+      "degenerateUvFaces": 0,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 0
+    },
+    "lod1.nacelle_exteriors": {
+      "degenerateUvFaces": 0,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 45
+    },
+    "lod1.rubber_tyres": {
+      "degenerateUvFaces": 0,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 0
+    },
+    "lod1.winglets": {
+      "degenerateUvFaces": 0,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 4
+    },
+    "lod1.wings": {
+      "degenerateUvFaces": 1,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 27
+    },
+    "lod2.cabin_windows": {
+      "degenerateUvFaces": 0,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 0
+    },
+    "lod2.cockpit_glass": {
+      "degenerateUvFaces": 0,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 0
+    },
+    "lod2.engine_interiors": {
+      "degenerateUvFaces": 0,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 0
+    },
+    "lod2.fin": {
+      "degenerateUvFaces": 0,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 2
+    },
+    "lod2.fuselage": {
+      "degenerateUvFaces": 3,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 49
+    },
+    "lod2.horizontal_stabilisers": {
+      "degenerateUvFaces": 0,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 2
+    },
+    "lod2.lights": {
+      "degenerateUvFaces": 0,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 0
+    },
+    "lod2.nacelle_exteriors": {
+      "degenerateUvFaces": 1,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 52
+    },
+    "lod2.rubber_tyres": {
+      "degenerateUvFaces": 0,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 0
+    },
+    "lod2.winglets": {
+      "degenerateUvFaces": 0,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 4
+    },
+    "lod2.wings": {
+      "degenerateUvFaces": 0,
+      "duplicateFaces": 0,
+      "overlappingUvFaces": 16
+    }
+  },
+  "original": {
+    "byteSize": 59899984,
+    "componentCount": 100,
+    "fileName": "A320neo.glb",
+    "sha256": "4421977f9f3ee6539f50d8ba20fd0a5f371d70cfffc946b58d639887cb676cd2",
+    "triangles": 1977240
+  },
+  "salvageVersion": "1.1.0",
+  "validation": {
+    "errors": 0,
+    "hints": 0,
+    "infos": 33,
+    "validator": "2.0.0-dev.3.10",
+    "warnings": 0
+  }
+}

@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 
 import { intakeAircraftAsset } from './pipeline';
 import { selectPreviousAssetVersion, verifyRegistry } from './registry';
+import { salvageA320neo } from './salvage-a320neo';
 import { AssetPipelineError } from './schema';
 
 function argumentsByName(values: readonly string[]): Map<string, string> {
@@ -52,7 +53,18 @@ async function main(): Promise<void> {
     );
     return;
   }
-  throw new Error('Usage: cli.js intake|validate|rollback [options]');
+  if (command === 'salvage-a320neo') {
+    const result = await salvageA320neo({
+      inputPath: resolve(required(argumentsMap, 'input')),
+      outputDirectory: resolve(required(argumentsMap, 'output')),
+      reviewedAt: required(argumentsMap, 'date'),
+    });
+    process.stdout.write(
+      `salvaged A320neo ${result.sourceSha256} (${String(result.sourceByteSize)} bytes; LODs ${result.lodTriangles.join('/')})\n`,
+    );
+    return;
+  }
+  throw new Error('Usage: cli.js intake|validate|rollback|salvage-a320neo [options]');
 }
 
 try {

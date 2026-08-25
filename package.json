@@ -14,6 +14,7 @@
     "build": "pnpm --filter @tailfin/server build && pnpm --filter @tailfin/web build",
     "assets:build": "pnpm --filter @tailfin/assets build",
     "assets:intake": "pnpm --filter @tailfin/assets intake",
+    "assets:salvage:a320neo": "pnpm --filter @tailfin/assets salvage:a320neo",
     "assets:validate": "pnpm --filter @tailfin/assets validate",
     "assets:rollback": "pnpm --filter @tailfin/assets rollback",
     "typecheck": "tsc -b",

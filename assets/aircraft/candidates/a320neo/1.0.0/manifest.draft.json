@@ -1,0 +1,278 @@
+{
+  "candidateStatus": "blocked_pending_proof_of_purchase_and_terms_evidence",
+  "format": "tailfin-aircraft-asset",
+  "formatVersion": 1,
+  "licence": null,
+  "technical": {
+    "anchors": [
+      {
+        "id": "camera_three_quarter",
+        "nodeName": "anchor-camera-three-quarter"
+      },
+      {
+        "id": "camera_side",
+        "nodeName": "anchor-camera-side"
+      },
+      {
+        "id": "camera_top",
+        "nodeName": "anchor-camera-top"
+      },
+      {
+        "id": "rotation_center",
+        "nodeName": "anchor-rotation-center"
+      },
+      {
+        "id": "ground_contact",
+        "nodeName": "anchor-ground-contact"
+      },
+      {
+        "id": "registration_port",
+        "nodeName": "anchor-registration-port"
+      },
+      {
+        "id": "registration_starboard",
+        "nodeName": "anchor-registration-starboard"
+      },
+      {
+        "id": "tail_logo_port",
+        "nodeName": "anchor-tail-logo-port"
+      },
+      {
+        "id": "tail_logo_starboard",
+        "nodeName": "anchor-tail-logo-starboard"
+      }
+    ],
+    "bindingResources": {
+      "anchorSet": {
+        "id": "a320neo-anchors",
+        "version": "1.0.0"
+      },
+      "materialBinding": {
+        "id": "a320neo-materials",
+        "version": "1.0.0"
+      }
+    },
+    "budget": {
+      "boundsM": {
+        "height": 11.76,
+        "length": 37.57,
+        "width": 35.8
+      },
+      "drawCalls": 11,
+      "materialCount": 11,
+      "profile": "narrowbody",
+      "textureMemoryBytes": 178956976
+    },
+    "contentAudit": {
+      "neutralBaseCoat": true,
+      "realWorldAirlineLivery": false,
+      "reviewedAt": "2026-08-25",
+      "reviewedBy": "Tailfin deterministic salvage pipeline; human visual review pending",
+      "trademarkedLogos": [],
+      "unlicensedLogos": []
+    },
+    "delivery": {
+      "byteSize": 25189584,
+      "filePath": "aircraft.glb",
+      "fileSha256": "2957eaa1a88a197e29087b8bc3e94b1cdb8810709ccccab59ef150db6434fb5a",
+      "forwardAxis": "-Z",
+      "gltfVersion": "2.0",
+      "mimeType": "model/gltf-binary",
+      "origin": "ground-centre",
+      "transformsBaked": true,
+      "units": "metres",
+      "upAxis": "+Y"
+    },
+    "fallback": {
+      "assetId": "a320neo",
+      "kind": "fleet_render"
+    },
+    "featureTags": [
+      "underwing-turbofans",
+      "sharklets",
+      "narrowbody-doors",
+      "salvaged-hi3d"
+    ],
+    "gearState": "retracted",
+    "identity": {
+      "assetId": "a320neo",
+      "assetVersion": "1.0.0",
+      "catalogueVersion": "v1",
+      "designations": [
+        "A320neo"
+      ],
+      "family": "A320neo",
+      "geometryVariantId": "a320neo"
+    },
+    "lightSockets": [
+      {
+        "id": "navigation_port",
+        "nodeName": "light-navigation-port"
+      },
+      {
+        "id": "navigation_starboard",
+        "nodeName": "light-navigation-starboard"
+      },
+      {
+        "id": "beacon_upper",
+        "nodeName": "light-beacon-upper"
+      },
+      {
+        "id": "beacon_lower",
+        "nodeName": "light-beacon-lower"
+      },
+      {
+        "id": "landing_port",
+        "nodeName": "light-landing-port"
+      },
+      {
+        "id": "landing_starboard",
+        "nodeName": "light-landing-starboard"
+      }
+    ],
+    "liveryUv": {
+      "mirroredIslands": [],
+      "nonOverlappingPaintableIslands": true,
+      "normalized": true,
+      "paddingPxAt4096": 8,
+      "resource": {
+        "id": "a320neo-livery-uv",
+        "version": "1.0.0"
+      },
+      "texCoord": "TEXCOORD_1"
+    },
+    "lods": [
+      {
+        "level": 0,
+        "nodeName": "lod0",
+        "triangleCount": 237047
+      },
+      {
+        "level": 1,
+        "nodeName": "lod1",
+        "triangleCount": 98772
+      },
+      {
+        "level": 2,
+        "nodeName": "lod2",
+        "triangleCount": 35636
+      }
+    ],
+    "materials": [
+      {
+        "class": "fuselage",
+        "kind": "paintable",
+        "materialName": "mat-fuselage"
+      },
+      {
+        "class": "fin",
+        "kind": "paintable",
+        "materialName": "mat-fin"
+      },
+      {
+        "class": "horizontal_stabilisers",
+        "kind": "paintable",
+        "materialName": "mat-horizontal-stabilisers"
+      },
+      {
+        "class": "wings",
+        "kind": "paintable",
+        "materialName": "mat-wings"
+      },
+      {
+        "class": "winglets",
+        "kind": "paintable",
+        "materialName": "mat-winglets"
+      },
+      {
+        "class": "nacelle_exteriors",
+        "kind": "paintable",
+        "materialName": "mat-nacelle-exteriors"
+      },
+      {
+        "class": "cockpit_glass",
+        "kind": "protected",
+        "materialName": "mat-cockpit-glass"
+      },
+      {
+        "class": "cabin_windows",
+        "kind": "protected",
+        "materialName": "mat-cabin-windows"
+      },
+      {
+        "class": "rubber_tyres",
+        "kind": "protected",
+        "materialName": "mat-rubber-tyres"
+      },
+      {
+        "class": "lights",
+        "kind": "protected",
+        "materialName": "mat-lights"
+      },
+      {
+        "class": "engine_interiors",
+        "kind": "protected",
+        "materialName": "mat-engine-interiors"
+      }
+    ],
+    "naming": {
+      "convention": "tailfin-aircraft-v1",
+      "meshNames": [
+        "mesh-lod0",
+        "mesh-lod1",
+        "mesh-lod2"
+      ],
+      "nodeNames": [
+        "aircraft-root",
+        "lod0",
+        "lod1",
+        "lod2",
+        "anchor-camera-three-quarter",
+        "anchor-camera-side",
+        "anchor-camera-top",
+        "anchor-rotation-center",
+        "anchor-ground-contact",
+        "anchor-registration-port",
+        "anchor-registration-starboard",
+        "anchor-tail-logo-port",
+        "anchor-tail-logo-starboard",
+        "light-navigation-port",
+        "light-navigation-starboard",
+        "light-beacon-upper",
+        "light-beacon-lower",
+        "light-landing-port",
+        "light-landing-starboard"
+      ],
+      "rootNode": "aircraft-root"
+    },
+    "pbrTextures": [
+      {
+        "channelPacking": "rgba",
+        "colorSpace": "srgb",
+        "height": 4096,
+        "kind": "base_color",
+        "mimeType": "image/jpeg",
+        "uri": "base-color.jpg",
+        "width": 4096
+      },
+      {
+        "channelPacking": "normal_xy",
+        "colorSpace": "linear",
+        "height": 1,
+        "kind": "normal",
+        "mimeType": "image/png",
+        "uri": "normal.png",
+        "width": 1
+      },
+      {
+        "channelPacking": "gltf_metallic_roughness",
+        "colorSpace": "linear",
+        "height": 4096,
+        "kind": "metallic_roughness",
+        "mimeType": "image/jpeg",
+        "uri": "metallic-roughness.jpg",
+        "width": 4096
+      }
+    ]
+  }
+}

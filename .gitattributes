@@ -25,6 +25,7 @@ Dockerfile    text eol=lf
 *.woff2       binary
 *.pdf         binary
 *.zip         binary
+*.glb         binary
 
 # Generated — collapse in PR diffs
 pnpm-lock.yaml linguist-generated=true -diff

@@ -4,7 +4,7 @@ await build({
   entryPoints: ['src/cli.ts'],
   outfile: 'dist/cli.js',
   bundle: true,
-  external: ['@gltf-transform/*', 'gltf-validator', 'meshoptimizer', 'zod'],
+  external: ['@gltf-transform/*', 'gltf-validator', 'meshoptimizer', 'sharp', 'watlas', 'zod'],
   platform: 'node',
   target: 'node24',
   format: 'esm',

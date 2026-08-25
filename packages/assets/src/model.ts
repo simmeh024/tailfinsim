@@ -32,6 +32,7 @@ import {
   type AircraftAssetBudgetException,
   type AircraftAssetBudgetProfile,
   type AircraftAssetManifest as AircraftAssetManifestValue,
+  type AircraftAssetTechnicalManifest as AircraftAssetTechnicalManifestValue,
   type AircraftRuntimeStats,
 } from '@tailfin/shared';
 
@@ -75,6 +76,13 @@ export interface SourceModel extends InspectedModel {
   readonly manifest: AircraftAssetManifestValue;
   readonly sourcePath: string;
 }
+
+export interface TechnicalCandidateModel extends InspectedModel {
+  readonly bytes: Uint8Array;
+  readonly technical: AircraftAssetTechnicalManifestValue;
+}
+
+type TechnicalManifestEnvelope = Pick<AircraftAssetManifestValue, 'technical'>;
 
 function problem(
   issues: AssetPipelineIssue[],
@@ -210,6 +218,8 @@ interface UvTriangle {
   readonly materialClass: string;
   readonly accessorKey: object;
   readonly indices: readonly [number, number, number];
+  readonly minCellX: number;
+  readonly minCellY: number;
   readonly points: readonly [
     readonly [number, number],
     readonly [number, number],
@@ -347,7 +357,6 @@ function validateUvOverlaps(
   issues: AssetPipelineIssue[],
 ): void {
   const grid = new Map<string, UvTriangle[]>();
-  const compared = new Set<string>();
   let triangleId = 0;
   const cells = 96;
   for (const primitive of primitives) {
@@ -368,13 +377,7 @@ function validateUvOverlaps(
         const value = uv.getElement(index, [0, 0]);
         return [value[0] ?? 0, value[1] ?? 0] as const;
       }) as unknown as UvTriangle['points'];
-      const triangle: UvTriangle = {
-        id: triangleId,
-        materialClass,
-        accessorKey: uv,
-        indices: vertexIndices,
-        points,
-      };
+      const id = triangleId;
       triangleId += 1;
       if (Math.abs(signedArea(points)) < 1e-10) {
         problem(
@@ -393,13 +396,26 @@ function validateUvOverlaps(
       const maxX = Math.floor(maxU * (cells - 1));
       const minY = Math.floor(minV * (cells - 1));
       const maxY = Math.floor(maxV * (cells - 1));
+      const triangle: UvTriangle = {
+        id,
+        materialClass,
+        accessorKey: uv,
+        indices: vertexIndices,
+        minCellX: minX,
+        minCellY: minY,
+        points,
+      };
       for (let x = minX; x <= maxX; x += 1) {
         for (let y = minY; y <= maxY; y += 1) {
           const key = `${String(x)}:${String(y)}`;
           for (const other of grid.get(key) ?? []) {
-            const pair = `${String(Math.min(triangle.id, other.id))}:${String(Math.max(triangle.id, other.id))}`;
-            if (compared.has(pair) || sharedEdge(triangle, other)) continue;
-            compared.add(pair);
+            if (
+              x !== Math.max(triangle.minCellX, other.minCellX) ||
+              y !== Math.max(triangle.minCellY, other.minCellY) ||
+              sharedEdge(triangle, other)
+            ) {
+              continue;
+            }
             if (overlapArea(triangle.points, other.points) <= 1e-8) continue;
             if (
               triangle.materialClass === other.materialClass &&
@@ -411,7 +427,7 @@ function validateUvOverlaps(
               issues,
               'overlapping_livery_uv',
               'TEXCOORD_1',
-              `paintable ${triangle.materialClass} overlaps ${other.materialClass} in livery UV space`,
+              `paintable ${triangle.materialClass} triangle ${String(triangle.id)} overlaps ${other.materialClass} triangle ${String(other.id)} in livery UV space`,
             );
             if (issues.filter((issue) => issue.code === 'overlapping_livery_uv').length >= 20) {
               return;
@@ -584,7 +600,7 @@ export function measuredBudgetIssues(
 function inspectDocument(
   document: Document,
   json: GlbJson,
-  manifest: AircraftAssetManifestValue,
+  manifest: TechnicalManifestEnvelope,
   decision: AircraftOptimisationDecision,
   today: string,
   phase: 'source' | 'runtime',
@@ -998,6 +1014,56 @@ function officialIssues(report: ValidatorReport): AssetPipelineIssue[] {
       path: message.pointer ?? '',
       message: message.message,
     }));
+}
+
+export async function inspectTechnicalGlbCandidate(
+  bytes: Uint8Array,
+  technical: AircraftAssetTechnicalManifestValue,
+  decision: AircraftOptimisationDecision,
+  today = new Date().toISOString().slice(0, 10),
+): Promise<TechnicalCandidateModel> {
+  const issues: AssetPipelineIssue[] = [];
+  if (bytes.byteLength !== technical.delivery.byteSize) {
+    problem(
+      issues,
+      'source_size_mismatch',
+      'technical.delivery.byteSize',
+      `manifest declares ${String(technical.delivery.byteSize)}, read ${String(bytes.byteLength)}`,
+    );
+  }
+  const sourceHash = sha256(bytes);
+  if (sourceHash !== technical.delivery.fileSha256) {
+    problem(issues, 'source_hash_mismatch', 'technical.delivery.fileSha256', sourceHash);
+  }
+  if (decision.sourceFileSha256 !== sourceHash) {
+    problem(issues, 'decision_hash_mismatch', 'decision.sourceFileSha256', sourceHash);
+  }
+  const json = parseGlbJson(bytes);
+  const externalUris = listUris(json);
+  if (externalUris.length > 0) {
+    for (const uri of externalUris) {
+      problem(
+        issues,
+        'candidate_external_uri',
+        'glb.uri',
+        `prepared candidate must embed external resource "${decodeURIComponent(uri)}"`,
+      );
+    }
+  }
+  const officialReport = await officialValidation(
+    bytes,
+    technical.delivery.filePath,
+    '.',
+    new Set(),
+  );
+  issues.push(...officialIssues(officialReport));
+  const document = await (await createIo()).readBinary(bytes);
+  const inspected = inspectDocument(document, json, { technical }, decision, today, 'source');
+  issues.push(...inspected.issues);
+  if (issues.some((issue) => issue.severity === 'error')) {
+    throw new AssetPipelineError('Technical aircraft candidate failed validation', issues);
+  }
+  return { bytes, document, technical, officialReport, stats: inspected.stats, issues };
 }
 
 export async function loadAndInspectSource(
