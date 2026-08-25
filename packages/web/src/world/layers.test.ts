@@ -153,6 +153,45 @@ describe('projection-independent world layers', () => {
     expect(ids).not.toContain('world-terrain');
   });
 
+  it('stops filling the land polygon while the terrain covers it', () => {
+    /*
+     * The pale halo that hugged every coastline, and the reason small islands
+     * came out as pale blobs.
+     *
+     * The fill is a vector polygon drawn at screen resolution; the terrain is a
+     * raster whose alpha edge is a texel wide. The polygon's edge therefore sits
+     * outside the point where the image goes opaque, and that sliver — several
+     * screen pixels once zoomed — was painted `--world-land`, a pale blue in the
+     * dark theme.
+     *
+     * So the assertion is about a *prop*, not a colour: with terrain on the land
+     * layer must not fill, and with it off it must, because then the fill is the
+     * only thing drawing the land at all.
+     */
+    const landLayer = (terrain: boolean) =>
+      createWorldLayers({
+        palette,
+        quality: 'full',
+        routes: [],
+        darkness: DARKNESS,
+        land: COARSE_WORLD.land,
+        borders: COARSE_WORLD.borders,
+        projection: 'globe',
+        visibility: {
+          graticule: false,
+          routes: false,
+          terminator: false,
+          borders: false,
+          terrain,
+        },
+      })
+        .filter((layer): layer is Layer => layer !== false)
+        .find((layer) => layer.id === 'world-land');
+
+    expect(landLayer(true)?.props).toMatchObject({ filled: false, stroked: true });
+    expect(landLayer(false)?.props).toMatchObject({ filled: true, stroked: true });
+  });
+
   it('takes the terrain tint and opacity from the theme, not from the asset', () => {
     /*
      * One image serves both themes, and this is the only thing that makes that

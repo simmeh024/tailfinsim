@@ -361,7 +361,29 @@ export function createWorldLayers({
     new GeoJsonLayer({
       id: 'world-land',
       data: land,
-      filled: true,
+      /*
+       * **Not filled while the terrain is on, and this is what removes the pale
+       * halo around every coastline.**
+       *
+       * The fill is a vector polygon, tessellated and drawn by the GPU at screen
+       * resolution. The terrain is a raster whose alpha edge is a texel wide. So
+       * the polygon's edge sits *outside* the point where the image becomes
+       * opaque, by up to one texel — and at any zoom past a texel-per-pixel that
+       * sliver is several screen pixels of `--world-land`, which in the dark
+       * theme is a pale blue. It reads as a deliberate coastal shelf. Small
+       * islands, where the raster carries only partial alpha, came out as pale
+       * blobs entirely.
+       *
+       * Painting nothing there instead lets the image's own alpha ramp blend
+       * into the ocean, which is what antialiasing a coastline is supposed to
+       * look like. Nothing is lost: the basemap is opaque across the land it
+       * covers, so the fill was only ever visible in the sliver where it did
+       * not.
+       *
+       * The stroke stays either way — it is the coastline, and it is what still
+       * outlines an island the raster is too coarse to resolve.
+       */
+      filled: !visibility.terrain,
       stroked: true,
       getFillColor: palette.land,
       getLineColor: palette.landLine,

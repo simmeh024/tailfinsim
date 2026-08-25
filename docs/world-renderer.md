@@ -111,6 +111,17 @@ image is opaque across every land texel, so the land layer beneath is reduced to
 draws the coastline. Under the borders because a country line has to stay crisp over a busy
 image.
 
+**The land layer stops filling while the terrain is on**, and that is what removes the pale halo
+that hugged every coastline. The fill is a vector polygon drawn at screen resolution; the
+terrain is a raster whose alpha edge is a texel wide. The polygon's edge therefore sits outside
+the point where the image goes opaque, by up to a texel — which at any zoom past
+a-texel-per-pixel is several screen pixels of `--world-land`, a pale blue in the dark theme. It
+read as a deliberate coastal shelf, and small islands, where the raster carries only partial
+alpha, came out as pale blobs. Painting nothing there instead lets the image's own alpha ramp
+blend into the ocean, which is what antialiasing a coastline should look like. The stroke stays
+either way: it is the coastline, and it is what still outlines an island the raster is too
+coarse to resolve.
+
 **Transparent over the sea, deliberately.** The source raster draws its own ocean; it is masked
 out, because the palette owns the sea — the day/night wash is measured against `--world-ocean`
 and so is every contrast pairing in `palette.test.ts`. A basemap painting its own ocean would
