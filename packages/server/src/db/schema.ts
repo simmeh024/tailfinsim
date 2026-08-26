@@ -455,6 +455,7 @@ export const cashMovementCause = pgEnum('cash_movement_cause', [
   'crew_base_overhead',
   'crew_positioning',
   'office_salary',
+  'office_expansion',
   'admin_adjustment',
   'flight_settlement',
   'migration_opening_balance',
@@ -3041,7 +3042,12 @@ export const officeHire = pgTable(
     airlineId: uuid('airline_id')
       .notNull()
       .references(() => airline.id, { onDelete: 'cascade' }),
-    /** A `@tailfin/shared` `OfficeRole`. */
+    /**
+     * A `@tailfin/shared` `OfficeSeatId` — one of the six roles, or a neutral
+     * expansion seat (`neutral-1`..`neutral-4`). The column keeps its name from
+     * before expansion existed; the unique index below keys one hire per seat,
+     * and a neutral seat's id never collides with a role's.
+     */
     role: text('role').notNull(),
     /** Opaque candidate identity, for the client to render whom you hired. */
     candidateId: text('candidate_id').notNull(),
@@ -3054,3 +3060,32 @@ export const officeHire = pgTable(
 );
 
 export type OfficeHireRow = typeof officeHire.$inferSelect;
+
+/**
+ * How far an airline has expanded its headquarters (M5-04, §9.1 "Expand HQ").
+ *
+ * The presence of a row means the airline has bought at least the first
+ * expansion; `neutralSeats` is the cumulative count of neutral offices unlocked
+ * (2 or 4). No row means the base six offices and no neutral seats — so the
+ * table needs no zero default and a world reset that deletes the row restores
+ * the unexpanded state (ADR-0005). The purchase itself is an AIR-06
+ * `office_expansion` cash movement; this row records only the structural unlock.
+ */
+export const officeExpansion = pgTable(
+  'office_expansion',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    /** Cumulative neutral seats unlocked — 2 or 4. */
+    neutralSeats: integer('neutral_seats').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('office_expansion_airline_key').on(table.airlineId)],
+);
+
+export type OfficeExpansionRow = typeof officeExpansion.$inferSelect;

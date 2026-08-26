@@ -260,6 +260,13 @@
       "when": 1787756009080,
       "tag": "0036_lively_vulture",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1787770972179,
+      "tag": "0037_omniscient_zeigeist",
+      "breakpoints": true
     }
   ]
 }

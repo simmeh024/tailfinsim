@@ -89,7 +89,7 @@ describe('the Headquarters page', () => {
   // A tiny in-memory stand-in for `/api/office`: the page reads it on mount and
   // writes to it on hire and dismiss, and the server always answers with the
   // whole office, so the mock does too.
-  let hires: { role: string; candidateId: string; candidateName: string }[] = [];
+  let hires: { seat: string; candidateId: string; candidateName: string }[] = [];
 
   function officeState() {
     return {
@@ -98,7 +98,9 @@ describe('the Headquarters page', () => {
         monthlySalaryMinor: 1_000_000,
         hiredAt: '2024-10-20T00:00:00.000Z',
       })),
-      hasExtendedAuthority: hires.some((h) => h.role === 'safety-compliance'),
+      hasExtendedAuthority: hires.some((h) => h.seat === 'safety-compliance'),
+      neutralSeats: 0,
+      nextExpansion: { addsSeats: 2, totalSeats: 8, costMinor: 1_000_000_000 },
     };
   }
 
@@ -114,17 +116,17 @@ describe('the Headquarters page', () => {
         if (url === '/api/office/hires' && method === 'POST') {
           const raw = typeof init?.body === 'string' ? init.body : '{}';
           const body = JSON.parse(raw) as {
-            role: string;
+            seat: string;
             candidateId: string;
             candidateName: string;
           };
-          hires = hires.filter((h) => h.role !== body.role);
+          hires = hires.filter((h) => h.seat !== body.seat);
           hires.push(body);
           return ok();
         }
         if (url.startsWith('/api/office/hires/') && method === 'DELETE') {
-          const role = url.slice('/api/office/hires/'.length);
-          hires = hires.filter((h) => h.role !== role);
+          const seat = url.slice('/api/office/hires/'.length);
+          hires = hires.filter((h) => h.seat !== seat);
           return ok();
         }
         throw new Error(`unexpected fetch ${method} ${url}`);
@@ -190,7 +192,7 @@ describe('the Headquarters page', () => {
   it('renders the seats the server already reports as filled, on load', async () => {
     hires = [
       {
-        role: 'safety-compliance',
+        seat: 'safety-compliance',
         candidateId: 'safety-compliance-claire',
         candidateName: 'Claire Fontaine',
       },
@@ -212,25 +214,44 @@ describe('the Headquarters page', () => {
 });
 
 describe('the HQ layout overview', () => {
-  const room = (container: HTMLElement, role: string): HTMLElement => {
-    const el = container.querySelector<HTMLElement>(`.hq-room[data-role="${role}"]`);
-    if (el === null) throw new Error(`no room for ${role}`);
+  const cell = (container: HTMLElement, seat: string): HTMLElement => {
+    const el = container.querySelector<HTMLElement>(`.hq-cell[data-seat="${seat}"]`);
+    if (el === null) throw new Error(`no cell for ${seat}`);
     return el;
   };
 
-  it('shows all six rooms, every one vacant when nothing is hired', () => {
-    const { container } = render(
-      <HqLayoutPanel office={{ hires: [], hasExtendedAuthority: false }} />,
-    );
+  const emptyOffice = (neutralSeats: number): OfficeStateResponse => ({
+    hires: [],
+    hasExtendedAuthority: false,
+    neutralSeats,
+    nextExpansion:
+      neutralSeats < 4
+        ? { addsSeats: 2, totalSeats: neutralSeats + 8, costMinor: 1_000_000_000 }
+        : null,
+  });
+
+  it('shows all six offices vacant when nothing is hired', () => {
+    const { container } = render(<HqLayoutPanel office={emptyOffice(0)} />);
     for (const role of HQ_ROLES) {
-      const el = room(container, role.id);
+      const el = cell(container, role.id);
       expect(el.dataset.occupied).toBe('false');
-      expect(within(el).getByText('Seat vacant')).toBeInTheDocument();
-      // A vacant room shows the seat icon, never an avatar.
+      expect(within(el).getByText('Vacant')).toBeInTheDocument();
       expect(el.querySelector('img')).toBeNull();
     }
+    // With no expansion, the two neutral offices are not on the plan.
+    expect(container.querySelector('.hq-cell[data-seat="neutral-1"]')).toBeNull();
     const count = container.querySelector('.hq-layout__count');
-    expect(count?.textContent).toContain('0 of 6 seats filled');
+    expect(count?.textContent).toContain('0 of 6 offices staffed');
+  });
+
+  it('adds the neutral offices once expanded', () => {
+    const { container } = render(<HqLayoutPanel office={emptyOffice(2)} />);
+    expect(cell(container, 'neutral-1').dataset.occupied).toBe('false');
+    expect(cell(container, 'neutral-2').dataset.occupied).toBe('false');
+    expect(container.querySelector('.hq-cell[data-seat="neutral-3"]')).toBeNull();
+    expect(container.querySelector('.hq-layout__count')?.textContent).toContain(
+      '0 of 8 offices staffed',
+    );
   });
 
   it('renders a rounded avatar and the occupant name for a filled seat', () => {
@@ -238,7 +259,7 @@ describe('the HQ layout overview', () => {
     const office: OfficeStateResponse = {
       hires: [
         {
-          role: 'route-planner',
+          seat: 'route-planner',
           candidateId: mara.id,
           candidateName: mara.name,
           monthlySalaryMinor: 1_800_000,
@@ -246,19 +267,21 @@ describe('the HQ layout overview', () => {
         },
       ],
       hasExtendedAuthority: false,
+      neutralSeats: 0,
+      nextExpansion: null,
     };
     const { container } = render(<HqLayoutPanel office={office} />);
 
-    const filled = room(container, 'route-planner');
+    const filled = cell(container, 'route-planner');
     expect(filled.dataset.occupied).toBe('true');
-    const avatar = filled.querySelector<HTMLImageElement>('img.hq-room__avatar');
+    const avatar = filled.querySelector<HTMLImageElement>('img.hq-cell__avatar');
     expect(avatar).not.toBeNull();
     expect(avatar?.getAttribute('src')).toBe(mara.portrait);
     expect(avatar?.getAttribute('alt')).toMatch(/Mara Ellison/);
     expect(within(filled).getByText('Mara Ellison')).toBeInTheDocument();
 
     // The seats it did not fill stay vacant.
-    expect(room(container, 'safety-compliance').dataset.occupied).toBe('false');
+    expect(cell(container, 'safety-compliance').dataset.occupied).toBe('false');
   });
 
   it('notes long-haul authority once the gate seat is filled', () => {
@@ -267,7 +290,7 @@ describe('the HQ layout overview', () => {
         office={{
           hires: [
             {
-              role: 'safety-compliance',
+              seat: 'safety-compliance',
               candidateId: 'safety-compliance-claire',
               candidateName: 'Claire Fontaine',
               monthlySalaryMinor: 3_000_000,
@@ -275,6 +298,8 @@ describe('the HQ layout overview', () => {
             },
           ],
           hasExtendedAuthority: true,
+          neutralSeats: 0,
+          nextExpansion: null,
         }}
       />,
     );

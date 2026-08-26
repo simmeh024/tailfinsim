@@ -1,10 +1,14 @@
 import {
-  OFFICE_ROLE_ORDER,
+  HEADQUARTERS_BASE_SEATS,
+  isNeutralSeat,
   OFFICE_ROLES,
-  type OfficeRole,
+  type OfficeSeatId,
   type OfficeStateResponse,
 } from '@tailfin/shared';
 
+import floor10 from './assets/floorplan/hq-floor-10.webp';
+import floor6 from './assets/floorplan/hq-floor-6.webp';
+import floor8 from './assets/floorplan/hq-floor-8.webp';
 import { HQ_CANDIDATES } from './hq-roster';
 
 import type { ReactNode } from 'react';
@@ -12,154 +16,134 @@ import type { ReactNode } from 'react';
 /**
  * The HQ layout overview, for the context panel (M5-04, App. H.4).
  *
- * H.4's context panel is "a view that never covers the world"; this is the
- * Headquarters page's occupant of it — a floor-plan of the six office seats that
- * says, at a glance, which unlocks the airline holds. A filled seat shows the
- * hire's **rounded avatar** and name in the seat's accent; a vacant one shows the
- * seat's icon and "Seat vacant".
+ * A floor-plan of the headquarters that says, at a glance, which offices the
+ * airline holds and who sits in them. The plan is a rendered image — one per
+ * expansion tier, six / eight / ten offices — and the occupant info is laid over
+ * the matching room: a **rounded avatar** and name where a seat is filled, a
+ * faint "Vacant" where it is not.
  *
- * It reads the office state the page already fetched, and the candidate roster
- * for the portrait — the server sends the hired candidate's id, and the roster is
- * where that id becomes a face. A hired candidate the roster does not know (an
- * older market entry) falls back to the seat icon rather than a broken image.
+ * The rooms sit at fixed positions in each render, so the overlay is placed by
+ * normalised coordinates: each office has a column (left or right of the
+ * corridor) and a row, and each tier has its own row centres because a taller
+ * plan spreads the same rooms differently. The image is stretched to the panel
+ * and the container carries the render's aspect ratio, so the coordinates hold at
+ * any width.
  */
 
-/** One line icon per seat. `currentColor` so each takes its seat's accent. */
-const ROLE_ICON: Record<OfficeRole, ReactNode> = {
-  'route-planner': (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M3 11 21 3l-8 18-2-7-8-3Z"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-    </svg>
-  ),
-  'revenue-manager': (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M12 3v18M8 7a3 3 0 0 1 3-3h2a3 3 0 0 1 0 6h-2a3 3 0 0 0 0 6h2a3 3 0 0 0 3-3"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-    </svg>
-  ),
-  'ops-controller': (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.6" />
-      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.6" />
-      <circle cx="12" cy="12" r="1.4" fill="currentColor" />
-    </svg>
-  ),
-  'chief-pilot': (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M12 3 4 9l8 3 8-3-8-6ZM6 11v4c0 2 3 4 6 4s6-2 6-4v-4"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-    </svg>
-  ),
-  'ground-ops': (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M2 7h11v9H2ZM13 10h4l3 3v3h-7Z"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-      <circle cx="6" cy="18" r="1.8" stroke="currentColor" strokeWidth="1.6" />
-      <circle cx="17" cy="18" r="1.8" stroke="currentColor" strokeWidth="1.6" />
-    </svg>
-  ),
-  'safety-compliance': (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M12 3 5 6v5c0 4 3 7 7 9 4-2 7-5 7-9V6l-7-3Z"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-      <path
-        d="m9 12 2 2 4-4"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  ),
+/** The plan render, and its aspect ratio, keyed by neutral seats unlocked. */
+const FLOORPLAN: Record<number, { src: string; aspect: string }> = {
+  0: { src: floor6, aspect: '1024 / 1536' },
+  2: { src: floor8, aspect: '934 / 1683' },
+  4: { src: floor10, aspect: '887 / 1774' },
 };
+
+/** Column centres, as a fraction of image width — left and right of the corridor. */
+const COLUMN_X: Record<'left' | 'right', number> = { left: 0.245, right: 0.755 };
+
+/** Row centres, as a fraction of image height, per neutral-seat tier. */
+const ROW_Y: Record<number, readonly number[]> = {
+  0: [0.255, 0.515, 0.78],
+  2: [0.175, 0.395, 0.61, 0.83],
+  4: [0.135, 0.315, 0.495, 0.675, 0.85],
+};
+
+/** Where each seat sits in the plan, top to bottom, left then right. */
+const SEAT_GRID: readonly { seat: OfficeSeatId; row: number; col: 'left' | 'right' }[] = [
+  { seat: 'route-planner', row: 0, col: 'left' },
+  { seat: 'revenue-manager', row: 0, col: 'right' },
+  { seat: 'ops-controller', row: 1, col: 'left' },
+  { seat: 'chief-pilot', row: 1, col: 'right' },
+  { seat: 'ground-ops', row: 2, col: 'left' },
+  { seat: 'safety-compliance', row: 2, col: 'right' },
+  { seat: 'neutral-1', row: 3, col: 'left' },
+  { seat: 'neutral-2', row: 3, col: 'right' },
+  { seat: 'neutral-3', row: 4, col: 'left' },
+  { seat: 'neutral-4', row: 4, col: 'right' },
+];
+
+const MONEY = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  maximumFractionDigits: 0,
+});
+
+function seatTitle(seat: OfficeSeatId): string {
+  return isNeutralSeat(seat) ? 'Neutral office' : OFFICE_ROLES[seat].title;
+}
 
 interface HqLayoutPanelProps {
   office: OfficeStateResponse | null;
 }
 
 export function HqLayoutPanel({ office }: HqLayoutPanelProps): ReactNode {
-  const hiredByRole = new Map((office?.hires ?? []).map((hire) => [hire.role, hire]));
-  const filled = hiredByRole.size;
+  const neutralSeats = office?.neutralSeats ?? 0;
+  const totalSeats = HEADQUARTERS_BASE_SEATS + neutralSeats;
+  const hiredBySeat = new Map((office?.hires ?? []).map((hire) => [hire.seat, hire]));
+  const filled = hiredBySeat.size;
+
+  const plan = FLOORPLAN[neutralSeats] ?? FLOORPLAN[0];
+  const rows = ROW_Y[neutralSeats] ?? ROW_Y[0] ?? [];
+  const visible = SEAT_GRID.slice(0, totalSeats);
 
   return (
     <div className="hq-layout">
       <p className="hq-layout__count">
-        <strong>{filled}</strong> of {OFFICE_ROLE_ORDER.length} seats filled
+        <strong>{filled}</strong> of {totalSeats} offices staffed
         {office?.hasExtendedAuthority === true && (
           <span className="hq-layout__authority"> · long-haul authority</span>
         )}
       </p>
 
-      <ul className="hq-layout__floor">
-        {OFFICE_ROLE_ORDER.map((role) => {
-          const hire = hiredByRole.get(role);
+      <div
+        className="hq-layout__floor"
+        style={{ backgroundImage: `url(${plan?.src ?? ''})`, aspectRatio: plan?.aspect ?? '2 / 3' }}
+      >
+        {visible.map(({ seat, row, col }) => {
+          const hire = hiredBySeat.get(seat);
           const occupant =
             hire !== undefined
               ? (HQ_CANDIDATES.find((candidate) => candidate.id === hire.candidateId) ?? null)
               : null;
           return (
-            <li key={role} className="hq-room" data-role={role} data-occupied={hire !== undefined}>
-              <span className="hq-room__dot" aria-hidden="true" />
-              <div className="hq-room__figure">
-                {hire !== undefined && occupant !== null ? (
-                  <img
-                    className="hq-room__avatar"
-                    src={occupant.portrait}
-                    alt={`${hire.candidateName}, ${OFFICE_ROLES[role].title}`}
-                    loading="lazy"
-                  />
-                ) : (
-                  <span className="hq-room__icon" aria-hidden="true">
-                    {ROLE_ICON[role]}
-                  </span>
-                )}
-              </div>
-              <p className="hq-room__role">{OFFICE_ROLES[role].title}</p>
-              <p className="hq-room__occupant">
-                {hire !== undefined ? hire.candidateName : 'Seat vacant'}
-              </p>
-            </li>
+            <div
+              key={seat}
+              className="hq-cell"
+              data-seat={seat}
+              data-neutral={isNeutralSeat(seat)}
+              data-occupied={hire !== undefined}
+              style={{
+                left: `${String((COLUMN_X[col] ?? 0.5) * 100)}%`,
+                top: `${String((rows[row] ?? 0.5) * 100)}%`,
+              }}
+              title={
+                hire !== undefined ? `${hire.candidateName} — ${seatTitle(seat)}` : seatTitle(seat)
+              }
+            >
+              {hire !== undefined ? (
+                <>
+                  {occupant !== null && (
+                    <img
+                      className="hq-cell__avatar"
+                      src={occupant.portrait}
+                      alt={hire.candidateName}
+                    />
+                  )}
+                  <span className="hq-cell__name">{hire.candidateName}</span>
+                </>
+              ) : (
+                <span className="hq-cell__vacant">Vacant</span>
+              )}
+            </div>
           );
         })}
-      </ul>
-
-      {/*
-        Expansion is a preview of a mechanic that does not exist yet: the six base
-        offices are all "built", and buying more office space is post-MVP. Shown
-        disabled rather than omitted so the layout matches the design, and marked
-        so it never reads as a live purchase.
-      */}
-      <div className="hq-layout__expand" aria-disabled="true">
-        <div>
-          <p className="hq-layout__expand-title">Expand Headquarters</p>
-          <p className="hq-layout__expand-note">+2 office spaces · $10,000,000</p>
-        </div>
-        <span className="hq-layout__soon">Soon</span>
       </div>
-      <p className="hq-layout__path">
-        Expansion path: 6 offices → 8 offices ($10,000,000) → 10 offices ($25,000,000 max).
-      </p>
+
+      {office?.nextExpansion != null && (
+        <p className="hq-layout__path">
+          Next: +{office.nextExpansion.addsSeats} offices ·{' '}
+          {MONEY.format(office.nextExpansion.costMinor / 100)} — expand from the Headquarters page.
+        </p>
+      )}
     </div>
   );
 }
