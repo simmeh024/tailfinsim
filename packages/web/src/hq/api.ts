@@ -39,12 +39,23 @@ async function readOutcome(response: Response, label: string): Promise<OfficeOut
   };
 }
 
-/** The office as it stands, or null for a player with no airline (409). */
+/**
+ * The office as it stands, or null for a player with no airline (409/401).
+ *
+ * Never throws: the shell loads this on every screen, so a transport failure
+ * must degrade to "no office panel", not an unhandled rejection that takes the
+ * whole shell down with it.
+ */
 export async function fetchOffice(): Promise<OfficeStateResponse | null> {
-  const response = await fetch('/api/office', {
-    headers: { accept: 'application/json' },
-    credentials: 'same-origin',
-  });
+  let response: Response;
+  try {
+    response = await fetch('/api/office', {
+      headers: { accept: 'application/json' },
+      credentials: 'same-origin',
+    });
+  } catch {
+    return null;
+  }
   if (response.status === 409 || response.status === 401) return null;
   const outcome = await readOutcome(response, 'GET /api/office');
   return outcome.ok ? outcome.state : null;
