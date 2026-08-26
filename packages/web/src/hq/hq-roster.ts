@@ -21,6 +21,8 @@
 import chiefPilot from './assets/portraits/chief-pilot.webp';
 import groundOps from './assets/portraits/ground-ops.webp';
 import opsController from './assets/portraits/ops-controller.webp';
+import revenueManager2 from './assets/portraits/revenue-manager-2.webp';
+import revenueManager3 from './assets/portraits/revenue-manager-3.webp';
 import revenueManager from './assets/portraits/revenue-manager.webp';
 import routePlanner2 from './assets/portraits/route-planner-2.webp';
 import routePlanner3 from './assets/portraits/route-planner-3.webp';
@@ -118,8 +120,9 @@ export const HQ_ROLES: readonly HqRole[] = [
 
 /**
  * The candidate market. Several candidates may compete for one seat — the Route
- * Planner has three — and you hire one. Everyone else has one for now; more
- * arrive as portraits and names are generated, and each is one entry here.
+ * Planner and the Revenue Manager each have three — and you hire one. The rest
+ * have one for now; more arrive as portraits and names are generated, and each
+ * is one entry here.
  */
 export const HQ_CANDIDATES: readonly HqCandidate[] = [
   {
@@ -169,6 +172,30 @@ export const HQ_CANDIDATES: readonly HqCandidate[] = [
       detail: 'Keeps yield a touch firmer through a fare war than most would dare.',
     },
     portrait: revenueManager,
+  },
+  {
+    id: 'revenue-manager-sofia',
+    roleId: 'revenue-manager',
+    name: 'Sofía Reyes',
+    tier: 'Manager',
+    salaryPerMonthMinor: 2_100_000,
+    trait: {
+      label: 'Ancillary hunter',
+      detail: 'Turns bags, seats and lounges into a revenue line of their own.',
+    },
+    portrait: revenueManager2,
+  },
+  {
+    id: 'revenue-manager-anders',
+    roleId: 'revenue-manager',
+    name: 'Anders Holm',
+    tier: 'Director',
+    salaryPerMonthMinor: 2_900_000,
+    trait: {
+      label: 'Premium instinct',
+      detail: 'Reads exactly when the front cabin will bear another notch of fare.',
+    },
+    portrait: revenueManager3,
   },
   {
     id: 'ops-controller-diego',

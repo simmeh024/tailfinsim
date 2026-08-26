@@ -20,6 +20,8 @@ Each file is the finished portrait for the candidate named:
 | `route-planner-2.webp`   | Route Planner (Tom Bakker)            | Young man, TAILFIN lanyard, whiteboard of AMS route opportunities      |
 | `route-planner-3.webp`   | Route Planner (Victor Lindqvist)      | Older man with grey hair, "TAILFIN SIM — Smarter routes" screen        |
 | `revenue-manager.webp`   | Revenue Manager (Kenji Tan)           | Man at a revenue dashboard, "YIELD DEMAND PROFITABILITY" mug, RM books |
+| `revenue-manager-2.webp` | Revenue Manager (Sofía Reyes)         | Woman at a "REVENUE OVERVIEW $148.7M" dashboard, MEX routes            |
+| `revenue-manager-3.webp` | Revenue Manager (Anders Holm)         | Older grey-haired man, "REVENUE & DEMAND OVERVIEW" screen              |
 | `ops-controller.webp`    | Ops Controller (Diego Alvarez)        | Man with a headset in an ops control room, weather radar behind        |
 | `chief-pilot.webp`       | Chief Pilot (Sten Halvorsen)          | Man in a four-bar pilot uniform with wings, in a cockpit               |
 | `ground-ops.webp`        | Head of Ground Ops (Nadia Kovač)      | Woman in hi-vis, "HEAD OF GROUND OPS" badge, on the apron by a jet     |
