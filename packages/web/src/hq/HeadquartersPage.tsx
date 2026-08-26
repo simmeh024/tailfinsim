@@ -2,8 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { OFFICE_ROLES, type OfficeRole, type OfficeStateResponse } from '@tailfin/shared';
 
+import { useContextSelection } from '../shell/context-selection';
+
 import { dismissOffice, fetchOffice, hireOffice } from './api';
 import { candidatesForRole, formatSalary, HQ_ROLES, type HqCandidate } from './hq-roster';
+import { HqLayoutPanel } from './HqLayoutPanel';
 
 import type { ReactNode } from 'react';
 
@@ -35,12 +38,20 @@ import type { ReactNode } from 'react';
  *
  * An unfilled candidate is greyed, the hired one is in colour — a CSS `filter` on
  * the portrait keyed off `data-hired`, so one asset serves both states.
+ *
+ * ## The layout overview lives in the context panel
+ *
+ * H.4's context panel is where a player sees which unlocks the airline holds
+ * without leaving the world — so the page publishes an {@link HqLayoutPanel}
+ * floor-plan into it, republishing whenever the office changes and clearing it on
+ * unmount, exactly as the Crew page's selection does.
  */
 export function HeadquartersPage(): ReactNode {
   const [office, setOffice] = useState<OfficeStateResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<OfficeRole | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { select, clear } = useContextSelection();
 
   useEffect(() => {
     let live = true;
@@ -53,6 +64,17 @@ export function HeadquartersPage(): ReactNode {
       live = false;
     };
   }, []);
+
+  useEffect(() => {
+    select({
+      kind: 'hq-layout',
+      id: 'hq',
+      title: 'HQ Layout',
+      body: <HqLayoutPanel office={office} />,
+    });
+  }, [office, select]);
+
+  useEffect(() => () => clear(), [clear]);
 
   const hiredByRole = new Map<OfficeRole, string>(
     (office?.hires ?? []).map((hire) => [hire.role, hire.candidateId]),
