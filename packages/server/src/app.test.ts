@@ -211,22 +211,22 @@ describe('GET /api/version', () => {
   });
 
   it('serves the rights-pending A320neo candidate only from dev', async () => {
-    const dev = await devApp.inject({
-      method: 'HEAD',
-      url: '/api/dev/assets/aircraft/a320neo.glb',
-    });
-    expect(dev.statusCode).toBe(200);
-    expect(dev.headers['content-type']).toMatch(/^model\/gltf-binary/);
-    expect(dev.headers['cache-control']).toBe('private, no-store');
-    expect(dev.headers['x-content-type-options']).toBe('nosniff');
-    expect(Number(dev.headers['content-length'])).toBeGreaterThan(20_000_000);
-    expect(dev.body).toBe('');
+    const stagedLengths: number[] = [];
+    for (const fileName of ['aircraft-lod2.glb', 'aircraft-lod1.glb', 'aircraft-lod0.glb']) {
+      const url = `/api/dev/assets/aircraft/${fileName}`;
+      const dev = await devApp.inject({ method: 'HEAD', url });
+      expect(dev.statusCode).toBe(200);
+      expect(dev.headers['content-type']).toMatch(/^model\/gltf-binary/);
+      expect(dev.headers['cache-control']).toBe('private, no-store');
+      expect(dev.headers['x-content-type-options']).toBe('nosniff');
+      stagedLengths.push(Number(dev.headers['content-length']));
+      expect(dev.body).toBe('');
 
-    const production = await productionApp.inject({
-      method: 'HEAD',
-      url: '/api/dev/assets/aircraft/a320neo.glb',
-    });
-    expect(production.statusCode).toBe(404);
+      const production = await productionApp.inject({ method: 'HEAD', url });
+      expect(production.statusCode).toBe(404);
+    }
+    expect(stagedLengths[0]).toBeLessThan(stagedLengths[1]!);
+    expect(stagedLengths[1]).toBeLessThan(stagedLengths[2]!);
   });
 
   it('reports the same start time across requests', async () => {

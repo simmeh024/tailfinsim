@@ -39,7 +39,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 /** Both resolve the same from `src` (dev) and `dist` (built) — each sits one level under packages/server. */
 const HOLDING_PAGE = resolve(here, '..', '..', 'web', 'holding', 'index.html');
 const CLIENT_DIR = resolve(here, '..', '..', 'web', 'dist', 'client');
-const DEV_A320NEO_CANDIDATE = resolve(
+const DEV_A320NEO_CANDIDATE_DIRECTORY = resolve(
   here,
   '..',
   '..',
@@ -49,12 +49,27 @@ const DEV_A320NEO_CANDIDATE = resolve(
   'candidates',
   'a320neo',
   '1.0.0',
-  'aircraft.glb',
 );
 
-function readDevA320neoCandidate(environment: ServerEnv['environmentLabel']): Buffer | null {
-  if (environment !== 'dev' || !existsSync(DEV_A320NEO_CANDIDATE)) return null;
-  return readFileSync(DEV_A320NEO_CANDIDATE);
+const DEV_A320NEO_CANDIDATE_FILES = [
+  'aircraft-lod0.glb',
+  'aircraft-lod1.glb',
+  'aircraft-lod2.glb',
+] as const;
+let devA320neoCandidateCache: ReadonlyMap<string, Buffer> | null = null;
+
+function readDevA320neoCandidates(
+  environment: ServerEnv['environmentLabel'],
+): ReadonlyMap<string, Buffer> {
+  if (environment !== 'dev') return new Map();
+  if (devA320neoCandidateCache !== null) return devA320neoCandidateCache;
+  const candidates = new Map<string, Buffer>();
+  for (const fileName of DEV_A320NEO_CANDIDATE_FILES) {
+    const path = resolve(DEV_A320NEO_CANDIDATE_DIRECTORY, fileName);
+    if (existsSync(path)) candidates.set(fileName, readFileSync(path));
+  }
+  devA320neoCandidateCache = candidates;
+  return devA320neoCandidateCache;
 }
 
 export interface BuildAppOptions {
@@ -214,7 +229,7 @@ export function buildApp({
   // process lives — a redeploy restarts it.
   const deployInfo = readDeployInfo();
   const startedAtIso = new Date().toISOString();
-  const devA320neoCandidate = readDevA320neoCandidate(env.environmentLabel);
+  const devA320neoCandidates = readDevA320neoCandidates(env.environmentLabel);
 
   app.get(
     '/api/version',
@@ -244,25 +259,20 @@ export function buildApp({
    * No public cache may retain the candidate while its licence pack is pending.
    */
   if (env.environmentLabel === 'dev') {
-    app.get(
-      '/api/dev/assets/aircraft/a320neo.glb',
-      { logLevel: 'warn' },
-      async (_request, reply) => {
-        if (devA320neoCandidate === null) {
-          return reply.code(404).send({
-            code: 'candidate_not_found',
-            message: 'A320neo review candidate is not available',
-          });
-        }
-        return reply
-          .code(200)
-          .type('model/gltf-binary')
-          .header('cache-control', 'private, no-store')
-          .header('content-length', String(devA320neoCandidate.byteLength))
-          .header('x-content-type-options', 'nosniff')
-          .send(devA320neoCandidate);
-      },
-    );
+    for (const [fileName, candidate] of devA320neoCandidates) {
+      app.get(
+        `/api/dev/assets/aircraft/${fileName}`,
+        { logLevel: 'warn' },
+        async (_request, reply) =>
+          reply
+            .code(200)
+            .type('model/gltf-binary')
+            .header('cache-control', 'private, no-store')
+            .header('content-length', String(candidate.byteLength))
+            .header('x-content-type-options', 'nosniff')
+            .send(candidate),
+      );
+    }
   }
 
   /**

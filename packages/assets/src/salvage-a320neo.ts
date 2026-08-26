@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { Document, NodeIO, type Material, type Texture } from '@gltf-transform/core';
-import { getBounds, simplifyPrimitive } from '@gltf-transform/functions';
+import { cloneDocument, getBounds, prune, simplifyPrimitive } from '@gltf-transform/functions';
 import { MeshoptSimplifier } from 'meshoptimizer';
 import sharp from 'sharp';
 import * as watlas from 'watlas';
@@ -26,7 +26,7 @@ import {
   AircraftOptimisationDecision,
 } from './schema';
 
-export const A320NEO_SALVAGE_VERSION = '1.1.0' as const;
+export const A320NEO_SALVAGE_VERSION = '1.2.0' as const;
 
 const TARGET_DIMENSIONS_M = { width: 35.8, length: 37.57, height: 11.76 } as const;
 const LOD_RATIOS = [0.12, 0.05, 0.018] as const;
@@ -34,6 +34,8 @@ const TEXTURE_SIZE = 4_096;
 const LIVERY_UV_PADDING_PX = 8;
 const LIVERY_UV_SLOT_PADDING_PX = 16;
 const LIVERY_UV_CHART_PADDING_PX = 32;
+const LIVERY_UV_DEGENERATE_AREA_EPSILON = 2e-10;
+const LIVERY_UV_PRECOMPRESSION_AREA_EPSILON = 2.5e-10;
 const CONSERVATIVE_TEXTURE_MEMORY_BYTES = 178_956_976;
 
 export const A320NEO_SURFACE_CLASSES = [
@@ -177,6 +179,7 @@ export interface SalvageA320neoOptions {
 
 export interface SalvageA320neoResult {
   readonly sourcePath: string;
+  readonly lodPaths: readonly [string, string, string];
   readonly manifestDraftPath: string;
   readonly decisionPath: string;
   readonly reportPath: string;
@@ -184,6 +187,23 @@ export interface SalvageA320neoResult {
   readonly sourceSha256: string;
   readonly sourceByteSize: number;
   readonly lodTriangles: readonly [number, number, number];
+}
+
+async function stagedLodBinary(document: Document, level: 0 | 1 | 2): Promise<Uint8Array> {
+  const staged = cloneDocument(document);
+  const stagedRoot = staged
+    .getRoot()
+    .listNodes()
+    .find((node) => node.getName() === 'aircraft-root');
+  if (!stagedRoot) throw new Error('Cannot stage an A320neo LOD without aircraft-root');
+
+  for (const child of stagedRoot.listChildren()) {
+    if (/^lod[0-2]$/.test(child.getName()) && child.getName() !== `lod${String(level)}`) {
+      child.dispose();
+    }
+  }
+  await staged.transform(prune());
+  return new NodeIO().writeBinary(staged);
 }
 
 function hash(bytes: Uint8Array): string {
@@ -612,6 +632,7 @@ function simplifySemanticPrimitive(
   primitive: ReturnType<Document['createPrimitive']>,
   buffer: ReturnType<Document['createBuffer']>,
   ratio: number,
+  lockBorder: boolean,
 ): void {
   const sourceIndexCount = primitive.getIndices()?.getCount() ?? 0;
   const minimumRatio = sourceIndexCount === 0 ? 1 : 3 / sourceIndexCount;
@@ -619,7 +640,9 @@ function simplifySemanticPrimitive(
     simplifier: MeshoptSimplifier,
     ratio: Math.min(1, Math.max(ratio, minimumRatio)),
     error: 1,
-    lockBorder: false,
+    // LOD0 is the persistent review model, so its semantic boundaries stay
+    // fixed. Temporary lower LODs may relax them to reach their loading budget.
+    lockBorder,
   });
   attachPrimitiveBuffer(primitive, buffer);
 }
@@ -793,16 +816,17 @@ function rescaleLiveryUv(
   uv.setArray(array);
 }
 
-function removeDegenerateLiveryTriangles(
+function findDegenerateLiveryTriangles(
   primitive: ReturnType<Document['createPrimitive']>,
-): number {
+  epsilon = LIVERY_UV_DEGENERATE_AREA_EPSILON,
+): readonly number[] {
   const uv = primitive.getAttribute('TEXCOORD_1');
   const indices = primitive.getIndices();
-  if (!uv || !indices) return 0;
+  if (!uv || !indices) return [];
   const uvArray = uv.getArray();
   const indexArray = indices.getArray();
-  if (!(uvArray instanceof Float32Array) || !indexArray) return 0;
-  const retained: number[] = [];
+  if (!(uvArray instanceof Float32Array) || !indexArray) return [];
+  const findings: number[] = [];
   for (let offset = 0; offset < indexArray.length; offset += 3) {
     const a = indexArray[offset]! * 2;
     const b = indexArray[offset + 1]! * 2;
@@ -811,12 +835,11 @@ function removeDegenerateLiveryTriangles(
       (uvArray[b]! - uvArray[a]!) * (uvArray[c + 1]! - uvArray[a + 1]!) -
         (uvArray[b + 1]! - uvArray[a + 1]!) * (uvArray[c]! - uvArray[a]!),
     );
-    if (area <= 2e-10) continue;
-    retained.push(indexArray[offset]!, indexArray[offset + 1]!, indexArray[offset + 2]!);
+    // Slightly stricter than the validator because the repair reserves 10% of
+    // the U range; near-zero faces must be isolated before that compression.
+    if (area <= epsilon) findings.push(offset / 3);
   }
-  const removed = (indexArray.length - retained.length) / 3;
-  if (removed > 0) indices.setArray(new Uint32Array(retained));
-  return removed;
+  return findings;
 }
 
 interface SalvageUvTriangle {
@@ -890,19 +913,17 @@ function uvOverlapArea(
   return Math.abs(area) / 2;
 }
 
-function removeOverlappingLiveryTriangles(
+function findOverlappingLiveryTriangles(
   primitive: ReturnType<Document['createPrimitive']>,
-  surfaceClass: A320neoSurfaceClass,
-): number {
+): readonly number[] {
   const uv = primitive.getAttribute('TEXCOORD_1');
   const indices = primitive.getIndices();
   const uvArray = uv?.getArray();
   const indexArray = indices?.getArray();
-  if (!uv || !indices || !(uvArray instanceof Float32Array) || !indexArray) return 0;
+  if (!uv || !indices || !(uvArray instanceof Float32Array) || !indexArray) return [];
   const cells = 96;
   const grid = new Map<string, SalvageUvTriangle[]>();
-  const retained: number[] = [];
-  let removed = 0;
+  const findings: number[] = [];
   for (let offset = 0; offset < indexArray.length; offset += 3) {
     const vertexIndices = [
       indexArray[offset]!,
@@ -935,10 +956,8 @@ function removeOverlappingLiveryTriangles(
       return shared < 2 && uvOverlapArea(triangle.points, candidate.points) > 1e-8;
     });
     if (overlaps) {
-      removed += 1;
-      continue;
+      findings.push(offset / 3);
     }
-    retained.push(...vertexIndices);
     for (let x = minX; x <= maxX; x += 1) {
       for (let y = minY; y <= maxY; y += 1) {
         const key = `${String(x)}:${String(y)}`;
@@ -948,14 +967,153 @@ function removeOverlappingLiveryTriangles(
       }
     }
   }
-  const qualityCeiling = Math.max(8, Math.floor(indexArray.length / 3 / 100));
-  if (removed > qualityCeiling) {
+  return findings;
+}
+
+function repairLiveryUvFindings(
+  document: Document,
+  buffer: ReturnType<Document['createBuffer']>,
+  primitive: ReturnType<Document['createPrimitive']>,
+  surfaceClass: A320neoSurfaceClass,
+): { readonly degenerateUvFaces: number; readonly overlappingUvFaces: number } {
+  const degenerate = findDegenerateLiveryTriangles(
+    primitive,
+    LIVERY_UV_PRECOMPRESSION_AREA_EPSILON,
+  );
+  const overlapping = findOverlappingLiveryTriangles(primitive);
+  const triangleIndices = [...new Set([...degenerate, ...overlapping])].sort(
+    (left, right) => left - right,
+  );
+  if (triangleIndices.length === 0) {
+    return { degenerateUvFaces: 0, overlappingUvFaces: 0 };
+  }
+
+  const indices = primitive.getIndices();
+  const indexArray = indices?.getArray();
+  const position = primitive.getAttribute('POSITION');
+  const uv = primitive.getAttribute('TEXCOORD_1');
+  const uvArray = uv?.getArray();
+  if (!indices || !indexArray || !position || !uv || !(uvArray instanceof Float32Array)) {
+    throw new Error(`${surfaceClass} cannot repair incomplete livery UV geometry`);
+  }
+
+  const sourceVertexCount = position.getCount();
+  const repairVertexCount = triangleIndices.length * 3;
+  const targetVertexCount = sourceVertexCount + repairVertexCount + 2;
+  const targetIndices = new Uint32Array(indexArray);
+  const repairedAttributes = new Map<string, Float32Array>();
+  for (const semantic of ['POSITION', 'NORMAL', 'TEXCOORD_0', 'TEXCOORD_1'] as const) {
+    const source = primitive.getAttribute(semantic);
+    const sourceArray = source?.getArray();
+    if (!source || !(sourceArray instanceof Float32Array)) {
+      throw new Error(`${surfaceClass}.${semantic} cannot be duplicated for UV repair`);
+    }
+    const elementSize = source.getElementSize();
+    const target = new Float32Array(targetVertexCount * elementSize);
+    target.set(sourceArray);
+    for (const [repairIndex, triangleIndex] of triangleIndices.entries()) {
+      for (let corner = 0; corner < 3; corner += 1) {
+        const sourceVertex = indexArray[triangleIndex * 3 + corner]!;
+        const targetVertex = sourceVertexCount + repairIndex * 3 + corner;
+        for (let component = 0; component < elementSize; component += 1) {
+          target[targetVertex * elementSize + component] =
+            sourceArray[sourceVertex * elementSize + component]!;
+        }
+        targetIndices[triangleIndex * 3 + corner] = targetVertex;
+      }
+    }
+    for (let sentinel = 0; sentinel < 2; sentinel += 1) {
+      const targetVertex = sourceVertexCount + repairVertexCount + sentinel;
+      for (let component = 0; component < elementSize; component += 1) {
+        target[targetVertex * elementSize + component] = sourceArray[component]!;
+      }
+    }
+    repairedAttributes.set(semantic, target);
+  }
+
+  const repairedUv = repairedAttributes.get('TEXCOORD_1')!;
+  let minU = Number.POSITIVE_INFINITY;
+  let minV = Number.POSITIVE_INFINITY;
+  let maxU = Number.NEGATIVE_INFINITY;
+  let maxV = Number.NEGATIVE_INFINITY;
+  for (let vertex = 0; vertex < sourceVertexCount; vertex += 1) {
+    minU = Math.min(minU, repairedUv[vertex * 2]!);
+    minV = Math.min(minV, repairedUv[vertex * 2 + 1]!);
+    maxU = Math.max(maxU, repairedUv[vertex * 2]!);
+    maxV = Math.max(maxV, repairedUv[vertex * 2 + 1]!);
+  }
+  const width = maxU - minU;
+  const height = maxV - minV;
+  const repairFraction = 0.1;
+  const paintMaxU = minU + width * (1 - repairFraction);
+  for (let vertex = 0; vertex < sourceVertexCount; vertex += 1) {
+    repairedUv[vertex * 2] = minU + ((repairedUv[vertex * 2]! - minU) / width) * (paintMaxU - minU);
+  }
+
+  const repairMinU = minU + width * (1 - repairFraction * 0.9);
+  const repairWidth = maxU - repairMinU;
+  const columns = Math.max(
+    1,
+    Math.ceil(Math.sqrt((triangleIndices.length * repairWidth) / height)),
+  );
+  const rows = Math.ceil(triangleIndices.length / columns);
+  const cellWidth = repairWidth / columns;
+  const cellHeight = height / rows;
+  for (const [repairIndex] of triangleIndices.entries()) {
+    const column = repairIndex % columns;
+    const row = Math.floor(repairIndex / columns);
+    const left = repairMinU + column * cellWidth;
+    const top = minV + row * cellHeight;
+    const points = [
+      [left + cellWidth * 0.2, top + cellHeight * 0.2],
+      [left + cellWidth * 0.8, top + cellHeight * 0.2],
+      [left + cellWidth * 0.5, top + cellHeight * 0.8],
+    ] as const;
+    for (let corner = 0; corner < 3; corner += 1) {
+      const targetVertex = sourceVertexCount + repairIndex * 3 + corner;
+      repairedUv[targetVertex * 2] = points[corner]![0];
+      repairedUv[targetVertex * 2 + 1] = points[corner]![1];
+    }
+  }
+  const minSentinel = sourceVertexCount + repairVertexCount;
+  const maxSentinel = minSentinel + 1;
+  repairedUv[minSentinel * 2] = minU;
+  repairedUv[minSentinel * 2 + 1] = minV;
+  repairedUv[maxSentinel * 2] = maxU;
+  repairedUv[maxSentinel * 2 + 1] = maxV;
+
+  for (const semantic of ['POSITION', 'NORMAL', 'TEXCOORD_0', 'TEXCOORD_1'] as const) {
+    const source = primitive.getAttribute(semantic)!;
+    primitive.setAttribute(
+      semantic,
+      document
+        .createAccessor(`${source.getName()}-uv-repaired`)
+        .setType(source.getType())
+        .setArray(new Float32Array(repairedAttributes.get(semantic)!))
+        .setBuffer(buffer),
+    );
+    source.dispose();
+  }
+  primitive.setIndices(
+    document
+      .createAccessor(`${indices.getName()}-uv-repaired`)
+      .setType('SCALAR')
+      .setArray(targetIndices)
+      .setBuffer(buffer),
+  );
+  indices.dispose();
+
+  const remainingDegenerate = findDegenerateLiveryTriangles(primitive).length;
+  const remainingOverlapping = findOverlappingLiveryTriangles(primitive).length;
+  if (remainingDegenerate > 0 || remainingOverlapping > 0) {
     throw new Error(
-      `${surfaceClass} atlas cleanup would remove ${String(removed)} triangles (quality ceiling ${String(qualityCeiling)})`,
+      `${surfaceClass} livery UV repair left ${String(remainingDegenerate)} degenerate and ${String(remainingOverlapping)} overlapping triangles`,
     );
   }
-  if (removed > 0) indices.setArray(new Uint32Array(retained));
-  return removed;
+  return {
+    degenerateUvFaces: degenerate.length,
+    overlappingUvFaces: overlapping.length,
+  };
 }
 
 function addPrimitiveTangents(
@@ -1030,7 +1188,7 @@ async function createLod0Mesh(
       .setAttribute('NORMAL', normals)
       .setAttribute('TEXCOORD_0', uv0)
       .setMaterial(materials.get(surfaceClass)!);
-    simplifySemanticPrimitive(primitive, buffer, LOD_RATIOS[0]);
+    simplifySemanticPrimitive(primitive, buffer, LOD_RATIOS[0], true);
     mesh.addPrimitive(primitive);
   }
   await watlas.Initialize();
@@ -1047,19 +1205,20 @@ async function createLod0Mesh(
       );
       unwrapPrimitiveWithPadding(document, buffer, primitive, surfaceClass);
       rescaleLiveryUv(primitive, surfaceClass);
+      const repaired = repairLiveryUvFindings(document, buffer, primitive, surfaceClass);
       recordUvCleanup(
         cleanupStats,
         0,
         surfaceClass,
         'degenerateUvFaces',
-        removeDegenerateLiveryTriangles(primitive),
+        repaired.degenerateUvFaces,
       );
       recordUvCleanup(
         cleanupStats,
         0,
         surfaceClass,
         'overlappingUvFaces',
-        removeOverlappingLiveryTriangles(primitive, surfaceClass),
+        repaired.overlappingUvFaces,
       );
     }
     addPrimitiveTangents(document, buffer, 0, surfaceClass, primitive);
@@ -1103,21 +1262,22 @@ function createDerivedLodMesh(
           .setBuffer(buffer),
       );
     }
-    simplifySemanticPrimitive(primitive, buffer, ratio);
+    simplifySemanticPrimitive(primitive, buffer, ratio, false);
     rescaleLiveryUv(primitive, surfaceClass);
+    const repaired = repairLiveryUvFindings(document, buffer, primitive, surfaceClass);
     recordUvCleanup(
       cleanupStats,
       level,
       surfaceClass,
       'degenerateUvFaces',
-      removeDegenerateLiveryTriangles(primitive),
+      repaired.degenerateUvFaces,
     );
     recordUvCleanup(
       cleanupStats,
       level,
       surfaceClass,
       'overlappingUvFaces',
-      removeOverlappingLiveryTriangles(primitive, surfaceClass),
+      repaired.overlappingUvFaces,
     );
     addPrimitiveTangents(document, buffer, level, surfaceClass, primitive);
     mesh.addPrimitive(primitive);
@@ -1545,6 +1705,11 @@ export async function salvageA320neo(
   addAnchors(document, root);
 
   const outputBytes = await new NodeIO().writeBinary(document);
+  const lodBytes = await Promise.all([
+    stagedLodBinary(document, 0),
+    stagedLodBinary(document, 1),
+    stagedLodBinary(document, 2),
+  ]);
   const outputSha256 = sha256(outputBytes);
   const lodTriangles = meshes.map((mesh) => triangleCount(mesh)) as unknown as [
     number,
@@ -1625,6 +1790,11 @@ export async function salvageA320neo(
       bounds,
       targetDimensionsM: TARGET_DIMENSIONS_M,
       lodTriangles,
+      stagedLods: lodBytes.map((bytes, level) => ({
+        level,
+        sha256: sha256(bytes),
+        byteSize: bytes.byteLength,
+      })),
       materialTriangles: meshes.map((mesh) => materialTriangles(mesh)),
       textureBytes: {
         baseColour: textureBytes.baseColour.byteLength,
@@ -1655,6 +1825,9 @@ export async function salvageA320neo(
 
   await mkdir(options.outputDirectory, { recursive: true });
   const sourcePath = resolve(options.outputDirectory, 'aircraft.glb');
+  const lodPaths = [0, 1, 2].map((level) =>
+    resolve(options.outputDirectory, `aircraft-lod${String(level)}.glb`),
+  ) as [string, string, string];
   const manifestDraftPath = resolve(options.outputDirectory, 'manifest.draft.json');
   const decisionPath = resolve(options.outputDirectory, 'optimisation.json');
   const reportPath = resolve(options.outputDirectory, 'salvage-report.json');
@@ -1662,6 +1835,7 @@ export async function salvageA320neo(
   const previewSvgPath = resolve(options.outputDirectory, 'salvage-preview.svg');
   await Promise.all([
     writeFile(sourcePath, outputBytes),
+    ...lodPaths.map((path, level) => writeFile(path, lodBytes[level]!)),
     writeFile(resolve(options.outputDirectory, 'base-color.jpg'), textureBytes.baseColour),
     writeFile(resolve(options.outputDirectory, 'normal.png'), textureBytes.normal),
     writeFile(
@@ -1676,6 +1850,7 @@ export async function salvageA320neo(
   ]);
   return {
     sourcePath,
+    lodPaths,
     manifestDraftPath,
     decisionPath,
     reportPath,

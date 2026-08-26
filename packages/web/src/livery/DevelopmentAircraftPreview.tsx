@@ -15,7 +15,13 @@ import type {
 } from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three/examples/jsm/controls/OrbitControls.js';
 
-const A320NEO_DEV_MODEL_URL = '/api/dev/assets/aircraft/a320neo.glb';
+export const A320NEO_DEV_MODEL_STAGES = [
+  { level: 2, url: '/api/dev/assets/aircraft/aircraft-lod2.glb' },
+  { level: 1, url: '/api/dev/assets/aircraft/aircraft-lod1.glb' },
+  { level: 0, url: '/api/dev/assets/aircraft/aircraft-lod0.glb' },
+] as const;
+
+type DevelopmentLod = (typeof A320NEO_DEV_MODEL_STAGES)[number]['level'];
 
 const MATERIAL_ZONE = Object.freeze({
   'mat-fuselage': 'fuselage',
@@ -29,14 +35,16 @@ const MATERIAL_ZONE = Object.freeze({
 /**
  * The salvaged candidate contains a small number of exterior triangles whose
  * winding is reversed. Rendering those materials single-sided makes the hull
- * appear transparent as the camera moves around it. Keep the correction scoped
- * to paintable aircraft skin so glass and engine internals retain their authored
- * material behaviour.
+ * appear transparent as the camera moves around it. Render all salvaged
+ * surfaces double-sided, but scope forced opacity and depth-writing to paintable
+ * aircraft skin so glass and engine internals retain their authored behaviour.
  */
 export function configureA320neoDevelopmentExteriorMaterial(
   material: MeshStandardMaterial,
   doubleSide: Side,
 ): boolean {
+  material.side = doubleSide;
+  material.needsUpdate = true;
   if (!Object.hasOwn(MATERIAL_ZONE, material.name)) return false;
 
   material.transparent = false;
@@ -44,8 +52,10 @@ export function configureA320neoDevelopmentExteriorMaterial(
   material.alphaTest = 0;
   material.depthTest = true;
   material.depthWrite = true;
-  material.side = doubleSide;
-  material.needsUpdate = true;
+  material.metalnessMap = null;
+  material.roughnessMap = null;
+  material.metalness = 0.06;
+  material.roughness = 0.72;
   return true;
 }
 
@@ -119,8 +129,8 @@ export function a320neoDevelopmentMaterialColors(
 interface PreviewRuntime {
   readonly camera: PerspectiveCamera;
   readonly controls: OrbitControlsType;
-  readonly model: Object3D;
-  readonly originalMaterialColors: ReadonlyMap<MeshStandardMaterial, number>;
+  model: Object3D;
+  originalMaterialColors: ReadonlyMap<MeshStandardMaterial, number>;
   readonly renderer: WebGLRenderer;
   readonly scene: Scene;
   readonly resetView: () => void;
@@ -162,6 +172,7 @@ export function DevelopmentAircraftPreview({
   const colors = useMemo(() => a320neoDevelopmentMaterialColors(layers), [layers]);
   const colorsRef = useRef(colors);
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading');
+  const [lodLevel, setLodLevel] = useState<DevelopmentLod | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
 
   useEffect(() => {
@@ -201,16 +212,19 @@ export function DevelopmentAircraftPreview({
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 0.95;
+        renderer.toneMappingExposure = 1.05;
 
         const scene = new THREE.Scene();
-        scene.add(new THREE.HemisphereLight(0xddeeff, 0x101820, 2.1));
+        scene.add(new THREE.HemisphereLight(0xddeeff, 0x405061, 2.4));
         const keyLight = new THREE.DirectionalLight(0xffffff, 3.2);
         keyLight.position.set(-18, 30, 24);
         scene.add(keyLight);
         const rimLight = new THREE.DirectionalLight(0x86c8ff, 1.6);
         rimLight.position.set(24, 12, -28);
         scene.add(rimLight);
+        const undersideFill = new THREE.DirectionalLight(0xc5ddf2, 1.8);
+        undersideFill.position.set(-8, -24, 14);
+        scene.add(undersideFill);
 
         const camera = new THREE.PerspectiveCamera(34, 1, 0.05, 500);
         const controls = new OrbitControls(camera, canvas);
@@ -221,20 +235,38 @@ export function DevelopmentAircraftPreview({
 
         const loader = new GLTFLoader();
         loader.setMeshoptDecoder(MeshoptDecoder);
-        const gltf = await new Promise<Awaited<ReturnType<typeof loader.loadAsync>>>(
-          (resolve, reject) => {
+        const loadStage = async (
+          stage: (typeof A320NEO_DEV_MODEL_STAGES)[number],
+        ): Promise<Awaited<ReturnType<typeof loader.loadAsync>>> =>
+          new Promise((resolve, reject) => {
             loader.load(
-              A320NEO_DEV_MODEL_URL,
+              stage.url,
               resolve,
               (event) => {
-                if (event.total > 0 && !cancelled) {
+                if (stage.level === 2 && event.total > 0 && !cancelled) {
                   setProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
                 }
               },
               reject,
             );
-          },
-        );
+          });
+        const prepareModel = (model: Object3D): ReadonlyMap<MeshStandardMaterial, number> => {
+          const originalMaterialColors = new Map<MeshStandardMaterial, number>();
+          model.traverse((object) => {
+            const material = (object as Object3D & { material?: MeshStandardMaterial }).material;
+            if (!material?.isMeshStandardMaterial) return;
+            if (!originalMaterialColors.has(material)) {
+              originalMaterialColors.set(material, material.color.getHex());
+            }
+            const color = colorsRef.current[material.name];
+            if (color !== undefined) material.color.set(color);
+            material.envMapIntensity = 0.65;
+            configureA320neoDevelopmentExteriorMaterial(material, THREE.DoubleSide);
+          });
+          return originalMaterialColors;
+        };
+
+        const gltf = await loadStage(A320NEO_DEV_MODEL_STAGES[0]);
         if (cancelled) {
           disposeModel(gltf.scene);
           renderer.dispose();
@@ -242,22 +274,7 @@ export function DevelopmentAircraftPreview({
         }
 
         const model = gltf.scene;
-        const lod1 = model.getObjectByName('lod1');
-        const lod2 = model.getObjectByName('lod2');
-        if (lod1 !== undefined) lod1.visible = false;
-        if (lod2 !== undefined) lod2.visible = false;
-        const originalMaterialColors = new Map<MeshStandardMaterial, number>();
-        model.traverse((object) => {
-          const material = (object as Object3D & { material?: MeshStandardMaterial }).material;
-          if (!material?.isMeshStandardMaterial) return;
-          if (!originalMaterialColors.has(material)) {
-            originalMaterialColors.set(material, material.color.getHex());
-          }
-          const color = colorsRef.current[material.name];
-          if (color !== undefined) material.color.set(color);
-          material.envMapIntensity = 0.65;
-          configureA320neoDevelopmentExteriorMaterial(material, THREE.DoubleSide);
-        });
+        const originalMaterialColors = prepareModel(model);
         scene.add(model);
 
         const bounds = new THREE.Box3().setFromObject(model);
@@ -306,6 +323,34 @@ export function DevelopmentAircraftPreview({
         pendingControls = null;
         pendingRenderer = null;
         setState('ready');
+        setLodLevel(2);
+
+        for (const stage of A320NEO_DEV_MODEL_STAGES.slice(1)) {
+          if (cancelled) break;
+          try {
+            const nextGltf = await loadStage(stage);
+            if (cancelled) {
+              disposeModel(nextGltf.scene);
+              break;
+            }
+            const runtime = runtimeRef.current;
+            if (runtime === null) {
+              disposeModel(nextGltf.scene);
+              break;
+            }
+            const nextModel = nextGltf.scene;
+            const nextOriginalMaterialColors = prepareModel(nextModel);
+            runtime.scene.remove(runtime.model);
+            disposeModel(runtime.model);
+            runtime.model = nextModel;
+            runtime.originalMaterialColors = nextOriginalMaterialColors;
+            runtime.scene.add(nextModel);
+            setLodLevel(stage.level);
+          } catch {
+            // Keep the last successfully rendered stage. A failed upgrade must
+            // never turn a visible aircraft back into an empty canvas.
+          }
+        }
       } catch {
         pendingControls?.dispose();
         pendingRenderer?.dispose();
@@ -349,15 +394,21 @@ export function DevelopmentAircraftPreview({
       role="img"
       aria-label="A320neo interactive true 3D livery preview"
       data-state={state}
+      data-lod={lodLevel ?? 'fallback'}
     >
-      <canvas ref={canvasRef} aria-hidden="true" />
+      {state === 'loading' && (
+        <div className="livery-true-preview__fallback" aria-hidden="true">
+          {fallback}
+        </div>
+      )}
+      <canvas ref={canvasRef} aria-hidden="true" data-visible={state === 'ready'} />
       {state === 'loading' && (
         <p className="livery-true-preview__loading" role="status">
           Loading true 3D A320neo{progress === null ? '…' : ` · ${String(progress)}%`}
         </p>
       )}
       <div className="livery-true-preview__badges" aria-hidden="true">
-        <span>True 3D · LOD0</span>
+        <span>True 3D</span>
         <span>Dev review · licence pending</span>
       </div>
       <button
