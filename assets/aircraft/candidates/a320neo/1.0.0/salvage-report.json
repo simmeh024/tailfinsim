@@ -8,17 +8,17 @@
     "fallbackAssignments": [],
     "method": "connected-component spatial rules plus base-colour atlas sampling; protected groups require human preview review",
     "sourceTriangles": {
-      "cabin_windows": 36002,
-      "cockpit_glass": 11640,
-      "engine_interiors": 234300,
+      "cabin_windows": 2426,
+      "cockpit_glass": 6209,
+      "engine_interiors": 47134,
       "fin": 31968,
-      "fuselage": 848630,
-      "horizontal_stabilisers": 108405,
+      "fuselage": 923829,
+      "horizontal_stabilisers": 108460,
       "lights": 9333,
-      "nacelle_exteriors": 503173,
+      "nacelle_exteriors": 652888,
       "rubber_tyres": 1708,
       "winglets": 7773,
-      "wings": 184308
+      "wings": 185512
     }
   },
   "derived": {
@@ -30,73 +30,73 @@
       ],
       "min": [
         -17.896331787109375,
-        0.002600600942969322,
+        0.0023720336612313986,
         -18.77204704284668
       ]
     },
-    "byteSize": 27732912,
+    "byteSize": 26110240,
     "lodTriangles": [
-      248971,
-      103847,
-      39855
+      242322,
+      101080,
+      37065
     ],
     "materialTriangles": [
       {
-        "mat-cabin-windows": 4474,
-        "mat-cockpit-glass": 1482,
-        "mat-engine-interiors": 39500,
+        "mat-cabin-windows": 746,
+        "mat-cockpit-glass": 1047,
+        "mat-engine-interiors": 9926,
         "mat-fin": 3835,
-        "mat-fuselage": 101789,
-        "mat-horizontal-stabilisers": 13007,
+        "mat-fuselage": 110809,
+        "mat-horizontal-stabilisers": 13014,
         "mat-lights": 1119,
-        "mat-nacelle-exteriors": 60361,
+        "mat-nacelle-exteriors": 78279,
         "mat-rubber-tyres": 368,
         "mat-winglets": 931,
-        "mat-wings": 22105
+        "mat-wings": 22248
       },
       {
-        "mat-cabin-windows": 1862,
-        "mat-cockpit-glass": 617,
-        "mat-engine-interiors": 16446,
+        "mat-cabin-windows": 309,
+        "mat-cockpit-glass": 436,
+        "mat-engine-interiors": 4132,
         "mat-fin": 1596,
-        "mat-fuselage": 42412,
-        "mat-horizontal-stabilisers": 5419,
+        "mat-fuselage": 46170,
+        "mat-horizontal-stabilisers": 5422,
         "mat-lights": 465,
-        "mat-nacelle-exteriors": 25150,
+        "mat-nacelle-exteriors": 32609,
         "mat-rubber-tyres": 284,
         "mat-winglets": 387,
-        "mat-wings": 9209
+        "mat-wings": 9270
       },
       {
-        "mat-cabin-windows": 669,
-        "mat-cockpit-glass": 222,
-        "mat-engine-interiors": 5923,
+        "mat-cabin-windows": 111,
+        "mat-cockpit-glass": 157,
+        "mat-engine-interiors": 1486,
         "mat-fin": 575,
-        "mat-fuselage": 15258,
-        "mat-horizontal-stabilisers": 1951,
+        "mat-fuselage": 16620,
+        "mat-horizontal-stabilisers": 1952,
         "mat-lights": 167,
-        "mat-nacelle-exteriors": 11352,
+        "mat-nacelle-exteriors": 12238,
         "mat-rubber-tyres": 284,
         "mat-winglets": 139,
-        "mat-wings": 3315
+        "mat-wings": 3336
       }
     ],
-    "sha256": "ec6bfad2c34ff8e559e52c159df921de63afff0365a4a2ebaa36ed470cfa0d63",
+    "sha256": "3eda725a4dd70be45e07f516fbd51a2b99554d4d1042e13ab27289d010e4a8cd",
     "stagedLods": [
       {
-        "byteSize": 15822032,
+        "byteSize": 14634208,
         "level": 0,
-        "sha256": "dc97e93c2927a5513990bf3e4c845218835d03a19f36509298f8de61bea3f2a9"
+        "sha256": "c0d064605139c2b3f7ff534b7ef49eb67ed9a41d442ea13052f6d3a03370a0fc"
       },
       {
-        "byteSize": 8805408,
+        "byteSize": 8509920,
         "level": 1,
-        "sha256": "2b4441843bdd81c8e1237bce013c32ac2ad5b47ec2b034e07747dec427ccb20c"
+        "sha256": "903981e944e49b8753d1e15906ba0a678e5bf6226f97d109a1b2dc05f1326e3f"
       },
       {
-        "byteSize": 5349696,
+        "byteSize": 5089776,
         "level": 2,
-        "sha256": "ce04e346c3939d9a489cbce6d397e8bfbbabbab5aeda1d6682e85d1bfba15d3d"
+        "sha256": "0c8c638dcbed2941348e871e3b04481257cd627a18b5adbca069403265b7d3c0"
       }
     ],
     "targetDimensionsM": {
@@ -119,19 +119,19 @@
       "overlappingUvFaces": 1
     },
     "lod0.fuselage": {
-      "degenerateUvFaces": 164,
-      "duplicateFaces": 45,
-      "overlappingUvFaces": 48
+      "degenerateUvFaces": 210,
+      "duplicateFaces": 48,
+      "overlappingUvFaces": 52
     },
     "lod0.horizontal_stabilisers": {
       "degenerateUvFaces": 2,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 19
+      "overlappingUvFaces": 6
     },
     "lod0.nacelle_exteriors": {
-      "degenerateUvFaces": 1686,
-      "duplicateFaces": 16,
-      "overlappingUvFaces": 23
+      "degenerateUvFaces": 265,
+      "duplicateFaces": 65,
+      "overlappingUvFaces": 57
     },
     "lod0.winglets": {
       "degenerateUvFaces": 0,
@@ -140,8 +140,8 @@
     },
     "lod0.wings": {
       "degenerateUvFaces": 0,
-      "duplicateFaces": 11,
-      "overlappingUvFaces": 34
+      "duplicateFaces": 12,
+      "overlappingUvFaces": 22
     },
     "lod1.cabin_windows": {
       "degenerateUvFaces": 0,
@@ -164,14 +164,14 @@
       "overlappingUvFaces": 2
     },
     "lod1.fuselage": {
-      "degenerateUvFaces": 5,
+      "degenerateUvFaces": 17,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 20
+      "overlappingUvFaces": 17
     },
     "lod1.horizontal_stabilisers": {
       "degenerateUvFaces": 1,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 0
+      "overlappingUvFaces": 3
     },
     "lod1.lights": {
       "degenerateUvFaces": 0,
@@ -179,9 +179,9 @@
       "overlappingUvFaces": 0
     },
     "lod1.nacelle_exteriors": {
-      "degenerateUvFaces": 0,
+      "degenerateUvFaces": 4,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 31
+      "overlappingUvFaces": 30
     },
     "lod1.rubber_tyres": {
       "degenerateUvFaces": 0,
@@ -196,7 +196,7 @@
     "lod1.wings": {
       "degenerateUvFaces": 0,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 22
+      "overlappingUvFaces": 18
     },
     "lod2.cabin_windows": {
       "degenerateUvFaces": 0,
@@ -219,9 +219,9 @@
       "overlappingUvFaces": 5
     },
     "lod2.fuselage": {
-      "degenerateUvFaces": 1,
+      "degenerateUvFaces": 6,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 61
+      "overlappingUvFaces": 58
     },
     "lod2.horizontal_stabilisers": {
       "degenerateUvFaces": 0,
@@ -234,9 +234,9 @@
       "overlappingUvFaces": 0
     },
     "lod2.nacelle_exteriors": {
-      "degenerateUvFaces": 2,
+      "degenerateUvFaces": 1,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 65
+      "overlappingUvFaces": 80
     },
     "lod2.rubber_tyres": {
       "degenerateUvFaces": 0,
@@ -251,7 +251,7 @@
     "lod2.wings": {
       "degenerateUvFaces": 0,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 28
+      "overlappingUvFaces": 30
     }
   },
   "original": {
@@ -261,7 +261,7 @@
     "sha256": "4421977f9f3ee6539f50d8ba20fd0a5f371d70cfffc946b58d639887cb676cd2",
     "triangles": 1977240
   },
-  "salvageVersion": "1.2.0",
+  "salvageVersion": "1.3.0",
   "validation": {
     "errors": 0,
     "hints": 0,

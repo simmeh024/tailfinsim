@@ -32,12 +32,15 @@ const MATERIAL_ZONE = Object.freeze({
   'mat-nacelle-exteriors': 'engine_nacelles',
 } satisfies Readonly<Record<string, LiveryZone>>);
 
+const WINDOW_MATERIALS = new Set(['mat-cockpit-glass', 'mat-cabin-windows']);
+
 /**
  * The salvaged candidate contains a small number of exterior triangles whose
  * winding is reversed. Rendering those materials single-sided makes the hull
  * appear transparent as the camera moves around it. Render all salvaged
- * surfaces double-sided, but scope forced opacity and depth-writing to paintable
- * aircraft skin so glass and engine internals retain their authored behaviour.
+ * surfaces double-sided. The source has no cabin behind its window polygons, so
+ * glass must remain an opaque, dark reflective surface; transparent glass would
+ * expose the back face of the fuselage and read as a missing window.
  */
 export function configureA320neoDevelopmentExteriorMaterial(
   material: MeshStandardMaterial,
@@ -45,6 +48,32 @@ export function configureA320neoDevelopmentExteriorMaterial(
 ): boolean {
   material.side = doubleSide;
   material.needsUpdate = true;
+  if (WINDOW_MATERIALS.has(material.name)) {
+    material.transparent = false;
+    material.opacity = 1;
+    material.alphaTest = 0;
+    material.depthTest = true;
+    material.depthWrite = true;
+    material.metalnessMap = null;
+    material.roughnessMap = null;
+    material.color.set(0x102538);
+    material.metalness = 0.12;
+    material.roughness = 0.24;
+    return false;
+  }
+  if (material.name === 'mat-engine-interiors') {
+    material.transparent = false;
+    material.opacity = 1;
+    material.alphaTest = 0;
+    material.depthTest = true;
+    material.depthWrite = true;
+    material.metalnessMap = null;
+    material.roughnessMap = null;
+    material.color.set(0x7f8992);
+    material.metalness = 0.3;
+    material.roughness = 0.48;
+    return false;
+  }
   if (!Object.hasOwn(MATERIAL_ZONE, material.name)) return false;
 
   material.transparent = false;
@@ -183,7 +212,9 @@ export function DevelopmentAircraftPreview({
       const material = (object as Object3D & { material?: MeshStandardMaterial }).material;
       if (!material?.isMeshStandardMaterial) return;
       const original = runtime.originalMaterialColors.get(material);
-      if (original !== undefined) material.color.setHex(original);
+      if (original !== undefined && Object.hasOwn(MATERIAL_ZONE, material.name)) {
+        material.color.setHex(original);
+      }
       const color = colors[material.name];
       if (color !== undefined) material.color.set(color);
     });
@@ -212,17 +243,17 @@ export function DevelopmentAircraftPreview({
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.05;
+        renderer.toneMappingExposure = 0.8;
 
         const scene = new THREE.Scene();
-        scene.add(new THREE.HemisphereLight(0xddeeff, 0x405061, 2.4));
-        const keyLight = new THREE.DirectionalLight(0xffffff, 3.2);
+        scene.add(new THREE.HemisphereLight(0xddeeff, 0x344252, 1.25));
+        const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
         keyLight.position.set(-18, 30, 24);
         scene.add(keyLight);
-        const rimLight = new THREE.DirectionalLight(0x86c8ff, 1.6);
+        const rimLight = new THREE.DirectionalLight(0x86c8ff, 0.65);
         rimLight.position.set(24, 12, -28);
         scene.add(rimLight);
-        const undersideFill = new THREE.DirectionalLight(0xc5ddf2, 1.8);
+        const undersideFill = new THREE.DirectionalLight(0xc5ddf2, 0.9);
         undersideFill.position.set(-8, -24, 14);
         scene.add(undersideFill);
 

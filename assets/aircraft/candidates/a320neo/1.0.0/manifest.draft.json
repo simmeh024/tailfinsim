@@ -72,9 +72,9 @@
       "unlicensedLogos": []
     },
     "delivery": {
-      "byteSize": 27732912,
+      "byteSize": 26110240,
       "filePath": "aircraft.glb",
-      "fileSha256": "ec6bfad2c34ff8e559e52c159df921de63afff0365a4a2ebaa36ed470cfa0d63",
+      "fileSha256": "3eda725a4dd70be45e07f516fbd51a2b99554d4d1042e13ab27289d010e4a8cd",
       "forwardAxis": "-Z",
       "gltfVersion": "2.0",
       "mimeType": "model/gltf-binary",
@@ -145,17 +145,17 @@
       {
         "level": 0,
         "nodeName": "lod0",
-        "triangleCount": 248971
+        "triangleCount": 242322
       },
       {
         "level": 1,
         "nodeName": "lod1",
-        "triangleCount": 103847
+        "triangleCount": 101080
       },
       {
         "level": 2,
         "nodeName": "lod2",
-        "triangleCount": 39855
+        "triangleCount": 37065
       }
     ],
     "materials": [
