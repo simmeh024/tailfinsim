@@ -3090,3 +3090,81 @@ export const officeExpansion = pgTable(
 );
 
 export type OfficeExpansionRow = typeof officeExpansion.$inferSelect;
+
+/**
+ * One airline's automation mode and policy for one system (M5-05, ADR-0023).
+ *
+ * The ladder is per airline **and per system**, so a player can delegate
+ * disruption response while keeping revenue manual. Absence of a row is the
+ * default — Manual, no policy — so the default costs no row and a world reset
+ * that deletes it restores it (ADR-0005). `policy` is a JSON document stored as
+ * text and parsed on the way out against today's schema, exactly as the economy
+ * config and the maintenance state are; never a stored expression the worker
+ * evaluates. Owner-scoped: the airline is resolved from the session, never
+ * accepted from the client.
+ */
+export const automationSetting = pgTable(
+  'automation_setting',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    /** The governed system — `'disruption'` first; the set grows as systems land. */
+    system: text('system').notNull(),
+    /** `'manual' | 'policy' | 'delegated'`. */
+    mode: text('mode').notNull(),
+    /** The declarative policy document as JSON text, or null when none is written. */
+    policy: text('policy'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('automation_setting_airline_system_key').on(table.airlineId, table.system),
+  ],
+);
+
+export type AutomationSettingRow = typeof automationSetting.$inferSelect;
+
+/**
+ * A situation the worker detected but is not authorised to resolve (M5-05, ADR-0023).
+ *
+ * §3.1's promise is that a decision waits for the player rather than being
+ * guessed offline; this is where "waits for you" lives. One open row per
+ * situation — a disruption under Manual, or one under Policy/Delegated that no
+ * rule covers. The partial unique index keeps a restart or two racing workers
+ * from stacking duplicates: one open task per subject, idempotent by constraint
+ * like the queue and the used market. Nothing in the worker *acts* on this; the
+ * admin health view and the player's surfaces read it. It is to decisions what
+ * the AIR-06 ledger is to money — the record of what was deliberately left undone.
+ */
+export const operationsTask = pgTable(
+  'operations_task',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    system: text('system').notNull(),
+    kind: text('kind').notNull(),
+    /** What the task is about — a flight — or null for a base-wide task. */
+    subjectType: text('subject_type'),
+    subjectId: uuid('subject_id'),
+    /** The human sentence the console shows. */
+    detail: text('detail').notNull(),
+    raisedAt: timestamp('raised_at', { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('operations_task_open_subject_key')
+      .on(table.airlineId, table.system, table.subjectId)
+      .where(sql`resolved_at is null`),
+  ],
+);
+
+export type OperationsTaskRow = typeof operationsTask.$inferSelect;
