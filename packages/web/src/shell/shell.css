@@ -5681,3 +5681,19 @@ body {
   border-color: var(--border-subtle);
   color: var(--text-muted);
 }
+
+.hq-page__authority {
+  color: var(--status-profit, var(--accent));
+  font-weight: 600;
+}
+
+.hq-page__error {
+  width: min(72rem, 100%);
+  margin: var(--space-4) auto 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--accent-quiet);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}

@@ -184,6 +184,8 @@ const COVERED_WRITE_ENDPOINTS = [
   'POST /api/fleet/acquisition-quotes',
   'POST /api/fleet/acquisitions',
   'POST /api/fleet/maintenance/checks',
+  'POST /api/office/hires',
+  'DELETE /api/office/hires/:role',
   'POST /api/routes',
   'POST /api/routes/:routeId/fares/preview',
   'PUT /api/crew/policies',

@@ -546,6 +546,7 @@ export const AdminCashMovementCause = z.enum([
   'crew_payroll',
   'crew_base_overhead',
   'crew_positioning',
+  'office_salary',
   'admin_adjustment',
   'flight_settlement',
   'migration_opening_balance',

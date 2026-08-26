@@ -24,6 +24,7 @@ import { readDeployInfo } from './deploy-info';
 import { type ServerEnv } from './env';
 import { createEconomicsProvider } from './network/economics';
 import { registerNetworkRoutes } from './network/routes';
+import { registerOfficeRoutes } from './office/routes';
 import { registerWorldRoutes } from './world/routes';
 
 /**
@@ -202,6 +203,7 @@ export function buildApp({
   registerWorldRoutes(app, { db });
   // Crew, behind the same airline boundary (M5-01).
   registerCrewRoutes(app, { db });
+  registerOfficeRoutes(app, { db });
 
   const startedAt = Date.now();
 

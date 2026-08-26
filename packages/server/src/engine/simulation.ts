@@ -12,6 +12,7 @@ import { completeDueConversions } from '../crew/store';
 import { type Database } from '../db/client';
 import { world, type WorldRow } from '../db/schema';
 import { reviewNpcCarriers } from '../npc/operate';
+import { runOfficePayroll } from '../office/payroll';
 import {
   drainDueEvents,
   queueDepth,
@@ -93,6 +94,8 @@ export interface TickReport {
   crewRested: number;
   /** M5-02. Airlines billed for a month of crew. */
   crewPaid: number;
+  /** M5-04. Airlines billed for a month of office salaries. */
+  officeSalariesPaid: number;
   /** M5-03. Crew bases whose morale was reviewed. */
   moraleReviews: number;
   /** M5-03. Heads who resigned. The expensive half of section 9.2's bill. */
@@ -153,6 +156,8 @@ export interface SimulationEngineOptions {
   returnCrew?: typeof returnRestedCrew;
   /** M5-02. Bills the month's salaries and base overheads. */
   payCrew?: typeof runCrewPayroll;
+  /** M5-04. Bills the month's office salaries. */
+  payOffice?: typeof runOfficePayroll;
   /** M5-03. Moves morale toward its target and collects the bill. */
   reviewMorale?: typeof reviewCrewMorale;
   /** M5-03. Returns crew whose sick leave has run out. */
@@ -232,6 +237,8 @@ export interface EngineSnapshot {
   crewRested: number;
   /** M5-02. Airlines billed for a month of crew. */
   crewPaid: number;
+  /** M5-04. Airlines billed for a month of office salaries. */
+  officeSalariesPaid: number;
   /** M5-03. Crew bases whose morale was reviewed. */
   moraleReviews: number;
   /** M5-03. Heads who resigned. The expensive half of section 9.2's bill. */
@@ -322,6 +329,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     standDownCrew = standDownIdleCrew,
     returnCrew = returnRestedCrew,
     payCrew = runCrewPayroll,
+    payOffice = runOfficePayroll,
     reviewMorale = reviewCrewMorale,
     returnSick = returnSickCrew,
   } = options;
@@ -348,6 +356,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let crewStoodDown = 0;
   let crewRested = 0;
   let crewPaid = 0;
+  let officeSalariesPaid = 0;
   let moraleReviews = 0;
   let crewResignations = 0;
   let crewSickened = 0;
@@ -367,6 +376,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     let tickCrewStoodDown = 0;
     let tickCrewRested = 0;
     let tickCrewPaid = 0;
+    let tickOfficePaid = 0;
     let tickMoraleReviews = 0;
     let tickResignations = 0;
     let tickSickened = 0;
@@ -504,6 +514,17 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
           );
         }
 
+        // Office payday (M5-04). Same monthly, idempotent shape as crew payroll,
+        // billing the salaries snapshotted on each office_hire row.
+        const officePaid = await payOffice(db, entry.id, worldNow);
+        tickOfficePaid += officePaid.airlinesBilled;
+        if (officePaid.airlinesBilled > 0) {
+          log?.info?.(
+            `[${entry.name}] office payroll: ${String(officePaid.airlinesBilled)} airline(s), ` +
+              `${String(Math.round(officePaid.totalMinor / 100))}`,
+          );
+        }
+
         /*
          * Morale (M5-03). The review is what makes section 9.2's bill *arrive*:
          * a base drifts toward the target its pay band, rosters, hotels and rest
@@ -576,6 +597,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     crewStoodDown += tickCrewStoodDown;
     crewRested += tickCrewRested;
     crewPaid += tickCrewPaid;
+    officeSalariesPaid += tickOfficePaid;
     moraleReviews += tickMoraleReviews;
     crewResignations += tickResignations;
     crewSickened += tickSickened;
@@ -601,6 +623,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       crewStoodDown: tickCrewStoodDown,
       crewRested: tickCrewRested,
       crewPaid: tickCrewPaid,
+      officeSalariesPaid: tickOfficePaid,
       moraleReviews: tickMoraleReviews,
       crewResignations: tickResignations,
       crewSickened: tickSickened,
@@ -667,6 +690,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         crewStoodDown,
         crewRested,
         crewPaid,
+        officeSalariesPaid,
         moraleReviews,
         crewResignations,
         crewSickened,

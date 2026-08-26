@@ -42,6 +42,7 @@ import { checkReachability, haversineNm } from '@tailfin/sim';
 import type { AircraftCapability, AirportCapability, Reachability } from '@tailfin/sim';
 
 import { airline, airport, route, runway } from '../db/schema';
+import { hasExtendedAuthority, requiresExtendedAuthority } from '../office/authority';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
 import type { Database } from '../db/client';
@@ -74,7 +75,8 @@ export type OpenRouteResult =
   | { ok: false; kind: 'unknown-airport'; icao: string }
   | { ok: false; kind: 'same-airport' }
   | { ok: false; kind: 'duplicate' }
-  | { ok: false; kind: 'unreachable'; reachability: Extract<Reachability, { ok: false }> };
+  | { ok: false; kind: 'unreachable'; reachability: Extract<Reachability, { ok: false }> }
+  | { ok: false; kind: 'authority'; reason: 'long-haul' | 'international' };
 
 interface AirportRow {
   icao: string;
@@ -195,6 +197,26 @@ export async function openRoute(
 
   if (!reachability.ok) {
     return { ok: false, kind: 'unreachable', reachability };
+  }
+
+  /*
+   * Extended operating authority (M5-04, §9.1). A route that leaves the country
+   * or runs long-haul is unreachable until the airline holds the Safety &
+   * Compliance seat — the hire's concrete unlock, and M5-04's first acceptance
+   * criterion. Checked here, after geography and before the row is written, so a
+   * refused route is never created; the message names which authority is missing
+   * so the client can point at the seat rather than say a generic "unavailable".
+   */
+  const international = from.isoCountry !== to.isoCountry;
+  if (
+    requiresExtendedAuthority({
+      originCountry: from.isoCountry,
+      destinationCountry: to.isoCountry,
+      greatCircleNm,
+    }) &&
+    !(await hasExtendedAuthority(db, own.id))
+  ) {
+    return { ok: false, kind: 'authority', reason: international ? 'international' : 'long-haul' };
   }
 
   return db.transaction(async (tx): Promise<OpenRouteResult> => {
