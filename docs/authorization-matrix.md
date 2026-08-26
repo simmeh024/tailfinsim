@@ -46,6 +46,28 @@ for every signed-in player. It is selected with an owner-scoped query, never fet
 and compared after the fact. A cross-owner id and a nonexistent id therefore execute the same
 lookup and return the same status, code and message. Current airline routes are private.
 
+**Testing a private resource (SEC-05).** Object-level authorization is the vulnerability class
+that survives a good review — the route guard passes because the caller _is_ signed in, and the
+handler then acts on whatever id it was handed. The test that catches it is the one that needs a
+_second_ player owning a _second_ resource, so `createOwnershipTestSuite`
+(`packages/server/src/test-fixtures/ownership.ts`) founds that pair once: `playerA` and `playerB`
+each with an airline in one shared world, and `playerA` with a third airline in a second world.
+`airline/cross-owner-routes.test.ts` is the worked example to copy. Every owned endpoint asserts,
+against that fixture:
+
+- the owner reaches their own resource (200);
+- another player's id returns the endpoint's 404, **byte-identical** to a missing and a malformed
+  id — never a 403, which would confirm the resource exists;
+- the **same player's** resource in another world returns that same 404 while a different world is
+  active — ownership is the player _and_ the world, and the player id matching is the trap;
+- after a refused write or delete, the target row is read back and shown **unchanged**. The status
+  code proves the response; only the row proves the effect, and a handler that answers 404 after
+  writing passes the first and fails the second.
+
+The predicate belongs in the query — `where(and(eq(id, …), eq(ownerId, resolved)))` — so an
+unowned row is never loaded, rather than loaded and then compared. Loading first works until
+someone adds a log line.
+
 A **public projection** is a deliberately limited view whose existence and fields are safe for
 its declared audience independent of ownership. It must be marked public in this matrix and
 carry disclosure tests; a public view never grants mutation rights over its backing private
