@@ -29,6 +29,8 @@ Each file is the finished portrait for the candidate named:
 | `chief-pilot-2.webp`     | Chief Pilot (Fiona Brennan)           | Red-haired woman in a four-bar captain uniform, "CHIEF PILOT" door placard  |
 | `chief-pilot-3.webp`     | Chief Pilot (Grant Wexford)           | Older grey-haired man in captain uniform, "FLIGHT SAFETY LEADERSHIP" poster |
 | `ground-ops.webp`        | Head of Ground Ops (Nadia Kovač)      | Woman in hi-vis, "HEAD OF GROUND OPS" badge, on the apron by a jet          |
+| `ground-ops-2.webp`      | Head of Ground Ops (Omar Haddad)      | Bald man with glasses at a "GROUND OPERATIONS OVERVIEW" dashboard           |
+| `ground-ops-3.webp`      | Head of Ground Ops (Luca Moretti)     | Young man in hi-vis, "GROUND OPS" badge, by a fuel truck and jet            |
 | `safety-compliance.webp` | Safety & Compliance (Claire Fontaine) | Woman in hi-vis, "SAFETY & COMPLIANCE" badge, in a maintenance hangar       |
 
 ## Format
