@@ -60,9 +60,9 @@ export function configureA320neoDevelopmentExteriorMaterial(
     material.map = null;
     material.metalnessMap = null;
     material.roughnessMap = null;
-    material.color.set(0x102538);
-    material.emissive.set(0x030b12);
-    material.emissiveIntensity = 0.35;
+    material.color.set(0x244d68);
+    material.emissive.set(0x07141e);
+    material.emissiveIntensity = 0.4;
     material.metalness = 0.12;
     material.roughness = 0.24;
     return false;

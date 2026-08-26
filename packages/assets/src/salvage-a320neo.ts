@@ -26,7 +26,7 @@ import {
   AircraftOptimisationDecision,
 } from './schema';
 
-export const A320NEO_SALVAGE_VERSION = '1.3.0' as const;
+export const A320NEO_SALVAGE_VERSION = '1.4.0' as const;
 
 const TARGET_DIMENSIONS_M = { width: 35.8, length: 37.57, height: 11.76 } as const;
 const LOD_RATIOS = [0.12, 0.05, 0.018] as const;
@@ -358,10 +358,12 @@ export function classifyA320neoSurface(input: {
   }
   if (
     centre.z > 0.405 &&
+    absoluteX > 0.012 &&
     absoluteX < 0.065 &&
     centre.y > -0.055 &&
+    centre.y < 0.035 &&
     luminance < 130 &&
-    (Math.abs(normal.x) > 0.2 || normal.y > 0.15)
+    Math.abs(normal.x) > 0.2
   ) {
     return 'cockpit_glass';
   }

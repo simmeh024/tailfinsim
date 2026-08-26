@@ -9,10 +9,10 @@
     "method": "connected-component spatial rules plus base-colour atlas sampling; protected groups require human preview review",
     "sourceTriangles": {
       "cabin_windows": 2426,
-      "cockpit_glass": 6209,
+      "cockpit_glass": 4602,
       "engine_interiors": 47134,
       "fin": 31968,
-      "fuselage": 923829,
+      "fuselage": 925436,
       "horizontal_stabilisers": 108460,
       "lights": 9333,
       "nacelle_exteriors": 652888,
@@ -34,19 +34,19 @@
         -18.77204704284668
       ]
     },
-    "byteSize": 26110240,
+    "byteSize": 25954468,
     "lodTriangles": [
-      242322,
-      101080,
-      37065
+      242161,
+      101012,
+      37040
     ],
     "materialTriangles": [
       {
         "mat-cabin-windows": 746,
-        "mat-cockpit-glass": 1047,
+        "mat-cockpit-glass": 692,
         "mat-engine-interiors": 9926,
         "mat-fin": 3835,
-        "mat-fuselage": 110809,
+        "mat-fuselage": 111003,
         "mat-horizontal-stabilisers": 13014,
         "mat-lights": 1119,
         "mat-nacelle-exteriors": 78279,
@@ -56,10 +56,10 @@
       },
       {
         "mat-cabin-windows": 309,
-        "mat-cockpit-glass": 436,
+        "mat-cockpit-glass": 288,
         "mat-engine-interiors": 4132,
         "mat-fin": 1596,
-        "mat-fuselage": 46170,
+        "mat-fuselage": 46250,
         "mat-horizontal-stabilisers": 5422,
         "mat-lights": 465,
         "mat-nacelle-exteriors": 32609,
@@ -69,10 +69,10 @@
       },
       {
         "mat-cabin-windows": 111,
-        "mat-cockpit-glass": 157,
+        "mat-cockpit-glass": 103,
         "mat-engine-interiors": 1486,
         "mat-fin": 575,
-        "mat-fuselage": 16620,
+        "mat-fuselage": 16649,
         "mat-horizontal-stabilisers": 1952,
         "mat-lights": 167,
         "mat-nacelle-exteriors": 12238,
@@ -81,22 +81,22 @@
         "mat-wings": 3336
       }
     ],
-    "sha256": "3eda725a4dd70be45e07f516fbd51a2b99554d4d1042e13ab27289d010e4a8cd",
+    "sha256": "47c2219977a30da6f90ddf088e14dc7010295edd140d8bcae91b075fa4f6783f",
     "stagedLods": [
       {
-        "byteSize": 14634208,
+        "byteSize": 14553428,
         "level": 0,
-        "sha256": "c0d064605139c2b3f7ff534b7ef49eb67ed9a41d442ea13052f6d3a03370a0fc"
+        "sha256": "4ae027459ae6e230c76c25aafd8619d667dea60402bb509ab7e24a731cac0b5a"
       },
       {
-        "byteSize": 8509920,
+        "byteSize": 8464632,
         "level": 1,
-        "sha256": "903981e944e49b8753d1e15906ba0a678e5bf6226f97d109a1b2dc05f1326e3f"
+        "sha256": "e03a1bd0e554925977e6a5a65dbd0ac70d4b25cdb70e45e4d0be8561477d5564"
       },
       {
-        "byteSize": 5089776,
+        "byteSize": 5078712,
         "level": 2,
-        "sha256": "0c8c638dcbed2941348e871e3b04481257cd627a18b5adbca069403265b7d3c0"
+        "sha256": "704a583d647c8f65f8f52f0e87a72ea3069e3c338cfcf884523c7545e47fe210"
       }
     ],
     "targetDimensionsM": {
@@ -119,9 +119,9 @@
       "overlappingUvFaces": 1
     },
     "lod0.fuselage": {
-      "degenerateUvFaces": 210,
-      "duplicateFaces": 48,
-      "overlappingUvFaces": 52
+      "degenerateUvFaces": 194,
+      "duplicateFaces": 47,
+      "overlappingUvFaces": 31
     },
     "lod0.horizontal_stabilisers": {
       "degenerateUvFaces": 2,
@@ -164,9 +164,9 @@
       "overlappingUvFaces": 2
     },
     "lod1.fuselage": {
-      "degenerateUvFaces": 17,
+      "degenerateUvFaces": 22,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 17
+      "overlappingUvFaces": 9
     },
     "lod1.horizontal_stabilisers": {
       "degenerateUvFaces": 1,
@@ -219,9 +219,9 @@
       "overlappingUvFaces": 5
     },
     "lod2.fuselage": {
-      "degenerateUvFaces": 6,
+      "degenerateUvFaces": 4,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 58
+      "overlappingUvFaces": 48
     },
     "lod2.horizontal_stabilisers": {
       "degenerateUvFaces": 0,
@@ -261,7 +261,7 @@
     "sha256": "4421977f9f3ee6539f50d8ba20fd0a5f371d70cfffc946b58d639887cb676cd2",
     "triangles": 1977240
   },
-  "salvageVersion": "1.3.0",
+  "salvageVersion": "1.4.0",
   "validation": {
     "errors": 0,
     "hints": 0,
