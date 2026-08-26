@@ -184,8 +184,17 @@ the owner rows above record the system that exists now rather than preserving th
 ## Maintenance rule
 
 Add or change the matrix row in the same pull request as an HTTP route. The row states the
-intended boundary first; tests then prove the registered route agrees. SEC-04 owns the
-Fastify route-enumeration test that makes a missing row fail, and later ownership/admin issues
-own the denial and unchanged-effect cases. Until those land, review this table explicitly
-against every `app.get`/`post`/`put`/`patch`/`delete` registration. Any new private identifier
-also needs missing, malformed and cross-owner cases with the same observable 404 response.
+intended boundary first; tests then prove the registered route agrees.
+
+This is now enforced, not merely asked for. `authorization-inventory.test.ts` (SEC-04)
+enumerates the routes Fastify actually registered and fails if any lacks a row here, or if
+any row here names a route that no longer exists — so a route added without a row, or a row
+left behind by a renamed route, is a failing test rather than a reviewer's catch. It runs
+without a database, on every pull request. `admin/authorization.test.ts` then proves the
+running server answers 401 to a guest, 403 to a signed-in non-admin and lets the administrator
+through, for every `/api/admin/*` route, and that a refused destructive request changed
+nothing and wrote no audit row. Later ownership issues own the cross-owner cases.
+
+The gate compares _routes_, not boundaries — it cannot read intent — so still fill each row's
+guest/player/owner/admin columns from the design. Any new private identifier also needs
+missing, malformed and cross-owner cases with the same observable 404 response.
