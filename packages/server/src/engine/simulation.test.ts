@@ -382,9 +382,10 @@ describe('queue depth', () => {
 
 describe('crew conversions on the tick', () => {
   /*
-   * M5-02 put two more crew sweeps on the tick. They are stubbed here rather
-   * than left to the real ones because the real ones read the world's economy
-   * config, which this fake database does not have -- and the resulting failure
+   * M5-02 put two more crew sweeps on the tick, and M5-04 added office payroll.
+   * They are stubbed here rather than left to the real ones because the real
+   * ones read the world's economy config or the office table, which this fake
+   * database does not have -- and the resulting failure
    * would be counted in `crewErrors`, which is exactly what these tests assert
    * on. `duty-store.test.ts` proves what the sweeps do.
    */
@@ -392,6 +393,7 @@ describe('crew conversions on the tick', () => {
     standDownCrew: () => Promise.resolve({ stoodDown: 0, hotelledMinor: 0 }),
     returnCrew: () => Promise.resolve({ returned: 0 }),
     payCrew: () => Promise.resolve({ airlinesBilled: 0, totalMinor: 0 }),
+    payOffice: () => Promise.resolve({ airlinesBilled: 0, totalMinor: 0 }),
     reviewMorale: () => Promise.resolve({ basesReviewed: 0, resignations: 0, sickened: 0 }),
     returnSick: () => Promise.resolve({ returned: 0 }),
   };

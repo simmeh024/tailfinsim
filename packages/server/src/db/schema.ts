@@ -454,6 +454,7 @@ export const cashMovementCause = pgEnum('cash_movement_cause', [
   'crew_payroll',
   'crew_base_overhead',
   'crew_positioning',
+  'office_salary',
   'admin_adjustment',
   'flight_settlement',
   'migration_opening_balance',
@@ -3016,3 +3017,40 @@ export const crewDutyPeriod = pgTable(
     ),
   ],
 );
+
+/**
+ * Office hires (M5-04, section 9.1).
+ *
+ * One row per filled seat: which candidate an airline put in which role, in
+ * which world, and the salary the worker bills monthly. `role` is the
+ * `@tailfin/shared` `OfficeRole` string; the salary is snapshotted at hire so a
+ * later retune of the role catalogue cannot silently re-bill a standing hire.
+ *
+ * A seat holds one person: `(airline_id, role)` is unique, so hiring a rival
+ * into a filled seat is a replace, never a second row. Both foreign keys cascade
+ * -- an airline reset or a world reset takes its office with it, which is
+ * ADR-0005's requirement, not a convenience.
+ */
+export const officeHire = pgTable(
+  'office_hire',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    /** A `@tailfin/shared` `OfficeRole`. */
+    role: text('role').notNull(),
+    /** Opaque candidate identity, for the client to render whom you hired. */
+    candidateId: text('candidate_id').notNull(),
+    candidateName: text('candidate_name').notNull(),
+    /** Salary per game month, minor units, snapshotted at hire. */
+    monthlySalaryMinor: bigint('monthly_salary_minor', { mode: 'number' }).notNull(),
+    hiredAt: timestamp('hired_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('office_hire_airline_role_key').on(table.airlineId, table.role)],
+);
+
+export type OfficeHireRow = typeof officeHire.$inferSelect;

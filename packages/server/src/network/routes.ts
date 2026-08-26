@@ -164,6 +164,19 @@ export function registerNetworkRoutes(
           .code(409)
           .send({ code: 'duplicate_route', message: 'You already fly that pair' });
       }
+      if (result.kind === 'authority') {
+        // The concrete unlock, refused (M5-04). 422: the request was well-formed
+        // and a rule declined it, and the message names the seat to fill rather
+        // than a generic unavailable.
+        return reply.code(422).send({
+          code: 'office_authority_required',
+          message:
+            result.reason === 'international'
+              ? 'An international route needs a Safety & Compliance hire in your office.'
+              : 'A long-haul route needs a Safety & Compliance hire in your office.',
+          fields: { role: ['safety-compliance'] },
+        });
+      }
       return reply.code(422).send(result);
     },
   );

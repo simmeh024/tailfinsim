@@ -18,6 +18,8 @@
  * the role table changes.
  */
 
+import type { OfficeRole } from '@tailfin/shared';
+
 import chiefPilot2 from './assets/portraits/chief-pilot-2.webp';
 import chiefPilot3 from './assets/portraits/chief-pilot-3.webp';
 import chiefPilot from './assets/portraits/chief-pilot.webp';
@@ -37,14 +39,12 @@ import safetyCompliance2 from './assets/portraits/safety-compliance-2.webp';
 import safetyCompliance3 from './assets/portraits/safety-compliance-3.webp';
 import safetyCompliance from './assets/portraits/safety-compliance.webp';
 
-/** The six MVP roles named in the M5-04 issue and §9.1. */
-export type HqRoleId =
-  | 'route-planner'
-  | 'revenue-manager'
-  | 'ops-controller'
-  | 'chief-pilot'
-  | 'ground-ops'
-  | 'safety-compliance';
+/**
+ * The six MVP roles. Aliased to the shared `OfficeRole` so the client's role
+ * strings and the server's are one type — a candidate's `roleId` is exactly what
+ * `POST /api/office/hires` expects, checked by the compiler rather than by hope.
+ */
+export type HqRoleId = OfficeRole;
 
 /** A candidate's seniority band. Flavour for now; real tiers arrive with the market. */
 export type HqTier = 'Analyst' | 'Manager' | 'Director';

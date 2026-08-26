@@ -253,6 +253,13 @@
       "when": 1787542035731,
       "tag": "0035_flimsy_professor_monster",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1787756009080,
+      "tag": "0036_lively_vulture",
+      "breakpoints": true
     }
   ]
 }

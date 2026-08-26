@@ -1,12 +1,9 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
-import {
-  candidatesForRole,
-  formatSalary,
-  HQ_ROLES,
-  type HqCandidate,
-  type HqRoleId,
-} from './hq-roster';
+import { OFFICE_ROLES, type OfficeRole, type OfficeStateResponse } from '@tailfin/shared';
+
+import { dismissOffice, fetchOffice, hireOffice } from './api';
+import { candidatesForRole, formatSalary, HQ_ROLES, type HqCandidate } from './hq-roster';
 
 import type { ReactNode } from 'react';
 
@@ -17,35 +14,72 @@ import type { ReactNode } from 'react';
  * off the player's hands. The page is organised by **seat**, and under each seat
  * the **candidates** in the market for it. Each seat states the concrete
  * capability filling it unlocks — never a stat bonus, per §9.1 and the M5-04
- * acceptance criterion — and each candidate shows a salary, a tier and their own
- * visible trait.
+ * acceptance criterion.
  *
- * ## One hire per seat
+ * ## The office is the server's now
  *
- * A seat holds one person. Hiring a candidate fills the seat and puts the others
- * back on the market; hiring a different one swaps. State is a map from seat to
- * the hired candidate, held here for now — the real candidate market, its refresh
- * over game time, and the salary billing are the server half of M5-04 that lands
- * on top of this without changing the layout.
+ * Which seat is filled, and by whom, is read from `/api/office`; hiring and
+ * dismissing go back to the server and return the whole office. The salary shown
+ * is the seat's, from the shared role catalogue — the one the worker actually
+ * bills every month — not a candidate's asking figure, so the number on the card
+ * is the number on the ledger. The candidate market (the named faces and their
+ * traits) is still the client's; what crosses the wire is which seat you filled.
+ *
+ * ## The gate reads as a gate
+ *
+ * Filling Safety & Compliance unlocks long-haul, ETOPS and international routes —
+ * the server refuses those routes until it is filled. The page says so, and marks
+ * the state, so the seat reads as the unlock it is rather than one more hire.
  *
  * ## Hired reads as colour, unhired as grey
  *
- * The one visual rule the brief asked for: an unfilled candidate is greyed, the
- * hired one is in colour. It is a CSS `filter` on the portrait keyed off
- * `data-hired`, so one asset serves both states and the office fills in with
- * colour as you hire.
+ * An unfilled candidate is greyed, the hired one is in colour — a CSS `filter` on
+ * the portrait keyed off `data-hired`, so one asset serves both states.
  */
 export function HeadquartersPage(): ReactNode {
-  const [hiredByRole, setHiredByRole] = useState<ReadonlyMap<HqRoleId, string>>(new Map());
+  const [office, setOffice] = useState<OfficeStateResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [pending, setPending] = useState<OfficeRole | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const hire = useCallback((candidate: HqCandidate) => {
-    setHiredByRole((current) => {
-      const next = new Map(current);
-      if (next.get(candidate.roleId) === candidate.id) next.delete(candidate.roleId);
-      else next.set(candidate.roleId, candidate.id);
-      return next;
+  useEffect(() => {
+    let live = true;
+    void fetchOffice().then((state) => {
+      if (!live) return;
+      setOffice(state);
+      setLoading(false);
     });
+    return () => {
+      live = false;
+    };
   }, []);
+
+  const hiredByRole = new Map<OfficeRole, string>(
+    (office?.hires ?? []).map((hire) => [hire.role, hire.candidateId]),
+  );
+
+  const act = useCallback(async (role: OfficeRole, run: () => ReturnType<typeof hireOffice>) => {
+    setPending(role);
+    setError(null);
+    const outcome = await run();
+    if (outcome.ok) setOffice(outcome.state);
+    else setError(outcome.failure.message);
+    setPending(null);
+  }, []);
+
+  const onHire = useCallback(
+    (candidate: HqCandidate) =>
+      act(candidate.roleId, () =>
+        hireOffice({
+          role: candidate.roleId,
+          candidateId: candidate.id,
+          candidateName: candidate.name,
+        }),
+      ),
+    [act],
+  );
+
+  const onDismiss = useCallback((role: OfficeRole) => act(role, () => dismissOffice(role)), [act]);
 
   const filled = hiredByRole.size;
 
@@ -63,14 +97,28 @@ export function HeadquartersPage(): ReactNode {
         </div>
         <p className="hq-page__count" role="status">
           <strong>{filled}</strong> of {HQ_ROLES.length} seats filled
+          {office?.hasExtendedAuthority === true && (
+            <>
+              {' · '}
+              <span className="hq-page__authority">long-haul authority unlocked</span>
+            </>
+          )}
         </p>
       </header>
 
-      <div className="hq-roster">
+      {error !== null && (
+        <p className="hq-page__error" role="alert">
+          {error}
+        </p>
+      )}
+
+      <div className="hq-roster" aria-busy={loading}>
         {HQ_ROLES.map((seat) => {
           const candidates = candidatesForRole(seat.id);
           const hiredId = hiredByRole.get(seat.id);
           const hiredCandidate = candidates.find((candidate) => candidate.id === hiredId) ?? null;
+          const salary = formatSalary(OFFICE_ROLES[seat.id].monthlySalaryMinor);
+          const seatPending = pending === seat.id;
 
           return (
             <section key={seat.id} className="hq-seat" aria-label={seat.role}>
@@ -119,7 +167,7 @@ export function HeadquartersPage(): ReactNode {
                           </div>
                           <div>
                             <dt>Salary</dt>
-                            <dd>{formatSalary(candidate.salaryPerMonthMinor)}/mo</dd>
+                            <dd>{salary}/mo</dd>
                           </div>
                         </dl>
 
@@ -134,7 +182,10 @@ export function HeadquartersPage(): ReactNode {
                           type="button"
                           className="hq-card__action"
                           aria-pressed={isHired}
-                          onClick={() => hire(candidate)}
+                          disabled={loading || seatPending}
+                          onClick={() =>
+                            isHired ? void onDismiss(seat.id) : void onHire(candidate)
+                          }
                         >
                           {isHired ? 'Let go' : `Hire ${given}`}
                         </button>

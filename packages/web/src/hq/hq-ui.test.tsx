@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HeadquartersPage } from './HeadquartersPage';
 import { candidatesForRole, HQ_CANDIDATES, HQ_ROLES } from './hq-roster';
@@ -83,7 +83,57 @@ describe('the office roster', () => {
 });
 
 describe('the Headquarters page', () => {
-  it('shows every seat and every candidate', () => {
+  // A tiny in-memory stand-in for `/api/office`: the page reads it on mount and
+  // writes to it on hire and dismiss, and the server always answers with the
+  // whole office, so the mock does too.
+  let hires: { role: string; candidateId: string; candidateName: string }[] = [];
+
+  function officeState() {
+    return {
+      hires: hires.map((h) => ({
+        ...h,
+        monthlySalaryMinor: 1_000_000,
+        hiredAt: '2024-10-20T00:00:00.000Z',
+      })),
+      hasExtendedAuthority: hires.some((h) => h.role === 'safety-compliance'),
+    };
+  }
+
+  beforeEach(() => {
+    hires = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit): Promise<Response> => {
+        const method = init?.method ?? 'GET';
+        const ok = () =>
+          Promise.resolve(new Response(JSON.stringify(officeState()), { status: 200 }));
+        if (url === '/api/office' && method === 'GET') return ok();
+        if (url === '/api/office/hires' && method === 'POST') {
+          const raw = typeof init?.body === 'string' ? init.body : '{}';
+          const body = JSON.parse(raw) as {
+            role: string;
+            candidateId: string;
+            candidateName: string;
+          };
+          hires = hires.filter((h) => h.role !== body.role);
+          hires.push(body);
+          return ok();
+        }
+        if (url.startsWith('/api/office/hires/') && method === 'DELETE') {
+          const role = url.slice('/api/office/hires/'.length);
+          hires = hires.filter((h) => h.role !== role);
+          return ok();
+        }
+        throw new Error(`unexpected fetch ${method} ${url}`);
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('shows every seat and every candidate', async () => {
     render(<HeadquartersPage />);
     expect(screen.getByRole('heading', { level: 1, name: 'Headquarters' })).toBeInTheDocument();
     for (const role of HQ_ROLES) {
@@ -92,10 +142,13 @@ describe('the Headquarters page', () => {
     for (const candidate of HQ_CANDIDATES) {
       expect(screen.getByText(candidate.name)).toBeInTheDocument();
     }
-    expect(screen.getByRole('status')).toHaveTextContent(`0 of ${String(HQ_ROLES.length)} seats`);
+    // The office loads empty from the server.
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(`0 of ${String(HQ_ROLES.length)} seats`),
+    );
   });
 
-  it('starts every candidate greyed, and colours the one hired', () => {
+  it('starts every candidate greyed, and colours the one hired', async () => {
     render(<HeadquartersPage />);
     const mara = HQ_CANDIDATES.find((c) => c.id === 'route-planner-mara')!;
     const card = screen.getByText(mara.name).closest<HTMLElement>('.hq-card');
@@ -104,36 +157,52 @@ describe('the Headquarters page', () => {
     if (!portrait) throw new Error('no portrait');
 
     expect(portrait.dataset.hired).toBe('false');
-    fireEvent.click(within(card).getByRole('button', { name: /Hire Mara/i }));
-    expect(portrait.dataset.hired).toBe('true');
+    const hireMara = within(card).getByRole('button', { name: /Hire Mara/i });
+    await waitFor(() => expect(hireMara).toBeEnabled());
+    fireEvent.click(hireMara);
+    await waitFor(() => expect(portrait.dataset.hired).toBe('true'));
     expect(screen.getByRole('status')).toHaveTextContent('1 of');
-    // The seat now names its hire.
     const seat = screen.getByRole('region', { name: 'Route Planner' });
     expect(within(seat).getByText(/Seat filled by Mara Ellison/i)).toBeInTheDocument();
   });
 
-  it('holds one person per seat — hiring a rival swaps, it does not stack', () => {
+  it('holds one person per seat — hiring a rival swaps, it does not stack', async () => {
     render(<HeadquartersPage />);
     const seat = screen.getByRole('region', { name: 'Route Planner' });
 
-    fireEvent.click(within(seat).getByRole('button', { name: /Hire Mara/i }));
+    const hireMara = within(seat).getByRole('button', { name: /Hire Mara/i });
+    await waitFor(() => expect(hireMara).toBeEnabled());
+    fireEvent.click(hireMara);
+    await within(seat).findByText(/Seat filled by Mara Ellison/i);
     fireEvent.click(within(seat).getByRole('button', { name: /Hire Tom/i }));
+    await within(seat).findByText(/Seat filled by Tom Bakker/i);
 
-    // Still one seat filled across the whole office, and it is Tom now.
     expect(screen.getByRole('status')).toHaveTextContent('1 of');
-    expect(within(seat).getByText(/Seat filled by Tom Bakker/i)).toBeInTheDocument();
-
     const maraCard = within(seat).getByText('Mara Ellison').closest<HTMLElement>('.hq-card');
     const tomCard = within(seat).getByText('Tom Bakker').closest<HTMLElement>('.hq-card');
     expect(maraCard?.dataset.hired).toBe('false');
     expect(tomCard?.dataset.hired).toBe('true');
   });
 
+  it('renders the seats the server already reports as filled, on load', async () => {
+    hires = [
+      {
+        role: 'safety-compliance',
+        candidateId: 'safety-compliance-claire',
+        candidateName: 'Claire Fontaine',
+      },
+    ];
+    render(<HeadquartersPage />);
+    const seat = screen.getByRole('region', { name: 'Safety & Compliance' });
+    expect(await within(seat).findByText(/Seat filled by Claire Fontaine/i)).toBeInTheDocument();
+    // Filling the gate seat unlocks long-haul authority, and the page says so.
+    expect(await screen.findByText(/long-haul authority unlocked/i)).toBeInTheDocument();
+  });
+
   it('flags the seat that gates long-haul authority', () => {
     render(<HeadquartersPage />);
     const seat = screen.getByRole('region', { name: 'Safety & Compliance' });
     expect(within(seat).getByText('Gate')).toBeInTheDocument();
-    // Scoped to the gate paragraph, not any of the several mentions of "long-haul".
     const gate = seat.querySelector('.hq-card__gate');
     expect(gate?.textContent?.toLowerCase()).toContain('long-haul');
   });
