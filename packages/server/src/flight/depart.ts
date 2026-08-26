@@ -1,9 +1,12 @@
 import { eq } from 'drizzle-orm';
 
+import type { DisruptionRoll } from '@tailfin/sim';
+
 import { dispatchCrew, type DispatchDecision } from '../crew/dispatch';
 import { flight } from '../db/schema';
 import { scheduleEvent, type EventHandler } from '../sim/event-queue';
 
+import { rollGroundDisruption } from './disruption';
 import { arrivalKey } from './settle';
 
 import type { Database } from '../db/client';
@@ -29,13 +32,20 @@ import type { Database } from '../db/client';
  *
  * No boarding, no pushback, no taxi, no phase ticking — §21 says flight state is
  * computed on read, and the phases between `scheduled` and `cruise` are
- * interpolation, not rows. No weather roll and no technical roll either: M2-08
- * built `rollDisruption` and nothing wires it here, because a departure gate
- * that also decides the weather is two mechanisms in one place and the second
- * one belongs with the world's weather, not with its crew.
+ * interpolation, not rows.
  *
- * What it does do is the whole crew half: legality, the duty period, and the
- * three outcomes §9.2 names.
+ * ## The ground disruption roll (M5-05)
+ *
+ * M5-05 wires `rollDisruption` in for the ground half: before the crew are
+ * committed, a flight faces a roll for whatever is likely to go wrong on the
+ * stand — today only a technical fault from its maintenance condition, the other
+ * causes staying 0 until their systems land ({@link rollGroundDisruption}). It is
+ * rolled *before* dispatch on purpose, so a cancellation cannot strand a duty
+ * period, and *once* per flight (only while `disruption` is null), so a delayed
+ * flight retried at its new time is not rolled against the same stream again.
+ *
+ * The rest is the whole crew half: legality, the duty period, and the three
+ * outcomes §9.2 names.
  *
  * ## Replay safety
  *
@@ -57,6 +67,8 @@ export type DepartureOutcome =
 export interface DepartureDeps {
   /** Overridable so the tests can drive a decision without a crew base. */
   dispatch?: typeof dispatchCrew;
+  /** Overridable so the tests can force, or silence, the ground disruption roll. */
+  disruption?: typeof rollGroundDisruption;
 }
 
 /**
@@ -95,6 +107,23 @@ export async function departFlight(
   if (!row) return { status: 'not-found' };
   if (row.actualDeparture !== null || row.disruption === 'cancelled' || row.phase !== 'scheduled') {
     return { status: 'already-handled' };
+  }
+
+  /*
+   * The ground disruption roll, before any crew are committed and only once — a
+   * flight already carrying a disruption (a crew delay, or a disruption from a
+   * previous attempt) has had its roll and is not rolled again.
+   */
+  if (row.disruption === null) {
+    const rollDisruptionFn = deps.disruption ?? rollGroundDisruption;
+    const disruption = await rollDisruptionFn(db, {
+      flightId: row.id,
+      worldId: row.worldId,
+      airframeId: row.airframeId,
+    });
+    if (disruption !== null) {
+      return applyGroundDisruption(db, row, at, disruption);
+    }
   }
 
   /*
@@ -201,6 +230,47 @@ async function applyDecision(
     .where(eq(flight.id, row.id));
 
   return { status: 'cancelled', reason: decision.reason };
+}
+
+/**
+ * Turn a ground disruption roll into a delay or a cancellation on the flight row.
+ *
+ * A delay reschedules a second `FLIGHT_DEPART` at the new time — keyed by that
+ * time, like the crew delay, so the retry is a distinct event — and records the
+ * cause, which stops the retry rolling again. A cancellation leaves the aeroplane
+ * on the stand where `machine.ts` puts a cancelled flight. No crew were committed,
+ * so there is no duty period to unwind.
+ */
+async function applyGroundDisruption(
+  db: Database,
+  row: FlightRow,
+  at: Date,
+  roll: DisruptionRoll,
+): Promise<DepartureOutcome> {
+  if (roll.outcome === 'delay') {
+    const untilAt = new Date(at.getTime() + roll.delayMinutes * 60_000);
+    await db
+      .update(flight)
+      .set({ disruption: 'delayed', disruptionCause: roll.cause })
+      .where(eq(flight.id, row.id));
+
+    await scheduleEvent(db, {
+      worldId: row.worldId,
+      type: 'FLIGHT_DEPART',
+      fireAt: untilAt,
+      payload: { flightId: row.id },
+      idempotencyKey: `flight:${row.id}:depart:${untilAt.toISOString()}`,
+    });
+
+    return { status: 'delayed', untilAt, reason: `A ${roll.cause} fault delayed the departure.` };
+  }
+
+  await db
+    .update(flight)
+    .set({ phase: 'idle', disruption: 'cancelled', disruptionCause: roll.cause })
+    .where(eq(flight.id, row.id));
+
+  return { status: 'cancelled', reason: `A ${roll.cause} fault cancelled the flight.` };
 }
 
 /**

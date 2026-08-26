@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
+import type { DisruptionRoll } from '@tailfin/sim';
+
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { airport, flight, worldEvent } from '../db/schema';
 import {
@@ -296,5 +298,99 @@ describeDb('a departure attempt', () => {
       dispatch: () => Promise.resolve(goes(randomUUID())),
     });
     expect(outcome).toEqual({ status: 'not-found' });
+  });
+
+  /*
+   * The ground disruption roll (M5-05). The roll itself is `disruption.test`'s
+   * (soon) and the sim's; these prove the gate wires it in correctly — that it
+   * runs before the crew are committed, and once.
+   */
+  describe('a ground disruption', () => {
+    const delayRoll: DisruptionRoll = {
+      cause: 'technical',
+      outcome: 'delay',
+      delayMinutes: 45,
+      disruption: 'delayed',
+      probability: 0.2,
+    };
+    const cancelRoll: DisruptionRoll = {
+      cause: 'technical',
+      outcome: 'cancel',
+      delayMinutes: 0,
+      disruption: 'cancelled',
+      probability: 0.2,
+    };
+
+    it('delays the departure and does not commit the crew', async () => {
+      const { fixture, flightId } = await scheduledFlight();
+      let dispatched = false;
+
+      const outcome = await departFlight(db.db, flightId, DEPART_AT, {
+        dispatch: () => {
+          dispatched = true;
+          return Promise.resolve(goes(randomUUID()));
+        },
+        disruption: () => Promise.resolve(delayRoll),
+      });
+
+      // Rolled before dispatch: the crew were never asked, so no duty period opened.
+      expect(dispatched).toBe(false);
+      expect(outcome.status).toBe('delayed');
+      const untilAt = new Date(DEPART_AT.getTime() + 45 * 60_000);
+      if (outcome.status === 'delayed') {
+        expect(outcome.untilAt.toISOString()).toBe(untilAt.toISOString());
+      }
+
+      const row = await flightRow(flightId);
+      expect(row?.disruption).toBe('delayed');
+      expect(row?.disruptionCause).toBe('technical');
+      expect(row?.actualDeparture).toBeNull();
+      expect(row?.crewDutyPeriodId).toBeNull();
+
+      // A retry is queued at the new time, and no arrival yet.
+      const departs = await eventsOfType(fixture.world.id, 'FLIGHT_DEPART');
+      expect(departs.map((e) => e.fireAt.toISOString())).toContain(untilAt.toISOString());
+      expect(await eventsOfType(fixture.world.id, 'FLIGHT_ARRIVE')).toHaveLength(0);
+    });
+
+    it('cancels the flight and does not commit the crew', async () => {
+      const { fixture, flightId } = await scheduledFlight();
+      let dispatched = false;
+
+      const outcome = await departFlight(db.db, flightId, DEPART_AT, {
+        dispatch: () => {
+          dispatched = true;
+          return Promise.resolve(goes(randomUUID()));
+        },
+        disruption: () => Promise.resolve(cancelRoll),
+      });
+
+      expect(dispatched).toBe(false);
+      expect(outcome.status).toBe('cancelled');
+      const row = await flightRow(flightId);
+      expect(row?.disruption).toBe('cancelled');
+      expect(row?.disruptionCause).toBe('technical');
+      expect(row?.phase).toBe('idle');
+      expect(row?.crewDutyPeriodId).toBeNull();
+      expect(await eventsOfType(fixture.world.id, 'FLIGHT_ARRIVE')).toHaveLength(0);
+    });
+
+    it('is not rolled again for a flight that already carries a disruption', async () => {
+      const { flightId } = await scheduledFlight();
+      // A prior attempt (or a crew delay) already marked it; the retry must not roll.
+      await db.db.update(flight).set({ disruption: 'delayed' }).where(eq(flight.id, flightId));
+
+      let rolled = false;
+      const outcome = await departFlight(db.db, flightId, DEPART_AT, {
+        dispatch: () => Promise.resolve(goes(randomUUID())),
+        disruption: () => {
+          rolled = true;
+          return Promise.resolve(cancelRoll);
+        },
+      });
+
+      expect(rolled).toBe(false);
+      expect(outcome.status).toBe('departed');
+    });
   });
 });
