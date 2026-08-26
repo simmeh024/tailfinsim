@@ -1,12 +1,14 @@
 import { eq, sql } from 'drizzle-orm';
 
 import { FlightLoad } from '@tailfin/shared';
-import type { AirportFees } from '@tailfin/shared';
+import type { AirportFees, FlightDisruption } from '@tailfin/shared';
 import {
   computeBlockTime,
   computeFuelBurn,
   computeFuelCost,
   DEFAULT_FLIGHT_PROFILE,
+  disruptionCost,
+  type DisruptionOutcome,
   type FlightProfile,
   type FlightSettlement,
   type FuelMarket,
@@ -121,6 +123,22 @@ export type SettleOutcome =
 /** The `world_event` idempotency key for a flight's arrival, matching `departureKey`. */
 export function arrivalKey(flightId: string): string {
   return `flight:${flightId}:arrive`;
+}
+
+/** The disruption outcome to bill an arrival for, or null when it arrived clean. */
+function disruptionOutcomeOf(disruption: FlightDisruption | null): DisruptionOutcome | null {
+  switch (disruption) {
+    case 'delayed':
+      return 'delay';
+    case 'diverted':
+      return 'divert';
+    case 'air_return':
+      return 'air_return';
+    default:
+      // null (clean), 'cancelled' (never settles) and 'returned_to_stand' (never
+      // left the stand) have nothing to bill at an arrival.
+      return null;
+  }
 }
 
 /**
@@ -264,6 +282,35 @@ export async function settleArrivedFlight(
     // A result inserted in this transaction cannot legitimately find a prior
     // movement. Treat it as ledger drift and roll the whole settlement back.
     throw new Error(`Flight ${row.id} had a cash movement before its result`);
+  }
+
+  /*
+   * Disruption cost (M5-05, §8.4). A flight that arrived delayed, diverted or
+   * air-returned owes its passengers rebooking, EU261 compensation and duty of
+   * care — a separate ledger line from the flight's own settlement, so the bill
+   * stays explicable. Charged against the load it actually carried, and once:
+   * this is inside the block the `flight_result` insert has already proved is not
+   * a replay. The delay the passenger felt is the departure delay, since the
+   * aeroplane does not make time up in the air.
+   */
+  const outcome = disruptionOutcomeOf(row.disruption);
+  if (outcome !== null) {
+    const departureDelayMinutes = row.actualDeparture
+      ? Math.max(
+          0,
+          Math.round((row.actualDeparture.getTime() - row.scheduledDeparture.getTime()) / 60_000),
+        )
+      : 0;
+    const cost = disruptionCost(outcome, departureDelayMinutes, load, economy.costs.disruption);
+    if (cost.totalMinor > 0) {
+      await moveAirlineCash(tx, {
+        airlineId: row.airlineId,
+        amountMinor: -cost.totalMinor,
+        cause: 'disruption_cost',
+        reference: `${row.id}:disruption`,
+        occurredAt: arrivedAt,
+      });
+    }
   }
 
   // The airframe got older (M4-06, §7.3). In this transaction, after the
