@@ -5378,3 +5378,306 @@ body {
     animation: none;
   }
 }
+
+/* --------------------------------------------------------- headquarters ---- */
+
+/*
+ * The office roster (M5-04, §9.1).
+ *
+ * A scrollable content page like `.airline-page`, overriding `.page`'s centring.
+ * The one rule the brief asked for lives here: an unhired seat is greyed and a
+ * hired one is in colour, done as a `filter` on the portrait keyed off
+ * `data-hired` so one asset serves both states.
+ */
+.hq-page {
+  place-content: initial;
+  display: block;
+  overflow: auto;
+  padding: clamp(var(--space-4), 4vw, 3rem);
+  text-align: left;
+}
+
+.hq-page__heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--space-6);
+  width: min(72rem, 100%);
+  margin-inline: auto;
+  padding-bottom: var(--space-6);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.hq-page__heading .page__title {
+  color: var(--text-primary);
+  font-size: clamp(1.5rem, 4vw, 2.75rem);
+  letter-spacing: -0.02em;
+  text-transform: none;
+}
+
+.hq-page__heading .page__note {
+  margin-top: var(--space-2);
+  max-width: 52ch;
+}
+
+.hq-page__count {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.hq-page__count strong {
+  color: var(--text-primary);
+  font-size: var(--text-lg);
+}
+
+.hq-roster {
+  width: min(72rem, 100%);
+  margin: var(--space-6) auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.hq-seat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.hq-seat:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.hq-seat__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-6);
+}
+
+.hq-seat__role {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.hq-seat__gate-flag {
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--console-bg-far);
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hq-seat__unlock {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  max-width: 60ch;
+}
+
+.hq-seat__status {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.hq-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--space-4);
+}
+
+.hq-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--console-card);
+  overflow: hidden;
+  transition: border-color 120ms ease;
+}
+
+.hq-card[data-hired='true'] {
+  border-color: var(--border-strong);
+}
+
+.hq-card__portrait {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  background: var(--console-bg);
+}
+
+.hq-card__portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  /* The greyed/colour rule. An empty seat is desaturated and dimmed; hiring
+     brings the portrait to life. `transition` so a hire is felt, not just seen. */
+  filter: grayscale(1) brightness(0.72) contrast(0.95);
+  transition: filter 180ms ease;
+}
+
+.hq-card__portrait[data-hired='true'] img {
+  filter: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hq-card__portrait img {
+    transition: none;
+  }
+}
+
+.hq-card__gate-flag {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--console-bg-far);
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hq-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+}
+
+.hq-card__role {
+  margin: 0;
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.hq-card__name {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.hq-card[data-hired='true'] .hq-card__name {
+  color: var(--text-primary);
+}
+
+.hq-card__meta {
+  display: flex;
+  gap: var(--space-4);
+  margin: 0;
+}
+
+.hq-card__meta dt {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hq-card__meta dd {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.hq-card__label {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.hq-card__unlock {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+}
+
+.hq-card__gate {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--accent-quiet);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.hq-card__trait {
+  display: flex;
+  gap: var(--space-2);
+  align-items: start;
+  margin: var(--space-1) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.hq-card__trait strong {
+  color: var(--text-secondary);
+}
+
+.hq-card__trait-badge {
+  flex: none;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.hq-card__action {
+  margin-top: auto;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.hq-card__action:hover {
+  border-color: var(--accent);
+  background: var(--accent-quiet);
+}
+
+.hq-card__action[aria-pressed='true'] {
+  border-color: var(--border-subtle);
+  color: var(--text-muted);
+}

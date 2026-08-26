@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 800" role="img" aria-label="Route Planner placeholder portrait">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0d1420"/><stop offset="1" stop-color="#161f2c"/></linearGradient></defs>
+  <rect width="600" height="800" fill="url(#g)"/>
+  <g fill="#5eb8ff" opacity="0.18"><circle cx="300" cy="300" r="150"/><path d="M120 800c0-140 80-240 180-240s180 100 180 240z"/></g>
+  <text x="300" y="330" text-anchor="middle" font-family="system-ui, sans-serif" font-size="150" font-weight="700" fill="#5eb8ff" opacity="0.85">VL</text>
+  <text x="300" y="640" text-anchor="middle" font-family="system-ui, sans-serif" font-size="34" letter-spacing="2" fill="#9dabc0">ROUTE PLANNER</text>
+  <text x="300" y="690" text-anchor="middle" font-family="system-ui, sans-serif" font-size="22" fill="#6d7c93">placeholder portrait</text>
+</svg>
