@@ -18,6 +18,8 @@
  * the role table changes.
  */
 
+import chiefPilot2 from './assets/portraits/chief-pilot-2.webp';
+import chiefPilot3 from './assets/portraits/chief-pilot-3.webp';
 import chiefPilot from './assets/portraits/chief-pilot.webp';
 import groundOps from './assets/portraits/ground-ops.webp';
 import opsController2 from './assets/portraits/ops-controller-2.webp';
@@ -122,9 +124,9 @@ export const HQ_ROLES: readonly HqRole[] = [
 
 /**
  * The candidate market. Several candidates may compete for one seat — the Route
- * Planner, the Revenue Manager and the Ops Controller each have three — and you
- * hire one. The rest have one for now; more arrive as portraits and names are
- * generated, and each is one entry here.
+ * Route Planner, Revenue Manager, Ops Controller and Chief Pilot each have three
+ * — and you hire one. The rest have one for now; more arrive as portraits and
+ * names are generated, and each is one entry here.
  */
 export const HQ_CANDIDATES: readonly HqCandidate[] = [
   {
@@ -246,6 +248,30 @@ export const HQ_CANDIDATES: readonly HqCandidate[] = [
       detail: 'Brings a training record without a single failed check ride.',
     },
     portrait: chiefPilot,
+  },
+  {
+    id: 'chief-pilot-fiona',
+    roleId: 'chief-pilot',
+    name: 'Fiona Brennan',
+    tier: 'Director',
+    salaryPerMonthMinor: 2_900_000,
+    trait: {
+      label: 'Line-current',
+      detail: 'Still flies the line, so her training reflects the aeroplane, not the manual.',
+    },
+    portrait: chiefPilot2,
+  },
+  {
+    id: 'chief-pilot-grant',
+    roleId: 'chief-pilot',
+    name: 'Grant Wexford',
+    tier: 'Director',
+    salaryPerMonthMinor: 3_000_000,
+    trait: {
+      label: 'Standard-setter',
+      detail: 'Runs a check-and-training programme other airlines quietly copy.',
+    },
+    portrait: chiefPilot3,
   },
   {
     id: 'ground-ops-nadia',
