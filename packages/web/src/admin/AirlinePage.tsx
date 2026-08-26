@@ -32,6 +32,7 @@ const CAUSE_LABEL: Record<AdminCashMovementCause, string> = {
   crew_positioning: 'Crew hotels and positioning',
   office_salary: 'Office salary',
   office_expansion: 'HQ expansion',
+  disruption_cost: 'Disruption cost',
   admin_adjustment: 'Operator adjustment',
   flight_settlement: 'Flight settlement',
   migration_opening_balance: 'Migration opening balance',

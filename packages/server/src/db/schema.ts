@@ -458,6 +458,7 @@ export const cashMovementCause = pgEnum('cash_movement_cause', [
   'office_expansion',
   'admin_adjustment',
   'flight_settlement',
+  'disruption_cost',
   'migration_opening_balance',
 ]);
 export type CashMovementCause = (typeof cashMovementCause.enumValues)[number];

@@ -550,6 +550,7 @@ export const AdminCashMovementCause = z.enum([
   'office_expansion',
   'admin_adjustment',
   'flight_settlement',
+  'disruption_cost',
   'migration_opening_balance',
 ]);
 export type AdminCashMovementCause = z.infer<typeof AdminCashMovementCause>;

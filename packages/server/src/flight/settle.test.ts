@@ -364,6 +364,44 @@ describeDb('settling an arrived flight', () => {
     );
   });
 
+  it('bills a badly delayed arrival on its own ledger line (M5-05)', async () => {
+    const { flightId, airlineId } = await makeFlight();
+    // Four hours late at pushback — past the EU261 and duty-of-care thresholds.
+    const late = new Date(DEPARTS.getTime() + 4 * 60 * 60_000);
+    await db.db
+      .update(flight)
+      .set({ disruption: 'delayed', actualDeparture: late })
+      .where(eq(flight.id, flightId));
+
+    await db.db.transaction((tx) => settleArrivedFlight(tx, flightId, ARRIVES));
+
+    const movements = await db.db
+      .select({
+        cause: cashMovement.cause,
+        amountMinor: cashMovement.amountMinor,
+        reference: cashMovement.reference,
+      })
+      .from(cashMovement)
+      .where(eq(cashMovement.airlineId, airlineId));
+    const disruption = movements.filter((m) => m.cause === 'disruption_cost');
+    // A separate line from the flight's own settlement, and it costs money.
+    expect(disruption).toHaveLength(1);
+    expect(Number(disruption[0]?.amountMinor)).toBeLessThan(0);
+    expect(disruption[0]?.reference).toBe(`${flightId}:disruption`);
+    expect(movements.some((m) => m.cause === 'flight_settlement')).toBe(true);
+  });
+
+  it('bills no disruption cost for an on-time arrival', async () => {
+    const { flightId, airlineId } = await makeFlight();
+    await db.db.transaction((tx) => settleArrivedFlight(tx, flightId, ARRIVES));
+
+    const movements = await db.db
+      .select({ cause: cashMovement.cause })
+      .from(cashMovement)
+      .where(eq(cashMovement.airlineId, airlineId));
+    expect(movements.some((m) => m.cause === 'disruption_cost')).toBe(false);
+  });
+
   it('reports a flight that does not exist rather than inventing one', async () => {
     const outcome = await db.db.transaction((tx) =>
       settleArrivedFlight(tx, crypto.randomUUID(), ARRIVES),
