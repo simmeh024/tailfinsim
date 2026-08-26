@@ -254,6 +254,19 @@ describe('the HQ layout overview', () => {
     );
   });
 
+  it('shows the expand button under the map and drives onExpand', async () => {
+    const onExpand = vi.fn().mockResolvedValue({ ok: true });
+    render(<HqLayoutPanel office={emptyOffice(0)} onExpand={onExpand} />);
+    const button = screen.getByRole('button', { name: /expand/i });
+    fireEvent.click(button);
+    await waitFor(() => expect(onExpand).toHaveBeenCalledTimes(1));
+  });
+
+  it('hides the expand button when no expansion handler is wired', () => {
+    render(<HqLayoutPanel office={emptyOffice(0)} />);
+    expect(screen.queryByRole('button', { name: /expand/i })).toBeNull();
+  });
+
   it('renders a rounded avatar and the occupant name for a filled seat', () => {
     const mara = HQ_CANDIDATES.find((c) => c.id === 'route-planner-mara')!;
     const office: OfficeStateResponse = {

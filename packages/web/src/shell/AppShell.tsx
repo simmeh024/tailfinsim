@@ -5,8 +5,8 @@ import type { OfficeStateResponse, OwnAirlineResponse } from '@tailfin/shared';
 
 import { fetchOwnAirline, formatMinorUnits } from '../airline/api';
 import { AccountBadge } from '../auth/AccountBadge';
-import { fetchOffice } from '../hq/api';
-import { HqLayoutPanel } from '../hq/HqLayoutPanel';
+import { expandOffice, fetchOffice } from '../hq/api';
+import { HqLayoutPanel, type ExpandResult } from '../hq/HqLayoutPanel';
 import { useTheme } from '../theme/ThemeProvider';
 import { BuildBadge } from '../version/BuildBadge';
 
@@ -127,10 +127,12 @@ function ContextPanel({
   open,
   onToggle,
   office,
+  onExpand,
 }: {
   open: boolean;
   onToggle: () => void;
   office: OfficeStateResponse | null;
+  onExpand: () => Promise<ExpandResult>;
 }): ReactNode {
   const { selection, clear, attachPanelBody } = useContextSelection();
 
@@ -181,7 +183,7 @@ function ContextPanel({
       </div>
       <div className="panel__body">
         {selection === null ? (
-          <HqLayoutPanel office={office} />
+          <HqLayoutPanel office={office} onExpand={onExpand} />
         ) : selection.body === null ? (
           <div className="panel__portal" ref={attachPanelBody} />
         ) : (
@@ -257,6 +259,18 @@ export function AppShell(): ReactNode {
     setOffice(await fetchOffice());
   }, []);
 
+  // Buying an expansion moves real money, so it lives with the office state the
+  // shell owns; the panel drives it and shows the result. Success replaces the
+  // office in place, so the plan grows without a refetch.
+  const onExpand = useCallback(async (): Promise<ExpandResult> => {
+    const outcome = await expandOffice();
+    if (outcome.ok) {
+      setOffice(outcome.state);
+      return { ok: true };
+    }
+    return { ok: false, message: outcome.failure.message };
+  }, []);
+
   useEffect(() => {
     void loadOwnAirline();
     void loadOffice();
@@ -284,6 +298,7 @@ export function AppShell(): ReactNode {
           open={panelOpen}
           onToggle={() => setPanelOpen((open) => !open)}
           office={office}
+          onExpand={onExpand}
         />
         <StatusStrip ownAirline={ownAirline} />
       </div>

@@ -9,7 +9,7 @@ import {
   type OfficeStateResponse,
 } from '@tailfin/shared';
 
-import { dismissOffice, expandOffice, fetchOffice, hireOffice } from './api';
+import { dismissOffice, fetchOffice, hireOffice } from './api';
 import {
   candidatesForRole,
   formatSalary,
@@ -57,7 +57,6 @@ export function HeadquartersPage(): ReactNode {
   const [office, setOffice] = useState<OfficeStateResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<OfficeSeatId | null>(null);
-  const [expanding, setExpanding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pick, setPick] = useState<Record<string, string>>({});
   const syncOffice = useOutletContext<OwnAirlineShellContext | null>()?.replaceOffice;
@@ -126,17 +125,6 @@ export function HeadquartersPage(): ReactNode {
     (seat: OfficeSeatId) => act(seat, () => dismissOffice(seat)),
     [act],
   );
-
-  const onExpand = useCallback(async () => {
-    setExpanding(true);
-    setError(null);
-    const outcome = await expandOffice();
-    if (outcome.ok) {
-      setOffice(outcome.state);
-      syncOffice?.(outcome.state);
-    } else setError(outcome.failure.message);
-    setExpanding(false);
-  }, [syncOffice]);
 
   const neutralSeats = office?.neutralSeats ?? 0;
   const totalSeats = HEADQUARTERS_BASE_SEATS + neutralSeats;
@@ -258,93 +246,79 @@ export function HeadquartersPage(): ReactNode {
         })}
       </div>
 
-      {office != null && (neutralSeats > 0 || office.nextExpansion != null) && (
-        <section className="hq-expand" aria-label="Headquarters expansion">
+      {neutralSeats > 0 && (
+        <section className="hq-expand" aria-label="Neutral offices">
           <header className="hq-expand__head">
-            <h2 className="hq-expand__title">Expand headquarters</h2>
+            <h2 className="hq-expand__title">Neutral offices</h2>
             <p className="hq-expand__size">
-              {totalSeats} offices{neutralSeats > 0 ? ` · ${String(neutralSeats)} neutral` : ''}
+              {totalSeats} offices · {String(neutralSeats)} neutral
             </p>
           </header>
 
           <p className="hq-expand__note">
             Neutral offices take any candidate and add staffed capacity — they do not grant a role’s
-            capability, and the long-haul gate still lives in the Safety &amp; Compliance seat.
+            capability, and the long-haul gate still lives in the Safety &amp; Compliance seat. Buy
+            more offices from the layout panel.
           </p>
 
-          {office.nextExpansion != null && (
-            <button
-              type="button"
-              className="hq-expand__buy"
-              disabled={loading || expanding}
-              onClick={() => void onExpand()}
-            >
-              {expanding
-                ? 'Expanding…'
-                : `Buy +${String(office.nextExpansion.addsSeats)} offices — $${formatSalary(office.nextExpansion.costMinor)}`}
-            </button>
-          )}
-
-          {neutralSeats > 0 && (
-            <ul className="hq-neutral">
-              {unlockedNeutralSeats(neutralSeats).map((seat, index) => {
-                const hire = hiredBySeat.get(seat);
-                const seatPending = pending === seat;
-                const chosen = pick[seat] ?? '';
-                return (
-                  <li key={seat} className="hq-neutral__seat">
-                    <span className="hq-neutral__label">Neutral office {index + 1}</span>
-                    {hire ? (
-                      <>
-                        <span className="hq-neutral__who">{hire.candidateName}</span>
-                        <button
-                          type="button"
-                          className="hq-neutral__action"
-                          disabled={loading || seatPending}
-                          onClick={() => void onDismiss(seat)}
-                        >
-                          Let go
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <select
-                          className="hq-neutral__pick"
-                          value={chosen}
-                          aria-label={`Assign a candidate to neutral office ${String(index + 1)}`}
-                          onChange={(event) =>
-                            setPick((prev) => ({ ...prev, [seat]: event.target.value }))
-                          }
-                        >
-                          <option value="">Choose a candidate…</option>
-                          {HQ_ROLES.map((role) => (
-                            <optgroup key={role.id} label={role.role}>
-                              {candidatesForRole(role.id).map((candidate) => (
-                                <option key={candidate.id} value={candidate.id}>
-                                  {candidate.name}
-                                </option>
-                              ))}
-                            </optgroup>
-                          ))}
-                        </select>
-                        <button
-                          type="button"
-                          className="hq-neutral__action"
-                          disabled={loading || seatPending || chosen === ''}
-                          onClick={() => {
-                            const candidate = HQ_CANDIDATES.find((entry) => entry.id === chosen);
-                            if (candidate) void onHireNeutral(seat, candidate);
-                          }}
-                        >
-                          Hire
-                        </button>
-                      </>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+          <ul className="hq-neutral">
+            {unlockedNeutralSeats(neutralSeats).map((seat, index) => {
+              const hire = hiredBySeat.get(seat);
+              const seatPending = pending === seat;
+              const chosen = pick[seat] ?? '';
+              return (
+                <li key={seat} className="hq-neutral__seat">
+                  <span className="hq-neutral__label">Neutral office {index + 1}</span>
+                  {hire ? (
+                    <>
+                      <span className="hq-neutral__who">{hire.candidateName}</span>
+                      <button
+                        type="button"
+                        className="hq-neutral__action"
+                        disabled={loading || seatPending}
+                        onClick={() => void onDismiss(seat)}
+                      >
+                        Let go
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <select
+                        className="hq-neutral__pick"
+                        value={chosen}
+                        aria-label={`Assign a candidate to neutral office ${String(index + 1)}`}
+                        onChange={(event) =>
+                          setPick((prev) => ({ ...prev, [seat]: event.target.value }))
+                        }
+                      >
+                        <option value="">Choose a candidate…</option>
+                        {HQ_ROLES.map((role) => (
+                          <optgroup key={role.id} label={role.role}>
+                            {candidatesForRole(role.id).map((candidate) => (
+                              <option key={candidate.id} value={candidate.id}>
+                                {candidate.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="hq-neutral__action"
+                        disabled={loading || seatPending || chosen === ''}
+                        onClick={() => {
+                          const candidate = HQ_CANDIDATES.find((entry) => entry.id === chosen);
+                          if (candidate) void onHireNeutral(seat, candidate);
+                        }}
+                      >
+                        Hire
+                      </button>
+                    </>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         </section>
       )}
     </section>

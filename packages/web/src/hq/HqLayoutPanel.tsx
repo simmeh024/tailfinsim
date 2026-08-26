@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import {
   HEADQUARTERS_BASE_SEATS,
   isNeutralSeat,
@@ -71,11 +73,31 @@ function seatTitle(seat: OfficeSeatId): string {
   return isNeutralSeat(seat) ? 'Neutral office' : OFFICE_ROLES[seat].title;
 }
 
-interface HqLayoutPanelProps {
-  office: OfficeStateResponse | null;
+/** The outcome of a panel-driven expansion purchase, from the shell that owns cash. */
+export interface ExpandResult {
+  ok: boolean;
+  message?: string;
 }
 
-export function HqLayoutPanel({ office }: HqLayoutPanelProps): ReactNode {
+interface HqLayoutPanelProps {
+  office: OfficeStateResponse | null;
+  /** Buy the next expansion. Absent in a bare render (a test), where the button hides. */
+  onExpand?: () => Promise<ExpandResult>;
+}
+
+export function HqLayoutPanel({ office, onExpand }: HqLayoutPanelProps): ReactNode {
+  const [expanding, setExpanding] = useState(false);
+  const [expandError, setExpandError] = useState<string | null>(null);
+
+  const runExpand = async (): Promise<void> => {
+    if (onExpand === undefined) return;
+    setExpanding(true);
+    setExpandError(null);
+    const result = await onExpand();
+    if (!result.ok) setExpandError(result.message ?? 'Could not expand headquarters');
+    setExpanding(false);
+  };
+
   const neutralSeats = office?.neutralSeats ?? 0;
   const totalSeats = HEADQUARTERS_BASE_SEATS + neutralSeats;
   const hiredBySeat = new Map((office?.hires ?? []).map((hire) => [hire.seat, hire]));
@@ -138,11 +160,24 @@ export function HqLayoutPanel({ office }: HqLayoutPanelProps): ReactNode {
         })}
       </div>
 
-      {office?.nextExpansion != null && (
-        <p className="hq-layout__path">
-          Next: +{office.nextExpansion.addsSeats} offices ·{' '}
-          {MONEY.format(office.nextExpansion.costMinor / 100)} — expand from the Headquarters page.
-        </p>
+      {office?.nextExpansion != null && onExpand !== undefined && (
+        <div className="hq-layout__expand">
+          <button
+            type="button"
+            className="hq-layout__expand-btn"
+            disabled={expanding}
+            onClick={() => void runExpand()}
+          >
+            {expanding
+              ? 'Expanding…'
+              : `Expand · +${office.nextExpansion.addsSeats} offices for ${MONEY.format(office.nextExpansion.costMinor / 100)}`}
+          </button>
+          {expandError !== null && (
+            <p className="hq-layout__expand-error" role="alert">
+              {expandError}
+            </p>
+          )}
+        </div>
       )}
     </div>
   );
