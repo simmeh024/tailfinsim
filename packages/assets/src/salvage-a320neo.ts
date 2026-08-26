@@ -26,7 +26,7 @@ import {
   AircraftOptimisationDecision,
 } from './schema';
 
-export const A320NEO_SALVAGE_VERSION = '1.2.0' as const;
+export const A320NEO_SALVAGE_VERSION = '1.3.0' as const;
 
 const TARGET_DIMENSIONS_M = { width: 35.8, length: 37.57, height: 11.76 } as const;
 const LOD_RATIOS = [0.12, 0.05, 0.018] as const;
@@ -317,6 +317,7 @@ export function classifyA320neoSurface(input: {
   readonly centre: Vec3;
   readonly normal: Vec3;
   readonly colour: Vec3;
+  readonly triangleArea: number;
   readonly componentCentre: Vec3;
   readonly componentSize: Vec3;
   readonly componentTriangles: number;
@@ -327,12 +328,20 @@ export function classifyA320neoSurface(input: {
   const luminance = (colour.x + colour.y + colour.z) / 3;
   const saturation =
     Math.max(colour.x, colour.y, colour.z) - Math.min(colour.x, colour.y, colour.z);
+  const nacelleComponent =
+    componentAbsoluteX >= 0.14 &&
+    componentAbsoluteX <= 0.23 &&
+    component.y < -0.07 &&
+    component.z >= 0 &&
+    component.z <= 0.24;
   const nacelleZone =
+    nacelleComponent &&
     absoluteX >= 0.105 &&
     absoluteX <= 0.255 &&
     centre.z >= 0.015 &&
     centre.z <= 0.255 &&
     centre.y < -0.052;
+  const overwingExitZone = centre.z > 0.06 && centre.z < 0.13;
 
   if (absoluteX > 0.493 && Math.abs(centre.z) < 0.075 && centre.y > -0.055) return 'lights';
   if (
@@ -344,12 +353,13 @@ export function classifyA320neoSurface(input: {
   ) {
     return 'rubber_tyres';
   }
-  if (nacelleZone && (luminance < 112 || Math.abs(normal.z) > 0.72)) {
+  if (nacelleZone && centre.y < -0.072 && luminance < 135 && Math.abs(normal.z) > 0.55) {
     return 'engine_interiors';
   }
   if (
-    centre.z > 0.32 &&
+    centre.z > 0.405 &&
     absoluteX < 0.065 &&
+    centre.y > -0.055 &&
     luminance < 130 &&
     (Math.abs(normal.x) > 0.2 || normal.y > 0.15)
   ) {
@@ -359,6 +369,10 @@ export function classifyA320neoSurface(input: {
     centre.z > -0.31 &&
     centre.z < 0.31 &&
     absoluteX < 0.075 &&
+    centre.y > -0.045 &&
+    centre.y < -0.015 &&
+    !overwingExitZone &&
+    input.triangleArea < 0.000015 &&
     luminance < 112 &&
     Math.abs(normal.x) > 0.35
   ) {
@@ -452,6 +466,25 @@ async function classifyGeometry(source: SourceGeometry): Promise<ClassificationR
       u += source.uv0[vertex * 2]! / 3;
       v += source.uv0[vertex * 2 + 1]! / 3;
     }
+    const left = vertices[0];
+    const middle = vertices[1];
+    const right = vertices[2];
+    const ab = {
+      x: source.positions[middle * 3]! - source.positions[left * 3]!,
+      y: source.positions[middle * 3 + 1]! - source.positions[left * 3 + 1]!,
+      z: source.positions[middle * 3 + 2]! - source.positions[left * 3 + 2]!,
+    };
+    const ac = {
+      x: source.positions[right * 3]! - source.positions[left * 3]!,
+      y: source.positions[right * 3 + 1]! - source.positions[left * 3 + 1]!,
+      z: source.positions[right * 3 + 2]! - source.positions[left * 3 + 2]!,
+    };
+    const cross = {
+      x: ab.y * ac.z - ab.z * ac.y,
+      y: ab.z * ac.x - ab.x * ac.z,
+      z: ab.x * ac.y - ab.y * ac.x,
+    };
+    const triangleArea = Math.hypot(cross.x, cross.y, cross.z) / 2;
     const colour = sampleColour(sampler, u, v);
     const componentStatsValue = components.get(roots[vertices[0]]!);
     if (!componentStatsValue) {
@@ -461,6 +494,7 @@ async function classifyGeometry(source: SourceGeometry): Promise<ClassificationR
       centre,
       normal,
       colour,
+      triangleArea,
       componentCentre: componentCentre(componentStatsValue),
       componentSize: componentSize(componentStatsValue),
       componentTriangles: componentStatsValue.triangles,

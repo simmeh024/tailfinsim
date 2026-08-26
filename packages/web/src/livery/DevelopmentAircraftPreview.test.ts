@@ -72,7 +72,7 @@ describe('A320neo dev material preview', () => {
     expect(colors['mat-cabin-windows']).toBeUndefined();
   });
 
-  it('makes all salvaged surfaces double-sided and only exterior paint opaque', () => {
+  it('makes all salvaged surfaces double-sided and seals exterior paint and windows', () => {
     const exterior = new MeshStandardMaterial({
       name: 'mat-fuselage',
       opacity: 0.25,
@@ -105,6 +105,31 @@ describe('A320neo dev material preview', () => {
     });
 
     expect(configureA320neoDevelopmentExteriorMaterial(glass, DoubleSide)).toBe(false);
-    expect(glass).toMatchObject({ opacity: 0.4, side: DoubleSide, transparent: true });
+    expect(glass).toMatchObject({
+      alphaTest: 0,
+      depthTest: true,
+      depthWrite: true,
+      metalness: 0.12,
+      metalnessMap: null,
+      opacity: 1,
+      roughness: 0.24,
+      roughnessMap: null,
+      side: DoubleSide,
+      transparent: false,
+    });
+    expect(glass.color.getHexString()).toBe('102538');
+
+    const engineInterior = new MeshStandardMaterial({ name: 'mat-engine-interiors' });
+    expect(configureA320neoDevelopmentExteriorMaterial(engineInterior, DoubleSide)).toBe(false);
+    expect(engineInterior).toMatchObject({
+      depthTest: true,
+      depthWrite: true,
+      metalness: 0.3,
+      opacity: 1,
+      roughness: 0.48,
+      side: DoubleSide,
+      transparent: false,
+    });
+    expect(engineInterior.color.getHexString()).toBe('7f8992');
   });
 });
