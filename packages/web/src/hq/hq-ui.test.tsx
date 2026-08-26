@@ -26,11 +26,16 @@ describe('the office roster', () => {
     ]);
   });
 
-  it('carries a market of candidates, three of them for the Route Planner', () => {
+  it('carries a market of candidates, three each for the Route Planner and Revenue Manager', () => {
     expect(candidatesForRole('route-planner').map((c) => c.name)).toEqual([
       'Mara Ellison',
       'Tom Bakker',
       'Victor Lindqvist',
+    ]);
+    expect(candidatesForRole('revenue-manager').map((c) => c.name)).toEqual([
+      'Kenji Tan',
+      'Sofía Reyes',
+      'Anders Holm',
     ]);
     // Every candidate names a real seat and carries a portrait.
     const roleIds = new Set(HQ_ROLES.map((role) => role.id));
