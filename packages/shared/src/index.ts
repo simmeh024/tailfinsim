@@ -55,6 +55,7 @@ export * from './flight';
 export * from './api';
 export * from './auth';
 export * from './admin';
+export * from './capacity';
 export * from './version';
 export * from './json-schema';
 
