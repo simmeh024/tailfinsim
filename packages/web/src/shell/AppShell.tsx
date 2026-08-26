@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
 
-import type { OwnAirlineResponse } from '@tailfin/shared';
+import type { OfficeStateResponse, OwnAirlineResponse } from '@tailfin/shared';
 
 import { fetchOwnAirline, formatMinorUnits } from '../airline/api';
 import { AccountBadge } from '../auth/AccountBadge';
+import { fetchOffice } from '../hq/api';
+import { HqLayoutPanel } from '../hq/HqLayoutPanel';
 import { useTheme } from '../theme/ThemeProvider';
 import { BuildBadge } from '../version/BuildBadge';
 
@@ -105,13 +107,31 @@ function Stage({ children }: { children: ReactNode }): ReactNode {
 /**
  * The context panel (App. H.4), now with an occupant.
  *
+ * ## The office layout is the panel's home, not an empty placeholder
+ *
+ * H.4's panel used to sit empty until a page selected something. It now shows
+ * the {@link HqLayoutPanel} — a floor-plan of the office seats and the unlocks
+ * the airline holds — as its **default** state, on every screen. A page that
+ * selects something (a crew pool, an airframe) takes the panel over while that
+ * selection stands, and clearing it returns to the office layout rather than to
+ * a blank slate. So there is always something to look at, and it is the one thing
+ * every page wants nearby.
+ *
  * Two dismissals, and they are different. The × closes the *panel*, which is a
  * layout preference and survives navigation. "Clear" drops the *selection* and
  * leaves the panel open — the player wanted the panel, they just finished with
  * that row. Collapsing the panel because a selection ended would take away
  * something they did not ask to lose.
  */
-function ContextPanel({ open, onToggle }: { open: boolean; onToggle: () => void }): ReactNode {
+function ContextPanel({
+  open,
+  onToggle,
+  office,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  office: OfficeStateResponse | null;
+}): ReactNode {
   const { selection, clear, attachPanelBody } = useContextSelection();
 
   if (!open) {
@@ -131,7 +151,7 @@ function ContextPanel({ open, onToggle }: { open: boolean; onToggle: () => void 
             className="panel__title"
             tabIndex={selection === null ? undefined : -1}
           >
-            {selection?.title ?? 'Context'}
+            {selection?.title ?? 'Head Office'}
           </h2>
           {selection?.subtitle !== undefined && (
             <p className="panel__subtitle">{selection.subtitle}</p>
@@ -161,10 +181,7 @@ function ContextPanel({ open, onToggle }: { open: boolean; onToggle: () => void 
       </div>
       <div className="panel__body">
         {selection === null ? (
-          <p>
-            Selection detail appears here — a flight, an airframe, a route. Empty until there is
-            something to select.
-          </p>
+          <HqLayoutPanel office={office} />
         ) : selection.body === null ? (
           <div className="panel__portal" ref={attachPanelBody} />
         ) : (
@@ -217,6 +234,12 @@ export function AppShell(): ReactNode {
   const [ownAirline, setOwnAirline] = useState<OwnAirlineResponse | null>(null);
   const [ownAirlineLoading, setOwnAirlineLoading] = useState(true);
   const [ownAirlineError, setOwnAirlineError] = useState(false);
+  // The office state behind the always-on context panel. `fetchOffice` answers
+  // null for a player with no airline yet, which the layout renders as six vacant
+  // seats — so the panel is present from the first screen. The Headquarters page
+  // pushes fresh state here through `replaceOffice` after every hire, so the panel
+  // updates in lock-step with a change made while it is on screen.
+  const [office, setOffice] = useState<OfficeStateResponse | null>(null);
 
   const loadOwnAirline = useCallback(async () => {
     setOwnAirlineLoading(true);
@@ -230,9 +253,14 @@ export function AppShell(): ReactNode {
     }
   }, []);
 
+  const loadOffice = useCallback(async () => {
+    setOffice(await fetchOffice());
+  }, []);
+
   useEffect(() => {
     void loadOwnAirline();
-  }, [loadOwnAirline]);
+    void loadOffice();
+  }, [loadOwnAirline, loadOffice]);
 
   const outletContext: OwnAirlineShellContext = {
     ownAirline,
@@ -240,6 +268,9 @@ export function AppShell(): ReactNode {
     ownAirlineError,
     replaceOwnAirline: setOwnAirline,
     reloadOwnAirline: loadOwnAirline,
+    office,
+    replaceOffice: setOffice,
+    reloadOffice: loadOffice,
   };
 
   return (
@@ -249,7 +280,11 @@ export function AppShell(): ReactNode {
         <Stage>
           <Outlet context={outletContext} />
         </Stage>
-        <ContextPanel open={panelOpen} onToggle={() => setPanelOpen((open) => !open)} />
+        <ContextPanel
+          open={panelOpen}
+          onToggle={() => setPanelOpen((open) => !open)}
+          office={office}
+        />
         <StatusStrip ownAirline={ownAirline} />
       </div>
     </ContextSelectionProvider>
@@ -263,4 +298,9 @@ export interface OwnAirlineShellContext {
   ownAirlineError: boolean;
   replaceOwnAirline: (value: OwnAirlineResponse) => void;
   reloadOwnAirline: () => Promise<void>;
+  /** The office behind the context panel; null until loaded or when unfounded. */
+  office: OfficeStateResponse | null;
+  /** Push a fresh office state (e.g. the response to a hire) into the panel. */
+  replaceOffice: (value: OfficeStateResponse | null) => void;
+  reloadOffice: () => Promise<void>;
 }

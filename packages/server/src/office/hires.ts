@@ -1,15 +1,19 @@
 import { and, asc, eq } from 'drizzle-orm';
 
 import {
+  EXTENDED_AUTHORITY_ROLE,
+  isNeutralSeat,
+  nextExpansionTier,
   OFFICE_ROLES,
-  roleGatesExtendedAuthority,
+  unlockedNeutralSeats,
   type HireOfficeRequest,
   type OfficeHire,
   type OfficeRole,
+  type OfficeSeatId,
   type OfficeStateResponse,
 } from '@tailfin/shared';
 
-import { officeHire } from '../db/schema';
+import { officeExpansion, officeHire } from '../db/schema';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
 import type { Database } from '../db/client';
@@ -21,6 +25,11 @@ import type { Database } from '../db/client';
  * (AIR-05, SEC-05): the airline id is never accepted from the client, so a
  * request can only ever reach its own office. There is no state in which a
  * player could hire into, or read, a competitor's seat.
+ *
+ * A hire's `seat` is where the person sits — one of the six roles, or a neutral
+ * expansion seat. The salary is the candidate's *role* salary, snapshotted onto
+ * the row. A neutral seat grants no capability: only the real Safety & Compliance
+ * seat unlocks extended authority, so a duplicate cannot smuggle the unlock in.
  */
 
 function toWire(row: {
@@ -31,7 +40,7 @@ function toWire(row: {
   hiredAt: Date;
 }): OfficeHire {
   return {
-    role: row.role as OfficeRole,
+    seat: row.role as OfficeSeatId,
     candidateId: row.candidateId,
     candidateName: row.candidateName,
     monthlySalaryMinor: row.monthlySalaryMinor,
@@ -39,58 +48,95 @@ function toWire(row: {
   };
 }
 
-/** Every seat this airline has filled, and whether that unlocks extended authority. */
+/** Neutral expansion seats this airline has unlocked (0 when it has never expanded). */
+export async function readNeutralSeats(db: Database, airlineId: string): Promise<number> {
+  const [row] = await db
+    .select({ neutralSeats: officeExpansion.neutralSeats })
+    .from(officeExpansion)
+    .where(eq(officeExpansion.airlineId, airlineId))
+    .limit(1);
+  return row?.neutralSeats ?? 0;
+}
+
+/** Every seat this airline has filled, its authority standing, and its expansion offer. */
 export async function readOfficeState(
   db: Database,
   own: ResolvedPlayerAirline,
 ): Promise<OfficeStateResponse> {
-  const rows = await db
-    .select({
-      role: officeHire.role,
-      candidateId: officeHire.candidateId,
-      candidateName: officeHire.candidateName,
-      monthlySalaryMinor: officeHire.monthlySalaryMinor,
-      hiredAt: officeHire.hiredAt,
-    })
-    .from(officeHire)
-    .where(eq(officeHire.airlineId, own.id))
-    .orderBy(asc(officeHire.role));
+  const [rows, neutralSeats] = await Promise.all([
+    db
+      .select({
+        role: officeHire.role,
+        candidateId: officeHire.candidateId,
+        candidateName: officeHire.candidateName,
+        monthlySalaryMinor: officeHire.monthlySalaryMinor,
+        hiredAt: officeHire.hiredAt,
+      })
+      .from(officeHire)
+      .where(eq(officeHire.airlineId, own.id))
+      .orderBy(asc(officeHire.role)),
+    readNeutralSeats(db, own.id),
+  ]);
 
   const hires = rows.map(toWire);
+  const tier = nextExpansionTier(neutralSeats);
   return {
     hires,
-    hasExtendedAuthority: hires.some((hire) => roleGatesExtendedAuthority(hire.role)),
+    // Only the real gate seat unlocks authority — never a neutral seat.
+    hasExtendedAuthority: hires.some((hire) => hire.seat === EXTENDED_AUTHORITY_ROLE),
+    neutralSeats,
+    nextExpansion:
+      tier === null
+        ? null
+        : {
+            addsSeats: tier.neutralSeats - neutralSeats,
+            totalSeats: tier.totalSeats,
+            costMinor: tier.costMinor,
+          },
   };
 }
 
-export type HireOfficeResult = { ok: true; hire: OfficeHire } | { ok: false; code: 'unknown_role' };
+export type HireOfficeResult =
+  | { ok: true; hire: OfficeHire }
+  | { ok: false; code: 'unknown_role' | 'role_mismatch' | 'seat_locked' };
 
 /**
  * Hire a candidate into a seat, replacing any incumbent.
  *
- * The salary is the seat's, taken from the shared role catalogue and
- * **snapshotted** onto the row — a later retune of the catalogue does not
- * silently re-price a standing hire, exactly as an acquisition pins its
- * commercial terms. The candidate id and name are opaque: the server does not
+ * The salary is the candidate's role salary, taken from the shared catalogue and
+ * **snapshotted** onto the row — a later retune does not silently re-price a
+ * standing hire. The candidate id and name are opaque: the server does not
  * validate them against a market, because the market is the client's for now.
  *
- * One seat, one person: the `(airline_id, role)` unique index makes hiring a
- * rival an upsert, so this cannot stack two people in a seat even under a race.
+ * The seat is checked, not the candidate: a role seat must match the candidate's
+ * role, and a neutral seat must already be unlocked by expansion. One seat, one
+ * person — the `(airline_id, role)` unique index makes hiring a rival an upsert,
+ * so this cannot stack two people in a seat even under a race.
  */
 export async function hireOffice(
   db: Database,
   own: ResolvedPlayerAirline,
   request: HireOfficeRequest,
 ): Promise<HireOfficeResult> {
-  const definition = OFFICE_ROLES[request.role] as (typeof OFFICE_ROLES)[OfficeRole] | undefined;
+  const definition = OFFICE_ROLES[request.candidateRole] as
+    (typeof OFFICE_ROLES)[OfficeRole] | undefined;
   if (definition === undefined) return { ok: false, code: 'unknown_role' };
+
+  if (isNeutralSeat(request.seat)) {
+    const neutralSeats = await readNeutralSeats(db, own.id);
+    if (!unlockedNeutralSeats(neutralSeats).includes(request.seat)) {
+      return { ok: false, code: 'seat_locked' };
+    }
+  } else if (request.seat !== request.candidateRole) {
+    return { ok: false, code: 'role_mismatch' };
+  }
 
   const [row] = await db
     .insert(officeHire)
     .values({
       worldId: own.worldId,
       airlineId: own.id,
-      role: request.role,
+      role: request.seat,
       candidateId: request.candidateId,
       candidateName: request.candidateName,
       monthlySalaryMinor: definition.monthlySalaryMinor,
@@ -120,11 +166,11 @@ export async function hireOffice(
 export async function dismissOffice(
   db: Database,
   own: ResolvedPlayerAirline,
-  role: OfficeRole,
+  seat: OfficeSeatId,
 ): Promise<{ dismissed: boolean }> {
   const removed = await db
     .delete(officeHire)
-    .where(and(eq(officeHire.airlineId, own.id), eq(officeHire.role, role)))
+    .where(and(eq(officeHire.airlineId, own.id), eq(officeHire.role, seat)))
     .returning({ id: officeHire.id });
   return { dismissed: removed.length > 0 };
 }

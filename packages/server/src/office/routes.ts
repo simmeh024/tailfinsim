@@ -1,13 +1,14 @@
 import {
   apiErrorJsonSchema,
   HireOfficeRequest,
-  OfficeRole,
+  OfficeSeatId,
   officeStateResponseJsonSchema,
 } from '@tailfin/shared';
 
 import { resolvedAirlineOf } from '../airline/context';
 import { parseRequestBody } from '../http/request-body';
 
+import { purchaseExpansion } from './expansion';
 import { dismissOffice, hireOffice, readOfficeState } from './hires';
 
 import type { DatabaseHandle } from '../db/client';
@@ -18,13 +19,13 @@ import type { FastifyInstance } from 'fastify';
  *
  * Owner-scoped throughout: the airline is resolved from the session (AIR-05),
  * never accepted from the client, so every read and write reaches only the
- * caller's own office. The authorization matrix records these three rows and
+ * caller's own office. The authorization matrix records these rows and
  * `authorization-inventory.test.ts` (SEC-04) fails the build if it does not.
  *
- * `requireAirline` to read, `requireActiveAirline` to hire or dismiss: looking at
- * your office is fine while restricted, but committing a new salaried head is a
- * new commitment, and §9 treats those alike whether the money moves now or on
- * the next payday.
+ * `requireAirline` to read, `requireActiveAirline` to hire, dismiss or expand:
+ * looking at your office is fine while restricted, but committing a salaried head
+ * — or spending millions on more offices — is a new commitment, and §9 treats
+ * those alike whether the money moves now or on the next payday.
  */
 export function registerOfficeRoutes(app: FastifyInstance, { db }: { db: DatabaseHandle }): void {
   app.get(
@@ -47,6 +48,7 @@ export function registerOfficeRoutes(app: FastifyInstance, { db }: { db: Databas
         response: {
           200: officeStateResponseJsonSchema,
           400: apiErrorJsonSchema,
+          422: apiErrorJsonSchema,
         },
       },
     },
@@ -55,12 +57,21 @@ export function registerOfficeRoutes(app: FastifyInstance, { db }: { db: Databas
       if (!parsed.success) {
         return reply
           .code(400)
-          .send({ code: 'invalid_input', message: 'Expected a role and a candidate' });
+          .send({ code: 'invalid_input', message: 'Expected a seat and a candidate' });
       }
       const own = resolvedAirlineOf(request);
       const result = await hireOffice(db.db, own, parsed.data);
       if (!result.ok) {
-        return reply.code(400).send({ code: result.code, message: 'No such office role' });
+        if (result.code === 'unknown_role') {
+          return reply.code(400).send({ code: 'invalid_input', message: 'No such office role' });
+        }
+        // 422: the request parsed, but the office rules refuse it — a role seat
+        // that does not match the candidate, or a neutral seat not yet unlocked.
+        const message =
+          result.code === 'seat_locked'
+            ? 'Expand your headquarters before staffing this office'
+            : 'This seat only takes its own role';
+        return reply.code(422).send({ code: result.code, message });
       }
       // The whole office back, not the one hire: hiring the gate seat flips
       // `hasExtendedAuthority`, and a client that had to refetch would show the
@@ -69,8 +80,8 @@ export function registerOfficeRoutes(app: FastifyInstance, { db }: { db: Databas
     },
   );
 
-  app.delete<{ Params: { role: string } }>(
-    '/api/office/hires/:role',
+  app.delete<{ Params: { seat: string } }>(
+    '/api/office/hires/:seat',
     {
       onRequest: app.requireActiveAirline,
       schema: {
@@ -81,12 +92,37 @@ export function registerOfficeRoutes(app: FastifyInstance, { db }: { db: Databas
       },
     },
     async (request, reply) => {
-      const role = OfficeRole.safeParse(request.params.role);
-      if (!role.success) {
-        return reply.code(400).send({ code: 'invalid_input', message: 'No such office role' });
+      const seat = OfficeSeatId.safeParse(request.params.seat);
+      if (!seat.success) {
+        return reply.code(400).send({ code: 'invalid_input', message: 'No such office seat' });
       }
       const own = resolvedAirlineOf(request);
-      await dismissOffice(db.db, own, role.data);
+      await dismissOffice(db.db, own, seat.data);
+      return reply.code(200).send(await readOfficeState(db.db, own));
+    },
+  );
+
+  app.post(
+    '/api/office/expansion',
+    {
+      onRequest: app.requireActiveAirline,
+      schema: {
+        response: {
+          200: officeStateResponseJsonSchema,
+          422: apiErrorJsonSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const own = resolvedAirlineOf(request);
+      const result = await purchaseExpansion(db.db, own);
+      if (!result.ok) {
+        const message =
+          result.code === 'maxed'
+            ? 'Your headquarters is already at its maximum size'
+            : 'Not enough cash to expand your headquarters';
+        return reply.code(422).send({ code: result.code, message });
+      }
       return reply.code(200).send(await readOfficeState(db.db, own));
     },
   );

@@ -1,4 +1,9 @@
-import type { ApiError, HireOfficeRequest, OfficeRole, OfficeStateResponse } from '@tailfin/shared';
+import type {
+  ApiError,
+  HireOfficeRequest,
+  OfficeSeatId,
+  OfficeStateResponse,
+} from '@tailfin/shared';
 
 /**
  * The Headquarters page's half of the client API (M5-04, §9.1).
@@ -55,11 +60,21 @@ export async function hireOffice(request: HireOfficeRequest): Promise<OfficeOutc
   return readOutcome(response, 'POST /api/office/hires');
 }
 
-export async function dismissOffice(role: OfficeRole): Promise<OfficeOutcome> {
-  const response = await fetch(`/api/office/hires/${role}`, {
+export async function dismissOffice(seat: OfficeSeatId): Promise<OfficeOutcome> {
+  const response = await fetch(`/api/office/hires/${seat}`, {
     method: 'DELETE',
     headers: { accept: 'application/json' },
     credentials: 'same-origin',
   });
   return readOutcome(response, 'DELETE /api/office/hires');
+}
+
+/** Buy the next headquarters expansion — two more neutral offices. */
+export async function expandOffice(): Promise<OfficeOutcome> {
+  const response = await fetch('/api/office/expansion', {
+    method: 'POST',
+    headers: { accept: 'application/json' },
+    credentials: 'same-origin',
+  });
+  return readOutcome(response, 'POST /api/office/expansion');
 }

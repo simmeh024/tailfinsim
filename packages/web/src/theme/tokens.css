@@ -120,6 +120,7 @@
   --hq-accent-chief-pilot: #b98cff;
   --hq-accent-ground-ops: #e6cf5a;
   --hq-accent-safety-compliance: #4fd6c0;
+  --hq-accent-neutral: #cbb389;
 
   /*
    * The console's own surfaces.
@@ -226,6 +227,7 @@
   --hq-accent-chief-pilot: #6a44b0;
   --hq-accent-ground-ops: #8a6f0f;
   --hq-accent-safety-compliance: #12897a;
+  --hq-accent-neutral: #7a6238;
 
   /* See the dark set for why the console has its own ground. */
   --console-bg: #eeeae3;

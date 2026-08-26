@@ -1,10 +1,11 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { OFFICE_ROLES } from '@tailfin/shared';
+import { HEADQUARTERS_EXPANSION_TIERS, OFFICE_ROLES } from '@tailfin/shared';
 
+import { moveAirlineCash } from '../airline/cash';
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { airport, cashMovement, officeHire, runway } from '../db/schema';
+import { airport, cashMovement, officeExpansion, officeHire, runway } from '../db/schema';
 import { openRoute } from '../network/open-route';
 import {
   createFoundedAirlineFixtureHarness,
@@ -13,6 +14,7 @@ import {
 } from '../test-fixtures/founded-airline';
 
 import { requiresExtendedAuthority, hasExtendedAuthority } from './authority';
+import { purchaseExpansion } from './expansion';
 import { dismissOffice, hireOffice, readOfficeState } from './hires';
 import { runOfficePayroll } from './payroll';
 
@@ -133,16 +135,17 @@ describeDb('the office, on the database', () => {
     it('fills a seat, and reads it back with the seat salary', async () => {
       const airline = await fixtures.create();
       const result = await hireOffice(db.db, own(airline), {
-        role: 'route-planner',
+        seat: 'route-planner',
         candidateId: 'rp-1',
         candidateName: 'Mara Ellison',
+        candidateRole: 'route-planner',
       });
       expect(result.ok).toBe(true);
 
       const state = await readOfficeState(db.db, own(airline));
       expect(state.hires).toHaveLength(1);
       expect(state.hires[0]).toMatchObject({
-        role: 'route-planner',
+        seat: 'route-planner',
         candidateName: 'Mara Ellison',
         monthlySalaryMinor: OFFICE_ROLES['route-planner'].monthlySalaryMinor,
       });
@@ -152,14 +155,16 @@ describeDb('the office, on the database', () => {
     it('holds one person per seat — a rival is a replace, not a second row', async () => {
       const airline = await fixtures.create();
       await hireOffice(db.db, own(airline), {
-        role: 'route-planner',
+        seat: 'route-planner',
         candidateId: 'rp-1',
         candidateName: 'Mara Ellison',
+        candidateRole: 'route-planner',
       });
       await hireOffice(db.db, own(airline), {
-        role: 'route-planner',
+        seat: 'route-planner',
         candidateId: 'rp-2',
         candidateName: 'Tom Bakker',
+        candidateRole: 'route-planner',
       });
 
       const state = await readOfficeState(db.db, own(airline));
@@ -172,9 +177,10 @@ describeDb('the office, on the database', () => {
       expect(await hasExtendedAuthority(db.db, airline.airline.id)).toBe(false);
 
       await hireOffice(db.db, own(airline), {
-        role: 'safety-compliance',
+        seat: 'safety-compliance',
         candidateId: 'sc-1',
         candidateName: 'Claire Fontaine',
+        candidateRole: 'safety-compliance',
       });
       expect(await hasExtendedAuthority(db.db, airline.airline.id)).toBe(true);
       expect((await readOfficeState(db.db, own(airline))).hasExtendedAuthority).toBe(true);
@@ -187,9 +193,10 @@ describeDb('the office, on the database', () => {
       const a = await fixtures.create();
       const b = await fixtures.create({ worldId: a.world.id });
       await hireOffice(db.db, own(a), {
-        role: 'chief-pilot',
+        seat: 'chief-pilot',
         candidateId: 'cp-1',
         candidateName: 'Sten Halvorsen',
+        candidateRole: 'chief-pilot',
       });
 
       expect((await readOfficeState(db.db, own(b))).hires).toEqual([]);
@@ -215,9 +222,10 @@ describeDb('the office, on the database', () => {
 
       // Hire the seat, and the same route opens.
       await hireOffice(db.db, own(airline), {
-        role: 'safety-compliance',
+        seat: 'safety-compliance',
         candidateId: 'sc-1',
         candidateName: 'Claire Fontaine',
+        candidateRole: 'safety-compliance',
       });
       const opened = await openRoute(db.db, own(airline), {
         originIcao: 'OFIA',
@@ -254,14 +262,16 @@ describeDb('the office, on the database', () => {
     it('bills the seat salaries once a month, and is idempotent across ticks', async () => {
       const airline = await fixtures.create();
       await hireOffice(db.db, own(airline), {
-        role: 'safety-compliance',
+        seat: 'safety-compliance',
         candidateId: 'sc-1',
         candidateName: 'Claire Fontaine',
+        candidateRole: 'safety-compliance',
       });
       await hireOffice(db.db, own(airline), {
-        role: 'route-planner',
+        seat: 'route-planner',
         candidateId: 'rp-1',
         candidateName: 'Mara Ellison',
+        candidateRole: 'route-planner',
       });
 
       // The world clock is somewhere in a month; payroll bills the previous one.
@@ -300,6 +310,123 @@ describeDb('the office, on the database', () => {
         .select({ id: officeHire.id })
         .from(officeHire)
         .where(eq(officeHire.airlineId, airline.airline.id));
+      expect(rows).toEqual([]);
+    });
+  });
+
+  describe('headquarters expansion', () => {
+    const [tier1, tier2] = HEADQUARTERS_EXPANSION_TIERS;
+    if (!tier1 || !tier2) throw new Error('expected two expansion tiers');
+
+    /** Top an airline up with real AIR-06 cash so it can afford an expansion. */
+    async function fund(airlineId: string, amountMinor: number): Promise<void> {
+      await db.db.transaction((tx) =>
+        moveAirlineCash(tx, {
+          airlineId,
+          amountMinor,
+          cause: 'admin_adjustment',
+          reference: `test-fund:${airlineId}`,
+          occurredAt: new Date('2024-01-01T00:00:00.000Z'),
+        }),
+      );
+    }
+
+    it('locks a neutral seat until the airline has expanded', async () => {
+      const a = await fixtures.create();
+      const locked = await hireOffice(db.db, own(a), {
+        seat: 'neutral-1',
+        candidateId: 'rp-1',
+        candidateName: 'Mara Ellison',
+        candidateRole: 'route-planner',
+      });
+      expect(locked).toEqual({ ok: false, code: 'seat_locked' });
+
+      await fund(a.airline.id, 5_000_000_000);
+      expect(await purchaseExpansion(db.db, own(a))).toEqual({ ok: true, neutralSeats: 2 });
+
+      const filled = await hireOffice(db.db, own(a), {
+        seat: 'neutral-1',
+        candidateId: 'rp-1',
+        candidateName: 'Mara Ellison',
+        candidateRole: 'route-planner',
+      });
+      expect(filled.ok).toBe(true);
+
+      const state = await readOfficeState(db.db, own(a));
+      expect(state.neutralSeats).toBe(2);
+      expect(state.hires.map((h) => h.seat)).toContain('neutral-1');
+    });
+
+    it('does not let a neutral Safety hire unlock authority', async () => {
+      const a = await fixtures.create();
+      await fund(a.airline.id, 5_000_000_000);
+      await purchaseExpansion(db.db, own(a));
+      const hired = await hireOffice(db.db, own(a), {
+        seat: 'neutral-1',
+        candidateId: 'sc-1',
+        candidateName: 'Claire Fontaine',
+        candidateRole: 'safety-compliance',
+      });
+      expect(hired.ok).toBe(true);
+      // A Safety candidate in a neutral seat is not the gate — no authority.
+      expect(await hasExtendedAuthority(db.db, a.airline.id)).toBe(false);
+      expect((await readOfficeState(db.db, own(a))).hasExtendedAuthority).toBe(false);
+    });
+
+    it('refuses a role seat filled by the wrong role', async () => {
+      const a = await fixtures.create();
+      const bad = await hireOffice(db.db, own(a), {
+        seat: 'route-planner',
+        candidateId: 'cp-1',
+        candidateName: 'Sten Halvorsen',
+        candidateRole: 'chief-pilot',
+      });
+      expect(bad).toEqual({ ok: false, code: 'role_mismatch' });
+    });
+
+    it('charges each tier via AIR-06 and advances to the ten-office ceiling', async () => {
+      const a = await fixtures.create();
+      await fund(a.airline.id, 5_000_000_000);
+
+      expect(await purchaseExpansion(db.db, own(a))).toEqual({ ok: true, neutralSeats: 2 });
+      let state = await readOfficeState(db.db, own(a));
+      expect(state.neutralSeats).toBe(2);
+      expect(state.nextExpansion).toEqual({
+        addsSeats: 2,
+        totalSeats: 10,
+        costMinor: tier2.costMinor,
+      });
+
+      expect(await purchaseExpansion(db.db, own(a))).toEqual({ ok: true, neutralSeats: 4 });
+      state = await readOfficeState(db.db, own(a));
+      expect(state.neutralSeats).toBe(4);
+      expect(state.nextExpansion).toBeNull();
+
+      // No third tier — the ten-office ceiling refuses.
+      expect(await purchaseExpansion(db.db, own(a))).toEqual({ ok: false, code: 'maxed' });
+
+      const spent = await db.db
+        .select({ cause: cashMovement.cause, amountMinor: cashMovement.amountMinor })
+        .from(cashMovement)
+        .where(eq(cashMovement.airlineId, a.airline.id));
+      const expansions = spent
+        .filter((m) => m.cause === 'office_expansion')
+        .map((m) => Number(m.amountMinor))
+        .sort((x, y) => x - y);
+      expect(expansions).toEqual([-tier2.costMinor, -tier1.costMinor]);
+    });
+
+    it('refuses to expand when the airline cannot afford it', async () => {
+      const a = await fixtures.create();
+      // A fresh airline opens with far less than the first tier costs.
+      expect(await purchaseExpansion(db.db, own(a))).toEqual({
+        ok: false,
+        code: 'insufficient_funds',
+      });
+      const rows = await db.db
+        .select({ id: officeExpansion.id })
+        .from(officeExpansion)
+        .where(eq(officeExpansion.airlineId, a.airline.id));
       expect(rows).toEqual([]);
     });
   });
