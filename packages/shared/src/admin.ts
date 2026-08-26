@@ -190,11 +190,13 @@ export type AdminCreateWorldResponse = z.infer<typeof AdminCreateWorldResponse>;
  * stops two admins from silently overwriting each other; it does not stop one
  * admin acting alone.
  */
-export const AdminSpeedChangeRequest = z.object({
-  speedMultiplier: z.number().positive().max(MAX_SPEED_MULTIPLIER),
-  /** The speed the console was showing when the admin confirmed. */
-  expectedSpeedMultiplier: z.number().positive(),
-});
+export const AdminSpeedChangeRequest = z
+  .object({
+    speedMultiplier: z.number().positive().max(MAX_SPEED_MULTIPLIER),
+    /** The speed the console was showing when the admin confirmed. */
+    expectedSpeedMultiplier: z.number().positive(),
+  })
+  .strict();
 export type AdminSpeedChangeRequest = z.infer<typeof AdminSpeedChangeRequest>;
 
 /** The world's clock, on one side of a change. */
@@ -248,10 +250,12 @@ export type AdminSpeedChangeResponse = z.infer<typeof AdminSpeedChangeResponse>;
  * request shape does not encode that, because the legal set depends on where the
  * world is now and the server is what knows.
  */
-export const AdminWorldStatusRequest = z.object({
-  status: WorldStatus,
-  expectedStatus: WorldStatus,
-});
+export const AdminWorldStatusRequest = z
+  .object({
+    status: WorldStatus,
+    expectedStatus: WorldStatus,
+  })
+  .strict();
 export type AdminWorldStatusRequest = z.infer<typeof AdminWorldStatusRequest>;
 
 /**
@@ -300,11 +304,13 @@ export type AdminWorldStatusResponse = z.infer<typeof AdminWorldStatusResponse>;
  *   - **`expectedStatus`** so a world that was opened to players while the
  *     confirmation sat on screen is refused rather than quietly reset.
  */
-export const AdminResetWorldRequest = z.object({
-  confirmName: z.string().min(1),
-  reason: z.string().trim().min(4),
-  expectedStatus: WorldStatus,
-});
+export const AdminResetWorldRequest = z
+  .object({
+    confirmName: z.string().min(1),
+    reason: z.string().trim().min(4),
+    expectedStatus: WorldStatus,
+  })
+  .strict();
 export type AdminResetWorldRequest = z.infer<typeof AdminResetWorldRequest>;
 
 /** What a reset destroyed, counted as it happened. */
@@ -945,20 +951,22 @@ export type AdminEconomyConfigDetailResponse = z.infer<typeof AdminEconomyConfig
  * Creating a version changes nothing on its own — a world has to be pinned to
  * it, which is a second, separately audited act.
  */
-export const AdminCreateEconomyConfigRequest = z.object({
-  version: EconomyConfigVersion,
-  /** The full payload as JSON text, validated against `EconomyConfig` on arrival. */
-  payloadJson: z.string().min(1),
-  /**
-   * The version this was derived from.
-   *
-   * Required, because *"every version is diffable against the previous"* needs a
-   * previous. The seed is the one row without one, and the seed is not created
-   * through this route.
-   */
-  parentVersion: EconomyConfigVersion,
-  notes: z.string().min(1).max(2_000),
-});
+export const AdminCreateEconomyConfigRequest = z
+  .object({
+    version: EconomyConfigVersion,
+    /** The full payload as JSON text, validated against `EconomyConfig` on arrival. */
+    payloadJson: z.string().min(1),
+    /**
+     * The version this was derived from.
+     *
+     * Required, because *"every version is diffable against the previous"* needs a
+     * previous. The seed is the one row without one, and the seed is not created
+     * through this route.
+     */
+    parentVersion: EconomyConfigVersion,
+    notes: z.string().min(1).max(2_000),
+  })
+  .strict();
 export type AdminCreateEconomyConfigRequest = z.infer<typeof AdminCreateEconomyConfigRequest>;
 
 export const AdminCreateEconomyConfigResponse = z.object({
@@ -975,10 +983,12 @@ export type AdminCreateEconomyConfigResponse = z.infer<typeof AdminCreateEconomy
  * longer on the version the admin was shown, somebody else moved it and the
  * sentence they agreed to is not the one that would be carried out.
  */
-export const AdminPinEconomyConfigRequest = z.object({
-  version: EconomyConfigVersion,
-  expectedVersion: EconomyConfigVersion,
-});
+export const AdminPinEconomyConfigRequest = z
+  .object({
+    version: EconomyConfigVersion,
+    expectedVersion: EconomyConfigVersion,
+  })
+  .strict();
 export type AdminPinEconomyConfigRequest = z.infer<typeof AdminPinEconomyConfigRequest>;
 
 export const AdminPinEconomyConfigResponse = z.object({
@@ -1007,17 +1017,19 @@ export type AdminPinEconomyConfigResponse = z.infer<typeof AdminPinEconomyConfig
  * point of `unsupported` being a state rather than a failure: recovering the
  * work must not require somebody to write an `UPDATE` against a live database.
  */
-export const AdminRequeueEventsRequest = z.object({
-  /**
-   * The types to return. Required, and deliberately not defaulted to "all".
-   *
-   * Requeueing a type whose handler still does not exist just moves the rows
-   * back into `pending` for the next drain to move out again — churn, and a
-   * confusing audit trail. Naming the types makes the operator state what they
-   * believe has changed.
-   */
-  types: z.array(z.string().min(1)).min(1),
-});
+export const AdminRequeueEventsRequest = z
+  .object({
+    /**
+     * The types to return. Required, and deliberately not defaulted to "all".
+     *
+     * Requeueing a type whose handler still does not exist just moves the rows
+     * back into `pending` for the next drain to move out again — churn, and a
+     * confusing audit trail. Naming the types makes the operator state what they
+     * believe has changed.
+     */
+    types: z.array(z.string().min(1)).min(1),
+  })
+  .strict();
 export type AdminRequeueEventsRequest = z.infer<typeof AdminRequeueEventsRequest>;
 
 export const AdminRequeueEventsResponse = z.object({

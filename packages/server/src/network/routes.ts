@@ -24,10 +24,11 @@
 
 import { and, eq } from 'drizzle-orm';
 
-import { CabinClass, FareTable, Uuid } from '@tailfin/shared';
+import { CabinClass, OpenRouteInput, SetFaresRequest, Uuid } from '@tailfin/shared';
 
 import { resolvedAirlineOf } from '../airline/context';
 import { route } from '../db/schema';
+import { parseRequestBody } from '../http/request-body';
 
 import { parseFares, previewFares, type RouteEconomics, type RouteRow, setFares } from './fares';
 import { openRoute } from './open-route';
@@ -136,16 +137,16 @@ export function registerNetworkRoutes(
     async (request, reply) => {
       const own = resolvedAirlineOf(request);
 
-      const body = request.body as { originIcao?: unknown; destinationIcao?: unknown } | null;
-      if (typeof body?.originIcao !== 'string' || typeof body.destinationIcao !== 'string') {
+      const parsed = parseRequestBody(request, OpenRouteInput);
+      if (!parsed.success) {
         return reply
           .code(400)
           .send({ code: 'invalid_route', message: 'An origin and a destination are required' });
       }
 
       const result = await openRoute(db.db, own, {
-        originIcao: body.originIcao,
-        destinationIcao: body.destinationIcao,
+        originIcao: parsed.data.originIcao,
+        destinationIcao: parsed.data.destinationIcao,
       });
 
       if (result.ok) return reply.code(201).send(result);
@@ -181,7 +182,7 @@ export function registerNetworkRoutes(
     async (request, reply) => {
       const own = resolvedAirlineOf(request);
 
-      const parsed = FareTable.safeParse((request.body as { fares?: unknown })?.fares);
+      const parsed = parseRequestBody(request, SetFaresRequest);
       if (!parsed.success) {
         return reply
           .code(400)
@@ -191,7 +192,7 @@ export function registerNetworkRoutes(
       const row = await ownedRoute(db.db, own.id, request.params.routeId);
       if (!row) return notFound(reply);
 
-      const result = await setFares(db.db, row, parsed.data, await economicsFor(row));
+      const result = await setFares(db.db, row, parsed.data.fares, await economicsFor(row));
       if (!result.ok && 'kind' in result) {
         return reply.code(409).send({
           code: 'airline_ceased',
@@ -253,7 +254,7 @@ export function registerNetworkRoutes(
     async (request, reply) => {
       const own = resolvedAirlineOf(request);
 
-      const parsed = FareTable.safeParse((request.body as { fares?: unknown })?.fares);
+      const parsed = parseRequestBody(request, SetFaresRequest);
       if (!parsed.success) {
         return reply
           .code(400)
@@ -263,7 +264,7 @@ export function registerNetworkRoutes(
       const row = await ownedRoute(db.db, own.id, request.params.routeId);
       if (!row) return notFound(reply);
 
-      return reply.code(200).send(previewFares(row, parsed.data, await economicsFor(row)));
+      return reply.code(200).send(previewFares(row, parsed.data.fares, await economicsFor(row)));
     },
   );
 }

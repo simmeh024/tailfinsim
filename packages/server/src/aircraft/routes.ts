@@ -18,6 +18,7 @@ import {
 
 import { resolvedAirlineOf } from '../airline/context';
 import { type DatabaseHandle } from '../db/client';
+import { parseRequestBody } from '../http/request-body';
 
 import {
   acquireAircraft,
@@ -79,7 +80,7 @@ export function registerAircraftRoutes(app: FastifyInstance, { db }: { db: Datab
       },
     },
     async (request, reply) => {
-      const parsed = AircraftAcquisitionQuoteInput.safeParse(request.body);
+      const parsed = parseRequestBody(request, AircraftAcquisitionQuoteInput);
       if (!parsed.success) {
         const fields: Record<string, string[]> = {};
         for (const issue of parsed.error.issues) {
@@ -121,7 +122,7 @@ export function registerAircraftRoutes(app: FastifyInstance, { db }: { db: Datab
       },
     },
     async (request, reply) => {
-      const parsed = AircraftAcquisitionInput.safeParse(request.body);
+      const parsed = parseRequestBody(request, AircraftAcquisitionInput);
       if (!parsed.success) {
         const fields: Record<string, string[]> = {};
         for (const issue of parsed.error.issues) {
@@ -291,7 +292,7 @@ export function registerAircraftRoutes(app: FastifyInstance, { db }: { db: Datab
       },
     },
     async (request, reply) => {
-      const parsed = BookCheckInput.safeParse(request.body);
+      const parsed = parseRequestBody(request, BookCheckInput);
       if (!parsed.success) {
         const fields: Record<string, string[]> = {};
         for (const issue of parsed.error.issues) {

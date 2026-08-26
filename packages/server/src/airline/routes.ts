@@ -16,6 +16,7 @@ import {
 } from '@tailfin/shared';
 
 import { type DatabaseHandle } from '../db/client';
+import { parseRequestBody } from '../http/request-body';
 
 import { checkAirlineCodeAvailability } from './codes';
 import { ACTIVE_WORLD_HEADER, parseActiveWorldHeader, resolvedAirlineOf } from './context';
@@ -166,7 +167,7 @@ export function registerAirlineRoutes(
       },
     },
     async (request, reply) => {
-      const parsed = UpdateOwnAirlineInput.safeParse(request.body);
+      const parsed = parseRequestBody(request, UpdateOwnAirlineInput);
       if (!parsed.success) {
         return reply
           .code(400)
@@ -257,7 +258,7 @@ export function registerAirlineRoutes(
       },
     },
     async (request, reply) => {
-      const parsed = AirlineCodeAvailabilityInput.safeParse(request.body);
+      const parsed = parseRequestBody(request, AirlineCodeAvailabilityInput);
       if (!parsed.success) {
         return reply
           .code(400)
@@ -290,7 +291,7 @@ export function registerAirlineRoutes(
       const playerId = request.player?.id;
       if (playerId === undefined) return;
 
-      const parsed = CreateAirlineInput.safeParse(request.body);
+      const parsed = parseRequestBody(request, CreateAirlineInput);
       if (!parsed.success) {
         return reply
           .code(400)
@@ -337,7 +338,7 @@ export function registerAirlineRoutes(
           .send({ code: 'airline_not_found', message: 'No airline with that id.' });
       }
 
-      const parsed = ForceRenameAirlineInput.safeParse(request.body);
+      const parsed = parseRequestBody(request, ForceRenameAirlineInput);
       if (!parsed.success) {
         return reply
           .code(400)

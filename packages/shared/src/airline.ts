@@ -174,10 +174,12 @@ export const CreateAirlineInput = Airline.pick({
   icaoCode: true,
   callsign: true,
   baseCountry: true,
-}).extend({
-  /** The first hub is chosen at founding and granted without a purchase (App. B.5). */
-  hubIdent: AirportIdent,
-});
+})
+  .extend({
+    /** The first hub is chosen at founding and granted without a purchase (App. B.5). */
+    hubIdent: AirportIdent,
+  })
+  .strict();
 export type CreateAirlineInput = z.infer<typeof CreateAirlineInput>;
 
 /** One airport at which an airline is based. M7-04 adds purchases and facilities. */
@@ -285,7 +287,9 @@ export const AirlineCodeAvailabilityInput = AirlineIdentity.pick({
   name: true,
   iataCode: true,
   icaoCode: true,
-}).extend({ worldId: Uuid });
+})
+  .extend({ worldId: Uuid })
+  .strict();
 export type AirlineCodeAvailabilityInput = z.infer<typeof AirlineCodeAvailabilityInput>;
 
 /** The scope and non-reservation semantics every availability result carries. */
@@ -323,10 +327,12 @@ export const AirlineCodeUnavailableError = ApiError.extend({
 export type AirlineCodeUnavailableError = z.infer<typeof AirlineCodeUnavailableError>;
 
 /** The fields a moderation remedy may replace; scarce codes are not renamed here. */
-export const ForceRenameAirlineInput = AirlineIdentity.pick({ name: true, callsign: true }).extend({
-  /** Why the intervention happened, retained in the append-only admin audit log. */
-  reason: z.string().trim().min(1, 'is required for the audit log').max(500),
-});
+export const ForceRenameAirlineInput = AirlineIdentity.pick({ name: true, callsign: true })
+  .extend({
+    /** Why the intervention happened, retained in the append-only admin audit log. */
+    reason: z.string().trim().min(1, 'is required for the audit log').max(500),
+  })
+  .strict();
 export type ForceRenameAirlineInput = z.infer<typeof ForceRenameAirlineInput>;
 
 export const ForceRenameAirlineResponse = z.object({ airline: Airline, changed: z.boolean() });
