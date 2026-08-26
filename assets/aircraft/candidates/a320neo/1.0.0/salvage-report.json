@@ -29,59 +29,76 @@
         18.79700469970703
       ],
       "min": [
-        -17.895694732666016,
-        0.0023720336612313986,
+        -17.896331787109375,
+        0.002600600942969322,
         -18.77204704284668
       ]
     },
-    "byteSize": 25189584,
+    "byteSize": 27732912,
     "lodTriangles": [
-      237047,
-      98772,
-      35636
+      248971,
+      103847,
+      39855
     ],
     "materialTriangles": [
       {
-        "mat-cabin-windows": 4320,
-        "mat-cockpit-glass": 1396,
-        "mat-engine-interiors": 28105,
-        "mat-fin": 3831,
-        "mat-fuselage": 101617,
-        "mat-horizontal-stabilisers": 12993,
+        "mat-cabin-windows": 4474,
+        "mat-cockpit-glass": 1482,
+        "mat-engine-interiors": 39500,
+        "mat-fin": 3835,
+        "mat-fuselage": 101789,
+        "mat-horizontal-stabilisers": 13007,
         "mat-lights": 1119,
-        "mat-nacelle-exteriors": 60294,
+        "mat-nacelle-exteriors": 60361,
         "mat-rubber-tyres": 368,
         "mat-winglets": 931,
-        "mat-wings": 22073
+        "mat-wings": 22105
       },
       {
-        "mat-cabin-windows": 1800,
-        "mat-cockpit-glass": 580,
-        "mat-engine-interiors": 11704,
-        "mat-fin": 1594,
-        "mat-fuselage": 42315,
-        "mat-horizontal-stabilisers": 5407,
+        "mat-cabin-windows": 1862,
+        "mat-cockpit-glass": 617,
+        "mat-engine-interiors": 16446,
+        "mat-fin": 1596,
+        "mat-fuselage": 42412,
+        "mat-horizontal-stabilisers": 5419,
         "mat-lights": 465,
-        "mat-nacelle-exteriors": 25072,
+        "mat-nacelle-exteriors": 25150,
         "mat-rubber-tyres": 284,
-        "mat-winglets": 382,
-        "mat-wings": 9169
+        "mat-winglets": 387,
+        "mat-wings": 9209
       },
       {
-        "mat-cabin-windows": 646,
-        "mat-cockpit-glass": 209,
-        "mat-engine-interiors": 4211,
-        "mat-fin": 571,
-        "mat-fuselage": 15183,
-        "mat-horizontal-stabilisers": 1946,
+        "mat-cabin-windows": 669,
+        "mat-cockpit-glass": 222,
+        "mat-engine-interiors": 5923,
+        "mat-fin": 575,
+        "mat-fuselage": 15258,
+        "mat-horizontal-stabilisers": 1951,
         "mat-lights": 167,
-        "mat-nacelle-exteriors": 8991,
+        "mat-nacelle-exteriors": 11352,
         "mat-rubber-tyres": 284,
-        "mat-winglets": 135,
-        "mat-wings": 3293
+        "mat-winglets": 139,
+        "mat-wings": 3315
       }
     ],
-    "sha256": "2957eaa1a88a197e29087b8bc3e94b1cdb8810709ccccab59ef150db6434fb5a",
+    "sha256": "ec6bfad2c34ff8e559e52c159df921de63afff0365a4a2ebaa36ed470cfa0d63",
+    "stagedLods": [
+      {
+        "byteSize": 15822032,
+        "level": 0,
+        "sha256": "dc97e93c2927a5513990bf3e4c845218835d03a19f36509298f8de61bea3f2a9"
+      },
+      {
+        "byteSize": 8805408,
+        "level": 1,
+        "sha256": "2b4441843bdd81c8e1237bce013c32ac2ad5b47ec2b034e07747dec427ccb20c"
+      },
+      {
+        "byteSize": 5349696,
+        "level": 2,
+        "sha256": "ce04e346c3939d9a489cbce6d397e8bfbbabbab5aeda1d6682e85d1bfba15d3d"
+      }
+    ],
     "targetDimensionsM": {
       "height": 11.76,
       "length": 37.57,
@@ -99,22 +116,22 @@
     "lod0.fin": {
       "degenerateUvFaces": 0,
       "duplicateFaces": 1,
-      "overlappingUvFaces": 3
+      "overlappingUvFaces": 1
     },
     "lod0.fuselage": {
-      "degenerateUvFaces": 152,
-      "duplicateFaces": 43,
-      "overlappingUvFaces": 22
+      "degenerateUvFaces": 164,
+      "duplicateFaces": 45,
+      "overlappingUvFaces": 48
     },
     "lod0.horizontal_stabilisers": {
       "degenerateUvFaces": 2,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 13
+      "overlappingUvFaces": 19
     },
     "lod0.nacelle_exteriors": {
-      "degenerateUvFaces": 7,
-      "duplicateFaces": 35,
-      "overlappingUvFaces": 42
+      "degenerateUvFaces": 1686,
+      "duplicateFaces": 16,
+      "overlappingUvFaces": 23
     },
     "lod0.winglets": {
       "degenerateUvFaces": 0,
@@ -123,8 +140,8 @@
     },
     "lod0.wings": {
       "degenerateUvFaces": 0,
-      "duplicateFaces": 10,
-      "overlappingUvFaces": 32
+      "duplicateFaces": 11,
+      "overlappingUvFaces": 34
     },
     "lod1.cabin_windows": {
       "degenerateUvFaces": 0,
@@ -144,17 +161,17 @@
     "lod1.fin": {
       "degenerateUvFaces": 0,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 1
+      "overlappingUvFaces": 2
     },
     "lod1.fuselage": {
-      "degenerateUvFaces": 11,
+      "degenerateUvFaces": 5,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 5
+      "overlappingUvFaces": 20
     },
     "lod1.horizontal_stabilisers": {
       "degenerateUvFaces": 1,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 5
+      "overlappingUvFaces": 0
     },
     "lod1.lights": {
       "degenerateUvFaces": 0,
@@ -164,7 +181,7 @@
     "lod1.nacelle_exteriors": {
       "degenerateUvFaces": 0,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 45
+      "overlappingUvFaces": 31
     },
     "lod1.rubber_tyres": {
       "degenerateUvFaces": 0,
@@ -174,12 +191,12 @@
     "lod1.winglets": {
       "degenerateUvFaces": 0,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 4
+      "overlappingUvFaces": 0
     },
     "lod1.wings": {
-      "degenerateUvFaces": 1,
+      "degenerateUvFaces": 0,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 27
+      "overlappingUvFaces": 22
     },
     "lod2.cabin_windows": {
       "degenerateUvFaces": 0,
@@ -199,17 +216,17 @@
     "lod2.fin": {
       "degenerateUvFaces": 0,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 2
+      "overlappingUvFaces": 5
     },
     "lod2.fuselage": {
-      "degenerateUvFaces": 3,
+      "degenerateUvFaces": 1,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 49
+      "overlappingUvFaces": 61
     },
     "lod2.horizontal_stabilisers": {
       "degenerateUvFaces": 0,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 2
+      "overlappingUvFaces": 3
     },
     "lod2.lights": {
       "degenerateUvFaces": 0,
@@ -217,9 +234,9 @@
       "overlappingUvFaces": 0
     },
     "lod2.nacelle_exteriors": {
-      "degenerateUvFaces": 1,
+      "degenerateUvFaces": 2,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 52
+      "overlappingUvFaces": 65
     },
     "lod2.rubber_tyres": {
       "degenerateUvFaces": 0,
@@ -229,12 +246,12 @@
     "lod2.winglets": {
       "degenerateUvFaces": 0,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 4
+      "overlappingUvFaces": 2
     },
     "lod2.wings": {
       "degenerateUvFaces": 0,
       "duplicateFaces": 0,
-      "overlappingUvFaces": 16
+      "overlappingUvFaces": 28
     }
   },
   "original": {
@@ -244,7 +261,7 @@
     "sha256": "4421977f9f3ee6539f50d8ba20fd0a5f371d70cfffc946b58d639887cb676cd2",
     "triangles": 1977240
   },
-  "salvageVersion": "1.1.0",
+  "salvageVersion": "1.2.0",
   "validation": {
     "errors": 0,
     "hints": 0,

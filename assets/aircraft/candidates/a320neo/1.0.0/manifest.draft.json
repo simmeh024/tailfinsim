@@ -66,15 +66,15 @@
     "contentAudit": {
       "neutralBaseCoat": true,
       "realWorldAirlineLivery": false,
-      "reviewedAt": "2026-08-25",
+      "reviewedAt": "2026-08-26",
       "reviewedBy": "Tailfin deterministic salvage pipeline; human visual review pending",
       "trademarkedLogos": [],
       "unlicensedLogos": []
     },
     "delivery": {
-      "byteSize": 25189584,
+      "byteSize": 27732912,
       "filePath": "aircraft.glb",
-      "fileSha256": "2957eaa1a88a197e29087b8bc3e94b1cdb8810709ccccab59ef150db6434fb5a",
+      "fileSha256": "ec6bfad2c34ff8e559e52c159df921de63afff0365a4a2ebaa36ed470cfa0d63",
       "forwardAxis": "-Z",
       "gltfVersion": "2.0",
       "mimeType": "model/gltf-binary",
@@ -145,17 +145,17 @@
       {
         "level": 0,
         "nodeName": "lod0",
-        "triangleCount": 237047
+        "triangleCount": 248971
       },
       {
         "level": 1,
         "nodeName": "lod1",
-        "triangleCount": 98772
+        "triangleCount": 103847
       },
       {
         "level": 2,
         "nodeName": "lod2",
-        "triangleCount": 35636
+        "triangleCount": 39855
       }
     ],
     "materials": [
