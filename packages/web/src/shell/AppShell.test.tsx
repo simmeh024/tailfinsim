@@ -123,10 +123,10 @@ describe('layout', () => {
     expect(screen.queryByLabelText('Interactive world renderer')).toBeNull();
   });
 
-  it('has a rail link for each of the seven destinations', async () => {
+  it('has a rail link for each destination', async () => {
     await renderAt('/world');
     const rail = screen.getByRole('navigation', { name: 'Main' });
-    expect(NAV_ITEMS).toHaveLength(7);
+    expect(NAV_ITEMS).toHaveLength(8);
     for (const item of NAV_ITEMS) {
       expect(within(rail).getByRole('link', { name: new RegExp(item.label, 'i') })).toHaveAttribute(
         'href',
@@ -173,6 +173,7 @@ describe('routing', () => {
     ['/network', 'Network'],
     ['/finance', 'Finance'],
     ['/crew', 'Crew'],
+    ['/headquarters', 'Headquarters'],
     ['/design', 'Shell Air'],
     ['/board', 'Board'],
   ])('%s renders its page', async (path, title) => {

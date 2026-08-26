@@ -43,13 +43,17 @@ interface NavItem {
   glyph: string;
 }
 
-/** The seven destinations named in App. H.4, in the doc's order. */
+/**
+ * The console's destinations, in the doc's order. App. H.4 named seven; M5-04's
+ * Headquarters sits between Crew and Design as the eighth, the office-hires page.
+ */
 export const NAV_ITEMS: readonly NavItem[] = [
   { to: '/world', label: 'World', glyph: '◎' },
   { to: '/fleet', label: 'Fleet', glyph: '✈' },
   { to: '/network', label: 'Network', glyph: '⤳' },
   { to: '/finance', label: 'Finance', glyph: '§' },
   { to: '/crew', label: 'Crew', glyph: '☰' },
+  { to: '/headquarters', label: 'Headquarters', glyph: '⌂' },
   { to: '/design', label: 'Design', glyph: '◆' },
   { to: '/board', label: 'Board', glyph: '▤' },
 ];
