@@ -99,6 +99,15 @@ same 404 status, code and message. Resolve ownership in the query; do not fetch 
 compare afterwards. A public projection is an explicit matrix row with a limited field
 contract, not an exception invented inside a handler.
 
+Prove it with a second owner. An owned endpoint is not done until it is tested against another
+player's resource, and `createOwnershipTestSuite` (`packages/server/src/test-fixtures/ownership.ts`,
+SEC-05) exists so that costs a few lines rather than a fresh set of fixtures — it founds two
+players with airlines in one world and a third airline for the first player in a second world.
+Copy `airline/cross-owner-routes.test.ts`: own resource 200, another player's 404 identical to a
+missing id, the same player's other-world resource 404, and a refused write shown to have left the
+row **unchanged**. The last one is the assertion that separates a real guard from one that answers
+404 after acting.
+
 ---
 
 ## The web/worker boundary
