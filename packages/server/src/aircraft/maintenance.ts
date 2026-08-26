@@ -480,6 +480,35 @@ export async function fleetMaintenance(
 }
 
 /**
+ * One airframe's technical-fault probability, for the disruption roll (M5-05).
+ *
+ * The same reliability the fleet page shows, reduced to the single number
+ * `DisruptionRisk.technical` reserved for it — a new airframe near 0, one overdue
+ * for a check approaching 1. Returns 0 for an unknown airframe or a type absent
+ * from its pinned catalogue: a missing reliability model is honestly "no extra
+ * risk", and a departure must never fail because a type row could not be found.
+ */
+export async function airframeTechnicalRisk(db: Database, airframeId: string): Promise<number> {
+  const [row] = await db.select().from(airframe).where(eq(airframe.id, airframeId)).limit(1);
+  if (!row) return 0;
+
+  const [worldRow] = await db
+    .select({ economyConfigVersion: world.economyConfigVersion })
+    .from(world)
+    .where(eq(world.id, row.worldId))
+    .limit(1);
+  if (!worldRow) return 0;
+
+  const economy = await loadEconomyConfig(db, worldRow.economyConfigVersion);
+  const catalogue = await loadCatalogueVersion(db, row.catalogueVersion);
+  const type = catalogue.types.get(row.typeDesignation);
+  if (!type) return 0;
+
+  return maintenanceStatus(stateOf(row), type.maintenanceProfile, economy.maintenance)
+    .technicalRisk;
+}
+
+/**
  * Higher is more urgent. Grounded first, then unairworthy, then closest to due.
  *
  * Keyed on the status column rather than only on recomputed airworthiness, and
