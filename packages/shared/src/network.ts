@@ -56,6 +56,13 @@ export const CreateRouteInput = Route.pick({
 });
 export type CreateRouteInput = z.infer<typeof CreateRouteInput>;
 
+/** Player-authored fields for opening a route; ownership and economics are server-resolved. */
+export const OpenRouteInput = Route.pick({
+  originIcao: true,
+  destinationIcao: true,
+}).strict();
+export type OpenRouteInput = z.infer<typeof OpenRouteInput>;
+
 /**
  * Which of the seven reachability checks failed (App. B.4).
  *
@@ -196,9 +203,11 @@ export type ScheduleValidation = z.infer<typeof ScheduleValidation>;
  * Partial, like `FareTable` itself: a route flown by an all-economy aircraft has
  * no business fare and should not be forced to invent one.
  */
-export const SetFaresRequest = z.object({
-  fares: FareTable,
-});
+export const SetFaresRequest = z
+  .object({
+    fares: FareTable,
+  })
+  .strict();
 export type SetFaresRequest = z.infer<typeof SetFaresRequest>;
 
 /**

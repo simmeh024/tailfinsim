@@ -330,23 +330,40 @@ describeDb('creating worlds', () => {
       }
     });
 
-    it('cannot be talked into creating an open world', async () => {
-      // The acceptance criterion. `status` is not part of the request shape, so
-      // the extra key is dropped rather than honoured.
+    it('cannot be talked into assigning server-owned world fields', async () => {
+      // WorldConfig deliberately keeps its established compatibility behaviour:
+      // unknown fields are stripped. The stored row — not the 201 — is proof
+      // that none of them crossed the parsed-body boundary.
       const actor = await makeAdmin();
       const app = buildApp({ env, db });
       try {
+        const before = new Date();
+        const c = config();
         const reply = await app.inject({
           method: 'POST',
           url: '/api/admin/worlds',
-          payload: { ...config(), status: 'open' },
+          payload: {
+            ...c,
+            status: 'open',
+            launchDate: '1900-01-01T00:00:00.000Z',
+            isAdmin: true,
+            playerId: '00000000-0000-4000-8000-000000000001',
+            cashMinor: 999_999_999,
+            tokenHash: 'attacker-controlled-session-material',
+          },
           headers: { cookie: await cookieFor(actor) },
         });
 
         expect(reply.statusCode).toBe(201);
         const body = reply.json<{ world: { id: string; status: string } }>();
         madeWorlds.push(body.world.id);
-        expect(body.world.status).toBe('staging');
+        const stored = await db.db.select().from(world).where(eq(world.id, body.world.id));
+        expect(stored[0]).toMatchObject({
+          epoch: new Date(c.epoch),
+          speedMultiplier: c.speedMultiplier.toFixed(2),
+          status: 'staging',
+        });
+        expect(stored[0]?.launchDate.getTime()).toBeGreaterThanOrEqual(before.getTime());
       } finally {
         await app.close();
       }

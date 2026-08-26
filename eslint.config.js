@@ -225,6 +225,22 @@ export default tseslint.config(
     },
   },
 
+  // SEC-06 — handlers consume parsed bodies, never Fastify's raw body.
+  // `http/request-body.ts` is the single boundary that may perform this read.
+  {
+    files: ['packages/server/src/**/*routes.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "MemberExpression[object.name='request'][property.name='body']",
+          message:
+            'Parse request bodies through parseRequestBody(); handlers must never read request.body directly. See CONTRIBUTING.md and SEC-06.',
+        },
+      ],
+    },
+  },
+
   // --- 2. The engine, the worker and the loop itself -------------------------
   // They are what the tick restriction protects, so it cannot apply to them.
   // Invariant 3 still does: the worker settles flights and must read the world's

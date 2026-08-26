@@ -233,4 +233,34 @@ describeDb('cross-player ownership on the route endpoints (SEC-05)', () => {
       expect(rows).toEqual([{ fares: STORED_FARES }]);
     }
   });
+
+  it('rejects privileged fare-body fields before changing the stored row', async () => {
+    const before = await db.db
+      .select({ airlineId: route.airlineId, worldId: route.worldId, fares: route.fares })
+      .from(route)
+      .where(eq(route.id, ownRouteId));
+    const response = await suite.as(
+      { actor: 'playerA', worldId: suite.worldMain.id },
+      {
+        method: 'PUT',
+        url: `/api/routes/${ownRouteId}/fares`,
+        payload: {
+          fares: { economy: 99_999 },
+          airlineId: suite.airlineB.airline.id,
+          worldId: suite.worldOther.id,
+          cashMinor: 999_999_999,
+          isAdmin: true,
+          tokenHash: 'attacker-controlled-session-material',
+        },
+      },
+    );
+
+    expect(response.statusCode).toBe(400);
+    expect(
+      await db.db
+        .select({ airlineId: route.airlineId, worldId: route.worldId, fares: route.fares })
+        .from(route)
+        .where(eq(route.id, ownRouteId)),
+    ).toEqual(before);
+  });
 });

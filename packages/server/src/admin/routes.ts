@@ -40,6 +40,7 @@ import {
   validateCreateRequest,
   validatePinRequest,
 } from '../economy/versions';
+import { parseRequestBody } from '../http/request-body';
 
 import { readAirline } from './airlines';
 import { parseAuditJson, readAudit } from './audit';
@@ -357,19 +358,21 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
     },
     async (request, reply) => {
       const now = new Date();
-      const validated = await validateWorldConfig(request.body, now, {
-        // Validation runs before `createWorld`, so both shipped versions have to
-        // be there by now or a freshly migrated database refuses its first world
-        // with a field error. Both seeds are memoised and insert-only.
-        economyVersionExists: async (version) => {
-          await ensureEconomyConfigSeeded(db.db);
-          return economyConfigVersionExists(db.db, version);
-        },
-        catalogueVersionExists: async (version) => {
-          await ensureCatalogueSeeded(db.db);
-          return catalogueVersionExists(db.db, version);
-        },
-      });
+      const validated = await parseRequestBody(request, (body) =>
+        validateWorldConfig(body, now, {
+          // Validation runs before `createWorld`, so both shipped versions have to
+          // be there by now or a freshly migrated database refuses its first world
+          // with a field error. Both seeds are memoised and insert-only.
+          economyVersionExists: async (version) => {
+            await ensureEconomyConfigSeeded(db.db);
+            return economyConfigVersionExists(db.db, version);
+          },
+          catalogueVersionExists: async (version) => {
+            await ensureCatalogueSeeded(db.db);
+            return catalogueVersionExists(db.db, version);
+          },
+        }),
+      );
       if (!validated.ok) {
         return reply.code(400).send({
           code: 'invalid_world',
@@ -451,7 +454,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
         return reply.code(404).send({ code: 'world_not_found', message: 'No world with that id.' });
       }
 
-      const validated = validateSpeedRequest(request.body);
+      const validated = parseRequestBody(request, validateSpeedRequest);
       if (!validated.ok) {
         return reply.code(SPEED_REFUSAL_STATUS[validated.code]).send({
           code: validated.code,
@@ -546,7 +549,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
         return reply.code(404).send({ code: 'world_not_found', message: 'No world with that id.' });
       }
 
-      const validated = validateStatusRequest(request.body);
+      const validated = parseRequestBody(request, validateStatusRequest);
       if (!validated.ok) {
         return reply.code(LIFECYCLE_REFUSAL_STATUS[validated.code]).send({
           code: validated.code,
@@ -602,7 +605,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
         return reply.code(404).send({ code: 'world_not_found', message: 'No world with that id.' });
       }
 
-      const validated = validateResetRequest(request.body);
+      const validated = parseRequestBody(request, validateResetRequest);
       if (!validated.ok) {
         return reply.code(LIFECYCLE_REFUSAL_STATUS[validated.code]).send({
           code: validated.code,
@@ -746,7 +749,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
       },
     },
     async (request, reply) => {
-      const validated = validateCreateRequest(request.body);
+      const validated = parseRequestBody(request, validateCreateRequest);
       if (!validated.ok) {
         return reply.code(ECONOMY_CREATE_STATUS[validated.code]).send({
           code: validated.code,
@@ -795,7 +798,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
         return reply.code(404).send({ code: 'world_not_found', message: 'No world with that id.' });
       }
 
-      const validated = validatePinRequest(request.body);
+      const validated = parseRequestBody(request, validatePinRequest);
       if (!validated.ok) {
         return reply.code(ECONOMY_PIN_STATUS[validated.code]).send({
           code: validated.code,
@@ -884,7 +887,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
       },
     },
     async (request, reply) => {
-      const validated = validateRequeueRequest(request.body);
+      const validated = parseRequestBody(request, validateRequeueRequest);
       if (!validated.ok) {
         return reply
           .code(400)

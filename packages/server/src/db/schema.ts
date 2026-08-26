@@ -1096,6 +1096,39 @@ export const adminGrant = pgTable('admin_grant', {
 });
 
 /**
+ * Columns that must never become client-assignable by accident (SEC-06).
+ *
+ * The `satisfies` clauses derive every name from the Drizzle insert schemas:
+ * renaming or removing a protected column therefore breaks typecheck here
+ * instead of leaving a stale security checklist. Keep new authority,
+ * ownership, identity, session and server-computed columns in this registry.
+ */
+export const SENSITIVE_REQUEST_FIELDS = {
+  adminGrant: ['playerId'] satisfies readonly (keyof typeof adminGrant.$inferInsert)[],
+  world: [
+    'speedMultiplier',
+    'launchDate',
+    'epoch',
+    'status',
+  ] satisfies readonly (keyof typeof world.$inferInsert)[],
+  airline: [
+    'cashMinor',
+    'reputation',
+    'playerId',
+    'worldId',
+  ] satisfies readonly (keyof typeof airline.$inferInsert)[],
+  playerIdentity: [
+    'email',
+    'subject',
+    'playerId',
+  ] satisfies readonly (keyof typeof playerIdentity.$inferInsert)[],
+  session: ['tokenHash', 'playerId'] satisfies readonly (keyof typeof session.$inferInsert)[],
+} as const;
+
+/** Authority-shaped inputs with no backing writable column are hostile too. */
+export const VIRTUAL_PRIVILEGE_FIELDS = ['isAdmin', 'adminGrant'] as const;
+
+/**
  * The audit log. Append-only, enforced by the database.
  *
  * "No UPDATE or DELETE path in the application" would be a convention, and a

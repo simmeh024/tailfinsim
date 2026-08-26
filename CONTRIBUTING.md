@@ -108,6 +108,17 @@ missing id, the same player's other-world resource 404, and a refused write show
 row **unchanged**. The last one is the assertion that separates a real guard from one that answers
 404 after acting.
 
+### Parse request bodies; never read them in handlers
+
+Every write handler must pass the whole body through `parseRequestBody()` and consume only the
+parser result. Direct field access on `request.body` is forbidden by lint. Request schemas should
+be strict unless an established compatibility contract deliberately strips unknown keys; either
+way, tests send authority, ownership, identity, session and server-computed fields and read the
+stored row back to prove they changed nothing. The canonical sensitive-field registry lives beside
+the Drizzle schema as `SENSITIVE_REQUEST_FIELDS`, so column renames break typecheck instead of
+silently leaving a stale checklist. Extend that registry and the hostile-body tests whenever a new
+sensitive column or write endpoint lands.
+
 ---
 
 ## The web/worker boundary

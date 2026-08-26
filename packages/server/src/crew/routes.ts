@@ -10,6 +10,7 @@ import {
 } from '@tailfin/shared';
 
 import { resolvedAirlineOf } from '../airline/context';
+import { parseRequestBody } from '../http/request-body';
 
 import {
   hireCrew,
@@ -77,7 +78,7 @@ export function registerCrewRoutes(app: FastifyInstance, { db }: { db: DatabaseH
       },
     },
     async (request, reply) => {
-      const parsed = OpenCrewBaseInput.safeParse(request.body);
+      const parsed = parseRequestBody(request, OpenCrewBaseInput);
       if (!parsed.success) {
         return reply.code(400).send({ code: 'invalid_input', message: 'Expected an ICAO code' });
       }
@@ -104,7 +105,7 @@ export function registerCrewRoutes(app: FastifyInstance, { db }: { db: DatabaseH
       },
     },
     async (request, reply) => {
-      const parsed = HireCrewInput.safeParse(request.body);
+      const parsed = parseRequestBody(request, HireCrewInput);
       if (!parsed.success) {
         return reply.code(400).send({ code: 'invalid_input', message: 'Malformed hire' });
       }
@@ -128,7 +129,7 @@ export function registerCrewRoutes(app: FastifyInstance, { db }: { db: DatabaseH
       },
     },
     async (request, reply) => {
-      const parsed = StartCrewConversionInput.safeParse(request.body);
+      const parsed = parseRequestBody(request, StartCrewConversionInput);
       if (!parsed.success) {
         return reply.code(400).send({ code: 'invalid_input', message: 'Malformed conversion' });
       }
@@ -157,7 +158,7 @@ export function registerCrewRoutes(app: FastifyInstance, { db }: { db: DatabaseH
       },
     },
     async (request, reply) => {
-      const parsed = SetCrewReserveInput.safeParse(request.body);
+      const parsed = parseRequestBody(request, SetCrewReserveInput);
       if (!parsed.success) {
         return reply.code(400).send({ code: 'invalid_input', message: 'Malformed reserve' });
       }
@@ -181,7 +182,7 @@ export function registerCrewRoutes(app: FastifyInstance, { db }: { db: DatabaseH
       },
     },
     async (request, reply) => {
-      const parsed = SetCrewPoliciesInput.safeParse(request.body);
+      const parsed = parseRequestBody(request, SetCrewPoliciesInput);
       if (!parsed.success) {
         return reply.code(400).send({ code: 'invalid_input', message: 'Malformed policy' });
       }

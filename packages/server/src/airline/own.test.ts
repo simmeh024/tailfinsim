@@ -6,7 +6,16 @@ import { FLAGSHIP_CONFIG, OwnAirlineResponse, UpdateOwnAirlineResponse } from '@
 import { buildApp } from '../app';
 import { createSession, SESSION_COOKIE } from '../auth/session';
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { airline, airlineIdentityChange, airport, cashMovement, player, world } from '../db/schema';
+import {
+  adminGrant,
+  airline,
+  airlineIdentityChange,
+  airport,
+  cashMovement,
+  player,
+  session,
+  world,
+} from '../db/schema';
 import { ECONOMY_CONFIG_V1 } from '../economy/config';
 import { type ServerEnv } from '../env';
 import { createWorld } from '../world/lifecycle';
@@ -319,9 +328,17 @@ describeDb('reading and changing your own airline', () => {
 
   it.each([
     ['cash', 900_000_000],
+    ['cashMinor', 999_999_999],
     ['reputation', 1],
     ['iataCode', 'ZZ'],
     ['icaoCode', 'ZZZ'],
+    ['playerId', '00000000-0000-4000-8000-000000000001'],
+    ['worldId', '00000000-0000-4000-8000-000000000002'],
+    ['isAdmin', true],
+    ['adminGrant', true],
+    ['tokenHash', 'attacker-controlled-session-material'],
+    ['subject', 'attacker-controlled-identity'],
+    ['email', 'attacker@example.invalid'],
   ])(
     'rejects attempts to set immutable %s rather than silently stripping it',
     async (field, value) => {
@@ -343,12 +360,23 @@ describeDb('reading and changing your own airline', () => {
       expect(response.statusCode).toBe(400);
       const stored = await db.db.select().from(airline).where(eq(airline.id, own.id));
       expect(stored[0]).toMatchObject({
+        playerId,
+        worldId: own.worldId,
         name: own.name,
         callsign: own.callsign,
         baseCountry: own.baseCountry,
         cashMinor: own.cash,
         reputation: '0.35',
       });
+      expect(
+        await db.db.select().from(adminGrant).where(eq(adminGrant.playerId, playerId)),
+      ).toEqual([]);
+      expect(
+        await db.db
+          .select({ tokenHash: session.tokenHash })
+          .from(session)
+          .where(eq(session.playerId, playerId)),
+      ).not.toContainEqual({ tokenHash: 'attacker-controlled-session-material' });
     },
   );
 
