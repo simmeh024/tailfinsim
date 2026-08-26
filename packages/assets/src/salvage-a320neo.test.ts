@@ -83,6 +83,14 @@ describe('A320neo semantic salvage classifier', () => {
     expect(
       classifyA320neoSurface({
         ...defaults,
+        centre: { x: 0.005, y: 0.045, z: 0.44 },
+        normal: { x: 0.05, y: 0.95, z: 0.2 },
+        colour: { x: 25, y: 25, z: 25 },
+      }),
+    ).toBe('fuselage');
+    expect(
+      classifyA320neoSurface({
+        ...defaults,
         centre: { x: 0.18, y: -0.06, z: 0.15 },
         normal: { x: 0, y: 0, z: 1 },
         colour: { x: 80, y: 80, z: 80 },

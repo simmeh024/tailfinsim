@@ -16,14 +16,14 @@
       "pilotAssets": [
         "a320neo/1.0.0"
       ],
-      "runtimeBytes": 26110240,
-      "sourceBytes": 26110240,
+      "runtimeBytes": 25954468,
+      "sourceBytes": 25954468,
       "visualReview": "Deterministic salvage retains the supplied silhouette and semantic atlas."
     },
     "mode": "lossless"
   },
   "rendererCompatibilityVersion": "m6-13-v1",
-  "sourceFileSha256": "3eda725a4dd70be45e07f516fbd51a2b99554d4d1042e13ab27289d010e4a8cd",
+  "sourceFileSha256": "47c2219977a30da6f90ddf088e14dc7010295edd140d8bcae91b075fa4f6783f",
   "textures": {
     "evidence": {
       "gpuUploadMsP95": 0,
@@ -32,8 +32,8 @@
       "pilotAssets": [
         "a320neo/1.0.0"
       ],
-      "runtimeBytes": 26110240,
-      "sourceBytes": 26110240,
+      "runtimeBytes": 25954468,
+      "sourceBytes": 25954468,
       "visualReview": "Four-kilopixel PBR inputs retain the supplied UV atlas for pilot review."
     },
     "mode": "retain"

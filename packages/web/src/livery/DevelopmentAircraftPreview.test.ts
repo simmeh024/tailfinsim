@@ -121,9 +121,9 @@ describe('A320neo dev material preview', () => {
       side: DoubleSide,
       transparent: false,
     });
-    expect(glass.color.getHexString()).toBe('102538');
-    expect(glass.emissive.getHexString()).toBe('030b12');
-    expect(glass.emissiveIntensity).toBe(0.35);
+    expect(glass.color.getHexString()).toBe('244d68');
+    expect(glass.emissive.getHexString()).toBe('07141e');
+    expect(glass.emissiveIntensity).toBe(0.4);
 
     const engineInterior = new MeshStandardMaterial({ name: 'mat-engine-interiors' });
     expect(configureA320neoDevelopmentExteriorMaterial(engineInterior, DoubleSide)).toBe(false);
