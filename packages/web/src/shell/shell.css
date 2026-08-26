@@ -5697,3 +5697,189 @@ body {
   color: var(--text-primary);
   font-size: var(--text-sm);
 }
+
+/*
+ * HQ layout overview — the Headquarters page's occupant of the context panel
+ * (M5-04, App. H.4). A floor-plan of the six office seats: a filled seat shows a
+ * rounded avatar and its occupant's name in the seat accent, a vacant one the
+ * seat icon and "Seat vacant". Each seat's hue is a `--hq-accent-*` token so a
+ * status dot, icon and name read as one colour.
+ */
+.hq-layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.hq-layout__count {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.hq-layout__count strong {
+  color: var(--text-primary);
+}
+
+.hq-layout__authority {
+  color: var(--status-profit, var(--accent));
+  font-weight: 600;
+}
+
+.hq-layout__floor {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The corridor down the middle of the plan. */
+.hq-layout__floor::before {
+  content: '';
+  position: absolute;
+  inset: var(--space-1) auto var(--space-1) 50%;
+  width: 0;
+  border-left: 1px dashed var(--border-subtle);
+  transform: translateX(-50%);
+}
+
+.hq-room {
+  --room-accent: var(--accent);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-2) var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  text-align: center;
+}
+
+.hq-room[data-role='route-planner'] {
+  --room-accent: var(--hq-accent-route-planner);
+}
+.hq-room[data-role='revenue-manager'] {
+  --room-accent: var(--hq-accent-revenue-manager);
+}
+.hq-room[data-role='ops-controller'] {
+  --room-accent: var(--hq-accent-ops-controller);
+}
+.hq-room[data-role='chief-pilot'] {
+  --room-accent: var(--hq-accent-chief-pilot);
+}
+.hq-room[data-role='ground-ops'] {
+  --room-accent: var(--hq-accent-ground-ops);
+}
+.hq-room[data-role='safety-compliance'] {
+  --room-accent: var(--hq-accent-safety-compliance);
+}
+
+.hq-room[data-occupied='true'] {
+  border-color: color-mix(in srgb, var(--room-accent, var(--accent)) 45%, var(--border-subtle));
+}
+
+.hq-room__dot {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--room-accent, var(--accent));
+}
+
+.hq-room[data-occupied='false'] .hq-room__dot {
+  background: var(--border-strong);
+}
+
+.hq-room__figure {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.hq-room__icon {
+  display: flex;
+  color: var(--room-accent, var(--accent));
+}
+
+.hq-room__icon svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.hq-room__avatar {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--room-accent, var(--accent));
+}
+
+.hq-room__role {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: 1.2;
+}
+
+.hq-room__occupant {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.hq-room[data-occupied='true'] .hq-room__occupant {
+  color: var(--room-accent, var(--accent));
+  font-weight: 600;
+}
+
+.hq-layout__expand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  opacity: 0.72;
+}
+
+.hq-layout__expand-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.hq-layout__expand-note {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.hq-layout__soon {
+  flex: none;
+  padding: 0.1rem var(--space-2);
+  border-radius: 999px;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.hq-layout__path {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: 1.4;
+}

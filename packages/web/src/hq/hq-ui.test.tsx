@@ -1,8 +1,11 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { OfficeStateResponse } from '@tailfin/shared';
+
 import { HeadquartersPage } from './HeadquartersPage';
 import { candidatesForRole, HQ_CANDIDATES, HQ_ROLES } from './hq-roster';
+import { HqLayoutPanel } from './HqLayoutPanel';
 
 /**
  * Headquarters — the office hires (M5-04, §9.1).
@@ -205,5 +208,76 @@ describe('the Headquarters page', () => {
     expect(within(seat).getByText('Gate')).toBeInTheDocument();
     const gate = seat.querySelector('.hq-card__gate');
     expect(gate?.textContent?.toLowerCase()).toContain('long-haul');
+  });
+});
+
+describe('the HQ layout overview', () => {
+  const room = (container: HTMLElement, role: string): HTMLElement => {
+    const el = container.querySelector<HTMLElement>(`.hq-room[data-role="${role}"]`);
+    if (el === null) throw new Error(`no room for ${role}`);
+    return el;
+  };
+
+  it('shows all six rooms, every one vacant when nothing is hired', () => {
+    const { container } = render(
+      <HqLayoutPanel office={{ hires: [], hasExtendedAuthority: false }} />,
+    );
+    for (const role of HQ_ROLES) {
+      const el = room(container, role.id);
+      expect(el.dataset.occupied).toBe('false');
+      expect(within(el).getByText('Seat vacant')).toBeInTheDocument();
+      // A vacant room shows the seat icon, never an avatar.
+      expect(el.querySelector('img')).toBeNull();
+    }
+    const count = container.querySelector('.hq-layout__count');
+    expect(count?.textContent).toContain('0 of 6 seats filled');
+  });
+
+  it('renders a rounded avatar and the occupant name for a filled seat', () => {
+    const mara = HQ_CANDIDATES.find((c) => c.id === 'route-planner-mara')!;
+    const office: OfficeStateResponse = {
+      hires: [
+        {
+          role: 'route-planner',
+          candidateId: mara.id,
+          candidateName: mara.name,
+          monthlySalaryMinor: 1_800_000,
+          hiredAt: '2024-10-20T00:00:00.000Z',
+        },
+      ],
+      hasExtendedAuthority: false,
+    };
+    const { container } = render(<HqLayoutPanel office={office} />);
+
+    const filled = room(container, 'route-planner');
+    expect(filled.dataset.occupied).toBe('true');
+    const avatar = filled.querySelector<HTMLImageElement>('img.hq-room__avatar');
+    expect(avatar).not.toBeNull();
+    expect(avatar?.getAttribute('src')).toBe(mara.portrait);
+    expect(avatar?.getAttribute('alt')).toMatch(/Mara Ellison/);
+    expect(within(filled).getByText('Mara Ellison')).toBeInTheDocument();
+
+    // The seats it did not fill stay vacant.
+    expect(room(container, 'safety-compliance').dataset.occupied).toBe('false');
+  });
+
+  it('notes long-haul authority once the gate seat is filled', () => {
+    render(
+      <HqLayoutPanel
+        office={{
+          hires: [
+            {
+              role: 'safety-compliance',
+              candidateId: 'safety-compliance-claire',
+              candidateName: 'Claire Fontaine',
+              monthlySalaryMinor: 3_000_000,
+              hiredAt: '2024-10-20T00:00:00.000Z',
+            },
+          ],
+          hasExtendedAuthority: true,
+        }}
+      />,
+    );
+    expect(screen.getByText(/long-haul authority/i)).toBeInTheDocument();
   });
 });

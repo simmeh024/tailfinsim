@@ -110,6 +110,18 @@
   --world-atmosphere: #5eb8ff;
 
   /*
+   * Office-seat accents (M5-04). One hue per Head Office seat, so the HQ layout
+   * panel and its status dots read at a glance. Decorative, and kept here because
+   * the token guard forbids a colour literal anywhere but this file.
+   */
+  --hq-accent-route-planner: #5eb8ff;
+  --hq-accent-revenue-manager: #6fd39a;
+  --hq-accent-ops-controller: #f0a35e;
+  --hq-accent-chief-pilot: #b98cff;
+  --hq-accent-ground-ops: #e6cf5a;
+  --hq-accent-safety-compliance: #4fd6c0;
+
+  /*
    * The console's own surfaces.
    *
    * The game's panels are translucent so the world stays visible behind them
@@ -206,6 +218,14 @@
      not lighter still. */
   --world-terrain: #9eaba2ff;
   --world-atmosphere: #0a63b0;
+
+  /* Office-seat accents, darkened for contrast on the light ground. */
+  --hq-accent-route-planner: #1f6fb0;
+  --hq-accent-revenue-manager: #1f8a5a;
+  --hq-accent-ops-controller: #b5651d;
+  --hq-accent-chief-pilot: #6a44b0;
+  --hq-accent-ground-ops: #8a6f0f;
+  --hq-accent-safety-compliance: #12897a;
 
   /* See the dark set for why the console has its own ground. */
   --console-bg: #eeeae3;
