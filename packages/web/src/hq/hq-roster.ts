@@ -21,6 +21,8 @@
 import chiefPilot2 from './assets/portraits/chief-pilot-2.webp';
 import chiefPilot3 from './assets/portraits/chief-pilot-3.webp';
 import chiefPilot from './assets/portraits/chief-pilot.webp';
+import groundOps2 from './assets/portraits/ground-ops-2.webp';
+import groundOps3 from './assets/portraits/ground-ops-3.webp';
 import groundOps from './assets/portraits/ground-ops.webp';
 import opsController2 from './assets/portraits/ops-controller-2.webp';
 import opsController3 from './assets/portraits/ops-controller-3.webp';
@@ -124,9 +126,9 @@ export const HQ_ROLES: readonly HqRole[] = [
 
 /**
  * The candidate market. Several candidates may compete for one seat — the Route
- * Route Planner, Revenue Manager, Ops Controller and Chief Pilot each have three
- * — and you hire one. The rest have one for now; more arrive as portraits and
- * names are generated, and each is one entry here.
+ * Every seat but Safety & Compliance has three candidates in the market — and
+ * you hire one. More arrive as portraits and names are generated, and each is
+ * one entry here.
  */
 export const HQ_CANDIDATES: readonly HqCandidate[] = [
   {
@@ -287,6 +289,30 @@ export const HQ_CANDIDATES: readonly HqCandidate[] = [
       detail: 'Trims about a point off turnaround when the ramp is hers to run.',
     },
     portrait: groundOps,
+  },
+  {
+    id: 'ground-ops-omar',
+    roleId: 'ground-ops',
+    name: 'Omar Haddad',
+    tier: 'Director',
+    salaryPerMonthMinor: 2_500_000,
+    trait: {
+      label: 'Turnaround tactician',
+      detail: 'Keeps every gate to schedule when the whole bank stacks up at once.',
+    },
+    portrait: groundOps2,
+  },
+  {
+    id: 'ground-ops-luca',
+    roleId: 'ground-ops',
+    name: 'Luca Moretti',
+    tier: 'Manager',
+    salaryPerMonthMinor: 2_000_000,
+    trait: {
+      label: 'Ramp-hardened',
+      detail: 'Came up on the ramp, so nothing on the apron in bad weather surprises him.',
+    },
+    portrait: groundOps3,
   },
   {
     id: 'safety-compliance-claire',
