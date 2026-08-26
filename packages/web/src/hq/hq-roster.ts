@@ -20,6 +20,8 @@
 
 import chiefPilot from './assets/portraits/chief-pilot.webp';
 import groundOps from './assets/portraits/ground-ops.webp';
+import opsController2 from './assets/portraits/ops-controller-2.webp';
+import opsController3 from './assets/portraits/ops-controller-3.webp';
 import opsController from './assets/portraits/ops-controller.webp';
 import revenueManager2 from './assets/portraits/revenue-manager-2.webp';
 import revenueManager3 from './assets/portraits/revenue-manager-3.webp';
@@ -120,9 +122,9 @@ export const HQ_ROLES: readonly HqRole[] = [
 
 /**
  * The candidate market. Several candidates may compete for one seat — the Route
- * Planner and the Revenue Manager each have three — and you hire one. The rest
- * have one for now; more arrive as portraits and names are generated, and each
- * is one entry here.
+ * Planner, the Revenue Manager and the Ops Controller each have three — and you
+ * hire one. The rest have one for now; more arrive as portraits and names are
+ * generated, and each is one entry here.
  */
 export const HQ_CANDIDATES: readonly HqCandidate[] = [
   {
@@ -208,6 +210,30 @@ export const HQ_CANDIDATES: readonly HqCandidate[] = [
       detail: 'Reshuffles a broken evening bank without tripping a night restriction.',
     },
     portrait: opsController,
+  },
+  {
+    id: 'ops-controller-marta',
+    roleId: 'ops-controller',
+    name: 'Marta Silva',
+    tier: 'Manager',
+    salaryPerMonthMinor: 2_300_000,
+    trait: {
+      label: 'Weather-wise',
+      detail: 'Sees a cell building on the radar before it reaches the arrivals bank.',
+    },
+    portrait: opsController2,
+  },
+  {
+    id: 'ops-controller-jun',
+    roleId: 'ops-controller',
+    name: 'Jun Park',
+    tier: 'Director',
+    salaryPerMonthMinor: 2_700_000,
+    trait: {
+      label: 'On-time obsessive',
+      detail: 'Claws a morning of delays back to schedule by the evening bank.',
+    },
+    portrait: opsController3,
   },
   {
     id: 'chief-pilot-sten',

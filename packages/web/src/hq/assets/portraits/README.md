@@ -23,6 +23,8 @@ Each file is the finished portrait for the candidate named:
 | `revenue-manager-2.webp` | Revenue Manager (Sofía Reyes)         | Woman at a "REVENUE OVERVIEW $148.7M" dashboard, MEX routes            |
 | `revenue-manager-3.webp` | Revenue Manager (Anders Holm)         | Older grey-haired man, "REVENUE & DEMAND OVERVIEW" screen              |
 | `ops-controller.webp`    | Ops Controller (Diego Alvarez)        | Man with a headset in an ops control room, weather radar behind        |
+| `ops-controller-2.webp`  | Ops Controller (Marta Silva)          | Woman with a headset in an ops room, weather radar behind              |
+| `ops-controller-3.webp`  | Ops Controller (Jun Park)             | Man with glasses at an "OPERATIONS OVERVIEW" dashboard                 |
 | `chief-pilot.webp`       | Chief Pilot (Sten Halvorsen)          | Man in a four-bar pilot uniform with wings, in a cockpit               |
 | `ground-ops.webp`        | Head of Ground Ops (Nadia Kovač)      | Woman in hi-vis, "HEAD OF GROUND OPS" badge, on the apron by a jet     |
 | `safety-compliance.webp` | Safety & Compliance (Claire Fontaine) | Woman in hi-vis, "SAFETY & COMPLIANCE" badge, in a maintenance hangar  |
