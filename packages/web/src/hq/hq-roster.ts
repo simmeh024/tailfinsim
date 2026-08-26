@@ -18,14 +18,14 @@
  * the role table changes.
  */
 
-import chiefPilot from './assets/portraits/chief-pilot.svg';
-import groundOps from './assets/portraits/ground-ops.svg';
-import opsController from './assets/portraits/ops-controller.svg';
-import revenueManager from './assets/portraits/revenue-manager.svg';
-import routePlanner2 from './assets/portraits/route-planner-2.svg';
-import routePlanner3 from './assets/portraits/route-planner-3.svg';
-import routePlanner from './assets/portraits/route-planner.svg';
-import safetyCompliance from './assets/portraits/safety-compliance.svg';
+import chiefPilot from './assets/portraits/chief-pilot.webp';
+import groundOps from './assets/portraits/ground-ops.webp';
+import opsController from './assets/portraits/ops-controller.webp';
+import revenueManager from './assets/portraits/revenue-manager.webp';
+import routePlanner2 from './assets/portraits/route-planner-2.webp';
+import routePlanner3 from './assets/portraits/route-planner-3.webp';
+import routePlanner from './assets/portraits/route-planner.webp';
+import safetyCompliance from './assets/portraits/safety-compliance.webp';
 
 /** The six MVP roles named in the M5-04 issue and §9.1. */
 export type HqRoleId =
