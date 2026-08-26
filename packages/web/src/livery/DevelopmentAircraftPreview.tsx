@@ -54,9 +54,15 @@ export function configureA320neoDevelopmentExteriorMaterial(
     material.alphaTest = 0;
     material.depthTest = true;
     material.depthWrite = true;
+    // The source atlas contains baked black window cut-outs and ambient-occlusion
+    // marks. Once geometry is split into semantic materials, keeping that atlas
+    // multiplies those pixels into the replacement glazing colour.
+    material.map = null;
     material.metalnessMap = null;
     material.roughnessMap = null;
     material.color.set(0x102538);
+    material.emissive.set(0x030b12);
+    material.emissiveIntensity = 0.35;
     material.metalness = 0.12;
     material.roughness = 0.24;
     return false;
@@ -81,6 +87,9 @@ export function configureA320neoDevelopmentExteriorMaterial(
   material.alphaTest = 0;
   material.depthTest = true;
   material.depthWrite = true;
+  // Livery colours replace the source render's baked colour and occlusion.
+  // Retaining its atlas leaves black seams and blotches visible through paint.
+  material.map = null;
   material.metalnessMap = null;
   material.roughnessMap = null;
   material.metalness = 0.06;
