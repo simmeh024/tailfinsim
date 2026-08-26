@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import fastifyCookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import { sql } from 'drizzle-orm';
-import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyError, type FastifyInstance, type RouteOptions } from 'fastify';
 
 import { healthResponseJsonSchema, versionResponseJsonSchema } from '@tailfin/shared';
 
@@ -81,6 +81,28 @@ export interface BuildAppOptions {
   airlineCodePolicy?: AirlineCodeAllocationPolicy;
   /** Test seam at the external OAuth boundary; production uses the real provider. */
   googleAuth?: GoogleAuthOperations;
+  /**
+   * Called once for every route as it is registered (SEC-04).
+   *
+   * The authorization matrix in `docs/authorization-matrix.md` is the *intended*
+   * boundary for every route, and it is only worth anything if a route cannot be
+   * added without one. Proving that needs the list of routes the app actually
+   * registered, and the honest way to get it is to be told as it happens.
+   *
+   * `app.printRoutes()` is the alternative and it is worse: it renders a tree for
+   * a human, so reading it back means parsing indentation and re-joining path
+   * segments, and a cosmetic change to that output would silently weaken the
+   * gate. Fastify's `onRoute` hook hands over `method` and `url` directly.
+   *
+   * It has to be an option rather than something a test adds afterwards, because
+   * `onRoute` fires *during* registration and every route here is registered
+   * before this function returns. A hook added to the instance we hand back is
+   * always too late.
+   *
+   * Observation only. Nothing in the request path reads it, and production never
+   * passes it.
+   */
+  onRoute?: (route: RouteOptions) => void;
 }
 
 export function buildApp({
@@ -89,6 +111,7 @@ export function buildApp({
   identityModerator,
   airlineCodePolicy,
   googleAuth,
+  onRoute,
 }: BuildAppOptions): FastifyInstance {
   const app = Fastify({
     logger: {
@@ -151,6 +174,10 @@ export function buildApp({
    * need it, and the one signed cookie (the OAuth state) is written solely on a
    * path guarded by `env.authEnabled`.
    */
+  // Before any registration, or it sees nothing: `onRoute` fires as each route is
+  // added, and every route below is added before this function returns.
+  if (onRoute) app.addHook('onRoute', onRoute);
+
   app.register(fastifyCookie, env.sessionSecret ? { secret: env.sessionSecret } : {});
   registerAuthRoutes(app, { env, db, googleAuth });
   // Resolves "my airline" from the authenticated session and active world.
