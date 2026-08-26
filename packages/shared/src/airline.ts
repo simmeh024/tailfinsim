@@ -174,12 +174,10 @@ export const CreateAirlineInput = Airline.pick({
   icaoCode: true,
   callsign: true,
   baseCountry: true,
-})
-  .extend({
-    /** The first hub is chosen at founding and granted without a purchase (App. B.5). */
-    hubIdent: AirportIdent,
-  })
-  .strict();
+}).extend({
+  /** The first hub is chosen at founding and granted without a purchase (App. B.5). */
+  hubIdent: AirportIdent,
+});
 export type CreateAirlineInput = z.infer<typeof CreateAirlineInput>;
 
 /** One airport at which an airline is based. M7-04 adds purchases and facilities. */

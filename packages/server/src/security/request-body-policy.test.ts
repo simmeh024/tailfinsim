@@ -62,19 +62,6 @@ const STRICT_WRITE_CONTRACTS = [
     payload: { worldId: UUID_A, name: 'Secure Air', iataCode: 'SQ', icaoCode: 'SQA' },
   },
   {
-    endpoint: 'POST /api/airlines',
-    schema: CreateAirlineInput,
-    payload: {
-      worldId: UUID_A,
-      name: 'Secure Air',
-      iataCode: 'SQ',
-      icaoCode: 'SQA',
-      callsign: 'SECURE',
-      baseCountry: 'NL',
-      hubIdent: 'EHAM',
-    },
-  },
-  {
     endpoint: 'PATCH /api/admin/airlines/:airlineId/identity',
     schema: ForceRenameAirlineInput,
     payload: { name: 'Secure Air', callsign: 'SECURE', reason: 'SEC-06 canary' },
@@ -246,6 +233,27 @@ describe('SEC-06 request-body policy', () => {
       launchDate: '1900-01-01T00:00:00.000Z',
     });
     expect(parsed).toEqual(FLAGSHIP_CONFIG);
+  });
+
+  it('keeps airline founding compatible while stripping server-computed and privileged fields', () => {
+    const allowed = {
+      worldId: UUID_A,
+      name: 'Secure Air',
+      iataCode: 'SQ',
+      icaoCode: 'SQA',
+      callsign: 'SECURE',
+      baseCountry: 'NL',
+      hubIdent: 'EHAM',
+    };
+    const parsed = CreateAirlineInput.parse({
+      ...allowed,
+      cash: 999_999_999,
+      reputation: 1,
+      playerId: UUID_A,
+      isAdmin: true,
+      tokenHash: 'attacker-controlled-session-material',
+    });
+    expect(parsed).toEqual(allowed);
   });
 
   it('keeps the schema-derived hostile field registry complete and duplicate-free', () => {
