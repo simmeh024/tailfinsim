@@ -81,6 +81,7 @@ describe('A320neo dev material preview', () => {
       depthWrite: false,
       side: FrontSide,
     });
+    exterior.map = new Texture();
     exterior.metalnessMap = new Texture();
     exterior.roughnessMap = new Texture();
     const glass = new MeshStandardMaterial({
@@ -97,6 +98,7 @@ describe('A320neo dev material preview', () => {
       depthWrite: true,
       opacity: 1,
       metalness: 0.06,
+      map: null,
       metalnessMap: null,
       roughness: 0.72,
       roughnessMap: null,
@@ -104,12 +106,14 @@ describe('A320neo dev material preview', () => {
       transparent: false,
     });
 
+    glass.map = new Texture();
     expect(configureA320neoDevelopmentExteriorMaterial(glass, DoubleSide)).toBe(false);
     expect(glass).toMatchObject({
       alphaTest: 0,
       depthTest: true,
       depthWrite: true,
       metalness: 0.12,
+      map: null,
       metalnessMap: null,
       opacity: 1,
       roughness: 0.24,
@@ -118,6 +122,8 @@ describe('A320neo dev material preview', () => {
       transparent: false,
     });
     expect(glass.color.getHexString()).toBe('102538');
+    expect(glass.emissive.getHexString()).toBe('030b12');
+    expect(glass.emissiveIntensity).toBe(0.35);
 
     const engineInterior = new MeshStandardMaterial({ name: 'mat-engine-interiors' });
     expect(configureA320neoDevelopmentExteriorMaterial(engineInterior, DoubleSide)).toBe(false);
