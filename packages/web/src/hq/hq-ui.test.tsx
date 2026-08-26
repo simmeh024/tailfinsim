@@ -26,7 +26,7 @@ describe('the office roster', () => {
     ]);
   });
 
-  it('carries a market of candidates, three each for every seat but Safety & Compliance', () => {
+  it('carries a market of candidates, three each for all six seats', () => {
     expect(candidatesForRole('route-planner').map((c) => c.name)).toEqual([
       'Mara Ellison',
       'Tom Bakker',
@@ -51,6 +51,11 @@ describe('the office roster', () => {
       'Nadia Kovač',
       'Omar Haddad',
       'Luca Moretti',
+    ]);
+    expect(candidatesForRole('safety-compliance').map((c) => c.name)).toEqual([
+      'Claire Fontaine',
+      'Hiroshi Tanaka',
+      'Emma Larsson',
     ]);
     // Every candidate names a real seat and carries a portrait.
     const roleIds = new Set(HQ_ROLES.map((role) => role.id));

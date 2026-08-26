@@ -33,6 +33,8 @@ import revenueManager from './assets/portraits/revenue-manager.webp';
 import routePlanner2 from './assets/portraits/route-planner-2.webp';
 import routePlanner3 from './assets/portraits/route-planner-3.webp';
 import routePlanner from './assets/portraits/route-planner.webp';
+import safetyCompliance2 from './assets/portraits/safety-compliance-2.webp';
+import safetyCompliance3 from './assets/portraits/safety-compliance-3.webp';
 import safetyCompliance from './assets/portraits/safety-compliance.webp';
 
 /** The six MVP roles named in the M5-04 issue and §9.1. */
@@ -126,9 +128,8 @@ export const HQ_ROLES: readonly HqRole[] = [
 
 /**
  * The candidate market. Several candidates may compete for one seat — the Route
- * Every seat but Safety & Compliance has three candidates in the market — and
- * you hire one. More arrive as portraits and names are generated, and each is
- * one entry here.
+ * Every seat has three candidates in the market — and you hire one. Each is one
+ * entry here; a new arrival is a new entry plus its portrait.
  */
 export const HQ_CANDIDATES: readonly HqCandidate[] = [
   {
@@ -325,6 +326,30 @@ export const HQ_CANDIDATES: readonly HqCandidate[] = [
       detail: 'Clears an ETOPS audit without a single finding against the fleet.',
     },
     portrait: safetyCompliance,
+  },
+  {
+    id: 'safety-compliance-hiroshi',
+    roleId: 'safety-compliance',
+    name: 'Hiroshi Tanaka',
+    tier: 'Director',
+    salaryPerMonthMinor: 3_100_000,
+    trait: {
+      label: 'Zero-compromise',
+      detail: 'Has grounded a jet over a paperwork gap, and would do it again tomorrow.',
+    },
+    portrait: safetyCompliance2,
+  },
+  {
+    id: 'safety-compliance-emma',
+    roleId: 'safety-compliance',
+    name: 'Emma Larsson',
+    tier: 'Manager',
+    salaryPerMonthMinor: 2_400_000,
+    trait: {
+      label: 'Reporting-culture builder',
+      detail: 'Gets crews logging the near-miss nobody else would have written up.',
+    },
+    portrait: safetyCompliance3,
   },
 ];
 
