@@ -3,14 +3,17 @@ import { useOutletContext } from 'react-router';
 
 import {
   HEADQUARTERS_BASE_SEATS,
+  isNeutralSeat,
+  isSocialMediaSpecialistId,
   OFFICE_ROLES,
   unlockedNeutralSeats,
   type OfficeSeatId,
   type OfficeStateResponse,
 } from '@tailfin/shared';
 
-import { dismissOffice, fetchOffice, hireOffice } from './api';
+import { dismissOffice, expandOffice, fetchOffice, hireOffice } from './api';
 import {
+  candidateById,
   candidatesForRole,
   formatSalary,
   HQ_CANDIDATES,
@@ -18,10 +21,18 @@ import {
   specialistById,
   type HqCandidate,
 } from './hq-roster';
+import { HqLayoutPanel, officeLabel, type ExpandResult } from './HqLayoutPanel';
 import { PoliciesModal } from './PoliciesModal';
+import { StaffOfficeDrawer } from './StaffOfficeDrawer';
 
 import type { OwnAirlineShellContext } from '../shell/AppShell';
 import type { ReactNode } from 'react';
+
+const MONEY = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  maximumFractionDigits: 0,
+});
 
 /**
  * Headquarters — the office hires (M5-04, §9.1).
@@ -60,8 +71,12 @@ export function HeadquartersPage(): ReactNode {
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<OfficeSeatId | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pick, setPick] = useState<Record<string, string>>({});
   const [policiesOpen, setPoliciesOpen] = useState(false);
+  // The neutral office the player is managing (drawer open), and the one hovered
+  // or focused anywhere — a room and its card share these so they light together.
+  const [selectedSeat, setSelectedSeat] = useState<OfficeSeatId | null>(null);
+  const [hoveredSeat, setHoveredSeat] = useState<OfficeSeatId | null>(null);
+  const [expanding, setExpanding] = useState(false);
   const syncOffice = useOutletContext<OwnAirlineShellContext | null>()?.replaceOffice;
 
   useEffect(() => {
@@ -89,7 +104,7 @@ export function HeadquartersPage(): ReactNode {
   const hiredCandidateIds = new Set((office?.hires ?? []).map((hire) => hire.candidateId));
 
   const act = useCallback(
-    async (seat: OfficeSeatId, run: () => ReturnType<typeof hireOffice>) => {
+    async (seat: OfficeSeatId, run: () => ReturnType<typeof hireOffice>): Promise<boolean> => {
       setPending(seat);
       setError(null);
       const outcome = await run();
@@ -98,6 +113,7 @@ export function HeadquartersPage(): ReactNode {
         syncOffice?.(outcome.state);
       } else setError(outcome.failure.message);
       setPending(null);
+      return outcome.ok;
     },
     [syncOffice],
   );
@@ -115,53 +131,74 @@ export function HeadquartersPage(): ReactNode {
     [act],
   );
 
-  const onHireNeutral = useCallback(
-    (seat: OfficeSeatId, candidate: HqCandidate) =>
-      act(seat, () =>
+  const onDismiss = useCallback(
+    (seat: OfficeSeatId) => act(seat, () => dismissOffice(seat)),
+    [act],
+  );
+
+  // Assign into (or replace an occupant of) a specific neutral office, then close
+  // the drawer — but only on success, so a refused hire keeps the drawer and its
+  // error up rather than silently reverting.
+  const assignToOffice = useCallback(
+    async (seat: OfficeSeatId, candidate: HqCandidate): Promise<void> => {
+      const ok = await act(seat, () =>
         hireOffice({
           seat,
           candidateId: candidate.id,
           candidateName: candidate.name,
           candidateRole: candidate.roleId,
         }),
-      ),
+      );
+      if (ok) setSelectedSeat(null);
+    },
     [act],
   );
 
-  const onDismiss = useCallback(
-    (seat: OfficeSeatId) => act(seat, () => dismissOffice(seat)),
+  const removeFromOffice = useCallback(
+    async (seat: OfficeSeatId): Promise<void> => {
+      const ok = await act(seat, () => dismissOffice(seat));
+      if (ok) setSelectedSeat(null);
+    },
     [act],
   );
 
-  const onHireSpecialist = useCallback(
-    (candidate: HqCandidate, seat: OfficeSeatId) =>
-      act(seat, () =>
-        hireOffice({
-          seat,
-          candidateId: candidate.id,
-          candidateName: candidate.name,
-          candidateRole: 'social-media',
-        }),
-      ),
-    [act],
-  );
+  const onExpandOffice = useCallback(async (): Promise<ExpandResult> => {
+    setExpanding(true);
+    setError(null);
+    const outcome = await expandOffice();
+    setExpanding(false);
+    if (outcome.ok) {
+      setOffice(outcome.state);
+      syncOffice?.(outcome.state);
+      return { ok: true };
+    }
+    return { ok: false, message: outcome.failure.message };
+  }, [syncOffice]);
 
   const neutralSeats = office?.neutralSeats ?? 0;
   const totalSeats = HEADQUARTERS_BASE_SEATS + neutralSeats;
   const filled = hiredBySeat.size;
   const hasOpsController = (office?.hires ?? []).some((hire) => hire.seat === 'ops-controller');
 
-  // The world offers exactly one specialist; the server names it. They only ever
-  // sit in a neutral office, so their current seat and the first free one both
-  // come from the unlocked neutral seats.
+  // The world offers exactly one specialist; the server names it. It is highlighted
+  // in the staffing drawer, and only offered while it is not already employed.
   const specialist = office?.offeredSpecialist ? specialistById(office.offeredSpecialist) : null;
-  const specialistSeat =
-    specialist === null
-      ? undefined
-      : unlockedNeutralSeats(neutralSeats).find(
-          (seat) => hiredBySeat.get(seat)?.candidateId === specialist.id,
-        );
-  const freeNeutralSeat = unlockedNeutralSeats(neutralSeats).find((seat) => !hiredBySeat.has(seat));
+
+  const neutral = unlockedNeutralSeats(neutralSeats);
+  const neutralFilled = neutral.filter((seat) => hiredBySeat.has(seat)).length;
+  const neutralVacant = neutral.length - neutralFilled;
+
+  // Candidates free to take a neutral office — nobody already employed — with the
+  // world's specialist surfaced first when it is still available.
+  const eligible: readonly HqCandidate[] = (() => {
+    const generics = HQ_CANDIDATES.filter((candidate) => !hiredCandidateIds.has(candidate.id));
+    const offered =
+      specialist !== null && !hiredCandidateIds.has(specialist.id) ? [specialist] : [];
+    return [...offered, ...generics];
+  })();
+
+  const managing = selectedSeat !== null && isNeutralSeat(selectedSeat) ? selectedSeat : null;
+  const managingOccupant = managing !== null ? (hiredBySeat.get(managing) ?? null) : null;
 
   return (
     <section className="page hq-page" aria-label="Headquarters">
@@ -288,182 +325,188 @@ export function HeadquartersPage(): ReactNode {
             </section>
           );
         })}
-
-        {specialist !== null && (
-          <section className="hq-seat hq-seat--specialist" aria-label="Social Media Specialist">
-            <header className="hq-seat__header">
-              <div>
-                <h2 className="hq-seat__role">
-                  <span>Social Media Specialist</span>
-                  <span
-                    className="hq-seat__gate-flag"
-                    title="One specialist, and only in a neutral office"
-                    aria-hidden="true"
-                  >
-                    Specialist
-                  </span>
-                </h2>
-                <p className="hq-seat__unlock">
-                  <span className="hq-card__label">Perk</span>
-                  One specialist is on the market this world. They take a neutral office and carry a
-                  small standing edge — you can employ just the one.
-                </p>
-              </div>
-              <p className="hq-seat__status">
-                {specialistSeat !== undefined ? 'Working a neutral office' : 'Not hired'}
-              </p>
-            </header>
-
-            <ul className="hq-grid">
-              <li className="hq-card" data-hired={specialistSeat !== undefined}>
-                <div className="hq-card__portrait" data-hired={specialistSeat !== undefined}>
-                  <img
-                    src={specialist.portrait}
-                    alt={`${specialist.name}, social media specialist`}
-                    loading="lazy"
-                  />
-                </div>
-
-                <div className="hq-card__body">
-                  <p className="hq-card__name">{specialist.name}</p>
-
-                  <dl className="hq-card__meta">
-                    <div>
-                      <dt>Tier</dt>
-                      <dd>{specialist.tier}</dd>
-                    </div>
-                    <div>
-                      <dt>Salary</dt>
-                      <dd>{formatSalary(specialist.salaryPerMonthMinor)}/mo</dd>
-                    </div>
-                  </dl>
-
-                  <p className="hq-card__trait">
-                    <span className="hq-card__trait-badge">
-                      {specialist.name.split(' ')[0] ?? specialist.name}
-                    </span>
-                    <span>
-                      <strong>{specialist.trait.label}.</strong> {specialist.trait.detail}
-                    </span>
-                  </p>
-
-                  {specialistSeat !== undefined ? (
-                    <button
-                      type="button"
-                      className="hq-card__action"
-                      aria-pressed={true}
-                      disabled={loading || pending === specialistSeat}
-                      onClick={() => void onDismiss(specialistSeat)}
-                    >
-                      Let go
-                    </button>
-                  ) : freeNeutralSeat !== undefined ? (
-                    <button
-                      type="button"
-                      className="hq-card__action"
-                      aria-pressed={false}
-                      disabled={loading || pending === freeNeutralSeat}
-                      onClick={() => void onHireSpecialist(specialist, freeNeutralSeat)}
-                    >
-                      Hire {specialist.name.split(' ')[0] ?? specialist.name}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="hq-card__action"
-                      disabled
-                      title="Expand your headquarters for a neutral office"
-                    >
-                      Needs a neutral office
-                    </button>
-                  )}
-                </div>
-              </li>
-            </ul>
-          </section>
-        )}
       </div>
 
-      {neutralSeats > 0 && (
-        <section className="hq-expand" aria-label="Neutral offices">
-          <header className="hq-expand__head">
-            <h2 className="hq-expand__title">Neutral offices</h2>
-            <p className="hq-expand__size">
-              {totalSeats} offices · {String(neutralSeats)} neutral
+      <section className="hq-offices" aria-label="Neutral offices">
+        <header className="hq-offices__head">
+          <div>
+            <h2 className="hq-offices__title">Neutral offices</h2>
+            <p className="hq-offices__summary">
+              <strong>{neutralFilled}</strong> of {neutral.length} neutral offices staffed
+              {neutralVacant > 0 && ` · ${String(neutralVacant)} vacant`}
             </p>
-          </header>
+          </div>
+        </header>
 
-          <p className="hq-expand__note">
-            Neutral offices take any candidate and add staffed capacity — they do not grant a role’s
-            capability, and the long-haul gate still lives in the Safety &amp; Compliance seat. Buy
-            more offices from the layout panel.
-          </p>
+        <div className="hq-offices__layout">
+          <div className="hq-offices__plan">
+            <HqLayoutPanel
+              office={office}
+              onSelectSeat={setSelectedSeat}
+              selectedSeat={selectedSeat}
+              hoveredSeat={hoveredSeat}
+              onHoverSeat={setHoveredSeat}
+            />
+          </div>
 
-          <ul className="hq-neutral">
-            {unlockedNeutralSeats(neutralSeats).map((seat, index) => {
-              const hire = hiredBySeat.get(seat);
-              const seatPending = pending === seat;
-              const chosen = pick[seat] ?? '';
-              return (
-                <li key={seat} className="hq-neutral__seat">
-                  <span className="hq-neutral__label">Neutral office {index + 1}</span>
-                  {hire ? (
-                    <>
-                      <span className="hq-neutral__who">{hire.candidateName}</span>
-                      <button
-                        type="button"
-                        className="hq-neutral__action"
-                        disabled={loading || seatPending}
-                        onClick={() => void onDismiss(seat)}
-                      >
-                        Let go
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <select
-                        className="hq-neutral__pick"
-                        value={chosen}
-                        aria-label={`Assign a candidate to neutral office ${String(index + 1)}`}
-                        onChange={(event) =>
-                          setPick((prev) => ({ ...prev, [seat]: event.target.value }))
-                        }
-                      >
-                        <option value="">Choose a candidate…</option>
-                        {HQ_ROLES.map((role) => {
-                          const free = candidatesForRole(role.id).filter(
-                            (candidate) => !hiredCandidateIds.has(candidate.id),
-                          );
-                          if (free.length === 0) return null;
-                          return (
-                            <optgroup key={role.id} label={role.role}>
-                              {free.map((candidate) => (
-                                <option key={candidate.id} value={candidate.id}>
-                                  {candidate.name}
-                                </option>
-                              ))}
-                            </optgroup>
-                          );
-                        })}
-                      </select>
-                      <button
-                        type="button"
-                        className="hq-neutral__action"
-                        disabled={loading || seatPending || chosen === ''}
-                        onClick={() => {
-                          const candidate = HQ_CANDIDATES.find((entry) => entry.id === chosen);
-                          if (candidate) void onHireNeutral(seat, candidate);
-                        }}
-                      >
-                        Hire
-                      </button>
-                    </>
-                  )}
+          <div className="hq-offices__side">
+            {neutral.length === 0 && (
+              <p className="hq-offices__hint">
+                Your headquarters has no neutral offices yet. Expand it to open flexible rooms you
+                can staff with any candidate.
+              </p>
+            )}
+            <ul className="hq-offices__grid">
+              {neutral.map((seat) => {
+                const hire = hiredBySeat.get(seat);
+                const occupant = hire !== undefined ? candidateById(hire.candidateId) : null;
+                const isSpecialist =
+                  hire !== undefined && isSocialMediaSpecialistId(hire.candidateId);
+                const seatPending = pending === seat;
+                return (
+                  <li key={seat}>
+                    <div
+                      className="hq-office-card"
+                      data-occupied={hire !== undefined}
+                      data-selected={selectedSeat === seat}
+                      data-hovered={hoveredSeat === seat}
+                      onMouseEnter={() => setHoveredSeat(seat)}
+                      onMouseLeave={() => setHoveredSeat(null)}
+                    >
+                      <header className="hq-office-card__head">
+                        <span className="hq-office-card__num">{officeLabel(seat)}</span>
+                        <span className="hq-office-card__state" data-occupied={hire !== undefined}>
+                          {hire !== undefined ? '● Staffed' : '○ Vacant'}
+                        </span>
+                      </header>
+
+                      {hire !== undefined ? (
+                        <>
+                          <div className="hq-office-card__who">
+                            {occupant !== null && (
+                              <img
+                                className="hq-office-card__avatar"
+                                src={occupant.portrait}
+                                alt=""
+                              />
+                            )}
+                            <div>
+                              <p className="hq-office-card__name">{hire.candidateName}</p>
+                              <p className="hq-office-card__role">
+                                {isSpecialist
+                                  ? 'Social media specialist'
+                                  : (occupant?.tier ?? 'Staff')}
+                              </p>
+                            </div>
+                          </div>
+                          <p className="hq-office-card__perk">
+                            {isSpecialist ? '+ Standing edge' : '+1 HQ capacity'}
+                            {!isSpecialist && (
+                              <span className="hq-office-card__muted">
+                                {' '}
+                                · no specialist ability
+                              </span>
+                            )}
+                          </p>
+                          <div className="hq-office-card__actions">
+                            <button
+                              type="button"
+                              className="hq-office-card__btn"
+                              disabled={loading || seatPending}
+                              onClick={() => setSelectedSeat(seat)}
+                              onFocus={() => setHoveredSeat(seat)}
+                              onBlur={() => setHoveredSeat(null)}
+                            >
+                              Replace
+                            </button>
+                            <button
+                              type="button"
+                              className="hq-office-card__btn hq-office-card__btn--quiet"
+                              disabled={loading || seatPending}
+                              onClick={() => void removeFromOffice(seat)}
+                            >
+                              Remove from Office
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="hq-office-card__hire"
+                          disabled={loading || seatPending}
+                          aria-label={`Staff ${officeLabel(seat)}`}
+                          onClick={() => setSelectedSeat(seat)}
+                          onFocus={() => setHoveredSeat(seat)}
+                          onBlur={() => setHoveredSeat(null)}
+                        >
+                          <span className="hq-office-card__plus" aria-hidden="true">
+                            +
+                          </span>
+                          Hire staff
+                          <span className="hq-office-card__hint">Any candidate · +1 capacity</span>
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+
+              {office?.nextExpansion != null && (
+                <li>
+                  <div className="hq-office-card hq-office-card--locked">
+                    <header className="hq-office-card__head">
+                      <span className="hq-office-card__num">
+                        +{office.nextExpansion.addsSeats} offices
+                      </span>
+                      <span className="hq-office-card__state" data-locked="true">
+                        🔒 Locked
+                      </span>
+                    </header>
+                    <p className="hq-office-card__perk">
+                      Build {office.nextExpansion.addsSeats} more neutral offices ({' '}
+                      {office.nextExpansion.totalSeats} total ).
+                    </p>
+                    <button
+                      type="button"
+                      className="hq-office-card__hire hq-office-card__hire--buy"
+                      disabled={expanding}
+                      onClick={() => void onExpandOffice()}
+                    >
+                      {expanding
+                        ? 'Expanding…'
+                        : `Expand · ${MONEY.format(office.nextExpansion.costMinor / 100)}`}
+                    </button>
+                  </div>
                 </li>
-              );
-            })}
-          </ul>
-        </section>
+              )}
+            </ul>
+
+            <div className="hq-offices__legend">
+              <p className="hq-offices__legend-title">What a neutral office does</p>
+              <ul className="hq-offices__benefits">
+                <li>+1 staffed HQ capacity</li>
+                <li>Takes any management candidate — or the world’s specialist</li>
+              </ul>
+              <ul className="hq-offices__limits">
+                <li>No department capability — those stay in the six seats above</li>
+                <li>Does not unlock long-haul authority</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {managing !== null && (
+        <StaffOfficeDrawer
+          officeName={officeLabel(managing)}
+          occupant={managingOccupant}
+          candidates={eligible}
+          specialistId={specialist?.id ?? null}
+          busy={pending === managing}
+          onAssign={(candidate) => void assignToOffice(managing, candidate)}
+          onRemove={() => void removeFromOffice(managing)}
+          onClose={() => setSelectedSeat(null)}
+        />
       )}
     </section>
   );

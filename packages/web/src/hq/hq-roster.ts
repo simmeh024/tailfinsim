@@ -408,6 +408,11 @@ export function specialistById(id: string): HqCandidate | null {
   return SPECIALIST_CANDIDATES.find((candidate) => candidate.id === id) ?? null;
 }
 
+/** Any candidate — a seat candidate or a specialist — by id, or null. */
+export function candidateById(id: string): HqCandidate | null {
+  return HQ_CANDIDATES.find((candidate) => candidate.id === id) ?? specialistById(id);
+}
+
 /** Salary as the game shows money elsewhere: major units, grouped, no fraction. */
 export function formatSalary(minor: number): string {
   return (minor / 100).toLocaleString('en-GB', { maximumFractionDigits: 0 });

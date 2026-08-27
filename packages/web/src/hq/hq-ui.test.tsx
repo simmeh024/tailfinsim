@@ -206,50 +206,98 @@ describe('the Headquarters page', () => {
     expect(tomCard?.dataset.hired).toBe('true');
   });
 
-  it('keeps an already-hired candidate out of the neutral picker', async () => {
-    // Mara sits in her own role seat; a neutral office is unlocked.
+  it('opens a drawer for the exact office a vacant room names', async () => {
+    neutralSeats = 2;
+    render(<HeadquartersPage />);
+    // Office 07 is the first neutral office (neutral-1).
+    const staff = await screen.findByRole('button', { name: 'Staff Office 07' });
+    fireEvent.click(staff);
+    expect(await screen.findByRole('dialog', { name: /Staff Office 07/i })).toBeInTheDocument();
+  });
+
+  it('hires a candidate into the clicked office and closes the drawer', async () => {
+    neutralSeats = 2;
+    render(<HeadquartersPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Staff Office 07' }));
+    const dialog = await screen.findByRole('dialog', { name: /Staff Office 07/i });
+
+    const tomRow = within(dialog).getByText('Tom Bakker').closest('li');
+    if (!tomRow) throw new Error('no candidate row for Tom');
+    fireEvent.click(within(tomRow).getByRole('button', { name: /Hire & Assign/i }));
+
+    // The assignment carried the office the drawer was for — neutral-1 / Office 07.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const post = hires.find((h) => h.candidateId === 'route-planner-tom');
+    expect(post?.seat).toBe('neutral-1');
+  });
+
+  it('excludes an already-hired candidate from the drawer', async () => {
     hires = [
       { seat: 'route-planner', candidateId: 'route-planner-mara', candidateName: 'Mara Ellison' },
     ];
     neutralSeats = 2;
     render(<HeadquartersPage />);
-
-    const picker = await screen.findByRole('combobox', {
-      name: /Assign a candidate to neutral office 1/i,
-    });
-    const options = within(picker).getAllByRole('option');
-    const labels = options.map((o) => o.textContent);
-    // She is already seated, so she cannot be offered a second office…
-    expect(labels).not.toContain('Mara Ellison');
-    // …but her un-hired rival is still on offer.
-    expect(labels).toContain('Tom Bakker');
+    fireEvent.click(await screen.findByRole('button', { name: 'Staff Office 07' }));
+    const dialog = await screen.findByRole('dialog', { name: /Staff Office 07/i });
+    // Mara already holds a seat, so she is not on offer; her rival still is.
+    expect(within(dialog).queryByText('Mara Ellison')).toBeNull();
+    expect(within(dialog).getByText('Tom Bakker')).toBeInTheDocument();
   });
 
-  it('offers one social media specialist and seats them in a neutral office', async () => {
+  it('surfaces the world specialist in the drawer, badged, and only that one', async () => {
     offeredSpecialist = 'social-media-reputation';
     neutralSeats = 2;
     render(<HeadquartersPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Staff Office 07' }));
+    const dialog = await screen.findByRole('dialog', { name: /Staff Office 07/i });
 
-    const region = await screen.findByRole('region', { name: 'Social Media Specialist' });
-    expect(within(region).getByText('Lena Voss')).toBeInTheDocument();
-    // Only the world's offer is ever shown — never both specialists.
-    expect(screen.queryByText('Kai Mercer')).toBeNull();
+    const lenaRow = within(dialog).getByText('Lena Voss').closest('li');
+    expect(lenaRow?.dataset.specialist).toBe('true');
+    // The other specialist is never on the market this world.
+    expect(within(dialog).queryByText('Kai Mercer')).toBeNull();
 
-    const hire = within(region).getByRole('button', { name: /Hire Lena/i });
-    await waitFor(() => expect(hire).toBeEnabled());
-    fireEvent.click(hire);
-
-    await within(region).findByText(/Working a neutral office/i);
-    // She was seated in the first free neutral office, tagged as the specialist.
-    const post = hires.find((h) => h.candidateId === 'social-media-reputation');
-    expect(post?.seat).toBe('neutral-1');
+    fireEvent.click(within(lenaRow as HTMLElement).getByRole('button', { name: /Hire & Assign/i }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(hires.find((h) => h.candidateId === 'social-media-reputation')?.seat).toBe('neutral-1');
   });
 
-  it('cannot seat the specialist with no neutral office unlocked', async () => {
+  it('shows an occupied office and removes the right occupant', async () => {
+    hires = [{ seat: 'neutral-1', candidateId: 'route-planner-tom', candidateName: 'Tom Bakker' }];
+    neutralSeats = 2;
+    const { container } = render(<HeadquartersPage />);
+    const side = container.querySelector<HTMLElement>('.hq-offices__side')!;
+
+    // The Office 07 card names its occupant and offers to remove them.
+    const card = (await within(side).findByText('Office 07')).closest('.hq-office-card');
+    if (!card) throw new Error('no card for Office 07');
+    expect(within(card as HTMLElement).getByText('Tom Bakker')).toBeInTheDocument();
+    fireEvent.click(
+      within(card as HTMLElement).getByRole('button', { name: /Remove from Office/i }),
+    );
+
+    await waitFor(() => expect(hires.find((h) => h.seat === 'neutral-1')).toBeUndefined());
+  });
+
+  it('syncs highlight from an office card to its floor room', async () => {
+    neutralSeats = 2;
+    const { container } = render(<HeadquartersPage />);
+    const side = container.querySelector<HTMLElement>('.hq-offices__side')!;
+    const card = (await within(side).findByText('Office 07')).closest('.hq-office-card');
+    if (!card) throw new Error('no card for Office 07');
+    const room = container.querySelector<HTMLElement>('.hq-cell[data-seat="neutral-1"]');
+    expect(room?.dataset.hovered).toBe('false');
+    fireEvent.mouseEnter(card);
+    expect(room?.dataset.hovered).toBe('true');
+  });
+
+  it('offers expansion, not staffing, when no neutral office is unlocked', async () => {
     neutralSeats = 0;
     render(<HeadquartersPage />);
-    const region = await screen.findByRole('region', { name: 'Social Media Specialist' });
-    expect(within(region).getByRole('button', { name: /neutral office/i })).toBeDisabled();
+    await screen.findByRole('heading', { level: 2, name: 'Neutral offices' });
+    // Nothing to staff yet…
+    expect(screen.queryByRole('button', { name: /^Staff Office/i })).toBeNull();
+    // …but the locked card can buy the first ones.
+    expect(screen.getByRole('button', { name: /Expand ·/i })).toBeInTheDocument();
   });
 
   it('renders the seats the server already reports as filled, on load', async () => {
