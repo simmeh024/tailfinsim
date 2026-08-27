@@ -271,7 +271,9 @@ describeDb('sessions over HTTP', () => {
         .from(adminAudit)
         .where(eq(adminAudit.subjectId, playerId));
       const audit = audits.find((entry) => entry.action === 'sessions.revoked');
-      expect(audit?.after).toBe(JSON.stringify({ result: 'success', revokedSessions: 2 }));
+      expect(audit?.after).toBe(
+        JSON.stringify({ activeSessions: 0, result: 'success', revokedSessions: 2 }),
+      );
       expect(audit?.after).not.toContain(first.token);
       expect(audit?.after).not.toContain(second.token);
     });

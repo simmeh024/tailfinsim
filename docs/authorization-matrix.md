@@ -244,6 +244,17 @@ read another player's financial records. There are no premium, credit or entitle
 today; any future version must add a server-owned write path, ledger/audit coverage and these
 request-boundary tests before exposing one.
 
+## Audit action contract (SEC-10)
+
+Every `AdminAction` has a declared subject type and evidence shape in
+`ADMIN_AUDIT_ACTION_POLICY`. `writeAudit()` rejects a row that targets the wrong kind of subject,
+omits before/after evidence for a change, records identical before and after snapshots, or omits a
+required reason. Creation and deliberate player-detail views have their own honest shapes: an
+after-only creation record and an after-only disclosure summary. The policy is exhaustive over the
+closed action enum, so extending the admin console without deciding its audit contract fails the
+SEC-10 test suite and typecheck. The action and audit row remain in the caller's transaction; a
+rollback leaves neither behind.
+
 ## Decisions and open questions
 
 The three ambiguities recorded when SEC-01 was opened have changed as the product grew:
