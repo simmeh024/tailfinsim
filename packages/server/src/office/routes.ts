@@ -62,8 +62,10 @@ export function registerOfficeRoutes(app: FastifyInstance, { db }: { db: Databas
       const own = resolvedAirlineOf(request);
       const result = await hireOffice(db.db, own, parsed.data);
       if (!result.ok) {
-        if (result.code === 'unknown_role') {
-          return reply.code(400).send({ code: 'invalid_input', message: 'No such office role' });
+        if (result.code === 'unknown_candidate') {
+          return reply
+            .code(400)
+            .send({ code: 'invalid_input', message: 'No such candidate in the market' });
         }
         // 422: the request parsed, but the office rules refuse it.
         const message =

@@ -3,10 +3,10 @@ import { useState } from 'react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { OfficeSeatId, OfficeStateResponse } from '@tailfin/shared';
+import { officeCandidate, type OfficeSeatId, type OfficeStateResponse } from '@tailfin/shared';
 
 import { HeadquartersPage } from './HeadquartersPage';
-import { candidatesForRole, HQ_CANDIDATES, HQ_ROLES } from './hq-roster';
+import { candidatesForRole, HQ_CANDIDATES, HQ_ROLES, SPECIALIST_CANDIDATES } from './hq-roster';
 import { HqLayoutPanel, type ExpandResult } from './HqLayoutPanel';
 
 import type { OwnAirlineShellContext } from '../shell/AppShell';
@@ -128,6 +128,17 @@ describe('the office roster', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it('bills what it shows — every candidate salary matches the shared catalogue', () => {
+    // The roster is the display; the shared catalogue is what the server bills.
+    // If these drift, a card shows a price the ledger never charges.
+    for (const candidate of [...HQ_CANDIDATES, ...SPECIALIST_CANDIDATES]) {
+      const billed = officeCandidate(candidate.id);
+      expect(billed, candidate.id).toBeDefined();
+      expect(candidate.salaryPerMonthMinor, candidate.id).toBe(billed?.monthlySalaryMinor);
+      expect(candidate.roleId, candidate.id).toBe(billed?.role);
+    }
+  });
+
   it("makes each seat's effect a concrete unlock, not a percentage — M5-04's rule", () => {
     for (const role of HQ_ROLES) {
       expect(role.unlock.length, role.id).toBeGreaterThan(0);
@@ -225,6 +236,17 @@ describe('the Headquarters page', () => {
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent(`0 of ${String(HQ_ROLES.length)} seats`),
     );
+  });
+
+  it('shows each candidate their own salary, not a flat role rate', () => {
+    render(<HeadquartersPage />);
+    const seat = screen.getByRole('region', { name: 'Route Planner' });
+    const tom = within(seat).getByText('Tom Bakker').closest('.hq-card');
+    const victor = within(seat).getByText('Victor Lindqvist').closest('.hq-card');
+    if (!tom || !victor) throw new Error('missing candidate cards');
+    // The Analyst and the Director cost different amounts — the whole point.
+    expect(within(tom as HTMLElement).getByText('12,000/mo')).toBeInTheDocument();
+    expect(within(victor as HTMLElement).getByText('26,000/mo')).toBeInTheDocument();
   });
 
   it('starts every candidate greyed, and colours the one hired', async () => {

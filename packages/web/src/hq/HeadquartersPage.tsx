@@ -4,7 +4,6 @@ import { useOutletContext } from 'react-router';
 import {
   HEADQUARTERS_BASE_SEATS,
   isNeutralSeat,
-  OFFICE_ROLES,
   type OfficeSeatId,
   type OfficeStateResponse,
 } from '@tailfin/shared';
@@ -250,7 +249,6 @@ export function HeadquartersPage(): ReactNode {
           const candidates = candidatesForRole(seat.id);
           const hiredId = hiredBySeat.get(seat.id)?.candidateId;
           const hiredCandidate = candidates.find((candidate) => candidate.id === hiredId) ?? null;
-          const salary = formatSalary(OFFICE_ROLES[seat.id].monthlySalaryMinor);
           const seatPending = pending === seat.id;
 
           return (
@@ -300,7 +298,7 @@ export function HeadquartersPage(): ReactNode {
                           </div>
                           <div>
                             <dt>Salary</dt>
-                            <dd>{salary}/mo</dd>
+                            <dd>{formatSalary(candidate.salaryPerMonthMinor)}/mo</dd>
                           </div>
                         </dl>
 

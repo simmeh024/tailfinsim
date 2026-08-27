@@ -276,6 +276,184 @@ export function offeredSocialMediaSpecialistId(worldId: string): string {
   return chosen.id;
 }
 
+/** A candidate's seniority band. Sets the pay: a Director costs more than an Analyst. */
+export type OfficeCandidateTier = 'Analyst' | 'Manager' | 'Director';
+
+/**
+ * One person in the hiring market (§9.1), as all three parties must agree on them.
+ *
+ * The client renders the face, the server admits the hire and snapshots the pay,
+ * and the worker bills it every month — so identity, role and **salary** are
+ * shared, not the client's to assert. The server bills `monthlySalaryMinor` from
+ * this catalogue keyed by `id`, never a figure the client sends, so a player
+ * cannot hire a Director at an Analyst's rate; the tier is what makes the three
+ * candidates for a seat cost different amounts. Portraits and the flavour trait
+ * stay in the client — they are not billable and not the server's concern.
+ */
+export interface OfficeCandidate {
+  /** Stable id, shared by the client roster, the wire and the payroll. */
+  id: string;
+  /** The role this candidate is for. A role seat must match it; specialists are `social-media`. */
+  role: OfficeRole;
+  name: string;
+  tier: OfficeCandidateTier;
+  /** Salary per game month, minor units — what the worker bills while they are on staff. */
+  monthlySalaryMinor: number;
+}
+
+/**
+ * The candidate market: three people for each of the six seats, plus the two
+ * social media specialists. Ordered by seat, then by roster order within a seat,
+ * because the client renders them in this order and its tests pin it.
+ */
+export const OFFICE_CANDIDATES: readonly OfficeCandidate[] = [
+  {
+    id: 'route-planner-mara',
+    role: 'route-planner',
+    name: 'Mara Ellison',
+    tier: 'Manager',
+    monthlySalaryMinor: 1_800_000,
+  },
+  {
+    id: 'route-planner-tom',
+    role: 'route-planner',
+    name: 'Tom Bakker',
+    tier: 'Analyst',
+    monthlySalaryMinor: 1_200_000,
+  },
+  {
+    id: 'route-planner-victor',
+    role: 'route-planner',
+    name: 'Victor Lindqvist',
+    tier: 'Director',
+    monthlySalaryMinor: 2_600_000,
+  },
+  {
+    id: 'revenue-manager-kenji',
+    role: 'revenue-manager',
+    name: 'Kenji Tan',
+    tier: 'Manager',
+    monthlySalaryMinor: 2_000_000,
+  },
+  {
+    id: 'revenue-manager-sofia',
+    role: 'revenue-manager',
+    name: 'Sofía Reyes',
+    tier: 'Manager',
+    monthlySalaryMinor: 2_100_000,
+  },
+  {
+    id: 'revenue-manager-anders',
+    role: 'revenue-manager',
+    name: 'Anders Holm',
+    tier: 'Director',
+    monthlySalaryMinor: 2_900_000,
+  },
+  {
+    id: 'ops-controller-diego',
+    role: 'ops-controller',
+    name: 'Diego Alvarez',
+    tier: 'Director',
+    monthlySalaryMinor: 2_600_000,
+  },
+  {
+    id: 'ops-controller-marta',
+    role: 'ops-controller',
+    name: 'Marta Silva',
+    tier: 'Manager',
+    monthlySalaryMinor: 2_300_000,
+  },
+  {
+    id: 'ops-controller-jun',
+    role: 'ops-controller',
+    name: 'Jun Park',
+    tier: 'Director',
+    monthlySalaryMinor: 2_700_000,
+  },
+  {
+    id: 'chief-pilot-sten',
+    role: 'chief-pilot',
+    name: 'Sten Halvorsen',
+    tier: 'Director',
+    monthlySalaryMinor: 2_800_000,
+  },
+  {
+    id: 'chief-pilot-fiona',
+    role: 'chief-pilot',
+    name: 'Fiona Brennan',
+    tier: 'Director',
+    monthlySalaryMinor: 2_900_000,
+  },
+  {
+    id: 'chief-pilot-grant',
+    role: 'chief-pilot',
+    name: 'Grant Wexford',
+    tier: 'Director',
+    monthlySalaryMinor: 3_000_000,
+  },
+  {
+    id: 'ground-ops-nadia',
+    role: 'ground-ops',
+    name: 'Nadia Kovač',
+    tier: 'Director',
+    monthlySalaryMinor: 2_400_000,
+  },
+  {
+    id: 'ground-ops-omar',
+    role: 'ground-ops',
+    name: 'Omar Haddad',
+    tier: 'Director',
+    monthlySalaryMinor: 2_500_000,
+  },
+  {
+    id: 'ground-ops-luca',
+    role: 'ground-ops',
+    name: 'Luca Moretti',
+    tier: 'Manager',
+    monthlySalaryMinor: 2_000_000,
+  },
+  {
+    id: 'safety-compliance-claire',
+    role: 'safety-compliance',
+    name: 'Claire Fontaine',
+    tier: 'Director',
+    monthlySalaryMinor: 3_000_000,
+  },
+  {
+    id: 'safety-compliance-hiroshi',
+    role: 'safety-compliance',
+    name: 'Hiroshi Tanaka',
+    tier: 'Director',
+    monthlySalaryMinor: 3_100_000,
+  },
+  {
+    id: 'safety-compliance-emma',
+    role: 'safety-compliance',
+    name: 'Emma Larsson',
+    tier: 'Manager',
+    monthlySalaryMinor: 2_400_000,
+  },
+  {
+    id: 'social-media-reputation',
+    role: 'social-media',
+    name: 'Lena Voss',
+    tier: 'Manager',
+    monthlySalaryMinor: 1_500_000,
+  },
+  {
+    id: 'social-media-attractiveness',
+    role: 'social-media',
+    name: 'Kai Mercer',
+    tier: 'Manager',
+    monthlySalaryMinor: 1_500_000,
+  },
+];
+
+/** The candidate with this id, or undefined — the server's billing lookup. */
+export function officeCandidate(id: string): OfficeCandidate | undefined {
+  return OFFICE_CANDIDATES.find((candidate) => candidate.id === id);
+}
+
 /**
  * The distance beyond which a route needs extended authority, in nautical miles.
  *
