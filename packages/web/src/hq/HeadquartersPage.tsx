@@ -17,6 +17,7 @@ import {
   HQ_ROLES,
   type HqCandidate,
 } from './hq-roster';
+import { PoliciesModal } from './PoliciesModal';
 
 import type { OwnAirlineShellContext } from '../shell/AppShell';
 import type { ReactNode } from 'react';
@@ -59,6 +60,7 @@ export function HeadquartersPage(): ReactNode {
   const [pending, setPending] = useState<OfficeSeatId | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pick, setPick] = useState<Record<string, string>>({});
+  const [policiesOpen, setPoliciesOpen] = useState(false);
   const syncOffice = useOutletContext<OwnAirlineShellContext | null>()?.replaceOffice;
 
   useEffect(() => {
@@ -129,6 +131,7 @@ export function HeadquartersPage(): ReactNode {
   const neutralSeats = office?.neutralSeats ?? 0;
   const totalSeats = HEADQUARTERS_BASE_SEATS + neutralSeats;
   const filled = hiredBySeat.size;
+  const hasOpsController = (office?.hires ?? []).some((hire) => hire.seat === 'ops-controller');
 
   return (
     <section className="page hq-page" aria-label="Headquarters">
@@ -142,16 +145,27 @@ export function HeadquartersPage(): ReactNode {
             you hire is in colour.
           </p>
         </div>
-        <p className="hq-page__count" role="status">
-          <strong>{filled}</strong> of {totalSeats} seats filled
-          {office?.hasExtendedAuthority === true && (
-            <>
-              {' · '}
-              <span className="hq-page__authority">long-haul authority unlocked</span>
-            </>
-          )}
-        </p>
+        <div className="hq-page__aside">
+          <button type="button" className="hq-page__policies" onClick={() => setPoliciesOpen(true)}>
+            Policies
+          </button>
+          <p className="hq-page__count" role="status">
+            <strong>{filled}</strong> of {totalSeats} seats filled
+            {office?.hasExtendedAuthority === true && (
+              <>
+                {' · '}
+                <span className="hq-page__authority">long-haul authority unlocked</span>
+              </>
+            )}
+          </p>
+        </div>
       </header>
+
+      <PoliciesModal
+        open={policiesOpen}
+        onClose={() => setPoliciesOpen(false)}
+        hasOpsController={hasOpsController}
+      />
 
       {error !== null && (
         <p className="hq-page__error" role="alert">
