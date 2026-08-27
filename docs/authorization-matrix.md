@@ -72,6 +72,19 @@ kind, and malformed values (empty, trailing whitespace, non-UUID and overlong). 
 `security/resource-id-inventory.test.ts` compares its path entries with Fastify's real route table
 so a new `:parameter` cannot arrive unclassified.
 
+**Nested parent chains (SEC-08).** When a private leaf has a parent, resolve it from the leaf
+through every parent to `airline` in one SQL query. The reusable worked example is
+`packages/server/src/airline/nested-ownership.ts`: `schedule_leg → schedule → airline`, with
+both `airline.player_id = caller` and `airline.world_id = activeWorld` in the predicate. Keep
+the parent-to-airline world relationship in the join too, so an inconsistent row cannot bridge
+worlds. Do not load a leaf, then walk and compare its parents in application code; do not prove
+only that the caller owns _some_ airline.
+
+`packages/server/src/airline/nested-ownership.test.ts` is the required template. Every nested
+endpoint adds its own **own-chain**, **sibling-chain**, **same-player wrong-world**, and
+**broken-parent-chain** case. A broken chain is a clean concealed refusal (the endpoint's 404),
+never a null dereference or 500.
+
 Apply the matrix according to what the identifier means:
 
 - owner-scoped route, airframe, crew-base and ground-contract references resolve inside the session-derived airline;
