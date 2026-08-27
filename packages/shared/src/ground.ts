@@ -66,8 +66,10 @@ export const GroundStationResponse = z.object({
 export type GroundStationResponse = z.infer<typeof GroundStationResponse>;
 
 /** `POST /api/ground/:icao/contracts` — sign a handler for a service line. */
-export const SignContractRequest = z.object({
-  serviceLine: GroundServiceLine,
-  grade: HandlerGrade,
-});
+export const SignContractRequest = z
+  .object({
+    serviceLine: GroundServiceLine,
+    grade: HandlerGrade,
+  })
+  .strict();
 export type SignContractRequest = z.infer<typeof SignContractRequest>;

@@ -225,6 +225,25 @@ operator can read them without an application credential.
 | `GET /healthz` | Loopback bind + host firewall; no app guard | Not edge-reachable | Not edge-reachable | Not edge-reachable | Not edge-reachable |
 | `GET /queues`  | Loopback bind + host firewall; no app guard | Not edge-reachable | Not edge-reachable | Not edge-reachable | Not edge-reachable |
 
+## Financial authority (SEC-09)
+
+Players submit intent and references, not financial facts. Every player-facing write contract is
+strict: `cash`, balances, reputation, prices, charged amounts, payment/order status, credits and
+entitlements are server-owned fields. The founding endpoint retains its backward-compatible
+unknown-field stripping, but discards those same fields before the founding service runs. Current
+purchase quantities are bounded positive integers; a zero, negative, fractional or implausibly
+large crew request never reaches the service layer.
+
+`moveAirlineCash()` is the only application path that changes `airline.cash_minor`. It accepts a
+caller-owned database transaction and records the cash movement, dimensional ledger entries and
+materialised balance in that transaction. Database reconciliation triggers require the balance to
+equal both the movement and ledger totals, and immutable movement/ledger rows turn corrections
+into explicit compensating entries. All money is safe integer minor units; fractional values are
+rejected before any write. The P&L route derives the airline solely from the session, so it cannot
+read another player's financial records. There are no premium, credit or entitlement balances
+today; any future version must add a server-owned write path, ledger/audit coverage and these
+request-boundary tests before exposing one.
+
 ## Decisions and open questions
 
 The three ambiguities recorded when SEC-01 was opened have changed as the product grew:

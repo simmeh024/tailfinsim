@@ -506,17 +506,19 @@ export const OfficeStateResponse = z.object({
 export type OfficeStateResponse = z.infer<typeof OfficeStateResponse>;
 
 /** `POST /api/office/hires` — hire a candidate into a seat, replacing any incumbent. */
-export const HireOfficeRequest = z.object({
-  /** The seat to fill. A neutral seat must already be unlocked by expansion. */
-  seat: OfficeSeatId,
-  candidateId: z.string().min(1),
-  candidateName: z.string().min(1),
-  /**
-   * The candidate's role. It sets the salary billed, and for a role seat it must
-   * equal the seat — the server refuses a mismatch. A neutral seat accepts any role.
-   */
-  candidateRole: OfficeRole,
-});
+export const HireOfficeRequest = z
+  .object({
+    /** The seat to fill. A neutral seat must already be unlocked by expansion. */
+    seat: OfficeSeatId,
+    candidateId: z.string().min(1),
+    candidateName: z.string().min(1),
+    /**
+     * The candidate's role. It sets the salary billed, and for a role seat it must
+     * equal the seat — the server refuses a mismatch. A neutral seat accepts any role.
+     */
+    candidateRole: OfficeRole,
+  })
+  .strict();
 export type HireOfficeRequest = z.infer<typeof HireOfficeRequest>;
 
 /** The airline id is never on the wire — ownership is resolved from the session (AIR-05). */

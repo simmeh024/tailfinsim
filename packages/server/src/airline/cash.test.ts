@@ -256,4 +256,33 @@ describeDb('cash movements', () => {
       ),
     ).rejects.toThrow(/safe integer/);
   });
+
+  it('refuses fractional cash and ledger amounts before they can be stored', async () => {
+    const { airlineId } = await makeAirline();
+
+    await expect(
+      db.db.transaction((tx) =>
+        moveAirlineCash(tx, {
+          airlineId,
+          amountMinor: 1.5,
+          cause: 'flight_settlement',
+          reference: 'flight-fractional-cash',
+          occurredAt,
+        }),
+      ),
+    ).rejects.toThrow(/safe integer/);
+
+    await expect(
+      db.db.transaction((tx) =>
+        moveAirlineCash(tx, {
+          airlineId,
+          amountMinor: 100,
+          cause: 'flight_settlement',
+          reference: 'flight-fractional-ledger',
+          occurredAt,
+          ledgerLines: [{ amountMinor: 99.5, category: 'other' }],
+        }),
+      ),
+    ).rejects.toThrow(/safe integer/);
+  });
 });

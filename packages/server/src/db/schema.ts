@@ -1233,6 +1233,27 @@ export const SENSITIVE_REQUEST_FIELDS = {
 export const VIRTUAL_PRIVILEGE_FIELDS = ['isAdmin', 'adminGrant'] as const;
 
 /**
+ * Financial facts are produced by the simulation and ledger, never accepted
+ * from a player request (SEC-09). Some duplicate database columns above; the
+ * remainder are response/API names with no writable column to derive from.
+ */
+export const SERVER_OWNED_FINANCIAL_FIELDS = [
+  'cash',
+  'cashMinor',
+  'balanceMinor',
+  'reputation',
+  'amountMinor',
+  'priceMinor',
+  'chargedMinor',
+  'monthlyLeaseRateMinor',
+  'resultingCashMinor',
+  'credits',
+  'entitlements',
+  'paymentStatus',
+  'orderStatus',
+] as const;
+
+/**
  * The audit log. Append-only, enforced by the database.
  *
  * "No UPDATE or DELETE path in the application" would be a convention, and a
