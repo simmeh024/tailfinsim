@@ -124,6 +124,7 @@ const OWN: OwnAirlineResponse = {
     icaoCode: 'TFN',
     callsign: 'TAILFIN',
     baseCountry: 'NL',
+    logo: null,
     cash: 50_000_000_000,
     reputation: 0.5,
     status: 'active',

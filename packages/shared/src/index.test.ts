@@ -126,6 +126,7 @@ describe('Airline', () => {
     icaoCode: 'TFN',
     callsign: 'TAILFIN',
     baseCountry: 'NL',
+    logo: null,
     cash: 50_000_000,
     reputation: 0.35,
     status: 'active',
@@ -265,7 +266,7 @@ describe('Airline', () => {
         airline: valid,
         rebrand: {
           costMinor: 2_500_000,
-          mutableFields: ['name', 'callsign', 'baseCountry'],
+          mutableFields: ['name', 'callsign', 'baseCountry', 'logo'],
           immutableFields: ['iataCode', 'icaoCode', 'cash', 'reputation'],
         },
       }).success,

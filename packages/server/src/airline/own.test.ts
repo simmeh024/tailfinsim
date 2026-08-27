@@ -198,7 +198,7 @@ describeDb('reading and changing your own airline', () => {
       },
       rebrand: {
         costMinor: ECONOMY_CONFIG_V1.airlineIdentity.rebrandCostMinor,
-        mutableFields: ['name', 'callsign', 'baseCountry'],
+        mutableFields: ['name', 'callsign', 'baseCountry', 'logo'],
         immutableFields: ['iataCode', 'icaoCode', 'cash', 'reputation'],
       },
     });
@@ -298,6 +298,68 @@ describeDb('reading and changing your own airline', () => {
       }),
     ]);
     expect(await reconcileAirlineCash(db.db, before.id)).toMatchObject({ reconciles: true });
+  });
+
+  it('treats a logo-only change as a paid rebrand and records the emblem before/after', async () => {
+    const playerId = await makePlayer();
+    const before = await makeAirline(playerId);
+    const token = await tokenFor(playerId);
+
+    const logo = {
+      shape: 'shield' as const,
+      mark: { kind: 'symbol' as const, symbol: 'wings' as const },
+      background: '#123456',
+      foreground: '#ffffff',
+      accent: '#e6b800',
+    };
+
+    // Same name/callsign/country — only the logo differs, and that alone is a rebrand.
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/airlines/me',
+      cookies: { [SESSION_COOKIE]: token },
+      payload: {
+        name: before.name,
+        callsign: before.callsign,
+        baseCountry: before.baseCountry,
+        logo,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      changed: true,
+      chargedMinor: ECONOMY_CONFIG_V1.airlineIdentity.rebrandCostMinor,
+      airline: { id: before.id, logo },
+    });
+    expect(UpdateOwnAirlineResponse.safeParse(response.json()).success).toBe(true);
+
+    const events = await db.db
+      .select()
+      .from(airlineIdentityChange)
+      .where(eq(airlineIdentityChange.airlineId, before.id));
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      beforeName: before.name,
+      afterName: before.name,
+      beforeLogo: null,
+      afterLogo: logo,
+    });
+    expect(await reconcileAirlineCash(db.db, before.id)).toMatchObject({ reconciles: true });
+
+    // Re-submitting the same logo is now a no-op — no second charge.
+    const again = await app.inject({
+      method: 'PATCH',
+      url: '/api/airlines/me',
+      cookies: { [SESSION_COOKIE]: token },
+      payload: {
+        name: before.name,
+        callsign: before.callsign,
+        baseCountry: before.baseCountry,
+        logo,
+      },
+    });
+    expect(again.json()).toMatchObject({ changed: false, chargedMinor: 0 });
   });
 
   it('does not charge when the submitted identity is already current', async () => {

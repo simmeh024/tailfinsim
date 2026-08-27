@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { AirlineLogo } from './airline-logo';
 import { AirportTier, SlotLevel } from './airport';
 import { ApiError } from './api';
 import { AirlineKind, NpcArchetype } from './npc';
@@ -124,6 +125,9 @@ export const Airline = z.object({
 
   ...AirlineIdentity.shape,
   baseCountry: CountryCode,
+
+  /** The brand emblem, or null for an airline that has never set one (a default is shown). */
+  logo: AirlineLogo.nullable(),
 
   cash: MinorUnits,
   reputation: Reputation,
@@ -347,7 +351,12 @@ export const OwnAirlineResponse = z.object({
   rebrand: z
     .object({
       costMinor: MinorUnits.positive(),
-      mutableFields: z.tuple([z.literal('name'), z.literal('callsign'), z.literal('baseCountry')]),
+      mutableFields: z.tuple([
+        z.literal('name'),
+        z.literal('callsign'),
+        z.literal('baseCountry'),
+        z.literal('logo'),
+      ]),
       immutableFields: z.tuple([
         z.literal('iataCode'),
         z.literal('icaoCode'),
@@ -370,7 +379,17 @@ export const UpdateOwnAirlineInput = Airline.pick({
   name: true,
   callsign: true,
   baseCountry: true,
-}).strict();
+})
+  .extend({
+    /**
+     * Optional so a caller that only rebrands the name or callsign need not
+     * resend the logo: omitted means "leave the logo as it is", a value replaces
+     * it, and `null` clears it back to the default emblem. Provided or not, any
+     * change here is the same paid rebrand as a name change.
+     */
+    logo: AirlineLogo.nullable().optional(),
+  })
+  .strict();
 export type UpdateOwnAirlineInput = z.infer<typeof UpdateOwnAirlineInput>;
 
 /** One paid §15 identity event, or a no-op when the submitted identity is current. */

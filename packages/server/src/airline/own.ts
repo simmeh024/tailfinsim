@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 
+import { airlineLogoEquals } from '@tailfin/shared';
 import type {
   Airline as AirlineContract,
   OwnAirlineResponse,
@@ -20,7 +21,7 @@ import {
 } from './moderation';
 import { wireAirline } from './wire';
 
-const MUTABLE_FIELDS = ['name', 'callsign', 'baseCountry'] as const;
+const MUTABLE_FIELDS = ['name', 'callsign', 'baseCountry', 'logo'] as const;
 const IMMUTABLE_FIELDS = ['iataCode', 'icaoCode', 'cash', 'reputation'] as const;
 
 /**
@@ -141,10 +142,18 @@ export async function updateOwnAirline(
     if (current.row.status === 'restricted') return { ok: false, kind: 'airline-restricted' };
     if (current.row.status === 'ceased') return { ok: false, kind: 'airline-ceased' };
 
+    // The logo is optional in the input: omitted means "leave it", so only a
+    // provided-and-different logo is a change. null clears it to the default.
+    const currentLogo = current.row.logo ?? null;
+    const logoProvided = input.logo !== undefined;
+    const nextLogo = logoProvided ? (input.logo ?? null) : currentLogo;
+    const logoChanged = logoProvided && !airlineLogoEquals(currentLogo, nextLogo);
+
     const changed =
       current.row.name !== input.name ||
       current.row.callsign !== input.callsign ||
-      current.row.baseCountry !== input.baseCountry;
+      current.row.baseCountry !== input.baseCountry ||
+      logoChanged;
     if (!changed) {
       return {
         ok: true,
@@ -175,6 +184,8 @@ export async function updateOwnAirline(
         afterCallsign: input.callsign,
         beforeBaseCountry: current.row.baseCountry,
         afterBaseCountry: input.baseCountry,
+        beforeLogo: currentLogo,
+        afterLogo: nextLogo,
         costMinor: terms.costMinor,
         occurredAt,
       })
@@ -184,7 +195,12 @@ export async function updateOwnAirline(
 
     const updatedRows = await tx
       .update(airline)
-      .set({ name: input.name, callsign: input.callsign, baseCountry: input.baseCountry })
+      .set({
+        name: input.name,
+        callsign: input.callsign,
+        baseCountry: input.baseCountry,
+        logo: nextLogo,
+      })
       .where(eq(airline.id, current.row.id))
       .returning();
     const updated = updatedRows[0];
