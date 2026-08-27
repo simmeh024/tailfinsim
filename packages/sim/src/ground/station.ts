@@ -1,5 +1,4 @@
 import { HANDLER_GRADES } from '@tailfin/shared';
-
 import type { AirportTier, GroundServiceLine, HandlerGrade } from '@tailfin/shared';
 
 import { deriveRng, intBetween } from '../random';
