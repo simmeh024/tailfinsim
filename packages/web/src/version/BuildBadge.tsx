@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 
 import type { VersionResponse } from '@tailfin/shared';
 
 import { useSession } from '../auth/SessionProvider';
+import { useWorldClock } from '../world/useWorldClock';
 
 import type { ReactNode } from 'react';
 
@@ -57,58 +58,28 @@ export function useBuildInfo(): VersionResponse | null {
 }
 
 /**
- * The server's clock, ticking.
- *
- * Anchored to the server and advanced locally rather than polled every second:
- * one request establishes the offset between the two machines, and the browser's
- * own clock supplies the ticking. Polling `/api/version` at 1 Hz to render a
- * corner label would be a request per second per open tab for a decoration.
- *
- * The drift that remains is the drift between the two clocks over the life of a
- * page, which is seconds a day — irrelevant for a label, and the whole point is
- * that it starts from the *server's* idea of the time rather than the viewer's.
+ * The active world's time, using the same speed-aware clock as the World page.
+ * Mount only for a signed-in session; no world means no clock, not wall time.
  */
-function useServerClock(serverTimeIso: string | undefined): Date | null {
-  const [now, setNow] = useState<Date | null>(null);
-  const offsetMs = useRef(0);
-
-  useEffect(() => {
-    if (serverTimeIso === undefined) return;
-
-    const serverMs = Date.parse(serverTimeIso);
-    if (Number.isNaN(serverMs)) return;
-    offsetMs.current = serverMs - Date.now();
-
-    const update = (): void => {
-      setNow(new Date(Date.now() + offsetMs.current));
-    };
-    update();
-
-    const timer = setInterval(update, 1_000);
-    return () => {
-      clearInterval(timer);
-    };
-  }, [serverTimeIso]);
-
-  return now;
-}
-
-/**
- * `2026-08-18 04:15:07 UTC` — ISO-ish, always UTC.
- *
- * UTC and not the viewer's zone: the server runs UTC, every log line and every
- * scheduled event is stamped in it, and a badge showing local time would need
- * converting in your head before it could be compared to any of them.
- */
-function formatServerTime(at: Date): string {
-  const iso = at.toISOString();
-  return `${iso.slice(0, 10)} ${iso.slice(11, 19)} UTC`;
+function InGameClock(): ReactNode {
+  const { inGameTime } = useWorldClock();
+  if (inGameTime === null) return null;
+  const iso = inGameTime.toISOString();
+  return (
+    <time
+      className="build__clock figure"
+      dateTime={iso}
+      aria-label="In-game time"
+      title="In-game time (UTC)"
+    >
+      {`${iso.slice(0, 10)} ${iso.slice(11, 19)} UTC`}
+    </time>
+  );
 }
 
 export function BuildBadge(): ReactNode {
   const version = useBuildInfo();
-  const serverNow = useServerClock(version?.serverTime);
-  const { isAdmin } = useSession();
+  const { isAdmin, status } = useSession();
   if (!version) return null;
 
   return (
@@ -119,9 +90,7 @@ export function BuildBadge(): ReactNode {
       title={`commit ${version.commit} · started ${version.startedAt}`}
       data-environment={version.environment}
     >
-      {serverNow !== null && (
-        <span className="build__clock figure">{formatServerTime(serverNow)}</span>
-      )}
+      {status === 'signed-in' && <InGameClock />}
       {/*
         The way into the admin console (M1A-01), between the clock and the build
         label. Shown only to admins — but that is *tidiness, not security*. The
