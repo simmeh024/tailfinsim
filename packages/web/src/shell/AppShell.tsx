@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { NavLink, Outlet } from 'react-router';
+import { NavLink, Outlet, useLocation } from 'react-router';
 
 import type { OfficeStateResponse, OwnAirlineResponse } from '@tailfin/shared';
 
@@ -135,6 +135,9 @@ function ContextPanel({
   onExpand: () => Promise<ExpandResult>;
 }): ReactNode {
   const { selection, clear, attachPanelBody } = useContextSelection();
+  // The Head Office floor-plan belongs to the Headquarters page, not to every
+  // screen — elsewhere the panel is the plain selection surface it started as.
+  const onHeadquarters = useLocation().pathname.startsWith('/headquarters');
 
   if (!open) {
     return (
@@ -153,7 +156,7 @@ function ContextPanel({
             className="panel__title"
             tabIndex={selection === null ? undefined : -1}
           >
-            {selection?.title ?? 'Head Office'}
+            {selection?.title ?? (onHeadquarters ? 'Head Office' : 'Context')}
           </h2>
           {selection?.subtitle !== undefined && (
             <p className="panel__subtitle">{selection.subtitle}</p>
@@ -183,7 +186,14 @@ function ContextPanel({
       </div>
       <div className="panel__body">
         {selection === null ? (
-          <HqLayoutPanel office={office} onExpand={onExpand} />
+          onHeadquarters ? (
+            <HqLayoutPanel office={office} onExpand={onExpand} />
+          ) : (
+            <p>
+              Selection detail appears here — a flight, an airframe, a route. Empty until there is
+              something to select.
+            </p>
+          )
         ) : selection.body === null ? (
           <div className="panel__portal" ref={attachPanelBody} />
         ) : (
