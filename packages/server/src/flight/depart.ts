@@ -42,8 +42,9 @@ import type { Database } from '../db/client';
  *
  * M5-05 wires `rollDisruption` in for the ground half: before the crew are
  * committed, a flight faces a roll for whatever is likely to go wrong on the
- * stand — today only a technical fault from its maintenance condition, the other
- * causes staying 0 until their systems land ({@link rollGroundDisruption}). It is
+ * stand — a technical fault from its maintenance condition, and (M5-06) the
+ * reliability of the ramp handler it contracted at the origin
+ * ({@link rollGroundDisruption}). It is
  * rolled *before* dispatch on purpose, so a cancellation cannot strand a duty
  * period, and *once* per flight (only while `disruption` is null), so a delayed
  * flight retried at its new time is not rolled against the same stream again.
@@ -124,6 +125,8 @@ export async function departFlight(
       flightId: row.id,
       worldId: row.worldId,
       airframeId: row.airframeId,
+      airlineId: row.airlineId,
+      originIcao: row.originIcao,
     });
     if (disruption !== null) {
       return applyGroundDisruption(db, row, at, disruption);
