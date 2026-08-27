@@ -10,10 +10,22 @@
 
 import { and, eq, sql } from 'drizzle-orm';
 
-import { airline, cashMovement } from '../db/schema';
+import { airline, cashMovement, ledgerEntry } from '../db/schema';
 
 import type { Database } from '../db/client';
-import type { CashMovementCause, CashMovementRow } from '../db/schema';
+import type { CashMovementCause, CashMovementRow, LedgerCategory } from '../db/schema';
+
+/** A dimensional line that explains part of a cash movement. */
+export interface LedgerLineInput {
+  amountMinor: number;
+  category: LedgerCategory;
+  counterparty?: string;
+  flightId?: string | null;
+  routeId?: string | null;
+  aircraftId?: string | null;
+  hubId?: string | null;
+  cabinClass?: 'economy' | 'premium_economy' | 'business' | 'first' | null;
+}
 
 export interface MoveAirlineCashInput {
   airlineId: string;
@@ -23,6 +35,11 @@ export interface MoveAirlineCashInput {
   reference: string;
   /** Game time for simulation causes; founding time for the opening grant. */
   occurredAt: Date;
+  /**
+   * Optional itemisation. When omitted, one honest line is generated from the
+   * cause. When present, the signed line amounts must sum to amountMinor.
+   */
+  ledgerLines?: readonly LedgerLineInput[];
 }
 
 export type MoveAirlineCashResult =
@@ -39,6 +56,69 @@ function validateInput(input: MoveAirlineCashInput): void {
   if (!Number.isFinite(input.occurredAt.getTime())) {
     throw new Error('Cash movement occurredAt must be a valid date');
   }
+  if (input.ledgerLines) {
+    if (input.ledgerLines.length === 0)
+      throw new Error('A ledger movement needs at least one line');
+    let total = 0;
+    for (const line of input.ledgerLines) {
+      if (!Number.isSafeInteger(line.amountMinor)) {
+        throw new RangeError('Ledger line amount must be a safe integer number of minor units');
+      }
+      if (
+        line.counterparty !== undefined &&
+        (line.counterparty === '' || line.counterparty !== line.counterparty.trim())
+      ) {
+        throw new Error('Ledger counterparty must be non-blank and trimmed');
+      }
+      total += line.amountMinor;
+    }
+    if (!Number.isSafeInteger(total) || total !== input.amountMinor) {
+      throw new Error('Ledger line amounts must sum exactly to the cash movement amount');
+    }
+  }
+}
+
+/** Existing causes remain meaningful when they are projected into M8-01. */
+function categoryForCause(cause: CashMovementCause): LedgerCategory {
+  switch (cause) {
+    case 'airline_founding':
+      return 'equity';
+    case 'airline_rebrand':
+      return 'repaint_retrofit';
+    case 'aircraft_lease_deposit':
+      return 'asset_deposit';
+    case 'aircraft_used_purchase':
+    case 'aircraft_new_purchase':
+      return 'aircraft_purchase';
+    case 'maintenance_check':
+      return 'maintenance';
+    case 'crew_base_opening':
+    case 'crew_hiring':
+    case 'crew_conversion':
+    case 'crew_payroll':
+    case 'crew_base_overhead':
+    case 'crew_positioning':
+      return 'crew';
+    case 'office_salary':
+      return 'office_salary';
+    case 'office_expansion':
+    case 'disruption_cost':
+      return 'other';
+    case 'admin_adjustment':
+      return 'equity';
+    case 'migration_opening_balance':
+      return 'opening_balance';
+    case 'flight_settlement':
+      return 'other';
+  }
+}
+
+function defaultLedgerLine(input: MoveAirlineCashInput): LedgerLineInput {
+  return {
+    amountMinor: input.amountMinor,
+    category: categoryForCause(input.cause),
+    counterparty: 'system',
+  };
 }
 
 function assertSameCause(existing: CashMovementRow, input: MoveAirlineCashInput): CashMovementRow {
@@ -83,7 +163,7 @@ export async function moveAirlineCash(
   // Serialises every balance movement for this airline. Each caller therefore
   // computes from the balance left by the preceding committed movement.
   const airlines = await tx
-    .select({ id: airline.id, cashMinor: airline.cashMinor })
+    .select({ id: airline.id, worldId: airline.worldId, cashMinor: airline.cashMinor })
     .from(airline)
     .where(eq(airline.id, input.airlineId))
     .limit(1)
@@ -103,7 +183,14 @@ export async function moveAirlineCash(
 
   const inserted = await tx
     .insert(cashMovement)
-    .values({ ...input, balanceAfterMinor })
+    .values({
+      airlineId: input.airlineId,
+      amountMinor: input.amountMinor,
+      cause: input.cause,
+      reference: input.reference,
+      occurredAt: input.occurredAt,
+      balanceAfterMinor,
+    })
     .onConflictDoNothing({ target: [cashMovement.cause, cashMovement.reference] })
     .returning();
   const created = inserted[0];
@@ -115,6 +202,25 @@ export async function moveAirlineCash(
     }
     return { status: 'already-applied', movement: assertSameCause(winner, input) };
   }
+
+  const lines = input.ledgerLines ?? [defaultLedgerLine(input)];
+  await tx.insert(ledgerEntry).values(
+    lines.map((line, index) => ({
+      worldId: current.worldId,
+      airlineId: input.airlineId,
+      cashMovementId: created.id,
+      lineNumber: index + 1,
+      amountMinor: line.amountMinor,
+      category: line.category,
+      counterparty: line.counterparty ?? 'system',
+      flightId: line.flightId ?? null,
+      routeId: line.routeId ?? null,
+      aircraftId: line.aircraftId ?? null,
+      hubId: line.hubId ?? null,
+      cabinClass: line.cabinClass ?? null,
+      occurredAt: input.occurredAt,
+    })),
+  );
 
   const updated = await tx
     .update(airline)

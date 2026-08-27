@@ -60,6 +60,7 @@ export * from './auth';
 export * from './admin';
 export * from './capacity';
 export * from './version';
+export * from './finance';
 export * from './json-schema';
 
 /** Schema version of the shared contract. Bumped when a breaking change lands. */
