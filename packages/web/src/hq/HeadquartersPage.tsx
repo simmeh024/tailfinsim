@@ -15,6 +15,7 @@ import {
   formatSalary,
   HQ_CANDIDATES,
   HQ_ROLES,
+  specialistById,
   type HqCandidate,
 } from './hq-roster';
 import { PoliciesModal } from './PoliciesModal';
@@ -102,10 +103,10 @@ export function HeadquartersPage(): ReactNode {
   );
 
   const onHire = useCallback(
-    (candidate: HqCandidate) =>
-      act(candidate.roleId, () =>
+    (seat: OfficeSeatId, candidate: HqCandidate) =>
+      act(seat, () =>
         hireOffice({
-          seat: candidate.roleId,
+          seat,
           candidateId: candidate.id,
           candidateName: candidate.name,
           candidateRole: candidate.roleId,
@@ -132,10 +133,35 @@ export function HeadquartersPage(): ReactNode {
     [act],
   );
 
+  const onHireSpecialist = useCallback(
+    (candidate: HqCandidate, seat: OfficeSeatId) =>
+      act(seat, () =>
+        hireOffice({
+          seat,
+          candidateId: candidate.id,
+          candidateName: candidate.name,
+          candidateRole: 'social-media',
+        }),
+      ),
+    [act],
+  );
+
   const neutralSeats = office?.neutralSeats ?? 0;
   const totalSeats = HEADQUARTERS_BASE_SEATS + neutralSeats;
   const filled = hiredBySeat.size;
   const hasOpsController = (office?.hires ?? []).some((hire) => hire.seat === 'ops-controller');
+
+  // The world offers exactly one specialist; the server names it. They only ever
+  // sit in a neutral office, so their current seat and the first free one both
+  // come from the unlocked neutral seats.
+  const specialist = office?.offeredSpecialist ? specialistById(office.offeredSpecialist) : null;
+  const specialistSeat =
+    specialist === null
+      ? undefined
+      : unlockedNeutralSeats(neutralSeats).find(
+          (seat) => hiredBySeat.get(seat)?.candidateId === specialist.id,
+        );
+  const freeNeutralSeat = unlockedNeutralSeats(neutralSeats).find((seat) => !hiredBySeat.has(seat));
 
   return (
     <section className="page hq-page" aria-label="Headquarters">
@@ -249,7 +275,7 @@ export function HeadquartersPage(): ReactNode {
                           aria-pressed={isHired}
                           disabled={loading || seatPending}
                           onClick={() =>
-                            isHired ? void onDismiss(seat.id) : void onHire(candidate)
+                            isHired ? void onDismiss(seat.id) : void onHire(seat.id, candidate)
                           }
                         >
                           {isHired ? 'Let go' : `Hire ${given}`}
@@ -262,6 +288,100 @@ export function HeadquartersPage(): ReactNode {
             </section>
           );
         })}
+
+        {specialist !== null && (
+          <section className="hq-seat hq-seat--specialist" aria-label="Social Media Specialist">
+            <header className="hq-seat__header">
+              <div>
+                <h2 className="hq-seat__role">
+                  <span>Social Media Specialist</span>
+                  <span
+                    className="hq-seat__gate-flag"
+                    title="One specialist, and only in a neutral office"
+                    aria-hidden="true"
+                  >
+                    Specialist
+                  </span>
+                </h2>
+                <p className="hq-seat__unlock">
+                  <span className="hq-card__label">Perk</span>
+                  One specialist is on the market this world. They take a neutral office and carry a
+                  small standing edge — you can employ just the one.
+                </p>
+              </div>
+              <p className="hq-seat__status">
+                {specialistSeat !== undefined ? 'Working a neutral office' : 'Not hired'}
+              </p>
+            </header>
+
+            <ul className="hq-grid">
+              <li className="hq-card" data-hired={specialistSeat !== undefined}>
+                <div className="hq-card__portrait" data-hired={specialistSeat !== undefined}>
+                  <img
+                    src={specialist.portrait}
+                    alt={`${specialist.name}, social media specialist`}
+                    loading="lazy"
+                  />
+                </div>
+
+                <div className="hq-card__body">
+                  <p className="hq-card__name">{specialist.name}</p>
+
+                  <dl className="hq-card__meta">
+                    <div>
+                      <dt>Tier</dt>
+                      <dd>{specialist.tier}</dd>
+                    </div>
+                    <div>
+                      <dt>Salary</dt>
+                      <dd>{formatSalary(specialist.salaryPerMonthMinor)}/mo</dd>
+                    </div>
+                  </dl>
+
+                  <p className="hq-card__trait">
+                    <span className="hq-card__trait-badge">
+                      {specialist.name.split(' ')[0] ?? specialist.name}
+                    </span>
+                    <span>
+                      <strong>{specialist.trait.label}.</strong> {specialist.trait.detail}
+                    </span>
+                  </p>
+
+                  {specialistSeat !== undefined ? (
+                    <button
+                      type="button"
+                      className="hq-card__action"
+                      aria-pressed={true}
+                      disabled={loading || pending === specialistSeat}
+                      onClick={() => void onDismiss(specialistSeat)}
+                    >
+                      Let go
+                    </button>
+                  ) : freeNeutralSeat !== undefined ? (
+                    <button
+                      type="button"
+                      className="hq-card__action"
+                      aria-pressed={false}
+                      disabled={loading || pending === freeNeutralSeat}
+                      onClick={() => void onHireSpecialist(specialist, freeNeutralSeat)}
+                    >
+                      Hire {specialist.name.split(' ')[0] ?? specialist.name}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="hq-card__action"
+                      disabled
+                      title="Expand your headquarters for a neutral office"
+                    >
+                      Needs a neutral office
+                    </button>
+                  )}
+                </div>
+              </li>
+            </ul>
+          </section>
+        )}
       </div>
 
       {neutralSeats > 0 && (

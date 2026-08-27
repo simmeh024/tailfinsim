@@ -38,6 +38,8 @@ import routePlanner from './assets/portraits/route-planner.webp';
 import safetyCompliance2 from './assets/portraits/safety-compliance-2.webp';
 import safetyCompliance3 from './assets/portraits/safety-compliance-3.webp';
 import safetyCompliance from './assets/portraits/safety-compliance.webp';
+import socialMediaAttractiveness from './assets/portraits/social-media-attractiveness.webp';
+import socialMediaReputation from './assets/portraits/social-media-reputation.webp';
 
 /**
  * The six MVP roles. Aliased to the shared `OfficeRole` so the client's role
@@ -46,11 +48,18 @@ import safetyCompliance from './assets/portraits/safety-compliance.webp';
  */
 export type HqRoleId = OfficeRole;
 
+/**
+ * The roles that are also **seats** — the six with a fixed room, i.e. every
+ * office role except the neutral-only `social-media` specialist. A seat role is
+ * always a valid `OfficeSeatId`, which the six `HqRole` rows below rely on.
+ */
+export type HqSeatRoleId = Exclude<OfficeRole, 'social-media'>;
+
 /** A candidate's seniority band. Flavour for now; real tiers arrive with the market. */
 export type HqTier = 'Analyst' | 'Manager' | 'Director';
 
 export interface HqRole {
-  id: HqRoleId;
+  id: HqSeatRoleId;
   /** The seat. */
   role: string;
   /** The concrete §9.1 capability filling the seat unlocks. Never a percentage. */
@@ -356,6 +365,47 @@ export const HQ_CANDIDATES: readonly HqCandidate[] = [
 /** The candidates in the market for one seat, in roster order. */
 export function candidatesForRole(roleId: HqRoleId): readonly HqCandidate[] {
   return HQ_CANDIDATES.filter((candidate) => candidate.roleId === roleId);
+}
+
+/**
+ * The social media specialists — the "Specialist" row (§9.1).
+ *
+ * Kept apart from {@link HQ_CANDIDATES} on purpose: a specialist never competes
+ * for one of the six seats, and a world only ever offers **one** of these two,
+ * so they are not part of the seat market the roster above renders. Their ids
+ * match the shared {@link SOCIAL_MEDIA_SPECIALISTS} so the server and worker know
+ * the same faces. The trait is the perk the specialist actually carries.
+ */
+export const SPECIALIST_CANDIDATES: readonly HqCandidate[] = [
+  {
+    id: 'social-media-reputation',
+    roleId: 'social-media',
+    name: 'Lena Voss',
+    tier: 'Manager',
+    salaryPerMonthMinor: 1_500_000,
+    trait: {
+      label: 'Brand builder',
+      detail: 'Grows your airline’s public reputation a little more every month she stays.',
+    },
+    portrait: socialMediaReputation,
+  },
+  {
+    id: 'social-media-attractiveness',
+    roleId: 'social-media',
+    name: 'Kai Mercer',
+    tier: 'Manager',
+    salaryPerMonthMinor: 1_500_000,
+    trait: {
+      label: 'Crowd-puller',
+      detail: 'Nudges undecided travellers your way when you fly more than one route.',
+    },
+    portrait: socialMediaAttractiveness,
+  },
+];
+
+/** The specialist with this id, or null — used to render the world's offer. */
+export function specialistById(id: string): HqCandidate | null {
+  return SPECIALIST_CANDIDATES.find((candidate) => candidate.id === id) ?? null;
 }
 
 /** Salary as the game shows money elsewhere: major units, grouped, no fraction. */

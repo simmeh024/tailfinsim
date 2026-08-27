@@ -71,7 +71,9 @@ export function registerOfficeRoutes(app: FastifyInstance, { db }: { db: Databas
             ? 'Expand your headquarters before staffing this office'
             : result.code === 'already_seated'
               ? 'This person already holds another office'
-              : 'This seat only takes its own role';
+              : result.code === 'specialist_unavailable'
+                ? 'That social media specialist is not on offer in your market'
+                : 'This seat only takes its own role';
         return reply.code(422).send({ code: result.code, message });
       }
       // The whole office back, not the one hire: hiring the gate seat flips

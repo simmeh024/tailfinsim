@@ -3,8 +3,10 @@ import { and, asc, eq } from 'drizzle-orm';
 import {
   EXTENDED_AUTHORITY_ROLE,
   isNeutralSeat,
+  isSocialMediaSpecialistId,
   nextExpansionTier,
   OFFICE_ROLES,
+  offeredSocialMediaSpecialistId,
   unlockedNeutralSeats,
   type HireOfficeRequest,
   type OfficeHire,
@@ -93,12 +95,23 @@ export async function readOfficeState(
             totalSeats: tier.totalSeats,
             costMinor: tier.costMinor,
           },
+    // The world decides which of the two specialists is on the market, so every
+    // reader agrees without coordinating.
+    offeredSpecialist: offeredSocialMediaSpecialistId(own.worldId),
   };
 }
 
 export type HireOfficeResult =
   | { ok: true; hire: OfficeHire }
-  | { ok: false; code: 'unknown_role' | 'role_mismatch' | 'seat_locked' | 'already_seated' };
+  | {
+      ok: false;
+      code:
+        | 'unknown_role'
+        | 'role_mismatch'
+        | 'seat_locked'
+        | 'already_seated'
+        | 'specialist_unavailable';
+    };
 
 /**
  * Hire a candidate into a seat, replacing any incumbent.
@@ -129,6 +142,18 @@ export async function hireOffice(
     }
   } else if (request.seat !== request.candidateRole) {
     return { ok: false, code: 'role_mismatch' };
+  }
+
+  // A social media specialist may only be the one this world puts on the market.
+  // The seat rules above already keep any specialist out of a role seat (its
+  // role is `social-media`, which is not a seat), so this is the only extra gate:
+  // you get the world's specialist, or none. Combined with one-person-one-office
+  // below, that means at most one specialist is ever employed.
+  if (
+    isSocialMediaSpecialistId(request.candidateId) &&
+    request.candidateId !== offeredSocialMediaSpecialistId(own.worldId)
+  ) {
+    return { ok: false, code: 'specialist_unavailable' };
   }
 
   // One person, one office. The neutral seats made it possible to sit the same
