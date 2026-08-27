@@ -7,6 +7,7 @@ import { readSetting } from '../automation/store';
 import { raiseOperationsTask } from '../automation/tasks';
 import { dispatchCrew, type DispatchDecision } from '../crew/dispatch';
 import { flight } from '../db/schema';
+import { holdsRoleSeat } from '../office/authority';
 import { scheduleEvent, type EventHandler } from '../sim/event-queue';
 
 import { rollGroundDisruption } from './disruption';
@@ -257,7 +258,12 @@ async function applyGroundDisruption(
     // them. The mechanical delay is already decided; this decides what to do
     // about it.
     const setting = await readSetting(db, row.airlineId, 'disruption');
-    const response = resolveDisruptionResponse(setting, roll.delayMinutes);
+    // Delegation needs the Ops Controller seat; only ask when it could matter.
+    const hasController =
+      setting.mode === 'delegated'
+        ? await holdsRoleSeat(db, row.airlineId, 'ops-controller')
+        : false;
+    const response = resolveDisruptionResponse(setting, roll.delayMinutes, { hasController });
 
     if (response.action === 'cancel') {
       await cancelFlight(db, row.id, roll.cause);
