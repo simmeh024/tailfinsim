@@ -1,11 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  DEFAULT_GROUND_HANDLING,
-  groundVendorRisk,
-  HANDLER_GRADES,
-  handlerProfile,
-} from './vendor';
+import { HANDLER_GRADES } from '@tailfin/shared';
+
+import { DEFAULT_GROUND_HANDLING, groundVendorRisk, handlerProfile } from './vendor';
 
 /**
  * The ground-handler grades (M5-06, §9.3).

@@ -281,6 +281,13 @@
       "when": 1787783469752,
       "tag": "0039_rare_switch",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1787794914481,
+      "tag": "0040_quiet_lady_mastermind",
+      "breakpoints": true
     }
   ]
 }

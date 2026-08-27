@@ -3168,3 +3168,58 @@ export const operationsTask = pgTable(
 );
 
 export type OperationsTaskRow = typeof operationsTask.$inferSelect;
+
+/**
+ * An airline's contract with a ground handler at a station (M5-06, §9.3).
+ *
+ * The vendors themselves are derived, not stored (`@tailfin/sim`'s
+ * `stationVendors`); this is the one thing worth persisting — which grade an
+ * airline has signed for which service line at which airport. One active contract
+ * per `(airline, airport, service_line)`: you use one handler for a line at a
+ * station. The `capacity` index counts the active contracts against a vendor's
+ * finite slots, which is how §9.3's competing airlines exhaust the good handler.
+ *
+ * `term_end` is **game time** (the world clock), like a `world_event`'s fire time
+ * — a contract lasts a business season, not a real week. Owner-scoped: the airline
+ * is resolved from the session, never accepted from the client.
+ */
+export const groundContract = pgTable(
+  'ground_contract',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    airportIcao: text('airport_icao').notNull(),
+    /** A `@tailfin/shared` `GroundServiceLine`. */
+    serviceLine: text('service_line').notNull(),
+    /** A `@tailfin/shared` `HandlerGrade`. */
+    grade: text('grade').notNull(),
+    /** `'active' | 'terminated'`. */
+    status: text('status').notNull(),
+    /** Game time the term ends; null while a term/expiry model is not yet applied. */
+    termEnd: timestamp('term_end', { withTimezone: true }),
+    /** Departures committed over the term; carried for the volume model, unused yet. */
+    volumeCommitment: integer('volume_commitment'),
+    /** Early-termination penalty in minor units; carried for the money model, unused yet. */
+    penaltyMinor: bigint('penalty_minor', { mode: 'number' }),
+    signedAt: timestamp('signed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('ground_contract_active_line_key')
+      .on(table.airlineId, table.airportIcao, table.serviceLine)
+      .where(sql`status = 'active'`),
+    index('ground_contract_capacity_idx').on(
+      table.worldId,
+      table.airportIcao,
+      table.serviceLine,
+      table.grade,
+      table.status,
+    ),
+  ],
+);
+
+export type GroundContractRow = typeof groundContract.$inferSelect;
