@@ -1,3 +1,5 @@
+import { eq } from 'drizzle-orm';
+
 import {
   adminAirlineDetailResponseJsonSchema,
   adminAuditResponseJsonSchema,
@@ -27,6 +29,7 @@ import {
 import { catalogueVersionExists, ensureCatalogueSeeded } from '../aircraft/catalogue';
 import { revokePlayerSessions } from '../auth/revocation';
 import { type DatabaseHandle } from '../db/client';
+import { world } from '../db/schema';
 import { economyChecksum, ECONOMY_CONFIG_V1 } from '../economy/config';
 import { economyConfigVersionExists } from '../economy/loader';
 import { ensureEconomyConfigSeeded } from '../economy/seed';
@@ -864,6 +867,14 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
     },
     async (request, reply) => {
       if (missingWorld(request.params.worldId)) {
+        return reply.code(404).send({ code: 'world_not_found', message: 'No world with that id.' });
+      }
+      const [existingWorld] = await db.db
+        .select({ id: world.id })
+        .from(world)
+        .where(eq(world.id, request.params.worldId))
+        .limit(1);
+      if (!existingWorld) {
         return reply.code(404).send({ code: 'world_not_found', message: 'No world with that id.' });
       }
       return reply.code(200).send(await buildNpcReport(db.db, request.params.worldId));

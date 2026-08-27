@@ -37,9 +37,10 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
  *
  * ## Refusals are data, not errors
  *
- * Every expected refusal is a `409` carrying a code from the closed `CrewRefusal`
- * set. "Not enough heads" and "hiring capacity" are answers the interface has to
- * place next to a specific control, and a prose message cannot be placed.
+ * Known-state refusals are a `409` carrying a code from the closed `CrewRefusal`
+ * set. A missing or foreign base is concealed as `404` (ADR-0020). "Not enough
+ * heads" and "hiring capacity" are answers the interface has to place next to a
+ * specific control, and a prose message cannot be placed.
  */
 
 /** The one place a refusal becomes an HTTP body. */
@@ -54,6 +55,15 @@ function refusalBody(refusal: CrewRefusal): { code: CrewRefusal; message: string
     same_family: 'Crew are already rated on that family',
   };
   return { code: refusal, message: message[refusal] };
+}
+
+/**
+ * A base id outside the session-resolved airline is concealed exactly like a
+ * missing one (ADR-0020). The remaining refusals describe known state and stay
+ * conflicts: the base exists in the caller's namespace, but cannot do this now.
+ */
+function sendRefusal(reply: FastifyReply, refusal: CrewRefusal) {
+  return reply.code(refusal === 'base_absent' ? 404 : 409).send(refusalBody(refusal));
 }
 
 export function registerCrewRoutes(app: FastifyInstance, { db }: { db: DatabaseHandle }): void {
@@ -74,7 +84,11 @@ export function registerCrewRoutes(app: FastifyInstance, { db }: { db: DatabaseH
     {
       onRequest: app.requireActiveAirline,
       schema: {
-        response: { 200: crewResponseJsonSchema, 400: apiErrorJsonSchema, 409: apiErrorJsonSchema },
+        response: {
+          200: crewResponseJsonSchema,
+          400: apiErrorJsonSchema,
+          409: apiErrorJsonSchema,
+        },
       },
     },
     async (request, reply) => {
@@ -101,7 +115,12 @@ export function registerCrewRoutes(app: FastifyInstance, { db }: { db: DatabaseH
     {
       onRequest: app.requireActiveAirline,
       schema: {
-        response: { 200: crewResponseJsonSchema, 400: apiErrorJsonSchema, 409: apiErrorJsonSchema },
+        response: {
+          200: crewResponseJsonSchema,
+          400: apiErrorJsonSchema,
+          404: apiErrorJsonSchema,
+          409: apiErrorJsonSchema,
+        },
       },
     },
     async (request, reply) => {
@@ -115,7 +134,7 @@ export function registerCrewRoutes(app: FastifyInstance, { db }: { db: DatabaseH
         airlineId: own.id,
         ...parsed.data,
       });
-      if (!result.ok) return reply.code(409).send(refusalBody(result.refusal));
+      if (!result.ok) return sendRefusal(reply, result.refusal);
       return reply.code(200).send(await readCrewState(db.db, own.worldId, own.id));
     },
   );
@@ -125,7 +144,12 @@ export function registerCrewRoutes(app: FastifyInstance, { db }: { db: DatabaseH
     {
       onRequest: app.requireActiveAirline,
       schema: {
-        response: { 200: crewResponseJsonSchema, 400: apiErrorJsonSchema, 409: apiErrorJsonSchema },
+        response: {
+          200: crewResponseJsonSchema,
+          400: apiErrorJsonSchema,
+          404: apiErrorJsonSchema,
+          409: apiErrorJsonSchema,
+        },
       },
     },
     async (request, reply) => {
@@ -139,7 +163,7 @@ export function registerCrewRoutes(app: FastifyInstance, { db }: { db: DatabaseH
         airlineId: own.id,
         ...parsed.data,
       });
-      if (!result.ok) return reply.code(409).send(refusalBody(result.refusal));
+      if (!result.ok) return sendRefusal(reply, result.refusal);
       return reply.code(200).send(await readCrewState(db.db, own.worldId, own.id));
     },
   );
@@ -154,7 +178,12 @@ export function registerCrewRoutes(app: FastifyInstance, { db }: { db: DatabaseH
     {
       onRequest: app.requireActiveAirline,
       schema: {
-        response: { 200: crewResponseJsonSchema, 400: apiErrorJsonSchema, 409: apiErrorJsonSchema },
+        response: {
+          200: crewResponseJsonSchema,
+          400: apiErrorJsonSchema,
+          404: apiErrorJsonSchema,
+          409: apiErrorJsonSchema,
+        },
       },
     },
     async (request, reply) => {
@@ -164,7 +193,7 @@ export function registerCrewRoutes(app: FastifyInstance, { db }: { db: DatabaseH
       }
       const own = resolvedAirlineOf(request);
       const result = await setCrewReserve(db.db, { airlineId: own.id, ...parsed.data });
-      if (!result.ok) return reply.code(409).send(refusalBody(result.refusal));
+      if (!result.ok) return sendRefusal(reply, result.refusal);
       return reply.code(200).send(await readCrewState(db.db, own.worldId, own.id));
     },
   );
@@ -178,7 +207,12 @@ export function registerCrewRoutes(app: FastifyInstance, { db }: { db: DatabaseH
     {
       onRequest: app.requireActiveAirline,
       schema: {
-        response: { 200: crewResponseJsonSchema, 400: apiErrorJsonSchema, 409: apiErrorJsonSchema },
+        response: {
+          200: crewResponseJsonSchema,
+          400: apiErrorJsonSchema,
+          404: apiErrorJsonSchema,
+          409: apiErrorJsonSchema,
+        },
       },
     },
     async (request, reply) => {
@@ -188,7 +222,7 @@ export function registerCrewRoutes(app: FastifyInstance, { db }: { db: DatabaseH
       }
       const own = resolvedAirlineOf(request);
       const result = await setCrewPolicies(db.db, { airlineId: own.id, ...parsed.data });
-      if (!result.ok) return reply.code(409).send(refusalBody(result.refusal));
+      if (!result.ok) return sendRefusal(reply, result.refusal);
       return reply.code(200).send(await readCrewState(db.db, own.worldId, own.id));
     },
   );

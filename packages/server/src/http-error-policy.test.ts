@@ -7,6 +7,7 @@ import {
   createAuthorizationTestSuite,
   type AuthorizationTestSuite,
 } from './test-fixtures/authorization';
+import { ABSENT_RESOURCE_UUID, MALFORMED_RESOURCE_IDS } from './test-fixtures/resource-id';
 
 import type { InjectOptions } from 'fastify';
 
@@ -90,37 +91,83 @@ describeDb('HTTP authorization and resource-concealment policy (SEC-03)', () => 
     expect(response.statusCode).toBe(200);
   });
 
-  it('answers 404, never 500, for every malformed or unknown path identifier', async () => {
-    // This is the complete parameterised admin-route inventory in the SEC-01
-    // matrix. The three player-owned route surfaces are exercised together in
-    // airline/context.test.ts, where cross-owner and missing ids can also be
-    // compared byte-for-byte.
-    const requests: InjectOptions[] = [
-      { method: 'GET', url: '/api/admin/players/not-a-uuid' },
-      { method: 'POST', url: '/api/admin/players/not-a-uuid/sessions/revoke' },
-      { method: 'GET', url: '/api/admin/airlines/not-a-uuid' },
-      { method: 'PATCH', url: '/api/admin/airlines/not-a-uuid/identity', payload: {} },
-      { method: 'POST', url: '/api/admin/worlds/not-a-uuid/speed', payload: {} },
-      { method: 'POST', url: '/api/admin/worlds/not-a-uuid/status', payload: {} },
-      { method: 'POST', url: '/api/admin/worlds/not-a-uuid/reset', payload: {} },
-      { method: 'GET', url: '/api/admin/economy-config/not-a-uuid' },
-      { method: 'POST', url: '/api/admin/worlds/not-a-uuid/economy-config', payload: {} },
-      { method: 'GET', url: '/api/admin/worlds/not-a-uuid/npc' },
+  it('answers 404, never 500, for every malformed UUID path identifier', async () => {
+    // This is the complete UUID-parameterised admin-route inventory. The
+    // economy-config version and office role paths are bounded domain keys, not
+    // resource UUIDs, and are accounted for separately by the SEC-07 inventory.
+    const requests = [
+      (id: string): InjectOptions => ({ method: 'GET', url: `/api/admin/players/${id}` }),
+      (id: string): InjectOptions => ({
+        method: 'POST',
+        url: `/api/admin/players/${id}/sessions/revoke`,
+      }),
+      (id: string): InjectOptions => ({ method: 'GET', url: `/api/admin/airlines/${id}` }),
+      (id: string): InjectOptions => ({
+        method: 'PATCH',
+        url: `/api/admin/airlines/${id}/identity`,
+        payload: {},
+      }),
+      (id: string): InjectOptions => ({
+        method: 'POST',
+        url: `/api/admin/worlds/${id}/speed`,
+        payload: {},
+      }),
+      (id: string): InjectOptions => ({
+        method: 'POST',
+        url: `/api/admin/worlds/${id}/status`,
+        payload: {},
+      }),
+      (id: string): InjectOptions => ({
+        method: 'POST',
+        url: `/api/admin/worlds/${id}/reset`,
+        payload: {},
+      }),
+      (id: string): InjectOptions => ({
+        method: 'POST',
+        url: `/api/admin/worlds/${id}/economy-config`,
+        payload: {},
+      }),
+      (id: string): InjectOptions => ({ method: 'GET', url: `/api/admin/worlds/${id}/npc` }),
     ];
 
-    for (const request of requests) {
-      const requestUrl =
-        typeof request.url === 'string' ? request.url : (request.url?.pathname ?? '<unknown>');
-      const response = await authorization.app.inject({
-        ...request,
-        headers: { cookie: authorization.identities.admin.cookie! },
-      });
+    for (const malformed of MALFORMED_RESOURCE_IDS) {
+      for (const makeRequest of requests) {
+        const request = makeRequest(encodeURIComponent(malformed));
+        const requestUrl =
+          typeof request.url === 'string' ? request.url : (request.url?.pathname ?? '<unknown>');
+        const response = await authorization.app.inject({
+          ...request,
+          headers: { cookie: authorization.identities.admin.cookie! },
+        });
 
-      expect(response.statusCode, `${request.method ?? 'GET'} ${requestUrl}`).toBe(404);
-      expect(Object.keys(response.json<Record<string, unknown>>()).sort()).toEqual([
-        'code',
-        'message',
-      ]);
+        expect(response.statusCode, `${request.method ?? 'GET'} ${requestUrl}`).toBe(404);
+        expect(Object.keys(response.json<Record<string, unknown>>()).sort()).toEqual([
+          'code',
+          'message',
+        ]);
+      }
     }
+  });
+
+  it('does not turn a valid but missing or wrong-entity NPC world id into an empty report', async () => {
+    const wrongEntityId = authorization.identities.playerA.playerId;
+    if (wrongEntityId === null) throw new Error('SEC-07 player fixture was not seated');
+    const responses = await Promise.all(
+      [ABSENT_RESOURCE_UUID, wrongEntityId].map((worldId) =>
+        authorization.app.inject({
+          method: 'GET',
+          url: `/api/admin/worlds/${worldId}/npc`,
+          headers: { cookie: authorization.identities.admin.cookie! },
+        }),
+      ),
+    );
+    for (const response of responses) {
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toEqual({
+        code: 'world_not_found',
+        message: 'No world with that id.',
+      });
+    }
+    expect(responses[0]?.body).toBe(responses[1]?.body);
   });
 });

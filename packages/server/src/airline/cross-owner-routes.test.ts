@@ -5,6 +5,11 @@ import { createDatabase, type DatabaseHandle } from '../db/client';
 import { airport, route } from '../db/schema';
 import { type ServerEnv } from '../env';
 import { createOwnershipTestSuite, type OwnershipTestSuite } from '../test-fixtures/ownership';
+import {
+  ABSENT_RESOURCE_UUID,
+  MALFORMED_RESOURCE_IDS,
+  resourceIdCases,
+} from '../test-fixtures/resource-id';
 
 import type { InjectOptions } from 'fastify';
 
@@ -59,8 +64,6 @@ const env: ServerEnv = {
   allowRegistration: false,
 };
 
-const MALFORMED_ROUTE_ID = 'not-a-uuid';
-const MISSING_ROUTE_ID = '00000000-0000-4000-8000-000000000000';
 const STORED_FARES = JSON.stringify({ economy: 12_000 });
 
 describeDb('cross-player ownership on the route endpoints (SEC-05)', () => {
@@ -164,6 +167,14 @@ describeDb('cross-player ownership on the route endpoints (SEC-05)', () => {
         payload: { fares: { economy: 99_999 } },
       }),
     },
+    {
+      name: 'POST fare preview (read-only calculation)',
+      request: (routeId) => ({
+        method: 'POST',
+        url: `/api/routes/${routeId}/fares/preview`,
+        payload: { fares: { economy: 99_999 } },
+      }),
+    },
   ];
 
   it.each(surfaces)('$name lets playerA reach playerA’s own route', async ({ request }) => {
@@ -178,9 +189,16 @@ describeDb('cross-player ownership on the route endpoints (SEC-05)', () => {
     '$name conceals playerB’s route from playerA, identically to a missing id',
     async ({ request }) => {
       const denied = await Promise.all(
-        [competitorRouteId, MISSING_ROUTE_ID, MALFORMED_ROUTE_ID].map((routeId) =>
-          suite.as({ actor: 'playerA', worldId: suite.worldMain.id }, request(routeId)),
-        ),
+        resourceIdCases({
+          own: ownRouteId,
+          anotherPlayer: competitorRouteId,
+          wrongEntity: suite.worldMain.id,
+          absent: ABSENT_RESOURCE_UUID,
+        })
+          .filter(({ expected }) => expected === 'conceal')
+          .map(({ id }) =>
+            suite.as({ actor: 'playerA', worldId: suite.worldMain.id }, request(id)),
+          ),
       );
 
       for (const response of denied) {
@@ -192,6 +210,49 @@ describeDb('cross-player ownership on the route endpoints (SEC-05)', () => {
       expect(new Set(denied.map((response) => response.body)).size).toBe(1);
     },
   );
+
+  it.each(surfaces)('$name rejects malformed ids without a 500', async ({ request }) => {
+    for (const malformed of MALFORMED_RESOURCE_IDS) {
+      const safePathSegment = encodeURIComponent(malformed);
+      const response = await suite.as(
+        { actor: 'playerA', worldId: suite.worldMain.id },
+        request(safePathSegment),
+      );
+      expect([400, 404]).toContain(response.statusCode);
+    }
+  });
+
+  it('validates the waterfall rival query id and only resolves a competitor on this market', async () => {
+    const allowed = await suite.as(
+      { actor: 'playerA', worldId: suite.worldMain.id },
+      {
+        method: 'GET',
+        url: `/api/routes/${ownRouteId}/waterfall?rival=${suite.airlineB.airline.id}`,
+      },
+    );
+    expect(allowed.statusCode).toBe(200);
+
+    for (const id of [suite.airlineA.airline.id, ABSENT_RESOURCE_UUID, suite.worldMain.id]) {
+      const response = await suite.as(
+        { actor: 'playerA', worldId: suite.worldMain.id },
+        { method: 'GET', url: `/api/routes/${ownRouteId}/waterfall?rival=${id}` },
+      );
+      expect(response.statusCode).toBe(422);
+      expect(response.json()).toMatchObject({ kind: 'unknown-rival' });
+    }
+
+    for (const malformed of MALFORMED_RESOURCE_IDS) {
+      const response = await suite.as(
+        { actor: 'playerA', worldId: suite.worldMain.id },
+        {
+          method: 'GET',
+          url: `/api/routes/${ownRouteId}/waterfall?rival=${encodeURIComponent(malformed)}`,
+        },
+      );
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({ code: 'invalid_rival', message: 'No such rival' });
+    }
+  });
 
   it.each(surfaces)(
     '$name conceals playerA’s OTHER-world route while worldMain is active',

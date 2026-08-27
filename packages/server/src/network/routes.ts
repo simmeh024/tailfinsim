@@ -238,6 +238,9 @@ export function registerNetworkRoutes(
       if (!cabin.success) {
         return reply.code(400).send({ code: 'invalid_cabin', message: 'No such cabin' });
       }
+      if (request.query.rival !== undefined && !Uuid.safeParse(request.query.rival).success) {
+        return reply.code(400).send({ code: 'invalid_rival', message: 'No such rival' });
+      }
 
       const row = await ownedRoute(db.db, own.id, request.params.routeId);
       if (!row) return notFound(reply);

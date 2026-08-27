@@ -153,6 +153,13 @@ export function buildApp({
     // looks like 127.0.0.1 in the logs.
     trustProxy: true,
 
+    // Keep resource-shaped parameters inside the application long enough for
+    // each handler's UUID guard to produce the same 400/404 policy response as
+    // any other malformed id (SEC-07). Fastify's 100-character default answers
+    // 414 before routing, which makes an overlong id observably different.
+    // 512 is still a deliberately small, bounded parsing ceiling.
+    routerOptions: { maxParamLength: 512 },
+
     // Note: no `disableRequestLogging`. Fastify 5 deprecates it (FSTDEP023) and
     // removes it in 6, and `false` was the default anyway. Per-route
     // `logLevel` is the supported way to quieten a noisy endpoint — see
