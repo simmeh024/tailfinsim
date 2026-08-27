@@ -1,3 +1,5 @@
+import type { AirportTier } from '@tailfin/shared';
+
 /**
  * Ground handling — what a vendor at a station is, and what it does (M5-06, §9.3).
  *
@@ -75,6 +77,16 @@ export interface HandlerGradeProfile {
 
 export interface GroundHandlingConfig {
   grades: Record<HandlerGrade, HandlerGradeProfile>;
+  /**
+   * Base contract capacity per grade at each airport tier — how many airlines a
+   * vendor of that grade will take before it is full. `0` means the grade is not
+   * offered at that tier by default: a regional strip has no premium handler.
+   *
+   * The scarcity is the competition §9.3 wants — the good handler at a busy hub
+   * has few slots, so airlines contend for it. Premium capacity stays low even at
+   * a flagship for exactly that reason.
+   */
+  stationCapacity: Record<AirportTier, Record<HandlerGrade, number>>;
 }
 
 /**
@@ -89,6 +101,13 @@ export const DEFAULT_GROUND_HANDLING: GroundHandlingConfig = {
     budget: { reliability: 0.85, speedFactor: 1.2, quality: 0.5, priceIndex: 0.7 },
     standard: { reliability: 0.95, speedFactor: 1.0, quality: 0.75, priceIndex: 1.0 },
     premium: { reliability: 0.99, speedFactor: 0.9, quality: 0.95, priceIndex: 1.5 },
+  },
+  stationCapacity: {
+    flagship: { premium: 4, standard: 10, budget: 16 },
+    large: { premium: 3, standard: 8, budget: 12 },
+    medium: { premium: 1, standard: 5, budget: 8 },
+    small: { premium: 0, standard: 2, budget: 4 },
+    regional: { premium: 0, standard: 0, budget: 2 },
   },
 };
 
