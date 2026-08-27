@@ -3092,6 +3092,51 @@ export const officeExpansion = pgTable(
 export type OfficeExpansionRow = typeof officeExpansion.$inferSelect;
 
 /**
+ * A month's reputation grant from a hired social media specialist (§9.1, §15).
+ *
+ * The reputation specialist adds a little to `airline.reputation` once per game
+ * month while she is on staff. Something has to make that idempotent: the worker
+ * ticks every second and would otherwise apply a month's drip sixty times a
+ * minute. This row is the marker — one per `(airline, period)`, inserted
+ * `ON CONFLICT DO NOTHING` in the same transaction as the reputation bump, so a
+ * replayed or double-ticked sweep grants nothing a second time.
+ *
+ * It is the used market's idempotency shape (a unique constraint, not a
+ * "last granted" column) for the used market's reason: a timestamp column would
+ * have to be reset on a world reset (ADR-0005) and forgetting would strand a
+ * fresh airline believing it had already been paid. `world_id`/`airline_id`
+ * cascade, so a reset takes the markers with the airline and the drip starts
+ * clean. `period` is the world's own calendar month, `YYYY-MM`; `amount` records
+ * what was applied, because a grant nobody can trace back to a rate is
+ * indistinguishable from a bug.
+ */
+export const socialMediaReputationGrant = pgTable(
+  'social_media_reputation_grant',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    /** The world's own calendar month the grant covers, `YYYY-MM`. */
+    period: text('period').notNull(),
+    /** The reputation added, on §15's 0.00–1.00 scale. Recorded, not re-derived. */
+    amount: numeric('amount', { precision: 3, scale: 2 }).notNull(),
+    grantedAt: timestamp('granted_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('social_media_reputation_grant_airline_period_key').on(
+      table.airlineId,
+      table.period,
+    ),
+  ],
+);
+
+export type SocialMediaReputationGrantRow = typeof socialMediaReputationGrant.$inferSelect;
+
+/**
  * One airline's automation mode and policy for one system (M5-05, ADR-0023).
  *
  * The ladder is per airline **and per system**, so a player can delegate

@@ -1880,6 +1880,44 @@ export const SHIPPED_CREW_BALANCE = {
   morale: SHIPPED_CREW_MORALE_BALANCE,
 } as const satisfies z.input<typeof CrewBalance>;
 
+/**
+ * What a hired social media specialist is worth (M5-04 follow-up, §9.1, §15).
+ *
+ * The market offers one of two specialists per world (`SOCIAL_MEDIA_SPECIALISTS`
+ * in `office.ts`), and an airline may hire one. Their effect is a balance lever
+ * rather than a hard-coded figure, for CONTRIBUTING invariant 3's reason: what a
+ * marketing hire is worth is precisely the kind of number a world should be able
+ * to retune without a deploy.
+ *
+ *   - `reputationPerMonth` — the reputation specialist's slow drip. Added to
+ *     `airline.reputation` once per game month while she is on staff, clamped at
+ *     §15's 1.00 ceiling. Deliberately tiny: reputation is a compound the whole
+ *     demand model reads, so this is a nudge over seasons, not a shortcut.
+ *   - `attractivenessUtility` — the attractiveness specialist's edge, added
+ *     directly to the airline's A.3 utility (like the alliance bonus, not through
+ *     a beta) in every market where it competes, but **only once it flies more
+ *     than one route**. A one-route airline has no network to market; the second
+ *     route is what the specialist has something to say about.
+ */
+export const SocialMediaBalance = z
+  .object({
+    reputationPerMonth: z.number().min(0).max(1),
+    attractivenessUtility: z.number().nonnegative(),
+  })
+  .strict();
+export type SocialMediaBalance = z.infer<typeof SocialMediaBalance>;
+
+export const SHIPPED_SOCIAL_MEDIA_BALANCE = {
+  // §15's reputation runs 0.00–1.00; 0.05 a month is roughly a point a season,
+  // so a specialist kept on for a year lifts a median airline by a tier without
+  // ever being the reason it wins a route on her own.
+  reputationPerMonth: 0.05,
+  // A small additive utility. The leisure reputation beta is ~1.4, so 0.1 is
+  // worth about seven reputation points' worth of pull — a thumb on the scale in
+  // a close market, not a dominant strategy (A.1's third requirement).
+  attractivenessUtility: 0.1,
+} as const satisfies z.input<typeof SocialMediaBalance>;
+
 export const EconomyConfig = z
   .object({
     version: EconomyConfigVersion,
@@ -1912,6 +1950,9 @@ export const EconomyConfig = z
     maintenance: MaintenanceBalance.default(SHIPPED_MAINTENANCE_BALANCE),
     // And again (M5-01).
     crew: CrewBalance.default(SHIPPED_CREW_BALANCE),
+    // Defaulted for the same reason once more (M5-04 follow-up). Every `v1` row
+    // written before the social media specialist reads back the shipped values.
+    socialMedia: SocialMediaBalance.default(SHIPPED_SOCIAL_MEDIA_BALANCE),
   })
   .strict();
 export type EconomyConfig = z.infer<typeof EconomyConfig>;
@@ -2197,6 +2238,7 @@ export const ECONOMY_CONFIG_V1: EconomyConfig = EconomyConfig.parse({
   usedMarket: SHIPPED_USED_MARKET_BALANCE,
   maintenance: SHIPPED_MAINTENANCE_BALANCE,
   crew: SHIPPED_CREW_BALANCE,
+  socialMedia: SHIPPED_SOCIAL_MEDIA_BALANCE,
 });
 
 // ---------------------------------------------------------------------------

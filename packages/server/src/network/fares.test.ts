@@ -196,6 +196,26 @@ describe('the preview is the resolution code — the second acceptance criterion
     expect(economy?.projectedShare).toBeLessThan(1);
   });
 
+  it('wins back share when the attractiveness specialist is on staff (§9.1)', () => {
+    // Same fares, same rival — the only difference is the specialist's additive
+    // utility flowing through `self`, which is exactly how the economics provider
+    // supplies it once the airline flies more than one route.
+    const without = previewFares(ROUTE, ROUTE.fares, economics({ competitors: [RIVAL] }));
+    const withSpecialist = previewFares(
+      ROUTE,
+      ROUTE.fares,
+      economics({
+        competitors: [RIVAL],
+        self: { ...REFERENCE_SELF, attractiveness: 0.3 },
+      }),
+    );
+
+    expect(withSpecialist.projectedPassengers).toBeGreaterThan(without.projectedPassengers);
+    const economy = withSpecialist.positions.find((p) => p.cabin === 'economy');
+    const economyWithout = without.positions.find((p) => p.cabin === 'economy');
+    expect(economy?.projectedShare ?? 0).toBeGreaterThan(economyWithout?.projectedShare ?? 0);
+  });
+
   it('reports a cabin the player does not sell as unpriced rather than as zero', () => {
     // Null and zero are different answers: one means "you do not sell this",
     // the other means "you sell it and nobody buys". §14.1's no-dead-end rule

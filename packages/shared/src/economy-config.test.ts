@@ -105,6 +105,17 @@ describe('a payload written before a section existed', () => {
     expect(parsed.maintenance).toEqual(ECONOMY_CONFIG_V1.maintenance);
   });
 
+  it('takes the shipped social media balance when a pre-specialist payload is read back', () => {
+    // The same rule again (M5-04 follow-up). Every `v1` row written before the
+    // social media specialist existed has no `socialMedia` section; without this
+    // default the first economy read after the deploy would throw and take flight
+    // pricing and the fare floor down with it, exactly as M3-12 did with `npc`.
+    const { socialMedia: _socialMedia, ...beforeSocialMediaExisted } = ECONOMY_CONFIG_V1;
+
+    const parsed = EconomyConfig.parse(beforeSocialMediaExisted);
+    expect(parsed.socialMedia).toEqual(ECONOMY_CONFIG_V1.socialMedia);
+  });
+
   it('keeps a section the payload does carry, rather than defaulting over it', () => {
     // A default fills an absence. It must never overwrite a live retune —
     // which is the property the whole seed-but-never-update design rests on.

@@ -23,13 +23,14 @@
  * and does not is a number a player would price against and be wrong.
  */
 
-import { and, eq } from 'drizzle-orm';
+import { and, count, eq } from 'drizzle-orm';
 
 import type { AirportFees, DemandSegment } from '@tailfin/shared';
 import type { FareFloorAircraft, FuelMarket, FuelStation } from '@tailfin/sim';
 
-import { demandPool } from '../db/schema';
+import { demandPool, route } from '../db/schema';
 import { loadWorldEconomyConfig } from '../economy/loader';
+import { activeSocialMediaEffects } from '../office/specialists';
 
 import { competitorsFor } from './competitors';
 
@@ -159,10 +160,22 @@ export function createEconomicsProvider(
   market?: FuelMarket,
 ): (row: RouteRow) => Promise<RouteEconomics> {
   return async (row) => {
-    const [economy, segmentPools] = await Promise.all([
+    const [economy, segmentPools, effects, activeRoutes] = await Promise.all([
       loadWorldEconomyConfig(db, row.worldId),
       poolsFor(db, row),
+      activeSocialMediaEffects(db, row.airlineId),
+      countActiveRoutes(db, row.airlineId),
     ]);
+
+    /*
+     * §9.1's attractiveness specialist. The bonus applies only once the airline
+     * flies more than one route: a single-route carrier has no network for a
+     * marketer to work with, and the second route is the first thing the
+     * specialist has something to say about. Zero otherwise, which keeps the
+     * term out of every market where it does not apply.
+     */
+    const attractiveness =
+      effects.attractiveness && activeRoutes > 1 ? economy.socialMedia.attractivenessUtility : 0;
 
     const competitors = await competitorsFor(db, {
       worldId: row.worldId,
@@ -184,9 +197,24 @@ export function createEconomicsProvider(
       destinationFees: REFERENCE_FEES,
       segmentPools,
       competitors,
-      self: REFERENCE_SELF,
+      self: { ...REFERENCE_SELF, attractiveness },
       settlement: economy.costs.settlement,
       fareFloorRatio: economy.pricing.fareFloorRatio,
     };
   };
+}
+
+/**
+ * How many routes this airline is currently flying.
+ *
+ * Only `active` routes count — a closed route is not a network the specialist
+ * can market. A grouped `count` rather than a correlated subquery, which is the
+ * shape CLAUDE.md records as the one that actually comes back right on Postgres.
+ */
+async function countActiveRoutes(db: Database, airlineId: string): Promise<number> {
+  const [row] = await db
+    .select({ value: count() })
+    .from(route)
+    .where(and(eq(route.airlineId, airlineId), eq(route.active, true)));
+  return row?.value ?? 0;
 }

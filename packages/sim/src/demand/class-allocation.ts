@@ -306,6 +306,7 @@ export function allocateByClass(
             schedFit: o.schedFit,
             loyalty: o.loyalty,
             alliance: o.alliance,
+            attractiveness: o.attractiveness,
             connectionPenalty: o.connectionPenalty,
           } satisfies Operator;
         }),

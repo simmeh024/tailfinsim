@@ -80,8 +80,19 @@ export interface RouteEconomics {
   segmentPools: Record<DemandSegment, number>;
   /** Who else is selling this pair. Empty is legal — a monopoly is a market of one. */
   competitors: readonly ClassOperator[];
-  /** The player's own non-price attributes, until M6 and §15 can supply them. */
-  self: { reputation: number; productScore: number; frequency: number };
+  /**
+   * The player's own non-price attributes, until M6 and §15 can supply them.
+   *
+   * `attractiveness` is §9.1's social media specialist edge — a direct additive
+   * utility the provider fills in when the airline has hired the attractiveness
+   * specialist and flies more than one route, and zero otherwise.
+   */
+  self: {
+    reputation: number;
+    productScore: number;
+    frequency: number;
+    attractiveness?: number;
+  };
   /**
    * The world's cost table and A.10 floor ratio, from its pinned economy.
    *
@@ -240,6 +251,7 @@ export function selfAsOperator(
     frequency: economics.self.frequency,
     productScore: economics.self.productScore,
     reputation: economics.self.reputation,
+    attractiveness: economics.self.attractiveness,
     cabins,
   };
 }
