@@ -5,8 +5,9 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import type { DisruptionRoll } from '@tailfin/sim';
 
+import { writeSetting } from '../automation/store';
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { airport, flight, worldEvent } from '../db/schema';
+import { airport, flight, operationsTask, worldEvent } from '../db/schema';
 import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixture,
@@ -391,6 +392,81 @@ describeDb('a departure attempt', () => {
 
       expect(rolled).toBe(false);
       expect(outcome.status).toBe('departed');
+    });
+  });
+
+  /*
+   * The automation ladder governing the disruption response (M5-05, ADR-0023).
+   * The roll is injected so these are about what the *policy* does with a delay,
+   * not about the odds of one.
+   */
+  describe('the disruption-response policy', () => {
+    const delayRoll: DisruptionRoll = {
+      cause: 'technical',
+      outcome: 'delay',
+      delayMinutes: 90,
+      disruption: 'delayed',
+      probability: 0.2,
+    };
+
+    async function tasksFor(airlineId: string) {
+      return db.db
+        .select({ kind: operationsTask.kind, subjectId: operationsTask.subjectId })
+        .from(operationsTask)
+        .where(eq(operationsTask.airlineId, airlineId));
+    }
+
+    it('under Manual, lets the delay stand and raises an operations task', async () => {
+      const { fixture, flightId } = await scheduledFlight();
+
+      const outcome = await departFlight(db.db, flightId, DEPART_AT, {
+        dispatch: () => Promise.resolve(goes(randomUUID())),
+        disruption: () => Promise.resolve(delayRoll),
+      });
+
+      expect(outcome.status).toBe('delayed');
+      const tasks = await tasksFor(fixture.airline.id);
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0]).toMatchObject({ kind: 'disruption_review', subjectId: flightId });
+    });
+
+    it('cancels a delay past the policy ceiling, and raises no task', async () => {
+      const { fixture, flightId } = await scheduledFlight();
+      await writeSetting(
+        db.db,
+        { id: fixture.airline.id, worldId: fixture.world.id, status: 'active' },
+        'disruption',
+        { mode: 'policy', policy: { disruptionResponse: { cancelDelaysOverMinutes: 60 } } },
+      );
+
+      const outcome = await departFlight(db.db, flightId, DEPART_AT, {
+        dispatch: () => Promise.resolve(goes(randomUUID())),
+        disruption: () => Promise.resolve(delayRoll),
+      });
+
+      // 90 > 60: the player's rule cancels it.
+      expect(outcome.status).toBe('cancelled');
+      expect((await flightRow(flightId))?.disruption).toBe('cancelled');
+      expect(await tasksFor(fixture.airline.id)).toHaveLength(0);
+    });
+
+    it('accepts a delay within the ceiling, quietly', async () => {
+      const { fixture, flightId } = await scheduledFlight();
+      await writeSetting(
+        db.db,
+        { id: fixture.airline.id, worldId: fixture.world.id, status: 'active' },
+        'disruption',
+        { mode: 'policy', policy: { disruptionResponse: { cancelDelaysOverMinutes: 120 } } },
+      );
+
+      const outcome = await departFlight(db.db, flightId, DEPART_AT, {
+        dispatch: () => Promise.resolve(goes(randomUUID())),
+        disruption: () => Promise.resolve(delayRoll),
+      });
+
+      // 90 <= 120: covered and accepted — no task.
+      expect(outcome.status).toBe('delayed');
+      expect(await tasksFor(fixture.airline.id)).toHaveLength(0);
     });
   });
 });

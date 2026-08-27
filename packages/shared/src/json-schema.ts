@@ -40,6 +40,7 @@ import {
 } from './airline';
 import { ApiError, HealthResponse } from './api';
 import { LogoutResponse, MeResponse, RevokeSessionsResponse } from './auth';
+import { AutomationStateResponse } from './automation';
 import { CrewResponse } from './crew';
 import { AirframeDetailResponse, FleetAirframesResponse } from './fleet';
 import { LiveryDocument } from './livery';
@@ -146,4 +147,5 @@ export const bookCheckResponseJsonSchema = z.toJSONSchema(BookCheckResponse);
 export const adminRequeueEventsResponseJsonSchema = z.toJSONSchema(AdminRequeueEventsResponse);
 export const worldClockJsonSchema = z.toJSONSchema(WorldClock);
 export const crewResponseJsonSchema = z.toJSONSchema(CrewResponse);
+export const automationStateResponseJsonSchema = z.toJSONSchema(AutomationStateResponse);
 export const officeStateResponseJsonSchema = z.toJSONSchema(OfficeStateResponse);
