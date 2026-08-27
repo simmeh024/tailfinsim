@@ -1,19 +1,36 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import {
+  EXECUTIVE_OFFICE_COUNT,
   HEADQUARTERS_BASE_SEATS,
   isNeutralSeat,
   OFFICE_ROLES,
+  type ExecutiveFloorState,
   type OfficeSeatId,
   type OfficeStateResponse,
 } from '@tailfin/shared';
 
+import { fetchExecutiveFloor, unlockExecutiveFloor, unlockExecutiveOffice } from './api';
+import execFloor0 from './assets/floorplan/exec-floor-0.png';
+import execFloor1 from './assets/floorplan/exec-floor-1.png';
 import floor10 from './assets/floorplan/hq-floor-10.webp';
 import floor6 from './assets/floorplan/hq-floor-6.webp';
 import floor8 from './assets/floorplan/hq-floor-8.webp';
 import { candidateById } from './hq-roster';
 
 import type { ReactNode } from 'react';
+
+/** The executive floor art, keyed by offices unlocked. More states arrive as art. */
+const EXEC_FLOORPLAN: Record<number, string> = { 0: execFloor0, 1: execFloor1 };
+
+/** The exec floor render for a given progress — the exact art if we have it, else the nearest below. */
+function execFloorImage(officesUnlocked: number): string {
+  for (let n = officesUnlocked; n >= 0; n -= 1) {
+    const src = EXEC_FLOORPLAN[n];
+    if (src !== undefined) return src;
+  }
+  return execFloor0;
+}
 
 /**
  * The HQ layout overview and — on the Headquarters page — its interactive floor
@@ -124,6 +141,47 @@ export function HqLayoutPanel({
   const [expanding, setExpanding] = useState(false);
   const [expandError, setExpandError] = useState<string | null>(null);
 
+  // The executive floor is a second floor reached by the pager. It manages its
+  // own state here — fetched once, refreshed on an unlock — so the ground floor
+  // and the shell that owns this panel need to know nothing about it.
+  const [floor, setFloor] = useState<'ground' | 'executive'>('ground');
+  const [execState, setExecState] = useState<ExecutiveFloorState | null>(null);
+  const [execBusy, setExecBusy] = useState(false);
+  const [execError, setExecError] = useState<string | null>(null);
+
+  // The executive floor is only managed on the interactive Headquarters panel;
+  // the read-only overview (and every bare render in a test) never reaches for it,
+  // so it does no network work where the feature cannot be used anyway.
+  const interactivePanel = onSelectSeat !== undefined;
+  useEffect(() => {
+    if (!interactivePanel) return;
+    let live = true;
+    void fetchExecutiveFloor().then((state) => {
+      if (live) setExecState(state);
+    });
+    return () => {
+      live = false;
+    };
+  }, [interactivePanel]);
+
+  const unlockFloor = async (): Promise<void> => {
+    setExecBusy(true);
+    setExecError(null);
+    const result = await unlockExecutiveFloor();
+    if (result.ok) setExecState(result.state);
+    else setExecError(result.failure.message);
+    setExecBusy(false);
+  };
+
+  const unlockOffice = async (): Promise<void> => {
+    setExecBusy(true);
+    setExecError(null);
+    const result = await unlockExecutiveOffice();
+    if (result.ok) setExecState(result.state);
+    else setExecError(result.failure.message);
+    setExecBusy(false);
+  };
+
   const runExpand = async (): Promise<void> => {
     if (onExpand === undefined) return;
     setExpanding(true);
@@ -144,98 +202,204 @@ export function HqLayoutPanel({
 
   return (
     <div className="hq-layout">
+      {execState !== null && (
+        <div className="hq-layout__pager" role="tablist" aria-label="Headquarters floor">
+          <button
+            type="button"
+            role="tab"
+            className="hq-layout__pager-btn"
+            data-active={floor === 'ground'}
+            aria-selected={floor === 'ground'}
+            onClick={() => setFloor('ground')}
+          >
+            ‹ Ground
+          </button>
+          <button
+            type="button"
+            role="tab"
+            className="hq-layout__pager-btn"
+            data-active={floor === 'executive'}
+            aria-selected={floor === 'executive'}
+            onClick={() => setFloor('executive')}
+          >
+            Executive ›
+          </button>
+        </div>
+      )}
+
       <p className="hq-layout__count">
-        <strong>{filled}</strong> of {totalSeats} offices staffed
-        {office?.hasExtendedAuthority === true && (
-          <span className="hq-layout__authority"> · long-haul authority</span>
+        {floor === 'ground' ? (
+          <>
+            <strong>{filled}</strong> of {totalSeats} offices staffed
+            {office?.hasExtendedAuthority === true && (
+              <span className="hq-layout__authority"> · long-haul authority</span>
+            )}
+          </>
+        ) : (
+          <>
+            <strong>{execState?.officesUnlocked ?? 0}</strong> of {EXECUTIVE_OFFICE_COUNT} executive
+            offices open
+          </>
         )}
       </p>
 
-      <div
-        className="hq-layout__floor"
-        style={{ backgroundImage: `url(${plan?.src ?? ''})`, aspectRatio: plan?.aspect ?? '2 / 3' }}
-      >
-        {visible.map(({ seat, row, col }) => {
-          const hire = hiredBySeat.get(seat);
-          const occupant = hire !== undefined ? candidateById(hire.candidateId) : null;
-          const neutral = isNeutralSeat(seat);
-          // Every room is managed from the plan when it is interactive — the six
-          // department seats as well as the neutral ones. The roster above is the
-          // other way in for a role seat; the plan is the way in for all ten.
-          const interactive = onSelectSeat !== undefined;
-          const style = {
-            left: `${String((COLUMN_X[col] ?? 0.5) * 100)}%`,
-            top: `${String((rows[row] ?? 0.5) * 100)}%`,
-          };
+      {floor === 'ground' && (
+        <div
+          className="hq-layout__floor"
+          style={{
+            backgroundImage: `url(${plan?.src ?? ''})`,
+            aspectRatio: plan?.aspect ?? '2 / 3',
+          }}
+        >
+          {visible.map(({ seat, row, col }) => {
+            const hire = hiredBySeat.get(seat);
+            const occupant = hire !== undefined ? candidateById(hire.candidateId) : null;
+            const neutral = isNeutralSeat(seat);
+            // Every room is managed from the plan when it is interactive — the six
+            // department seats as well as the neutral ones. The roster above is the
+            // other way in for a role seat; the plan is the way in for all ten.
+            const interactive = onSelectSeat !== undefined;
+            const style = {
+              left: `${String((COLUMN_X[col] ?? 0.5) * 100)}%`,
+              top: `${String((rows[row] ?? 0.5) * 100)}%`,
+            };
 
-          const inner =
-            hire !== undefined ? (
-              <>
-                {occupant !== null && (
-                  <img
-                    className="hq-cell__avatar"
-                    src={occupant.portrait}
-                    alt={hire.candidateName}
-                  />
-                )}
-                <span className="hq-cell__name">{hire.candidateName}</span>
-              </>
-            ) : interactive ? (
-              <span className="hq-cell__add" aria-hidden="true">
-                + Hire
-              </span>
-            ) : (
-              <span className="hq-cell__vacant">Vacant</span>
-            );
+            const inner =
+              hire !== undefined ? (
+                <>
+                  {occupant !== null && (
+                    <img
+                      className="hq-cell__avatar"
+                      src={occupant.portrait}
+                      alt={hire.candidateName}
+                    />
+                  )}
+                  <span className="hq-cell__name">{hire.candidateName}</span>
+                </>
+              ) : interactive ? (
+                <span className="hq-cell__add" aria-hidden="true">
+                  + Hire
+                </span>
+              ) : (
+                <span className="hq-cell__vacant">Vacant</span>
+              );
 
-          if (interactive) {
-            const state = hire !== undefined ? 'Staffed' : 'Vacant';
-            const action = hire !== undefined ? 'Activate to manage.' : 'Activate to assign staff.';
+            if (interactive) {
+              const state = hire !== undefined ? 'Staffed' : 'Vacant';
+              const action =
+                hire !== undefined ? 'Activate to manage.' : 'Activate to assign staff.';
+              return (
+                <button
+                  key={seat}
+                  type="button"
+                  className="hq-cell hq-cell--interactive"
+                  data-seat={seat}
+                  data-neutral={neutral}
+                  data-occupied={hire !== undefined}
+                  data-selected={selectedSeat === seat}
+                  data-hovered={hoveredSeat === seat}
+                  style={style}
+                  aria-label={`${officeLabel(seat)}, ${seatTitle(seat)}, ${state}. ${action}`}
+                  aria-pressed={selectedSeat === seat}
+                  onClick={() => onSelectSeat?.(seat)}
+                  onMouseEnter={() => onHoverSeat?.(seat)}
+                  onMouseLeave={() => onHoverSeat?.(null)}
+                  onFocus={() => onHoverSeat?.(seat)}
+                  onBlur={() => onHoverSeat?.(null)}
+                >
+                  <span className="hq-cell__num">{officeLabel(seat)}</span>
+                  {inner}
+                </button>
+              );
+            }
+
             return (
-              <button
+              <div
                 key={seat}
-                type="button"
-                className="hq-cell hq-cell--interactive"
+                className="hq-cell"
                 data-seat={seat}
                 data-neutral={neutral}
                 data-occupied={hire !== undefined}
-                data-selected={selectedSeat === seat}
                 data-hovered={hoveredSeat === seat}
                 style={style}
-                aria-label={`${officeLabel(seat)}, ${seatTitle(seat)}, ${state}. ${action}`}
-                aria-pressed={selectedSeat === seat}
-                onClick={() => onSelectSeat?.(seat)}
-                onMouseEnter={() => onHoverSeat?.(seat)}
-                onMouseLeave={() => onHoverSeat?.(null)}
-                onFocus={() => onHoverSeat?.(seat)}
-                onBlur={() => onHoverSeat?.(null)}
+                title={
+                  hire !== undefined
+                    ? `${hire.candidateName} — ${seatTitle(seat)}`
+                    : seatTitle(seat)
+                }
               >
-                <span className="hq-cell__num">{officeLabel(seat)}</span>
                 {inner}
-              </button>
+              </div>
             );
-          }
+          })}
+        </div>
+      )}
 
-          return (
-            <div
-              key={seat}
-              className="hq-cell"
-              data-seat={seat}
-              data-neutral={neutral}
-              data-occupied={hire !== undefined}
-              data-hovered={hoveredSeat === seat}
-              style={style}
-              title={
-                hire !== undefined ? `${hire.candidateName} — ${seatTitle(seat)}` : seatTitle(seat)
-              }
-            >
-              {inner}
+      {floor === 'executive' && execState !== null && (
+        <div
+          className="hq-layout__floor hq-layout__floor--exec"
+          style={{
+            backgroundImage: `url(${execFloorImage(execState.officesUnlocked)})`,
+            aspectRatio: '887 / 1774',
+          }}
+        >
+          {!execState.unlocked ? (
+            <div className="hq-exec-gate">
+              <p className="hq-exec-gate__title">Executive Floor</p>
+              {execState.monthlyRevenueMinor >= execState.revenueGateMinor ? (
+                <p className="hq-exec-gate__ok">Requirements met — the floor is yours to open.</p>
+              ) : (
+                <p className="hq-exec-gate__need">
+                  You do not meet the requirements yet — need{' '}
+                  <strong>
+                    {MONEY.format(
+                      (execState.revenueGateMinor - execState.monthlyRevenueMinor) / 100,
+                    )}
+                  </strong>{' '}
+                  more income a month.
+                </p>
+              )}
+              <button
+                type="button"
+                className="hq-exec-gate__unlock"
+                disabled={execBusy || execState.monthlyRevenueMinor < execState.revenueGateMinor}
+                onClick={() => void unlockFloor()}
+              >
+                {execBusy
+                  ? 'Opening…'
+                  : `Unlock the Executive Floor · ${MONEY.format(execState.unlockCostMinor / 100)}`}
+              </button>
+              {execError !== null && (
+                <p className="hq-exec-gate__error" role="alert">
+                  {execError}
+                </p>
+              )}
             </div>
-          );
-        })}
-      </div>
+          ) : (
+            execState.nextOffice !== null && (
+              <div className="hq-exec-next">
+                <button
+                  type="button"
+                  className="hq-exec-next__btn"
+                  disabled={execBusy}
+                  onClick={() => void unlockOffice()}
+                >
+                  {execBusy
+                    ? 'Opening…'
+                    : `Open office ${String(execState.officesUnlocked + 1)} of ${String(EXECUTIVE_OFFICE_COUNT)} · ${MONEY.format(execState.nextOffice.costMinor / 100)}`}
+                </button>
+                {execError !== null && (
+                  <p className="hq-exec-gate__error" role="alert">
+                    {execError}
+                  </p>
+                )}
+              </div>
+            )
+          )}
+        </div>
+      )}
 
-      {office?.nextExpansion != null && onExpand !== undefined && (
+      {floor === 'ground' && office?.nextExpansion != null && onExpand !== undefined && (
         <div className="hq-layout__expand">
           <button
             type="button"

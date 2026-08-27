@@ -1,5 +1,6 @@
 import type {
   ApiError,
+  ExecutiveFloorState,
   HireOfficeRequest,
   OfficeSeatId,
   OfficeStateResponse,
@@ -88,4 +89,59 @@ export async function expandOffice(): Promise<OfficeOutcome> {
     credentials: 'same-origin',
   });
   return readOutcome(response, 'POST /api/office/expansion');
+}
+
+/* ---- The executive floor (§9.1 follow-up) ------------------------------- */
+
+export type ExecutiveOutcome =
+  { ok: true; state: ExecutiveFloorState } | { ok: false; failure: OfficeFailure };
+
+async function readExecutiveOutcome(response: Response, label: string): Promise<ExecutiveOutcome> {
+  const payload: unknown = await response.json().catch(() => ({}));
+  if (response.status === 200) return { ok: true, state: payload as ExecutiveFloorState };
+  const error = payload as Partial<ApiError>;
+  return {
+    ok: false,
+    failure: {
+      status: response.status,
+      code: error.code ?? 'unknown',
+      message: error.message ?? `${label} failed with ${String(response.status)}`,
+    },
+  };
+}
+
+/** The executive floor's state, or null for a player with no airline / transport failure. */
+export async function fetchExecutiveFloor(): Promise<ExecutiveFloorState | null> {
+  let response: Response;
+  try {
+    response = await fetch('/api/office/executive', {
+      headers: { accept: 'application/json' },
+      credentials: 'same-origin',
+    });
+  } catch {
+    return null;
+  }
+  if (response.status === 409 || response.status === 401) return null;
+  const outcome = await readExecutiveOutcome(response, 'GET /api/office/executive');
+  return outcome.ok ? outcome.state : null;
+}
+
+/** Open the executive floor (charges $100M behind the revenue gate). */
+export async function unlockExecutiveFloor(): Promise<ExecutiveOutcome> {
+  const response = await fetch('/api/office/executive/unlock', {
+    method: 'POST',
+    headers: { accept: 'application/json' },
+    credentials: 'same-origin',
+  });
+  return readExecutiveOutcome(response, 'POST /api/office/executive/unlock');
+}
+
+/** Open the next executive office in sequence. */
+export async function unlockExecutiveOffice(): Promise<ExecutiveOutcome> {
+  const response = await fetch('/api/office/executive/offices', {
+    method: 'POST',
+    headers: { accept: 'application/json' },
+    credentials: 'same-origin',
+  });
+  return readExecutiveOutcome(response, 'POST /api/office/executive/offices');
 }

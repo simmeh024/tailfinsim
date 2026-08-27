@@ -5722,6 +5722,32 @@ body {
   gap: var(--space-3);
 }
 
+/* The floor pager — switch between the ground floor and the executive floor. */
+.hq-layout__pager {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.hq-layout__pager-btn {
+  flex: 1 1 0;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.hq-layout__pager-btn[data-active='true'] {
+  border-color: var(--accent);
+  color: var(--text-primary);
+  background: var(--accent-quiet);
+}
+
 .hq-layout__count {
   margin: 0;
   font-size: var(--text-sm);
@@ -5746,6 +5772,81 @@ body {
   background-size: 100% 100%;
   background-position: center;
   background-repeat: no-repeat;
+}
+
+/* The executive floor's gate and unlock affordances, laid over its render. */
+.hq-exec-gate,
+.hq-exec-next {
+  position: absolute;
+  inset-inline: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  text-align: center;
+}
+
+.hq-exec-gate {
+  inset: 0;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg-scrim) 88%, transparent);
+}
+
+.hq-exec-next {
+  bottom: 0;
+  padding-block: var(--space-3);
+  background: linear-gradient(to top, var(--bg-scrim), transparent);
+}
+
+.hq-exec-gate__title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.hq-exec-gate__need,
+.hq-exec-gate__ok {
+  margin: 0;
+  max-width: 22rem;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.hq-exec-gate__need strong {
+  color: var(--status-loss, var(--accent));
+}
+
+.hq-exec-gate__ok {
+  color: var(--status-profit, var(--accent));
+}
+
+.hq-exec-gate__unlock,
+.hq-exec-next__btn {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--bg-inset);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.hq-exec-gate__unlock:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  border-color: var(--border-strong);
+}
+
+.hq-exec-gate__error {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--status-loss, var(--accent));
 }
 
 /* One office's occupant info, laid over its room in the plan render. */
