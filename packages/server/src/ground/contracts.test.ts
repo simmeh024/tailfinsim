@@ -1,10 +1,13 @@
+import { randomUUID } from 'node:crypto';
+
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import type { AirportTier } from '@tailfin/shared';
+import type { AirportTier, HandlerGrade } from '@tailfin/shared';
 
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { airport } from '../db/schema';
+import { rollGroundDisruption } from '../flight/disruption';
 import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixture,
@@ -158,5 +161,42 @@ describeDb('ground contracts', () => {
     expect(signed).toBeGreaterThanOrEqual(1);
     expect(exhausted).toBeGreaterThanOrEqual(1);
     expect(signed + exhausted).toBe(6);
+  });
+
+  it('a cheaper ramp handler never fixes a flight a better one would have broken', async () => {
+    // The disruption effect (M5-06 → M5-05's loop), proved deterministically: the
+    // roll is a pure function of the flight's own stream, so the set of flights a
+    // budget handler disrupts is a *superset* of what premium disrupts — a worse
+    // handler only ever adds disruptions, it never removes them.
+    const a = await fixtures.create();
+    const icao = await makeAirport('GVND', 'flagship');
+    // Enough flights that the band between budget's and premium's odds is very
+    // unlikely to be empty — the strict-difference assertion below stays robust.
+    const flightIds = Array.from({ length: 200 }, () => randomUUID());
+
+    const disruptedUnder = async (grade: HandlerGrade): Promise<Set<string>> => {
+      await signContract(db.db, own(a), icao, { serviceLine: 'ramp_baggage', grade });
+      const disrupted = new Set<string>();
+      for (const flightId of flightIds) {
+        const roll = await rollGroundDisruption(db.db, {
+          flightId,
+          worldId: a.world.id,
+          airframeId: randomUUID(), // no airframe row: technical risk 0, so only the handler moves the odds
+          airlineId: a.airline.id,
+          originIcao: icao,
+        });
+        if (roll !== null) disrupted.add(flightId);
+      }
+      return disrupted;
+    };
+
+    const budget = await disruptedUnder('budget');
+    const premium = await disruptedUnder('premium');
+
+    for (const flightId of premium) {
+      expect(budget.has(flightId)).toBe(true);
+    }
+    // And on this batch the budget handler is strictly worse, as it should be.
+    expect(budget.size).toBeGreaterThan(premium.size);
   });
 });

@@ -146,11 +146,18 @@ describeDb('a departure attempt', () => {
     usedReserve: false,
   });
 
+  // The gate tests are about the dispatch decision, not the odds of a ground
+  // disruption, so they silence the roll — otherwise the ground-vendor default
+  // (a budget walk-up at the origin) would occasionally disrupt a flight they
+  // expect to depart cleanly.
+  const noRoll = (): Promise<null> => Promise.resolve(null);
+
   it('releases the flight and queues its arrival', async () => {
     const { fixture, flightId } = await scheduledFlight();
     const dutyPeriodId = randomUUID();
 
     const outcome = await departFlight(db.db, flightId, DEPART_AT, {
+      disruption: noRoll,
       dispatch: () => Promise.resolve(goes(dutyPeriodId)),
     });
 
@@ -172,6 +179,7 @@ describeDb('a departure attempt', () => {
     const late = new Date(DEPART_AT.getTime() + 90 * 60_000);
 
     await departFlight(db.db, flightId, late, {
+      disruption: noRoll,
       dispatch: () => Promise.resolve(goes(randomUUID())),
     });
 
@@ -193,6 +201,7 @@ describeDb('a departure attempt', () => {
     const untilAt = new Date(DEPART_AT.getTime() + 100 * 60_000);
 
     const outcome = await departFlight(db.db, flightId, DEPART_AT, {
+      disruption: noRoll,
       dispatch: () =>
         Promise.resolve({
           status: 'delay',
@@ -225,6 +234,7 @@ describeDb('a departure attempt', () => {
     const { fixture, flightId } = await scheduledFlight();
 
     const outcome = await departFlight(db.db, flightId, DEPART_AT, {
+      disruption: noRoll,
       dispatch: () =>
         Promise.resolve({
           status: 'cancel',
@@ -246,6 +256,7 @@ describeDb('a departure attempt', () => {
     const { flightId } = await scheduledFlight();
 
     await departFlight(db.db, flightId, DEPART_AT, {
+      disruption: noRoll,
       dispatch: () =>
         Promise.resolve({
           status: 'cancel',
@@ -270,8 +281,8 @@ describeDb('a departure attempt', () => {
       return Promise.resolve(goes(randomUUID()));
     };
 
-    await departFlight(db.db, flightId, DEPART_AT, { dispatch });
-    const again = await departFlight(db.db, flightId, DEPART_AT, { dispatch });
+    await departFlight(db.db, flightId, DEPART_AT, { dispatch, disruption: noRoll });
+    const again = await departFlight(db.db, flightId, DEPART_AT, { dispatch, disruption: noRoll });
 
     expect(again).toEqual({ status: 'already-handled' });
     // The queue can deliver an event twice. A second dispatch would open a
@@ -283,11 +294,13 @@ describeDb('a departure attempt', () => {
   it('does nothing to a flight that has already been cancelled', async () => {
     const { flightId } = await scheduledFlight();
     await departFlight(db.db, flightId, DEPART_AT, {
+      disruption: noRoll,
       dispatch: () =>
         Promise.resolve({ status: 'cancel', cause: 'crew_timeout', reason: 'out of hours' }),
     });
 
     const again = await departFlight(db.db, flightId, DEPART_AT, {
+      disruption: noRoll,
       dispatch: () => Promise.resolve(goes(randomUUID())),
     });
     expect(again).toEqual({ status: 'already-handled' });
@@ -296,6 +309,7 @@ describeDb('a departure attempt', () => {
 
   it('reports a flight that is not there rather than inventing one', async () => {
     const outcome = await departFlight(db.db, randomUUID(), DEPART_AT, {
+      disruption: noRoll,
       dispatch: () => Promise.resolve(goes(randomUUID())),
     });
     expect(outcome).toEqual({ status: 'not-found' });
