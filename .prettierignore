@@ -1,6 +1,7 @@
 node_modules/
 dist/
 coverage/
+.e2e-types/
 *.tsbuildinfo
 pnpm-lock.yaml
 .claude/worktrees/
