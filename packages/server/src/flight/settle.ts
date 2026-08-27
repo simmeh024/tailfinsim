@@ -1,6 +1,6 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
-import { FlightLoad } from '@tailfin/shared';
+import { CABIN_ORDER, FlightLoad } from '@tailfin/shared';
 import type { AirportFees, FlightDisruption } from '@tailfin/shared';
 import {
   computeBlockTime,
@@ -20,7 +20,7 @@ import {
 
 import { accrueFlightHours } from '../aircraft/maintenance';
 import { moveAirlineCash } from '../airline/cash';
-import { airport, flight, flightResult } from '../db/schema';
+import { airport, flight, flightResult, route } from '../db/schema';
 import { type PinnedEconomyConfig } from '../economy/config';
 import { loadWorldEconomyConfig } from '../economy/loader';
 
@@ -232,6 +232,18 @@ export async function settleArrivedFlight(
 
   const delayMinutes = Math.round((arrivedAt.getTime() - row.estimatedArrival.getTime()) / 60_000);
 
+  const [routeRow] = await tx
+    .select({ id: route.id })
+    .from(route)
+    .where(
+      and(
+        eq(route.airlineId, row.airlineId),
+        eq(route.originIcao, row.originIcao),
+        eq(route.destinationIcao, row.destinationIcao),
+      ),
+    )
+    .limit(1);
+
   // `onConflictDoNothing` rather than a plain insert: the select above closes the
   // window for anything holding the same lock, but not for a caller that reached
   // here another way. If this reports nothing, someone else settled it and the
@@ -277,6 +289,66 @@ export async function settleArrivedFlight(
     cause: 'flight_settlement',
     reference: row.id,
     occurredAt: arrivedAt,
+    ledgerLines: [
+      ...CABIN_ORDER.flatMap((cabin) => {
+        const amountMinor = load[cabin]?.revenue ?? 0;
+        return amountMinor === 0
+          ? []
+          : [
+              {
+                amountMinor,
+                category: 'ticket' as const,
+                counterparty: 'passengers',
+                flightId: row.id,
+                routeId: routeRow?.id,
+                aircraftId: row.airframeId,
+                cabinClass: cabin,
+              },
+            ];
+      }),
+      ...settlement.revenue
+        .filter((line) => line.source !== 'tickets' && line.amountMinor !== 0)
+        .map((line) => ({
+          amountMinor: line.amountMinor,
+          category: line.source === 'ancillary' ? ('ancillary' as const) : ('cargo' as const),
+          counterparty: line.source === 'ancillary' ? 'passengers' : 'cargo_customers',
+          flightId: row.id,
+          routeId: routeRow?.id,
+          aircraftId: row.airframeId,
+        })),
+      ...settlement.costs
+        .filter((line) => line.amountMinor !== 0)
+        .map((line) => ({
+          amountMinor: -line.amountMinor,
+          category:
+            line.source === 'fuel'
+              ? ('fuel' as const)
+              : line.source === 'crew'
+                ? ('crew' as const)
+                : line.source === 'maintenance'
+                  ? ('maintenance' as const)
+                  : line.source === 'airport'
+                    ? ('airport_slot' as const)
+                    : line.source === 'handling'
+                      ? ('ground_handling' as const)
+                      : ('airport_slot' as const),
+          counterparty:
+            line.source === 'fuel'
+              ? 'fuel_supplier'
+              : line.source === 'crew'
+                ? 'crew'
+                : line.source === 'maintenance'
+                  ? 'maintenance_reserve'
+                  : line.source === 'airport'
+                    ? 'airport'
+                    : line.source === 'handling'
+                      ? 'ground_handler'
+                      : 'regulator',
+          flightId: row.id,
+          routeId: routeRow?.id,
+          aircraftId: row.airframeId,
+        })),
+    ],
   });
   if (cash.status !== 'applied') {
     // A result inserted in this transaction cannot legitimately find a prior

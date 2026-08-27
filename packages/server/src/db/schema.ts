@@ -464,6 +464,36 @@ export const cashMovementCause = pgEnum('cash_movement_cause', [
 export type CashMovementCause = (typeof cashMovementCause.enumValues)[number];
 
 /**
+ * The stable accounting vocabulary used by M8-01.  Categories are deliberately
+ * narrower than causes: one cause can produce several lines (a flight is the
+ * important example), while the category is what a P&L groups.
+ */
+export const ledgerCategory = pgEnum('ledger_category', [
+  'opening_balance',
+  'equity',
+  'ticket',
+  'ancillary',
+  'cargo',
+  'charter',
+  'acmi',
+  'fuel',
+  'lease_finance',
+  'crew',
+  'office_salary',
+  'maintenance',
+  'airport_slot',
+  'atc',
+  'ground_handling',
+  'marketing',
+  'repaint_retrofit',
+  'interest',
+  'aircraft_purchase',
+  'asset_deposit',
+  'other',
+]);
+export type LedgerCategory = (typeof ledgerCategory.enumValues)[number];
+
+/**
  * One immutable row for every change to an airline's game balance.
  *
  * `cause + reference` is the logical identity of a movement. A flight id, for
@@ -508,6 +538,74 @@ export const cashMovement = pgTable(
     check(
       'cash_movement_reference_not_blank',
       sql`char_length(${t.reference}) > 0 AND ${t.reference} = btrim(${t.reference})`,
+    ),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// ledger_entry — immutable, attributable P&L lines (M8-01)
+// ---------------------------------------------------------------------------
+
+/**
+ * One or more lines explain one cash movement.  A cash movement remains the
+ * balance-control record owned by AIR-06; this table is the dimensional
+ * accounting projection used by finance.  The deferred reconciliation trigger
+ * in migration 0036 requires the line total for an airline to equal its cash
+ * balance, so a P&L cannot silently diverge from the purse.
+ *
+ * Optional dimension ids are intentionally UUIDs without foreign keys. Flights
+ * outlive schedules and future domains may retain financial history after an
+ * operational row is archived; the owning domain is responsible for resolving
+ * those ids at drill-down time.
+ */
+export const ledgerEntry = pgTable(
+  'ledger_entry',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    cashMovementId: uuid('cash_movement_id')
+      .notNull()
+      .references(() => cashMovement.id, { onDelete: 'cascade' }),
+    lineNumber: integer('line_number').notNull(),
+    amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+    category: ledgerCategory('category').notNull(),
+    counterparty: text('counterparty').notNull().default('system'),
+    flightId: uuid('flight_id'),
+    routeId: uuid('route_id'),
+    aircraftId: uuid('aircraft_id'),
+    hubId: uuid('hub_id'),
+    cabinClass: text('cabin_class'),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('ledger_entry_movement_line_key').on(t.cashMovementId, t.lineNumber),
+    index('ledger_entry_airline_occurred_at_idx').on(t.airlineId, t.occurredAt),
+    index('ledger_entry_airline_category_occurred_at_idx').on(
+      t.airlineId,
+      t.category,
+      t.occurredAt,
+    ),
+    index('ledger_entry_route_occurred_at_idx').on(t.airlineId, t.routeId, t.occurredAt),
+    index('ledger_entry_aircraft_occurred_at_idx').on(t.airlineId, t.aircraftId, t.occurredAt),
+    index('ledger_entry_hub_occurred_at_idx').on(t.airlineId, t.hubId, t.occurredAt),
+    check(
+      'ledger_entry_amount_safe_integer',
+      sql`${t.amountMinor} >= -9007199254740991 AND ${t.amountMinor} <= 9007199254740991`,
+    ),
+    check('ledger_entry_line_number_positive', sql`${t.lineNumber} > 0`),
+    check(
+      'ledger_entry_counterparty_not_blank',
+      sql`char_length(${t.counterparty}) > 0 AND ${t.counterparty} = btrim(${t.counterparty})`,
+    ),
+    check(
+      'ledger_entry_cabin_class_valid',
+      sql`${t.cabinClass} IS NULL OR ${t.cabinClass} IN ('economy', 'premium_economy', 'business', 'first')`,
     ),
   ],
 );
@@ -1043,6 +1141,9 @@ export type NewAirlineRow = typeof airline.$inferInsert;
 
 export type CashMovementRow = typeof cashMovement.$inferSelect;
 export type NewCashMovementRow = typeof cashMovement.$inferInsert;
+
+export type LedgerEntryRow = typeof ledgerEntry.$inferSelect;
+export type NewLedgerEntryRow = typeof ledgerEntry.$inferInsert;
 
 export type AirlineHubRow = typeof airlineHub.$inferSelect;
 export type NewAirlineHubRow = typeof airlineHub.$inferInsert;

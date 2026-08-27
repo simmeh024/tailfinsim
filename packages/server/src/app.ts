@@ -23,6 +23,7 @@ import { registerCrewRoutes } from './crew/routes';
 import { type DatabaseHandle } from './db/client';
 import { readDeployInfo } from './deploy-info';
 import { type ServerEnv } from './env';
+import { registerFinanceRoutes } from './finance/routes';
 import { registerGroundRoutes } from './ground/routes';
 import { createEconomicsProvider } from './network/economics';
 import { registerNetworkRoutes } from './network/routes';
@@ -215,6 +216,7 @@ export function buildApp({
   registerOfficeRoutes(app, { db });
   registerAutomationRoutes(app, { db });
   registerGroundRoutes(app, { db });
+  registerFinanceRoutes(app, { db });
 
   const startedAt = Date.now();
 
