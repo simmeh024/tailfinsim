@@ -21,6 +21,19 @@ export const AutomationMode = z.enum(['manual', 'policy', 'delegated']);
 export type AutomationMode = z.infer<typeof AutomationMode>;
 
 /**
+ * How far short of ideal manual handling a *delegated* controller falls (ADR-0023 §5).
+ *
+ * A modelled, non-zero shortfall — never 0, so delegation is not free lunch;
+ * never large, so it never punishes a player for having a life. 0.10 is §9.5's
+ * _"beat it by 10% with attention"_. A balance number: it lives here until the
+ * automation economy is tuned, then moves into the config like the office
+ * salaries. Applied as a tighter effective cancellation margin — the delegated
+ * controller is a shade too eager to cut a delay, and over-cancels about this
+ * much of the value ideal manual timing would have kept.
+ */
+export const DELEGATED_SHORTFALL = 0.1;
+
+/**
  * The disruption-response rule — the first typed lever (ADR-0023 §2).
  *
  * A delay ceiling: cancel a rolled delay longer than this many minutes to free

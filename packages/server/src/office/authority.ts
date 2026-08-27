@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 
-import { EXTENDED_AUTHORITY_ROLE, LONG_HAUL_THRESHOLD_NM } from '@tailfin/shared';
+import { EXTENDED_AUTHORITY_ROLE, LONG_HAUL_THRESHOLD_NM, type OfficeRole } from '@tailfin/shared';
 
 import { officeHire } from '../db/schema';
 
@@ -29,16 +29,27 @@ export function requiresExtendedAuthority(input: {
 }
 
 /**
- * Whether this airline holds the Safety & Compliance seat.
+ * Whether this airline holds a given role seat.
  *
  * Scoped to the airline, so the answer is that airline's office and no other's.
- * A single indexed existence check rather than loading the office.
+ * A single indexed existence check rather than loading the office. It reads the
+ * dedicated role seat only: a neutral expansion seat holding a candidate of that
+ * role grants no capability (M5-04), so it does not count here.
  */
-export async function hasExtendedAuthority(db: Database, airlineId: string): Promise<boolean> {
+export async function holdsRoleSeat(
+  db: Database,
+  airlineId: string,
+  role: OfficeRole,
+): Promise<boolean> {
   const rows = await db
     .select({ id: officeHire.id })
     .from(officeHire)
-    .where(and(eq(officeHire.airlineId, airlineId), eq(officeHire.role, EXTENDED_AUTHORITY_ROLE)))
+    .where(and(eq(officeHire.airlineId, airlineId), eq(officeHire.role, role)))
     .limit(1);
   return rows.length > 0;
+}
+
+/** Whether this airline holds the Safety & Compliance seat. */
+export async function hasExtendedAuthority(db: Database, airlineId: string): Promise<boolean> {
+  return holdsRoleSeat(db, airlineId, EXTENDED_AUTHORITY_ROLE);
 }

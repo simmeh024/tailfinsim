@@ -7,7 +7,7 @@ import type { DisruptionRoll } from '@tailfin/sim';
 
 import { writeSetting } from '../automation/store';
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { airport, flight, operationsTask, worldEvent } from '../db/schema';
+import { airport, flight, officeHire, operationsTask, worldEvent } from '../db/schema';
 import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixture,
@@ -467,6 +467,61 @@ describeDb('a departure attempt', () => {
       // 90 <= 120: covered and accepted — no task.
       expect(outcome.status).toBe('delayed');
       expect(await tasksFor(fixture.airline.id)).toHaveLength(0);
+    });
+
+    async function fillOpsController(fixture: FoundedAirlineFixture): Promise<void> {
+      await db.db.insert(officeHire).values({
+        worldId: fixture.world.id,
+        airlineId: fixture.airline.id,
+        role: 'ops-controller',
+        candidateId: 'oc-1',
+        candidateName: 'Diego Alvarez',
+        monthlySalaryMinor: 2_600_000,
+      });
+    }
+
+    it('a delegated Ops Controller cancels in the shortfall band a plain policy would fly', async () => {
+      const { fixture, flightId } = await scheduledFlight();
+      const own = {
+        id: fixture.airline.id,
+        worldId: fixture.world.id,
+        status: 'active' as const,
+      };
+      // Ceiling 95; the 10% shortfall tightens it to ~85.5, below the 90-min roll.
+      await writeSetting(db.db, own, 'disruption', {
+        mode: 'delegated',
+        policy: { disruptionResponse: { cancelDelaysOverMinutes: 95 } },
+      });
+      await fillOpsController(fixture);
+
+      const outcome = await departFlight(db.db, flightId, DEPART_AT, {
+        dispatch: () => Promise.resolve(goes(randomUUID())),
+        disruption: () => Promise.resolve(delayRoll),
+      });
+
+      // The delegate is a shade too eager: 90 > 85.5, so it cancels.
+      expect(outcome.status).toBe('cancelled');
+    });
+
+    it('delegated without the Ops Controller seat flies it, like Policy', async () => {
+      const { fixture, flightId } = await scheduledFlight();
+      const own = {
+        id: fixture.airline.id,
+        worldId: fixture.world.id,
+        status: 'active' as const,
+      };
+      await writeSetting(db.db, own, 'disruption', {
+        mode: 'delegated',
+        policy: { disruptionResponse: { cancelDelaysOverMinutes: 95 } },
+      });
+      // No hire — drops to Policy, no shortfall: 90 < 95, so it flies.
+
+      const outcome = await departFlight(db.db, flightId, DEPART_AT, {
+        dispatch: () => Promise.resolve(goes(randomUUID())),
+        disruption: () => Promise.resolve(delayRoll),
+      });
+
+      expect(outcome.status).toBe('delayed');
     });
   });
 });
