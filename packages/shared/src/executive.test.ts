@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  EXECUTIVE_CANDIDATES,
   EXECUTIVE_FLOOR_REVENUE_GATE_MINOR,
   EXECUTIVE_FLOOR_UNLOCK_COST_MINOR,
   EXECUTIVE_OFFICE_COSTS_MINOR,
   EXECUTIVE_OFFICE_COUNT,
+  executiveCandidate,
   nextExecutiveOffice,
 } from './executive';
 
@@ -50,5 +52,32 @@ describe('the executive floor costs', () => {
     // All ten open — nothing more to buy.
     expect(nextExecutiveOffice(10)).toBeNull();
     expect(nextExecutiveOffice(11)).toBeNull();
+  });
+});
+
+describe('the C-Suite roster', () => {
+  it('holds more candidates than offices, so a "no free office" state is reachable', () => {
+    expect(EXECUTIVE_CANDIDATES.length).toBeGreaterThan(EXECUTIVE_OFFICE_COUNT);
+  });
+
+  it('has unique ids and only the three C-Suite tiers', () => {
+    const ids = new Set(EXECUTIVE_CANDIDATES.map((c) => c.id));
+    expect(ids.size).toBe(EXECUTIVE_CANDIDATES.length);
+    for (const c of EXECUTIVE_CANDIDATES) {
+      expect(['Director', 'VP', 'President']).toContain(c.tier);
+    }
+  });
+
+  it('prices every candidate between $150k and $1M a month', () => {
+    for (const c of EXECUTIVE_CANDIDATES) {
+      expect(c.monthlySalaryMinor).toBeGreaterThanOrEqual(15_000_000);
+      expect(c.monthlySalaryMinor).toBeLessThanOrEqual(100_000_000);
+    }
+  });
+
+  it('resolves a candidate by id, and refuses an unknown one', () => {
+    const first = EXECUTIVE_CANDIDATES[0]!;
+    expect(executiveCandidate(first.id)).toEqual(first);
+    expect(executiveCandidate('not-a-real-id')).toBeUndefined();
   });
 });

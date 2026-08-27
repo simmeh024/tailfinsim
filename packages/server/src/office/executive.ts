@@ -1,15 +1,17 @@
-import { and, eq, gte, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, sql } from 'drizzle-orm';
 
 import {
   EXECUTIVE_FLOOR_REVENUE_GATE_MINOR,
   EXECUTIVE_FLOOR_UNLOCK_COST_MINOR,
+  executiveCandidate,
   nextExecutiveOffice,
   type ExecutiveFloorState,
+  type ExecutiveHire,
 } from '@tailfin/shared';
 import { gameTime, type WorldClock } from '@tailfin/sim';
 
 import { moveAirlineCash } from '../airline/cash';
-import { airline, executiveFloor, flightResult, world } from '../db/schema';
+import { airline, executiveFloor, executiveHire, flightResult, world } from '../db/schema';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
 import type { Database } from '../db/client';
@@ -74,6 +76,29 @@ export async function monthlyGrossRevenueMinor(
   return Number(row?.total ?? 0);
 }
 
+/** The C-Suite an airline currently employs, oldest hire first, as the wire shape. */
+export async function readExecutiveHires(
+  db: Database,
+  airlineId: string,
+): Promise<ExecutiveHire[]> {
+  const rows = await db
+    .select({
+      candidateId: executiveHire.candidateId,
+      candidateName: executiveHire.candidateName,
+      monthlySalaryMinor: executiveHire.monthlySalaryMinor,
+      hiredAt: executiveHire.hiredAt,
+    })
+    .from(executiveHire)
+    .where(eq(executiveHire.airlineId, airlineId))
+    .orderBy(asc(executiveHire.hiredAt));
+  return rows.map((row) => ({
+    candidateId: row.candidateId,
+    candidateName: row.candidateName,
+    monthlySalaryMinor: row.monthlySalaryMinor,
+    hiredAt: row.hiredAt.toISOString(),
+  }));
+}
+
 /** Read the executive floor's state for one airline. */
 export async function readExecutiveFloor(
   db: Database,
@@ -81,15 +106,18 @@ export async function readExecutiveFloor(
   gameNow?: Date,
 ): Promise<ExecutiveFloorState> {
   const now = gameNow ?? (await worldGameNow(db, own.worldId));
-  const [row] = await db
-    .select({ officesUnlocked: executiveFloor.officesUnlocked })
-    .from(executiveFloor)
-    .where(eq(executiveFloor.airlineId, own.id))
-    .limit(1);
+  const [[row], hires, monthlyRevenueMinor] = await Promise.all([
+    db
+      .select({ officesUnlocked: executiveFloor.officesUnlocked })
+      .from(executiveFloor)
+      .where(eq(executiveFloor.airlineId, own.id))
+      .limit(1),
+    readExecutiveHires(db, own.id),
+    monthlyGrossRevenueMinor(db, own.id, now),
+  ]);
 
   const unlocked = row !== undefined;
   const officesUnlocked = row?.officesUnlocked ?? 0;
-  const monthlyRevenueMinor = await monthlyGrossRevenueMinor(db, own.id, now);
 
   return {
     unlocked,
@@ -98,6 +126,7 @@ export async function readExecutiveFloor(
     revenueGateMinor: EXECUTIVE_FLOOR_REVENUE_GATE_MINOR,
     monthlyRevenueMinor,
     nextOffice: unlocked ? nextExecutiveOffice(officesUnlocked) : null,
+    hires,
   };
 }
 
@@ -198,4 +227,77 @@ export async function unlockExecutiveOffice(
 
   if (outcome !== null) return { ok: false, code: outcome };
   return { ok: true, state: await readExecutiveFloor(db, own) };
+}
+
+type HireExecFailCode = 'floor_locked' | 'unknown_candidate' | 'already_hired' | 'no_free_office';
+
+export type HireExecutiveResult =
+  { ok: true; state: ExecutiveFloorState } | { ok: false; code: HireExecFailCode };
+
+/**
+ * Hire a C-Suite candidate into a free executive office (Phase 2).
+ *
+ * An office is generic — any candidate fits any office — so a hire simply consumes
+ * one of the opened offices, and an airline may employ as many executives as it
+ * has opened. The candidate's **name and salary come from the shared catalogue by
+ * id**, never the request, and are snapshotted onto the row so a later retune
+ * cannot re-bill a standing executive. The `FOR UPDATE` lock on the floor row
+ * serialises concurrent hires so the capacity check cannot be raced past, and the
+ * `(airline_id, candidate_id)` unique index keeps a person from being hired twice.
+ */
+export async function hireExecutive(
+  db: Database,
+  own: ResolvedPlayerAirline,
+  candidateId: string,
+): Promise<HireExecutiveResult> {
+  const candidate = executiveCandidate(candidateId);
+  if (candidate === undefined) return { ok: false, code: 'unknown_candidate' };
+
+  const outcome = await db.transaction(async (tx): Promise<HireExecFailCode | null> => {
+    const [floor] = await tx
+      .select({ officesUnlocked: executiveFloor.officesUnlocked })
+      .from(executiveFloor)
+      .where(eq(executiveFloor.airlineId, own.id))
+      .limit(1)
+      .for('update');
+    if (!floor) return 'floor_locked';
+
+    const [existing] = await tx
+      .select({ id: executiveHire.id })
+      .from(executiveHire)
+      .where(and(eq(executiveHire.airlineId, own.id), eq(executiveHire.candidateId, candidateId)))
+      .limit(1);
+    if (existing) return 'already_hired';
+
+    const [countRow] = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(executiveHire)
+      .where(eq(executiveHire.airlineId, own.id));
+    if ((countRow?.count ?? 0) >= floor.officesUnlocked) return 'no_free_office';
+
+    await tx.insert(executiveHire).values({
+      worldId: own.worldId,
+      airlineId: own.id,
+      candidateId,
+      candidateName: candidate.name,
+      monthlySalaryMinor: candidate.monthlySalaryMinor,
+    });
+    return null;
+  });
+
+  if (outcome !== null) return { ok: false, code: outcome };
+  return { ok: true, state: await readExecutiveFloor(db, own) };
+}
+
+/** Let a C-Suite member go. Idempotent: dismissing someone not employed is a no-op. */
+export async function dismissExecutive(
+  db: Database,
+  own: ResolvedPlayerAirline,
+  candidateId: string,
+): Promise<{ dismissed: boolean }> {
+  const removed = await db
+    .delete(executiveHire)
+    .where(and(eq(executiveHire.airlineId, own.id), eq(executiveHire.candidateId, candidateId)))
+    .returning({ id: executiveHire.id });
+  return { dismissed: removed.length > 0 };
 }

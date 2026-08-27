@@ -16,6 +16,7 @@ import { CrewPage } from './crew/CrewPage';
 import { FleetPage } from './fleet/FleetPage';
 import { fetchFoundingOptions } from './founding/api';
 import { FoundingPage } from './founding/FoundingPage';
+import { ExecutiveSuitePage } from './hq/ExecutiveSuitePage';
 import { HeadquartersPage } from './hq/HeadquartersPage';
 import { LiveryBuilderPage } from './livery/LiveryBuilder';
 import { NetworkPage } from './network/NetworkPage';
@@ -106,6 +107,7 @@ export function App(): ReactNode {
               <Route path="finance" element={<FinancePage />} />
               <Route path="crew" element={<CrewPage />} />
               <Route path="headquarters" element={<HeadquartersPage />} />
+              <Route path="c-suite" element={<ExecutiveSuitePage />} />
               <Route path="design" element={<LiveryBuilderPage />} />
               <Route path="board" element={<BoardPage />} />
               {/*

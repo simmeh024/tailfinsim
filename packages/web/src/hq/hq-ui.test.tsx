@@ -65,6 +65,19 @@ function renderHq(
 }
 
 /**
+ * The page on its own — no shell, so `useOutletContext` is null and it falls back
+ * to local selection. It still needs a router for its links (the C-Suite button),
+ * so a bare MemoryRouter wraps it without an Outlet.
+ */
+function renderPage(): void {
+  render(
+    <MemoryRouter initialEntries={['/headquarters']}>
+      <HeadquartersPage />
+    </MemoryRouter>,
+  );
+}
+
+/**
  * Headquarters — the office hires (M5-04, §9.1).
  *
  * The page is a scaffold, so these are the invariants that keep it honest: every
@@ -258,7 +271,7 @@ describe('the Headquarters page', () => {
   });
 
   it('shows every seat and every candidate', async () => {
-    render(<HeadquartersPage />);
+    renderPage();
     expect(screen.getByRole('heading', { level: 1, name: 'Headquarters' })).toBeInTheDocument();
     for (const role of HQ_ROLES) {
       expect(screen.getByRole('heading', { level: 2, name: role.role })).toBeInTheDocument();
@@ -273,7 +286,7 @@ describe('the Headquarters page', () => {
   });
 
   it('shows each candidate their own salary, not a flat role rate', () => {
-    render(<HeadquartersPage />);
+    renderPage();
     const seat = screen.getByRole('region', { name: 'Route Planner' });
     const tom = within(seat).getByText('Tom Bakker').closest('.hq-card');
     const victor = within(seat).getByText('Victor Lindqvist').closest('.hq-card');
@@ -284,7 +297,7 @@ describe('the Headquarters page', () => {
   });
 
   it('starts every candidate greyed, and colours the one hired', async () => {
-    render(<HeadquartersPage />);
+    renderPage();
     const mara = HQ_CANDIDATES.find((c) => c.id === 'route-planner-mara')!;
     const card = screen.getByText(mara.name).closest<HTMLElement>('.hq-card');
     if (!card) throw new Error('no card for Mara');
@@ -302,7 +315,7 @@ describe('the Headquarters page', () => {
   });
 
   it('holds one person per seat — hiring a rival swaps, it does not stack', async () => {
-    render(<HeadquartersPage />);
+    renderPage();
     const seat = screen.getByRole('region', { name: 'Route Planner' });
 
     const hireMara = within(seat).getByRole('button', { name: /Hire Mara/i });
@@ -449,7 +462,7 @@ describe('the Headquarters page', () => {
         candidateName: 'Claire Fontaine',
       },
     ];
-    render(<HeadquartersPage />);
+    renderPage();
     const seat = screen.getByRole('region', { name: 'Safety & Compliance' });
     expect(await within(seat).findByText(/Seat filled by Claire Fontaine/i)).toBeInTheDocument();
     // Filling the gate seat unlocks long-haul authority, and the page says so.
@@ -457,7 +470,7 @@ describe('the Headquarters page', () => {
   });
 
   it('flags the seat that gates long-haul authority', () => {
-    render(<HeadquartersPage />);
+    renderPage();
     const seat = screen.getByRole('region', { name: 'Safety & Compliance' });
     expect(within(seat).getByText('Gate')).toBeInTheDocument();
     const gate = seat.querySelector('.hq-card__gate');
@@ -465,7 +478,7 @@ describe('the Headquarters page', () => {
   });
 
   it('gates Delegated in the Policies modal until an Ops Controller is hired', async () => {
-    render(<HeadquartersPage />);
+    renderPage();
     fireEvent.click(screen.getByRole('button', { name: 'Policies' }));
     const dialog = await screen.findByRole('dialog', { name: /operations policies/i });
     expect(within(dialog).getByRole('radio', { name: /Delegated/i })).toBeDisabled();
@@ -479,7 +492,7 @@ describe('the Headquarters page', () => {
         candidateName: 'Diego Alvarez',
       },
     ];
-    render(<HeadquartersPage />);
+    renderPage();
     await screen.findByText(/Seat filled by Diego Alvarez/i);
     fireEvent.click(screen.getByRole('button', { name: 'Policies' }));
     const dialog = await screen.findByRole('dialog');
@@ -487,7 +500,7 @@ describe('the Headquarters page', () => {
   });
 
   it('saves a disruption policy from the modal', async () => {
-    render(<HeadquartersPage />);
+    renderPage();
     fireEvent.click(screen.getByRole('button', { name: 'Policies' }));
     const dialog = await screen.findByRole('dialog');
 

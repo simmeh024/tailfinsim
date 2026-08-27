@@ -2,7 +2,7 @@ import { eq, inArray } from 'drizzle-orm';
 
 import { moveAirlineCash } from '../airline/cash';
 import { previousMonth } from '../crew/payroll';
-import { cashMovement, officeHire } from '../db/schema';
+import { cashMovement, executiveHire, officeHire } from '../db/schema';
 
 import type { Database } from '../db/client';
 
@@ -30,7 +30,9 @@ import type { Database } from '../db/client';
  *
  * One movement per airline — the office is a single line on the ledger, unlike
  * crew's people-and-buildings split, because there is nothing here a player
- * would want to interrogate into parts.
+ * would want to interrogate into parts. The C-Suite (Phase 2) is billed here too:
+ * an `executive_hire` is a salaried head like any other, folded into the same
+ * per-airline `office_salary` movement rather than given a line of its own.
  */
 
 export interface OfficePayrollResult {
@@ -49,16 +51,25 @@ export async function runOfficePayroll(
   const nextMonthStart = monthAfter(period);
   const occurredAt = new Date(`${nextMonthStart}-01T00:00:00.000Z`);
 
-  const rows = await db
-    .select({
-      airlineId: officeHire.airlineId,
-      monthlySalaryMinor: officeHire.monthlySalaryMinor,
-    })
-    .from(officeHire)
-    .where(eq(officeHire.worldId, worldId));
+  const [officeRows, execRows] = await Promise.all([
+    db
+      .select({
+        airlineId: officeHire.airlineId,
+        monthlySalaryMinor: officeHire.monthlySalaryMinor,
+      })
+      .from(officeHire)
+      .where(eq(officeHire.worldId, worldId)),
+    db
+      .select({
+        airlineId: executiveHire.airlineId,
+        monthlySalaryMinor: executiveHire.monthlySalaryMinor,
+      })
+      .from(executiveHire)
+      .where(eq(executiveHire.worldId, worldId)),
+  ]);
 
   const owed = new Map<string, number>();
-  for (const row of rows) {
+  for (const row of [...officeRows, ...execRows]) {
     owed.set(row.airlineId, (owed.get(row.airlineId) ?? 0) + row.monthlySalaryMinor);
   }
   if (owed.size === 0) return { airlinesBilled: 0, totalMinor: 0 };

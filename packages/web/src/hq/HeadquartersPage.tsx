@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useOutletContext } from 'react-router';
+import { Link, useOutletContext } from 'react-router';
 
 import {
   HEADQUARTERS_BASE_SEATS,
@@ -217,9 +217,18 @@ export function HeadquartersPage(): ReactNode {
           </p>
         </div>
         <div className="hq-page__aside">
-          <button type="button" className="hq-page__policies" onClick={() => setPoliciesOpen(true)}>
-            Policies
-          </button>
+          <div className="hq-page__actions">
+            <button
+              type="button"
+              className="hq-page__policies"
+              onClick={() => setPoliciesOpen(true)}
+            >
+              Policies
+            </button>
+            <Link to="/c-suite" className="hq-page__policies">
+              C-Suite
+            </Link>
+          </div>
           <p className="hq-page__count" role="status">
             <strong>{filled}</strong> of {totalSeats} seats filled
             {office?.hasExtendedAuthority === true && (
