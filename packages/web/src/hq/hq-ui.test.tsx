@@ -161,6 +161,16 @@ describe('the Headquarters page', () => {
   let neutralSeats = 0;
   let offeredSpecialist = 'social-media-reputation';
   let automation: { settings: unknown[]; tasks: unknown[] } = { settings: [], tasks: [] };
+  // The panel fetches the executive floor on mount; a closed floor with no
+  // revenue is the default so the pager appears and the gate reads locked.
+  let execFloor = {
+    unlocked: false,
+    officesUnlocked: 0,
+    unlockCostMinor: 10_000_000_000,
+    revenueGateMinor: 5_000_000_000,
+    monthlyRevenueMinor: 0,
+    nextOffice: null as { index: number; costMinor: number } | null,
+  };
 
   function officeState() {
     return {
@@ -179,6 +189,14 @@ describe('the Headquarters page', () => {
   beforeEach(() => {
     hires = [];
     neutralSeats = 0;
+    execFloor = {
+      unlocked: false,
+      officesUnlocked: 0,
+      unlockCostMinor: 10_000_000_000,
+      revenueGateMinor: 5_000_000_000,
+      monthlyRevenueMinor: 0,
+      nextOffice: null,
+    };
     offeredSpecialist = 'social-media-reputation';
     automation = { settings: [], tasks: [] };
     vi.stubGlobal(
@@ -196,6 +214,22 @@ describe('the Headquarters page', () => {
           const system = url.slice('/api/automation/'.length);
           automation = { settings: [{ system, mode: body.mode, policy: body.policy }], tasks: [] };
           return Promise.resolve(new Response(JSON.stringify(automation), { status: 200 }));
+        }
+        if (url === '/api/office/executive' && method === 'GET') {
+          return Promise.resolve(new Response(JSON.stringify(execFloor), { status: 200 }));
+        }
+        if (url === '/api/office/executive/unlock' && method === 'POST') {
+          execFloor = {
+            ...execFloor,
+            unlocked: true,
+            nextOffice: { index: 0, costMinor: 7_500_000_000 },
+          };
+          return Promise.resolve(new Response(JSON.stringify(execFloor), { status: 200 }));
+        }
+        if (url === '/api/office/executive/offices' && method === 'POST') {
+          const officesUnlocked = execFloor.officesUnlocked + 1;
+          execFloor = { ...execFloor, officesUnlocked, nextOffice: null };
+          return Promise.resolve(new Response(JSON.stringify(execFloor), { status: 200 }));
         }
         if (url === '/api/office' && method === 'GET') return ok();
         if (url === '/api/office/hires' && method === 'POST') {
@@ -385,6 +419,26 @@ describe('the Headquarters page', () => {
     expect(await screen.findByRole('button', { name: /Expand/i })).toBeInTheDocument();
     // …and there is no Office 07 to staff until it is bought.
     expect(screen.queryByRole('button', { name: /Office 07/i })).toBeNull();
+  });
+
+  it('pages to the executive floor and shows the locked, revenue-gated overlay', async () => {
+    renderHq();
+    fireEvent.click(await screen.findByRole('tab', { name: /Executive/i }));
+    const unlock = await screen.findByRole('button', { name: /Unlock the Executive Floor/i });
+    // No revenue → the gate is not met and the unlock is disabled.
+    expect(screen.getByText(/do not meet the requirements/i)).toBeInTheDocument();
+    expect(unlock).toBeDisabled();
+  });
+
+  it('unlocks the executive floor once the revenue gate is met, then offers its first office', async () => {
+    execFloor.monthlyRevenueMinor = 6_000_000_000; // above the $50M/month gate
+    renderHq();
+    fireEvent.click(await screen.findByRole('tab', { name: /Executive/i }));
+    const unlock = await screen.findByRole('button', { name: /Unlock the Executive Floor/i });
+    expect(unlock).toBeEnabled();
+    fireEvent.click(unlock);
+    // The open floor offers its first office.
+    expect(await screen.findByRole('button', { name: /Open office 1 of 10/i })).toBeInTheDocument();
   });
 
   it('renders the seats the server already reports as filled, on load', async () => {
