@@ -17,6 +17,7 @@ import { registerPlayerAirlineContext } from './airline/context';
 import { type AirlineIdentityModerator } from './airline/moderation';
 import { registerAirlineRoutes } from './airline/routes';
 import { type GoogleAuthOperations, registerAuthRoutes } from './auth/routes';
+import { registerAutomationRoutes } from './automation/routes';
 import { readBuildInfo } from './build-info';
 import { registerCrewRoutes } from './crew/routes';
 import { type DatabaseHandle } from './db/client';
@@ -204,6 +205,7 @@ export function buildApp({
   // Crew, behind the same airline boundary (M5-01).
   registerCrewRoutes(app, { db });
   registerOfficeRoutes(app, { db });
+  registerAutomationRoutes(app, { db });
 
   const startedAt = Date.now();
 

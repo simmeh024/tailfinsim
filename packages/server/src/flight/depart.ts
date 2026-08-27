@@ -2,6 +2,9 @@ import { eq } from 'drizzle-orm';
 
 import type { DisruptionRoll } from '@tailfin/sim';
 
+import { resolveDisruptionResponse } from '../automation/response';
+import { readSetting } from '../automation/store';
+import { raiseOperationsTask } from '../automation/tasks';
 import { dispatchCrew, type DispatchDecision } from '../crew/dispatch';
 import { flight } from '../db/schema';
 import { scheduleEvent, type EventHandler } from '../sim/event-queue';
@@ -153,6 +156,7 @@ export async function departFlight(
 interface FlightRow {
   id: string;
   worldId: string;
+  airlineId: string;
   scheduledDeparture: Date;
 }
 
@@ -248,6 +252,21 @@ async function applyGroundDisruption(
   roll: DisruptionRoll,
 ): Promise<DepartureOutcome> {
   if (roll.outcome === 'delay') {
+    // The automation ladder governs the *response* to a delay (ADR-0023): the
+    // player's policy may cancel it to protect the rotation, or it waits for
+    // them. The mechanical delay is already decided; this decides what to do
+    // about it.
+    const setting = await readSetting(db, row.airlineId, 'disruption');
+    const response = resolveDisruptionResponse(setting, roll.delayMinutes);
+
+    if (response.action === 'cancel') {
+      await cancelFlight(db, row.id, roll.cause);
+      return {
+        status: 'cancelled',
+        reason: `Your disruption policy cancelled it — a ${roll.cause} fault would have delayed it ${String(roll.delayMinutes)} min.`,
+      };
+    }
+
     const untilAt = new Date(at.getTime() + roll.delayMinutes * 60_000);
     await db
       .update(flight)
@@ -262,15 +281,36 @@ async function applyGroundDisruption(
       idempotencyKey: `flight:${row.id}:depart:${untilAt.toISOString()}`,
     });
 
+    if (response.taskKind !== null) {
+      await raiseOperationsTask(db, {
+        worldId: row.worldId,
+        airlineId: row.airlineId,
+        system: 'disruption',
+        kind: response.taskKind,
+        subjectId: row.id,
+        detail: `A ${roll.cause} fault delayed this flight ${String(roll.delayMinutes)} min.`,
+      });
+    }
+
     return { status: 'delayed', untilAt, reason: `A ${roll.cause} fault delayed the departure.` };
   }
 
+  // A mechanical cancellation — the aeroplane broke — is not a decision the
+  // policy can undo. It stands, and the disruption cost bills the passengers.
+  await cancelFlight(db, row.id, roll.cause);
+  return { status: 'cancelled', reason: `A ${roll.cause} fault cancelled the flight.` };
+}
+
+/** Ground a flight where `machine.ts` puts a cancelled one: it never left the stand. */
+async function cancelFlight(
+  db: Database,
+  flightId: string,
+  cause: DisruptionRoll['cause'],
+): Promise<void> {
   await db
     .update(flight)
-    .set({ phase: 'idle', disruption: 'cancelled', disruptionCause: roll.cause })
-    .where(eq(flight.id, row.id));
-
-  return { status: 'cancelled', reason: `A ${roll.cause} fault cancelled the flight.` };
+    .set({ phase: 'idle', disruption: 'cancelled', disruptionCause: cause })
+    .where(eq(flight.id, flightId));
 }
 
 /**
