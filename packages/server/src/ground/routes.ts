@@ -2,6 +2,7 @@ import {
   apiErrorJsonSchema,
   groundStationResponseJsonSchema,
   SignContractRequest,
+  Uuid,
 } from '@tailfin/shared';
 
 import { resolvedAirlineOf } from '../airline/context';
@@ -86,6 +87,9 @@ export function registerGroundRoutes(app: FastifyInstance, { db }: { db: Databas
     },
     async (request, reply) => {
       const own = resolvedAirlineOf(request);
+      if (!Uuid.safeParse(request.params.id).success) {
+        return reply.code(404).send({ code: 'not_found', message: 'No such contract' });
+      }
       const icao = await terminateContract(db.db, own, request.params.id);
       if (icao === null) {
         return reply.code(404).send({ code: 'not_found', message: 'No such contract' });

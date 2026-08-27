@@ -18,11 +18,13 @@ import {
   airport,
   crewBase,
   crewPool,
+  groundContract,
   player,
   usedAircraftListing,
   world,
 } from '../db/schema';
 import { type ServerEnv } from '../env';
+import { readStation, signContract } from '../ground/contracts';
 import { createOwnershipTestSuite, type OwnershipTestSuite } from '../test-fixtures/ownership';
 import {
   ABSENT_RESOURCE_UUID,
@@ -65,6 +67,9 @@ describeDb('SEC-07 resource id tampering at owner-scoped HTTP boundaries', () =>
   let competitorAirframeId: string;
   let ownListingId: string;
   let crossWorldListingId: string;
+  let ownContractId: string;
+  let competitorContractId: string;
+  let otherWorldContractId: string;
   let extraAirlineId: string | undefined;
 
   function own(airlineFixture: OwnershipTestSuite['airlineA']): ResolvedPlayerAirline {
@@ -97,11 +102,15 @@ describeDb('SEC-07 resource id tampering at owner-scoped HTTP boundaries', () =>
     madeAirportIds.push(created.id);
   }
 
-  async function topUp(airlineId: string, reference: string): Promise<void> {
+  async function topUp(
+    airlineId: string,
+    reference: string,
+    amountMinor = 10_000_000_000,
+  ): Promise<void> {
     await db.db.transaction((tx) =>
       moveAirlineCash(tx, {
         airlineId,
-        amountMinor: 10_000_000_000,
+        amountMinor,
         cause: 'flight_settlement',
         reference,
         occurredAt: suite.worldMain.epoch,
@@ -132,6 +141,27 @@ describeDb('SEC-07 resource id tampering at owner-scoped HTTP boundaries', () =>
     await makeAirport('SZAA', -9_707_001);
     await makeAirport('SZAB', -9_707_002);
     await makeAirport('SZAC', -9_707_003);
+    async function makeContract(
+      airlineFixture: OwnershipTestSuite['airlineA'],
+      icao: string,
+    ): Promise<string> {
+      const station = await readStation(db.db, own(airlineFixture), icao);
+      const line = station?.lines[0];
+      const offer = line?.offers[0];
+      if (!line || !offer) throw new Error('SEC-07 ground offer was not available');
+      const signed = await signContract(db.db, own(airlineFixture), icao, {
+        serviceLine: line.serviceLine,
+        grade: offer.grade,
+      });
+      if (!signed.ok) throw new Error('SEC-07 ground contract was not signed');
+      const id = signed.station.lines.find((value) => value.serviceLine === line.serviceLine)
+        ?.contracted?.id;
+      if (!id) throw new Error('SEC-07 ground contract was not returned');
+      return id;
+    }
+    ownContractId = await makeContract(suite.airlineA, 'SZAA');
+    competitorContractId = await makeContract(suite.airlineB, 'SZAB');
+    otherWorldContractId = await makeContract(suite.airlineAOther, 'SZAC');
     await topUp(suite.airlineA.airline.id, 'sec-07-player-a-top-up');
     await topUp(suite.airlineB.airline.id, 'sec-07-player-b-top-up');
 
@@ -179,7 +209,10 @@ describeDb('SEC-07 resource id tampering at owner-scoped HTTP boundaries', () =>
     await refreshUsedAircraftMarket(db.db, suite.worldMain.id, suite.worldMain.launchDate);
     await refreshUsedAircraftMarket(db.db, suite.worldOther.id, suite.worldOther.launchDate);
     const [ownListing] = await db.db
-      .select({ id: usedAircraftListing.id })
+      .select({
+        id: usedAircraftListing.id,
+        askingPriceMinor: usedAircraftListing.askingPriceMinor,
+      })
       .from(usedAircraftListing)
       .where(
         and(
@@ -201,6 +234,13 @@ describeDb('SEC-07 resource id tampering at owner-scoped HTTP boundaries', () =>
     if (!ownListing || !crossWorldListing) throw new Error('SEC-07 used listings were not created');
     ownListingId = ownListing.id;
     crossWorldListingId = crossWorldListing.id;
+    // The generated market may offer a widebody. Fund the exact sampled price
+    // so the allowed-ID control tests authorization, not random affordability.
+    await topUp(
+      suite.airlineA.airline.id,
+      'sec-07-used-listing-funds',
+      ownListing.askingPriceMinor,
+    );
   });
 
   afterAll(async () => {
@@ -344,6 +384,53 @@ describeDb('SEC-07 resource id tampering at owner-scoped HTTP boundaries', () =>
       );
       expect([400, 404]).toContain(response.statusCode);
     }
+  });
+
+  it('conceals ground contract ids and leaves every refused termination untouched', async () => {
+    const snapshot = async () => ({
+      contracts: await db.db
+        .select()
+        .from(groundContract)
+        .where(eq(groundContract.id, competitorContractId)),
+      own: await db.db.select().from(groundContract).where(eq(groundContract.id, ownContractId)),
+      otherWorld: await db.db
+        .select()
+        .from(groundContract)
+        .where(eq(groundContract.id, otherWorldContractId)),
+      cash: await db.db
+        .select({ cashMinor: airline.cashMinor })
+        .from(airline)
+        .where(eq(airline.id, suite.airlineA.airline.id)),
+    });
+    const before = await snapshot();
+    const denied = resourceIdCases({
+      own: ownContractId,
+      anotherPlayer: competitorContractId,
+      wrongEntity: suite.worldMain.id,
+    }).filter(({ expected }) => expected === 'conceal');
+    for (const id of [
+      ...denied.map((testCase) => testCase.id),
+      otherWorldContractId,
+      ...MALFORMED_RESOURCE_IDS,
+    ]) {
+      const response = await suite.as(
+        { actor: 'playerA', worldId: suite.worldMain.id },
+        { method: 'DELETE', url: `/api/ground/contracts/${encodeURIComponent(id)}` },
+      );
+      expect(response.statusCode, response.body).toBe(404);
+      if (id !== '') {
+        expect(response.json()).toEqual({ code: 'not_found', message: 'No such contract' });
+      }
+      expect(await snapshot()).toEqual(before);
+    }
+    const allowed = await suite.as(
+      { actor: 'playerA', worldId: suite.worldMain.id },
+      { method: 'DELETE', url: `/api/ground/contracts/${ownContractId}` },
+    );
+    expect(allowed.statusCode, allowed.body).toBe(200);
+    expect(
+      await db.db.select().from(groundContract).where(eq(groundContract.id, ownContractId)),
+    ).toMatchObject([{ status: 'terminated' }]);
   });
 
   it('conceals refused maintenance targets and leaves the foreign airframe unchanged', async () => {

@@ -109,6 +109,12 @@ export const RESOURCE_ID_SURFACES = [
     semantics: 'admin-authorized-resource',
   })),
   {
+    endpoint: 'DELETE /api/ground/contracts/:id',
+    position: 'path',
+    field: 'id',
+    semantics: 'owner-scoped-resource',
+  },
+  {
     endpoint: 'GET /api/fleet/airframes/:airframeId',
     position: 'path',
     field: 'airframeId',

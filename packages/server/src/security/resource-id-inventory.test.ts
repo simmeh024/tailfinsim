@@ -24,8 +24,11 @@ const UUID_A = '00000000-0000-4000-8000-000000000001';
 
 /** Parameterised routes whose identifiers deliberately are not resource UUIDs. */
 const NON_UUID_PATH_IDENTIFIERS = [
-  'DELETE /api/office/hires/:role',
+  'DELETE /api/office/hires/:seat',
   'GET /api/admin/economy-config/:version',
+  'PUT /api/automation/:system',
+  'GET /api/ground/:icao',
+  'POST /api/ground/:icao/contracts',
 ] as const;
 
 const BODY_UUID_CONTRACTS = [

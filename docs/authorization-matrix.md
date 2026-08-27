@@ -74,7 +74,7 @@ so a new `:parameter` cannot arrive unclassified.
 
 Apply the matrix according to what the identifier means:
 
-- owner-scoped route, airframe and crew-base references resolve inside the session-derived airline;
+- owner-scoped route, airframe, crew-base and ground-contract references resolve inside the session-derived airline;
   foreign, absent and wrong-kind UUIDs are the same 404, and denied writes leave both the target and
   the caller's balance unchanged;
 - a body parent such as founding `worldId` resolves the world before a child can be created; worlds
