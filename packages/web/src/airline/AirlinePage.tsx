@@ -1,12 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useOutletContext } from 'react-router';
 
-import type { UpdateOwnAirlineInput } from '@tailfin/shared';
+import {
+  airlineLogoEquals,
+  defaultAirlineLogo,
+  type AirlineLogo,
+  type UpdateOwnAirlineInput,
+} from '@tailfin/shared';
 
+import { AirlineLogoEmblem } from './AirlineLogoEmblem';
 import { formatMinorUnits, patchOwnAirline } from './api';
+import { LogoEditor } from './LogoEditor';
 
 import type { OwnAirlineShellContext } from '../shell/AppShell';
 import type { ReactNode } from 'react';
+
+/** The draft carries a concrete logo so the editor and viewer never see `undefined`. */
+type AirlineDraft = UpdateOwnAirlineInput & { logo: AirlineLogo };
 
 function FieldError({ field, errors }: { field: string; errors: Record<string, string[]> }) {
   const messages = errors[field];
@@ -26,7 +36,7 @@ export function AirlinePage(): ReactNode {
   const { ownAirline, ownAirlineError, ownAirlineLoading, replaceOwnAirline } =
     useOutletContext<OwnAirlineShellContext>();
   const errorSummary = useRef<HTMLDivElement>(null);
-  const [draft, setDraft] = useState<UpdateOwnAirlineInput | null>(null);
+  const [draft, setDraft] = useState<AirlineDraft | null>(null);
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -34,10 +44,14 @@ export function AirlinePage(): ReactNode {
 
   useEffect(() => {
     if (!ownAirline?.airline) return;
+    const air = ownAirline.airline;
     setDraft({
-      name: ownAirline.airline.name,
-      callsign: ownAirline.airline.callsign,
-      baseCountry: ownAirline.airline.baseCountry,
+      name: air.name,
+      callsign: air.callsign,
+      baseCountry: air.baseCountry,
+      // Seed with the effective current logo — the stored one, or the default for
+      // an airline that has never set one — so an untouched logo reads as clean.
+      logo: air.logo ?? defaultAirlineLogo(air.iataCode),
     });
   }, [ownAirline]);
 
@@ -85,16 +99,23 @@ export function AirlinePage(): ReactNode {
     return (
       <section className="page airline-page" aria-labelledby="airline-page-title">
         <div className="airline-page__heading">
-          <div>
-            <p className="airline-page__eyebrow">Read-only airline record</p>
-            <h1 className="page__title" id="airline-page-title">
-              {current.name}
-            </h1>
-            <p className="page__note">
-              {restricted
-                ? 'Restricted · existing operations remain available, but new commitments and rebrands are paused.'
-                : `Ceased ${current.ceasedAt?.slice(0, 10) ?? ''} · operational history remains readable.`}
-            </p>
+          <div className="airline-page__brand">
+            <AirlineLogoEmblem
+              logo={current.logo ?? defaultAirlineLogo(current.iataCode)}
+              size={72}
+              label={`${current.name} logo`}
+            />
+            <div>
+              <p className="airline-page__eyebrow">Read-only airline record</p>
+              <h1 className="page__title" id="airline-page-title">
+                {current.name}
+              </h1>
+              <p className="page__note">
+                {restricted
+                  ? 'Restricted · existing operations remain available, but new commitments and rebrands are paused.'
+                  : `Ceased ${current.ceasedAt?.slice(0, 10) ?? ''} · operational history remains readable.`}
+              </p>
+            </div>
           </div>
           <div className="airline-page__designators" aria-label="Historical airline designators">
             <span>
@@ -136,10 +157,16 @@ export function AirlinePage(): ReactNode {
     );
   }
 
+  // The effective current logo — stored, or the default shown for an airline that
+  // has never set one. The logo is "dirty" only against this, so the default is
+  // display-only until the player actually changes it (and pays for it).
+  const effectiveLogo = current.logo ?? defaultAirlineLogo(current.iataCode);
+  const logoDirty = !airlineLogoEquals(effectiveLogo, draft.logo);
   const dirty =
     draft.name !== current.name ||
     draft.callsign !== current.callsign ||
-    draft.baseCountry !== current.baseCountry;
+    draft.baseCountry !== current.baseCountry ||
+    logoDirty;
 
   const update = (field: keyof UpdateOwnAirlineInput, value: string) => {
     setDraft((before) => (before ? { ...before, [field]: value } : before));
@@ -157,18 +184,27 @@ export function AirlinePage(): ReactNode {
     setFormError(null);
     setSuccess(null);
     try {
-      const outcome = await patchOwnAirline(draft);
+      // Send the logo only when it actually changed, so submitting an untouched
+      // default emblem is not charged as a rebrand.
+      const outcome = await patchOwnAirline({
+        name: draft.name,
+        callsign: draft.callsign,
+        baseCountry: draft.baseCountry,
+        ...(logoDirty ? { logo: draft.logo } : {}),
+      });
       if (!outcome.ok) {
         setErrors(outcome.refusal.fields ?? {});
         setFormError(outcome.refusal.message);
         return;
       }
 
-      replaceOwnAirline({ ...ownAirline, airline: outcome.result.airline });
+      const saved = outcome.result.airline;
+      replaceOwnAirline({ ...ownAirline, airline: saved });
       setDraft({
-        name: outcome.result.airline.name,
-        callsign: outcome.result.airline.callsign,
-        baseCountry: outcome.result.airline.baseCountry,
+        name: saved.name,
+        callsign: saved.callsign,
+        baseCountry: saved.baseCountry,
+        logo: saved.logo ?? defaultAirlineLogo(saved.iataCode),
       });
       setSuccess(
         outcome.result.changed
@@ -185,14 +221,17 @@ export function AirlinePage(): ReactNode {
   return (
     <section className="page airline-page" aria-labelledby="airline-page-title">
       <div className="airline-page__heading">
-        <div>
-          <p className="airline-page__eyebrow">Private airline record</p>
-          <h1 className="page__title" id="airline-page-title">
-            {current.name}
-          </h1>
-          <p className="page__note">
-            Identity, current balance and reputation for the active world.
-          </p>
+        <div className="airline-page__brand">
+          <AirlineLogoEmblem logo={effectiveLogo} size={72} label={`${current.name} logo`} />
+          <div>
+            <p className="airline-page__eyebrow">Private airline record</p>
+            <h1 className="page__title" id="airline-page-title">
+              {current.name}
+            </h1>
+            <p className="page__note">
+              Identity, current balance and reputation for the active world.
+            </p>
+          </div>
         </div>
         <div className="airline-page__designators" aria-label="Airline designators">
           <span>
@@ -310,6 +349,24 @@ export function AirlinePage(): ReactNode {
               <p id="airline-country-hint">Two-letter ISO code, such as NL or GB.</p>
               <FieldError field="baseCountry" errors={errors} />
             </div>
+          </div>
+
+          <div className="airline-page__logo-section">
+            <div className="airline-page__logo-heading">
+              <h3>Brand logo</h3>
+              {logoDirty && <span className="airline-page__logo-flag">changed</span>}
+            </div>
+            <p className="airline-page__logo-note">
+              A procedural emblem — pick a shape, a mark and its colours. Changing the logo is part
+              of the same paid rebrand as the name or callsign.
+            </p>
+            <LogoEditor
+              value={draft.logo}
+              onChange={(logo) => {
+                setDraft((before) => (before ? { ...before, logo } : before));
+                setSuccess(null);
+              }}
+            />
           </div>
 
           <button type="submit" disabled={!dirty || busy} aria-busy={busy}>

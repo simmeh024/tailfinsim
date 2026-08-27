@@ -15,6 +15,7 @@ export function wireAirline(row: AirlineRow): AirlineContract {
     icaoCode: row.icaoCode,
     callsign: row.callsign,
     baseCountry: row.baseCountry,
+    logo: row.logo ?? null,
     cash: row.cashMinor,
     // `numeric(3,2)` is a string at the database boundary. The shared wire
     // schema is deliberately a number, so normalise once here.

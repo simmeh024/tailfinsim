@@ -6,6 +6,7 @@ import {
   doublePrecision,
   index,
   integer,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
@@ -17,6 +18,8 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
+
+import type { AirlineLogo } from '@tailfin/shared';
 
 /**
  * Database schema.
@@ -304,6 +307,15 @@ export const airline = pgTable(
 
     /** ISO 3166-1 alpha-2. */
     baseCountry: text('base_country').notNull(),
+
+    /**
+     * The brand emblem — a small procedural `AirlineLogo` spec (§15/§16), or null
+     * for an airline that has never set one, in which case the client shows a
+     * default derived from the code. jsonb because it is a structured value, not
+     * text; nothing queries inside it, but jsonb lets the identity-change check
+     * compare two logos with `IS DISTINCT FROM`.
+     */
+    logo: jsonb('logo').$type<AirlineLogo>(),
 
     /**
      * Cash in **integer minor units** (cents), never a float — currency
@@ -637,6 +649,10 @@ export const airlineIdentityChange = pgTable(
     beforeBaseCountry: text('before_base_country').notNull(),
     afterBaseCountry: text('after_base_country').notNull(),
 
+    /** The brand emblem before and after; null where the airline had/keeps no logo. */
+    beforeLogo: jsonb('before_logo').$type<AirlineLogo>(),
+    afterLogo: jsonb('after_logo').$type<AirlineLogo>(),
+
     costMinor: bigint('cost_minor', { mode: 'number' }).notNull(),
     /** Game time when the rebrand took effect. */
     occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
@@ -650,7 +666,8 @@ export const airlineIdentityChange = pgTable(
       'airline_identity_change_changes_something',
       sql`${t.beforeName} <> ${t.afterName}
           OR ${t.beforeCallsign} <> ${t.afterCallsign}
-          OR ${t.beforeBaseCountry} <> ${t.afterBaseCountry}`,
+          OR ${t.beforeBaseCountry} <> ${t.afterBaseCountry}
+          OR ${t.beforeLogo} IS DISTINCT FROM ${t.afterLogo}`,
     ),
   ],
 );
