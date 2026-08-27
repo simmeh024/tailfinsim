@@ -27,11 +27,11 @@ import type { ReactNode } from 'react';
  *
  * ## Two modes, one component
  *
- * With no `onSelectSeat`, the plan is a **read-only overview** — this is the
- * context panel on every page, and the rooms are inert. Pass `onSelectSeat` and
- * the neutral rooms become **buttons**: the room is the office, so clicking
- * Office 08 is how you staff Office 08. Selection and hover are lifted to the
- * parent so a room and its office card highlight together.
+ * With no `onSelectSeat`, the plan is a **read-only overview** — the rooms are
+ * inert. Pass `onSelectSeat` and every room becomes a **button**: the room is the
+ * office, so clicking Office 08 is how you staff Office 08, and clicking the Route
+ * Planner's room is how you fill that seat. Selection is lifted to the parent, so
+ * the drawer that owns the hire opens against the room the player picked.
  *
  * The rooms sit at fixed positions in each render, so the overlay is placed by
  * normalised coordinates: each office has a column (left or right of the
@@ -159,9 +159,10 @@ export function HqLayoutPanel({
           const hire = hiredBySeat.get(seat);
           const occupant = hire !== undefined ? candidateById(hire.candidateId) : null;
           const neutral = isNeutralSeat(seat);
-          // Only neutral rooms are managed from the plan; role rooms are shown by
-          // the roster above and stay inert even when the plan is interactive.
-          const interactive = neutral && onSelectSeat !== undefined;
+          // Every room is managed from the plan when it is interactive — the six
+          // department seats as well as the neutral ones. The roster above is the
+          // other way in for a role seat; the plan is the way in for all ten.
+          const interactive = onSelectSeat !== undefined;
           const style = {
             left: `${String((COLUMN_X[col] ?? 0.5) * 100)}%`,
             top: `${String((rows[row] ?? 0.5) * 100)}%`,
@@ -196,12 +197,12 @@ export function HqLayoutPanel({
                 type="button"
                 className="hq-cell hq-cell--interactive"
                 data-seat={seat}
-                data-neutral="true"
+                data-neutral={neutral}
                 data-occupied={hire !== undefined}
                 data-selected={selectedSeat === seat}
                 data-hovered={hoveredSeat === seat}
                 style={style}
-                aria-label={`${officeLabel(seat)}, Neutral office, ${state}. ${action}`}
+                aria-label={`${officeLabel(seat)}, ${seatTitle(seat)}, ${state}. ${action}`}
                 aria-pressed={selectedSeat === seat}
                 onClick={() => onSelectSeat?.(seat)}
                 onMouseEnter={() => onHoverSeat?.(seat)}

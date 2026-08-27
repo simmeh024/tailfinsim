@@ -5,22 +5,27 @@ import { formatSalary, type HqCandidate } from './hq-roster';
 import type { ReactNode } from 'react';
 
 /**
- * The "Staff Office N" drawer (M5-04 UX follow-up).
+ * The staffing drawer (M5-04 UX follow-up).
  *
- * Opened by clicking a neutral office — on the floor-plan or its card — so the
- * physical room the player picked is the subject: the header names it, and every
- * candidate's action reads "Hire & Assign" because it assigns to *that* office.
+ * Opened by clicking a room on the Head Office floor-plan — any of the ten, a
+ * department seat or a neutral office — so the room the player picked is the
+ * subject: the header names it and its `description` says what it is for, and
+ * every candidate's action reads "Hire & Assign" because it assigns to *that*
+ * office.
  *
- * A neutral office takes any un-hired management candidate for +1 capacity and
- * nothing more; the world's one social-media specialist is the exception, shown
- * first and badged, because they carry a standing edge. The distinction is the
- * whole point — a specialist in a neutral office still grants no department
- * capability — so the drawer states it rather than leaving it to be inferred.
+ * The candidate list is chosen by the caller: a role seat is offered its own
+ * role's people; a neutral office is offered any un-hired candidate, with the
+ * world's one social-media specialist shown first and badged when `specialistId`
+ * names it, because they carry a standing edge a generic hire does not. A role
+ * seat passes a null `specialistId`, so no badge appears where it would not mean
+ * anything.
  */
 
 interface StaffOfficeDrawerProps {
-  /** The office being staffed, e.g. "Office 08". */
+  /** The office being staffed — "Office 08" for a neutral room, the role for a seat. */
   officeName: string;
+  /** One line under the title: what a neutral office is, or what a role seat unlocks. */
+  description: string;
   /** Who sits there now, if anyone — shown with a remove control. */
   occupant: { candidateId: string; candidateName: string } | null;
   /** Candidates eligible to assign here (already filtered to the un-hired). */
@@ -36,6 +41,7 @@ interface StaffOfficeDrawerProps {
 
 export function StaffOfficeDrawer({
   officeName,
+  description,
   occupant,
   candidates,
   specialistId,
@@ -76,10 +82,7 @@ export function StaffOfficeDrawer({
             <h2 id="staff-office-title" className="modal__title">
               {heading}
             </h2>
-            <p className="modal__subtitle">
-              A neutral office adds one staffed post. It grants no department capability — those
-              stay in the six seats — and does not unlock long-haul authority.
-            </p>
+            <p className="modal__subtitle">{description}</p>
           </div>
           <button type="button" className="modal__close" onClick={onClose} aria-label="Close">
             ×
@@ -93,12 +96,7 @@ export function StaffOfficeDrawer({
                 <span className="hq-staff__current-label">In this office</span>
                 <strong>{occupant.candidateName}</strong>
               </p>
-              <button
-                type="button"
-                className="hq-office-card__btn hq-office-card__btn--quiet"
-                disabled={busy}
-                onClick={onRemove}
-              >
+              <button type="button" className="hq-staff__remove" disabled={busy} onClick={onRemove}>
                 Remove from Office
               </button>
             </section>

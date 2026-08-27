@@ -1,11 +1,68 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { useState } from 'react';
+import { MemoryRouter, Outlet, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { OfficeStateResponse } from '@tailfin/shared';
+import type { OfficeSeatId, OfficeStateResponse } from '@tailfin/shared';
 
 import { HeadquartersPage } from './HeadquartersPage';
 import { candidatesForRole, HQ_CANDIDATES, HQ_ROLES } from './hq-roster';
-import { HqLayoutPanel } from './HqLayoutPanel';
+import { HqLayoutPanel, type ExpandResult } from './HqLayoutPanel';
+
+import type { OwnAirlineShellContext } from '../shell/AppShell';
+import type { ReactNode } from 'react';
+
+/**
+ * A stand-in for the app shell that owns the interactive floor-plan.
+ *
+ * On the real page the plan lives in the shell's context panel, and the page
+ * reads the selected office back through the outlet context to open its drawer.
+ * This mounts both halves the same way — the plan and the page sharing one
+ * selection — so a test can click a room and drive the drawer exactly as a
+ * player does. The page still feeds `office` back through `replaceOffice`, so the
+ * plan the harness renders is the office the page fetched.
+ */
+function ShellHarness({ onExpand }: { onExpand?: () => Promise<ExpandResult> }): ReactNode {
+  const [office, setOffice] = useState<OfficeStateResponse | null>(null);
+  const [selectedOffice, setSelectedOffice] = useState<OfficeSeatId | null>(null);
+  const ctx: OwnAirlineShellContext = {
+    ownAirline: null,
+    ownAirlineLoading: false,
+    ownAirlineError: false,
+    replaceOwnAirline: () => undefined,
+    reloadOwnAirline: async () => undefined,
+    office,
+    replaceOffice: setOffice,
+    reloadOffice: async () => undefined,
+    selectedOffice,
+    selectOffice: setSelectedOffice,
+  };
+  return (
+    <>
+      <HqLayoutPanel
+        office={office}
+        onExpand={onExpand}
+        onSelectSeat={setSelectedOffice}
+        selectedSeat={selectedOffice}
+      />
+      <Outlet context={ctx} />
+    </>
+  );
+}
+
+function renderHq(
+  onExpand: () => Promise<ExpandResult> = vi.fn().mockResolvedValue({ ok: true }),
+): void {
+  render(
+    <MemoryRouter initialEntries={['/headquarters']}>
+      <Routes>
+        <Route element={<ShellHarness onExpand={onExpand} />}>
+          <Route path="headquarters" element={<HeadquartersPage />} />
+        </Route>
+      </Routes>
+    </MemoryRouter>,
+  );
+}
 
 /**
  * Headquarters — the office hires (M5-04, §9.1).
@@ -208,17 +265,17 @@ describe('the Headquarters page', () => {
 
   it('opens a drawer for the exact office a vacant room names', async () => {
     neutralSeats = 2;
-    render(<HeadquartersPage />);
-    // Office 07 is the first neutral office (neutral-1).
-    const staff = await screen.findByRole('button', { name: 'Staff Office 07' });
-    fireEvent.click(staff);
+    renderHq();
+    // Office 07 is the first neutral office (neutral-1) on the plan.
+    const room = await screen.findByRole('button', { name: /Office 07, Neutral office/i });
+    fireEvent.click(room);
     expect(await screen.findByRole('dialog', { name: /Staff Office 07/i })).toBeInTheDocument();
   });
 
   it('hires a candidate into the clicked office and closes the drawer', async () => {
     neutralSeats = 2;
-    render(<HeadquartersPage />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Staff Office 07' }));
+    renderHq();
+    fireEvent.click(await screen.findByRole('button', { name: /Office 07, Neutral office/i }));
     const dialog = await screen.findByRole('dialog', { name: /Staff Office 07/i });
 
     const tomRow = within(dialog).getByText('Tom Bakker').closest('li');
@@ -231,13 +288,36 @@ describe('the Headquarters page', () => {
     expect(post?.seat).toBe('neutral-1');
   });
 
+  it('opens a role seat from its room and hires that role’s candidate into it', async () => {
+    renderHq();
+    // Office 01 is the Route Planner seat — now staffable straight from the plan.
+    fireEvent.click(await screen.findByRole('button', { name: /Office 01, Route Planner/i }));
+    const dialog = await screen.findByRole('dialog', { name: /Staff Route Planner/i });
+
+    const tomRow = within(dialog).getByText('Tom Bakker').closest('li');
+    if (!tomRow) throw new Error('no candidate row for Tom');
+    fireEvent.click(within(tomRow).getByRole('button', { name: /Hire & Assign/i }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(hires.find((h) => h.candidateId === 'route-planner-tom')?.seat).toBe('route-planner');
+  });
+
+  it('offers only a role’s own candidates in that seat’s drawer', async () => {
+    renderHq();
+    fireEvent.click(await screen.findByRole('button', { name: /Office 01, Route Planner/i }));
+    const dialog = await screen.findByRole('dialog', { name: /Staff Route Planner/i });
+    // The route-planner candidates are on offer; a revenue-manager candidate is not.
+    expect(within(dialog).getByText('Mara Ellison')).toBeInTheDocument();
+    expect(within(dialog).queryByText('Kenji Tan')).toBeNull();
+  });
+
   it('excludes an already-hired candidate from the drawer', async () => {
     hires = [
       { seat: 'route-planner', candidateId: 'route-planner-mara', candidateName: 'Mara Ellison' },
     ];
     neutralSeats = 2;
-    render(<HeadquartersPage />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Staff Office 07' }));
+    renderHq();
+    fireEvent.click(await screen.findByRole('button', { name: /Office 07, Neutral office/i }));
     const dialog = await screen.findByRole('dialog', { name: /Staff Office 07/i });
     // Mara already holds a seat, so she is not on offer; her rival still is.
     expect(within(dialog).queryByText('Mara Ellison')).toBeNull();
@@ -247,8 +327,8 @@ describe('the Headquarters page', () => {
   it('surfaces the world specialist in the drawer, badged, and only that one', async () => {
     offeredSpecialist = 'social-media-reputation';
     neutralSeats = 2;
-    render(<HeadquartersPage />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Staff Office 07' }));
+    renderHq();
+    fireEvent.click(await screen.findByRole('button', { name: /Office 07, Neutral office/i }));
     const dialog = await screen.findByRole('dialog', { name: /Staff Office 07/i });
 
     const lenaRow = within(dialog).getByText('Lena Voss').closest('li');
@@ -261,43 +341,28 @@ describe('the Headquarters page', () => {
     expect(hires.find((h) => h.candidateId === 'social-media-reputation')?.seat).toBe('neutral-1');
   });
 
-  it('shows an occupied office and removes the right occupant', async () => {
+  it('opens an occupied office from its room and removes the occupant', async () => {
     hires = [{ seat: 'neutral-1', candidateId: 'route-planner-tom', candidateName: 'Tom Bakker' }];
     neutralSeats = 2;
-    const { container } = render(<HeadquartersPage />);
-    const side = container.querySelector<HTMLElement>('.hq-offices__side')!;
-
-    // The Office 07 card names its occupant and offers to remove them.
-    const card = (await within(side).findByText('Office 07')).closest('.hq-office-card');
-    if (!card) throw new Error('no card for Office 07');
-    expect(within(card as HTMLElement).getByText('Tom Bakker')).toBeInTheDocument();
+    renderHq();
+    // The occupied room names Tom and opens the manage drawer.
     fireEvent.click(
-      within(card as HTMLElement).getByRole('button', { name: /Remove from Office/i }),
+      await screen.findByRole('button', { name: /Office 07, Neutral office, Staffed/i }),
     );
+    const dialog = await screen.findByRole('dialog', { name: /Manage Office 07/i });
+    expect(within(dialog).getByText('Tom Bakker')).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: /Remove from Office/i }));
 
     await waitFor(() => expect(hires.find((h) => h.seat === 'neutral-1')).toBeUndefined());
   });
 
-  it('syncs highlight from an office card to its floor room', async () => {
-    neutralSeats = 2;
-    const { container } = render(<HeadquartersPage />);
-    const side = container.querySelector<HTMLElement>('.hq-offices__side')!;
-    const card = (await within(side).findByText('Office 07')).closest('.hq-office-card');
-    if (!card) throw new Error('no card for Office 07');
-    const room = container.querySelector<HTMLElement>('.hq-cell[data-seat="neutral-1"]');
-    expect(room?.dataset.hovered).toBe('false');
-    fireEvent.mouseEnter(card);
-    expect(room?.dataset.hovered).toBe('true');
-  });
-
-  it('offers expansion, not staffing, when no neutral office is unlocked', async () => {
+  it('offers expansion on the plan when no neutral office is unlocked', async () => {
     neutralSeats = 0;
-    render(<HeadquartersPage />);
-    await screen.findByRole('heading', { level: 2, name: 'Neutral offices' });
-    // Nothing to staff yet…
-    expect(screen.queryByRole('button', { name: /^Staff Office/i })).toBeNull();
-    // …but the locked card can buy the first ones.
-    expect(screen.getByRole('button', { name: /Expand ·/i })).toBeInTheDocument();
+    renderHq();
+    // The plan carries the expand button…
+    expect(await screen.findByRole('button', { name: /Expand/i })).toBeInTheDocument();
+    // …and there is no Office 07 to staff until it is bought.
+    expect(screen.queryByRole('button', { name: /Office 07/i })).toBeNull();
   });
 
   it('renders the seats the server already reports as filled, on load', async () => {
