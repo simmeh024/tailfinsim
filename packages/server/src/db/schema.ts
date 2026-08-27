@@ -456,6 +456,8 @@ export const cashMovementCause = pgEnum('cash_movement_cause', [
   'crew_positioning',
   'office_salary',
   'office_expansion',
+  'executive_floor',
+  'executive_office',
   'admin_adjustment',
   'flight_settlement',
   'disruption_cost',
@@ -3090,6 +3092,36 @@ export const officeExpansion = pgTable(
 );
 
 export type OfficeExpansionRow = typeof officeExpansion.$inferSelect;
+
+/**
+ * How far an airline has opened its executive floor (§9.1 follow-up).
+ *
+ * The presence of a row means the executive floor itself is unlocked;
+ * `officesUnlocked` is how many of its ten offices are open (0–10), and they open
+ * in order, right to left. Like {@link officeExpansion}, no row is the default —
+ * the floor is closed, no offices — so a fresh airline needs no seed and a world
+ * reset that deletes the row restores the closed state (ADR-0005). The unlocks
+ * themselves are AIR-06 cash movements (`executive_floor` and `executive_office`);
+ * this row records only the structural unlock.
+ */
+export const executiveFloor = pgTable(
+  'executive_floor',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    /** Executive offices opened so far — 0 to 10, opening right to left. */
+    officesUnlocked: integer('offices_unlocked').notNull().default(0),
+    unlockedAt: timestamp('unlocked_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('executive_floor_airline_key').on(table.airlineId)],
+);
+
+export type ExecutiveFloorRow = typeof executiveFloor.$inferSelect;
 
 /**
  * A month's reputation grant from a hired social media specialist (§9.1, §15).
