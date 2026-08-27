@@ -43,6 +43,7 @@ import { LogoutResponse, MeResponse, RevokeSessionsResponse } from './auth';
 import { AutomationStateResponse } from './automation';
 import { CrewResponse } from './crew';
 import { AirframeDetailResponse, FleetAirframesResponse } from './fleet';
+import { GroundStationResponse } from './ground';
 import { LiveryDocument } from './livery';
 import { MaintenanceResponse, BookCheckResponse } from './maintenance';
 import { AdminNpcResponse } from './npc';
@@ -148,4 +149,5 @@ export const adminRequeueEventsResponseJsonSchema = z.toJSONSchema(AdminRequeueE
 export const worldClockJsonSchema = z.toJSONSchema(WorldClock);
 export const crewResponseJsonSchema = z.toJSONSchema(CrewResponse);
 export const automationStateResponseJsonSchema = z.toJSONSchema(AutomationStateResponse);
+export const groundStationResponseJsonSchema = z.toJSONSchema(GroundStationResponse);
 export const officeStateResponseJsonSchema = z.toJSONSchema(OfficeStateResponse);

@@ -52,6 +52,7 @@ export * from './fleet';
 export * from './livery';
 export * from './network';
 export * from './automation';
+export * from './ground';
 export * from './office';
 export * from './flight';
 export * from './api';

@@ -1,14 +1,10 @@
-import type { AirportTier } from '@tailfin/shared';
+import { HANDLER_GRADES } from '@tailfin/shared';
+
+import type { AirportTier, GroundServiceLine, HandlerGrade } from '@tailfin/shared';
 
 import { deriveRng, intBetween } from '../random';
 
-import {
-  DEFAULT_GROUND_HANDLING,
-  HANDLER_GRADES,
-  type GroundHandlingConfig,
-  type GroundServiceLine,
-  type HandlerGrade,
-} from './vendor';
+import { DEFAULT_GROUND_HANDLING, type GroundHandlingConfig } from './vendor';
 
 /**
  * Which handlers a station offers, for one service line (M5-06, §9.3).

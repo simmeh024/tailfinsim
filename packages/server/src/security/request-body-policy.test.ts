@@ -188,6 +188,8 @@ const COVERED_WRITE_ENDPOINTS = [
   'DELETE /api/office/hires/:seat',
   'POST /api/office/expansion',
   'PUT /api/automation/:system',
+  'POST /api/ground/:icao/contracts',
+  'DELETE /api/ground/contracts/:id',
   'POST /api/routes',
   'POST /api/routes/:routeId/fares/preview',
   'PUT /api/crew/policies',

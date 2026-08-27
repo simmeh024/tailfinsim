@@ -1,4 +1,4 @@
-import type { AirportTier } from '@tailfin/shared';
+import type { AirportTier, HandlerGrade } from '@tailfin/shared';
 
 /**
  * Ground handling — what a vendor at a station is, and what it does (M5-06, §9.3).
@@ -32,21 +32,6 @@ import type { AirportTier } from '@tailfin/shared';
  * not yet read, exactly as the disruption risk inputs were before their systems
  * landed.
  */
-
-/** The service lines a station's ground work divides into (§9.3). */
-export const GROUND_SERVICE_LINES = [
-  'ramp_baggage',
-  'fuelling',
-  'catering',
-  'cleaning',
-  'pushback',
-  'deicing',
-] as const;
-export type GroundServiceLine = (typeof GROUND_SERVICE_LINES)[number];
-
-/** A handler's quality tier — the named bundle of §9.3's trade. */
-export type HandlerGrade = 'budget' | 'standard' | 'premium';
-export const HANDLER_GRADES: readonly HandlerGrade[] = ['budget', 'standard', 'premium'];
 
 /** The operational profile of a grade: what it does, and the relative price of it. */
 export interface HandlerGradeProfile {
