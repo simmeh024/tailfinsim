@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { EXECUTIVE_OFFICE_COSTS_MINOR } from '@tailfin/shared';
+import { EXECUTIVE_CANDIDATES, EXECUTIVE_OFFICE_COSTS_MINOR } from '@tailfin/shared';
 
 import { moveAirlineCash } from '../airline/cash';
 import { createDatabase, type DatabaseHandle } from '../db/client';
@@ -12,7 +12,13 @@ import {
   type FoundedAirlineFixture,
 } from '../test-fixtures/founded-airline';
 
-import { readExecutiveFloor, unlockExecutiveFloor, unlockExecutiveOffice } from './executive';
+import {
+  dismissExecutive,
+  hireExecutive,
+  readExecutiveFloor,
+  unlockExecutiveFloor,
+  unlockExecutiveOffice,
+} from './executive';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
 
@@ -140,5 +146,66 @@ describeDb('the executive floor, on the database', () => {
     await seedOpenFloor(a, 10);
     const result = await unlockExecutiveOffice(db.db, own(a));
     expect(result).toEqual({ ok: false, code: 'maxed' });
+  });
+
+  /* ---- The C-Suite (Phase 2) ------------------------------------------- */
+
+  const [first, second] = EXECUTIVE_CANDIDATES;
+
+  it('hires a C-Suite member into a free office, from the catalogue salary', async () => {
+    const a = await fixtures.create();
+    await seedOpenFloor(a, 2);
+    const result = await hireExecutive(db.db, own(a), first!.id);
+    if (!result.ok) throw new Error(`expected the hire to succeed, got ${result.code}`);
+    expect(result.state.hires).toHaveLength(1);
+    const [hire] = result.state.hires;
+    expect(hire).toMatchObject({
+      candidateId: first!.id,
+      candidateName: first!.name,
+      monthlySalaryMinor: first!.monthlySalaryMinor,
+    });
+    expect(typeof hire!.hiredAt).toBe('string');
+  });
+
+  it('refuses a C-Suite hire before the floor is open', async () => {
+    const a = await fixtures.create();
+    const result = await hireExecutive(db.db, own(a), first!.id);
+    expect(result).toEqual({ ok: false, code: 'floor_locked' });
+  });
+
+  it('refuses an unknown candidate', async () => {
+    const a = await fixtures.create();
+    await seedOpenFloor(a, 1);
+    const result = await hireExecutive(db.db, own(a), 'not-a-real-id');
+    expect(result).toEqual({ ok: false, code: 'unknown_candidate' });
+  });
+
+  it('refuses hiring the same person twice', async () => {
+    const a = await fixtures.create();
+    await seedOpenFloor(a, 2);
+    await hireExecutive(db.db, own(a), first!.id);
+    const again = await hireExecutive(db.db, own(a), first!.id);
+    expect(again).toEqual({ ok: false, code: 'already_hired' });
+  });
+
+  it('locks the market when every open office is staffed', async () => {
+    const a = await fixtures.create();
+    await seedOpenFloor(a, 1); // one office, so one hire fills the floor
+    expect((await hireExecutive(db.db, own(a), first!.id)).ok).toBe(true);
+    const full = await hireExecutive(db.db, own(a), second!.id);
+    expect(full).toEqual({ ok: false, code: 'no_free_office' });
+  });
+
+  it('frees an office when a C-Suite member is let go', async () => {
+    const a = await fixtures.create();
+    await seedOpenFloor(a, 1);
+    await hireExecutive(db.db, own(a), first!.id);
+    // Full: the second is refused...
+    expect((await hireExecutive(db.db, own(a), second!.id)).ok).toBe(false);
+    // ...until the first is dismissed, freeing the office.
+    expect(await dismissExecutive(db.db, own(a), first!.id)).toEqual({ dismissed: true });
+    const now = await hireExecutive(db.db, own(a), second!.id);
+    expect(now.ok).toBe(true);
+    expect(now.ok && now.state.hires.map((h) => h.candidateId)).toEqual([second!.id]);
   });
 });

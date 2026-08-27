@@ -1,6 +1,7 @@
 import {
   apiErrorJsonSchema,
   executiveFloorStateJsonSchema,
+  HireExecutiveRequest,
   HireOfficeRequest,
   OfficeSeatId,
   officeStateResponseJsonSchema,
@@ -9,7 +10,13 @@ import {
 import { resolvedAirlineOf } from '../airline/context';
 import { parseRequestBody } from '../http/request-body';
 
-import { readExecutiveFloor, unlockExecutiveFloor, unlockExecutiveOffice } from './executive';
+import {
+  dismissExecutive,
+  hireExecutive,
+  readExecutiveFloor,
+  unlockExecutiveFloor,
+  unlockExecutiveOffice,
+} from './executive';
 import { purchaseExpansion } from './expansion';
 import { dismissOffice, hireOffice, readOfficeState } from './hires';
 
@@ -191,6 +198,56 @@ export function registerOfficeRoutes(app: FastifyInstance, { db }: { db: Databas
         return reply.code(422).send({ code: result.code, message });
       }
       return reply.code(200).send(result.state);
+    },
+  );
+
+  app.post<{ Body: unknown }>(
+    '/api/office/executive/hires',
+    {
+      onRequest: app.requireActiveAirline,
+      schema: {
+        response: {
+          200: executiveFloorStateJsonSchema,
+          400: apiErrorJsonSchema,
+          422: apiErrorJsonSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const parsed = parseRequestBody(request, HireExecutiveRequest);
+      if (!parsed.success) {
+        return reply.code(400).send({ code: 'invalid_input', message: 'Expected a candidate' });
+      }
+      const own = resolvedAirlineOf(request);
+      const result = await hireExecutive(db.db, own, parsed.data.candidateId);
+      if (!result.ok) {
+        if (result.code === 'unknown_candidate') {
+          return reply
+            .code(400)
+            .send({ code: 'invalid_input', message: 'No such C-Suite candidate' });
+        }
+        const message =
+          result.code === 'floor_locked'
+            ? 'Open the executive floor before staffing it'
+            : result.code === 'already_hired'
+              ? 'This person already holds one of your offices'
+              : 'Open another executive office before hiring';
+        return reply.code(422).send({ code: result.code, message });
+      }
+      return reply.code(200).send(result.state);
+    },
+  );
+
+  app.delete<{ Params: { candidateId: string } }>(
+    '/api/office/executive/hires/:candidateId',
+    {
+      onRequest: app.requireActiveAirline,
+      schema: { response: { 200: executiveFloorStateJsonSchema } },
+    },
+    async (request, reply) => {
+      const own = resolvedAirlineOf(request);
+      await dismissExecutive(db.db, own, request.params.candidateId);
+      return reply.code(200).send(await readExecutiveFloor(db.db, own));
     },
   );
 }

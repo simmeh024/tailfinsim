@@ -145,3 +145,24 @@ export async function unlockExecutiveOffice(): Promise<ExecutiveOutcome> {
   });
   return readExecutiveOutcome(response, 'POST /api/office/executive/offices');
 }
+
+/** Hire a C-Suite candidate into a free executive office. */
+export async function hireExecutive(candidateId: string): Promise<ExecutiveOutcome> {
+  const response = await fetch('/api/office/executive/hires', {
+    method: 'POST',
+    headers: { accept: 'application/json', 'content-type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ candidateId }),
+  });
+  return readExecutiveOutcome(response, 'POST /api/office/executive/hires');
+}
+
+/** Let a C-Suite member go, freeing their office. */
+export async function dismissExecutive(candidateId: string): Promise<ExecutiveOutcome> {
+  const response = await fetch(`/api/office/executive/hires/${encodeURIComponent(candidateId)}`, {
+    method: 'DELETE',
+    headers: { accept: 'application/json' },
+    credentials: 'same-origin',
+  });
+  return readExecutiveOutcome(response, 'DELETE /api/office/executive/hires');
+}

@@ -3246,6 +3246,43 @@ export const executiveFloor = pgTable(
 export type ExecutiveFloorRow = typeof executiveFloor.$inferSelect;
 
 /**
+ * One C-Suite member staffing one executive office (§9.1 follow-up, Phase 2).
+ *
+ * Unlike {@link officeHire}, an executive office is **generic**: there is no seat
+ * role, so a row records only which candidate an airline employs, and the number
+ * of rows an airline may hold is capped at its opened offices
+ * ({@link executiveFloor}.officesUnlocked) by the hire logic, not by the schema.
+ * `(airline_id, candidate_id)` is unique so a person cannot be hired twice; the
+ * salary is snapshotted at hire so a later catalogue retune cannot re-bill a
+ * standing executive. Both foreign keys cascade — an airline or world reset takes
+ * its C-Suite with it (ADR-0005). The monthly charge is folded into the same
+ * AIR-06 `office_salary` movement as the ground-floor staff.
+ */
+export const executiveHire = pgTable(
+  'executive_hire',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    /** Opaque candidate identity from the shared EXECUTIVE_CANDIDATES catalogue. */
+    candidateId: text('candidate_id').notNull(),
+    candidateName: text('candidate_name').notNull(),
+    /** Salary per game month, minor units, snapshotted at hire. */
+    monthlySalaryMinor: bigint('monthly_salary_minor', { mode: 'number' }).notNull(),
+    hiredAt: timestamp('hired_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('executive_hire_airline_candidate_key').on(table.airlineId, table.candidateId),
+  ],
+);
+
+export type ExecutiveHireRow = typeof executiveHire.$inferSelect;
+
+/**
  * A month's reputation grant from a hired social media specialist (§9.1, §15).
  *
  * The reputation specialist adds a little to `airline.reputation` once per game
