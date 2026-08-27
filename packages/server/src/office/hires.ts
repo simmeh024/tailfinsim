@@ -5,12 +5,11 @@ import {
   isNeutralSeat,
   isSocialMediaSpecialistId,
   nextExpansionTier,
-  OFFICE_ROLES,
+  officeCandidate,
   offeredSocialMediaSpecialistId,
   unlockedNeutralSeats,
   type HireOfficeRequest,
   type OfficeHire,
-  type OfficeRole,
   type OfficeSeatId,
   type OfficeStateResponse,
 } from '@tailfin/shared';
@@ -106,7 +105,7 @@ export type HireOfficeResult =
   | {
       ok: false;
       code:
-        | 'unknown_role'
+        | 'unknown_candidate'
         | 'role_mismatch'
         | 'seat_locked'
         | 'already_seated'
@@ -116,31 +115,35 @@ export type HireOfficeResult =
 /**
  * Hire a candidate into a seat, replacing any incumbent.
  *
- * The salary is the candidate's role salary, taken from the shared catalogue and
- * **snapshotted** onto the row — a later retune does not silently re-price a
- * standing hire. The candidate id and name are opaque: the server does not
- * validate them against a market, because the market is the client's for now.
+ * The candidate is resolved from the shared `OFFICE_CANDIDATES` market by id, so
+ * its **salary and name come from the catalogue, not the request** — a player
+ * cannot hire a Director at an Analyst's rate, and an unknown id is refused. The
+ * pay is **snapshotted** onto the row, so a later catalogue change does not
+ * silently re-price a standing hire.
  *
- * The seat is checked, not the candidate: a role seat must match the candidate's
- * role, and a neutral seat must already be unlocked by expansion. One seat, one
- * person — the `(airline_id, role)` unique index makes hiring a rival an upsert,
- * so this cannot stack two people in a seat even under a race.
+ * A role seat must match the candidate's own role; a neutral seat takes anyone but
+ * must already be unlocked by expansion. One seat, one person — the
+ * `(airline_id, role)` unique index makes hiring a rival an upsert, so this cannot
+ * stack two people in a seat even under a race.
  */
 export async function hireOffice(
   db: Database,
   own: ResolvedPlayerAirline,
   request: HireOfficeRequest,
 ): Promise<HireOfficeResult> {
-  const definition = OFFICE_ROLES[request.candidateRole] as
-    (typeof OFFICE_ROLES)[OfficeRole] | undefined;
-  if (definition === undefined) return { ok: false, code: 'unknown_role' };
+  // The candidate is resolved from the shared catalogue by id, and everything
+  // billable — the salary, and the role the seat is checked against — comes from
+  // there rather than from the request. A client cannot name its own price or
+  // claim a cheaper role: an id that is not in the market is refused outright.
+  const candidate = officeCandidate(request.candidateId);
+  if (candidate === undefined) return { ok: false, code: 'unknown_candidate' };
 
   if (isNeutralSeat(request.seat)) {
     const neutralSeats = await readNeutralSeats(db, own.id);
     if (!unlockedNeutralSeats(neutralSeats).includes(request.seat)) {
       return { ok: false, code: 'seat_locked' };
     }
-  } else if (request.seat !== request.candidateRole) {
+  } else if (request.seat !== candidate.role) {
     return { ok: false, code: 'role_mismatch' };
   }
 
@@ -176,15 +179,15 @@ export async function hireOffice(
       airlineId: own.id,
       role: request.seat,
       candidateId: request.candidateId,
-      candidateName: request.candidateName,
-      monthlySalaryMinor: definition.monthlySalaryMinor,
+      candidateName: candidate.name,
+      monthlySalaryMinor: candidate.monthlySalaryMinor,
     })
     .onConflictDoUpdate({
       target: [officeHire.airlineId, officeHire.role],
       set: {
         candidateId: request.candidateId,
-        candidateName: request.candidateName,
-        monthlySalaryMinor: definition.monthlySalaryMinor,
+        candidateName: candidate.name,
+        monthlySalaryMinor: candidate.monthlySalaryMinor,
         hiredAt: new Date(),
       },
     })

@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   HEADQUARTERS_EXPANSION_TIERS,
-  OFFICE_ROLES,
+  officeCandidate,
   offeredSocialMediaSpecialistId,
   SOCIAL_MEDIA_SPECIALISTS,
 } from '@tailfin/shared';
@@ -41,6 +41,13 @@ const describeDb = url ? describe : describe.skip;
 
 function own(fixture: FoundedAirlineFixture): ResolvedPlayerAirline {
   return { id: fixture.airline.id, worldId: fixture.world.id, status: 'active' };
+}
+
+/** A catalogue candidate's billed salary, for the assertions below. */
+function salaryOf(id: string): number {
+  const candidate = officeCandidate(id);
+  if (candidate === undefined) throw new Error(`no candidate ${id}`);
+  return candidate.monthlySalaryMinor;
 }
 
 describe('when a route needs extended authority', () => {
@@ -137,11 +144,11 @@ describeDb('the office, on the database', () => {
   }
 
   describe('hiring', () => {
-    it('fills a seat, and reads it back with the seat salary', async () => {
+    it('fills a seat, and reads it back with the candidate’s salary', async () => {
       const airline = await fixtures.create();
       const result = await hireOffice(db.db, own(airline), {
         seat: 'route-planner',
-        candidateId: 'rp-1',
+        candidateId: 'route-planner-mara',
         candidateName: 'Mara Ellison',
         candidateRole: 'route-planner',
       });
@@ -152,22 +159,85 @@ describeDb('the office, on the database', () => {
       expect(state.hires[0]).toMatchObject({
         seat: 'route-planner',
         candidateName: 'Mara Ellison',
-        monthlySalaryMinor: OFFICE_ROLES['route-planner'].monthlySalaryMinor,
+        monthlySalaryMinor: salaryOf('route-planner-mara'),
       });
       expect(state.hasExtendedAuthority).toBe(false);
+    });
+
+    it('bills each candidate their own salary — tier sets the pay', async () => {
+      const analyst = await fixtures.create();
+      await hireOffice(db.db, own(analyst), {
+        seat: 'route-planner',
+        candidateId: 'route-planner-tom',
+        candidateName: 'Tom Bakker',
+        candidateRole: 'route-planner',
+      });
+      const director = await fixtures.create({ worldId: analyst.world.id });
+      await hireOffice(db.db, own(director), {
+        seat: 'route-planner',
+        candidateId: 'route-planner-victor',
+        candidateName: 'Victor Lindqvist',
+        candidateRole: 'route-planner',
+      });
+
+      const tomSeat = (await readOfficeState(db.db, own(analyst))).hires[0];
+      const victorSeat = (await readOfficeState(db.db, own(director))).hires[0];
+      expect(tomSeat?.monthlySalaryMinor).toBe(salaryOf('route-planner-tom'));
+      expect(victorSeat?.monthlySalaryMinor).toBe(salaryOf('route-planner-victor'));
+      // The Director costs more than the Analyst for the very same seat.
+      expect(victorSeat?.monthlySalaryMinor).toBeGreaterThan(tomSeat?.monthlySalaryMinor ?? 0);
+    });
+
+    it('takes the salary and name from the catalogue, not the request', async () => {
+      const airline = await fixtures.create();
+      // A client that lies about the pay is ignored: the id is what is billed.
+      await hireOffice(db.db, own(airline), {
+        seat: 'route-planner',
+        candidateId: 'route-planner-victor',
+        candidateName: 'Someone Cheaper',
+        candidateRole: 'route-planner',
+      });
+      const seat = (await readOfficeState(db.db, own(airline))).hires[0];
+      expect(seat?.monthlySalaryMinor).toBe(salaryOf('route-planner-victor'));
+      expect(seat?.candidateName).toBe('Victor Lindqvist');
+    });
+
+    it('refuses a candidate id that is not in the market', async () => {
+      const a = await fixtures.create();
+      const result = await hireOffice(db.db, own(a), {
+        seat: 'route-planner',
+        candidateId: 'route-planner-nobody',
+        candidateName: 'Nobody',
+        candidateRole: 'route-planner',
+      });
+      expect(result).toEqual({ ok: false, code: 'unknown_candidate' });
+      expect((await readOfficeState(db.db, own(a))).hires).toEqual([]);
+    });
+
+    it('refuses a candidate whose catalogue role does not match the seat', async () => {
+      const a = await fixtures.create();
+      // A revenue-manager cannot take the route-planner seat even if the request
+      // claims their role is route-planner — the role comes from the catalogue.
+      const result = await hireOffice(db.db, own(a), {
+        seat: 'route-planner',
+        candidateId: 'revenue-manager-kenji',
+        candidateName: 'Kenji Tan',
+        candidateRole: 'route-planner',
+      });
+      expect(result).toEqual({ ok: false, code: 'role_mismatch' });
     });
 
     it('holds one person per seat — a rival is a replace, not a second row', async () => {
       const airline = await fixtures.create();
       await hireOffice(db.db, own(airline), {
         seat: 'route-planner',
-        candidateId: 'rp-1',
+        candidateId: 'route-planner-mara',
         candidateName: 'Mara Ellison',
         candidateRole: 'route-planner',
       });
       await hireOffice(db.db, own(airline), {
         seat: 'route-planner',
-        candidateId: 'rp-2',
+        candidateId: 'route-planner-tom',
         candidateName: 'Tom Bakker',
         candidateRole: 'route-planner',
       });
@@ -183,7 +253,7 @@ describeDb('the office, on the database', () => {
 
       await hireOffice(db.db, own(airline), {
         seat: 'safety-compliance',
-        candidateId: 'sc-1',
+        candidateId: 'safety-compliance-claire',
         candidateName: 'Claire Fontaine',
         candidateRole: 'safety-compliance',
       });
@@ -199,7 +269,7 @@ describeDb('the office, on the database', () => {
       const b = await fixtures.create({ worldId: a.world.id });
       await hireOffice(db.db, own(a), {
         seat: 'chief-pilot',
-        candidateId: 'cp-1',
+        candidateId: 'chief-pilot-sten',
         candidateName: 'Sten Halvorsen',
         candidateRole: 'chief-pilot',
       });
@@ -228,7 +298,7 @@ describeDb('the office, on the database', () => {
       // Hire the seat, and the same route opens.
       await hireOffice(db.db, own(airline), {
         seat: 'safety-compliance',
-        candidateId: 'sc-1',
+        candidateId: 'safety-compliance-claire',
         candidateName: 'Claire Fontaine',
         candidateRole: 'safety-compliance',
       });
@@ -268,22 +338,20 @@ describeDb('the office, on the database', () => {
       const airline = await fixtures.create();
       await hireOffice(db.db, own(airline), {
         seat: 'safety-compliance',
-        candidateId: 'sc-1',
+        candidateId: 'safety-compliance-claire',
         candidateName: 'Claire Fontaine',
         candidateRole: 'safety-compliance',
       });
       await hireOffice(db.db, own(airline), {
         seat: 'route-planner',
-        candidateId: 'rp-1',
+        candidateId: 'route-planner-mara',
         candidateName: 'Mara Ellison',
         candidateRole: 'route-planner',
       });
 
       // The world clock is somewhere in a month; payroll bills the previous one.
       const gameNow = new Date('2024-11-15T12:00:00.000Z');
-      const expected =
-        OFFICE_ROLES['safety-compliance'].monthlySalaryMinor +
-        OFFICE_ROLES['route-planner'].monthlySalaryMinor;
+      const expected = salaryOf('safety-compliance-claire') + salaryOf('route-planner-mara');
 
       const first = await runOfficePayroll(db.db, airline.world.id, gameNow);
       expect(first).toEqual({ airlinesBilled: 1, totalMinor: expected });
@@ -340,7 +408,7 @@ describeDb('the office, on the database', () => {
       const a = await fixtures.create();
       const locked = await hireOffice(db.db, own(a), {
         seat: 'neutral-1',
-        candidateId: 'rp-1',
+        candidateId: 'route-planner-mara',
         candidateName: 'Mara Ellison',
         candidateRole: 'route-planner',
       });
@@ -351,7 +419,7 @@ describeDb('the office, on the database', () => {
 
       const filled = await hireOffice(db.db, own(a), {
         seat: 'neutral-1',
-        candidateId: 'rp-1',
+        candidateId: 'route-planner-mara',
         candidateName: 'Mara Ellison',
         candidateRole: 'route-planner',
       });
@@ -370,7 +438,7 @@ describeDb('the office, on the database', () => {
       // Mara takes her own role seat first.
       const first = await hireOffice(db.db, own(a), {
         seat: 'route-planner',
-        candidateId: 'rp-1',
+        candidateId: 'route-planner-mara',
         candidateName: 'Mara Ellison',
         candidateRole: 'route-planner',
       });
@@ -379,7 +447,7 @@ describeDb('the office, on the database', () => {
       // The same person cannot also fill a neutral office.
       const second = await hireOffice(db.db, own(a), {
         seat: 'neutral-1',
-        candidateId: 'rp-1',
+        candidateId: 'route-planner-mara',
         candidateName: 'Mara Ellison',
         candidateRole: 'route-planner',
       });
@@ -387,7 +455,7 @@ describeDb('the office, on the database', () => {
 
       // She is in exactly one seat, and it is the one she was hired into.
       const state = await readOfficeState(db.db, own(a));
-      expect(state.hires.filter((h) => h.candidateId === 'rp-1')).toHaveLength(1);
+      expect(state.hires.filter((h) => h.candidateId === 'route-planner-mara')).toHaveLength(1);
       expect(state.hires.map((h) => h.seat)).not.toContain('neutral-1');
     });
 
@@ -397,7 +465,7 @@ describeDb('the office, on the database', () => {
       await purchaseExpansion(db.db, own(a));
       const req = {
         seat: 'neutral-1' as const,
-        candidateId: 'rp-1',
+        candidateId: 'route-planner-mara',
         candidateName: 'Mara Ellison',
         candidateRole: 'route-planner' as const,
       };
@@ -455,7 +523,7 @@ describeDb('the office, on the database', () => {
       await purchaseExpansion(db.db, own(a));
       const hired = await hireOffice(db.db, own(a), {
         seat: 'neutral-1',
-        candidateId: 'sc-1',
+        candidateId: 'safety-compliance-claire',
         candidateName: 'Claire Fontaine',
         candidateRole: 'safety-compliance',
       });
@@ -469,7 +537,7 @@ describeDb('the office, on the database', () => {
       const a = await fixtures.create();
       const bad = await hireOffice(db.db, own(a), {
         seat: 'route-planner',
-        candidateId: 'cp-1',
+        candidateId: 'chief-pilot-sten',
         candidateName: 'Sten Halvorsen',
         candidateRole: 'chief-pilot',
       });

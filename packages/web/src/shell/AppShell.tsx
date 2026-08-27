@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router';
 
-import type { OfficeStateResponse, OwnAirlineResponse } from '@tailfin/shared';
+import type { OfficeSeatId, OfficeStateResponse, OwnAirlineResponse } from '@tailfin/shared';
 
 import { fetchOwnAirline, formatMinorUnits } from '../airline/api';
 import { AccountBadge } from '../auth/AccountBadge';
@@ -128,11 +128,17 @@ function ContextPanel({
   onToggle,
   office,
   onExpand,
+  selectedOffice,
+  onSelectOffice,
 }: {
   open: boolean;
   onToggle: () => void;
   office: OfficeStateResponse | null;
   onExpand: () => Promise<ExpandResult>;
+  /** The office the Headquarters page is managing, so its room stays highlighted. */
+  selectedOffice: OfficeSeatId | null;
+  /** Pick an office on the plan — the Headquarters page opens its drawer on it. */
+  onSelectOffice: (seat: OfficeSeatId) => void;
 }): ReactNode {
   const { selection, clear, attachPanelBody } = useContextSelection();
   // The Head Office floor-plan belongs to the Headquarters page, not to every
@@ -187,7 +193,12 @@ function ContextPanel({
       <div className="panel__body">
         {selection === null ? (
           onHeadquarters ? (
-            <HqLayoutPanel office={office} onExpand={onExpand} />
+            <HqLayoutPanel
+              office={office}
+              onExpand={onExpand}
+              onSelectSeat={onSelectOffice}
+              selectedSeat={selectedOffice}
+            />
           ) : (
             <p>
               Selection detail appears here — a flight, an airframe, a route. Empty until there is
@@ -252,6 +263,10 @@ export function AppShell(): ReactNode {
   // pushes fresh state here through `replaceOffice` after every hire, so the panel
   // updates in lock-step with a change made while it is on screen.
   const [office, setOffice] = useState<OfficeStateResponse | null>(null);
+  // Which office the player is managing from the plan. It lives here because the
+  // interactive plan is the context panel, which the shell owns; the Headquarters
+  // page reads it to open its drawer and clears it on a hire or on unmount.
+  const [selectedOffice, setSelectedOffice] = useState<OfficeSeatId | null>(null);
 
   const loadOwnAirline = useCallback(async () => {
     setOwnAirlineLoading(true);
@@ -295,6 +310,8 @@ export function AppShell(): ReactNode {
     office,
     replaceOffice: setOffice,
     reloadOffice: loadOffice,
+    selectedOffice,
+    selectOffice: setSelectedOffice,
   };
 
   return (
@@ -309,6 +326,8 @@ export function AppShell(): ReactNode {
           onToggle={() => setPanelOpen((open) => !open)}
           office={office}
           onExpand={onExpand}
+          selectedOffice={selectedOffice}
+          onSelectOffice={setSelectedOffice}
         />
         <StatusStrip ownAirline={ownAirline} />
       </div>
@@ -328,4 +347,11 @@ export interface OwnAirlineShellContext {
   /** Push a fresh office state (e.g. the response to a hire) into the panel. */
   replaceOffice: (value: OfficeStateResponse | null) => void;
   reloadOffice: () => Promise<void>;
+  /**
+   * The office selected on the panel's interactive plan, or null. The
+   * Headquarters page reads it to open its staffing drawer on that room.
+   */
+  selectedOffice: OfficeSeatId | null;
+  /** Select an office (or clear with null). The plan and the page share this. */
+  selectOffice: (seat: OfficeSeatId | null) => void;
 }
