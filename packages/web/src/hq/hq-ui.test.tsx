@@ -30,10 +30,10 @@ function ShellHarness({ onExpand }: { onExpand?: () => Promise<ExpandResult> }):
     ownAirlineLoading: false,
     ownAirlineError: false,
     replaceOwnAirline: () => undefined,
-    reloadOwnAirline: async () => undefined,
+    reloadOwnAirline: () => Promise.resolve(),
     office,
     replaceOffice: setOffice,
-    reloadOffice: async () => undefined,
+    reloadOffice: () => Promise.resolve(),
     selectedOffice,
     selectOffice: setSelectedOffice,
   };
