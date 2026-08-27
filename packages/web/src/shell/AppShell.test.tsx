@@ -111,6 +111,17 @@ describe('layout', () => {
     expect(screen.getByLabelText('Status')).toBeInTheDocument();
   });
 
+  it('shows the Head Office floor-plan only on the Headquarters page', async () => {
+    const world = await renderAt('/world');
+    // Elsewhere the panel is the plain selection surface, not the office.
+    expect(world.container.querySelector('.hq-layout__floor')).toBeNull();
+    expect(screen.getByText(/Selection detail appears here/i)).toBeInTheDocument();
+    world.unmount();
+
+    const hq = await renderAt('/headquarters');
+    expect(hq.container.querySelector('.hq-layout__floor')).not.toBeNull();
+  });
+
   it('renders the world on the World page and nowhere else', async () => {
     const { unmount } = await renderAt('/world');
     expect(screen.getByLabelText('Interactive world renderer')).toBeInTheDocument();
