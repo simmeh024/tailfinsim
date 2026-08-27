@@ -40,12 +40,12 @@ import {
 } from './airline';
 import { ApiError, HealthResponse } from './api';
 import { LogoutResponse, MeResponse, RevokeSessionsResponse } from './auth';
+import { AutomationStateResponse } from './automation';
 import { CrewResponse } from './crew';
 import { AirframeDetailResponse, FleetAirframesResponse } from './fleet';
 import { LiveryDocument } from './livery';
 import { MaintenanceResponse, BookCheckResponse } from './maintenance';
 import { AdminNpcResponse } from './npc';
-import { AutomationStateResponse } from './automation';
 import { OfficeStateResponse } from './office';
 import { UsedMarketResponse } from './used-market';
 import { VersionResponse } from './version';
