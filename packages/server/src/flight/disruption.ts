@@ -3,6 +3,8 @@ import { eq } from 'drizzle-orm';
 import {
   applicableOutcome,
   deriveRng,
+  groundVendorRisk,
+  handlerProfile,
   NO_RISK,
   rollDisruption,
   type DisruptionRoll,
@@ -10,6 +12,7 @@ import {
 
 import { airframeTechnicalRisk } from '../aircraft/maintenance';
 import { world } from '../db/schema';
+import { contractedGrade } from '../ground/contracts';
 
 import type { Database } from '../db/client';
 
@@ -22,13 +25,15 @@ import type { Database } from '../db/client';
  * mechanisms in one place. M5-05 wires it, and this is the ground half: the roll
  * a flight faces at the moment it tries to push back.
  *
- * ## One input today, and it is honest about that
+ * ## The inputs that exist so far
  *
- * `DisruptionRisk` has seven severities. Only **technical** — how likely this
- * airframe is to break, from its maintenance condition — comes from a system that
- * exists, so it is the only one supplied; the rest stay 0 until weather (M2-09),
- * ATC (M7) and the ground handler (§9.3) land to fill them in. Crew timeout is a
- * hard rule at the dispatch gate, not a probability rolled here.
+ * `DisruptionRisk` has seven severities. Two come from systems that exist:
+ * **technical** — how likely this airframe is to break, from its maintenance
+ * condition (M4-06) — and **groundVendor** — how reliable the ramp handler
+ * working the departure turn is (M5-06), from the grade the airline contracted at
+ * the origin, or a budget-grade walk-up when it contracted none. The rest stay 0
+ * until weather (M2-09), ATC (M7) and the others land. Crew timeout is a hard
+ * rule at the dispatch gate, not a probability rolled here.
  *
  * ## Determinism, and why it is rolled before the crew are committed
  *
@@ -46,7 +51,13 @@ import type { Database } from '../db/client';
 /** The ground roll, made legal for a stand (delay or cancel), or null for a clean departure. */
 export async function rollGroundDisruption(
   db: Database,
-  input: { flightId: string; worldId: string; airframeId: string },
+  input: {
+    flightId: string;
+    worldId: string;
+    airframeId: string;
+    airlineId: string;
+    originIcao: string;
+  },
 ): Promise<DisruptionRoll | null> {
   const [worldRow] = await db
     .select({ seed: world.seed })
@@ -56,8 +67,17 @@ export async function rollGroundDisruption(
   if (!worldRow) return null;
 
   const technical = await airframeTechnicalRisk(db, input.airframeId);
+
+  // The ramp handler working the departure turn (M5-06). No contract is a
+  // "walk-up" — the airline scrambles the bags itself, at budget-grade
+  // reliability — so a station handled well is a real, purchased advantage over
+  // one handled on the day.
+  const grade =
+    (await contractedGrade(db, input.airlineId, input.originIcao, 'ramp_baggage')) ?? 'budget';
+  const groundVendor = groundVendorRisk(handlerProfile(grade));
+
   const rng = deriveRng(worldRow.seed, 'disruption', input.flightId);
-  const roll = rollDisruption(rng, { ...NO_RISK, technical });
+  const roll = rollDisruption(rng, { ...NO_RISK, technical, groundVendor });
   if (roll === null) return null;
 
   // On the stand: an air return or a diversion cannot happen to an aeroplane that
