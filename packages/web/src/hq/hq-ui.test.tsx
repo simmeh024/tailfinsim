@@ -90,6 +90,7 @@ describe('the Headquarters page', () => {
   // writes to it on hire and dismiss, and the server always answers with the
   // whole office, so the mock does too.
   let hires: { seat: string; candidateId: string; candidateName: string }[] = [];
+  let automation: { settings: unknown[]; tasks: unknown[] } = { settings: [], tasks: [] };
 
   function officeState() {
     return {
@@ -106,12 +107,23 @@ describe('the Headquarters page', () => {
 
   beforeEach(() => {
     hires = [];
+    automation = { settings: [], tasks: [] };
     vi.stubGlobal(
       'fetch',
       vi.fn((url: string, init?: RequestInit): Promise<Response> => {
         const method = init?.method ?? 'GET';
         const ok = () =>
           Promise.resolve(new Response(JSON.stringify(officeState()), { status: 200 }));
+        if (url === '/api/automation' && method === 'GET') {
+          return Promise.resolve(new Response(JSON.stringify(automation), { status: 200 }));
+        }
+        if (url.startsWith('/api/automation/') && method === 'PUT') {
+          const raw = typeof init?.body === 'string' ? init.body : '{}';
+          const body = JSON.parse(raw) as { mode: string; policy: unknown };
+          const system = url.slice('/api/automation/'.length);
+          automation = { settings: [{ system, mode: body.mode, policy: body.policy }], tasks: [] };
+          return Promise.resolve(new Response(JSON.stringify(automation), { status: 200 }));
+        }
         if (url === '/api/office' && method === 'GET') return ok();
         if (url === '/api/office/hires' && method === 'POST') {
           const raw = typeof init?.body === 'string' ? init.body : '{}';
@@ -210,6 +222,50 @@ describe('the Headquarters page', () => {
     expect(within(seat).getByText('Gate')).toBeInTheDocument();
     const gate = seat.querySelector('.hq-card__gate');
     expect(gate?.textContent?.toLowerCase()).toContain('long-haul');
+  });
+
+  it('gates Delegated in the Policies modal until an Ops Controller is hired', async () => {
+    render(<HeadquartersPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'Policies' }));
+    const dialog = await screen.findByRole('dialog', { name: /operations policies/i });
+    expect(within(dialog).getByRole('radio', { name: /Delegated/i })).toBeDisabled();
+  });
+
+  it('enables Delegated once the Ops Controller seat is filled', async () => {
+    hires = [
+      {
+        seat: 'ops-controller',
+        candidateId: 'ops-controller-diego',
+        candidateName: 'Diego Alvarez',
+      },
+    ];
+    render(<HeadquartersPage />);
+    await screen.findByText(/Seat filled by Diego Alvarez/i);
+    fireEvent.click(screen.getByRole('button', { name: 'Policies' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('radio', { name: /Delegated/i })).toBeEnabled();
+  });
+
+  it('saves a disruption policy from the modal', async () => {
+    render(<HeadquartersPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'Policies' }));
+    const dialog = await screen.findByRole('dialog');
+
+    fireEvent.click(within(dialog).getByRole('radio', { name: /Policy/i }));
+    fireEvent.click(within(dialog).getByRole('checkbox'));
+    fireEvent.change(within(dialog).getByLabelText(/Cancel delays longer than/i), {
+      target: { value: '90' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: /Save policy/i }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(automation.settings).toEqual([
+      {
+        system: 'disruption',
+        mode: 'policy',
+        policy: { disruptionResponse: { cancelDelaysOverMinutes: 90 } },
+      },
+    ]);
   });
 });
 
