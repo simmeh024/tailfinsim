@@ -1231,7 +1231,7 @@ body {
 }
 
 /*
- * Admin link, between the server clock and the build label (M1A-01).
+ * Admin link, between the in-game clock and the build label (M1A-01).
  *
  * Sits in the badge rather than the left rail because it is not a destination in
  * the game — it is a tool, and it belongs with the other things you only look at

@@ -202,6 +202,11 @@ Every deploy carries a build number: `git rev-list --count HEAD`, stamped into
 `GET /api/version` alongside the short commit SHA and `ENVIRONMENT_LABEL`. The client
 renders it bottom right on every screen.
 
+The clock beside the build number shows the active world's **in-game UTC time**, using
+`GET /api/world/clock` and the world's speed multiplier between syncs. It is hidden when signed
+out or when no world is available; `/api/version` still supplies the build metadata, not the
+displayed clock.
+
 Not a semantic version, deliberately. Nothing here is released to anyone, so there is
 no compatibility to promise, and a hand-maintained version drifts the first time someone
 forgets to bump it. This one is derived, so it cannot drift. A build made from a modified

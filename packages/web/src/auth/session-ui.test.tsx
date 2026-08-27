@@ -1,8 +1,8 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { MeResponse, VersionResponse } from '@tailfin/shared';
+import type { MeResponse, VersionResponse, WorldClock } from '@tailfin/shared';
 
 import { App } from '../App';
 
@@ -43,6 +43,13 @@ const VERSION: VersionResponse = {
   serverTime: '2026-08-17T20:05:00.000Z',
 };
 
+const WORLD_CLOCK: WorldClock = {
+  worldId: '00000000-0000-4000-8000-000000000001',
+  serverTime: VERSION.serverTime,
+  inGameTime: '2024-10-20T06:00:00.000Z',
+  speedMultiplier: 2,
+};
+
 /**
  * A hand-rolled response rather than the platform `Response`, so the tests do
  * not depend on which fetch globals the jsdom environment happens to expose.
@@ -56,7 +63,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 /** Stubs the endpoints the client calls, and fails loudly on any other. */
-function stubApi(me: MeResponse | 'error') {
+function stubApi(me: MeResponse | 'error', worldClock: WorldClock | null = WORLD_CLOCK) {
   const calls: string[] = [];
   const fetchMock = vi.fn((input: unknown) => {
     const url = String(input);
@@ -67,6 +74,13 @@ function stubApi(me: MeResponse | 'error') {
       );
     }
     if (url === '/api/version') return Promise.resolve(jsonResponse(VERSION));
+    if (url === '/api/world/clock') {
+      return Promise.resolve(
+        worldClock === null
+          ? jsonResponse({ code: 'active_world_required' }, 409)
+          : jsonResponse(worldClock),
+      );
+    }
     if (url === '/api/auth/logout') return Promise.resolve(jsonResponse({ signedOut: true }));
     if (url === '/api/auth/logout-all')
       return Promise.resolve(jsonResponse({ signedOut: true, revokedSessions: 2 }));
@@ -280,11 +294,13 @@ describe('the build badge', () => {
   });
 
   it('appears on the login page too, where there is no status strip', async () => {
-    stubApi(ANONYMOUS);
+    const { calls } = stubApi(ANONYMOUS);
     renderAt('/world');
 
     await screen.findByRole('link', { name: /sign in with google/i });
     expect(await screen.findByText('build 137')).toBeInTheDocument();
+    expect(screen.queryByLabelText('In-game time')).not.toBeInTheDocument();
+    expect(calls).not.toContain('/api/world/clock');
   });
 
   it('sits at the end of the status strip — the bottom right of the page', async () => {
@@ -308,15 +324,15 @@ describe('the build badge', () => {
     expect(badge).not.toHaveTextContent('abc1234');
   });
 
-  it('shows the server clock to the left of the build label', async () => {
+  it('shows the in-game clock to the left of the build label', async () => {
     stubApi(PLAYER);
     renderAt('/world');
 
     // Waits for the clock itself, not just for the badge. The clock arrives in a
-    // second effect once the server time has been read, so waiting on the build
+    // separate request from the version, so waiting on the build
     // number races it — a race this won locally every time and lost on CI.
     await screen.findByText('build 137');
-    await screen.findByText(/UTC$/);
+    await screen.findByLabelText('In-game time');
 
     const badge = document.querySelector('.build')!;
     const clock = badge.querySelector('.build__clock');
@@ -325,17 +341,15 @@ describe('the build badge', () => {
     expect(badge.firstElementChild).toBe(clock);
   });
 
-  it('shows the SERVER time, not the browser clock', async () => {
-    // The viewer can already see their own clock. The point of the badge is what
-    // the box thinks the time is, which is what every log line is stamped with.
+  it('shows in-game time, not server wall time or the browser clock', async () => {
     vi.setSystemTime(new Date('2020-01-01T00:00:00.000Z'));
     try {
       stubApi(PLAYER);
       renderAt('/world');
 
-      const clock = await screen.findByText(/UTC$/);
-      // VERSION.serverTime is 2026-08-17T20:05:00Z; the browser is in 2020.
-      expect(clock.textContent).toContain('2026-08-17 20:05');
+      const clock = await screen.findByLabelText('In-game time');
+      expect(clock.textContent).toContain('2024-10-20 06:00');
+      expect(clock.textContent).not.toContain('2026');
       expect(clock.textContent).not.toContain('2020');
     } finally {
       vi.useRealTimers();
@@ -345,10 +359,38 @@ describe('the build badge', () => {
   it('formats as an unambiguous UTC stamp', async () => {
     stubApi(PLAYER);
     renderAt('/world');
-    const clock = await screen.findByText(/UTC$/);
+    const clock = await screen.findByLabelText('In-game time');
     expect(clock.textContent).toMatch(
       /^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} UTC$/,
     );
+  });
+
+  it('advances the footer at the world speed between syncs', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['setInterval', 'clearInterval'] });
+    const monotonic = vi.spyOn(performance, 'now').mockReturnValue(0);
+    try {
+      stubApi(PLAYER);
+      renderAt('/finance');
+      const clock = await screen.findByLabelText('In-game time');
+      expect(clock).toHaveTextContent('2024-10-20 06:00:00 UTC');
+      monotonic.mockReturnValue(5000);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(clock).toHaveTextContent('2024-10-20 06:00:10 UTC');
+    } finally {
+      monotonic.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the build details but hides the clock when no world is available', async () => {
+    const { calls } = stubApi(PLAYER, null);
+    renderAt('/finance');
+    await screen.findByText('build 137');
+    await waitFor(() => expect(calls).toContain('/api/world/clock'));
+    expect(screen.queryByLabelText('In-game time')).not.toBeInTheDocument();
+    expect(document.querySelector('.build')).not.toHaveTextContent('2026-08-17');
   });
 
   it('renders nothing at all when the version endpoint says nothing', async () => {

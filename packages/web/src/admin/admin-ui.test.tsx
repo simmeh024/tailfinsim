@@ -111,6 +111,15 @@ function stubApi(me: MeResponse) {
     const url = String(input);
     if (url === '/api/me') return Promise.resolve(jsonResponse(me));
     if (url === '/api/version') return Promise.resolve(jsonResponse(VERSION));
+    if (url === '/api/world/clock')
+      return Promise.resolve(
+        jsonResponse({
+          worldId: '00000000-0000-4000-8000-000000000001',
+          serverTime: VERSION.serverTime,
+          inGameTime: '2024-10-20T06:00:00.000Z',
+          speedMultiplier: 2,
+        }),
+      );
     if (url === '/api/auth/logout') return Promise.resolve(jsonResponse({ signedOut: true }));
     if (url.startsWith('/api/admin/')) {
       if (!me.isAdmin) return Promise.resolve(jsonResponse({ code: 'forbidden' }, 403));
@@ -158,7 +167,7 @@ describe('the admin link', () => {
     expect(link).toHaveAttribute('href', '/admin');
   });
 
-  it('sits between the server clock and the build label', async () => {
+  it('sits between the in-game clock and the build label', async () => {
     // Where it was asked to go. Asserted on the order of the badge's children
     // rather than on pixels, which is the part that can actually regress.
     stubApi(ADMIN);
@@ -168,7 +177,7 @@ describe('the admin link', () => {
     // itself renders, so waiting only for the build number races it — locally it
     // won, in CI it lost.
     await screen.findByText('build 204');
-    await screen.findByText(/UTC$/);
+    await screen.findByLabelText('In-game time');
     await screen.findByRole('link', { name: 'admin' });
 
     const badge = document.querySelector('.build');
