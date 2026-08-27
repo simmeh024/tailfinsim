@@ -189,6 +189,13 @@ endpoint's identical 404 body. Scope the database query by the session-resolved 
 projections are explicit authorization-matrix entries with limited fields; they are not a
 reason to weaken the private endpoint behind them.
 
+**Every resource identifier uses the SEC-07 matrix.** Register path, body, query, parent and
+active-world-header surfaces in `test-fixtures/resource-id.ts`; use its own, another-player,
+absent, wrong-entity and malformed cases in HTTP tests. A refused write must prove the target
+and related money/ledger state are unchanged. Classify client-generated tokens and selectors
+explicitly rather than pretending they are owned resources, and never treat UUID randomness as
+an authorization control.
+
 ---
 
 ## The two environments, on three nodes

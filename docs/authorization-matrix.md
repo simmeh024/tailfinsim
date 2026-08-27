@@ -64,6 +64,37 @@ against that fixture:
   code proves the response; only the row proves the effect, and a handler that answers 404 after
   writing passes the first and fails the second.
 
+**Testing every identifier position (SEC-07).** UUID syntax is never authority. The canonical
+hostile values live in `packages/server/src/test-fixtures/resource-id.ts`: the caller's own row,
+another player's row, a well-formed UUID that names no row, a UUID belonging to the wrong entity
+kind, and malformed values (empty, trailing whitespace, non-UUID and overlong). The same file's
+`RESOURCE_ID_SURFACES` inventory classifies every path, body, query and active-world header input;
+`security/resource-id-inventory.test.ts` compares its path entries with Fastify's real route table
+so a new `:parameter` cannot arrive unclassified.
+
+Apply the matrix according to what the identifier means:
+
+- owner-scoped route, airframe, crew-base and ground-contract references resolve inside the session-derived airline;
+  foreign, absent and wrong-kind UUIDs are the same 404, and denied writes leave both the target and
+  the caller's balance unchanged;
+- a body parent such as founding `worldId` resolves the world before a child can be created; worlds
+  are public parents rather than player-owned rows, so an existing eligible world is allowed while
+  missing and wrong-kind UUIDs are 404;
+- the waterfall `rival` query selects from the rivals already disclosed for the owned route. A real
+  rival may belong to another player and is allowed; malformed UUIDs are 400 and a well-formed UUID
+  outside that computed set is the existing `unknown-rival` 422;
+- `x-tailfin-world-id` is a context selector, parsed once before airline resolution. It never grants
+  access to an airline in that world;
+- acquisition `requestId` is a client-generated idempotency token, not a resource reference. Any
+  unused UUID is valid by design; reusing another order's token is a non-mutating 409 conflict;
+- admin resource routes are grant-scoped, not owner-scoped. Another player's valid resource is
+  deliberately visible to an admitted admin; missing and wrong-kind UUIDs remain identical 404s.
+
+Malformed path UUIDs use the endpoint's 404. Malformed body and query UUIDs use 400. Fastify's
+parameter ceiling is high enough for the UUID guard to normalize the SEC-07 overlong test value,
+while remaining bounded. Never weaken these rules because UUIDs are difficult to guess: identifiers
+appear legitimately in responses, links, logs and screenshots.
+
 The predicate belongs in the query — `where(and(eq(id, …), eq(ownerId, resolved)))` — so an
 unowned row is never loaded, rather than loaded and then compared. Loading first works until
 someone adds a log line.
@@ -126,10 +157,10 @@ must compare with Fastify's route table. One method/path pair appears in each ro
 | `GET /api/world/clock`                              | `requireAirline`                                                       | 401   | 409 without an owned airline         | Allow when active                        | Same as player/owner        |
 | `GET /api/crew`                                     | `requireAirline`                                                       | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
 | `POST /api/crew/bases`                              | `requireActiveAirline`; airline derived from session                   | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
-| `POST /api/crew/hires`                              | `requireActiveAirline`; base scoped by resolved owner                  | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
-| `POST /api/crew/conversions`                        | `requireActiveAirline`; base scoped by resolved owner                  | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
-| `PUT /api/crew/reserves`                            | `requireActiveAirline`; base scoped by resolved owner                  | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
-| `PUT /api/crew/policies`                            | `requireActiveAirline`; base scoped by resolved owner                  | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
+| `POST /api/crew/hires`                              | `requireActiveAirline`; base scoped by owner; 404 cross-owner          | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
+| `POST /api/crew/conversions`                        | `requireActiveAirline`; base scoped by owner; 404 cross-owner          | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
+| `PUT /api/crew/reserves`                            | `requireActiveAirline`; base scoped by owner; 404 cross-owner          | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
+| `PUT /api/crew/policies`                            | `requireActiveAirline`; base scoped by owner; 404 cross-owner          | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
 | `GET /api/office`                                   | `requireAirline`; office scoped by resolved owner                      | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
 | `POST /api/office/hires`                            | `requireActiveAirline`; office scoped by resolved owner                | 401   | 409 without an owned airline         | Allow when active                        | Same as player/owner        |
 | `DELETE /api/office/hires/:seat`                    | `requireActiveAirline`; office scoped by resolved owner                | 401   | 409 without an owned airline         | Allow when active                        | Same as player/owner        |
@@ -149,13 +180,13 @@ must compare with Fastify's route table. One method/path pair appears in each ro
 | `GET /api/fleet/airframes`                          | `requireAirline`; airline derived from session                         | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
 | `GET /api/fleet/airframes/:airframeId`              | `requireAirline`; query scoped by session-resolved owner               | 401   | 404, identical to an unknown id      | Allow                                    | Same as player/owner        |
 | `GET /api/fleet/maintenance`                        | `requireAirline`; airline derived from session                         | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
-| `POST /api/fleet/maintenance/checks`                | `requireActiveAirline`; airframe ownership resolved, never accepted    | 401   | 409 without an owned airline         | Allow only when active                   | Same as player/owner        |
+| `POST /api/fleet/maintenance/checks`                | `requireActiveAirline`; airframe scoped by owner; 404 cross-owner      | 401   | 409 without an owned airline         | Allow only when active                   | Same as player/owner        |
 | `GET /api/fleet/orders`                             | `requireAirline`; airline derived from session/world                   | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
-| `POST /api/fleet/acquisitions`                      | `requireActiveAirline`; airline derived from session/world             | 401   | 409 without an owned airline         | Allow only when active                   | Same as player/owner        |
+| `POST /api/fleet/acquisitions`                      | `requireActiveAirline`; listing scoped to world; request id is a token | 401   | 409 without an owned airline         | Allow only when active                   | Same as player/owner        |
 | `GET /api/routes`                                   | `requireAirline`                                                       | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
 | `POST /api/routes`                                  | `requireActiveAirline`                                                 | 401   | 409 without an owned airline         | Allow when active                        | Same as player/owner        |
 | `PUT /api/routes/:routeId/fares`                    | `requireOperatingAirline` + owner-scoped query                         | 401   | 409 without airline; 404 cross-owner | Allow unless ceased                      | 404 unless owner; no bypass |
-| `GET /api/routes/:routeId/waterfall`                | `requireAirline` + owner-scoped query                                  | 401   | 409 without airline; 404 cross-owner | Allow                                    | 404 unless owner; no bypass |
+| `GET /api/routes/:routeId/waterfall`                | `requireAirline`; owned route + UUID-validated rival query             | 401   | 409 without airline; 404 cross-owner | Allow                                    | 404 unless owner; no bypass |
 | `POST /api/routes/:routeId/fares/preview`           | `requireOperatingAirline` + owner-scoped query                         | 401   | 409 without airline; 404 cross-owner | Allow unless ceased                      | 404 unless owner; no bypass |
 
 <!-- AUTHORIZATION_MATRIX_END -->

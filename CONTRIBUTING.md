@@ -108,6 +108,15 @@ missing id, the same player's other-world resource 404, and a refused write show
 row **unchanged**. The last one is the assertion that separates a real guard from one that answers
 404 after acting.
 
+SEC-07 extends that rule to every position. Add the endpoint to `RESOURCE_ID_SURFACES` in
+`packages/server/src/test-fixtures/resource-id.ts`, and build its tests from `resourceIdCases`:
+own, another player, a well-formed absent UUID and a UUID for the wrong entity kind. Exercise body,
+query, parent and `x-tailfin-world-id` inputs as well as paths. Malformed body/query identifiers are
+400; malformed private path identifiers use the same 404 as a missing row. For writes, snapshot the
+target and any balance or ledger the operation could touch, then compare after every refusal. If an
+identifier is a client token or a selector from an already disclosed set rather than a resource
+reference, classify that semantic explicitly in the inventory and test its actual boundary.
+
 ### Parse request bodies; never read them in handlers
 
 Every write handler must pass the whole body through `parseRequestBody()` and consume only the
