@@ -98,7 +98,7 @@ export async function readOfficeState(
 
 export type HireOfficeResult =
   | { ok: true; hire: OfficeHire }
-  | { ok: false; code: 'unknown_role' | 'role_mismatch' | 'seat_locked' };
+  | { ok: false; code: 'unknown_role' | 'role_mismatch' | 'seat_locked' | 'already_seated' };
 
 /**
  * Hire a candidate into a seat, replacing any incumbent.
@@ -129,6 +129,19 @@ export async function hireOffice(
     }
   } else if (request.seat !== request.candidateRole) {
     return { ok: false, code: 'role_mismatch' };
+  }
+
+  // One person, one office. The neutral seats made it possible to sit the same
+  // candidate in several rooms at once; a face cannot be in two rooms, so a
+  // candidate already holding another seat for this airline is refused. Re-hiring
+  // into the same seat is still an upsert, so this only guards a genuine double.
+  const [elsewhere] = await db
+    .select({ role: officeHire.role })
+    .from(officeHire)
+    .where(and(eq(officeHire.airlineId, own.id), eq(officeHire.candidateId, request.candidateId)))
+    .limit(1);
+  if (elsewhere !== undefined && elsewhere.role !== request.seat) {
+    return { ok: false, code: 'already_seated' };
   }
 
   const [row] = await db

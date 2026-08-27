@@ -65,12 +65,13 @@ export function registerOfficeRoutes(app: FastifyInstance, { db }: { db: Databas
         if (result.code === 'unknown_role') {
           return reply.code(400).send({ code: 'invalid_input', message: 'No such office role' });
         }
-        // 422: the request parsed, but the office rules refuse it — a role seat
-        // that does not match the candidate, or a neutral seat not yet unlocked.
+        // 422: the request parsed, but the office rules refuse it.
         const message =
           result.code === 'seat_locked'
             ? 'Expand your headquarters before staffing this office'
-            : 'This seat only takes its own role';
+            : result.code === 'already_seated'
+              ? 'This person already holds another office'
+              : 'This seat only takes its own role';
         return reply.code(422).send({ code: result.code, message });
       }
       // The whole office back, not the one hire: hiring the gate seat flips

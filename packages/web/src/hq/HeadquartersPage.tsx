@@ -82,6 +82,10 @@ export function HeadquartersPage(): ReactNode {
       { candidateId: hire.candidateId, candidateName: hire.candidateName },
     ]),
   );
+  // One person, one office: a candidate already sitting in any seat is out of the
+  // running for another. The server enforces this too, so this only spares the
+  // player a doomed pick.
+  const hiredCandidateIds = new Set((office?.hires ?? []).map((hire) => hire.candidateId));
 
   const act = useCallback(
     async (seat: OfficeSeatId, run: () => ReturnType<typeof hireOffice>) => {
@@ -306,15 +310,21 @@ export function HeadquartersPage(): ReactNode {
                         }
                       >
                         <option value="">Choose a candidate…</option>
-                        {HQ_ROLES.map((role) => (
-                          <optgroup key={role.id} label={role.role}>
-                            {candidatesForRole(role.id).map((candidate) => (
-                              <option key={candidate.id} value={candidate.id}>
-                                {candidate.name}
-                              </option>
-                            ))}
-                          </optgroup>
-                        ))}
+                        {HQ_ROLES.map((role) => {
+                          const free = candidatesForRole(role.id).filter(
+                            (candidate) => !hiredCandidateIds.has(candidate.id),
+                          );
+                          if (free.length === 0) return null;
+                          return (
+                            <optgroup key={role.id} label={role.role}>
+                              {free.map((candidate) => (
+                                <option key={candidate.id} value={candidate.id}>
+                                  {candidate.name}
+                                </option>
+                              ))}
+                            </optgroup>
+                          );
+                        })}
                       </select>
                       <button
                         type="button"

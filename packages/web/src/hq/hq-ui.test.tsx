@@ -90,6 +90,7 @@ describe('the Headquarters page', () => {
   // writes to it on hire and dismiss, and the server always answers with the
   // whole office, so the mock does too.
   let hires: { seat: string; candidateId: string; candidateName: string }[] = [];
+  let neutralSeats = 0;
   let automation: { settings: unknown[]; tasks: unknown[] } = { settings: [], tasks: [] };
 
   function officeState() {
@@ -100,13 +101,14 @@ describe('the Headquarters page', () => {
         hiredAt: '2024-10-20T00:00:00.000Z',
       })),
       hasExtendedAuthority: hires.some((h) => h.seat === 'safety-compliance'),
-      neutralSeats: 0,
+      neutralSeats,
       nextExpansion: { addsSeats: 2, totalSeats: 8, costMinor: 1_000_000_000 },
     };
   }
 
   beforeEach(() => {
     hires = [];
+    neutralSeats = 0;
     automation = { settings: [], tasks: [] };
     vi.stubGlobal(
       'fetch',
@@ -199,6 +201,25 @@ describe('the Headquarters page', () => {
     const tomCard = within(seat).getByText('Tom Bakker').closest<HTMLElement>('.hq-card');
     expect(maraCard?.dataset.hired).toBe('false');
     expect(tomCard?.dataset.hired).toBe('true');
+  });
+
+  it('keeps an already-hired candidate out of the neutral picker', async () => {
+    // Mara sits in her own role seat; a neutral office is unlocked.
+    hires = [
+      { seat: 'route-planner', candidateId: 'route-planner-mara', candidateName: 'Mara Ellison' },
+    ];
+    neutralSeats = 2;
+    render(<HeadquartersPage />);
+
+    const picker = await screen.findByRole('combobox', {
+      name: /Assign a candidate to neutral office 1/i,
+    });
+    const options = within(picker).getAllByRole('option');
+    const labels = options.map((o) => o.textContent);
+    // She is already seated, so she cannot be offered a second office…
+    expect(labels).not.toContain('Mara Ellison');
+    // …but her un-hired rival is still on offer.
+    expect(labels).toContain('Tom Bakker');
   });
 
   it('renders the seats the server already reports as filled, on load', async () => {

@@ -357,6 +357,50 @@ describeDb('the office, on the database', () => {
       expect(state.hires.map((h) => h.seat)).toContain('neutral-1');
     });
 
+    it('refuses a candidate already sitting in another seat', async () => {
+      const a = await fixtures.create();
+      await fund(a.airline.id, 5_000_000_000);
+      await purchaseExpansion(db.db, own(a));
+
+      // Mara takes her own role seat first.
+      const first = await hireOffice(db.db, own(a), {
+        seat: 'route-planner',
+        candidateId: 'rp-1',
+        candidateName: 'Mara Ellison',
+        candidateRole: 'route-planner',
+      });
+      expect(first.ok).toBe(true);
+
+      // The same person cannot also fill a neutral office.
+      const second = await hireOffice(db.db, own(a), {
+        seat: 'neutral-1',
+        candidateId: 'rp-1',
+        candidateName: 'Mara Ellison',
+        candidateRole: 'route-planner',
+      });
+      expect(second).toEqual({ ok: false, code: 'already_seated' });
+
+      // She is in exactly one seat, and it is the one she was hired into.
+      const state = await readOfficeState(db.db, own(a));
+      expect(state.hires.filter((h) => h.candidateId === 'rp-1')).toHaveLength(1);
+      expect(state.hires.map((h) => h.seat)).not.toContain('neutral-1');
+    });
+
+    it('still lets a candidate be re-hired into the same seat', async () => {
+      const a = await fixtures.create();
+      await fund(a.airline.id, 5_000_000_000);
+      await purchaseExpansion(db.db, own(a));
+      const req = {
+        seat: 'neutral-1' as const,
+        candidateId: 'rp-1',
+        candidateName: 'Mara Ellison',
+        candidateRole: 'route-planner' as const,
+      };
+      expect((await hireOffice(db.db, own(a), req)).ok).toBe(true);
+      // Re-issuing the identical hire is an upsert, not a double — never refused.
+      expect((await hireOffice(db.db, own(a), req)).ok).toBe(true);
+    });
+
     it('does not let a neutral Safety hire unlock authority', async () => {
       const a = await fixtures.create();
       await fund(a.airline.id, 5_000_000_000);
