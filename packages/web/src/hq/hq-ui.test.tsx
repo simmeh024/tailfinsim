@@ -61,7 +61,7 @@ describe('the office roster', () => {
       'Emma Larsson',
     ]);
     // Every candidate names a real seat and carries a portrait.
-    const roleIds = new Set(HQ_ROLES.map((role) => role.id));
+    const roleIds = new Set<string>(HQ_ROLES.map((role) => role.id));
     for (const candidate of HQ_CANDIDATES) {
       expect(roleIds.has(candidate.roleId), candidate.id).toBe(true);
       expect(candidate.portrait, candidate.id).toBeTruthy();
@@ -91,6 +91,7 @@ describe('the Headquarters page', () => {
   // whole office, so the mock does too.
   let hires: { seat: string; candidateId: string; candidateName: string }[] = [];
   let neutralSeats = 0;
+  let offeredSpecialist = 'social-media-reputation';
   let automation: { settings: unknown[]; tasks: unknown[] } = { settings: [], tasks: [] };
 
   function officeState() {
@@ -103,12 +104,14 @@ describe('the Headquarters page', () => {
       hasExtendedAuthority: hires.some((h) => h.seat === 'safety-compliance'),
       neutralSeats,
       nextExpansion: { addsSeats: 2, totalSeats: 8, costMinor: 1_000_000_000 },
+      offeredSpecialist,
     };
   }
 
   beforeEach(() => {
     hires = [];
     neutralSeats = 0;
+    offeredSpecialist = 'social-media-reputation';
     automation = { settings: [], tasks: [] };
     vi.stubGlobal(
       'fetch',
@@ -222,6 +225,33 @@ describe('the Headquarters page', () => {
     expect(labels).toContain('Tom Bakker');
   });
 
+  it('offers one social media specialist and seats them in a neutral office', async () => {
+    offeredSpecialist = 'social-media-reputation';
+    neutralSeats = 2;
+    render(<HeadquartersPage />);
+
+    const region = await screen.findByRole('region', { name: 'Social Media Specialist' });
+    expect(within(region).getByText('Lena Voss')).toBeInTheDocument();
+    // Only the world's offer is ever shown — never both specialists.
+    expect(screen.queryByText('Kai Mercer')).toBeNull();
+
+    const hire = within(region).getByRole('button', { name: /Hire Lena/i });
+    await waitFor(() => expect(hire).toBeEnabled());
+    fireEvent.click(hire);
+
+    await within(region).findByText(/Working a neutral office/i);
+    // She was seated in the first free neutral office, tagged as the specialist.
+    const post = hires.find((h) => h.candidateId === 'social-media-reputation');
+    expect(post?.seat).toBe('neutral-1');
+  });
+
+  it('cannot seat the specialist with no neutral office unlocked', async () => {
+    neutralSeats = 0;
+    render(<HeadquartersPage />);
+    const region = await screen.findByRole('region', { name: 'Social Media Specialist' });
+    expect(within(region).getByRole('button', { name: /neutral office/i })).toBeDisabled();
+  });
+
   it('renders the seats the server already reports as filled, on load', async () => {
     hires = [
       {
@@ -305,6 +335,7 @@ describe('the HQ layout overview', () => {
       neutralSeats < 4
         ? { addsSeats: 2, totalSeats: neutralSeats + 8, costMinor: 1_000_000_000 }
         : null,
+    offeredSpecialist: 'social-media-reputation',
   });
 
   it('shows all six offices vacant when nothing is hired', () => {
@@ -359,6 +390,7 @@ describe('the HQ layout overview', () => {
       hasExtendedAuthority: false,
       neutralSeats: 0,
       nextExpansion: null,
+      offeredSpecialist: 'social-media-reputation',
     };
     const { container } = render(<HqLayoutPanel office={office} />);
 
@@ -390,6 +422,7 @@ describe('the HQ layout overview', () => {
           hasExtendedAuthority: true,
           neutralSeats: 0,
           nextExpansion: null,
+          offeredSpecialist: 'social-media-reputation',
         }}
       />,
     );

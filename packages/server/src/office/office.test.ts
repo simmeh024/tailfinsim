@@ -1,7 +1,12 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { HEADQUARTERS_EXPANSION_TIERS, OFFICE_ROLES } from '@tailfin/shared';
+import {
+  HEADQUARTERS_EXPANSION_TIERS,
+  OFFICE_ROLES,
+  offeredSocialMediaSpecialistId,
+  SOCIAL_MEDIA_SPECIALISTS,
+} from '@tailfin/shared';
 
 import { moveAirlineCash } from '../airline/cash';
 import { createDatabase, type DatabaseHandle } from '../db/client';
@@ -399,6 +404,49 @@ describeDb('the office, on the database', () => {
       expect((await hireOffice(db.db, own(a), req)).ok).toBe(true);
       // Re-issuing the identical hire is an upsert, not a double — never refused.
       expect((await hireOffice(db.db, own(a), req)).ok).toBe(true);
+    });
+
+    it('offers one social media specialist and refuses the other', async () => {
+      const a = await fixtures.create();
+      await fund(a.airline.id, 5_000_000_000);
+      await purchaseExpansion(db.db, own(a));
+
+      const offered = offeredSocialMediaSpecialistId(a.world.id);
+      const other = SOCIAL_MEDIA_SPECIALISTS.find((s) => s.id !== offered);
+      expect(other).toBeDefined();
+
+      // The state names the one specialist this world offers.
+      expect((await readOfficeState(db.db, own(a))).offeredSpecialist).toBe(offered);
+
+      // The offered specialist takes a neutral office…
+      const ok = await hireOffice(db.db, own(a), {
+        seat: 'neutral-1',
+        candidateId: offered,
+        candidateName: 'Specialist',
+        candidateRole: 'social-media',
+      });
+      expect(ok.ok).toBe(true);
+
+      // …the other one is refused, in any neutral office.
+      const refused = await hireOffice(db.db, own(a), {
+        seat: 'neutral-2',
+        candidateId: other?.id ?? '',
+        candidateName: 'Specialist',
+        candidateRole: 'social-media',
+      });
+      expect(refused).toEqual({ ok: false, code: 'specialist_unavailable' });
+    });
+
+    it('never lets a specialist take a role seat', async () => {
+      const a = await fixtures.create();
+      const offered = offeredSocialMediaSpecialistId(a.world.id);
+      const bad = await hireOffice(db.db, own(a), {
+        seat: 'route-planner',
+        candidateId: offered,
+        candidateName: 'Specialist',
+        candidateRole: 'social-media',
+      });
+      expect(bad).toEqual({ ok: false, code: 'role_mismatch' });
     });
 
     it('does not let a neutral Safety hire unlock authority', async () => {

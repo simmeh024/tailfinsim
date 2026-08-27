@@ -17,7 +17,16 @@ import { Timestamp, Uuid } from './primitives';
  * has filled, what it costs a month, and which seat gates authority.
  */
 
-/** The six MVP office seats. */
+/**
+ * The office roles a hire can be priced and identified as.
+ *
+ * The first six are the MVP seats, each with its own fixed room. `social-media`
+ * is the odd one out: it is a **specialist**, not a seat. It is listed here so a
+ * specialist hire has a salary and a stable role string on the wire, but it is
+ * deliberately absent from {@link OFFICE_ROLE_ORDER} (so it draws no fixed room)
+ * and from {@link OfficeSeatId} (so it can never occupy a role seat — only a
+ * neutral office). See {@link SOCIAL_MEDIA_SPECIALISTS}.
+ */
 export const OfficeRole = z.enum([
   'route-planner',
   'revenue-manager',
@@ -25,6 +34,7 @@ export const OfficeRole = z.enum([
   'chief-pilot',
   'ground-ops',
   'safety-compliance',
+  'social-media',
 ]);
 export type OfficeRole = z.infer<typeof OfficeRole>;
 
@@ -99,6 +109,13 @@ export const OFFICE_ROLES: Readonly<Record<OfficeRole, OfficeRoleDefinition>> = 
     unlock: 'Required for long-haul and ETOPS authority and international rights.',
     monthlySalaryMinor: 3_000_000,
     gatesExtendedAuthority: true,
+  },
+  'social-media': {
+    role: 'social-media',
+    title: 'Social Media Specialist',
+    unlock: 'A neutral-office specialist with a small standing edge — see the Specialist row.',
+    monthlySalaryMinor: 1_500_000,
+    gatesExtendedAuthority: false,
   },
 };
 
@@ -201,6 +218,65 @@ export function unlockedNeutralSeats(neutralSeats: number): readonly NeutralOffi
 }
 
 /**
+ * The social media specialist (§9.1, the "Specialist" row).
+ *
+ * A specialist is not one of the six seats and never takes a role seat: the
+ * `social-media` role above exists only so a specialist hire can be *priced* and
+ * *identified*, and the seat enum omits it, so the one place a specialist can sit
+ * is a neutral office. Two specialists exist, each with a different standing edge;
+ * a world offers **exactly one** of them, chosen once and deterministically from
+ * the world id, and an airline may employ that one and no other.
+ *
+ * The ids are shared, not client-private, because three parties must agree on
+ * them: the client roster that shows the face, the server that admits the hire,
+ * and the worker that applies the edge each month.
+ */
+export type SocialMediaSpecialistEffect = 'reputation' | 'attractiveness';
+
+export interface SocialMediaSpecialist {
+  /** Stable id, shared by the client roster, the wire and the worker. */
+  id: string;
+  effect: SocialMediaSpecialistEffect;
+}
+
+export const SOCIAL_MEDIA_SPECIALISTS: readonly SocialMediaSpecialist[] = [
+  { id: 'social-media-reputation', effect: 'reputation' },
+  { id: 'social-media-attractiveness', effect: 'attractiveness' },
+];
+
+/** True for a candidate id that belongs to a social media specialist. */
+export function isSocialMediaSpecialistId(candidateId: string): boolean {
+  return SOCIAL_MEDIA_SPECIALISTS.some((specialist) => specialist.id === candidateId);
+}
+
+/** The edge a specialist id carries, or null if the id is not a specialist. */
+export function socialMediaSpecialistEffect(
+  candidateId: string,
+): SocialMediaSpecialistEffect | null {
+  return (
+    SOCIAL_MEDIA_SPECIALISTS.find((specialist) => specialist.id === candidateId)?.effect ?? null
+  );
+}
+
+/**
+ * The one specialist a world puts on offer — the same one for the life of the
+ * world, so the market does not flap and the server, client and worker agree
+ * without coordinating. A tiny FNV-1a over the world id chooses which; it is a
+ * pure function of the id and nothing else.
+ */
+export function offeredSocialMediaSpecialistId(worldId: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < worldId.length; i += 1) {
+    hash ^= worldId.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  const index = (hash >>> 0) % SOCIAL_MEDIA_SPECIALISTS.length;
+  const chosen = SOCIAL_MEDIA_SPECIALISTS[index] ?? SOCIAL_MEDIA_SPECIALISTS[0];
+  if (chosen === undefined) throw new Error('no social media specialists are defined');
+  return chosen.id;
+}
+
+/**
  * The distance beyond which a route needs extended authority, in nautical miles.
  *
  * A balance number, and deliberately reachable by the reference narrowbody
@@ -242,6 +318,12 @@ export const OfficeStateResponse = z.object({
   neutralSeats: z.number().int().nonnegative(),
   /** The next expansion the airline can buy, or null once the ten-office ceiling is reached. */
   nextExpansion: OfficeExpansionOffer.nullable(),
+  /**
+   * The candidate id of the one social media specialist this world offers. The
+   * server decides it (from the world id), so the client and the worker never
+   * disagree about which specialist is on the market.
+   */
+  offeredSpecialist: z.string().min(1),
 });
 export type OfficeStateResponse = z.infer<typeof OfficeStateResponse>;
 
