@@ -11,12 +11,13 @@ import {
 import floor10 from './assets/floorplan/hq-floor-10.webp';
 import floor6 from './assets/floorplan/hq-floor-6.webp';
 import floor8 from './assets/floorplan/hq-floor-8.webp';
-import { HQ_CANDIDATES } from './hq-roster';
+import { candidateById } from './hq-roster';
 
 import type { ReactNode } from 'react';
 
 /**
- * The HQ layout overview, for the context panel (M5-04, App. H.4).
+ * The HQ layout overview and — on the Headquarters page — its interactive floor
+ * (M5-04, App. H.4; the neutral-office interaction is M5-04's UX follow-up).
  *
  * A floor-plan of the headquarters that says, at a glance, which offices the
  * airline holds and who sits in them. The plan is a rendered image — one per
@@ -24,12 +25,18 @@ import type { ReactNode } from 'react';
  * the matching room: a **rounded avatar** and name where a seat is filled, a
  * faint "Vacant" where it is not.
  *
+ * ## Two modes, one component
+ *
+ * With no `onSelectSeat`, the plan is a **read-only overview** — this is the
+ * context panel on every page, and the rooms are inert. Pass `onSelectSeat` and
+ * the neutral rooms become **buttons**: the room is the office, so clicking
+ * Office 08 is how you staff Office 08. Selection and hover are lifted to the
+ * parent so a room and its office card highlight together.
+ *
  * The rooms sit at fixed positions in each render, so the overlay is placed by
  * normalised coordinates: each office has a column (left or right of the
  * corridor) and a row, and each tier has its own row centres because a taller
- * plan spreads the same rooms differently. The image is stretched to the panel
- * and the container carries the render's aspect ratio, so the coordinates hold at
- * any width.
+ * plan spreads the same rooms differently.
  */
 
 /** The plan render, and its aspect ratio, keyed by neutral seats unlocked. */
@@ -63,6 +70,15 @@ const SEAT_GRID: readonly { seat: OfficeSeatId; row: number; col: 'left' | 'righ
   { seat: 'neutral-4', row: 4, col: 'right' },
 ];
 
+/** The offices in floor order — the identity behind "Office 01 … Office 10". */
+export const OFFICE_SEQUENCE: readonly OfficeSeatId[] = SEAT_GRID.map((entry) => entry.seat);
+
+/** The stable office number for a seat, e.g. "Office 08". Same on plan and card. */
+export function officeLabel(seat: OfficeSeatId): string {
+  const index = OFFICE_SEQUENCE.indexOf(seat);
+  return `Office ${String(index + 1).padStart(2, '0')}`;
+}
+
 const MONEY = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
@@ -83,9 +99,28 @@ interface HqLayoutPanelProps {
   office: OfficeStateResponse | null;
   /** Buy the next expansion. Absent in a bare render (a test), where the button hides. */
   onExpand?: () => Promise<ExpandResult>;
+  /**
+   * Make the neutral rooms interactive. When set, each unlocked neutral office is
+   * a button that selects that office; role rooms stay display-only. Absent for
+   * the read-only overview panel.
+   */
+  onSelectSeat?: (seat: OfficeSeatId) => void;
+  /** The office the parent is managing — its room gets a persistent selected state. */
+  selectedSeat?: OfficeSeatId | null;
+  /** The office the parent is hovering/focusing elsewhere — mirrored onto its room. */
+  hoveredSeat?: OfficeSeatId | null;
+  /** Told when a room is hovered or focused, so a card can highlight in step. */
+  onHoverSeat?: (seat: OfficeSeatId | null) => void;
 }
 
-export function HqLayoutPanel({ office, onExpand }: HqLayoutPanelProps): ReactNode {
+export function HqLayoutPanel({
+  office,
+  onExpand,
+  onSelectSeat,
+  selectedSeat = null,
+  hoveredSeat = null,
+  onHoverSeat,
+}: HqLayoutPanelProps): ReactNode {
   const [expanding, setExpanding] = useState(false);
   const [expandError, setExpandError] = useState<string | null>(null);
 
@@ -122,39 +157,78 @@ export function HqLayoutPanel({ office, onExpand }: HqLayoutPanelProps): ReactNo
       >
         {visible.map(({ seat, row, col }) => {
           const hire = hiredBySeat.get(seat);
-          const occupant =
-            hire !== undefined
-              ? (HQ_CANDIDATES.find((candidate) => candidate.id === hire.candidateId) ?? null)
-              : null;
+          const occupant = hire !== undefined ? candidateById(hire.candidateId) : null;
+          const neutral = isNeutralSeat(seat);
+          // Only neutral rooms are managed from the plan; role rooms are shown by
+          // the roster above and stay inert even when the plan is interactive.
+          const interactive = neutral && onSelectSeat !== undefined;
+          const style = {
+            left: `${String((COLUMN_X[col] ?? 0.5) * 100)}%`,
+            top: `${String((rows[row] ?? 0.5) * 100)}%`,
+          };
+
+          const inner =
+            hire !== undefined ? (
+              <>
+                {occupant !== null && (
+                  <img
+                    className="hq-cell__avatar"
+                    src={occupant.portrait}
+                    alt={hire.candidateName}
+                  />
+                )}
+                <span className="hq-cell__name">{hire.candidateName}</span>
+              </>
+            ) : interactive ? (
+              <span className="hq-cell__add" aria-hidden="true">
+                + Hire
+              </span>
+            ) : (
+              <span className="hq-cell__vacant">Vacant</span>
+            );
+
+          if (interactive) {
+            const state = hire !== undefined ? 'Staffed' : 'Vacant';
+            const action = hire !== undefined ? 'Activate to manage.' : 'Activate to assign staff.';
+            return (
+              <button
+                key={seat}
+                type="button"
+                className="hq-cell hq-cell--interactive"
+                data-seat={seat}
+                data-neutral="true"
+                data-occupied={hire !== undefined}
+                data-selected={selectedSeat === seat}
+                data-hovered={hoveredSeat === seat}
+                style={style}
+                aria-label={`${officeLabel(seat)}, Neutral office, ${state}. ${action}`}
+                aria-pressed={selectedSeat === seat}
+                onClick={() => onSelectSeat?.(seat)}
+                onMouseEnter={() => onHoverSeat?.(seat)}
+                onMouseLeave={() => onHoverSeat?.(null)}
+                onFocus={() => onHoverSeat?.(seat)}
+                onBlur={() => onHoverSeat?.(null)}
+              >
+                <span className="hq-cell__num">{officeLabel(seat)}</span>
+                {inner}
+              </button>
+            );
+          }
+
           return (
             <div
               key={seat}
               className="hq-cell"
               data-seat={seat}
-              data-neutral={isNeutralSeat(seat)}
+              data-neutral={neutral}
               data-occupied={hire !== undefined}
-              style={{
-                left: `${String((COLUMN_X[col] ?? 0.5) * 100)}%`,
-                top: `${String((rows[row] ?? 0.5) * 100)}%`,
-              }}
+              data-hovered={hoveredSeat === seat}
+              style={style}
               title={
                 hire !== undefined ? `${hire.candidateName} — ${seatTitle(seat)}` : seatTitle(seat)
               }
             >
-              {hire !== undefined ? (
-                <>
-                  {occupant !== null && (
-                    <img
-                      className="hq-cell__avatar"
-                      src={occupant.portrait}
-                      alt={hire.candidateName}
-                    />
-                  )}
-                  <span className="hq-cell__name">{hire.candidateName}</span>
-                </>
-              ) : (
-                <span className="hq-cell__vacant">Vacant</span>
-              )}
+              {inner}
             </div>
           );
         })}
