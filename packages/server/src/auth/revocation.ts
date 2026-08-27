@@ -34,7 +34,8 @@ export async function revokePlayerSessions(
       action: 'sessions.revoked',
       subjectType: 'player',
       subjectId: playerId,
-      after: { result: 'success', revokedSessions },
+      before: { activeSessions: revokedSessions },
+      after: { activeSessions: 0, result: 'success', revokedSessions },
       requestId: actor.requestId,
     });
     return revokedSessions;

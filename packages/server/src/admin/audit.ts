@@ -43,8 +43,86 @@ export interface AuditEntry {
   requestId?: string | null;
 }
 
+type AuditEvidence = 'change' | 'created' | 'view';
+
+interface AuditActionPolicy {
+  subjectType: AdminSubjectType;
+  evidence: AuditEvidence;
+  requiresReason?: true;
+}
+
+/**
+ * The contract every sensitive administrative operation must meet (SEC-10).
+ *
+ * `satisfies Record<AdminAction, ...>` makes the action enum and this policy
+ * grow together: adding a new action without deciding its subject and evidence
+ * is a type error, and `audit-policy.test.ts` exercises every entry.
+ */
+export const ADMIN_AUDIT_ACTION_POLICY = {
+  'admin.granted': { subjectType: 'player', evidence: 'change' },
+  'admin.revoked': { subjectType: 'player', evidence: 'change' },
+  'world.created': { subjectType: 'world', evidence: 'created' },
+  'world.opened': { subjectType: 'world', evidence: 'change' },
+  'world.locked': { subjectType: 'world', evidence: 'change' },
+  'world.unlocked': { subjectType: 'world', evidence: 'change' },
+  'world.archived': { subjectType: 'world', evidence: 'change' },
+  'world.reset': { subjectType: 'world', evidence: 'change', requiresReason: true },
+  'world.speed_changed': { subjectType: 'world', evidence: 'change' },
+  'player.viewed': { subjectType: 'player', evidence: 'view' },
+  'sessions.revoked': { subjectType: 'player', evidence: 'change' },
+  'airline.identity_changed': { subjectType: 'airline', evidence: 'change', requiresReason: true },
+  'airline.cash_adjusted': { subjectType: 'airline', evidence: 'change', requiresReason: true },
+  'economy.version_created': { subjectType: 'economy_config', evidence: 'change' },
+  'world.economy_pinned': { subjectType: 'world', evidence: 'change' },
+  'events.requeued': { subjectType: 'world_event', evidence: 'change' },
+} as const satisfies Record<AdminAction, AuditActionPolicy>;
+
+export function auditPolicyFor(action: AdminAction): AuditActionPolicy {
+  return ADMIN_AUDIT_ACTION_POLICY[action];
+}
+
+function jsonEqual(left: Record<string, unknown>, right: Record<string, unknown>): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+/** Returns the policy failure rather than writing an ambiguous audit row. */
+export function auditEntryViolation(entry: AuditEntry): string | null {
+  const policy = auditPolicyFor(entry.action);
+  if (entry.actorLabel.trim() === '') return 'Audit actorLabel must be non-blank';
+  if (entry.subjectType !== policy.subjectType) {
+    return `Audit action ${entry.action} must target ${policy.subjectType}, not ${entry.subjectType}`;
+  }
+  if (entry.subjectId === '') return 'Audit subjectId must be null or non-blank';
+
+  if (policy.evidence === 'created') {
+    if (entry.before != null) return `Created action ${entry.action} cannot have a before snapshot`;
+    if (entry.after == null) return `Created action ${entry.action} needs an after snapshot`;
+  } else if (policy.evidence === 'view') {
+    if (entry.before != null) return `View action ${entry.action} cannot have a before snapshot`;
+    if (entry.after == null) return `View action ${entry.action} needs a disclosure summary`;
+  } else {
+    if (entry.before == null || entry.after == null) {
+      return `Changed action ${entry.action} needs before and after snapshots`;
+    }
+    if (jsonEqual(entry.before, entry.after)) {
+      return `Changed action ${entry.action} must have different before and after snapshots`;
+    }
+  }
+
+  if (policy.requiresReason) {
+    const reason = entry.after?.reason;
+    if (typeof reason !== 'string' || reason.trim() === '') {
+      return `Audit action ${entry.action} needs a non-blank reason in its after snapshot`;
+    }
+  }
+  return null;
+}
+
 /** Records one action. Must be called with the transaction that performs it. */
 export async function writeAudit(tx: Database, entry: AuditEntry): Promise<void> {
+  const violation = auditEntryViolation(entry);
+  if (violation) throw new Error(violation);
+
   await tx.insert(adminAudit).values({
     actorPlayerId: entry.actorPlayerId,
     actorLabel: entry.actorLabel,
