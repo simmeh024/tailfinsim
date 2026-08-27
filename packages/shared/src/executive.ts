@@ -24,7 +24,10 @@ export const EXECUTIVE_FLOOR_UNLOCK_COST_MINOR = 10_000_000_000;
  * to open the floor — $50M a month. Gross revenue (what flights earned), summed
  * over the last game month; not profit, and not cash on hand.
  */
-export const EXECUTIVE_FLOOR_REVENUE_GATE_MINOR = 5_000_000_000;
+// TEMPORARY (dev-test branch): the revenue gate is dropped to zero so the
+// executive floor can be opened for testing without months of real revenue.
+// The real gate on `claude/exec-floor` / #775 is 5_000_000_000 ($50M/month).
+export const EXECUTIVE_FLOOR_REVENUE_GATE_MINOR = 0;
 
 /** The executive floor has ten offices, like the ground floor. */
 export const EXECUTIVE_OFFICE_COUNT = 10;

@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { adjustAirlineCash } from './admin/cash';
 import { BOOTSTRAP_ACTOR, grantAdmin, listAdmins, revokeAdmin } from './admin/grants';
 import { createDatabase } from './db/client';
-import { player, playerIdentity } from './db/schema';
+import { airline, player, playerIdentity } from './db/schema';
 
 /**
  * `node dist/admin-cli.js` — admin grants from a shell (M1A-01).
@@ -103,7 +103,9 @@ function parseArgs(argv: readonly string[]): Args {
   }
 
   if (command === 'cash') {
-    if (!args.airlineId) throw new Error('cash needs --airline <uuid>');
+    if (!args.airlineId && !args.playerId && !args.email) {
+      throw new Error('cash needs --airline <uuid>, or --player/--email to resolve the airline');
+    }
     if (!args.amount) throw new Error('cash needs --amount <major units>');
     // Required, not optional. An adjustment nobody explained is one nobody can
     // review, and the audit row is the only place the why survives.
@@ -152,8 +154,40 @@ async function main(): Promise<void> {
       // Two decimal places, like every other minor-unit figure in the game.
       const amountMinor = Math.round(major * 100);
 
+      // The airline may be named directly, or resolved from its owner (--player,
+      // or --email → player). Resolution refuses ambiguity rather than guessing.
+      let airlineId = args.airlineId;
+      if (!airlineId) {
+        let ownerId: string | undefined = args.playerId || undefined;
+        if (!ownerId && args.email) {
+          const found = await db.db
+            .select({ playerId: playerIdentity.playerId })
+            .from(playerIdentity)
+            .where(eq(playerIdentity.email, args.email))
+            .limit(1);
+          ownerId = found[0]?.playerId;
+          if (!ownerId) throw new Error(`No account with the sign-in address ${args.email}`);
+        }
+        if (!ownerId) throw new Error('cash needs --airline, --player or --email');
+        const owned = await db.db
+          .select({ id: airline.id, name: airline.name })
+          .from(airline)
+          .where(eq(airline.playerId, ownerId));
+        if (owned.length === 0) throw new Error(`player ${ownerId} owns no airline`);
+        if (owned.length > 1) {
+          throw new Error(
+            `player owns ${String(owned.length)} airlines; pass --airline <uuid>:\n` +
+              owned.map((a) => `  ${a.id}  ${a.name}`).join('\n'),
+          );
+        }
+        const resolved = owned[0];
+        if (!resolved) throw new Error('airline resolution returned nothing');
+        airlineId = resolved.id;
+        out(`resolved airline ${airlineId} (${resolved.name})`);
+      }
+
       const result = await adjustAirlineCash(db.db, BOOTSTRAP_ACTOR, {
-        airlineId: args.airlineId,
+        airlineId,
         amountMinor,
         reason: args.reason,
       });
