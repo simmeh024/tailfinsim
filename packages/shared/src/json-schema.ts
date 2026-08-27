@@ -43,6 +43,7 @@ import { LogoutResponse, MeResponse, RevokeSessionsResponse } from './auth';
 import { AutomationStateResponse } from './automation';
 import { CrewResponse } from './crew';
 import { ExecutiveFloorState } from './executive';
+import { FinancePnlResponse } from './finance';
 import { AirframeDetailResponse, FleetAirframesResponse } from './fleet';
 import { GroundStationResponse } from './ground';
 import { LiveryDocument } from './livery';
@@ -153,3 +154,4 @@ export const automationStateResponseJsonSchema = z.toJSONSchema(AutomationStateR
 export const groundStationResponseJsonSchema = z.toJSONSchema(GroundStationResponse);
 export const officeStateResponseJsonSchema = z.toJSONSchema(OfficeStateResponse);
 export const executiveFloorStateJsonSchema = z.toJSONSchema(ExecutiveFloorState);
+export const financePnlResponseJsonSchema = z.toJSONSchema(FinancePnlResponse);

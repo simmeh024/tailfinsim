@@ -18,17 +18,23 @@ import {
   FLAGSHIP_CONFIG,
   ForceRenameAirlineInput,
   HireCrewInput,
+  HireOfficeRequest,
   OpenCrewBaseInput,
   OpenRouteInput,
   SetCrewPoliciesInput,
   SetCrewReserveInput,
   SetFaresRequest,
+  SignContractRequest,
   StartCrewConversionInput,
   UpdateOwnAirlineInput,
   WorldConfig,
 } from '@tailfin/shared';
 
-import { SENSITIVE_REQUEST_FIELDS, VIRTUAL_PRIVILEGE_FIELDS } from '../db/schema';
+import {
+  SENSITIVE_REQUEST_FIELDS,
+  SERVER_OWNED_FINANCIAL_FIELDS,
+  VIRTUAL_PRIVILEGE_FIELDS,
+} from '../db/schema';
 import { collectRegisteredRoutes } from '../test-fixtures/route-inventory';
 
 const SOURCE_ROOT = join(import.meta.dirname, '..');
@@ -116,6 +122,21 @@ const STRICT_WRITE_CONTRACTS = [
     endpoint: 'PUT /api/crew/policies',
     schema: SetCrewPoliciesInput,
     payload: { crewBaseId: UUID_A, payBand: 'market' },
+  },
+  {
+    endpoint: 'POST /api/office/hires',
+    schema: HireOfficeRequest,
+    payload: {
+      seat: 'revenue-manager',
+      candidateId: 'revenue-manager-1',
+      candidateName: 'Secure Candidate',
+      candidateRole: 'revenue-manager',
+    },
+  },
+  {
+    endpoint: 'POST /api/ground/:icao/contracts',
+    schema: SignContractRequest,
+    payload: { serviceLine: 'ramp_baggage', grade: 'standard' },
   },
   {
     endpoint: 'POST /api/routes',
@@ -233,6 +254,29 @@ describe('SEC-06 request-body policy', () => {
     },
   );
 
+  it.each(STRICT_WRITE_CONTRACTS)(
+    '$endpoint rejects every client-supplied financial fact and status',
+    ({ schema, payload }) => {
+      for (const field of SERVER_OWNED_FINANCIAL_FIELDS) {
+        expect(
+          schema.safeParse({ ...payload, [field]: field === 'entitlements' ? ['premium'] : 1 })
+            .success,
+          `${field} must not be accepted by ${schema.description ?? 'this request contract'}`,
+        ).toBe(false);
+      }
+    },
+  );
+
+  it('rejects non-positive, fractional and absurd crew purchase quantities', () => {
+    const base = { crewBaseId: UUID_A, family: 'A320', rank: 'captain' as const };
+    for (const heads of [0, -1, 1.5, 1_001]) {
+      expect(HireCrewInput.safeParse({ ...base, heads }).success).toBe(false);
+      expect(StartCrewConversionInput.safeParse({ ...base, toFamily: 'B737', heads }).success).toBe(
+        false,
+      );
+    }
+  });
+
   it('keeps the world-create compatibility contract but strips privileged extras', () => {
     const parsed = WorldConfig.parse({
       ...FLAGSHIP_CONFIG,
@@ -243,7 +287,7 @@ describe('SEC-06 request-body policy', () => {
     expect(parsed).toEqual(FLAGSHIP_CONFIG);
   });
 
-  it('keeps airline founding compatible while stripping server-computed and privileged fields', () => {
+  it('keeps airline founding compatible while stripping server-owned financial facts', () => {
     const allowed = {
       worldId: UUID_A,
       name: 'Secure Air',
@@ -253,10 +297,15 @@ describe('SEC-06 request-body policy', () => {
       baseCountry: 'NL',
       hubIdent: 'EHAM',
     };
+    const hostileFinancialFacts = Object.fromEntries(
+      SERVER_OWNED_FINANCIAL_FIELDS.map((field) => [
+        field,
+        field === 'entitlements' ? ['premium'] : 999_999_999,
+      ]),
+    );
     const parsed = CreateAirlineInput.parse({
       ...allowed,
-      cash: 999_999_999,
-      reputation: 1,
+      ...hostileFinancialFacts,
       playerId: UUID_A,
       isAdmin: true,
       tokenHash: 'attacker-controlled-session-material',
@@ -273,6 +322,21 @@ describe('SEC-06 request-body policy', () => {
       session: ['tokenHash', 'playerId'],
     });
     expect(VIRTUAL_PRIVILEGE_FIELDS).toEqual(['isAdmin', 'adminGrant']);
+    expect(SERVER_OWNED_FINANCIAL_FIELDS).toEqual([
+      'cash',
+      'cashMinor',
+      'balanceMinor',
+      'reputation',
+      'amountMinor',
+      'priceMinor',
+      'chargedMinor',
+      'monthlyLeaseRateMinor',
+      'resultingCashMinor',
+      'credits',
+      'entitlements',
+      'paymentStatus',
+      'orderStatus',
+    ]);
 
     const all = [...Object.values(SENSITIVE_REQUEST_FIELDS).flat(), ...VIRTUAL_PRIVILEGE_FIELDS];
     expect(new Set(all)).toEqual(

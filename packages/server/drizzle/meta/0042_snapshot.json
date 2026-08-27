@@ -1,5 +1,5 @@
 {
-  "id": "1d9c2bb4-db8b-44df-b4bb-8e1d0392275c",
+  "id": "e7809641-54d3-4211-b589-6ef5fe7c4209",
   "prevId": "259fc13c-8d20-4d0e-9e77-9a620c56910f",
   "version": "7",
   "dialect": "postgresql",
@@ -3277,87 +3277,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.executive_floor": {
-      "name": "executive_floor",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "world_id": {
-          "name": "world_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "airline_id": {
-          "name": "airline_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "offices_unlocked": {
-          "name": "offices_unlocked",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "unlocked_at": {
-          "name": "unlocked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "executive_floor_airline_key": {
-          "name": "executive_floor_airline_key",
-          "columns": [
-            {
-              "expression": "airline_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "executive_floor_world_id_world_id_fk": {
-          "name": "executive_floor_world_id_world_id_fk",
-          "tableFrom": "executive_floor",
-          "tableTo": "world",
-          "columnsFrom": ["world_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "executive_floor_airline_id_airline_id_fk": {
-          "name": "executive_floor_airline_id_airline_id_fk",
-          "tableFrom": "executive_floor",
-          "tableTo": "airline",
-          "columnsFrom": ["airline_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.flight": {
       "name": "flight",
       "schema": "",
@@ -4065,6 +3984,294 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.ledger_entry": {
+      "name": "ledger_entry",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "world_id": {
+          "name": "world_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "airline_id": {
+          "name": "airline_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cash_movement_id": {
+          "name": "cash_movement_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "line_number": {
+          "name": "line_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_minor": {
+          "name": "amount_minor",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category": {
+          "name": "category",
+          "type": "ledger_category",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "counterparty": {
+          "name": "counterparty",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'system'"
+        },
+        "flight_id": {
+          "name": "flight_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "route_id": {
+          "name": "route_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "aircraft_id": {
+          "name": "aircraft_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hub_id": {
+          "name": "hub_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cabin_class": {
+          "name": "cabin_class",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recorded_at": {
+          "name": "recorded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "ledger_entry_airline_occurred_at_idx": {
+          "name": "ledger_entry_airline_occurred_at_idx",
+          "columns": [
+            {
+              "expression": "airline_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ledger_entry_airline_category_occurred_at_idx": {
+          "name": "ledger_entry_airline_category_occurred_at_idx",
+          "columns": [
+            {
+              "expression": "airline_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "category",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ledger_entry_route_occurred_at_idx": {
+          "name": "ledger_entry_route_occurred_at_idx",
+          "columns": [
+            {
+              "expression": "airline_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "route_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ledger_entry_aircraft_occurred_at_idx": {
+          "name": "ledger_entry_aircraft_occurred_at_idx",
+          "columns": [
+            {
+              "expression": "airline_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "aircraft_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ledger_entry_hub_occurred_at_idx": {
+          "name": "ledger_entry_hub_occurred_at_idx",
+          "columns": [
+            {
+              "expression": "airline_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "hub_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "ledger_entry_world_id_world_id_fk": {
+          "name": "ledger_entry_world_id_world_id_fk",
+          "tableFrom": "ledger_entry",
+          "tableTo": "world",
+          "columnsFrom": ["world_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "ledger_entry_airline_id_airline_id_fk": {
+          "name": "ledger_entry_airline_id_airline_id_fk",
+          "tableFrom": "ledger_entry",
+          "tableTo": "airline",
+          "columnsFrom": ["airline_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "ledger_entry_cash_movement_id_cash_movement_id_fk": {
+          "name": "ledger_entry_cash_movement_id_cash_movement_id_fk",
+          "tableFrom": "ledger_entry",
+          "tableTo": "cash_movement",
+          "columnsFrom": ["cash_movement_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "ledger_entry_movement_line_key": {
+          "name": "ledger_entry_movement_line_key",
+          "nullsNotDistinct": false,
+          "columns": ["cash_movement_id", "line_number"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "ledger_entry_amount_safe_integer": {
+          "name": "ledger_entry_amount_safe_integer",
+          "value": "\"ledger_entry\".\"amount_minor\" >= -9007199254740991 AND \"ledger_entry\".\"amount_minor\" <= 9007199254740991"
+        },
+        "ledger_entry_line_number_positive": {
+          "name": "ledger_entry_line_number_positive",
+          "value": "\"ledger_entry\".\"line_number\" > 0"
+        },
+        "ledger_entry_counterparty_not_blank": {
+          "name": "ledger_entry_counterparty_not_blank",
+          "value": "char_length(\"ledger_entry\".\"counterparty\") > 0 AND \"ledger_entry\".\"counterparty\" = btrim(\"ledger_entry\".\"counterparty\")"
+        },
+        "ledger_entry_cabin_class_valid": {
+          "name": "ledger_entry_cabin_class_valid",
+          "value": "\"ledger_entry\".\"cabin_class\" IS NULL OR \"ledger_entry\".\"cabin_class\" IN ('economy', 'premium_economy', 'business', 'first')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.node_heartbeat": {
@@ -6187,6 +6394,33 @@
       "name": "hotel_tier",
       "schema": "public",
       "values": ["budget", "standard", "premium"]
+    },
+    "public.ledger_category": {
+      "name": "ledger_category",
+      "schema": "public",
+      "values": [
+        "opening_balance",
+        "equity",
+        "ticket",
+        "ancillary",
+        "cargo",
+        "charter",
+        "acmi",
+        "fuel",
+        "lease_finance",
+        "crew",
+        "office_salary",
+        "maintenance",
+        "airport_slot",
+        "atc",
+        "ground_handling",
+        "marketing",
+        "repaint_retrofit",
+        "interest",
+        "aircraft_purchase",
+        "asset_deposit",
+        "other"
+      ]
     },
     "public.node_role": {
       "name": "node_role",

@@ -72,6 +72,19 @@ kind, and malformed values (empty, trailing whitespace, non-UUID and overlong). 
 `security/resource-id-inventory.test.ts` compares its path entries with Fastify's real route table
 so a new `:parameter` cannot arrive unclassified.
 
+**Nested parent chains (SEC-08).** When a private leaf has a parent, resolve it from the leaf
+through every parent to `airline` in one SQL query. The reusable worked example is
+`packages/server/src/airline/nested-ownership.ts`: `schedule_leg → schedule → airline`, with
+both `airline.player_id = caller` and `airline.world_id = activeWorld` in the predicate. Keep
+the parent-to-airline world relationship in the join too, so an inconsistent row cannot bridge
+worlds. Do not load a leaf, then walk and compare its parents in application code; do not prove
+only that the caller owns _some_ airline.
+
+`packages/server/src/airline/nested-ownership.test.ts` is the required template. Every nested
+endpoint adds its own **own-chain**, **sibling-chain**, **same-player wrong-world**, and
+**broken-parent-chain** case. A broken chain is a clean concealed refusal (the endpoint's 404),
+never a null dereference or 500.
+
 Apply the matrix according to what the identifier means:
 
 - owner-scoped route, airframe, crew-base and ground-contract references resolve inside the session-derived airline;
@@ -156,6 +169,7 @@ must compare with Fastify's route table. One method/path pair appears in each ro
 | `PATCH /api/airlines/me`                            | `requireActiveAirline`                                                 | 401   | 409 without an owned airline         | Allow when active                        | Same as player/owner        |
 | `GET /api/world/clock`                              | `requireAirline`                                                       | 401   | 409 without an owned airline         | Allow when active                        | Same as player/owner        |
 | `GET /api/crew`                                     | `requireAirline`                                                       | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
+| `GET /api/finance/pnl`                              | `requireAirline`                                                       | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
 | `POST /api/crew/bases`                              | `requireActiveAirline`; airline derived from session                   | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
 | `POST /api/crew/hires`                              | `requireActiveAirline`; base scoped by owner; 404 cross-owner          | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
 | `POST /api/crew/conversions`                        | `requireActiveAirline`; base scoped by owner; 404 cross-owner          | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
@@ -213,6 +227,36 @@ operator can read them without an application credential.
 | -------------- | ------------------------------------------- | ------------------ | ------------------ | ------------------ | ------------------ |
 | `GET /healthz` | Loopback bind + host firewall; no app guard | Not edge-reachable | Not edge-reachable | Not edge-reachable | Not edge-reachable |
 | `GET /queues`  | Loopback bind + host firewall; no app guard | Not edge-reachable | Not edge-reachable | Not edge-reachable | Not edge-reachable |
+
+## Financial authority (SEC-09)
+
+Players submit intent and references, not financial facts. Every player-facing write contract is
+strict: `cash`, balances, reputation, prices, charged amounts, payment/order status, credits and
+entitlements are server-owned fields. The founding endpoint retains its backward-compatible
+unknown-field stripping, but discards those same fields before the founding service runs. Current
+purchase quantities are bounded positive integers; a zero, negative, fractional or implausibly
+large crew request never reaches the service layer.
+
+`moveAirlineCash()` is the only application path that changes `airline.cash_minor`. It accepts a
+caller-owned database transaction and records the cash movement, dimensional ledger entries and
+materialised balance in that transaction. Database reconciliation triggers require the balance to
+equal both the movement and ledger totals, and immutable movement/ledger rows turn corrections
+into explicit compensating entries. All money is safe integer minor units; fractional values are
+rejected before any write. The P&L route derives the airline solely from the session, so it cannot
+read another player's financial records. There are no premium, credit or entitlement balances
+today; any future version must add a server-owned write path, ledger/audit coverage and these
+request-boundary tests before exposing one.
+
+## Audit action contract (SEC-10)
+
+Every `AdminAction` has a declared subject type and evidence shape in
+`ADMIN_AUDIT_ACTION_POLICY`. `writeAudit()` rejects a row that targets the wrong kind of subject,
+omits before/after evidence for a change, records identical before and after snapshots, or omits a
+required reason. Creation and deliberate player-detail views have their own honest shapes: an
+after-only creation record and an after-only disclosure summary. The policy is exhaustive over the
+closed action enum, so extending the admin console without deciding its audit contract fails the
+SEC-10 test suite and typecheck. The action and audit row remain in the caller's transaction; a
+rollback leaves neither behind.
 
 ## Decisions and open questions
 
