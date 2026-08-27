@@ -102,6 +102,8 @@ function categoryForCause(cause: CashMovementCause): LedgerCategory {
     case 'office_salary':
       return 'office_salary';
     case 'office_expansion':
+    case 'executive_floor':
+    case 'executive_office':
     case 'disruption_cost':
       return 'other';
     case 'admin_adjustment':

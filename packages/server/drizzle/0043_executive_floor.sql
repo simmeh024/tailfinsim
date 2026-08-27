@@ -1,0 +1,19 @@
+-- tailfin:migration-strategy expand
+-- The executive floor (§9.1 follow-up). Purely additive on both counts: two new
+-- cash_movement_cause enum values for the floor and office unlocks, used only by
+-- the new code that ships with them, and a new executive_floor table the previous
+-- release neither reads nor writes — no row means the floor is closed, the correct
+-- default for every existing airline. No backfill.
+ALTER TYPE "public"."cash_movement_cause" ADD VALUE 'executive_floor' BEFORE 'admin_adjustment';--> statement-breakpoint
+ALTER TYPE "public"."cash_movement_cause" ADD VALUE 'executive_office' BEFORE 'admin_adjustment';--> statement-breakpoint
+CREATE TABLE "executive_floor" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"world_id" uuid NOT NULL,
+	"airline_id" uuid NOT NULL,
+	"offices_unlocked" integer DEFAULT 0 NOT NULL,
+	"unlocked_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE "executive_floor" ADD CONSTRAINT "executive_floor_world_id_world_id_fk" FOREIGN KEY ("world_id") REFERENCES "public"."world"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "executive_floor" ADD CONSTRAINT "executive_floor_airline_id_airline_id_fk" FOREIGN KEY ("airline_id") REFERENCES "public"."airline"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "executive_floor_airline_key" ON "executive_floor" USING btree ("airline_id");
