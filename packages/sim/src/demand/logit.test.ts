@@ -482,6 +482,25 @@ describe('the terms that later milestones will supply', () => {
     expect(allied.bySegment.business.operators[0]?.terms.alliance).toBeCloseTo(0.5, 12);
   });
 
+  it('adds a social media attractiveness bonus directly, across every segment', () => {
+    // §9.1's specialist edge enters utility like the alliance bonus — a flat
+    // additive term, not a factor of an existing attribute — and being flat, it
+    // shows up identically in business and leisure rather than differing by beta.
+    const promoted = computeShares({
+      operators: [{ ...YOU, attractiveness: 0.2 }, RIVAL_A, RIVAL_B],
+      segmentPools: A8_POOLS,
+    });
+    const plain = computeShares({ operators: [YOU, RIVAL_A, RIVAL_B], segmentPools: A8_POOLS });
+
+    expect(promoted.bySegment.business.operators[0]?.terms.attractiveness).toBeCloseTo(0.2, 12);
+    expect(promoted.bySegment.leisure.operators[0]?.terms.attractiveness).toBeCloseTo(0.2, 12);
+
+    // A positive bonus can only help: the promoted airline wins at least as much
+    // of every segment as it did without it.
+    expect(shareOf(promoted, 'leisure', 'you')).toBeGreaterThan(shareOf(plain, 'leisure', 'you'));
+    expect(shareOf(promoted, 'business', 'you')).toBeGreaterThan(shareOf(plain, 'business', 'you'));
+  });
+
   it('leaves loyalty at zero until it has a coefficient (App. E.5)', () => {
     const loyal = computeShares({
       operators: [{ ...YOU, loyalty: 1 }, RIVAL_A, RIVAL_B],

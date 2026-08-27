@@ -13,6 +13,7 @@ import { type Database } from '../db/client';
 import { world, type WorldRow } from '../db/schema';
 import { reviewNpcCarriers } from '../npc/operate';
 import { runOfficePayroll } from '../office/payroll';
+import { reviewSocialMediaReputation } from '../office/reputation';
 import {
   drainDueEvents,
   queueDepth,
@@ -103,6 +104,8 @@ export interface TickReport {
   /** M5-03. Heads who went off sick. */
   crewSickened: number;
   crewErrors: number;
+  /** M5-04 follow-up. Airlines whose social media specialist dripped reputation this run. */
+  reputationGrants: number;
 }
 
 export interface EngineLog {
@@ -162,6 +165,8 @@ export interface SimulationEngineOptions {
   reviewMorale?: typeof reviewCrewMorale;
   /** M5-03. Returns crew whose sick leave has run out. */
   returnSick?: typeof returnSickCrew;
+  /** M5-04 follow-up. Drips a hired social media specialist's monthly reputation. */
+  reviewReputation?: typeof reviewSocialMediaReputation;
   depth?: typeof queueDepth;
 }
 
@@ -247,6 +252,15 @@ export interface EngineSnapshot {
   crewSickened: number;
   crewErrors: number;
   maintenanceErrors: number;
+  /**
+   * M5-04 follow-up. Reputation drips granted since start, and sweeps that threw.
+   *
+   * A counter for the reason the crew ones exist: without a worker a specialist
+   * on the payroll moves nothing, and a reputation that never climbs reads as a
+   * broken perk rather than a missing process.
+   */
+  reputationGrants: number;
+  reputationErrors: number;
 }
 
 export interface QueueDepthByWorld {
@@ -332,6 +346,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     payOffice = runOfficePayroll,
     reviewMorale = reviewCrewMorale,
     returnSick = returnSickCrew,
+    reviewReputation = reviewSocialMediaReputation,
   } = options;
 
   const unhandledEventTypes = ALL_EVENT_TYPES.filter((type) => handlers[type] === undefined);
@@ -362,6 +377,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let crewSickened = 0;
   let crewErrors = 0;
   let maintenanceErrors = 0;
+  let reputationGrants = 0;
+  let reputationErrors = 0;
 
   async function tick(context: { tickedAt: Date; tickNumber: number }): Promise<TickReport> {
     const worlds = await listWorlds(db);
@@ -382,6 +399,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     let tickSickened = 0;
     let tickCrewErrors = 0;
     let tickAirframesGrounded = 0;
+    let tickReputationGrants = 0;
 
     for (const entry of worlds) {
       // Aircraft factory lead time is explicitly **real time** (§7.2), not a
@@ -548,6 +566,30 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         log?.warn?.(`[${entry.name}] crew duty sweep failed: ${String(error)}`);
       }
 
+      /*
+       * The social media specialist's reputation drip (M5-04 follow-up, §9.1,
+       * §15). Monthly on this world's game clock and idempotent by
+       * `(airline, period)`, so calling it every tick costs one config lookup
+       * and one indexed read in the common case, and applies once a month.
+       *
+       * Isolated like the sweeps above: a drip that could not run this tick runs
+       * the next one. Reputation is a slow compound, so a tick's delay is
+       * invisible where a lost settlement would be money gone.
+       */
+      try {
+        const reputation = await reviewReputation(db, entry.id, gameTime(entry.clock, now()));
+        tickReputationGrants += reputation.airlinesGranted;
+        if (reputation.airlinesGranted > 0) {
+          log?.info?.(
+            `[${entry.name}] social media: ${String(reputation.airlinesGranted)} airline(s) ` +
+              `dripped ${reputation.totalApplied.toFixed(2)} reputation`,
+          );
+        }
+      } catch (error) {
+        reputationErrors += 1;
+        log?.warn?.(`[${entry.name}] reputation sweep failed: ${String(error)}`);
+      }
+
       // Each world is drained against its own clock: `fire_at` is a game-time
       // instant, so what is due depends on where that world's clock has got to,
       // and two worlds at different speeds disagree about the same moment.
@@ -602,6 +644,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     crewResignations += tickResignations;
     crewSickened += tickSickened;
     crewErrors += tickCrewErrors;
+    reputationGrants += tickReputationGrants;
     lastTickAt = context.tickedAt;
     lastTickDurationMs = durationMs;
     lastWorldCount = worlds.length;
@@ -628,6 +671,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       crewResignations: tickResignations,
       crewSickened: tickSickened,
       crewErrors: tickCrewErrors,
+      reputationGrants: tickReputationGrants,
     };
   }
 
@@ -696,6 +740,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         crewSickened,
         crewErrors,
         maintenanceErrors,
+        reputationGrants,
+        reputationErrors,
       };
     },
 

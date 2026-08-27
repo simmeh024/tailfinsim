@@ -288,6 +288,13 @@
       "when": 1787794914481,
       "tag": "0040_quiet_lady_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1787831682392,
+      "tag": "0041_daffy_lenny_balinger",
+      "breakpoints": true
     }
   ]
 }

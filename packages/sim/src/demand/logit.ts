@@ -115,6 +115,16 @@ export interface Operator {
   /** Codeshare/feed bonus (§17). Post-MVP. Enters utility directly, not through a beta. */
   alliance?: Partial<Record<DemandSegment, number>>;
   /**
+   * A marketing/attractiveness bonus (§9.1's social media specialist, §15).
+   *
+   * A flat additive utility across every segment, entering directly like
+   * `alliance` rather than through a beta — it is a thumb on the scale, not a
+   * factor of an existing attribute. The server sets it from the airline's hired
+   * attractiveness specialist and the world's `socialMedia.attractivenessUtility`;
+   * defaulting to zero keeps it out of every market where nobody has one.
+   */
+  attractiveness?: number;
+  /**
    * One-stop penalty (§8.2, A.14). M3-07.
    *
    * Subtracted directly rather than scaled by a coefficient, as A.3 writes it —
@@ -138,6 +148,8 @@ export interface UtilityTerms {
   reputation: number;
   loyalty: number;
   alliance: number;
+  /** The social media attractiveness bonus (§9.1). A direct additive term. */
+  attractiveness: number;
   connectionPenalty: number;
 }
 
@@ -259,6 +271,7 @@ export function utilityTerms(
     reputation: beta.reputation * operator.reputation,
     loyalty: beta.loyalty * (operator.loyalty ?? 0),
     alliance: operator.alliance?.[segment] ?? 0,
+    attractiveness: operator.attractiveness ?? 0,
     connectionPenalty: -(operator.connectionPenalty?.[segment] ?? 0),
   };
 }
@@ -273,6 +286,7 @@ export function totalUtility(terms: UtilityTerms): number {
     terms.reputation +
     terms.loyalty +
     terms.alliance +
+    terms.attractiveness +
     terms.connectionPenalty
   );
 }

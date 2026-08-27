@@ -247,6 +247,7 @@ const FACTOR_LABEL: Record<string, string> = {
   // raw `connectionPenalty` appearing in front of a player.
   loyalty: 'Loyalty',
   alliance: 'Alliance',
+  attractiveness: 'Social media',
   connectionPenalty: 'Connection',
 };
 
