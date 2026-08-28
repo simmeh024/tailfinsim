@@ -15,12 +15,23 @@ import { worldClockJsonSchema } from '@tailfin/shared';
 
 import { resolvedAirlineOf } from '../airline/context';
 
+import { readWorldAirports } from './airports';
 import { readWorldClock } from './clock';
 
 import type { DatabaseHandle } from '../db/client';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 export function registerWorldRoutes(app: FastifyInstance, { db }: { db: DatabaseHandle }): void {
+  /*
+   * The world map's airports. Reference data shared by every world, so it needs a
+   * session but not an airline — the globe renders before a player founds anything,
+   * and the airports are the same regardless.
+   */
+  app.get('/api/world/airports', { onRequest: app.requireAuth }, async (_request, reply) => {
+    const airports = await readWorldAirports(db.db);
+    return reply.code(200).send({ airports });
+  });
+
   app.get(
     '/api/world/clock',
     {

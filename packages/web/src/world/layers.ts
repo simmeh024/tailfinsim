@@ -1,4 +1,4 @@
-import { ArcLayer, BitmapLayer, GeoJsonLayer, PathLayer } from '@deck.gl/layers';
+import { ArcLayer, BitmapLayer, GeoJsonLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 
 import { WEB_MERCATOR_MAX_LATITUDE } from './terminator';
 import { terrainImage } from './terrain';
@@ -18,6 +18,8 @@ export interface WorldLayerVisibility {
   borders: boolean;
   /** The terrain basemap over the land (App. H.2). */
   terrain: boolean;
+  /** Every served airport/city, as dots on the map. */
+  airports: boolean;
 }
 
 export interface WorldRoute {
@@ -26,10 +28,27 @@ export interface WorldRoute {
   target: LngLat;
 }
 
+/** One airport/city dot on the world map. */
+export interface WorldAirport {
+  /** `[longitude, latitude]`. */
+  position: LngLat;
+  name: string;
+  /** OurAirports kind — large_airport, medium_airport, … — sets the dot's size. */
+  kind: string;
+}
+
+/** Dot radius in pixels by airport kind — a hub reads larger than a regional field. */
+function airportRadius(kind: string): number {
+  if (kind === 'large_airport') return 2.6;
+  if (kind === 'medium_airport') return 1.8;
+  return 1.2;
+}
+
 export interface CreateWorldLayersOptions {
   palette: WorldPalette;
   quality: RendererQuality;
   routes: readonly WorldRoute[];
+  airports: readonly WorldAirport[];
   darkness: DarknessField;
   /**
    * The coastline outline to draw.
@@ -331,6 +350,7 @@ export function createWorldLayers({
   borders,
   projection,
   routes,
+  airports,
   visibility,
 }: CreateWorldLayersOptions): (Layer | false)[] {
   const bounds = worldBounds(projection, quality);
@@ -521,6 +541,20 @@ export function createWorldLayers({
         widthMaxPixels: 3,
         greatCircle: true,
         numSegments: quality === 'full' ? 100 : 50,
+        parameters: { cullMode: 'none' },
+      }),
+    visibility.airports &&
+      new ScatterplotLayer<WorldAirport>({
+        id: 'world-airports',
+        data: airports,
+        getPosition: ({ position }) => position,
+        getRadius: ({ kind }) => airportRadius(kind),
+        radiusUnits: 'pixels',
+        radiusMinPixels: 1,
+        radiusMaxPixels: 5,
+        getFillColor: palette.airport,
+        stroked: false,
+        // Drawn last, so on top; the sphere must not back-face cull the dots.
         parameters: { cullMode: 'none' },
       }),
   ];
