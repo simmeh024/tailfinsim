@@ -108,6 +108,19 @@ ownership or admin rights. DreamObjects receives a copy of the whole database an
 the data-protection scope. GitHub cannot deploy to production: the operator's SSH session
 and manual deploy command are the approval boundary.
 
+### Local aircraft tooling (M6-25)
+
+The offline aircraft preflight may read a Meshy credential from the invoking operator process or an
+explicit bounded local file. It returns only a presence/shape status, never the key, credential path
+or raw parser/OS errors. It has no network transport, writes, application endpoint or deployed
+Web/Worker credential. This reduces accidental disclosure, not workstation-compromise risk.
+
+The future Meshy client introduces paid external operations and untrusted model/texture downloads.
+Before enabling it, #791 must enforce explicit per-run approval, durable single-writer credit
+reservations, ambiguous-submission reconciliation, bounded downloads and immutable provenance.
+Subscription or balance is not spending authority. Candidate quarantine is not licensing or
+distribution approval; #793 owns admission evidence. No live provider boundary is enabled here.
+
 ### Boundaries that do not exist yet
 
 OPS-08's web/worker split is now deployed on dev and is described above; OPS-11 must still

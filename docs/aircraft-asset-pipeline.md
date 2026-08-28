@@ -11,6 +11,10 @@ the name of a licence is never treated as source evidence.
 
 ## Inputs and command
 
+AI-generated candidates start with the separate [aircraft factory preflight](aircraft-factory.md).
+That command is offline and cannot admit an asset or spend credits. Generation/provenance and
+canonical preparation must pass their review gates before entering the intake below.
+
 An intake has two authored inputs beside the source files:
 
 - the `AircraftAssetManifest` from `packages/shared/src/aircraft-asset.ts`, including exact source
