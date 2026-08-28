@@ -186,6 +186,56 @@ and [data/training guidance](https://help.meshy.ai/en/articles/15724182-is-meshy
 There is no automated winner selection, paid retexture, fallback geometry experiment or fleet
 publication in this increment. After four candidates, stop for human comparison/selection (#792).
 
+## Offline candidate geometry audit (M6-26)
+
+After archival, inspect one candidate without credentials, provider requests or credit authority:
+
+```bash
+pnpm assets:meshy-run -- audit --operation candidate-1
+```
+
+`audit` accepts only the recorded candidate-1 through candidate-4 operations. It rejects key,
+budget, URL and arbitrary input/output path options. The ledger and source are read only;
+the command verifies the archived task/export identity, then seals canonical JSON as
+`candidate-N-geometry-v1.json` beside the private exports. The report binds exact source bytes,
+task, approval, specification and algorithm version. Identical reruns are idempotent; conflicting
+reports or modified source bytes fail closed. Never delete a report to accommodate a changed
+algorithm: introduce a new report/algorithm version instead.
+
+The first decoder intentionally supports only untextured GLB v2 with one embedded buffer, one
+flat scene, identity-transform nodes and triangle primitives. Each mesh is instantiated once.
+Positions/normals/UVs use FLOAT accessors; indices may use unsigned byte, short or integer.
+It permits an empty root `extensions` object but refuses nonempty extensions, external resources,
+textures/materials, sparse accessors, skinning, morphs and hierarchy/transforms. Unsupported inputs
+produce a code-owned diagnostic without model-provided names, paths or parser errors. This is a
+bounded intake profile, **not official glTF conformance validation**.
+
+Limits are 64 MiB GLB, 1 MiB JSON, 64 nodes/meshes, 256 total primitives, 1,024 accessors/views,
+100,000 source vertices and 100,000 triangles. Accessor ranges, stride/alignment, finite values
+and index bounds are checked before use. Coordinates are bounded to absolute 1,000,000 source
+units. Declared accessor bounds are ignored; measured bounds use referenced vertices only.
+
+Measurements include triangle/vertex counts, exact coincident positions, duplicate faces ignoring
+winding, and degenerate faces (collapsed indices or double area at most `1e-12` after normalization
+by the longest bound extent). Exact-coordinate welding is **analysis only**: original bytes never
+change. Edge topology and edge-connected component sizes exclude duplicate/degenerate faces.
+The report counts boundaries, edges with more than two incident faces, and inconsistent winding
+on two-face edges. Only the largest 64 component sizes are listed, with an omitted count.
+
+The symmetry indicator reflects occupied **vertex** voxels about each native axis midpoint at
+256 cells per longest extent and computes intersection-over-union. It is density-sensitive, not
+surface/silhouette symmetry, and cannot choose canonical axes or rank aircraft automatically.
+Source extents are not metres or an A320neo dimension check. Attribute presence is not canonical
+UV coverage, semantic segmentation, or proof of correctly oriented normals.
+
+Every report remains quarantined and explicitly not livery-ready. Zero edge defects do not prove
+watertightness, vertex manifoldness or absence of self-intersections. Components are not identified
+as engines or other semantic parts; boundary edges can include intentional part openings. Licensing,
+official conformance, axes/dimensions, silhouette, engine placement, canonical UV/masks, protected
+materials and visual/performance review remain pending. Human selection is not asset admission.
+This increment neither repairs the source nor submits retexturing, changes a livery/asset schema,
+updates the registry or publishes to fleet.
+
 ## Pinned strategy and vendor evidence
 
 The planning observation is dated 2026-08-28. Four untextured T2 candidates cost 5 credits each;
