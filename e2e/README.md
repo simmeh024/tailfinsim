@@ -43,6 +43,16 @@ CI retries once and keeps a trace for that retry; local runs do not retry and
 retain a trace only when they fail. Screenshots are captured only on failure;
 video is disabled. Do not use `test.only`: CI rejects it.
 
+## Admin-console journeys
+
+`e2e/admin/console.spec.ts` keeps its broken-page sentinel in the `@smoke`
+subset. Its remaining journeys are intentionally broader: live console
+navigation, real world health, a world creation plus audit trail, confirmation
+controls, and player-view auditing. The creation test uses the fixed
+`E2E Admin Created World` staging world; preparation removes only that exact
+disposable row before the next run. It never submits a reset or changes the
+fixture world's lifecycle or speed.
+
 ## Authentication boundary
 
 The only supported test authentication is real database-backed sessions minted

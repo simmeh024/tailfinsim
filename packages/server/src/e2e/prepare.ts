@@ -17,6 +17,11 @@ export const DEFAULT_E2E_DATABASE_URL =
 
 export const E2E_FIXTURES = {
   worldName: 'E2E Fixture World',
+  // The admin-browser journey creates this staging world through the real
+  // console. Preparation removes only this exact disposable world before the
+  // next run, so the journey can prove a creation rather than rediscovering an
+  // old row. Its append-only audit history is intentionally retained.
+  createdWorldName: 'E2E Admin Created World',
   player: {
     id: '00000000-0000-4000-8000-000000000201',
     displayName: 'E2E Player',
@@ -56,6 +61,8 @@ export async function prepareE2eDatabase(): Promise<void> {
     await migrate(database.db, {
       migrationsFolder: resolve(import.meta.dirname, '../../drizzle'),
     });
+
+    await database.db.delete(world).where(eq(world.name, E2E_FIXTURES.createdWorldName));
 
     const seeded = await createWorld(database.db, e2eWorldConfig);
     await resetWorld(database.db, seeded.world.id);
