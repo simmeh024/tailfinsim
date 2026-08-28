@@ -8,6 +8,7 @@ import { meshyEvidenceDirectory, prepareMeshyEvidence } from './meshy-evidence';
 import { reportMeshyGeometry } from './meshy-geometry-report';
 import { readBoundedMeshyInput } from './meshy-preflight';
 import { sealMeshyCandidateProvenance } from './meshy-provenance';
+import { archiveMeshyReview } from './meshy-review-archive';
 import { assertMeshyRunCap, meshyRunApprovalIdentity } from './meshy-run';
 import { MeshyRunStore, meshyRunDatabasePath } from './meshy-store';
 import { submitMeshyCandidate } from './meshy-submit';
@@ -16,6 +17,7 @@ export const MESHY_RUN_USAGE =
   'Usage: assets:meshy-run init --approval-file PATH\n' +
   '       assets:meshy-run status\n' +
   '       assets:meshy-run audit --operation candidate-1..4\n' +
+  '       assets:meshy-run review --operation candidate-1..4\n' +
   '       assets:meshy-run account --max-credits 1..40 [--key-file PATH]\n' +
   '       assets:meshy-run prepare --evidence-file PATH --max-credits 1..40\n' +
   '       assets:meshy-run provenance --operation candidate-1..4 --max-credits 1..40\n' +
@@ -29,9 +31,17 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
     return { command: 'help' as const, options: new Map<string, string>() };
   const command = args[0];
   if (
-    !['init', 'status', 'account', 'prepare', 'submit', 'sync', 'provenance', 'audit'].includes(
-      command ?? '',
-    )
+    ![
+      'init',
+      'status',
+      'account',
+      'prepare',
+      'submit',
+      'sync',
+      'provenance',
+      'audit',
+      'review',
+    ].includes(command ?? '')
   )
     throw new Error('Unknown Meshy run command.');
   const allowed =
@@ -47,7 +57,7 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
               ? ['--operation', '--max-credits', '--key-file']
               : command === 'account'
                 ? ['--max-credits', '--key-file']
-                : command === 'audit'
+                : command === 'audit' || command === 'review'
                   ? ['--operation']
                   : [];
   const options = new Map<string, string>();
@@ -68,7 +78,7 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
     throw new Error('The approved whole-number ceiling is required.');
   }
   if (
-    ['sync', 'submit', 'provenance', 'audit'].includes(command!) &&
+    ['sync', 'submit', 'provenance', 'audit', 'review'].includes(command!) &&
     !/^candidate-[1-4]$/.test(options.get('--operation') ?? '')
   )
     throw new Error('One recorded candidate operation is required.');
@@ -132,6 +142,30 @@ export async function runMeshyRunCommand(
     return canonicalJson(
       reportMeshyGeometry(store, meshyArchiveDirectory(database), options.get('--operation')!),
     );
+  if (command === 'review') {
+    const { operationId, reportSha256, report } = await archiveMeshyReview(
+      store,
+      meshyArchiveDirectory(database),
+      options.get('--operation')!,
+    );
+    // Keep full geometry/source-face mappings in private evidence, not terminal logs.
+    return canonicalJson({
+      operationId,
+      reportSha256,
+      reportFile: `${operationId}-review-v1.json`,
+      derivativeFile: `review-${report.derivativeSha256}.glb`,
+      derivativeSha256: report.derivativeSha256,
+      derivativeBytes: report.derivativeBytes,
+      components: report.components.length,
+      triangles: report.after.sourceTriangles,
+      removedTriangles: report.removedTriangles.length,
+      ambiguousCoincidentFacePairs: report.ambiguousCoincidentFaces.length,
+      state: report.state,
+      runtimeAdmission: report.runtimeAdmission,
+      liveryReady: report.liveryReady,
+      creditsSpentByThisCommand: 0,
+    });
+  }
   const maxCredits = Number(options.get('--max-credits'));
   assertMeshyRunCap(state, maxCredits);
   if (command === 'provenance')

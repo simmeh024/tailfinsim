@@ -9,116 +9,11 @@ import { MeshyGenerationSpec, meshySpecIdentity } from './meshy';
 import { meshyArchiveDirectory, syncMeshyCandidate } from './meshy-archive';
 import { auditMeshyGeometry } from './meshy-geometry';
 import { reportMeshyGeometry } from './meshy-geometry-report';
+import { archiveMeshyReview } from './meshy-review-archive';
 import { MeshyRunApproval } from './meshy-run';
 import { parseMeshyRunArguments } from './meshy-run-command';
 import { MeshyRunStore } from './meshy-store';
-
-const tetra = [
-  [0, 0, 0],
-  [1, 0, 0],
-  [0, 1, 0],
-  [0, 0, 1],
-];
-const faces = [
-  [0, 2, 1],
-  [0, 1, 3],
-  [1, 2, 3],
-  [2, 0, 3],
-];
-interface Accessor {
-  bufferView: number;
-  byteOffset: number;
-  count: number;
-  componentType: number;
-  type: string;
-  min?: number[];
-  max?: number[];
-}
-function fixture(
-  points = tetra,
-  triangles = faces,
-  options: {
-    normals?: number[][];
-    uv?: number[][];
-    indexType?: 5121 | 5123 | 5125;
-    stride?: boolean;
-  } = {},
-) {
-  const chunks: Buffer[] = [];
-  const views: { buffer: number; byteOffset: number; byteLength: number; byteStride?: number }[] =
-    [];
-  const accessors: Accessor[] = [];
-  let offset = 0;
-  const append = (
-    values: number[],
-    count: number,
-    type: string,
-    componentType: number,
-    stride?: number,
-  ) => {
-    const size = componentType === 5121 ? 1 : componentType === 5123 ? 2 : 4;
-    const data = Buffer.alloc(Math.ceil((values.length * size) / 4) * 4);
-    values.forEach((v, i) => {
-      if (componentType === 5126) data.writeFloatLE(v, i * size);
-      else if (size === 1) data.writeUInt8(v, i);
-      else if (size === 2) data.writeUInt16LE(v, i * size);
-      else data.writeUInt32LE(v, i * size);
-    });
-    chunks.push(data);
-    views.push({
-      buffer: 0,
-      byteOffset: offset,
-      byteLength: data.length,
-      ...(stride ? { byteStride: stride } : {}),
-    });
-    offset += data.length;
-    accessors.push({ bufferView: views.length - 1, byteOffset: 0, count, componentType, type });
-    return accessors.length - 1;
-  };
-  const attrs: Record<string, number> = {
-    POSITION: append(
-      points.flatMap((p) => (options.stride ? [...p, 0] : p)),
-      points.length,
-      'VEC3',
-      5126,
-      options.stride ? 16 : undefined,
-    ),
-  };
-  const indices = append(
-    triangles.flat(),
-    triangles.length * 3,
-    'SCALAR',
-    options.indexType ?? 5125,
-  );
-  if (options.normals)
-    attrs.NORMAL = append(options.normals.flat(), options.normals.length, 'VEC3', 5126);
-  if (options.uv) attrs.TEXCOORD_0 = append(options.uv.flat(), options.uv.length, 'VEC2', 5126);
-  const json = {
-    asset: { version: '2.0' },
-    scene: 0,
-    scenes: [{ nodes: [0] }],
-    nodes: [{ mesh: 0 }],
-    meshes: [{ primitives: [{ attributes: attrs, indices }] }],
-    accessors,
-    bufferViews: views,
-    buffers: [{ byteLength: offset }],
-  };
-  return { json, binary: Buffer.concat(chunks) };
-}
-function pack({ json, binary }: ReturnType<typeof fixture>): Buffer {
-  const raw = Buffer.from(JSON.stringify(json));
-  const padding = Buffer.alloc((4 - (raw.length % 4)) % 4, 0x20);
-  const text = Buffer.concat([raw, padding]);
-  const bytes = Buffer.alloc(28 + text.length + binary.length);
-  [0x46546c67, 2, bytes.length, text.length, 0x4e4f534a].forEach((n, i) =>
-    bytes.writeUInt32LE(n, i * 4),
-  );
-  text.copy(bytes, 20);
-  bytes.writeUInt32LE(binary.length, 20 + text.length);
-  bytes.writeUInt32LE(0x004e4942, 24 + text.length);
-  binary.copy(bytes, 28 + text.length);
-  return bytes;
-}
+import { tetra, faces, fixture, pack } from './meshy-test-fixture';
 const audit = (f = fixture()) => auditMeshyGeometry(pack(f));
 
 afterEach(() => {
@@ -373,101 +268,121 @@ describe('bounded offline candidate geometry', () => {
 });
 
 describe('immutable recorded-candidate geometry report', () => {
-  it('requires an archived task, binds its hash, preserves ledger/source and refuses a conflicting report', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'tailfin-geometry-'));
-    try {
-      const spec = MeshyGenerationSpec.parse(
-        JSON.parse(
-          await readFile(
-            new URL('../../../assets/aircraft/generation/a320neo-t2-v1.json', import.meta.url),
-            'utf8',
-          ),
-        ) as unknown,
-      );
-      const taskId = '00000000-0000-4000-8000-000000000001';
-      const now = '2026-08-28T17:00:00.000Z';
-      const store = new MeshyRunStore(join(root, 'run.sqlite'));
-      const archive = meshyArchiveDirectory(join(root, 'run.sqlite'));
-      store.initialize(
-        MeshyRunApproval.parse({
-          format: 'tailfin-meshy-run-approval',
-          formatVersion: 1,
-          runId: 'a320neo-first-run',
-          specSha256: meshySpecIdentity(spec),
-          maxCredits: 40,
-          recordedAt: now,
-          authority: 'explicit-user-confirmation',
-          evidence: { taskId, confirmationSha256: 'a'.repeat(64) },
-          scope: 'four-t2-candidates-and-one-selected-4k-retexture',
-          fallbackApproved: false,
-          productionPublicationApproved: false,
-        }),
-        spec,
-      );
-      expect(() => reportMeshyGeometry(store, archive, 'candidate-1')).toThrow();
-      expect(() => reportMeshyGeometry(store, archive, '../candidate-1')).toThrow();
-      store.reserve(spec, 40, 'candidate-1', 'b'.repeat(64));
-      store.observe({
-        operationId: 'candidate-1',
-        taskId,
-        status: 'PENDING',
-        consumedCredits: null,
-        observedAt: now,
-      });
-      const bytes = pack(fixture());
-      const fetch = vi
-        .fn<typeof globalThis.fetch>()
-        .mockResolvedValueOnce(
-          new Response(
-            JSON.stringify({
-              id: taskId,
-              type: 'image-to-3d',
-              status: 'SUCCEEDED',
-              consumed_credits: 5,
-              created_at: Date.parse(now),
-              finished_at: Date.parse(now),
-              model_urls: { glb: 'https://assets.meshy.ai/model.glb' },
-            }),
-            { headers: { 'content-type': 'application/json' } },
-          ),
-        )
-        .mockResolvedValueOnce(
-          new Response(new Uint8Array(bytes), { headers: { 'content-type': 'model/gltf-binary' } }),
+  it.each(['audit', 'review'] as const)(
+    '%s requires an archived task, binds its hash, preserves ledger/source and refuses a conflicting report',
+    async (mode) => {
+      const root = await mkdtemp(join(tmpdir(), 'tailfin-geometry-'));
+      try {
+        const spec = MeshyGenerationSpec.parse(
+          JSON.parse(
+            await readFile(
+              new URL('../../../assets/aircraft/generation/a320neo-t2-v1.json', import.meta.url),
+              'utf8',
+            ),
+          ) as unknown,
         );
-      await syncMeshyCandidate(
-        store,
-        archive,
-        spec,
-        40,
-        'candidate-1',
-        'msy_testNotARealCredential',
-        { fetch, now: () => new Date(now), pause: () => Promise.resolve() },
-      );
-      const state = canonicalJson(store.read());
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(() => {
-          throw new Error('No network allowed');
-        }),
-      );
-      const result = reportMeshyGeometry(store, archive, 'candidate-1');
-      expect(result).toEqual(reportMeshyGeometry(store, archive, 'candidate-1'));
-      expect(canonicalJson(store.read())).toBe(state);
-      expect(await readFile(join(archive, `${sha256(bytes)}.glb`))).toEqual(bytes);
-      expect(result.report).toMatchObject({
-        operationId: 'candidate-1',
-        taskId,
-        sourceSha256: sha256(bytes),
-        state: 'quarantine',
-      });
-      await writeFile(join(archive, 'candidate-1-geometry-v1.json'), 'conflicting report');
-      expect(() => reportMeshyGeometry(store, archive, 'candidate-1')).toThrow();
-      await writeFile(join(archive, `${sha256(bytes)}.glb`), Buffer.alloc(bytes.length));
-      expect(() => reportMeshyGeometry(store, archive, 'candidate-1')).toThrow();
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
+        const taskId = '00000000-0000-4000-8000-000000000001';
+        const now = '2026-08-28T17:00:00.000Z';
+        const store = new MeshyRunStore(join(root, 'run.sqlite'));
+        const archive = meshyArchiveDirectory(join(root, 'run.sqlite'));
+        const run = async (operation: string) =>
+          mode === 'audit'
+            ? reportMeshyGeometry(store, archive, operation)
+            : archiveMeshyReview(store, archive, operation);
+        store.initialize(
+          MeshyRunApproval.parse({
+            format: 'tailfin-meshy-run-approval',
+            formatVersion: 1,
+            runId: 'a320neo-first-run',
+            specSha256: meshySpecIdentity(spec),
+            maxCredits: 40,
+            recordedAt: now,
+            authority: 'explicit-user-confirmation',
+            evidence: { taskId, confirmationSha256: 'a'.repeat(64) },
+            scope: 'four-t2-candidates-and-one-selected-4k-retexture',
+            fallbackApproved: false,
+            productionPublicationApproved: false,
+          }),
+          spec,
+        );
+        await expect(run('candidate-1')).rejects.toThrow();
+        await expect(run('../candidate-1')).rejects.toThrow();
+        store.reserve(spec, 40, 'candidate-1', 'b'.repeat(64));
+        store.observe({
+          operationId: 'candidate-1',
+          taskId,
+          status: 'PENDING',
+          consumedCredits: null,
+          observedAt: now,
+        });
+        const bytes = pack(fixture());
+        const fetch = vi
+          .fn<typeof globalThis.fetch>()
+          .mockResolvedValueOnce(
+            new Response(
+              JSON.stringify({
+                id: taskId,
+                type: 'image-to-3d',
+                status: 'SUCCEEDED',
+                consumed_credits: 5,
+                created_at: Date.parse(now),
+                finished_at: Date.parse(now),
+                model_urls: { glb: 'https://assets.meshy.ai/model.glb' },
+              }),
+              { headers: { 'content-type': 'application/json' } },
+            ),
+          )
+          .mockResolvedValueOnce(
+            new Response(new Uint8Array(bytes), {
+              headers: { 'content-type': 'model/gltf-binary' },
+            }),
+          );
+        await syncMeshyCandidate(
+          store,
+          archive,
+          spec,
+          40,
+          'candidate-1',
+          'msy_testNotARealCredential',
+          { fetch, now: () => new Date(now), pause: () => Promise.resolve() },
+        );
+        const state = canonicalJson(store.read());
+        vi.stubGlobal(
+          'fetch',
+          vi.fn(() => {
+            throw new Error('No network allowed');
+          }),
+        );
+        const result = await run('candidate-1');
+        expect(result).toEqual(await run('candidate-1'));
+        expect(canonicalJson(store.read())).toBe(state);
+        expect(await readFile(join(archive, `${sha256(bytes)}.glb`))).toEqual(bytes);
+        expect(result.report).toMatchObject({
+          operationId: 'candidate-1',
+          taskId,
+          sourceSha256: sha256(bytes),
+          state: 'quarantine',
+        });
+        if ('derivativeSha256' in result.report) {
+          const derivativePath = join(archive, `review-${result.report.derivativeSha256}.glb`);
+          const derivative = await readFile(derivativePath);
+          expect(sha256(derivative)).toBe(result.report.derivativeSha256);
+          await writeFile(derivativePath, 'tampered derivative');
+          await expect(run('candidate-1')).rejects.toThrow();
+          await writeFile(derivativePath, derivative);
+        }
+        await writeFile(
+          join(archive, `candidate-1-${mode === 'audit' ? 'geometry' : 'review'}-v1.json`),
+          'conflicting report',
+        );
+        await expect(run('candidate-1')).rejects.toThrow();
+        await writeFile(join(archive, `${sha256(bytes)}.glb`), Buffer.alloc(bytes.length));
+        await expect(run('candidate-1')).rejects.toThrow();
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
   it('has no credential, budget, arbitrary path or generation option', () => {
     expect(parseMeshyRunArguments(['audit', '--operation', 'candidate-1']).command).toBe('audit');
     for (const args of [

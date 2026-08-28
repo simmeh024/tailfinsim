@@ -5,8 +5,12 @@ import { readMeshyArtifact, savedMeshyArchive, writeImmutableMeshyArtifact } fro
 import { auditMeshyGeometry } from './meshy-geometry';
 import { type MeshyRunStore } from './meshy-store';
 
-/** Offline report over one already archived task; never changes ledger or source. */
-export function reportMeshyGeometry(store: MeshyRunStore, archiveRoot: string, operation: string) {
+/** Read and recheck the actual bytes consumed by offline geometry tooling. */
+export function readArchivedMeshyGeometry(
+  store: MeshyRunStore,
+  archiveRoot: string,
+  operation: string,
+) {
   const archive = savedMeshyArchive(archiveRoot, operation, store.read());
   if (!archive) throw new Error('An immutable successful export is required for geometry review.');
   const source = readMeshyArtifact(
@@ -19,6 +23,12 @@ export function reportMeshyGeometry(store: MeshyRunStore, archiveRoot: string, o
     sha256(source) !== archive.untouchedExport.sha256
   )
     throw new Error('Geometry review source differs from the immutable export.');
+  return { archive, source };
+}
+
+/** Offline report over one already archived task; never changes ledger or source. */
+export function reportMeshyGeometry(store: MeshyRunStore, archiveRoot: string, operation: string) {
+  const { archive, source } = readArchivedMeshyGeometry(store, archiveRoot, operation);
   const report = {
     ...auditMeshyGeometry(source),
     operationId: archive.task.operationId,

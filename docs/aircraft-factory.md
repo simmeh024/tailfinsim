@@ -236,6 +236,52 @@ materials and visual/performance review remain pending. Human selection is not a
 This increment neither repairs the source nor submits retexturing, changes a livery/asset schema,
 updates the registry or publishes to fleet.
 
+## Quarantine component review preparation (M6-27)
+
+```bash
+pnpm assets:meshy-run -- review --operation candidate-1
+```
+
+`review` is offline and accepts only the recorded candidate operation, with no credential,
+budget or input/output path options. It rechecks the untouched archive against the ledger,
+creates a **separate review derivative**, validates that derivative with the pinned official
+glTF validator, then seals `review-<sha256>.glb` and `candidate-N-review-v1.json` beside the
+private exports. The report is the completion marker, written last. Existing identical artifacts
+are verified; changed source, derivative or report bytes fail closed. Interrupted writes may
+leave an unreferenced derivative; a rerun can complete the same immutable report. The source,
+credit ledger, human selection, registry and existing v1 audit reports are not rewritten.
+The terminal prints only a compact summary and artifact basenames; full geometry/face mappings
+stay in the private report instead of being copied into logs.
+
+This is not canonical aircraft intake. The input must fit the bounded audit profile and contain
+exactly one primitive without authored normals or UVs: preparation refuses to drop those attributes
+or merge authored primitive boundaries. It removes only exact zero-area faces and exact
+same-winding duplicates, recording source triangle indices and retained twins. Positive near-zero
+faces at the audit's `1e-12` normalized double-area threshold are refused for manual review, not
+deleted. Opposite-winding coincident faces are **preserved and flagged** as ambiguous two-sided
+geometry. Bounds must remain exactly unchanged after cleanup.
+
+Exact-coordinate edge connectivity produces up to 64 individually named review components,
+ordered by first retained source triangle. IDs such as `review_component_001` are stable only for
+the **exact source**; they are not aircraft semantic names or reusable cross-version bindings.
+Each component records its original face indices, source-unit bounds and boundary segments.
+Coincident faces count once for connectivity/boundary analysis, including preserved opposite
+winding faces. Vertex-touching surfaces alone are not joined. Every semantic/protection assignment
+is unassigned; none becomes paintable by default.
+
+The output retains positions and winding, expands triangle corners and supplies flat face normals.
+It does not smooth, approximately weld, cap openings, flip winding, remove disconnected parts,
+normalize scale/axes/origin, author UVs or infer engines/windows/doors. Flat normals are a diagnostic
+display aid, not proof of outward-facing geometry or finished shading. Up to 33,333 retained triangles
+fit the audit's 100,000-vertex limit after expansion; report JSON is capped at 8 MiB. The output is
+deliberately larger and draw-call heavier than a shipping asset and must not enter the runtime registry.
+
+The report binds source/derivative/task/spec/approval hashes, algorithm and validator versions,
+before/after metrics, removed faces and unresolved coincident faces. Zero validator errors/warnings
+completes conformance only. Licensing, real-world dimensions, semantic/protected surfaces, winding,
+holes, canonical UVs and visual/performance admission remain separate gates. These artifacts enable
+component inspection and an explicit repair plan; they do not certify a completed aircraft.
+
 ## Pinned strategy and vendor evidence
 
 The planning observation is dated 2026-08-28. Four untextured T2 candidates cost 5 credits each;
