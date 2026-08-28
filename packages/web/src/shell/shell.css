@@ -918,50 +918,102 @@ body {
   font-size: var(--text-sm);
 }
 
-.logo-editor {
+.airline-page__logo-edit {
   display: flex;
-  gap: var(--space-6);
-  flex-wrap: wrap;
-  align-items: flex-start;
-}
-
-.logo-editor__preview {
-  flex: none;
-  padding: var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--console-bg);
-}
-
-.logo-editor__controls {
-  flex: 1 1 260px;
-  min-width: 240px;
-  display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: var(--space-4);
+  flex-wrap: wrap;
 }
 
-.logo-editor__group {
-  margin: 0;
-  padding: 0;
-  border: none;
-}
-
-.logo-editor__group legend {
-  margin-bottom: var(--space-2);
-  padding: 0;
+.airline-page__logo-button {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent-quiet);
+  color: var(--accent);
   font-size: var(--text-sm);
   font-weight: 600;
-  color: var(--text-secondary);
+  text-decoration: none;
 }
 
-.logo-editor__segmented {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
+.airline-page__logo-button:hover,
+.airline-page__logo-button:focus-visible {
+  background: var(--accent);
+  color: var(--text-on-accent);
 }
 
-.logo-editor__segmented button {
+/* ================================================================== *
+ * Logo studio — the full-screen brand-logo editor (§15/§16).
+ * A takeover page: header, a three-column workspace, and a footer with
+ * the brand palette, live preview and the paid rebrand.
+ * ================================================================== */
+
+.logo-studio {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+
+.logo-studio--message {
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  text-align: center;
+  padding: var(--space-6);
+}
+
+.logo-studio--message button {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.logo-studio__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-panel);
+}
+
+.logo-studio__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.logo-studio__mark {
+  font-size: var(--text-lg);
+  color: var(--accent);
+}
+
+.logo-studio__title h1 {
+  margin: 0;
+  font-size: var(--text-lg);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.logo-studio__title p {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.logo-studio__header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.logo-studio__header-actions button {
   padding: var(--space-1) var(--space-3);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
@@ -971,51 +1023,259 @@ body {
   cursor: pointer;
 }
 
-.logo-editor__segmented button[aria-pressed='true'] {
-  border-color: var(--accent);
-  background: var(--accent-quiet);
+.logo-studio__header-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
-.logo-editor__field {
-  margin-top: var(--space-3);
+.logo-studio__close {
+  font-size: var(--text-lg);
+  line-height: 1;
+}
+
+/* ---- three-column workspace ---- */
+
+.logo-studio__body {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(240px, 300px);
+  gap: var(--space-3);
+  padding: var(--space-3);
+  min-height: 0;
+}
+
+.logo-studio__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  overflow: auto;
+}
+
+.logo-studio__panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.logo-studio__panel-head h2 {
+  margin: 0;
+  font-size: var(--text-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ---- elements list ---- */
+
+.logo-studio__layers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
 }
 
-.logo-editor__field input {
-  width: 6rem;
-  text-transform: uppercase;
-}
-
-.logo-editor__symbols {
-  margin-top: var(--space-3);
+.logo-studio__layers li {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
 }
 
-.logo-editor__symbol {
+.logo-studio__layers li.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-quiet);
+}
+
+.logo-studio__layer-name {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
   padding: var(--space-1);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
+  border: none;
   background: transparent;
-  line-height: 0;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  text-align: left;
   cursor: pointer;
 }
 
-.logo-editor__symbol[aria-pressed='true'] {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+.logo-studio__layer-name span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.logo-editor__colors {
+.logo-studio__layer-glyph {
+  flex: none;
+  width: 1.4rem;
+  height: 1.4rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  font-size: var(--text-sm);
+}
+
+.logo-studio__layer-name .is-dim {
+  color: var(--text-muted);
+}
+
+.logo-studio__layer-toggle {
+  flex: none;
+  padding: 2px 4px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  opacity: 0.75;
+}
+
+.logo-studio__layer-toggle:hover {
+  opacity: 1;
+}
+
+.logo-studio__guides-toggle {
+  margin-top: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* ---- centre stage ---- */
+
+.logo-studio__stage {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
 }
 
-.logo-editor__color {
+.logo-studio__toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+}
+
+.logo-studio__tool-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.logo-studio__tool-label {
+  font-size: var(--text-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  min-width: 5.5rem;
+}
+
+.logo-studio__segmented,
+.logo-studio__add {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.logo-studio__segmented button,
+.logo-studio__add button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.logo-studio__segmented button[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-quiet);
+}
+
+.logo-studio__add button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.logo-studio__canvas-wrap {
+  flex: 1 1 auto;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--console-bg, var(--bg-inset));
+  min-height: 0;
+}
+
+.logo-studio__canvas {
+  width: min(100%, 60vh);
+  aspect-ratio: 1;
+  touch-action: none;
+  cursor: move;
+}
+
+.logo-studio__bed {
+  fill: var(--console-card, var(--bg-raised));
+}
+
+.logo-studio__guides line {
+  stroke: var(--accent);
+  stroke-width: 0.25;
+  opacity: 0.4;
+}
+
+.logo-studio__selection rect {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 0.6;
+  stroke-dasharray: 2 1.5;
+}
+
+.logo-studio__handle {
+  fill: var(--accent);
+  stroke: var(--bg-base);
+  stroke-width: 0.5;
+}
+
+/* ---- properties ---- */
+
+.logo-studio__props {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.logo-studio__empty {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.logo-studio__prop-name,
+.logo-studio__prop-check {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -1023,7 +1283,173 @@ body {
   color: var(--text-secondary);
 }
 
-.logo-editor__color input {
+.logo-studio__prop-check {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.logo-studio__prop-name input,
+.logo-studio__prop-name select {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.logo-studio__prop-group {
+  margin: 0;
+  padding: 0;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.logo-studio__prop-group legend {
+  padding: 0;
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.logo-studio__prop-group:disabled {
+  opacity: 0.5;
+}
+
+.logo-studio__prop-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.logo-studio__number {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.logo-studio__number input {
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.logo-studio__slider {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.logo-studio__slider-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.logo-studio__slider input[type='range'] {
+  width: 100%;
+}
+
+.logo-studio__paints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.logo-studio__paint {
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.logo-studio__paint[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-quiet);
+}
+
+.logo-studio__order {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-1);
+}
+
+.logo-studio__order button,
+.logo-studio__prop-actions button {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.logo-studio__prop-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.logo-studio__prop-actions button {
+  flex: 1 1 0;
+}
+
+.logo-studio__delete {
+  border-color: var(--status-loss) !important;
+  color: var(--status-loss) !important;
+}
+
+.logo-studio__delete:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---- footer: palette, preview, rebrand ---- */
+
+.logo-studio__footer {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(0, 2fr) minmax(220px, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-panel);
+}
+
+.logo-studio__footer h2 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.logo-studio__swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.logo-studio__swatch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.logo-studio__swatch input {
   width: 3rem;
   height: 2rem;
   padding: 0;
@@ -1033,99 +1459,127 @@ body {
   cursor: pointer;
 }
 
-/* ------------------------------------------------------------------ *
- * Custom symbol designer — grid / shapes / path tools over one canvas.
- * ------------------------------------------------------------------ */
+.logo-studio__swatch-hex {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
 
-.symbol-designer {
+.logo-studio__preview-row {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.logo-studio__preview-item {
+  margin: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-}
-
-.symbol-designer__modes,
-.symbol-designer__row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
   align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
 }
 
-.symbol-designer__modes button,
-.symbol-designer__row button {
-  padding: var(--space-1) var(--space-3);
+.logo-studio__preview-tail {
+  width: 4.5rem;
+  height: 4.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--bg-raised), var(--bg-inset));
+}
+
+.logo-studio__preview-ticket {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+}
+
+.logo-studio__preview-ticket-name {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  max-width: 6rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logo-studio__preview-appicon {
+  width: 4rem;
+  height: 4rem;
+  display: grid;
+  place-items: center;
+  border-radius: 22%;
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+}
+
+.logo-studio__commit {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.logo-studio__cost {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.logo-studio__cost span {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.logo-studio__cost strong {
+  font-size: var(--text-lg);
+}
+
+.logo-studio__commit-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.logo-studio__commit-actions button {
+  padding: var(--space-2) var(--space-4);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-primary);
-  font-size: var(--text-sm);
   cursor: pointer;
 }
 
-.symbol-designer__modes button[aria-pressed='true'] {
-  border-color: var(--accent);
-  background: var(--accent-quiet);
+.logo-studio__rebrand {
+  border-color: var(--accent) !important;
+  background: var(--accent) !important;
+  color: var(--text-on-accent) !important;
+  font-weight: 600;
 }
 
-.symbol-designer__row button:disabled {
-  opacity: 0.5;
+.logo-studio__rebrand:disabled {
+  opacity: 0.6;
   cursor: not-allowed;
 }
 
-.symbol-designer__canvas {
-  width: 100%;
-  max-width: 300px;
-  aspect-ratio: 1;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
-  background: var(--console-card);
-  touch-action: none;
-  cursor: crosshair;
-}
-
-.symbol-designer__bed {
-  fill: var(--console-bg);
-}
-
-.symbol-designer__grid-cell {
-  stroke: var(--border-subtle);
-  stroke-width: 0.3;
-}
-
-.symbol-designer__handle {
-  fill: var(--accent);
-  stroke: var(--console-card);
-  stroke-width: 1;
-}
-
-.symbol-designer__controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  align-items: center;
-}
-
-.symbol-designer__slider {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-}
-
-.symbol-designer__toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-}
-
-.symbol-designer__hint {
+.logo-studio__save-error {
   margin: 0;
   font-size: var(--text-xs);
-  color: var(--text-muted);
+  color: var(--status-loss);
+}
+
+@media (max-width: 60rem) {
+  .logo-studio__body {
+    grid-template-columns: 1fr;
+  }
+
+  .logo-studio__footer {
+    grid-template-columns: 1fr;
+  }
 }
 
 .airline-page__eyebrow {

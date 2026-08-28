@@ -1,22 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useOutletContext } from 'react-router';
 
-import {
-  airlineLogoEquals,
-  defaultAirlineLogo,
-  type AirlineLogo,
-  type UpdateOwnAirlineInput,
-} from '@tailfin/shared';
+import { defaultAirlineLogo, type UpdateOwnAirlineInput } from '@tailfin/shared';
 
 import { AirlineLogoEmblem } from './AirlineLogoEmblem';
 import { formatMinorUnits, patchOwnAirline } from './api';
-import { LogoEditor } from './LogoEditor';
 
 import type { OwnAirlineShellContext } from '../shell/AppShell';
 import type { ReactNode } from 'react';
 
-/** The draft carries a concrete logo so the editor and viewer never see `undefined`. */
-type AirlineDraft = UpdateOwnAirlineInput & { logo: AirlineLogo };
+/**
+ * The name/callsign/country rebrand draft. The logo is edited on its own page
+ * (the logo studio) and saved there as its own rebrand, so it is no longer part
+ * of this draft.
+ */
+type AirlineDraft = Pick<UpdateOwnAirlineInput, 'name' | 'callsign' | 'baseCountry'>;
 
 function FieldError({ field, errors }: { field: string; errors: Record<string, string[]> }) {
   const messages = errors[field];
@@ -49,9 +47,6 @@ export function AirlinePage(): ReactNode {
       name: air.name,
       callsign: air.callsign,
       baseCountry: air.baseCountry,
-      // Seed with the effective current logo — the stored one, or the default for
-      // an airline that has never set one — so an untouched logo reads as clean.
-      logo: air.logo ?? defaultAirlineLogo(air.iataCode),
     });
   }, [ownAirline]);
 
@@ -158,15 +153,12 @@ export function AirlinePage(): ReactNode {
   }
 
   // The effective current logo — stored, or the default shown for an airline that
-  // has never set one. The logo is "dirty" only against this, so the default is
-  // display-only until the player actually changes it (and pays for it).
+  // has never set one. Editing it happens on the logo studio page, not here.
   const effectiveLogo = current.logo ?? defaultAirlineLogo(current.iataCode);
-  const logoDirty = !airlineLogoEquals(effectiveLogo, draft.logo);
   const dirty =
     draft.name !== current.name ||
     draft.callsign !== current.callsign ||
-    draft.baseCountry !== current.baseCountry ||
-    logoDirty;
+    draft.baseCountry !== current.baseCountry;
 
   const update = (field: keyof UpdateOwnAirlineInput, value: string) => {
     setDraft((before) => (before ? { ...before, [field]: value } : before));
@@ -184,13 +176,12 @@ export function AirlinePage(): ReactNode {
     setFormError(null);
     setSuccess(null);
     try {
-      // Send the logo only when it actually changed, so submitting an untouched
-      // default emblem is not charged as a rebrand.
+      // The logo is edited and saved on its own page; this rebrand carries only
+      // the identity fields, so an untouched logo is never resent.
       const outcome = await patchOwnAirline({
         name: draft.name,
         callsign: draft.callsign,
         baseCountry: draft.baseCountry,
-        ...(logoDirty ? { logo: draft.logo } : {}),
       });
       if (!outcome.ok) {
         setErrors(outcome.refusal.fields ?? {});
@@ -204,7 +195,6 @@ export function AirlinePage(): ReactNode {
         name: saved.name,
         callsign: saved.callsign,
         baseCountry: saved.baseCountry,
-        logo: saved.logo ?? defaultAirlineLogo(saved.iataCode),
       });
       setSuccess(
         outcome.result.changed
@@ -354,19 +344,17 @@ export function AirlinePage(): ReactNode {
           <div className="airline-page__logo-section">
             <div className="airline-page__logo-heading">
               <h3>Brand logo</h3>
-              {logoDirty && <span className="airline-page__logo-flag">changed</span>}
             </div>
             <p className="airline-page__logo-note">
-              A procedural emblem — pick a shape, a mark and its colours. Changing the logo is part
-              of the same paid rebrand as the name or callsign.
+              A procedural emblem that represents your brand across the world. Editing it is its own
+              paid rebrand, designed on a dedicated page.
             </p>
-            <LogoEditor
-              value={draft.logo}
-              onChange={(logo) => {
-                setDraft((before) => (before ? { ...before, logo } : before));
-                setSuccess(null);
-              }}
-            />
+            <div className="airline-page__logo-edit">
+              <AirlineLogoEmblem logo={effectiveLogo} size={96} label="Current brand logo" />
+              <Link className="airline-page__logo-button" to="/airline/logo">
+                Edit logo
+              </Link>
+            </div>
           </div>
 
           <button type="submit" disabled={!dirty || busy} aria-busy={busy}>
