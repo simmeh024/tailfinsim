@@ -7,9 +7,9 @@ import {
   ownAirlineResponseJsonSchema,
 } from '@tailfin/shared';
 
-import type { AirlineRow } from '../db/schema';
-
 import { wireAirline } from './wire';
+
+import type { AirlineRow } from '../db/schema';
 
 // Synthetic future-version data, never an export of a player's artwork.
 const unsupported = { v: 99, shape: 'roundel', layers: [], palette: ['#123456'] };
