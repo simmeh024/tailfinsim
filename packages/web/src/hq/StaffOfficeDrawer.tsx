@@ -133,7 +133,8 @@ export function StaffOfficeDrawer({
                         {candidate.tier} · {formatSalary(candidate.salaryPerMonthMinor)}/mo
                       </p>
                       <p className="hq-staff__trait">
-                        <strong>{candidate.trait.label}.</strong> {candidate.trait.detail}
+                        <strong>{candidate.boost.label}.</strong>{' '}
+                        {candidate.trait?.detail ?? candidate.boost.description}
                       </p>
                     </div>
                     <button

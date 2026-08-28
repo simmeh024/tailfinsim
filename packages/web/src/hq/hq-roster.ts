@@ -1,61 +1,77 @@
 /**
- * The Head Office roster and its candidate market (M5-04, design doc §9.1).
+ * The Head Office roster and its candidate market (M5-04, §9.1; boosts are the
+ * §9.1 follow-up).
  *
- * §9.1's rule shapes this whole file: **senior hires are capability unlocks and
- * automation, not stat bonuses.** So the model has two halves:
+ * §9.1's shape still holds: a **role** is the seat and carries the concrete
+ * capability unlock, the same for anyone you put in it; a **candidate** is a named
+ * person in the market for a seat. What is new is that a candidate now also carries
+ * a small, salary-scaled **boost** — the "visible trait" made real — decided by the
+ * shared {@link OFFICE_CANDIDATES} catalogue so the server, the worker and the
+ * client all read one number.
  *
- * - a **role** — the seat — carries the concrete §9.1 `unlock`, the same for
- *   anyone you put in it, and that is M5-04's second acceptance criterion;
- * - a **candidate** — a named person in the market for a seat — carries a salary,
- *   a tier and a **visible trait** (§9.1: "a rotating candidate market with
- *   visible traits"). A seat can have several candidates; you hire one.
+ * ## Derived from the shared catalogue
  *
- * The trait is the candidate's colour, not the hire's mechanism, and is **not yet
- * applied to the simulation** — a trait that reads as a small percentage is
- * flavour, never a stat bonus. Wiring traits and the candidate-market refresh is
- * the server/sim half of M5-04 that lands on top of this scaffold; when it does,
- * `HQ_CANDIDATES` is replaced by what the server sends and neither the page nor
- * the role table changes.
+ * The identity, tier, salary and boost come straight from `@tailfin/shared`; this
+ * file adds only what is the client's to own — the **portrait** (imported so a
+ * missing file is a build error) and the optional flavour **trait**. So a new
+ * arrival is one raw entry in the shared catalogue plus a portrait here, and the
+ * two can never disagree about who someone is or what they cost.
  */
 
-import type { OfficeRole } from '@tailfin/shared';
+import { OFFICE_CANDIDATES, type ExecutiveBoost, type OfficeRole } from '@tailfin/shared';
 
 import chiefPilot2 from './assets/portraits/chief-pilot-2.webp';
 import chiefPilot3 from './assets/portraits/chief-pilot-3.webp';
+import chiefPilot4 from './assets/portraits/chief-pilot-4.webp';
+import chiefPilot5 from './assets/portraits/chief-pilot-5.webp';
+import chiefPilot6 from './assets/portraits/chief-pilot-6.webp';
+import chiefPilot7 from './assets/portraits/chief-pilot-7.webp';
 import chiefPilot from './assets/portraits/chief-pilot.webp';
 import groundOps2 from './assets/portraits/ground-ops-2.webp';
 import groundOps3 from './assets/portraits/ground-ops-3.webp';
+import groundOps4 from './assets/portraits/ground-ops-4.webp';
+import groundOps5 from './assets/portraits/ground-ops-5.webp';
+import groundOps6 from './assets/portraits/ground-ops-6.webp';
+import groundOps7 from './assets/portraits/ground-ops-7.webp';
 import groundOps from './assets/portraits/ground-ops.webp';
 import opsController2 from './assets/portraits/ops-controller-2.webp';
 import opsController3 from './assets/portraits/ops-controller-3.webp';
+import opsController4 from './assets/portraits/ops-controller-4.webp';
+import opsController5 from './assets/portraits/ops-controller-5.webp';
+import opsController6 from './assets/portraits/ops-controller-6.webp';
+import opsController7 from './assets/portraits/ops-controller-7.webp';
 import opsController from './assets/portraits/ops-controller.webp';
 import revenueManager2 from './assets/portraits/revenue-manager-2.webp';
 import revenueManager3 from './assets/portraits/revenue-manager-3.webp';
+import revenueManager4 from './assets/portraits/revenue-manager-4.webp';
+import revenueManager5 from './assets/portraits/revenue-manager-5.webp';
 import revenueManager from './assets/portraits/revenue-manager.webp';
 import routePlanner2 from './assets/portraits/route-planner-2.webp';
 import routePlanner3 from './assets/portraits/route-planner-3.webp';
+import routePlanner4 from './assets/portraits/route-planner-4.webp';
+import routePlanner5 from './assets/portraits/route-planner-5.webp';
+import routePlanner6 from './assets/portraits/route-planner-6.webp';
+import routePlanner7 from './assets/portraits/route-planner-7.webp';
 import routePlanner from './assets/portraits/route-planner.webp';
 import safetyCompliance2 from './assets/portraits/safety-compliance-2.webp';
 import safetyCompliance3 from './assets/portraits/safety-compliance-3.webp';
+import safetyCompliance4 from './assets/portraits/safety-compliance-4.webp';
+import safetyCompliance5 from './assets/portraits/safety-compliance-5.webp';
+import safetyCompliance6 from './assets/portraits/safety-compliance-6.webp';
 import safetyCompliance from './assets/portraits/safety-compliance.webp';
 import socialMediaAttractiveness from './assets/portraits/social-media-attractiveness.webp';
 import socialMediaReputation from './assets/portraits/social-media-reputation.webp';
 
 /**
  * The six MVP roles. Aliased to the shared `OfficeRole` so the client's role
- * strings and the server's are one type — a candidate's `roleId` is exactly what
- * `POST /api/office/hires` expects, checked by the compiler rather than by hope.
+ * strings and the server's are one type.
  */
 export type HqRoleId = OfficeRole;
 
-/**
- * The roles that are also **seats** — the six with a fixed room, i.e. every
- * office role except the neutral-only `social-media` specialist. A seat role is
- * always a valid `OfficeSeatId`, which the six `HqRole` rows below rely on.
- */
+/** The roles that are also **seats** — the six with a fixed room. */
 export type HqSeatRoleId = Exclude<OfficeRole, 'social-media'>;
 
-/** A candidate's seniority band. Flavour for now; real tiers arrive with the market. */
+/** A candidate's seniority band. */
 export type HqTier = 'Analyst' | 'Manager' | 'Director';
 
 export interface HqRole {
@@ -64,11 +80,7 @@ export interface HqRole {
   role: string;
   /** The concrete §9.1 capability filling the seat unlocks. Never a percentage. */
   unlock: string;
-  /**
-   * Set only on a seat that gates a capability nothing else can grant. Today only
-   * Safety & Compliance does — §9.1 and the M5-04 acceptance criterion make
-   * long-haul/ETOPS and international rights unreachable without it.
-   */
+  /** Set only on a seat that gates a capability nothing else can grant. */
   gates?: string;
 }
 
@@ -87,16 +99,17 @@ export interface HqCandidate {
   tier: HqTier;
   /** Salary per game month, integer minor units — the money convention used everywhere else. */
   salaryPerMonthMinor: number;
-  /** The candidate's own visible trait (§9.1). Flavour; not yet applied to the sim. */
-  trait: HqCandidateTrait;
+  /** The candidate's small, salary-scaled boost, from the shared catalogue. */
+  boost: ExecutiveBoost;
+  /** Optional flavour trait — colour on top of the boost. Not every candidate carries one. */
+  trait?: HqCandidateTrait;
   /** Portrait, imported so a missing file is a build error. */
   portrait: string;
 }
 
 /**
  * The seats, in §9.1's order: opportunity and revenue first, then the operational
- * seats, with the compliance gate last because it unlocks the others' reach
- * rather than a daily job.
+ * seats, with the compliance gate last because it unlocks the others' reach.
  */
 export const HQ_ROLES: readonly HqRole[] = [
   {
@@ -135,232 +148,158 @@ export const HQ_ROLES: readonly HqRole[] = [
   },
 ];
 
-/**
- * The candidate market. Several candidates may compete for one seat — the Route
- * Every seat has three candidates in the market — and you hire one. Each is one
- * entry here; a new arrival is a new entry plus its portrait.
- */
-export const HQ_CANDIDATES: readonly HqCandidate[] = [
-  {
-    id: 'route-planner-mara',
-    roleId: 'route-planner',
-    name: 'Mara Ellison',
-    tier: 'Manager',
-    salaryPerMonthMinor: 1_800_000,
-    trait: {
-      label: 'Early to market',
-      detail: 'Spots an unserved city-pair a season before the board would.',
-    },
-    portrait: routePlanner,
+/** Portrait per candidate id — imported so a missing one is a build error. */
+const PORTRAITS: Readonly<Record<string, string>> = {
+  'route-planner-mara': routePlanner,
+  'route-planner-tom': routePlanner2,
+  'route-planner-victor': routePlanner3,
+  'route-planner-rahman': routePlanner4,
+  'route-planner-bianchi': routePlanner5,
+  'route-planner-novak': routePlanner6,
+  'route-planner-park': routePlanner7,
+  'revenue-manager-kenji': revenueManager,
+  'revenue-manager-sofia': revenueManager2,
+  'revenue-manager-anders': revenueManager3,
+  'revenue-manager-lim': revenueManager4,
+  'revenue-manager-petrova': revenueManager5,
+  'ops-controller-diego': opsController,
+  'ops-controller-marta': opsController2,
+  'ops-controller-jun': opsController3,
+  'ops-controller-boateng': opsController4,
+  'ops-controller-chen': opsController5,
+  'ops-controller-doyle': opsController6,
+  'ops-controller-romano': opsController7,
+  'chief-pilot-sten': chiefPilot,
+  'chief-pilot-fiona': chiefPilot2,
+  'chief-pilot-grant': chiefPilot3,
+  'chief-pilot-nordheim': chiefPilot4,
+  'chief-pilot-holloway': chiefPilot5,
+  'chief-pilot-kelly': chiefPilot6,
+  'chief-pilot-sokolova': chiefPilot7,
+  'ground-ops-nadia': groundOps,
+  'ground-ops-omar': groundOps2,
+  'ground-ops-luca': groundOps3,
+  'ground-ops-okafor': groundOps4,
+  'ground-ops-adeyemi': groundOps5,
+  'ground-ops-kwon': groundOps6,
+  'ground-ops-herrera': groundOps7,
+  'safety-compliance-claire': safetyCompliance,
+  'safety-compliance-hiroshi': safetyCompliance2,
+  'safety-compliance-emma': safetyCompliance3,
+  'safety-compliance-fischer': safetyCompliance4,
+  'safety-compliance-braun': safetyCompliance5,
+  'safety-compliance-weiss': safetyCompliance6,
+  'social-media-reputation': socialMediaReputation,
+  'social-media-attractiveness': socialMediaAttractiveness,
+};
+
+/** Optional flavour trait per candidate id — the original hand-written colour. */
+const TRAITS: Readonly<Record<string, HqCandidateTrait>> = {
+  'route-planner-mara': {
+    label: 'Early to market',
+    detail: 'Spots an unserved city-pair a season before the board would.',
   },
-  {
-    id: 'route-planner-tom',
-    roleId: 'route-planner',
-    name: 'Tom Bakker',
-    tier: 'Analyst',
-    salaryPerMonthMinor: 1_200_000,
-    trait: {
-      label: 'Fresh eyes',
-      detail: 'Chases the long-thin routes the majors have written off.',
-    },
-    portrait: routePlanner2,
+  'route-planner-tom': {
+    label: 'Fresh eyes',
+    detail: 'Chases the long-thin routes the majors have written off.',
   },
-  {
-    id: 'route-planner-victor',
-    roleId: 'route-planner',
-    name: 'Victor Lindqvist',
-    tier: 'Director',
-    salaryPerMonthMinor: 2_600_000,
-    trait: {
-      label: 'Old hand',
-      detail: 'Reads a market’s turn a full season out, and has been right before.',
-    },
-    portrait: routePlanner3,
+  'route-planner-victor': {
+    label: 'Old hand',
+    detail: 'Reads a market’s turn a full season out, and has been right before.',
   },
-  {
-    id: 'revenue-manager-kenji',
-    roleId: 'revenue-manager',
-    name: 'Kenji Tan',
-    tier: 'Manager',
-    salaryPerMonthMinor: 2_000_000,
-    trait: {
-      label: 'Holds the line',
-      detail: 'Keeps yield a touch firmer through a fare war than most would dare.',
-    },
-    portrait: revenueManager,
+  'revenue-manager-kenji': {
+    label: 'Holds the line',
+    detail: 'Keeps yield a touch firmer through a fare war than most would dare.',
   },
-  {
-    id: 'revenue-manager-sofia',
-    roleId: 'revenue-manager',
-    name: 'Sofía Reyes',
-    tier: 'Manager',
-    salaryPerMonthMinor: 2_100_000,
-    trait: {
-      label: 'Ancillary hunter',
-      detail: 'Turns bags, seats and lounges into a revenue line of their own.',
-    },
-    portrait: revenueManager2,
+  'revenue-manager-sofia': {
+    label: 'Ancillary hunter',
+    detail: 'Turns bags, seats and lounges into a revenue line of their own.',
   },
-  {
-    id: 'revenue-manager-anders',
-    roleId: 'revenue-manager',
-    name: 'Anders Holm',
-    tier: 'Director',
-    salaryPerMonthMinor: 2_900_000,
-    trait: {
-      label: 'Premium instinct',
-      detail: 'Reads exactly when the front cabin will bear another notch of fare.',
-    },
-    portrait: revenueManager3,
+  'revenue-manager-anders': {
+    label: 'Premium instinct',
+    detail: 'Reads exactly when the front cabin will bear another notch of fare.',
   },
-  {
-    id: 'ops-controller-diego',
-    roleId: 'ops-controller',
-    name: 'Diego Alvarez',
-    tier: 'Director',
-    salaryPerMonthMinor: 2_600_000,
-    trait: {
-      label: 'Curfew-proof',
-      detail: 'Reshuffles a broken evening bank without tripping a night restriction.',
-    },
-    portrait: opsController,
+  'ops-controller-diego': {
+    label: 'Curfew-proof',
+    detail: 'Reshuffles a broken evening bank without tripping a night restriction.',
   },
-  {
-    id: 'ops-controller-marta',
-    roleId: 'ops-controller',
-    name: 'Marta Silva',
-    tier: 'Manager',
-    salaryPerMonthMinor: 2_300_000,
-    trait: {
-      label: 'Weather-wise',
-      detail: 'Sees a cell building on the radar before it reaches the arrivals bank.',
-    },
-    portrait: opsController2,
+  'ops-controller-marta': {
+    label: 'Weather-wise',
+    detail: 'Sees a cell building on the radar before it reaches the arrivals bank.',
   },
-  {
-    id: 'ops-controller-jun',
-    roleId: 'ops-controller',
-    name: 'Jun Park',
-    tier: 'Director',
-    salaryPerMonthMinor: 2_700_000,
-    trait: {
-      label: 'On-time obsessive',
-      detail: 'Claws a morning of delays back to schedule by the evening bank.',
-    },
-    portrait: opsController3,
+  'ops-controller-jun': {
+    label: 'On-time obsessive',
+    detail: 'Claws a morning of delays back to schedule by the evening bank.',
   },
-  {
-    id: 'chief-pilot-sten',
-    roleId: 'chief-pilot',
-    name: 'Sten Halvorsen',
-    tier: 'Director',
-    salaryPerMonthMinor: 2_800_000,
-    trait: {
-      label: 'Clean sheet',
-      detail: 'Brings a training record without a single failed check ride.',
-    },
-    portrait: chiefPilot,
+  'chief-pilot-sten': {
+    label: 'Clean sheet',
+    detail: 'Brings a training record without a single failed check ride.',
   },
-  {
-    id: 'chief-pilot-fiona',
-    roleId: 'chief-pilot',
-    name: 'Fiona Brennan',
-    tier: 'Director',
-    salaryPerMonthMinor: 2_900_000,
-    trait: {
-      label: 'Line-current',
-      detail: 'Still flies the line, so her training reflects the aeroplane, not the manual.',
-    },
-    portrait: chiefPilot2,
+  'chief-pilot-fiona': {
+    label: 'Line-current',
+    detail: 'Still flies the line, so her training reflects the aeroplane, not the manual.',
   },
-  {
-    id: 'chief-pilot-grant',
-    roleId: 'chief-pilot',
-    name: 'Grant Wexford',
-    tier: 'Director',
-    salaryPerMonthMinor: 3_000_000,
-    trait: {
-      label: 'Standard-setter',
-      detail: 'Runs a check-and-training programme other airlines quietly copy.',
-    },
-    portrait: chiefPilot3,
+  'chief-pilot-grant': {
+    label: 'Standard-setter',
+    detail: 'Runs a check-and-training programme other airlines quietly copy.',
   },
-  {
-    id: 'ground-ops-nadia',
-    roleId: 'ground-ops',
-    name: 'Nadia Kovač',
-    tier: 'Director',
-    salaryPerMonthMinor: 2_400_000,
-    trait: {
-      // The turnaround example from the brief — placed on Ground Ops, not the
-      // Route Planner, because §9.1 assigns the turnaround baseline to this seat.
-      // Shown as the candidate's colour; not yet applied to the sim.
-      label: 'Quick on the ramp',
-      detail: 'Trims about a point off turnaround when the ramp is hers to run.',
-    },
-    portrait: groundOps,
+  'ground-ops-nadia': {
+    label: 'Quick on the ramp',
+    detail: 'Trims about a point off turnaround when the ramp is hers to run.',
   },
-  {
-    id: 'ground-ops-omar',
-    roleId: 'ground-ops',
-    name: 'Omar Haddad',
-    tier: 'Director',
-    salaryPerMonthMinor: 2_500_000,
-    trait: {
-      label: 'Turnaround tactician',
-      detail: 'Keeps every gate to schedule when the whole bank stacks up at once.',
-    },
-    portrait: groundOps2,
+  'ground-ops-omar': {
+    label: 'Turnaround tactician',
+    detail: 'Keeps every gate to schedule when the whole bank stacks up at once.',
   },
-  {
-    id: 'ground-ops-luca',
-    roleId: 'ground-ops',
-    name: 'Luca Moretti',
-    tier: 'Manager',
-    salaryPerMonthMinor: 2_000_000,
-    trait: {
-      label: 'Ramp-hardened',
-      detail: 'Came up on the ramp, so nothing on the apron in bad weather surprises him.',
-    },
-    portrait: groundOps3,
+  'ground-ops-luca': {
+    label: 'Ramp-hardened',
+    detail: 'Came up on the ramp, so nothing on the apron in bad weather surprises him.',
   },
-  {
-    id: 'safety-compliance-claire',
-    roleId: 'safety-compliance',
-    name: 'Claire Fontaine',
-    tier: 'Director',
-    salaryPerMonthMinor: 3_000_000,
-    trait: {
-      label: 'Audit-clean',
-      detail: 'Clears an ETOPS audit without a single finding against the fleet.',
-    },
-    portrait: safetyCompliance,
+  'safety-compliance-claire': {
+    label: 'Audit-clean',
+    detail: 'Clears an ETOPS audit without a single finding against the fleet.',
   },
-  {
-    id: 'safety-compliance-hiroshi',
-    roleId: 'safety-compliance',
-    name: 'Hiroshi Tanaka',
-    tier: 'Director',
-    salaryPerMonthMinor: 3_100_000,
-    trait: {
-      label: 'Zero-compromise',
-      detail: 'Has grounded a jet over a paperwork gap, and would do it again tomorrow.',
-    },
-    portrait: safetyCompliance2,
+  'safety-compliance-hiroshi': {
+    label: 'Zero-compromise',
+    detail: 'Has grounded a jet over a paperwork gap, and would do it again tomorrow.',
   },
-  {
-    id: 'safety-compliance-emma',
-    roleId: 'safety-compliance',
-    name: 'Emma Larsson',
-    tier: 'Manager',
-    salaryPerMonthMinor: 2_400_000,
-    trait: {
-      label: 'Reporting-culture builder',
-      detail: 'Gets crews logging the near-miss nobody else would have written up.',
-    },
-    portrait: safetyCompliance3,
+  'safety-compliance-emma': {
+    label: 'Reporting-culture builder',
+    detail: 'Gets crews logging the near-miss nobody else would have written up.',
   },
-];
+  'social-media-reputation': {
+    label: 'Brand builder',
+    detail: 'Grows your airline’s public reputation a little more every month she stays.',
+  },
+  'social-media-attractiveness': {
+    label: 'Crowd-puller',
+    detail: 'Nudges undecided travellers your way when you fly more than one route.',
+  },
+};
+
+const placeholderTier = (tier: string): HqTier =>
+  tier === 'Analyst' || tier === 'Manager' || tier === 'Director' ? tier : 'Manager';
+
+/** Every candidate — seat candidates and specialists — built from the shared catalogue. */
+const ALL_CANDIDATES: readonly HqCandidate[] = OFFICE_CANDIDATES.map((candidate) => {
+  const portrait = PORTRAITS[candidate.id];
+  if (portrait === undefined) throw new Error(`no portrait for office candidate ${candidate.id}`);
+  return {
+    id: candidate.id,
+    roleId: candidate.role,
+    name: candidate.name,
+    tier: placeholderTier(candidate.tier),
+    salaryPerMonthMinor: candidate.monthlySalaryMinor,
+    boost: candidate.boost,
+    trait: TRAITS[candidate.id],
+    portrait,
+  };
+});
+
+/** The candidate market for the six seats (specialists kept apart — see below). */
+export const HQ_CANDIDATES: readonly HqCandidate[] = ALL_CANDIDATES.filter(
+  (candidate) => candidate.roleId !== 'social-media',
+);
 
 /** The candidates in the market for one seat, in roster order. */
 export function candidatesForRole(roleId: HqRoleId): readonly HqCandidate[] {
@@ -368,40 +307,13 @@ export function candidatesForRole(roleId: HqRoleId): readonly HqCandidate[] {
 }
 
 /**
- * The social media specialists — the "Specialist" row (§9.1).
- *
- * Kept apart from {@link HQ_CANDIDATES} on purpose: a specialist never competes
- * for one of the six seats, and a world only ever offers **one** of these two,
- * so they are not part of the seat market the roster above renders. Their ids
- * match the shared {@link SOCIAL_MEDIA_SPECIALISTS} so the server and worker know
- * the same faces. The trait is the perk the specialist actually carries.
+ * The social media specialists — the "Specialist" row (§9.1). Kept apart from
+ * {@link HQ_CANDIDATES} because a specialist never competes for one of the six
+ * seats, and a world only ever offers one of the two.
  */
-export const SPECIALIST_CANDIDATES: readonly HqCandidate[] = [
-  {
-    id: 'social-media-reputation',
-    roleId: 'social-media',
-    name: 'Lena Voss',
-    tier: 'Manager',
-    salaryPerMonthMinor: 1_500_000,
-    trait: {
-      label: 'Brand builder',
-      detail: 'Grows your airline’s public reputation a little more every month she stays.',
-    },
-    portrait: socialMediaReputation,
-  },
-  {
-    id: 'social-media-attractiveness',
-    roleId: 'social-media',
-    name: 'Kai Mercer',
-    tier: 'Manager',
-    salaryPerMonthMinor: 1_500_000,
-    trait: {
-      label: 'Crowd-puller',
-      detail: 'Nudges undecided travellers your way when you fly more than one route.',
-    },
-    portrait: socialMediaAttractiveness,
-  },
-];
+export const SPECIALIST_CANDIDATES: readonly HqCandidate[] = ALL_CANDIDATES.filter(
+  (candidate) => candidate.roleId === 'social-media',
+);
 
 /** The specialist with this id, or null — used to render the world's offer. */
 export function specialistById(id: string): HqCandidate | null {
@@ -410,7 +322,7 @@ export function specialistById(id: string): HqCandidate | null {
 
 /** Any candidate — a seat candidate or a specialist — by id, or null. */
 export function candidateById(id: string): HqCandidate | null {
-  return HQ_CANDIDATES.find((candidate) => candidate.id === id) ?? specialistById(id);
+  return ALL_CANDIDATES.find((candidate) => candidate.id === id) ?? null;
 }
 
 /** Salary as the game shows money elsewhere: major units, grouped, no fraction. */

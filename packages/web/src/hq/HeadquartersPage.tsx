@@ -9,6 +9,7 @@ import {
 } from '@tailfin/shared';
 
 import { dismissOffice, fetchOffice, hireOffice } from './api';
+import { formatCountdown, msUntilRefresh, rosterDayIndex, rotatingRoster } from './csuite-rotation';
 import {
   candidatesForRole,
   formatSalary,
@@ -23,6 +24,28 @@ import { StaffOfficeDrawer } from './StaffOfficeDrawer';
 
 import type { OwnAirlineShellContext } from '../shell/AppShell';
 import type { ReactNode } from 'react';
+
+/** How many candidates the market shows per seat before the daily reshuffle. */
+const SEAT_MARKET_SIZE = 4;
+
+/**
+ * Today's shortlist for a seat — a rotating {@link SEAT_MARKET_SIZE} of the role's
+ * candidates — with the currently hired candidate always kept in view even when
+ * they rotate out, so a standing hire can always be managed.
+ */
+function seatShortlist(
+  roleId: HqCandidate['roleId'],
+  dayIndex: number,
+  hiredId: string | undefined,
+): readonly HqCandidate[] {
+  const pool = candidatesForRole(roleId);
+  const shortlist = rotatingRoster(pool, dayIndex, SEAT_MARKET_SIZE);
+  if (hiredId === undefined || shortlist.some((candidate) => candidate.id === hiredId)) {
+    return shortlist;
+  }
+  const hired = pool.find((candidate) => candidate.id === hiredId);
+  return hired === undefined ? shortlist : [...shortlist, hired];
+}
 
 /**
  * Headquarters — the office hires (M5-04, §9.1).
@@ -68,6 +91,7 @@ export function HeadquartersPage(): ReactNode {
   const [pending, setPending] = useState<OfficeSeatId | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [policiesOpen, setPoliciesOpen] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const shell = useOutletContext<OwnAirlineShellContext | null>();
   const syncOffice = shell?.replaceOffice;
   // The office the player is managing (drawer open). The interactive plan is the
@@ -95,6 +119,15 @@ export function HeadquartersPage(): ReactNode {
   // does not reopen the drawer on a stale pick. The selection lives in the shell,
   // which outlives this page, so the clear has to be explicit.
   useEffect(() => () => setSelectedSeat(null), [setSelectedSeat]);
+
+  // The market refreshes every 24 hours; the countdown ticks once a second and,
+  // when it crosses a boundary, the day index changes and each seat reshuffles.
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const dayIndex = rosterDayIndex(now);
 
   const hiredBySeat = new Map<OfficeSeatId, { candidateId: string; candidateName: string }>(
     (office?.hires ?? []).map((hire) => [
@@ -195,7 +228,13 @@ export function HeadquartersPage(): ReactNode {
             ...(specialist !== null && !hiredCandidateIds.has(specialist.id) ? [specialist] : []),
             ...HQ_CANDIDATES.filter((candidate) => !hiredCandidateIds.has(candidate.id)),
           ]
-        : candidatesForRole(managing).filter((candidate) => !hiredCandidateIds.has(candidate.id));
+        : // A role seat offers today's rotating shortlist for that seat, minus anyone
+          // already employed — the same four the roster shows.
+          seatShortlist(
+            managing as HqCandidate['roleId'],
+            dayIndex,
+            hiredBySeat.get(managing)?.candidateId,
+          ).filter((candidate) => !hiredCandidateIds.has(candidate.id));
 
   const drawerName =
     managingRole !== null ? managingRole.role : managing !== null ? officeLabel(managing) : '';
@@ -206,14 +245,22 @@ export function HeadquartersPage(): ReactNode {
 
   return (
     <section className="page hq-page" aria-label="Headquarters">
+      <div className="csuite-refresh" role="timer" aria-label="Time until the market refreshes">
+        <span className="csuite-refresh__label">Market refreshes in</span>
+        <span className="csuite-refresh__clock">{formatCountdown(msUntilRefresh(now))}</span>
+        <span className="csuite-refresh__note">
+          A fresh shortlist of {SEAT_MARKET_SIZE} candidates per seat every 24 hours
+        </span>
+      </div>
+
       <header className="hq-page__heading">
         <div>
           <p className="airline-page__eyebrow">Head Office</p>
           <h1 className="page__title">Headquarters</h1>
           <p className="page__note">
-            Senior hires are capability unlocks, not stat bonuses — each one takes a job off your
-            hands or opens one up. A seat holds one person; an unfilled candidate is greyed, the one
-            you hire is in colour.
+            Each seat unlocks a concrete capability — and the person you put in it brings a small
+            standing boost of their own, worth their salary. A seat holds one person; an unfilled
+            candidate is greyed, the one you hire is in colour. The shortlist reshuffles daily.
           </p>
         </div>
         <div className="hq-page__aside">
@@ -255,8 +302,8 @@ export function HeadquartersPage(): ReactNode {
 
       <div className="hq-roster" aria-busy={loading}>
         {HQ_ROLES.map((seat) => {
-          const candidates = candidatesForRole(seat.id);
           const hiredId = hiredBySeat.get(seat.id)?.candidateId;
+          const candidates = seatShortlist(seat.id, dayIndex, hiredId);
           const hiredCandidate = candidates.find((candidate) => candidate.id === hiredId) ?? null;
           const seatPending = pending === seat.id;
 
@@ -311,12 +358,21 @@ export function HeadquartersPage(): ReactNode {
                           </div>
                         </dl>
 
-                        <p className="hq-card__trait">
-                          <span className="hq-card__trait-badge">{given}</span>
-                          <span>
-                            <strong>{candidate.trait.label}.</strong> {candidate.trait.detail}
+                        <p className="hq-card__boost" title={candidate.boost.description}>
+                          <span className="hq-card__boost-badge">{candidate.boost.label}</span>
+                          <span className="hq-card__boost-detail">
+                            {candidate.boost.description}
                           </span>
                         </p>
+
+                        {candidate.trait !== undefined && (
+                          <p className="hq-card__trait">
+                            <span className="hq-card__trait-badge">{given}</span>
+                            <span>
+                              <strong>{candidate.trait.label}.</strong> {candidate.trait.detail}
+                            </span>
+                          </p>
+                        )}
 
                         <button
                           type="button"

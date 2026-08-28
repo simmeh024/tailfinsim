@@ -33,6 +33,16 @@ export function msUntilRefresh(now: number = Date.now()): number {
   return Math.max(0, nextRefreshAt(now) - now);
 }
 
+/** A whole-seconds HH:MM:SS countdown from a millisecond span — the refresh clock. */
+export function formatCountdown(ms: number): string {
+  const total = Math.floor(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n: number): string => n.toString().padStart(2, '0');
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
+}
+
 /** A small, fast, seedable PRNG — enough to shuffle a two-dozen-item list. */
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
@@ -52,13 +62,15 @@ function mulberry32(seed: number): () => number {
  * genuinely mixed (not just the first ten of the catalogue) yet identical for
  * everyone in the same window. The input is never mutated.
  */
-export function rotatingExecutiveRoster<T extends { id: string }>(
+export function rotatingRoster<T extends { id: string }>(
   candidates: readonly T[],
   dayIndex: number,
-  count: number = ROSTER_SIZE,
+  count: number,
 ): T[] {
   const pool = [...candidates];
-  const rand = mulberry32(dayIndex + 1);
+  // Seed off the pool length too, so two different pools (say two seats) do not
+  // shuffle in lockstep on the same day.
+  const rand = mulberry32(dayIndex * 2654435761 + pool.length + 1);
   for (let i = pool.length - 1; i > 0; i -= 1) {
     const j = Math.floor(rand() * (i + 1));
     const a = pool[i]!;
@@ -67,4 +79,13 @@ export function rotatingExecutiveRoster<T extends { id: string }>(
     pool[j] = a;
   }
   return pool.slice(0, Math.min(count, pool.length));
+}
+
+/** The C-Suite's rotating shortlist — {@link rotatingRoster} at the C-Suite size. */
+export function rotatingExecutiveRoster<T extends { id: string }>(
+  candidates: readonly T[],
+  dayIndex: number,
+  count: number = ROSTER_SIZE,
+): T[] {
+  return rotatingRoster(candidates, dayIndex, count);
 }

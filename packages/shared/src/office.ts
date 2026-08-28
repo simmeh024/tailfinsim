@@ -1,20 +1,23 @@
 import { z } from 'zod';
 
+import { EXECUTIVE_BOOST_LEVERS, type ExecutiveBoost, type ExecutiveBoostLever } from './executive';
 import { Timestamp, Uuid } from './primitives';
 
 /**
  * The head office (M5-04, design doc §9.1).
  *
- * §9.1's rule, and the shape of this whole file: **senior hires are capability
- * unlocks and automation, not stat bonuses.** Each role's effect is a concrete
- * thing the hire takes off the player's hands, and the only role that changes
- * what the *simulation* will permit is Safety & Compliance — long-haul, ETOPS
- * and international authority are unreachable until that seat is filled.
+ * §9.1's rule shapes this whole file: a **seat is a capability unlock**, the same
+ * for anyone who fills it, and the only role that changes what the *simulation*
+ * will permit is Safety & Compliance — long-haul, ETOPS and international
+ * authority are unreachable until that seat is filled. On top of the seat, the
+ * §9.1 follow-up gives each *candidate* a tiny, salary-scaled **boost** of their
+ * own (the "visible trait" made real) — see {@link officeSeatBoost}. The boost is
+ * part of the shared contract because the worker will apply it; the portraits and
+ * the flavour trait stay client-side.
  *
- * This is the wire and balance contract both the server and the client read.
- * The candidate *market* — the named faces, their portraits and their traits —
- * lives client-side for now; what crosses the boundary is which seat an airline
- * has filled, what it costs a month, and which seat gates authority.
+ * This is the wire and balance contract both the server and the client read: which
+ * seat an airline has filled, what it costs a month, which seat gates authority,
+ * and — keyed by candidate id — the boost that hire brings.
  */
 
 /**
@@ -299,14 +302,71 @@ export interface OfficeCandidate {
   tier: OfficeCandidateTier;
   /** Salary per game month, minor units — what the worker bills while they are on staff. */
   monthlySalaryMinor: number;
+  /**
+   * The candidate's own small standing boost (§9.1's "visible trait", now with
+   * teeth). Unlike an executive, a seat still carries a concrete capability unlock
+   * regardless of who fills it — this is the *extra* edge the individual brings,
+   * and it is deliberately tiny and **derived from the salary** (see
+   * {@link officeSeatBoost}) so it is always fair value for the pay. The lever is
+   * the seat's characteristic one, so the boost reads as "what this seat is good
+   * at, a little more".
+   */
+  boost: ExecutiveBoost;
+}
+
+/** The characteristic boost lever each seat's candidates carry. */
+const SEAT_BOOST_LEVER: Readonly<Record<Exclude<OfficeRole, 'social-media'>, ExecutiveBoostLever>> =
+  {
+    'route-planner': 'route-demand',
+    'revenue-manager': 'fare-yield',
+    'ops-controller': 'on-time',
+    'chief-pilot': 'aircraft-utilisation',
+    'ground-ops': 'turnaround',
+    'safety-compliance': 'reputation',
+  };
+
+/** One line of flavour per lever an office boost can use — the card's description. */
+const OFFICE_BOOST_DESCRIPTION: Partial<Record<ExecutiveBoostLever, string>> = {
+  'route-demand': 'Sniffs out a little extra demand on the routes you already fly.',
+  'fare-yield': 'Squeezes a little more revenue from every seat sold.',
+  'on-time': 'Keeps the bank a touch more punctual through a rough day.',
+  'aircraft-utilisation': 'Keeps the line sharp, so each aircraft flies a little more.',
+  turnaround: 'Trims a little off every turn on the ramp.',
+  reputation: 'Keeps the airline’s standing a notch higher with a clean record.',
+  'brand-attractiveness': 'Wins over a few more undecided travellers.',
+};
+
+/**
+ * The tiny, salary-scaled boost an office candidate carries.
+ *
+ * A pure function of the lever and the pay, so it is always "worth their salary":
+ * roughly 0.35% of edge per $10k/month, which lands ground-floor hires in a
+ * 0.4%–1.1% band — a fraction of an executive's. A cost or duration lever (lower
+ * is better) gets a negative magnitude; everything else positive.
+ */
+export function officeSeatBoost(lever: ExecutiveBoostLever, salaryMinor: number): ExecutiveBoost {
+  const meta = EXECUTIVE_BOOST_LEVERS[lever];
+  // Tenths of a percent, so the label reads cleanly to one decimal place.
+  const tenths = Math.max(1, Math.round((salaryMinor / 1_000_000) * 3.5));
+  const magnitude = (meta.lowerIsBetter ? -tenths : tenths) / 1000;
+  const label = `${meta.label} ${meta.lowerIsBetter ? '−' : '+'}${(tenths / 10).toFixed(1)}%`;
+  const description = OFFICE_BOOST_DESCRIPTION[lever] ?? `${meta.label}, a little better.`;
+  return { lever, magnitude, label, description };
+}
+
+/** The lever a given candidate's boost uses — a specialist follows its own edge. */
+function candidateBoostLever(candidate: Omit<OfficeCandidate, 'boost'>): ExecutiveBoostLever {
+  if (candidate.role !== 'social-media') return SEAT_BOOST_LEVER[candidate.role];
+  return candidate.id.includes('reputation') ? 'reputation' : 'brand-attractiveness';
 }
 
 /**
- * The candidate market: three people for each of the six seats, plus the two
- * social media specialists. Ordered by seat, then by roster order within a seat,
- * because the client renders them in this order and its tests pin it.
+ * The candidate market: several people for each of the six seats, plus the two
+ * social media specialists. Ordered by seat, then by roster order within a seat.
+ * The boost on each is derived from the seat and the salary, so this raw list
+ * carries only identity and pay; {@link OFFICE_CANDIDATES} attaches the boost.
  */
-export const OFFICE_CANDIDATES: readonly OfficeCandidate[] = [
+const RAW_OFFICE_CANDIDATES: readonly Omit<OfficeCandidate, 'boost'>[] = [
   {
     id: 'route-planner-mara',
     role: 'route-planner',
@@ -433,6 +493,154 @@ export const OFFICE_CANDIDATES: readonly OfficeCandidate[] = [
     tier: 'Manager',
     monthlySalaryMinor: 2_400_000,
   },
+  // ── New arrivals (characters.zip), by seat ────────────────────────────────
+  {
+    id: 'route-planner-rahman',
+    role: 'route-planner',
+    name: 'Aisha Rahman',
+    tier: 'Manager',
+    monthlySalaryMinor: 1_900_000,
+  },
+  {
+    id: 'route-planner-bianchi',
+    role: 'route-planner',
+    name: 'Marco Bianchi',
+    tier: 'Director',
+    monthlySalaryMinor: 2_700_000,
+  },
+  {
+    id: 'route-planner-novak',
+    role: 'route-planner',
+    name: 'Ella Novak',
+    tier: 'Analyst',
+    monthlySalaryMinor: 1_300_000,
+  },
+  {
+    id: 'route-planner-park',
+    role: 'route-planner',
+    name: 'Zoe Park',
+    tier: 'Analyst',
+    monthlySalaryMinor: 1_250_000,
+  },
+  {
+    id: 'revenue-manager-lim',
+    role: 'revenue-manager',
+    name: 'Grace Lim',
+    tier: 'Director',
+    monthlySalaryMinor: 2_800_000,
+  },
+  {
+    id: 'revenue-manager-petrova',
+    role: 'revenue-manager',
+    name: 'Nina Petrova',
+    tier: 'Manager',
+    monthlySalaryMinor: 2_050_000,
+  },
+  {
+    id: 'ops-controller-boateng',
+    role: 'ops-controller',
+    name: 'Andre Boateng',
+    tier: 'Manager',
+    monthlySalaryMinor: 2_350_000,
+  },
+  {
+    id: 'ops-controller-chen',
+    role: 'ops-controller',
+    name: 'Wei Chen',
+    tier: 'Director',
+    monthlySalaryMinor: 2_750_000,
+  },
+  {
+    id: 'ops-controller-doyle',
+    role: 'ops-controller',
+    name: 'Karen Doyle',
+    tier: 'Director',
+    monthlySalaryMinor: 2_650_000,
+  },
+  {
+    id: 'ops-controller-romano',
+    role: 'ops-controller',
+    name: 'Lucia Romano',
+    tier: 'Manager',
+    monthlySalaryMinor: 2_320_000,
+  },
+  {
+    id: 'chief-pilot-nordheim',
+    role: 'chief-pilot',
+    name: 'Astrid Nordheim',
+    tier: 'Director',
+    monthlySalaryMinor: 2_950_000,
+  },
+  {
+    id: 'chief-pilot-holloway',
+    role: 'chief-pilot',
+    name: 'Ray Holloway',
+    tier: 'Director',
+    monthlySalaryMinor: 3_050_000,
+  },
+  {
+    id: 'chief-pilot-kelly',
+    role: 'chief-pilot',
+    name: 'Moira Kelly',
+    tier: 'Director',
+    monthlySalaryMinor: 2_850_000,
+  },
+  {
+    id: 'chief-pilot-sokolova',
+    role: 'chief-pilot',
+    name: 'Elena Sokolova',
+    tier: 'Director',
+    monthlySalaryMinor: 3_020_000,
+  },
+  {
+    id: 'ground-ops-okafor',
+    role: 'ground-ops',
+    name: 'Amara Okafor',
+    tier: 'Director',
+    monthlySalaryMinor: 2_450_000,
+  },
+  {
+    id: 'ground-ops-adeyemi',
+    role: 'ground-ops',
+    name: 'Samuel Adeyemi',
+    tier: 'Manager',
+    monthlySalaryMinor: 2_100_000,
+  },
+  {
+    id: 'ground-ops-kwon',
+    role: 'ground-ops',
+    name: 'David Kwon',
+    tier: 'Director',
+    monthlySalaryMinor: 2_520_000,
+  },
+  {
+    id: 'ground-ops-herrera',
+    role: 'ground-ops',
+    name: 'Sofia Herrera',
+    tier: 'Manager',
+    monthlySalaryMinor: 2_150_000,
+  },
+  {
+    id: 'safety-compliance-fischer',
+    role: 'safety-compliance',
+    name: 'Tom Fischer',
+    tier: 'Manager',
+    monthlySalaryMinor: 2_450_000,
+  },
+  {
+    id: 'safety-compliance-braun',
+    role: 'safety-compliance',
+    name: 'Wolfgang Braun',
+    tier: 'Director',
+    monthlySalaryMinor: 3_150_000,
+  },
+  {
+    id: 'safety-compliance-weiss',
+    role: 'safety-compliance',
+    name: 'Marion Weiss',
+    tier: 'Director',
+    monthlySalaryMinor: 3_050_000,
+  },
   {
     id: 'social-media-reputation',
     role: 'social-media',
@@ -448,6 +656,18 @@ export const OFFICE_CANDIDATES: readonly OfficeCandidate[] = [
     monthlySalaryMinor: 1_500_000,
   },
 ];
+
+/**
+ * The candidate market with each candidate's derived boost attached. The raw list
+ * above is the single source of identity and pay; the boost is a pure function of
+ * the two, so it cannot drift from the salary it is meant to be worth.
+ */
+export const OFFICE_CANDIDATES: readonly OfficeCandidate[] = RAW_OFFICE_CANDIDATES.map(
+  (candidate) => ({
+    ...candidate,
+    boost: officeSeatBoost(candidateBoostLever(candidate), candidate.monthlySalaryMinor),
+  }),
+);
 
 /** The candidate with this id, or undefined — the server's billing lookup. */
 export function officeCandidate(id: string): OfficeCandidate | undefined {

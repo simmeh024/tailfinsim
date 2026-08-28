@@ -12,6 +12,7 @@ import {
 import { dismissExecutive, fetchExecutiveFloor, hireExecutive } from './api';
 import { CSUITE_CANDIDATES, csuiteCandidate, type CSuiteCandidate } from './csuite-roster';
 import {
+  formatCountdown,
   msUntilRefresh,
   rosterDayIndex,
   rotatingExecutiveRoster,
@@ -47,16 +48,6 @@ import type { ReactNode } from 'react';
  * Rendered on its own in a test the shell context is null, so the page falls back
  * to its own fetch and local selection and everything still works.
  */
-
-/** A whole-seconds HH:MM:SS countdown from a millisecond span. */
-function formatCountdown(ms: number): string {
-  const total = Math.floor(ms / 1000);
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  const pad = (n: number): string => n.toString().padStart(2, '0');
-  return `${pad(h)}:${pad(m)}:${pad(s)}`;
-}
 
 /** One aggregated boost as a signed, unit-aware string, e.g. "Fuel cost −3.0%". */
 function formatAggregatedBoost(boost: AggregatedExecutiveBoost): string {
