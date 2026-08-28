@@ -587,7 +587,7 @@ describe('operator command authority boundary', () => {
   )('refuses unsafe options before file/network access: $args', ({ args }) => {
     expect(() => parseMeshyRunArguments(args)).toThrow();
   });
-  it('supports only explicit initialization, status and capped account checks', () => {
+  it('supports explicit initialization, status and capped account checks', () => {
     expect(parseMeshyRunArguments(['--', 'init', '--approval-file', 'private.json']).command).toBe(
       'init',
     );

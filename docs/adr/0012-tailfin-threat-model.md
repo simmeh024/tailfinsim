@@ -120,7 +120,14 @@ It GETs one fixed HTTPS endpoint with redirect, retry, timeout and decoded-size 
 numeric balance projection escapes. ADR-0024 adds a Git-common SQLite ledger with serialized
 durable reservations and quarantine-only provenance descriptors. The key is never persisted.
 
-The future paid Meshy client introduces external spending and untrusted model/texture downloads.
+Candidate recovery now accepts untrusted GLB downloads into a private quarantine: fixed HTTPS asset
+host, no forwarded API credential, no redirects, bounded decoded bytes/deadlines, container-envelope
+validation, immutable hashed objects and a sanitized completion manifest written last. It never
+executes embedded/external glTF resources or emits provider errors/signed URLs. Only already recorded
+task IDs can be recovered; no arbitrary adoption or paid POST is exposed. Corrupt or redirected
+local archives fail closed. These controls do not replace conformance, resource, licence or visual QA.
+
+The future paid Meshy client introduces external spending and further model/texture downloads.
 Before enabling it, #791 must connect the reservation gate to paid transport, ambiguous-submission
 reconciliation, fresh pricing checks, bounded downloads and verified immutable provenance bytes.
 Subscription or balance is not spending authority. Candidate quarantine is not licensing or

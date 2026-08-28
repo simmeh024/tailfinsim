@@ -144,7 +144,8 @@ no network request and never logs the key. Do not install that credential on Web
 put it in `VITE_*`, or add it to CI. The future paid client requires a separate approval and durable
 credit gate; see [aircraft factory](aircraft-factory.md) and ADR-0012. `assets:meshy-run` keeps its
 approval/credit history in the operator repository's Git common directory; its optional account
-check is GET-only. Do not copy an active ledger to another host or rewind it. ADR-0024 owns this
+check and known-candidate `sync` are GET-only. Quarantined GLB exports remain beside the operator's
+ledger, never in Web/Worker runtime assets. Do not copy an active ledger to another host or rewind it. ADR-0024 owns this
 local persistence boundary. The runtime topology is unchanged.
 
 Read by the server at boot from the repository-root `.env` (resolved from the bundle's

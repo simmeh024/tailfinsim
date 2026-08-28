@@ -41,7 +41,7 @@ and binds the budget to a specification hash. Unknown outcomes retain their rese
 reported charge does not release speculative retry capacity; an unexpected overcharge is retained
 and prevents further reservations. This kernel alone is **not a durable ledger**; use the SQLite
 run wrapper below for reservations and receipts. Paid submission, provider reconciliation and
-immutable downloads remain [#791](https://github.com/simmeh024/tailfinsim/issues/791) follow-ups.
+complete provenance remain [#791](https://github.com/simmeh024/tailfinsim/issues/791) follow-ups.
 
 ## One approved run and a read-only account check
 
@@ -54,6 +54,7 @@ pnpm assets:meshy-run -- --help
 pnpm assets:meshy-run -- init --approval-file /private/approval.json
 pnpm assets:meshy-run -- status
 pnpm assets:meshy-run -- account --max-credits 40 --key-file /private/meshy.txt
+pnpm assets:meshy-run -- sync --operation candidate-1 --max-credits 40 --key-file /private/meshy.txt
 ```
 
 Use `init` only after actual user approval. Its strict `MeshyRunApproval` input binds the consent
@@ -76,10 +77,39 @@ stored. An explicit key file overrides `MESHY_API_KEY`; neither is installed on 
 command spends zero generation credits and does not verify subscription/private-license terms.
 [Meshy balance contract](https://docs.meshy.ai/en/api/balance).
 
+`sync` performs one bounded read-only polling pass for a **previously recorded** candidate task.
+It cannot adopt an arbitrary task ID, resolve an uncertain submission, submit/retry generation,
+select a candidate or retrieve retexturing outputs. Repeat the command to resume a pending task.
+Task GETs use the fixed Image-to-3D endpoint, at most three attempts, ten seconds per attempt and
+64 KiB decoded JSON. Repeated status/charge observations retain their first durable timestamp,
+including concurrent polls, so progress polling does not exhaust the ledger's snapshot limit.
+Terminal charges are committed before attempting a download; expired/broken URLs cannot erase them.
+Mid-flight charges are reported but not confirmed as terminal. The future paid runner must serialize
+candidates until earlier tasks have terminal charges, and stop on any price drift.
+
+Successful, charged candidates archive their untouched GLB under the Git-common directory's
+`tailfin-aircraft-factory/a320neo-first-run-exports/`. The downloader accepts only HTTPS
+`assets.meshy.ai`, refuses redirects and never forwards the API credential. GET attempts are bounded
+to three, thirty seconds each and 64 MiB decoded bytes. A GLB v2 container-envelope check is **not**
+glTF conformance, self-containment, topology or visual approval; embedded/external resources are not
+loaded or executed. This first increment archives the requested GLB only, not provider thumbnails,
+alternate formats or separate PBR maps. Retexture archival needs its own gate before paid texturing.
+
+Files use content hashes and exclusive atomic publication. The sanitized completion manifest is
+written last and binds approval/spec/request/task/export identities; it excludes raw provider
+messages and signed URLs and explicitly marks evidence incomplete and runtime admission unreviewed.
+Existing complete archives are hash-verified without provider access. Corrupt/missing objects,
+conflicting manifests and symlink/junction/hard-link redirection fail closed without overwriting.
+Interrupted writes may leave `.pending-*` files for operator inspection. File data is flushed;
+directory flush is available on POSIX but not through Node on Windows. Preserve/back up archives
+separately from the active credit ledger; never restore an old ledger to recover an export.
+[Meshy API outputs expire after three days outside Enterprise](https://docs.meshy.ai/en/api/asset-retention).
+
 The quarantine-only provenance descriptor records task IDs and content identities, including an
 input task for retexturing. Incomplete rights, plan, terms, reference and export evidence cannot
-become a licensed runtime asset. Actual artifact download/hash verification and generation gating
-must still be connected before the first paid submission.
+become a licensed runtime asset. Reference/rights/terms/plan byte verification and paid-generation
+gating must still be connected before the first paid submission. An export archive is not complete
+candidate provenance, and a Pro receipt alone does not establish reference or aircraft-design rights.
 
 Recovery is fail-closed: **do not delete or rewind the ledger**. An incomplete/corrupt store, lost
 response or capacity limit requires reconciliation, not a fresh `init`. Preserve its journal too.
