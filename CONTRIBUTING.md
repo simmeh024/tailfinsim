@@ -78,6 +78,25 @@ than recomputing or discarding it.
 
 ---
 
+## End-to-end coverage
+
+Every player-facing feature adds **at least one** end-to-end test for its critical happy
+path. “Critical” means the shortest, unconfigured route by which a player receives the
+value the feature exists to deliver. This is a floor, not a ceiling: add another journey
+when a distinct player value or boundary makes it worthwhile.
+
+Put a new journey in the nightly browser suite by default. The PR suite has a fixed,
+small budget: add a journey there only when it breaks silently and often enough to justify
+gating every merge. State the chosen coverage, or `none` for a non-player-facing change,
+in the issue acceptance criteria and the pull request prompt.
+
+Keep business logic out of the browser. Calculation assertions, aircraft/airport or other
+permutation matrices, and refactor-sensitive implementation details belong in focused unit
+or integration tests—especially `packages/sim`, where they stay deterministic, fast and
+precise.
+
+---
+
 ## The authorization matrix
 
 [`docs/authorization-matrix.md`](docs/authorization-matrix.md) is the intended boundary for
