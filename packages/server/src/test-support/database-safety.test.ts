@@ -8,7 +8,7 @@ describe('the server test database guard', () => {
     expect(() => assertDisposableDatabaseUrl('')).not.toThrow();
   });
 
-  it.each(['tailfin_test', 'feature_ci', 'name%5Ftest'])(
+  it.each(['tailfin_test', 'tailfin_e2e_test', 'feature_ci', 'name%5Ftest'])(
     'allows the disposable database %s',
     (name) => {
       expect(() => assertDisposableDatabaseUrl(`postgres://localhost/${name}`)).not.toThrow();

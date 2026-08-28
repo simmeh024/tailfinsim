@@ -22,6 +22,7 @@ export default defineConfig({
   // Keep browser specs physically outside the Vitest projects.  The explicit
   // path makes the separation contractual rather than an accident of globs.
   testMatch: '**/*.spec.ts',
+  globalSetup: './packages/server/src/e2e/auth-setup.ts',
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 1 : undefined,
@@ -47,7 +48,7 @@ export default defineConfig({
   webServer: configuredBaseUrl
     ? undefined
     : {
-        command: 'node e2e/start-server.mjs',
+        command: 'pnpm exec tsx packages/server/src/e2e/prepare.ts && node e2e/start-server.mjs',
         url: `${baseURL}/healthz`,
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,
