@@ -183,6 +183,20 @@ export class MeshyRunStore {
     return this.update((state) => observeMeshyRunTask(state, task));
   }
 
+  /** Polls may race; repeated status/charge observations retain the first durable timestamp. */
+  observeProgress(task: MeshyTaskReceipt): MeshyRunState {
+    return this.update((state) => {
+      const before = state.tasks.find((entry) => entry.operationId === task.operationId);
+      if (
+        before?.taskId === task.taskId &&
+        before.status === task.status &&
+        before.consumedCredits === task.consumedCredits
+      )
+        return state;
+      return observeMeshyRunTask(state, task);
+    });
+  }
+
   select(taskId: string, evidenceSha256: string): MeshyRunState {
     return this.update((state) => selectMeshyRunCandidate(state, taskId, evidenceSha256));
   }

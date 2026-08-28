@@ -70,10 +70,28 @@ task/input-task IDs, generation date and content digests for the reference, righ
 plan evidence and untouched export. Missing artifacts stay explicit. A digest descriptor is not
 proof that bytes were downloaded or verified, and cannot become an accepted runtime asset.
 
-No generation transport, polling/downloader, candidate promotion or registry mutation is enabled
-by this decision. Those remain #791 follow-ups; reference authoring/selection belongs to #792 and
+The read-only `sync` follow-up recovers only already recorded Image-to-3D candidate IDs. It commits
+terminal charges before output retrieval, deduplicates status/charge updates inside the transaction,
+and never adopts an uncertain request. Task GETs have three attempts, 10-second deadlines and 64 KiB
+decoded bodies. Output GETs allow only HTTPS `assets.meshy.ai`, without credentials or redirects,
+with three attempts, 30-second deadlines and 64 MiB decoded GLBs. The container envelope is checked;
+no embedded/external resource is evaluated and no geometry/licence admission is implied.
+
+Archives are adjacent to the shared ledger. Unique temporary files are flushed, then hard-linked
+to immutable final names without replacement; the temporary link is removed. The sanitized manifest
+is published last. Existing blobs/manifests must match, or recovery fails closed. On Windows the
+file contents are flushed but Node cannot flush a directory; interrupted/missing/corrupt archives
+require inspection, never an automatic overwrite. POSIX also flushes the directory. A process crash
+can leave an orphan temporary link; preserve it for inspection. Duplicate polling cannot change an
+archived receipt's timestamp. Signed URLs remain ephemeral and no raw task JSON is persisted.
+
+No paid generation transport, candidate promotion or registry mutation is enabled by this decision.
+Complete provenance and paid orchestration remain #791 follow-ups; authoring/selection belongs to #792 and
 admission/licensing to #793. Paid submission must validate actual reference/evidence bytes and
 fresh provider pricing before using a durable reservation.
+Serialize paid candidates until prior charges are terminal: nonterminal `consumed_credits` is only
+an observation and the ledger does not certify its final value. Separate texture maps, thumbnails
+and retexture outputs are outside this GLB-only recovery increment.
 
 ## Recovery and limitations
 

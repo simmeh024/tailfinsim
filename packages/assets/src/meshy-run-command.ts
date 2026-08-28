@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { canonicalJson } from './canonical';
 import { MeshyGenerationSpec, meshyCreditExposure, meshySpecIdentity } from './meshy';
 import { checkMeshyAccount } from './meshy-account';
+import { meshyArchiveDirectory, syncMeshyCandidate } from './meshy-archive';
 import { readBoundedMeshyInput } from './meshy-preflight';
 import { assertMeshyRunCap, meshyRunApprovalIdentity } from './meshy-run';
 import { MeshyRunStore, meshyRunDatabasePath } from './meshy-store';
@@ -11,6 +12,7 @@ export const MESHY_RUN_USAGE =
   'Usage: assets:meshy-run init --approval-file PATH\n' +
   '       assets:meshy-run status\n' +
   '       assets:meshy-run account --max-credits 1..40 [--key-file PATH]\n' +
+  '       assets:meshy-run sync --operation candidate-1..4 --max-credits 1..40 [--key-file PATH]\n' +
   'One immutable first-run approval per repository. Account is GET-only. No generation command exists.\n';
 
 export function parseMeshyRunArguments(argv: readonly string[]) {
@@ -18,14 +20,16 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
   if (args.length === 1 && args[0] === '--help')
     return { command: 'help' as const, options: new Map<string, string>() };
   const command = args[0];
-  if (!['init', 'status', 'account'].includes(command ?? ''))
+  if (!['init', 'status', 'account', 'sync'].includes(command ?? ''))
     throw new Error('Unknown Meshy run command.');
   const allowed =
     command === 'init'
       ? ['--approval-file']
-      : command === 'account'
-        ? ['--max-credits', '--key-file']
-        : [];
+      : command === 'sync'
+        ? ['--operation', '--max-credits', '--key-file']
+        : command === 'account'
+          ? ['--max-credits', '--key-file']
+          : [];
   const options = new Map<string, string>();
   for (let index = 1; index < args.length; index += 2) {
     const key = args[index];
@@ -38,11 +42,13 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
   if (command === 'init' && !options.has('--approval-file'))
     throw new Error('Approval file is required.');
   if (
-    command === 'account' &&
+    (command === 'account' || command === 'sync') &&
     !/^(?:[1-9]|[1-3][0-9]|40)$/.test(options.get('--max-credits') ?? '')
   ) {
     throw new Error('The approved whole-number ceiling is required.');
   }
+  if (command === 'sync' && !/^candidate-[1-4]$/.test(options.get('--operation') ?? ''))
+    throw new Error('One recorded candidate operation is required.');
   return { command, options };
 }
 
@@ -63,7 +69,8 @@ export async function runMeshyRunCommand(
       ),
     ) as unknown,
   );
-  const store = new MeshyRunStore(meshyRunDatabasePath(repository));
+  const database = meshyRunDatabasePath(repository);
+  const store = new MeshyRunStore(database);
   if (command === 'init') {
     const approval = JSON.parse(
       await readBoundedMeshyInput(options.get('--approval-file')!, 8_192),
@@ -99,5 +106,18 @@ export async function runMeshyRunCommand(
     keyFile === undefined
       ? (environment.MESHY_API_KEY ?? '')
       : await readBoundedMeshyInput(keyFile, 4_096);
+  if (command === 'sync')
+    return canonicalJson({
+      ...(await syncMeshyCandidate(
+        store,
+        meshyArchiveDirectory(database),
+        spec,
+        maxCredits,
+        options.get('--operation')!,
+        credential,
+      )),
+      creditsSpentByThisCommand: 0,
+      generationAvailable: false,
+    });
   return canonicalJson(await checkMeshyAccount(state, spec, maxCredits, credential));
 }
