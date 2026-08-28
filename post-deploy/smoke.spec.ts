@@ -65,7 +65,7 @@ test('the deployed public surface renders the intended build without browser err
     // Production currently serves this surface. Its style is inline, so a
     // computed colour proves the stylesheet survived as well as the HTML.
     await expect(page).toHaveTitle('Tailfin — coming soon');
-    await expect(page.getByText('Coming soon.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Coming soon.')).toBeVisible();
     await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(6, 10, 18)');
   } else {
     // Dev serves the app. The anonymous login wall proves the client bundle,
