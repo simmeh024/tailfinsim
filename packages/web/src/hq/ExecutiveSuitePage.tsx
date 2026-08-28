@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useOutletContext } from 'react-router';
 
 import {
   aggregateExecutiveBoosts,
@@ -9,13 +9,7 @@ import {
   type ExecutiveFloorState,
 } from '@tailfin/shared';
 
-import {
-  dismissExecutive,
-  fetchExecutiveFloor,
-  hireExecutive,
-  unlockExecutiveFloor,
-  unlockExecutiveOffice,
-} from './api';
+import { dismissExecutive, fetchExecutiveFloor, hireExecutive } from './api';
 import { CSUITE_CANDIDATES, csuiteCandidate, type CSuiteCandidate } from './csuite-roster';
 import {
   msUntilRefresh,
@@ -23,31 +17,35 @@ import {
   rotatingExecutiveRoster,
   ROSTER_SIZE,
 } from './csuite-rotation';
-import { ExecutiveFloorPlan } from './ExecutiveFloorPlan';
 import { formatSalary } from './hq-roster';
+import { executiveOfficeLabel } from './HqLayoutPanel';
+import { StaffExecDrawer } from './StaffExecDrawer';
 
+import type { OwnAirlineShellContext } from '../shell/AppShell';
 import type { ReactNode } from 'react';
 
 /**
  * The C-Suite — staffing the executive floor's offices (§9.1 follow-up, Phase 2/3).
  *
- * The executive floor's counterpart to Headquarters. An executive office is
- * **generic**, so there is no seat to match — any candidate goes into any open
- * office, and an airline can employ as many executives as it has **opened
- * offices**. Past that, the remaining candidates are **locked** — greyed with a
- * padlock — until another office opens.
+ * The executive floor's counterpart to Headquarters, and it works the same way. The
+ * floor plan lives in the shell's **context panel** (shared with the Headquarters
+ * page, defaulting to the executive floor here); this page is the roster beside it.
+ * An executive office is **generic** — any candidate fits any open office — so a
+ * hire consumes a free office, and with none free the rest of the shortlist locks.
  *
- * The market is not the whole roster at once: it shows a **rotating ten**,
- * reshuffled every 24 hours (see {@link rotatingExecutiveRoster}), with a live
- * countdown to the next turnover at the top of the page. Anyone already hired
- * stays on the page even when they rotate out of the shortlist, so you can always
- * let them go. Each card carries the executive's role and the one small standing
- * **boost** they bring; the boosts an airline currently employs are summed into
- * the "Boosts in play" panel.
+ * The market is a **rotating ten**, reshuffled every 24 hours, with a live countdown
+ * at the top. Each card carries the executive's role and one small standing **boost**;
+ * the boosts an airline currently employs are summed into "Boosts in play".
  *
- * The salary and the boost on each card come from the shared catalogue by id — the
- * same the server bills and the worker will apply — so the client only renders
- * them, it does not assert them.
+ * ## The floor plan is the panel, and hiring works from either
+ *
+ * Like the Headquarters page, the interactive floor plan is the shell's context
+ * panel: clicking an executive office opens this page's staffing drawer on it —
+ * hire into an empty office, let an occupant go — so the plan is a second way in
+ * alongside the roster. The executive-floor state is owned by the shell, so a
+ * change made from the plan and one made from the roster land on the same object.
+ * Rendered on its own in a test the shell context is null, so the page falls back
+ * to its own fetch and local selection and everything still works.
  */
 
 /** A whole-seconds HH:MM:SS countdown from a millisecond span. */
@@ -70,57 +68,68 @@ function formatAggregatedBoost(boost: AggregatedExecutiveBoost): string {
 }
 
 export function ExecutiveSuitePage(): ReactNode {
-  const [floor, setFloor] = useState<ExecutiveFloorState | null>(null);
-  const [loading, setLoading] = useState(true);
+  const shell = useOutletContext<OwnAirlineShellContext | null>();
+
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  // The executive floor's own open-floor / open-office actions, now driven from
-  // this page rather than the shell's context panel.
-  const [execBusy, setExecBusy] = useState(false);
-  const [execError, setExecError] = useState<string | null>(null);
+
+  // The executive-floor state is the shell's when there is one (so the plan in the
+  // panel and this roster share it); on its own — a component test — the page owns
+  // it, fetching once and keeping local selection.
+  const [localFloor, setLocalFloor] = useState<ExecutiveFloorState | null>(null);
+  const [localLoading, setLocalLoading] = useState(true);
+  const [localSelected, setLocalSelected] = useState<number | null>(null);
+
+  const floor = shell ? shell.execFloor : localFloor;
+  const loading = shell ? shell.execFloor === null : localLoading;
+  const selectedExec = shell ? shell.selectedExecOffice : localSelected;
+  const setSelectedExec = shell ? shell.selectExecOffice : setLocalSelected;
 
   useEffect(() => {
+    if (shell) return; // The shell owns the fetch when it is present.
     let live = true;
     void fetchExecutiveFloor().then((state) => {
       if (!live) return;
-      setFloor(state);
-      setLoading(false);
+      setLocalFloor(state);
+      setLocalLoading(false);
     });
     return () => {
       live = false;
     };
-  }, []);
+  }, [shell]);
 
-  // The countdown ticks once a second; when it crosses a 24-hour boundary the day
-  // index changes and the shortlist below is recomputed from the new `now`.
+  // The countdown ticks once a second; crossing a 24-hour boundary changes the day
+  // index and the shortlist below is recomputed from the new `now`.
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
 
-  const act = useCallback(
-    async (candidateId: string, run: () => ReturnType<typeof hireExecutive>): Promise<void> => {
-      setPending(candidateId);
-      setError(null);
-      const outcome = await run();
-      if (outcome.ok) setFloor(outcome.state);
-      else setError(outcome.failure.message);
-      setPending(null);
+  // Leaving the page drops any office the plan had selected, so returning does not
+  // reopen the drawer on a stale pick. Selection lives in the shell, which outlives
+  // this page, so the clear is explicit.
+  useEffect(() => () => setSelectedExec(null), [setSelectedExec]);
+
+  const syncFloor = useCallback(
+    (state: ExecutiveFloorState) => {
+      if (shell) shell.replaceExecFloor(state);
+      else setLocalFloor(state);
     },
-    [],
+    [shell],
   );
 
-  const runExec = useCallback(
-    async (run: () => ReturnType<typeof unlockExecutiveFloor>): Promise<void> => {
-      setExecBusy(true);
-      setExecError(null);
+  const act = useCallback(
+    async (id: string, run: () => ReturnType<typeof hireExecutive>): Promise<boolean> => {
+      setPending(id);
+      setError(null);
       const outcome = await run();
-      if (outcome.ok) setFloor(outcome.state);
-      else setExecError(outcome.failure.message);
-      setExecBusy(false);
+      if (outcome.ok) syncFloor(outcome.state);
+      else setError(outcome.failure.message);
+      setPending(null);
+      return outcome.ok;
     },
-    [],
+    [syncFloor],
   );
 
   const hiredById = new Map((floor?.hires ?? []).map((hire) => [hire.candidateId, hire]));
@@ -147,6 +156,30 @@ export function ExecutiveSuitePage(): ReactNode {
     () => aggregateExecutiveBoosts((floor?.hires ?? []).map((hire) => hire.candidateId)),
     [floor?.hires],
   );
+
+  // The drawer opened from the plan: which office, who is in it, and who is free
+  // to hire (today's shortlist minus everyone already employed).
+  const occupant = selectedExec !== null && floor ? (floor.hires[selectedExec] ?? null) : null;
+  const drawerCandidates = useMemo<CSuiteCandidate[]>(() => {
+    const hiredIds = new Set((floor?.hires ?? []).map((hire) => hire.candidateId));
+    return rotatingExecutiveRoster(CSUITE_CANDIDATES, dayIndex, ROSTER_SIZE).filter(
+      (candidate) => !hiredIds.has(candidate.id),
+    );
+  }, [dayIndex, floor?.hires]);
+
+  const hireInto = useCallback(
+    async (candidate: CSuiteCandidate): Promise<void> => {
+      const ok = await act(candidate.id, () => hireExecutive(candidate.id));
+      if (ok) setSelectedExec(null);
+    },
+    [act, setSelectedExec],
+  );
+
+  const removeOccupant = useCallback(async (): Promise<void> => {
+    if (occupant === null) return;
+    const ok = await act(occupant.candidateId, () => dismissExecutive(occupant.candidateId));
+    if (ok) setSelectedExec(null);
+  }, [act, occupant, setSelectedExec]);
 
   const countdown = formatCountdown(msUntilRefresh(now));
 
@@ -187,121 +220,119 @@ export function ExecutiveSuitePage(): ReactNode {
         </div>
       </header>
 
-      <div className="csuite-page__layout">
-        <div className="csuite-page__main">
-          {boostsInPlay.length > 0 && (
-            <section className="csuite-boosts" aria-label="Boosts in play">
-              <p className="csuite-boosts__title">Boosts in play</p>
-              <ul className="csuite-boosts__list">
-                {boostsInPlay.map((boost) => (
-                  <li key={boost.lever} className="csuite-boosts__chip">
-                    {formatAggregatedBoost(boost)}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
+      {boostsInPlay.length > 0 && (
+        <section className="csuite-boosts" aria-label="Boosts in play">
+          <p className="csuite-boosts__title">Boosts in play</p>
+          <ul className="csuite-boosts__list">
+            {boostsInPlay.map((boost) => (
+              <li key={boost.lever} className="csuite-boosts__chip">
+                {formatAggregatedBoost(boost)}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
-          {error !== null && (
-            <p className="hq-page__error" role="alert">
-              {error}
-            </p>
-          )}
+      {error !== null && (
+        <p className="hq-page__error" role="alert">
+          {error}
+        </p>
+      )}
 
-          {!loading && !floorUnlocked && (
-            <p className="hq-page__plan-hint">
-              Your executive floor is not open yet. Open it on the floor plan beside the roster,
-              then open an office or two before hiring your C-Suite.
-            </p>
-          )}
+      {!loading && !floorUnlocked && (
+        <p className="hq-page__plan-hint">
+          Your executive floor is not open yet. Open it from the floor plan to the right, then open
+          an office or two before hiring your C-Suite.
+        </p>
+      )}
 
-          {!loading && floorUnlocked && officesUnlocked === 0 && (
-            <p className="hq-page__plan-hint">
-              Your executive floor is open, but it has no offices yet. Open an office on the floor
-              plan beside the roster, then hire someone into it.
-            </p>
-          )}
+      {!loading && floorUnlocked && officesUnlocked === 0 && (
+        <p className="hq-page__plan-hint">
+          Your executive floor is open, but it has no offices yet. Open an office from the floor
+          plan to the right, then hire someone into it — from the plan, or from the roster below.
+        </p>
+      )}
 
-          <div className="hq-roster" aria-busy={loading}>
-            <section className="hq-seat" aria-label="C-Suite market">
-              <ul className="hq-grid">
-                {shown.map((candidate: CSuiteCandidate) => {
-                  const isHired = hiredById.has(candidate.id);
-                  const locked = !isHired && freeOffices === 0;
-                  const given = candidate.name.split(' ')[0] ?? candidate.name;
-                  const busy = pending === candidate.id;
-                  return (
-                    <li
-                      key={candidate.id}
-                      className="hq-card"
-                      data-hired={isHired}
-                      data-locked={locked}
+      <div className="hq-roster" aria-busy={loading}>
+        <section className="hq-seat" aria-label="C-Suite market">
+          <ul className="hq-grid">
+            {shown.map((candidate: CSuiteCandidate) => {
+              const isHired = hiredById.has(candidate.id);
+              const locked = !isHired && freeOffices === 0;
+              const given = candidate.name.split(' ')[0] ?? candidate.name;
+              const busy = pending === candidate.id;
+              return (
+                <li
+                  key={candidate.id}
+                  className="hq-card"
+                  data-hired={isHired}
+                  data-locked={locked}
+                >
+                  <div className="hq-card__portrait" data-hired={isHired}>
+                    <img src={candidate.portrait} alt={candidate.name} loading="lazy" />
+                    {locked && (
+                      <span className="hq-card__lock" aria-hidden="true">
+                        🔒
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="hq-card__body">
+                    <p className="hq-card__name">{candidate.name}</p>
+                    <p className="hq-card__role">{candidate.role}</p>
+
+                    <p className="hq-card__boost" title={candidate.boost.description}>
+                      <span className="hq-card__boost-badge">{candidate.boost.label}</span>
+                      <span className="hq-card__boost-detail">{candidate.boost.description}</span>
+                    </p>
+
+                    <dl className="hq-card__meta">
+                      <div>
+                        <dt>Tier</dt>
+                        <dd>{candidate.tier}</dd>
+                      </div>
+                      <div>
+                        <dt>Salary</dt>
+                        <dd>{formatSalary(candidate.monthlySalaryMinor)}/mo</dd>
+                      </div>
+                    </dl>
+
+                    <button
+                      type="button"
+                      className="hq-card__action"
+                      aria-pressed={isHired}
+                      disabled={loading || busy || locked}
+                      onClick={() =>
+                        isHired
+                          ? void act(candidate.id, () => dismissExecutive(candidate.id))
+                          : void act(candidate.id, () => hireExecutive(candidate.id))
+                      }
                     >
-                      <div className="hq-card__portrait" data-hired={isHired}>
-                        <img src={candidate.portrait} alt={candidate.name} loading="lazy" />
-                        {locked && (
-                          <span className="hq-card__lock" aria-hidden="true">
-                            🔒
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="hq-card__body">
-                        <p className="hq-card__name">{candidate.name}</p>
-                        <p className="hq-card__role">{candidate.role}</p>
-
-                        <p className="hq-card__boost" title={candidate.boost.description}>
-                          <span className="hq-card__boost-badge">{candidate.boost.label}</span>
-                          <span className="hq-card__boost-detail">
-                            {candidate.boost.description}
-                          </span>
-                        </p>
-
-                        <dl className="hq-card__meta">
-                          <div>
-                            <dt>Tier</dt>
-                            <dd>{candidate.tier}</dd>
-                          </div>
-                          <div>
-                            <dt>Salary</dt>
-                            <dd>{formatSalary(candidate.monthlySalaryMinor)}/mo</dd>
-                          </div>
-                        </dl>
-
-                        <button
-                          type="button"
-                          className="hq-card__action"
-                          aria-pressed={isHired}
-                          disabled={loading || busy || locked}
-                          onClick={() =>
-                            isHired
-                              ? void act(candidate.id, () => dismissExecutive(candidate.id))
-                              : void act(candidate.id, () => hireExecutive(candidate.id))
-                          }
-                        >
-                          {isHired ? 'Let go' : locked ? 'No free office' : `Hire ${given}`}
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          </div>
-        </div>
-
-        {floor !== null && (
-          <aside className="csuite-page__floor" aria-label="Executive floor">
-            <ExecutiveFloorPlan
-              execState={floor}
-              busy={execBusy}
-              error={execError}
-              onUnlockFloor={() => void runExec(() => unlockExecutiveFloor())}
-              onOpenOffice={() => void runExec(() => unlockExecutiveOffice())}
-            />
-          </aside>
-        )}
+                      {isHired ? 'Let go' : locked ? 'No free office' : `Hire ${given}`}
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
       </div>
+
+      {selectedExec !== null && floor !== null && (
+        <StaffExecDrawer
+          officeName={executiveOfficeLabel(selectedExec)}
+          occupant={
+            occupant !== null
+              ? { candidateId: occupant.candidateId, candidateName: occupant.candidateName }
+              : null
+          }
+          candidates={drawerCandidates}
+          busy={pending !== null}
+          onHire={(candidate) => void hireInto(candidate)}
+          onRemove={() => void removeOccupant()}
+          onClose={() => setSelectedExec(null)}
+        />
+      )}
     </section>
   );
 }

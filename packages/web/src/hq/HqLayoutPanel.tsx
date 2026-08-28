@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import {
   EXECUTIVE_OFFICE_COUNT,
@@ -10,11 +10,11 @@ import {
   type OfficeStateResponse,
 } from '@tailfin/shared';
 
-import { fetchExecutiveFloor, unlockExecutiveFloor, unlockExecutiveOffice } from './api';
 import floor10 from './assets/floorplan/hq-floor-10.webp';
 import floor6 from './assets/floorplan/hq-floor-6.webp';
 import floor8 from './assets/floorplan/hq-floor-8.webp';
-import { execFloorImage } from './exec-floorplan';
+import { csuiteCandidate } from './csuite-roster';
+import { EXEC_FLOOR_ASPECT, execFloorImage } from './exec-floorplan';
 import { candidateById } from './hq-roster';
 
 import type { ReactNode } from 'react';
@@ -74,6 +74,32 @@ const SEAT_GRID: readonly { seat: OfficeSeatId; row: number; col: 'left' | 'righ
   { seat: 'neutral-4', row: 4, col: 'right' },
 ];
 
+/**
+ * The executive floor's ten rooms, in the order the art furnishes them as offices
+ * open (top-right first, then filling down the two columns). Office index `i`
+ * (0-based) sits here, so when `officesUnlocked` is 3 the three open rooms line up
+ * with the three furnished rooms in `exec-floor-3`.
+ */
+const EXEC_COLUMN_X: Record<'left' | 'right', number> = { left: 0.22, right: 0.78 };
+const EXEC_ROW_Y: readonly number[] = [0.1, 0.285, 0.465, 0.645, 0.83];
+const EXEC_SEAT_GRID: readonly { row: number; col: 'left' | 'right' }[] = [
+  { row: 0, col: 'right' },
+  { row: 0, col: 'left' },
+  { row: 1, col: 'left' },
+  { row: 1, col: 'right' },
+  { row: 2, col: 'left' },
+  { row: 2, col: 'right' },
+  { row: 3, col: 'left' },
+  { row: 3, col: 'right' },
+  { row: 4, col: 'left' },
+  { row: 4, col: 'right' },
+];
+
+/** The stable label for an executive office by its index, e.g. "Executive Office 03". */
+export function executiveOfficeLabel(index: number): string {
+  return `Executive Office ${String(index + 1).padStart(2, '0')}`;
+}
+
 /** The offices in floor order — the identity behind "Office 01 … Office 10". */
 export const OFFICE_SEQUENCE: readonly OfficeSeatId[] = SEAT_GRID.map((entry) => entry.seat);
 
@@ -115,6 +141,23 @@ interface HqLayoutPanelProps {
   hoveredSeat?: OfficeSeatId | null;
   /** Told when a room is hovered or focused, so a card can highlight in step. */
   onHoverSeat?: (seat: OfficeSeatId | null) => void;
+  /** Which floor the pager starts on — the C-Suite page opens on the executive floor. */
+  initialFloor?: 'ground' | 'executive';
+  /**
+   * The executive floor's state, owned by the shell (like {@link office}) so the
+   * C-Suite roster and this plan never disagree. Absent (undefined) means no
+   * executive floor is wired — no pager, ground floor only — which is how the bare
+   * overview renders in a test.
+   */
+  execFloor?: ExecutiveFloorState | null;
+  /** Open the executive floor (a paid unlock the shell performs). */
+  onUnlockExecFloor?: () => Promise<ExpandResult>;
+  /** Open the next executive office (a paid unlock the shell performs). */
+  onOpenExecOffice?: () => Promise<ExpandResult>;
+  /** The executive office index the parent is managing — its room stays selected. */
+  selectedExecOffice?: number | null;
+  /** Make the executive rooms interactive: click an office to hire into or fire from it. */
+  onSelectExecOffice?: (index: number | null) => void;
 }
 
 export function HqLayoutPanel({
@@ -124,48 +167,39 @@ export function HqLayoutPanel({
   selectedSeat = null,
   hoveredSeat = null,
   onHoverSeat,
+  initialFloor = 'ground',
+  execFloor,
+  onUnlockExecFloor,
+  onOpenExecOffice,
+  selectedExecOffice = null,
+  onSelectExecOffice,
 }: HqLayoutPanelProps): ReactNode {
   const [expanding, setExpanding] = useState(false);
   const [expandError, setExpandError] = useState<string | null>(null);
 
-  // The executive floor is a second floor reached by the pager. It manages its
-  // own state here — fetched once, refreshed on an unlock — so the ground floor
-  // and the shell that owns this panel need to know nothing about it.
-  const [floor, setFloor] = useState<'ground' | 'executive'>('ground');
-  const [execState, setExecState] = useState<ExecutiveFloorState | null>(null);
+  // The executive floor is a second floor reached by the pager. Its state is owned
+  // by the shell and passed in, so a hire made from the C-Suite roster and one made
+  // from this plan land on the same object.
+  const [floor, setFloor] = useState<'ground' | 'executive'>(initialFloor);
+  const execState: ExecutiveFloorState | null = execFloor ?? null;
   const [execBusy, setExecBusy] = useState(false);
   const [execError, setExecError] = useState<string | null>(null);
 
-  // The executive floor is only managed on the interactive Headquarters panel;
-  // the read-only overview (and every bare render in a test) never reaches for it,
-  // so it does no network work where the feature cannot be used anyway.
-  const interactivePanel = onSelectSeat !== undefined;
-  useEffect(() => {
-    if (!interactivePanel) return;
-    let live = true;
-    void fetchExecutiveFloor().then((state) => {
-      if (live) setExecState(state);
-    });
-    return () => {
-      live = false;
-    };
-  }, [interactivePanel]);
-
   const unlockFloor = async (): Promise<void> => {
+    if (onUnlockExecFloor === undefined) return;
     setExecBusy(true);
     setExecError(null);
-    const result = await unlockExecutiveFloor();
-    if (result.ok) setExecState(result.state);
-    else setExecError(result.failure.message);
+    const result = await onUnlockExecFloor();
+    if (!result.ok) setExecError(result.message ?? 'Could not open the executive floor');
     setExecBusy(false);
   };
 
   const unlockOffice = async (): Promise<void> => {
+    if (onOpenExecOffice === undefined) return;
     setExecBusy(true);
     setExecError(null);
-    const result = await unlockExecutiveOffice();
-    if (result.ok) setExecState(result.state);
-    else setExecError(result.failure.message);
+    const result = await onOpenExecOffice();
+    if (!result.ok) setExecError(result.message ?? 'Could not open the office');
     setExecBusy(false);
   };
 
@@ -327,7 +361,7 @@ export function HqLayoutPanel({
           className="hq-layout__floor hq-layout__floor--exec"
           style={{
             backgroundImage: `url(${execFloorImage(execState.officesUnlocked)})`,
-            aspectRatio: '887 / 1774',
+            aspectRatio: EXEC_FLOOR_ASPECT,
           }}
         >
           {!execState.unlocked ? (
@@ -363,25 +397,94 @@ export function HqLayoutPanel({
               )}
             </div>
           ) : (
-            execState.nextOffice !== null && (
-              <div className="hq-exec-next">
-                <button
-                  type="button"
-                  className="hq-exec-next__btn"
-                  disabled={execBusy}
-                  onClick={() => void unlockOffice()}
-                >
-                  {execBusy
-                    ? 'Opening…'
-                    : `Open office ${String(execState.officesUnlocked + 1)} of ${String(EXECUTIVE_OFFICE_COUNT)} · ${MONEY.format(execState.nextOffice.costMinor / 100)}`}
-                </button>
-                {execError !== null && (
-                  <p className="hq-exec-gate__error" role="alert">
-                    {execError}
-                  </p>
-                )}
-              </div>
-            )
+            <>
+              {EXEC_SEAT_GRID.slice(0, execState.officesUnlocked).map((pos, index) => {
+                const hire = execState.hires[index];
+                const occupant =
+                  hire !== undefined ? (csuiteCandidate(hire.candidateId) ?? null) : null;
+                const interactive = onSelectExecOffice !== undefined;
+                const label = executiveOfficeLabel(index);
+                const num = String(index + 1).padStart(2, '0');
+                const style = {
+                  left: `${String((EXEC_COLUMN_X[pos.col] ?? 0.5) * 100)}%`,
+                  top: `${String((EXEC_ROW_Y[pos.row] ?? 0.5) * 100)}%`,
+                };
+
+                const inner =
+                  hire !== undefined ? (
+                    <>
+                      {occupant !== null && (
+                        <img
+                          className="hq-cell__avatar"
+                          src={occupant.portrait}
+                          alt={hire.candidateName}
+                        />
+                      )}
+                      <span className="hq-cell__name">{hire.candidateName}</span>
+                    </>
+                  ) : interactive ? (
+                    <span className="hq-cell__add" aria-hidden="true">
+                      + Hire
+                    </span>
+                  ) : (
+                    <span className="hq-cell__vacant">Vacant</span>
+                  );
+
+                if (interactive) {
+                  const state = hire !== undefined ? 'Staffed' : 'Vacant';
+                  const action =
+                    hire !== undefined ? 'Activate to manage.' : 'Activate to hire an executive.';
+                  return (
+                    <button
+                      key={index}
+                      type="button"
+                      className="hq-cell hq-cell--interactive"
+                      data-occupied={hire !== undefined}
+                      data-selected={selectedExecOffice === index}
+                      style={style}
+                      aria-label={`${label}, ${state}. ${action}`}
+                      aria-pressed={selectedExecOffice === index}
+                      onClick={() => onSelectExecOffice?.(index)}
+                    >
+                      <span className="hq-cell__num">{num}</span>
+                      {inner}
+                    </button>
+                  );
+                }
+
+                return (
+                  <div
+                    key={index}
+                    className="hq-cell"
+                    data-occupied={hire !== undefined}
+                    style={style}
+                    title={hire !== undefined ? `${hire.candidateName} — ${label}` : label}
+                  >
+                    {inner}
+                  </div>
+                );
+              })}
+
+              {execState.nextOffice !== null && (
+                <div className="hq-exec-next">
+                  <button
+                    type="button"
+                    className="hq-exec-next__btn"
+                    disabled={execBusy}
+                    onClick={() => void unlockOffice()}
+                  >
+                    {execBusy
+                      ? 'Opening…'
+                      : `Open office ${String(execState.officesUnlocked + 1)} of ${String(EXECUTIVE_OFFICE_COUNT)} · ${MONEY.format(execState.nextOffice.costMinor / 100)}`}
+                  </button>
+                  {execError !== null && (
+                    <p className="hq-exec-gate__error" role="alert">
+                      {execError}
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

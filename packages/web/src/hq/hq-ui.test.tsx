@@ -1,10 +1,16 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { officeCandidate, type OfficeSeatId, type OfficeStateResponse } from '@tailfin/shared';
+import {
+  officeCandidate,
+  type ExecutiveFloorState,
+  type OfficeSeatId,
+  type OfficeStateResponse,
+} from '@tailfin/shared';
 
+import { fetchExecutiveFloor, unlockExecutiveFloor, unlockExecutiveOffice } from './api';
 import { HeadquartersPage } from './HeadquartersPage';
 import { candidatesForRole, HQ_CANDIDATES, HQ_ROLES, SPECIALIST_CANDIDATES } from './hq-roster';
 import { HqLayoutPanel, type ExpandResult } from './HqLayoutPanel';
@@ -25,6 +31,29 @@ import type { ReactNode } from 'react';
 function ShellHarness({ onExpand }: { onExpand?: () => Promise<ExpandResult> }): ReactNode {
   const [office, setOffice] = useState<OfficeStateResponse | null>(null);
   const [selectedOffice, setSelectedOffice] = useState<OfficeSeatId | null>(null);
+  // The shell owns the executive floor; the harness mirrors that so the panel's
+  // pager and unlocks behave exactly as they do in the app.
+  const [execFloor, setExecFloor] = useState<ExecutiveFloorState | null>(null);
+  const [selectedExecOffice, setSelectedExecOffice] = useState<number | null>(null);
+  useEffect(() => {
+    void fetchExecutiveFloor().then(setExecFloor);
+  }, []);
+  const onUnlockExecFloor = async (): Promise<ExpandResult> => {
+    const outcome = await unlockExecutiveFloor();
+    if (outcome.ok) {
+      setExecFloor(outcome.state);
+      return { ok: true };
+    }
+    return { ok: false, message: outcome.failure.message };
+  };
+  const onOpenExecOffice = async (): Promise<ExpandResult> => {
+    const outcome = await unlockExecutiveOffice();
+    if (outcome.ok) {
+      setExecFloor(outcome.state);
+      return { ok: true };
+    }
+    return { ok: false, message: outcome.failure.message };
+  };
   const ctx: OwnAirlineShellContext = {
     ownAirline: null,
     ownAirlineLoading: false,
@@ -36,6 +65,11 @@ function ShellHarness({ onExpand }: { onExpand?: () => Promise<ExpandResult> }):
     reloadOffice: () => Promise.resolve(),
     selectedOffice,
     selectOffice: setSelectedOffice,
+    execFloor,
+    replaceExecFloor: setExecFloor,
+    reloadExecFloor: () => Promise.resolve(),
+    selectedExecOffice,
+    selectExecOffice: setSelectedExecOffice,
   };
   return (
     <>
@@ -44,6 +78,11 @@ function ShellHarness({ onExpand }: { onExpand?: () => Promise<ExpandResult> }):
         onExpand={onExpand}
         onSelectSeat={setSelectedOffice}
         selectedSeat={selectedOffice}
+        execFloor={execFloor}
+        onUnlockExecFloor={onUnlockExecFloor}
+        onOpenExecOffice={onOpenExecOffice}
+        selectedExecOffice={selectedExecOffice}
+        onSelectExecOffice={setSelectedExecOffice}
       />
       <Outlet context={ctx} />
     </>
