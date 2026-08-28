@@ -3,12 +3,15 @@ import { useState } from 'react';
 import {
   AIRLINE_LOGO_SHAPES,
   AIRLINE_LOGO_SYMBOLS,
+  defaultCustomDesign,
   type AirlineLogo,
+  type AirlineLogoCustomDesign,
   type AirlineLogoShape,
   type AirlineLogoSymbol,
 } from '@tailfin/shared';
 
 import { AirlineLogoEmblem } from './AirlineLogoEmblem';
+import { CustomSymbolDesigner } from './CustomSymbolDesigner';
 
 import type { ReactNode } from 'react';
 
@@ -75,6 +78,9 @@ export function LogoEditor({
   const [lastSymbol, setLastSymbol] = useState<AirlineLogoSymbol>(
     value.mark.kind === 'symbol' ? value.mark.symbol : 'wings',
   );
+  const [lastCustom, setLastCustom] = useState<AirlineLogoCustomDesign>(
+    value.mark.kind === 'custom' ? value.mark.custom : defaultCustomDesign('grid'),
+  );
 
   const set = (patch: Partial<AirlineLogo>): void => onChange({ ...value, ...patch });
 
@@ -118,6 +124,13 @@ export function LogoEditor({
             >
               Symbol
             </button>
+            <button
+              type="button"
+              aria-pressed={value.mark.kind === 'custom'}
+              onClick={() => set({ mark: { kind: 'custom', custom: lastCustom } })}
+            >
+              Custom
+            </button>
           </div>
 
           {value.mark.kind === 'monogram' ? (
@@ -139,7 +152,7 @@ export function LogoEditor({
                 }}
               />
             </div>
-          ) : (
+          ) : value.mark.kind === 'symbol' ? (
             <div className="logo-editor__symbols" role="group" aria-label="Symbol">
               {AIRLINE_LOGO_SYMBOLS.map((symbol) => {
                 const selected = value.mark.kind === 'symbol' && value.mark.symbol === symbol;
@@ -164,6 +177,15 @@ export function LogoEditor({
                 );
               })}
             </div>
+          ) : (
+            <CustomSymbolDesigner
+              value={value.mark.custom}
+              color={value.foreground}
+              onChange={(custom) => {
+                setLastCustom(custom);
+                set({ mark: { kind: 'custom', custom } });
+              }}
+            />
           )}
         </fieldset>
 

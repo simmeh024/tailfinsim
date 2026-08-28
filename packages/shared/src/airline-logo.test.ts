@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { AirlineLogo, airlineLogoEquals, defaultAirlineLogo } from './airline-logo';
+import {
+  AirlineLogo,
+  AirlineLogoCustomDesign,
+  airlineLogoEquals,
+  CUSTOM_GRID_SIZE,
+  defaultAirlineLogo,
+  defaultCustomDesign,
+} from './airline-logo';
 
 /**
  * The brand logo spec (§15/§16).
@@ -77,5 +84,94 @@ describe('airlineLogoEquals', () => {
     expect(airlineLogoEquals(BASE, { ...BASE, mark: { kind: 'symbol', symbol: 'star' } })).toBe(
       false,
     );
+  });
+});
+
+describe('the custom symbol design', () => {
+  const grid = '1'.repeat(CUSTOM_GRID_SIZE * CUSTOM_GRID_SIZE);
+
+  it('accepts a valid grid, shapes and path, inside AirlineLogo', () => {
+    const base = {
+      shape: 'roundel',
+      background: '#111111',
+      foreground: '#ffffff',
+      accent: '#e6b800',
+    };
+    for (const custom of [
+      { design: 'grid', cells: grid },
+      { design: 'shapes', shapes: [{ type: 'circle', cx: 0.5, cy: 0.5, r: 0.3 }] },
+      {
+        design: 'path',
+        points: [
+          { x: 0.1, y: 0.1 },
+          { x: 0.9, y: 0.9 },
+        ],
+        closed: false,
+      },
+    ]) {
+      expect(AirlineLogo.safeParse({ ...base, mark: { kind: 'custom', custom } }).success).toBe(
+        true,
+      );
+    }
+  });
+
+  it('refuses a wrong-length grid, an empty or over-full shape stack, and a one-point path', () => {
+    expect(
+      AirlineLogoCustomDesign.safeParse({ design: 'grid', cells: grid.slice(1) }).success,
+    ).toBe(false);
+    expect(AirlineLogoCustomDesign.safeParse({ design: 'shapes', shapes: [] }).success).toBe(false);
+    expect(
+      AirlineLogoCustomDesign.safeParse({
+        design: 'shapes',
+        shapes: Array.from({ length: 25 }, () => ({ type: 'circle', cx: 0.5, cy: 0.5, r: 0.2 })),
+      }).success,
+    ).toBe(false);
+    expect(
+      AirlineLogoCustomDesign.safeParse({ design: 'path', points: [{ x: 0, y: 0 }], closed: true })
+        .success,
+    ).toBe(false);
+  });
+
+  it('has a valid default for each tool', () => {
+    for (const design of ['grid', 'shapes', 'path'] as const) {
+      expect(AirlineLogoCustomDesign.safeParse(defaultCustomDesign(design)).success).toBe(true);
+      expect(defaultCustomDesign(design).design).toBe(design);
+    }
+  });
+
+  it('compares custom marks by value, independent of key order', () => {
+    const base = {
+      shape: 'square' as const,
+      background: '#111111',
+      foreground: '#ffffff',
+      accent: '#000000',
+    };
+    const a = {
+      ...base,
+      mark: {
+        kind: 'custom' as const,
+        custom: {
+          design: 'shapes' as const,
+          shapes: [{ type: 'rect' as const, cx: 0.5, cy: 0.5, w: 0.3, h: 0.3, rot: 0 }],
+        },
+      },
+    };
+    // Same value, object keys built in a different order — jsonb round-trips do this.
+    const b = {
+      ...base,
+      mark: {
+        kind: 'custom' as const,
+        custom: {
+          shapes: [{ h: 0.3, rot: 0, w: 0.3, cy: 0.5, cx: 0.5, type: 'rect' as const }],
+          design: 'shapes' as const,
+        },
+      },
+    };
+    expect(airlineLogoEquals(a, b)).toBe(true);
+    const c = {
+      ...base,
+      mark: { kind: 'custom' as const, custom: { design: 'grid' as const, cells: grid } },
+    };
+    expect(airlineLogoEquals(a, c)).toBe(false);
   });
 });
