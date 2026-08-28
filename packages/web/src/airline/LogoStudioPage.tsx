@@ -24,6 +24,7 @@ import {
 
 import { AirlineLogoEmblem } from './AirlineLogoEmblem';
 import { fetchOwnAirline, formatMinorUnits, patchOwnAirline } from './api';
+import tailPhoto from './assets/preview-tail.jpg';
 import { drawLayer, framePath, layerCenter, moveLayerContent, resolvePaint } from './logo-draw';
 
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
@@ -831,7 +832,11 @@ export function LogoStudioPage(): ReactNode {
           <h2>Live preview</h2>
           <div className="logo-studio__preview-row">
             <PreviewTail logo={logo} />
-            <PreviewTicket logo={logo} name={own.airline?.name ?? 'Airline'} />
+            <PreviewTicket
+              logo={logo}
+              name={own.airline?.name ?? 'Airline'}
+              code={own.airline?.iataCode ?? 'TF'}
+            />
             <PreviewAppIcon logo={logo} />
           </div>
         </section>
@@ -1177,19 +1182,60 @@ function PreviewTail({ logo }: { logo: ComposedAirlineLogo }): ReactNode {
   return (
     <figure className="logo-studio__preview-item">
       <div className="logo-studio__preview-tail">
-        <AirlineLogoEmblem logo={logo} size={56} label="Logo on a tail" />
+        <img className="logo-studio__preview-tail-photo" src={tailPhoto} alt="" />
+        <div className="logo-studio__preview-tail-logo">
+          <AirlineLogoEmblem logo={logo} size={30} label="Logo on an aircraft tail" />
+        </div>
       </div>
       <figcaption>Aircraft tail</figcaption>
     </figure>
   );
 }
 
-function PreviewTicket({ logo, name }: { logo: ComposedAirlineLogo; name: string }): ReactNode {
+function PreviewTicket({
+  logo,
+  name,
+  code,
+}: {
+  logo: ComposedAirlineLogo;
+  name: string;
+  code: string;
+}): ReactNode {
+  const bg = resolvePaint(logo.palette, logo.frameFill) ?? logo.palette.background;
+  const fg = logo.palette.mark;
   return (
     <figure className="logo-studio__preview-item">
       <div className="logo-studio__preview-ticket">
-        <AirlineLogoEmblem logo={logo} size={28} label="Logo on a ticket" />
-        <span className="logo-studio__preview-ticket-name">{name}</span>
+        <div className="logo-studio__ticket-main">
+          <div className="logo-studio__ticket-brand" style={{ background: bg, color: fg }}>
+            <AirlineLogoEmblem logo={logo} size={18} label="Logo on a boarding pass" />
+            <span className="logo-studio__ticket-airline">{name}</span>
+            <span className="logo-studio__ticket-tag">BOARDING PASS</span>
+          </div>
+          <div className="logo-studio__ticket-route">
+            <strong className="figure">JFK</strong>
+            <span aria-hidden="true">✈</span>
+            <strong className="figure">LHR</strong>
+          </div>
+          <dl className="logo-studio__ticket-meta">
+            <div>
+              <dt>Flight</dt>
+              <dd className="figure">{code}204</dd>
+            </div>
+            <div>
+              <dt>Gate</dt>
+              <dd className="figure">B12</dd>
+            </div>
+            <div>
+              <dt>Seat</dt>
+              <dd className="figure">24A</dd>
+            </div>
+          </dl>
+        </div>
+        <div className="logo-studio__ticket-stub">
+          <span className="logo-studio__ticket-barcode" aria-hidden="true" />
+          <span className="figure logo-studio__ticket-seat">24A</span>
+        </div>
       </div>
       <figcaption>Ticket</figcaption>
     </figure>

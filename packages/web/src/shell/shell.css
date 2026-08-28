@@ -1468,6 +1468,7 @@ body {
   display: flex;
   gap: var(--space-3);
   flex-wrap: wrap;
+  align-items: flex-start;
 }
 
 .logo-studio__preview-item {
@@ -1481,30 +1482,136 @@ body {
 }
 
 .logo-studio__preview-tail {
-  width: 4.5rem;
-  height: 4.5rem;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-md);
-  background: linear-gradient(135deg, var(--bg-raised), var(--bg-inset));
+  position: relative;
+  width: 5rem;
+  aspect-ratio: 508 / 612;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+}
+
+.logo-studio__preview-tail-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* The emblem sits on the vertical stabiliser, where a real livery carries it. */
+.logo-studio__preview-tail-logo {
+  position: absolute;
+  left: 48%;
+  top: 33%;
+  transform: translate(-50%, -50%);
+  line-height: 0;
+  filter: drop-shadow(0 1px 2px var(--bg-scrim));
 }
 
 .logo-studio__preview-ticket {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2);
+  align-items: stretch;
+  width: 11rem;
   border-radius: var(--radius-sm);
+  overflow: hidden;
   background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+  color: var(--text-primary);
 }
 
-.logo-studio__preview-ticket-name {
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-  max-width: 6rem;
+.logo-studio__ticket-main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.logo-studio__ticket-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 3px var(--space-2);
+}
+
+.logo-studio__ticket-airline {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 0.62rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.logo-studio__ticket-tag {
+  font-size: 0.5rem;
+  letter-spacing: 0.06em;
+  opacity: 0.85;
+}
+
+.logo-studio__ticket-route {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2) 0;
+  font-size: var(--text-sm);
+}
+
+.logo-studio__ticket-route span {
+  color: var(--text-muted);
+}
+
+.logo-studio__ticket-meta {
+  display: flex;
+  gap: var(--space-3);
+  margin: 2px 0 var(--space-1);
+  padding: 0 var(--space-2);
+}
+
+.logo-studio__ticket-meta div {
+  display: flex;
+  flex-direction: column;
+}
+
+.logo-studio__ticket-meta dt {
+  font-size: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.logo-studio__ticket-meta dd {
+  margin: 0;
+  font-size: 0.62rem;
+}
+
+.logo-studio__ticket-stub {
+  flex: none;
+  width: 2.6rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-left: 1px dashed var(--border-strong);
+  background: var(--bg-panel);
+}
+
+.logo-studio__ticket-barcode {
+  width: 100%;
+  height: 2.2rem;
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--text-primary) 0,
+    var(--text-primary) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+.logo-studio__ticket-seat {
+  font-size: 0.62rem;
+  font-weight: 700;
 }
 
 .logo-studio__preview-appicon {
