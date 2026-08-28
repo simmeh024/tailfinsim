@@ -115,11 +115,16 @@ explicit bounded local file. It returns only a presence/shape status, never the 
 or raw parser/OS errors. It has no network transport, writes, application endpoint or deployed
 Web/Worker credential. This reduces accidental disclosure, not workstation-compromise risk.
 
-The future Meshy client introduces paid external operations and untrusted model/texture downloads.
-Before enabling it, #791 must enforce explicit per-run approval, durable single-writer credit
-reservations, ambiguous-submission reconciliation, bounded downloads and immutable provenance.
+The separate read-only balance command requires an immutable local approval and exact ceiling.
+It GETs one fixed HTTPS endpoint with redirect, retry, timeout and decoded-size bounds; only a
+numeric balance projection escapes. ADR-0024 adds a Git-common SQLite ledger with serialized
+durable reservations and quarantine-only provenance descriptors. The key is never persisted.
+
+The future paid Meshy client introduces external spending and untrusted model/texture downloads.
+Before enabling it, #791 must connect the reservation gate to paid transport, ambiguous-submission
+reconciliation, fresh pricing checks, bounded downloads and verified immutable provenance bytes.
 Subscription or balance is not spending authority. Candidate quarantine is not licensing or
-distribution approval; #793 owns admission evidence. No live provider boundary is enabled here.
+distribution approval; #793 owns admission evidence. No paid provider boundary is enabled here.
 
 ### Boundaries that do not exist yet
 

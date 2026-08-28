@@ -60,12 +60,12 @@ export const MeshyOperationId = z.enum([
 export type MeshyOperationId = z.infer<typeof MeshyOperationId>;
 
 /**
- * A pure accounting kernel, NOT the durable execution ledger. M6-25 must add a
- * single-writer, write-ahead reservation store before any paid transport exists.
+ * A pure accounting kernel, NOT the durable execution ledger. The local run
+ * store wraps this with single-writer, write-ahead reservations before transport.
  * Uncertain submissions retain their full reservation; a smaller charge does
  * not free credit for a speculative retry. Overcharges remain observable.
  */
-const MeshyBudget = z
+export const MeshyBudget = z
   .object({
     specSha256: Sha256,
     maxCredits: MeshyCreditCeiling,
@@ -228,7 +228,7 @@ export function createMeshyPreflight(
       ...(ceiling === null ? ['explicit-credit-ceiling-needed'] : []),
       ...(ceiling !== null && ceiling < estimatedCredits ? ['plan-exceeds-proposed-ceiling'] : []),
       'explicit-user-approval-not-recorded-by-dry-run',
-      'live-client-and-durable-ledger-not-implemented',
+      'paid-generation-client-not-implemented',
       'api-pricing-and-balance-not-rechecked',
       'reference-image-rights-and-provenance-incomplete',
     ],

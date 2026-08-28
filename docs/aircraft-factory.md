@@ -39,10 +39,53 @@ authenticated it. Never pass a key value in arguments, commit it, or use a `VITE
 The pure accounting kernel reserves credits before an operation, rejects duplicate reservations
 and binds the budget to a specification hash. Unknown outcomes retain their reservation. A smaller
 reported charge does not release speculative retry capacity; an unexpected overcharge is retained
-and prevents further reservations. This is **not yet a durable ledger**: single-writer locking,
-atomic write-ahead storage, crash recovery, task reconciliation and explicit approval records must
-land under [#791](https://github.com/simmeh024/tailfinsim/issues/791) before any live client is enabled.
-No caller should infer cross-process/concurrency safety from this pure kernel.
+and prevents further reservations. This kernel alone is **not a durable ledger**; use the SQLite
+run wrapper below for reservations and receipts. Paid submission, provider reconciliation and
+immutable downloads remain [#791](https://github.com/simmeh024/tailfinsim/issues/791) follow-ups.
+
+## One approved run and a read-only account check
+
+The separate `assets:meshy-run` command stores one immutable first-run approval and supports a
+read-only provider balance check. It does **not** change `assets:meshy --dry-run`: that command
+still has no network activity, ignores run approval and always reports spending unavailable.
+
+```bash
+pnpm assets:meshy-run -- --help
+pnpm assets:meshy-run -- init --approval-file /private/approval.json
+pnpm assets:meshy-run -- status
+pnpm assets:meshy-run -- account --max-credits 40 --key-file /private/meshy.txt
+```
+
+Use `init` only after actual user approval. Its strict `MeshyRunApproval` input binds the consent
+artifact's SHA-256 and task ID, recorded timestamp, exact spec hash, first-run scope and approved
+integer ceiling. Preserve the original consent artifact privately; a fabricated approval JSON is
+not consent. Initialization refuses an existing store rather than replacing the allowance.
+Account checks must pass **the same** ceiling; `40` above is an example, not blanket approval.
+
+The store is in the Git common directory at `tailfin-aircraft-factory/a320neo-first-run.sqlite`,
+shared across this repository's linked worktrees. No CLI override can create another first run.
+Reservations commit before a future paid call, unknown outcomes block further reservations,
+task identities cannot be reused, and retexture reservation requires one recorded human selection
+after four terminal candidates. Selection records refer to evidence; the tooling cannot substitute
+for the actual human review. There is no generation or selection CLI yet.
+
+`account` makes only a fixed-host HTTPS GET, bounded to three attempts, ten seconds each and
+4 KiB decoded JSON. It reports authentication, numeric API balance and whether that balance covers
+the approved ceiling. No key, key path, raw provider error or signed output URL is emitted or
+stored. An explicit key file overrides `MESHY_API_KEY`; neither is installed on a server. The
+command spends zero generation credits and does not verify subscription/private-license terms.
+[Meshy balance contract](https://docs.meshy.ai/en/api/balance).
+
+The quarantine-only provenance descriptor records task IDs and content identities, including an
+input task for retexturing. Incomplete rights, plan, terms, reference and export evidence cannot
+become a licensed runtime asset. Actual artifact download/hash verification and generation gating
+must still be connected before the first paid submission.
+
+Recovery is fail-closed: **do not delete or rewind the ledger**. An incomplete/corrupt store, lost
+response or capacity limit requires reconciliation, not a fresh `init`. Preserve its journal too.
+Use a local filesystem, not a network share, and do not move an active run between clones/hosts.
+See [ADR-0024](adr/0024-local-aircraft-generation-authority.md) for durability, bounds, consent and
+workstation-trust limitations. No shared livery/asset admission or application database changes.
 
 ## Pinned strategy and vendor evidence
 
