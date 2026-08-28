@@ -1,6 +1,20 @@
-import type { AirlineLogo, AirlineLogoShape, AirlineLogoSymbol } from '@tailfin/shared';
+import { CUSTOM_GRID_SIZE } from '@tailfin/shared';
+import type {
+  AirlineLogo,
+  AirlineLogoCustomDesign,
+  AirlineLogoShape,
+  AirlineLogoSymbol,
+} from '@tailfin/shared';
 
 import type { ReactNode } from 'react';
+
+/** The mark occupies a centred square of the 0..100 emblem; designs are 0..1 within it. */
+export const MARK_INSET = 18;
+export const MARK_SPAN = 64;
+/** Map a normalised 0..1 mark coordinate into the emblem's pixel space. */
+export function markToEmblem(u: number): number {
+  return MARK_INSET + u * MARK_SPAN;
+}
 
 /**
  * Renders an {@link AirlineLogo} as inline SVG (§15/§16).
@@ -75,6 +89,119 @@ function symbolMark(symbol: AirlineLogoSymbol, color: string): ReactNode {
   }
 }
 
+/** Draw a player-designed custom mark (grid / shapes / path) into the mark region. */
+function customMark(design: AirlineLogoCustomDesign, color: string): ReactNode {
+  const t = markToEmblem;
+
+  if (design.design === 'grid') {
+    const u = MARK_SPAN / CUSTOM_GRID_SIZE;
+    const rects: ReactNode[] = [];
+    for (let row = 0; row < CUSTOM_GRID_SIZE; row += 1) {
+      let col = 0;
+      while (col < CUSTOM_GRID_SIZE) {
+        if (design.cells[row * CUSTOM_GRID_SIZE + col] === '1') {
+          // Merge a horizontal run of on-cells into one rect, so a filled grid is
+          // a handful of rects rather than 256 of them.
+          let run = 1;
+          while (
+            col + run < CUSTOM_GRID_SIZE &&
+            design.cells[row * CUSTOM_GRID_SIZE + col + run] === '1'
+          ) {
+            run += 1;
+          }
+          rects.push(
+            <rect
+              key={`${String(row)}-${String(col)}`}
+              x={MARK_INSET + col * u}
+              y={MARK_INSET + row * u}
+              width={run * u}
+              height={u}
+              fill={color}
+            />,
+          );
+          col += run;
+        } else {
+          col += 1;
+        }
+      }
+    }
+    return <g>{rects}</g>;
+  }
+
+  if (design.design === 'shapes') {
+    return (
+      <g fill={color}>
+        {design.shapes.map((shape, index) => {
+          switch (shape.type) {
+            case 'circle':
+              return (
+                <circle key={index} cx={t(shape.cx)} cy={t(shape.cy)} r={shape.r * MARK_SPAN} />
+              );
+            case 'rect': {
+              const w = shape.w * MARK_SPAN;
+              const h = shape.h * MARK_SPAN;
+              const cx = t(shape.cx);
+              const cy = t(shape.cy);
+              return (
+                <rect
+                  key={index}
+                  x={cx - w / 2}
+                  y={cy - h / 2}
+                  width={w}
+                  height={h}
+                  transform={`rotate(${String(shape.rot)} ${String(cx)} ${String(cy)})`}
+                />
+              );
+            }
+            case 'triangle': {
+              const cx = t(shape.cx);
+              const cy = t(shape.cy);
+              const radius = (shape.size * MARK_SPAN) / 2;
+              const points = [0, 1, 2]
+                .map((k) => {
+                  const angle = ((-90 + shape.rot + k * 120) * Math.PI) / 180;
+                  return `${String(cx + radius * Math.cos(angle))},${String(cy + radius * Math.sin(angle))}`;
+                })
+                .join(' ');
+              return <polygon key={index} points={points} />;
+            }
+            case 'line':
+              return (
+                <line
+                  key={index}
+                  x1={t(shape.x1)}
+                  y1={t(shape.y1)}
+                  x2={t(shape.x2)}
+                  y2={t(shape.y2)}
+                  stroke={color}
+                  strokeWidth={shape.width * MARK_SPAN}
+                  strokeLinecap="round"
+                />
+              );
+          }
+        })}
+      </g>
+    );
+  }
+
+  const d =
+    design.points
+      .map((p, index) => `${index === 0 ? 'M' : 'L'}${String(t(p.x))} ${String(t(p.y))}`)
+      .join(' ') + (design.closed ? ' Z' : '');
+  return design.closed ? (
+    <path d={d} fill={color} />
+  ) : (
+    <path
+      d={d}
+      fill="none"
+      stroke={color}
+      strokeWidth={6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  );
+}
+
 const MONOGRAM_SIZE: Record<number, number> = { 1: 48, 2: 40, 3: 31 };
 
 export function AirlineLogoEmblem({
@@ -113,8 +240,10 @@ export function AirlineLogoEmblem({
         >
           {logo.mark.text}
         </text>
-      ) : (
+      ) : logo.mark.kind === 'symbol' ? (
         symbolMark(logo.mark.symbol, logo.foreground)
+      ) : (
+        customMark(logo.mark.custom, logo.foreground)
       )}
     </svg>
   );
