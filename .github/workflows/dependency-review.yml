@@ -49,10 +49,8 @@ name: Dependency Review
 # ---------------------------------------------------------------------------
 # Why this action is pinned to a SHA when the rest of the repository uses tags
 # ---------------------------------------------------------------------------
-# CodeQL's `actions/unpinned-tag` currently flags exactly one step in this
-# repository — `pnpm/action-setup@v6` in ci.yml — because it only reports
-# *third-party* actions, and `actions/*` and `github/*` publish immutable
-# releases. So this action would not be flagged either way.
+# CodeQL's `actions/unpinned-tag` reports third-party actions, while the
+# `actions/*` and `github/*` releases used here are trusted GitHub actions.
 #
 # It is pinned anyway, on the narrow grounds that this is the supply-chain check:
 # a guard that resolves a mutable reference at run time to decide whether your
