@@ -17,6 +17,7 @@ import {
   HQ_CANDIDATES,
   HQ_ROLES,
   specialistById,
+  tierMetal,
   type HqCandidate,
 } from './hq-roster';
 import { officeLabel } from './HqLayoutPanel';
@@ -336,7 +337,12 @@ export function HeadquartersPage(): ReactNode {
                   const isHired = hiredId === candidate.id;
                   const given = candidate.name.split(' ')[0] ?? candidate.name;
                   return (
-                    <li key={candidate.id} className="hq-card" data-hired={isHired}>
+                    <li
+                      key={candidate.id}
+                      className="hq-card"
+                      data-hired={isHired}
+                      data-metal={tierMetal(candidate.tier)}
+                    >
                       <div className="hq-card__portrait" data-hired={isHired}>
                         <img
                           src={candidate.portrait}

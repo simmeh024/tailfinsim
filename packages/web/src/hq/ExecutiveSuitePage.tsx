@@ -19,7 +19,8 @@ import {
   ROSTER_SIZE,
 } from './csuite-rotation';
 import { ExecutiveStaffDrawer } from './ExecutiveStaffDrawer';
-import { formatSalary } from './hq-roster';
+import { formatSalary, tierMetal } from './hq-roster';
+import { PoliciesModal } from './PoliciesModal';
 
 import type { OwnAirlineShellContext } from '../shell/AppShell';
 import type { ReactNode } from 'react';
@@ -63,6 +64,13 @@ export function ExecutiveSuitePage(): ReactNode {
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [policiesOpen, setPoliciesOpen] = useState(false);
+
+  // Policies gate on the ground-floor Ops Controller, which the shell owns; the
+  // C-Suite reads it so its Policies modal behaves the same as Headquarters'.
+  const hasOpsController = (shell?.office?.hires ?? []).some(
+    (hire) => hire.seat === 'ops-controller',
+  );
 
   // The executive-floor state is the shell's when there is one (so the plan in the
   // panel and this roster share it); on its own — a component test — the page owns
@@ -162,9 +170,18 @@ export function ExecutiveSuitePage(): ReactNode {
           </p>
         </div>
         <div className="hq-page__aside">
-          <Link to="/headquarters" className="hq-page__policies">
-            ‹ Headquarters
-          </Link>
+          <div className="hq-page__actions">
+            <button
+              type="button"
+              className="hq-page__policies"
+              onClick={() => setPoliciesOpen(true)}
+            >
+              Policies
+            </button>
+            <Link to="/headquarters" className="hq-page__policies">
+              ‹ Headquarters
+            </Link>
+          </div>
           <p className="hq-page__count" role="status">
             <strong>{filled}</strong> of {officesUnlocked} office{officesUnlocked === 1 ? '' : 's'}{' '}
             staffed
@@ -225,6 +242,7 @@ export function ExecutiveSuitePage(): ReactNode {
                   className="hq-card"
                   data-hired={isHired}
                   data-locked={locked}
+                  data-metal={tierMetal(candidate.tier)}
                 >
                   <div className="hq-card__portrait" data-hired={isHired}>
                     <img src={candidate.portrait} alt={candidate.name} loading="lazy" />
@@ -277,6 +295,12 @@ export function ExecutiveSuitePage(): ReactNode {
       </div>
 
       <ExecutiveStaffDrawer />
+
+      <PoliciesModal
+        open={policiesOpen}
+        onClose={() => setPoliciesOpen(false)}
+        hasOpsController={hasOpsController}
+      />
     </section>
   );
 }

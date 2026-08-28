@@ -96,6 +96,11 @@ describe('the C-Suite page', () => {
           floor = { ...floor, hires: floor.hires.filter((h) => h.candidateId !== id) };
           return json();
         }
+        if (url === '/api/automation' && method === 'GET') {
+          return Promise.resolve(
+            new Response(JSON.stringify({ settings: [], tasks: [] }), { status: 200 }),
+          );
+        }
         return Promise.resolve(new Response('{}', { status: 404 }));
       }),
     );
@@ -126,6 +131,19 @@ describe('the C-Suite page', () => {
     const card = (await screen.findByText(first!.name)).closest('li')!;
     expect(within(card).getByText(first!.role)).toBeTruthy();
     expect(within(card).getByText(first!.boost.label)).toBeTruthy();
+  });
+
+  it('borders each card by its tier — bronze, silver or gold', async () => {
+    renderCSuite();
+    const card = (await screen.findByText(first!.name)).closest('li')!;
+    const metal = { Director: 'bronze', VP: 'silver', President: 'gold' }[first!.tier];
+    expect(card.dataset.metal).toBe(metal);
+  });
+
+  it('opens the Policies modal from its button', async () => {
+    renderCSuite();
+    fireEvent.click(await screen.findByRole('button', { name: 'Policies' }));
+    expect(await screen.findByRole('dialog', { name: /operations policies/i })).toBeTruthy();
   });
 
   it('opens the whole market while there is a free office', async () => {
@@ -324,6 +342,11 @@ describe('the executive floor plan', () => {
           const id = decodeURIComponent(url.slice('/api/office/executive/hires/'.length));
           floor = { ...floor, hires: floor.hires.filter((h) => h.candidateId !== id) };
           return json();
+        }
+        if (url === '/api/automation' && method === 'GET') {
+          return Promise.resolve(
+            new Response(JSON.stringify({ settings: [], tasks: [] }), { status: 200 }),
+          );
         }
         return Promise.resolve(new Response('{}', { status: 404 }));
       }),

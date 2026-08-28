@@ -329,3 +329,23 @@ export function candidateById(id: string): HqCandidate | null {
 export function formatSalary(minor: number): string {
   return (minor / 100).toLocaleString('en-GB', { maximumFractionDigits: 0 });
 }
+
+/**
+ * The metallic accent for a seniority band, low to high — bronze, silver, gold.
+ * Both the head-office bands (Supervisor/Manager/Senior Manager) and the C-Suite
+ * bands (Director/VP/President) map onto the same three metals, so a card's border
+ * reads the same way on either floor.
+ */
+export function tierMetal(tier: string): 'bronze' | 'silver' | 'gold' {
+  switch (tier) {
+    case 'Supervisor':
+    case 'Director':
+      return 'bronze';
+    case 'Senior Manager':
+    case 'President':
+      return 'gold';
+    default:
+      // Manager, VP — the middle band.
+      return 'silver';
+  }
+}

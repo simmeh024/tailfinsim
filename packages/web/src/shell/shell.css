@@ -5788,6 +5788,29 @@ body {
   border-color: var(--border-strong);
 }
 
+/*
+ * A tier border, bronze → silver → gold, low band to high. Ground-floor and
+ * C-Suite bands map onto the same three metals (see `tierMetal`). Placed after the
+ * hired rule so the metal wins even on a hired card; a matching inner ring gives
+ * the 1px border a little more weight without shifting layout.
+ */
+.hq-card[data-metal='bronze'] {
+  --metal: #b0713a;
+}
+
+.hq-card[data-metal='silver'] {
+  --metal: #a7b2bf;
+}
+
+.hq-card[data-metal='gold'] {
+  --metal: #cba62f;
+}
+
+.hq-card[data-metal] {
+  border-color: var(--metal);
+  box-shadow: inset 0 0 0 1px var(--metal);
+}
+
 .hq-card__portrait {
   position: relative;
   aspect-ratio: 3 / 4;
