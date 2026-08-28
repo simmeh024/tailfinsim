@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AIRLINE_LOGO_LAYER_TYPES,
   AirlineLogo,
   AirlineLogoCustomDesign,
   airlineLogoEquals,
@@ -71,11 +72,25 @@ describe('the composed logo schema', () => {
     expect(ComposedAirlineLogo.safeParse({ ...COMPOSED, layers: many }).success).toBe(false);
   });
 
-  it('rejects an out-of-range opacity and an unknown palette slot as a paint', () => {
+  it('rejects an out-of-range opacity and a paint that is neither slot, hex nor none', () => {
     const bad = { ...COMPOSED, layers: [{ ...COMPOSED.layers[0], opacity: 2 }] };
     expect(ComposedAirlineLogo.safeParse(bad).success).toBe(false);
     const badPaint = { ...COMPOSED, layers: [{ ...COMPOSED.layers[0], fill: 'gold' }] };
     expect(ComposedAirlineLogo.safeParse(badPaint).success).toBe(false);
+  });
+
+  it('accepts a layer painted with its own hex colour, and a transparent fill', () => {
+    const ownColour = { ...COMPOSED, layers: [{ ...COMPOSED.layers[0], fill: '#12ab34' }] };
+    expect(ComposedAirlineLogo.safeParse(ownColour).success).toBe(true);
+    const transparent = { ...COMPOSED, layers: [{ ...COMPOSED.layers[0], fill: 'none' }] };
+    expect(ComposedAirlineLogo.safeParse(transparent).success).toBe(true);
+  });
+
+  it('carries a rotation on the layer, rejecting one out of range', () => {
+    const rotated = { ...COMPOSED, layers: [{ ...COMPOSED.layers[0], rotation: 45 }] };
+    expect(ComposedAirlineLogo.safeParse(rotated).success).toBe(true);
+    const bad = { ...COMPOSED, layers: [{ ...COMPOSED.layers[0], rotation: 900 }] };
+    expect(ComposedAirlineLogo.safeParse(bad).success).toBe(false);
   });
 
   it('rejects a bad palette colour and unknown keys', () => {
@@ -89,7 +104,7 @@ describe('the composed logo schema', () => {
   });
 
   it('accepts every layer content type from newLayer', () => {
-    for (const type of ['circle', 'rect', 'triangle', 'line', 'text', 'symbol', 'path'] as const) {
+    for (const type of AIRLINE_LOGO_LAYER_TYPES) {
       const logo = { ...COMPOSED, layers: [newLayer(type)] };
       expect(ComposedAirlineLogo.safeParse(logo).success).toBe(true);
     }

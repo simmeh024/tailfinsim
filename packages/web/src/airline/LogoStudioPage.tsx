@@ -15,6 +15,7 @@ import {
   type AirlineLogoLayerContent,
   type AirlineLogoLayerType,
   type AirlineLogoPaint,
+  type AirlineLogoPalette,
   type AirlineLogoPaletteSlot,
   type AirlineLogoShape,
   type AirlineLogoSymbol,
@@ -152,7 +153,16 @@ function layerBounds(content: AirlineLogoLayerContent): {
         w: content.w,
         h: content.h,
       };
+    case 'ellipse':
+      return {
+        x: content.cx - content.rx,
+        y: content.cy - content.ry,
+        w: content.rx * 2,
+        h: content.ry * 2,
+      };
     case 'triangle':
+    case 'polygon':
+    case 'star':
     case 'text':
     case 'symbol':
       return {
@@ -198,9 +208,13 @@ export function resizeLayerContent(
   switch (content.type) {
     case 'circle':
       return { ...content, r: clamp(uniform, 0.01, 0.6) };
+    case 'ellipse':
+      return { ...content, rx: clamp(halfW, 0.01, 0.6), ry: clamp(halfH, 0.01, 0.6) };
     case 'rect':
       return { ...content, w: clamp(halfW * 2, 0.01, 1), h: clamp(halfH * 2, 0.01, 1) };
     case 'triangle':
+    case 'polygon':
+    case 'star':
       return { ...content, size: clamp(uniform * 2, 0.02, 1) };
     case 'text':
     case 'symbol':
@@ -250,8 +264,11 @@ const SHAPE_LABELS: Record<AirlineLogoShape, string> = {
 
 const TYPE_LABELS: Record<AirlineLogoLayerType, string> = {
   circle: 'Circle',
+  ellipse: 'Ellipse',
   rect: 'Square',
   triangle: 'Triangle',
+  polygon: 'Polygon',
+  star: 'Star',
   line: 'Line',
   text: 'Initials',
   symbol: 'Symbol',
@@ -260,8 +277,11 @@ const TYPE_LABELS: Record<AirlineLogoLayerType, string> = {
 
 const TYPE_GLYPH: Record<AirlineLogoLayerType, string> = {
   circle: '○',
+  ellipse: '⬭',
   rect: '□',
   triangle: '△',
+  polygon: '⬡',
+  star: '★',
   line: '─',
   text: 'A',
   symbol: '☆',
@@ -884,6 +904,7 @@ export function LogoStudioPage(): ReactNode {
             <PropertiesPanel
               key={selected.id}
               layer={selected}
+              palette={logo.palette}
               onName={(name) => patchSelected((l) => ({ ...l, name }))}
               onPatchContent={patchContent}
               onPatchLayer={patchSelected}
@@ -969,6 +990,7 @@ export function LogoStudioPage(): ReactNode {
 
 function PropertiesPanel({
   layer,
+  palette,
   onName,
   onPatchContent,
   onPatchLayer,
@@ -981,6 +1003,7 @@ function PropertiesPanel({
   canDelete,
 }: {
   layer: AirlineLogoLayer;
+  palette: AirlineLogoPalette;
   onName: (name: string) => void;
   onPatchContent: (
     fn: (c: AirlineLogoLayerContent) => AirlineLogoLayerContent,
@@ -1001,9 +1024,6 @@ function PropertiesPanel({
 
   const moveTo = (nx: number, ny: number): void =>
     onPatchContent((content) => moveLayerContent(content, nx, ny));
-
-  const hasRotation =
-    c.type === 'rect' || c.type === 'triangle' || c.type === 'text' || c.type === 'symbol';
 
   return (
     <div className="logo-studio__props">
@@ -1079,10 +1099,42 @@ function PropertiesPanel({
               />
             </>
           )}
-          {(c.type === 'triangle' || c.type === 'text' || c.type === 'symbol') && (
+          {c.type === 'ellipse' && (
+            <>
+              <Slider
+                label="Width"
+                min={10}
+                max={600}
+                step={1}
+                value={c.rx * 1000}
+                onStart={onStartGesture}
+                onEnd={onEndGesture}
+                onInput={(v) =>
+                  onPatchContent((x) => (x.type === 'ellipse' ? { ...x, rx: v / 1000 } : x), true)
+                }
+              />
+              <Slider
+                label="Height"
+                min={10}
+                max={600}
+                step={1}
+                value={c.ry * 1000}
+                onStart={onStartGesture}
+                onEnd={onEndGesture}
+                onInput={(v) =>
+                  onPatchContent((x) => (x.type === 'ellipse' ? { ...x, ry: v / 1000 } : x), true)
+                }
+              />
+            </>
+          )}
+          {(c.type === 'triangle' ||
+            c.type === 'polygon' ||
+            c.type === 'star' ||
+            c.type === 'text' ||
+            c.type === 'symbol') && (
             <Slider
               label="Size"
-              min={c.type === 'triangle' ? 20 : 50}
+              min={c.type === 'triangle' || c.type === 'polygon' || c.type === 'star' ? 20 : 50}
               max={1000}
               step={1}
               value={c.size * 1000}
@@ -1091,7 +1143,11 @@ function PropertiesPanel({
               onInput={(v) =>
                 onPatchContent(
                   (x) =>
-                    x.type === 'triangle' || x.type === 'text' || x.type === 'symbol'
+                    x.type === 'triangle' ||
+                    x.type === 'polygon' ||
+                    x.type === 'star' ||
+                    x.type === 'text' ||
+                    x.type === 'symbol'
                       ? { ...x, size: v / 1000 }
                       : x,
                   true,
@@ -1099,24 +1155,50 @@ function PropertiesPanel({
               }
             />
           )}
+          {c.type === 'polygon' && (
+            <Slider
+              label="Sides"
+              min={3}
+              max={12}
+              step={1}
+              value={c.sides}
+              onStart={onStartGesture}
+              onEnd={onEndGesture}
+              onInput={(v) =>
+                onPatchContent((x) => (x.type === 'polygon' ? { ...x, sides: v } : x), true)
+              }
+            />
+          )}
+          {c.type === 'star' && (
+            <Slider
+              label="Points"
+              min={3}
+              max={12}
+              step={1}
+              value={c.points}
+              onStart={onStartGesture}
+              onEnd={onEndGesture}
+              onInput={(v) =>
+                onPatchContent((x) => (x.type === 'star' ? { ...x, points: v } : x), true)
+              }
+            />
+          )}
         </fieldset>
       )}
 
-      {hasRotation && (
-        <fieldset disabled={disabled} className="logo-studio__prop-group">
-          <Slider
-            label="Rotation"
-            min={-180}
-            max={180}
-            step={1}
-            value={'rot' in c ? c.rot : 0}
-            suffix="°"
-            onStart={onStartGesture}
-            onEnd={onEndGesture}
-            onInput={(v) => onPatchContent((x) => ('rot' in x ? { ...x, rot: v } : x), true)}
-          />
-        </fieldset>
-      )}
+      <fieldset disabled={disabled} className="logo-studio__prop-group">
+        <Slider
+          label="Rotation"
+          min={-180}
+          max={180}
+          step={1}
+          value={layer.rotation}
+          suffix="°"
+          onStart={onStartGesture}
+          onEnd={onEndGesture}
+          onInput={(v) => onPatchLayer((l) => ({ ...l, rotation: v }), true)}
+        />
+      </fieldset>
 
       {c.type === 'text' && (
         <label className="logo-studio__prop-name">
@@ -1189,6 +1271,7 @@ function PropertiesPanel({
         <legend>Fill</legend>
         <PaintPicker
           value={layer.fill}
+          fallback={resolvePaint(palette, layer.fill) ?? palette.mark}
           onChange={(fill) => onPatchLayer((l) => ({ ...l, fill }))}
         />
       </fieldset>
@@ -1197,6 +1280,7 @@ function PropertiesPanel({
         <legend>Stroke</legend>
         <PaintPicker
           value={layer.stroke}
+          fallback={resolvePaint(palette, layer.stroke) ?? palette.mark}
           onChange={(stroke) => onPatchLayer((l) => ({ ...l, stroke }))}
         />
         <Slider
@@ -1246,26 +1330,53 @@ function PropertiesPanel({
   );
 }
 
+const PALETTE_SLOT_SET = new Set<string>(AIRLINE_LOGO_PALETTE_SLOTS);
+
 function PaintPicker({
   value,
+  fallback,
   onChange,
 }: {
   value: AirlineLogoPaint;
+  /** The resolved colour to seed the custom picker with when it is opened. */
+  fallback: string;
   onChange: (paint: AirlineLogoPaint) => void;
 }): ReactNode {
+  // A paint that is neither "none" nor a palette slot is this layer's own colour.
+  const isCustom = value !== 'none' && !PALETTE_SLOT_SET.has(value);
   return (
     <div className="logo-studio__paints" role="group">
-      {(['none', ...AIRLINE_LOGO_PALETTE_SLOTS] as const).map((paint) => (
+      <button
+        type="button"
+        className="logo-studio__paint"
+        aria-pressed={value === 'none'}
+        onClick={() => onChange('none')}
+      >
+        Transparent
+      </button>
+      {AIRLINE_LOGO_PALETTE_SLOTS.map((slot) => (
         <button
-          key={paint}
+          key={slot}
           type="button"
           className="logo-studio__paint"
-          aria-pressed={value === paint}
-          onClick={() => onChange(paint)}
+          aria-pressed={value === slot}
+          onClick={() => onChange(slot)}
         >
-          {paint === 'none' ? 'None' : SLOT_LABELS[paint]}
+          {SLOT_LABELS[slot]}
         </button>
       ))}
+      <label
+        className={`logo-studio__paint logo-studio__paint-custom${isCustom ? ' is-active' : ''}`}
+        title="Custom colour"
+      >
+        <input
+          type="color"
+          aria-label="Custom colour"
+          value={isCustom ? value : fallback}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        Own
+      </label>
     </div>
   );
 }

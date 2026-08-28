@@ -87,12 +87,20 @@ export function symbolGlyph(symbol: AirlineLogoSymbol, color: string): ReactNode
 /** The native box a symbol glyph occupies, so a sized symbol layer scales sanely. */
 const SYMBOL_NATIVE_SPAN = 60;
 
-/** Resolve a fill/stroke reference to a hex colour, or `undefined` for `none`. */
+/**
+ * Resolve a fill/stroke reference to a hex colour, or `undefined` for `none`.
+ * A palette slot name resolves against the palette; anything else is already a
+ * literal `#RRGGBB` (a layer's own colour) and is returned as-is.
+ */
 export function resolvePaint(
   palette: AirlineLogoPalette,
   paint: AirlineLogoPaint,
 ): string | undefined {
-  return paint === 'none' ? undefined : palette[paint];
+  if (paint === 'none') return undefined;
+  if (paint === 'background' || paint === 'mark' || paint === 'ring' || paint === 'accent') {
+    return palette[paint];
+  }
+  return paint;
 }
 
 /** The centre of a layer's content, in normalised 0..1 space. */
@@ -144,6 +152,24 @@ export function moveLayerContent(
 
 const MONOGRAM_FONT: Record<number, number> = { 1: 1.06, 2: 0.9, 3: 0.7 };
 
+/** Vertices of a regular n-gon, point-up, as an SVG `points` string. */
+function regularPolygonPoints(cx: number, cy: number, radius: number, sides: number): string {
+  return Array.from({ length: sides }, (_, k) => {
+    const angle = ((-90 + (360 / sides) * k) * Math.PI) / 180;
+    return `${String(cx + radius * Math.cos(angle))},${String(cy + radius * Math.sin(angle))}`;
+  }).join(' ');
+}
+
+/** Vertices of an n-pointed star, point-up, alternating outer and inner radius. */
+function starPointsString(cx: number, cy: number, radius: number, points: number): string {
+  const inner = radius * 0.42;
+  return Array.from({ length: points * 2 }, (_, k) => {
+    const r = k % 2 === 0 ? radius : inner;
+    const angle = ((-90 + (180 / points) * k) * Math.PI) / 180;
+    return `${String(cx + r * Math.cos(angle))},${String(cy + r * Math.sin(angle))}`;
+  }).join(' ');
+}
+
 /** Draw one layer's geometry, painted from the palette. Returns the inner nodes. */
 function drawContent(
   content: AirlineLogoLayerContent,
@@ -176,35 +202,60 @@ function drawContent(
           {...strokeProps}
         />
       );
+    case 'ellipse':
+      return (
+        <ellipse
+          cx={t(content.cx)}
+          cy={t(content.cy)}
+          rx={content.rx * S}
+          ry={content.ry * S}
+          fill={fillProp}
+          {...strokeProps}
+        />
+      );
     case 'rect': {
       const w = content.w * S;
       const h = content.h * S;
       const x = t(content.cx);
       const y = t(content.cy);
       return (
-        <rect
-          x={x - w / 2}
-          y={y - h / 2}
-          width={w}
-          height={h}
-          transform={`rotate(${String(content.rot)} ${String(x)} ${String(y)})`}
+        <rect x={x - w / 2} y={y - h / 2} width={w} height={h} fill={fillProp} {...strokeProps} />
+      );
+    }
+    case 'triangle':
+      return (
+        <polygon
+          points={regularPolygonPoints(t(content.cx), t(content.cy), (content.size * S) / 2, 3)}
           fill={fillProp}
           {...strokeProps}
         />
       );
-    }
-    case 'triangle': {
-      const x = t(content.cx);
-      const y = t(content.cy);
-      const radius = (content.size * S) / 2;
-      const points = [0, 1, 2]
-        .map((k) => {
-          const angle = ((-90 + content.rot + k * 120) * Math.PI) / 180;
-          return `${String(x + radius * Math.cos(angle))},${String(y + radius * Math.sin(angle))}`;
-        })
-        .join(' ');
-      return <polygon points={points} fill={fillProp} {...strokeProps} />;
-    }
+    case 'polygon':
+      return (
+        <polygon
+          points={regularPolygonPoints(
+            t(content.cx),
+            t(content.cy),
+            (content.size * S) / 2,
+            content.sides,
+          )}
+          fill={fillProp}
+          {...strokeProps}
+        />
+      );
+    case 'star':
+      return (
+        <polygon
+          points={starPointsString(
+            t(content.cx),
+            t(content.cy),
+            (content.size * S) / 2,
+            content.points,
+          )}
+          fill={fillProp}
+          {...strokeProps}
+        />
+      );
     case 'line':
       return (
         <line
@@ -243,7 +294,6 @@ function drawContent(
         <text
           x={x}
           y={y}
-          transform={`rotate(${String(content.rot)} ${String(x)} ${String(y)})`}
           textAnchor="middle"
           dominantBaseline="central"
           fontFamily="'Inter', system-ui, sans-serif"
@@ -264,7 +314,7 @@ function drawContent(
       const color = fill ?? stroke ?? 'currentColor';
       return (
         <g
-          transform={`translate(${String(x)} ${String(y)}) rotate(${String(content.rot)}) scale(${String(k)}) translate(-50 -50)`}
+          transform={`translate(${String(x)} ${String(y)}) scale(${String(k)}) translate(-50 -50)`}
         >
           {symbolGlyph(content.symbol, color)}
         </g>
@@ -278,8 +328,17 @@ export function drawLayer(layer: AirlineLogoLayer, palette: AirlineLogoPalette):
   if (layer.hidden) return null;
   const fill = resolvePaint(palette, layer.fill);
   const stroke = resolvePaint(palette, layer.stroke);
+  // Rotation is applied once, around the content's own centre, so every element
+  // type rotates identically — including line and path, which have no angle field.
+  const c = layerCenter(layer.content);
+  const transform =
+    layer.rotation === 0
+      ? undefined
+      : `rotate(${String(layer.rotation)} ${String(c.x * EMBLEM_SPAN)} ${String(c.y * EMBLEM_SPAN)})`;
   return (
-    <g opacity={layer.opacity}>{drawContent(layer.content, fill, stroke, layer.strokeWidth)}</g>
+    <g opacity={layer.opacity} transform={transform}>
+      {drawContent(layer.content, fill, stroke, layer.strokeWidth)}
+    </g>
   );
 }
 

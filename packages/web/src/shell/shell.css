@@ -1381,6 +1381,27 @@ body {
   background: var(--accent-quiet);
 }
 
+.logo-studio__paint-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.logo-studio__paint-custom.is-active {
+  border-color: var(--accent);
+  background: var(--accent-quiet);
+}
+
+.logo-studio__paint-custom input {
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
 .logo-studio__order {
   display: grid;
   grid-template-columns: 1fr 1fr;

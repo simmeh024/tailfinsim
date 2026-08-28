@@ -180,14 +180,28 @@ export const AirlineLogoPalette = z
   .strict();
 export type AirlineLogoPalette = z.infer<typeof AirlineLogoPalette>;
 
-/** A fill or stroke reference: a palette slot, or `none` for no paint. */
-export const AirlineLogoPaint = z.union([AirlineLogoPaletteSlot, z.literal('none')]);
+/**
+ * A fill or stroke reference. Three forms, distinguished by shape:
+ *  - a palette slot name (tracks the brand palette),
+ *  - a literal `#RRGGBB` (this layer's own colour, independent of the palette),
+ *  - `none` (transparent — no paint at all).
+ */
+export const AirlineLogoPaint = z.union([
+  AirlineLogoPaletteSlot,
+  z.literal('none'),
+  AirlineLogoColor,
+]);
 export type AirlineLogoPaint = z.infer<typeof AirlineLogoPaint>;
+
+const Sides = z.number().int().min(3).max(12);
 
 /**
  * One layer's geometry. Coordinates are normalised 0..1 over the **whole** emblem
  * (unlike the legacy custom mark, which lived in a small centred region), so a
  * layer can be a full-bleed outer ring or a small accent dot with the same maths.
+ *
+ * Rotation is **not** here — it lives on the layer ({@link AirlineLogoLayer}),
+ * applied around the content's centre, so every element rotates the same way.
  */
 export const AirlineLogoLayerContent = z.discriminatedUnion('type', [
   z
@@ -200,12 +214,20 @@ export const AirlineLogoLayerContent = z.discriminatedUnion('type', [
     .strict(),
   z
     .object({
+      type: z.literal('ellipse'),
+      cx: Unit,
+      cy: Unit,
+      rx: z.number().finite().min(0.01).max(0.6),
+      ry: z.number().finite().min(0.01).max(0.6),
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal('rect'),
       cx: Unit,
       cy: Unit,
       w: z.number().finite().min(0.01).max(1),
       h: z.number().finite().min(0.01).max(1),
-      rot: Rotation,
     })
     .strict(),
   z
@@ -214,7 +236,24 @@ export const AirlineLogoLayerContent = z.discriminatedUnion('type', [
       cx: Unit,
       cy: Unit,
       size: z.number().finite().min(0.02).max(1),
-      rot: Rotation,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('polygon'),
+      cx: Unit,
+      cy: Unit,
+      size: z.number().finite().min(0.02).max(1),
+      sides: Sides,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('star'),
+      cx: Unit,
+      cy: Unit,
+      size: z.number().finite().min(0.02).max(1),
+      points: Sides,
     })
     .strict(),
   z.object({ type: z.literal('line'), x1: Unit, y1: Unit, x2: Unit, y2: Unit }).strict(),
@@ -235,7 +274,6 @@ export const AirlineLogoLayerContent = z.discriminatedUnion('type', [
       cy: Unit,
       text: Monogram,
       size: z.number().finite().min(0.05).max(1),
-      rot: Rotation,
     })
     .strict(),
   z
@@ -245,7 +283,6 @@ export const AirlineLogoLayerContent = z.discriminatedUnion('type', [
       cy: Unit,
       symbol: AirlineLogoSymbol,
       size: z.number().finite().min(0.05).max(1),
-      rot: Rotation,
     })
     .strict(),
 ]);
@@ -255,12 +292,15 @@ export type AirlineLogoLayerType = AirlineLogoLayerContent['type'];
 /** The layer content types the studio can add, in palette order. */
 export const AIRLINE_LOGO_LAYER_TYPES = [
   'circle',
+  'ellipse',
   'rect',
   'triangle',
+  'polygon',
+  'star',
   'line',
+  'path',
   'text',
   'symbol',
-  'path',
 ] as const satisfies readonly AirlineLogoLayerType[];
 
 export const MAX_LOGO_LAYERS = 24;
@@ -274,6 +314,8 @@ export const AirlineLogoLayer = z
     hidden: z.boolean(),
     locked: z.boolean(),
     opacity: z.number().finite().min(0).max(1),
+    /** Rotation in degrees, applied around the content's centre. Every element rotates. */
+    rotation: Rotation,
     fill: AirlineLogoPaint,
     stroke: AirlineLogoPaint,
     /** Stroke thickness as a fraction of the emblem; also the width of a `line`. */
@@ -326,10 +368,16 @@ export function defaultLayerContent(
   switch (type) {
     case 'circle':
       return { type: 'circle', cx: 0.5, cy: 0.5, r: 0.22 };
+    case 'ellipse':
+      return { type: 'ellipse', cx: 0.5, cy: 0.5, rx: 0.28, ry: 0.18 };
     case 'rect':
-      return { type: 'rect', cx: 0.5, cy: 0.5, w: 0.34, h: 0.34, rot: 0 };
+      return { type: 'rect', cx: 0.5, cy: 0.5, w: 0.34, h: 0.34 };
     case 'triangle':
-      return { type: 'triangle', cx: 0.5, cy: 0.5, size: 0.4, rot: 0 };
+      return { type: 'triangle', cx: 0.5, cy: 0.5, size: 0.4 };
+    case 'polygon':
+      return { type: 'polygon', cx: 0.5, cy: 0.5, size: 0.4, sides: 6 };
+    case 'star':
+      return { type: 'star', cx: 0.5, cy: 0.5, size: 0.44, points: 5 };
     case 'line':
       return { type: 'line', x1: 0.3, y1: 0.5, x2: 0.7, y2: 0.5 };
     case 'path':
@@ -343,16 +391,19 @@ export function defaultLayerContent(
         closed: true,
       };
     case 'text':
-      return { type: 'text', cx: 0.5, cy: 0.5, text: monogramFromCode(code), size: 0.42, rot: 0 };
+      return { type: 'text', cx: 0.5, cy: 0.5, text: monogramFromCode(code), size: 0.42 };
     case 'symbol':
-      return { type: 'symbol', cx: 0.5, cy: 0.5, symbol: 'wings', size: 0.5, rot: 0 };
+      return { type: 'symbol', cx: 0.5, cy: 0.5, symbol: 'wings', size: 0.5 };
   }
 }
 
 const LAYER_TYPE_LABEL: Record<AirlineLogoLayerType, string> = {
   circle: 'Circle',
+  ellipse: 'Ellipse',
   rect: 'Square',
   triangle: 'Triangle',
+  polygon: 'Polygon',
+  star: 'Star',
   line: 'Line',
   path: 'Path',
   text: 'Initials',
@@ -368,6 +419,7 @@ export function newLayer(type: AirlineLogoLayerType, code = 'AIR'): AirlineLogoL
     hidden: false,
     locked: false,
     opacity: 1,
+    rotation: 0,
     // A line has no area to fill; everything else fills from the mark slot.
     fill: line ? 'none' : 'mark',
     stroke: line ? 'mark' : 'none',
@@ -409,6 +461,7 @@ export function defaultAirlineLogo(code: string): ComposedAirlineLogo {
         hidden: false,
         locked: false,
         opacity: 1,
+        rotation: 0,
         fill: 'mark',
         stroke: 'none',
         strokeWidth: 0,
@@ -418,7 +471,6 @@ export function defaultAirlineLogo(code: string): ComposedAirlineLogo {
           cy: 0.5,
           text: monogramFromCode(code),
           size: 0.44,
-          rot: 0,
         },
       },
     ],
@@ -496,12 +548,14 @@ function markToLayers(mark: AirlineLogoMark): AirlineLogoLayer[] {
     content: AirlineLogoLayerContent,
     name: string,
     line = false,
+    rotation = 0,
   ): AirlineLogoLayer => ({
     id: makeLayerId(),
     name,
     hidden: false,
     locked: false,
     opacity: 1,
+    rotation,
     fill: line ? 'none' : 'mark',
     stroke: line ? 'mark' : 'none',
     strokeWidth: line ? 0.06 : 0,
@@ -509,14 +563,10 @@ function markToLayers(mark: AirlineLogoMark): AirlineLogoLayer[] {
   });
 
   if (mark.kind === 'monogram') {
-    return [
-      base({ type: 'text', cx: 0.5, cy: 0.5, text: mark.text, size: 0.44, rot: 0 }, 'Initials'),
-    ];
+    return [base({ type: 'text', cx: 0.5, cy: 0.5, text: mark.text, size: 0.44 }, 'Initials')];
   }
   if (mark.kind === 'symbol') {
-    return [
-      base({ type: 'symbol', cx: 0.5, cy: 0.5, symbol: mark.symbol, size: 0.5, rot: 0 }, 'Symbol'),
-    ];
+    return [base({ type: 'symbol', cx: 0.5, cy: 0.5, symbol: mark.symbol, size: 0.5 }, 'Symbol')];
   }
   // custom: legacy marks live in a centred region; map their normalised 0..1 into
   // the emblem's mark inset (18..82 of 100 → 0.18..0.82) so they land where they did.
@@ -538,9 +588,10 @@ function markToLayers(mark: AirlineLogoMark): AirlineLogoLayer[] {
             cy: into(shape.cy),
             w: shape.w * 0.64,
             h: shape.h * 0.64,
-            rot: shape.rot,
           },
           `Square ${String(index + 1)}`,
+          false,
+          shape.rot,
         );
       }
       if (shape.type === 'triangle') {
@@ -550,9 +601,10 @@ function markToLayers(mark: AirlineLogoMark): AirlineLogoLayer[] {
             cx: into(shape.cx),
             cy: into(shape.cy),
             size: shape.size * 0.64,
-            rot: shape.rot,
           },
           `Triangle ${String(index + 1)}`,
+          false,
+          shape.rot,
         );
       }
       return {

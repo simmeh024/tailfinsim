@@ -102,6 +102,18 @@ describe('the logo studio', () => {
     expect(screen.getByText('2 / 24')).toBeInTheDocument();
   });
 
+  it('offers the new element types and adds one', async () => {
+    stub();
+    renderStudio();
+    await screen.findByRole('heading', { level: 1, name: /brand logo editor/i });
+
+    for (const name of ['Ellipse', 'Polygon', 'Star']) {
+      expect(screen.getByRole('button', { name })).toBeInTheDocument();
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Star' }));
+    expect(screen.getByText('2 / 24')).toBeInTheDocument();
+  });
+
   it('changes the frame shape from the toolbar', async () => {
     stub();
     renderStudio();
