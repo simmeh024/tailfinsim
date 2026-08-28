@@ -6137,6 +6137,17 @@ body {
   font-weight: 600;
 }
 
+.hq-layout__payroll {
+  margin: calc(-1 * var(--space-2)) 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.hq-layout__payroll strong {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
 .hq-layout__floor {
   position: relative;
   width: 100%;

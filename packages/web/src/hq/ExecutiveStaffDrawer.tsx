@@ -62,7 +62,7 @@ export function ExecutiveStaffDrawer(): ReactNode {
       }
       candidates={candidates}
       busy={busy}
-      onHire={(candidate) => void run(() => hireExecutive(candidate.id))}
+      onHire={(candidate) => void run(() => hireExecutive(candidate.id, selected))}
       onRemove={() => {
         if (occupant !== null) void run(() => dismissExecutive(occupant.candidateId));
       }}

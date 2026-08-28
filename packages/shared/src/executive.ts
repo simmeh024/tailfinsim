@@ -647,6 +647,8 @@ export const ExecutiveHire = z.object({
   candidateId: z.string().min(1),
   candidateName: z.string().min(1),
   monthlySalaryMinor: z.number().int().nonnegative(),
+  /** Which office (0-based) they sit in, or null for a hire made before placement existed. */
+  officeIndex: z.number().int().nullable(),
   hiredAt: z.string(),
 });
 export type ExecutiveHire = z.infer<typeof ExecutiveHire>;
@@ -672,6 +674,18 @@ export const ExecutiveFloorState = z
   .strict();
 export type ExecutiveFloorState = z.infer<typeof ExecutiveFloorState>;
 
-/** `POST /api/office/executive/hires` — put a C-Suite candidate into a free office. */
-export const HireExecutiveRequest = z.object({ candidateId: z.string().min(1) }).strict();
+/**
+ * `POST /api/office/executive/hires` — put a C-Suite candidate into an office.
+ *
+ * `officeIndex` names the office the player clicked on the plan; omit it (a hire
+ * from the roster, which does not pick an office) and the server places them in
+ * the lowest free office. The server validates the index against the airline's
+ * opened offices, so it is a request, not a trusted placement.
+ */
+export const HireExecutiveRequest = z
+  .object({
+    candidateId: z.string().min(1),
+    officeIndex: z.number().int().min(0).optional(),
+  })
+  .strict();
 export type HireExecutiveRequest = z.infer<typeof HireExecutiveRequest>;

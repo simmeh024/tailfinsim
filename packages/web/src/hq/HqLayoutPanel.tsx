@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import {
   EXECUTIVE_OFFICE_COUNT,
@@ -6,6 +6,7 @@ import {
   isNeutralSeat,
   OFFICE_ROLES,
   type ExecutiveFloorState,
+  type ExecutiveHire,
   type OfficeSeatId,
   type OfficeStateResponse,
 } from '@tailfin/shared';
@@ -185,6 +186,28 @@ export function HqLayoutPanel({
   const [execBusy, setExecBusy] = useState(false);
   const [execError, setExecError] = useState<string | null>(null);
 
+  // Which hire sits in which office. A hire carries its own `officeIndex` now, so
+  // it appears in the office the player clicked; older hires without one fall back
+  // to the lowest free office so they still show up.
+  const execHireByOffice = useMemo(() => {
+    const byOffice = new Map<number, ExecutiveHire>();
+    const pending: ExecutiveHire[] = [];
+    for (const hire of execState?.hires ?? []) {
+      if (hire.officeIndex !== null && !byOffice.has(hire.officeIndex)) {
+        byOffice.set(hire.officeIndex, hire);
+      } else {
+        pending.push(hire);
+      }
+    }
+    let slot = 0;
+    for (const hire of pending) {
+      while (byOffice.has(slot)) slot += 1;
+      byOffice.set(slot, hire);
+      slot += 1;
+    }
+    return byOffice;
+  }, [execState?.hires]);
+
   const unlockFloor = async (): Promise<void> => {
     if (onUnlockExecFloor === undefined) return;
     setExecBusy(true);
@@ -220,6 +243,12 @@ export function HqLayoutPanel({
   const plan = FLOORPLAN[neutralSeats] ?? FLOORPLAN[0];
   const rows = ROW_Y[neutralSeats] ?? ROW_Y[0] ?? [];
   const visible = SEAT_GRID.slice(0, totalSeats);
+
+  // The whole staff organisation's monthly salary — ground floor and executive
+  // floor together — the same total on both pages, since the panel is shared.
+  const payrollMinor =
+    (office?.hires ?? []).reduce((sum, hire) => sum + hire.monthlySalaryMinor, 0) +
+    (execState?.hires ?? []).reduce((sum, hire) => sum + hire.monthlySalaryMinor, 0);
 
   return (
     <div className="hq-layout">
@@ -268,6 +297,10 @@ export function HqLayoutPanel({
             offices open
           </>
         )}
+      </p>
+
+      <p className="hq-layout__payroll">
+        Staff payroll <strong>{MONEY.format(payrollMinor / 100)}</strong>/mo
       </p>
 
       {floor === 'ground' && (
@@ -430,7 +463,7 @@ export function HqLayoutPanel({
                   );
                 }
 
-                const hire = execState.hires[index];
+                const hire = execHireByOffice.get(index);
                 const occupant =
                   hire !== undefined ? (csuiteCandidate(hire.candidateId) ?? null) : null;
                 const interactive = onSelectExecOffice !== undefined;

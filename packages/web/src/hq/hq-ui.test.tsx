@@ -222,6 +222,7 @@ describe('the Headquarters page', () => {
     candidateId: string;
     candidateName: string;
     monthlySalaryMinor: number;
+    officeIndex: number | null;
     hiredAt: string;
   }
   let execFloor = {
@@ -298,6 +299,7 @@ describe('the Headquarters page', () => {
         if (url === '/api/office/executive/hires' && method === 'POST') {
           const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
             candidateId: string;
+            officeIndex?: number;
           };
           const c = executiveCandidate(body.candidateId)!;
           execFloor = {
@@ -308,6 +310,7 @@ describe('the Headquarters page', () => {
                 candidateId: c.id,
                 candidateName: c.name,
                 monthlySalaryMinor: c.monthlySalaryMinor,
+                officeIndex: body.officeIndex ?? execFloor.hires.length,
                 hiredAt: '2024-10-20T00:00:00.000Z',
               },
             ],

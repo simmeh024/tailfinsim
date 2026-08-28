@@ -73,6 +73,7 @@ describe('the C-Suite page', () => {
         if (url === '/api/office/executive/hires' && method === 'POST') {
           const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
             candidateId: string;
+            officeIndex?: number;
           };
           const c = EXECUTIVE_CANDIDATES.find((x) => x.id === body.candidateId)!;
           floor = {
@@ -83,6 +84,7 @@ describe('the C-Suite page', () => {
                 candidateId: c.id,
                 candidateName: c.name,
                 monthlySalaryMinor: c.monthlySalaryMinor,
+                officeIndex: body.officeIndex ?? floor.hires.length,
                 hiredAt: '2024-10-20T00:00:00.000Z',
               },
             ],
@@ -160,6 +162,7 @@ describe('the C-Suite page', () => {
           candidateId: first!.id,
           candidateName: first!.name,
           monthlySalaryMinor: first!.monthlySalaryMinor,
+          officeIndex: 0,
           hiredAt: '2024-10-20T00:00:00.000Z',
         },
       ],
@@ -187,6 +190,7 @@ describe('the C-Suite page', () => {
           candidateId: offlist.id,
           candidateName: offlist.name,
           monthlySalaryMinor: offlist.monthlySalaryMinor,
+          officeIndex: 0,
           hiredAt: '2024-10-20T00:00:00.000Z',
         },
       ],
@@ -298,6 +302,7 @@ describe('the executive floor plan', () => {
         if (url === '/api/office/executive/hires' && method === 'POST') {
           const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
             candidateId: string;
+            officeIndex?: number;
           };
           const c = EXECUTIVE_CANDIDATES.find((x) => x.id === body.candidateId)!;
           floor = {
@@ -308,6 +313,7 @@ describe('the executive floor plan', () => {
                 candidateId: c.id,
                 candidateName: c.name,
                 monthlySalaryMinor: c.monthlySalaryMinor,
+                officeIndex: body.officeIndex ?? floor.hires.length,
                 hiredAt: '2024-10-20T00:00:00.000Z',
               },
             ],
@@ -347,6 +353,24 @@ describe('the executive floor plan', () => {
     expect(await screen.findByRole('button', { name: 'Let go' })).toBeTruthy();
   });
 
+  it('puts the hire in the office you clicked, not the first free one', async () => {
+    floor = { ...floor, officesUnlocked: 3 };
+    renderWithPlan();
+    // Offices 01 and 02 are empty; hire into office 03 specifically.
+    fireEvent.click(await screen.findByRole('button', { name: /Executive Office 03, Vacant/i }));
+    const dialog = await screen.findByRole('dialog', { name: /Staff Executive Office 03/i });
+    const given = planFirst!.name.split(' ')[0]!;
+    fireEvent.click(within(dialog).getByRole('button', { name: new RegExp(`Hire ${given}`) }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: /Executive Office 03/i })).toBeNull(),
+    );
+    // The occupant is in office 03; office 01 is still an empty "+ Hire".
+    const office3 = screen.getByRole('button', { name: /Executive Office 03, Staffed/i });
+    expect(within(office3).getByText(planFirst!.name)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Executive Office 01, Vacant/i })).toBeTruthy();
+  });
+
   it('fires the occupant by clicking a staffed room', async () => {
     floor = {
       ...floor,
@@ -355,6 +379,7 @@ describe('the executive floor plan', () => {
           candidateId: planFirst!.id,
           candidateName: planFirst!.name,
           monthlySalaryMinor: planFirst!.monthlySalaryMinor,
+          officeIndex: 0,
           hiredAt: '2024-10-20T00:00:00.000Z',
         },
       ],
