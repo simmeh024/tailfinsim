@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  aggregateExecutiveBoosts,
+  EXECUTIVE_BOOST_LEVERS,
   EXECUTIVE_CANDIDATES,
   EXECUTIVE_FLOOR_REVENUE_GATE_MINOR,
   EXECUTIVE_FLOOR_UNLOCK_COST_MINOR,
@@ -79,5 +81,41 @@ describe('the C-Suite roster', () => {
     const first = EXECUTIVE_CANDIDATES[0]!;
     expect(executiveCandidate(first.id)).toEqual(first);
     expect(executiveCandidate('not-a-real-id')).toBeUndefined();
+  });
+
+  it('gives every executive a role and a boost on a known lever', () => {
+    for (const c of EXECUTIVE_CANDIDATES) {
+      expect(c.role.length).toBeGreaterThan(0);
+      expect(c.boost.label.length).toBeGreaterThan(0);
+      expect(c.boost.description.length).toBeGreaterThan(0);
+      expect(Object.keys(EXECUTIVE_BOOST_LEVERS)).toContain(c.boost.lever);
+      // A cost/duration lever improves by going down; everything else by going up.
+      const meta = EXECUTIVE_BOOST_LEVERS[c.boost.lever];
+      expect(meta.lowerIsBetter ? c.boost.magnitude < 0 : c.boost.magnitude > 0).toBe(true);
+    }
+  });
+
+  it('makes each executive’s boost unique by its badge label', () => {
+    const labels = new Set(EXECUTIVE_CANDIDATES.map((c) => c.boost.label));
+    expect(labels.size).toBe(EXECUTIVE_CANDIDATES.length);
+  });
+});
+
+describe('aggregateExecutiveBoosts', () => {
+  it('sums employed executives by lever, in lever order, ignoring unknown ids', () => {
+    // Two fare-yield executives (a VP and a President) collapse into one lever.
+    const fareYield = EXECUTIVE_CANDIDATES.filter((c) => c.boost.lever === 'fare-yield');
+    expect(fareYield.length).toBeGreaterThanOrEqual(2);
+    const ids = [...fareYield.map((c) => c.id), 'not-a-real-id'];
+    const agg = aggregateExecutiveBoosts(ids);
+    const yieldRow = agg.find((row) => row.lever === 'fare-yield');
+    expect(yieldRow?.totalMagnitude).toBeCloseTo(
+      fareYield.reduce((sum, c) => sum + c.boost.magnitude, 0),
+    );
+  });
+
+  it('returns nothing for an empty or all-unknown set', () => {
+    expect(aggregateExecutiveBoosts([])).toEqual([]);
+    expect(aggregateExecutiveBoosts(['nope', 'also-nope'])).toEqual([]);
   });
 });

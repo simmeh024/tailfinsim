@@ -5968,6 +5968,113 @@ body {
 }
 
 /*
+ * The C-Suite market's extras (§9.1 follow-up, Phase 3): the 24-hour refresh
+ * timer that sits above the heading, each card's role and standing boost, and
+ * the "Boosts in play" summary of what the employed executives currently give.
+ */
+.csuite-refresh {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+  width: min(72rem, 100%);
+  margin: 0 auto var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--accent-quiet);
+}
+
+.csuite-refresh__label {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.csuite-refresh__clock {
+  color: var(--text-primary);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.csuite-refresh__note {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.csuite-boosts {
+  width: min(72rem, 100%);
+  margin: var(--space-4) auto 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised, transparent);
+}
+
+.csuite-boosts__title {
+  margin: 0 0 var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.csuite-boosts__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.csuite-boosts__chip {
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--accent-quiet);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.hq-card__role {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  letter-spacing: 0.02em;
+}
+
+.hq-card__boost {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: var(--space-1) 0 0;
+}
+
+.hq-card__boost-badge {
+  align-self: start;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent-quiet);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.hq-card__boost-detail {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+/*
  * HQ layout overview — the Headquarters page's occupant of the context panel
  * (M5-04, App. H.4). A floor-plan of the six office seats: a filled seat shows a
  * rounded avatar and its occupant's name in the seat accent, a vacant one the
