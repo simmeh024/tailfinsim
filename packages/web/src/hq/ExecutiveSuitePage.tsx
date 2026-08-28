@@ -9,7 +9,13 @@ import {
   type ExecutiveFloorState,
 } from '@tailfin/shared';
 
-import { dismissExecutive, fetchExecutiveFloor, hireExecutive } from './api';
+import {
+  dismissExecutive,
+  fetchExecutiveFloor,
+  hireExecutive,
+  unlockExecutiveFloor,
+  unlockExecutiveOffice,
+} from './api';
 import { CSUITE_CANDIDATES, csuiteCandidate, type CSuiteCandidate } from './csuite-roster';
 import {
   msUntilRefresh,
@@ -17,6 +23,7 @@ import {
   rotatingExecutiveRoster,
   ROSTER_SIZE,
 } from './csuite-rotation';
+import { ExecutiveFloorPlan } from './ExecutiveFloorPlan';
 import { formatSalary } from './hq-roster';
 
 import type { ReactNode } from 'react';
@@ -68,6 +75,10 @@ export function ExecutiveSuitePage(): ReactNode {
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  // The executive floor's own open-floor / open-office actions, now driven from
+  // this page rather than the shell's context panel.
+  const [execBusy, setExecBusy] = useState(false);
+  const [execError, setExecError] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -96,6 +107,18 @@ export function ExecutiveSuitePage(): ReactNode {
       if (outcome.ok) setFloor(outcome.state);
       else setError(outcome.failure.message);
       setPending(null);
+    },
+    [],
+  );
+
+  const runExec = useCallback(
+    async (run: () => ReturnType<typeof unlockExecutiveFloor>): Promise<void> => {
+      setExecBusy(true);
+      setExecError(null);
+      const outcome = await run();
+      if (outcome.ok) setFloor(outcome.state);
+      else setExecError(outcome.failure.message);
+      setExecBusy(false);
     },
     [],
   );
@@ -164,102 +187,120 @@ export function ExecutiveSuitePage(): ReactNode {
         </div>
       </header>
 
-      {boostsInPlay.length > 0 && (
-        <section className="csuite-boosts" aria-label="Boosts in play">
-          <p className="csuite-boosts__title">Boosts in play</p>
-          <ul className="csuite-boosts__list">
-            {boostsInPlay.map((boost) => (
-              <li key={boost.lever} className="csuite-boosts__chip">
-                {formatAggregatedBoost(boost)}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <div className="csuite-page__layout">
+        <div className="csuite-page__main">
+          {boostsInPlay.length > 0 && (
+            <section className="csuite-boosts" aria-label="Boosts in play">
+              <p className="csuite-boosts__title">Boosts in play</p>
+              <ul className="csuite-boosts__list">
+                {boostsInPlay.map((boost) => (
+                  <li key={boost.lever} className="csuite-boosts__chip">
+                    {formatAggregatedBoost(boost)}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
-      {error !== null && (
-        <p className="hq-page__error" role="alert">
-          {error}
-        </p>
-      )}
+          {error !== null && (
+            <p className="hq-page__error" role="alert">
+              {error}
+            </p>
+          )}
 
-      {!loading && !floorUnlocked && (
-        <p className="hq-page__plan-hint">
-          Your executive floor is not open yet. Open it from the floor plan to the right, then open
-          an office or two before hiring your C-Suite.
-        </p>
-      )}
+          {!loading && !floorUnlocked && (
+            <p className="hq-page__plan-hint">
+              Your executive floor is not open yet. Open it on the floor plan beside the roster,
+              then open an office or two before hiring your C-Suite.
+            </p>
+          )}
 
-      {!loading && floorUnlocked && officesUnlocked === 0 && (
-        <p className="hq-page__plan-hint">
-          Your executive floor is open, but it has no offices yet. Open an office from the floor
-          plan to the right, then hire someone into it.
-        </p>
-      )}
+          {!loading && floorUnlocked && officesUnlocked === 0 && (
+            <p className="hq-page__plan-hint">
+              Your executive floor is open, but it has no offices yet. Open an office on the floor
+              plan beside the roster, then hire someone into it.
+            </p>
+          )}
 
-      <div className="hq-roster" aria-busy={loading}>
-        <section className="hq-seat" aria-label="C-Suite market">
-          <ul className="hq-grid">
-            {shown.map((candidate: CSuiteCandidate) => {
-              const isHired = hiredById.has(candidate.id);
-              const locked = !isHired && freeOffices === 0;
-              const given = candidate.name.split(' ')[0] ?? candidate.name;
-              const busy = pending === candidate.id;
-              return (
-                <li
-                  key={candidate.id}
-                  className="hq-card"
-                  data-hired={isHired}
-                  data-locked={locked}
-                >
-                  <div className="hq-card__portrait" data-hired={isHired}>
-                    <img src={candidate.portrait} alt={candidate.name} loading="lazy" />
-                    {locked && (
-                      <span className="hq-card__lock" aria-hidden="true">
-                        🔒
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="hq-card__body">
-                    <p className="hq-card__name">{candidate.name}</p>
-                    <p className="hq-card__role">{candidate.role}</p>
-
-                    <p className="hq-card__boost" title={candidate.boost.description}>
-                      <span className="hq-card__boost-badge">{candidate.boost.label}</span>
-                      <span className="hq-card__boost-detail">{candidate.boost.description}</span>
-                    </p>
-
-                    <dl className="hq-card__meta">
-                      <div>
-                        <dt>Tier</dt>
-                        <dd>{candidate.tier}</dd>
-                      </div>
-                      <div>
-                        <dt>Salary</dt>
-                        <dd>{formatSalary(candidate.monthlySalaryMinor)}/mo</dd>
-                      </div>
-                    </dl>
-
-                    <button
-                      type="button"
-                      className="hq-card__action"
-                      aria-pressed={isHired}
-                      disabled={loading || busy || locked}
-                      onClick={() =>
-                        isHired
-                          ? void act(candidate.id, () => dismissExecutive(candidate.id))
-                          : void act(candidate.id, () => hireExecutive(candidate.id))
-                      }
+          <div className="hq-roster" aria-busy={loading}>
+            <section className="hq-seat" aria-label="C-Suite market">
+              <ul className="hq-grid">
+                {shown.map((candidate: CSuiteCandidate) => {
+                  const isHired = hiredById.has(candidate.id);
+                  const locked = !isHired && freeOffices === 0;
+                  const given = candidate.name.split(' ')[0] ?? candidate.name;
+                  const busy = pending === candidate.id;
+                  return (
+                    <li
+                      key={candidate.id}
+                      className="hq-card"
+                      data-hired={isHired}
+                      data-locked={locked}
                     >
-                      {isHired ? 'Let go' : locked ? 'No free office' : `Hire ${given}`}
-                    </button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
+                      <div className="hq-card__portrait" data-hired={isHired}>
+                        <img src={candidate.portrait} alt={candidate.name} loading="lazy" />
+                        {locked && (
+                          <span className="hq-card__lock" aria-hidden="true">
+                            🔒
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="hq-card__body">
+                        <p className="hq-card__name">{candidate.name}</p>
+                        <p className="hq-card__role">{candidate.role}</p>
+
+                        <p className="hq-card__boost" title={candidate.boost.description}>
+                          <span className="hq-card__boost-badge">{candidate.boost.label}</span>
+                          <span className="hq-card__boost-detail">
+                            {candidate.boost.description}
+                          </span>
+                        </p>
+
+                        <dl className="hq-card__meta">
+                          <div>
+                            <dt>Tier</dt>
+                            <dd>{candidate.tier}</dd>
+                          </div>
+                          <div>
+                            <dt>Salary</dt>
+                            <dd>{formatSalary(candidate.monthlySalaryMinor)}/mo</dd>
+                          </div>
+                        </dl>
+
+                        <button
+                          type="button"
+                          className="hq-card__action"
+                          aria-pressed={isHired}
+                          disabled={loading || busy || locked}
+                          onClick={() =>
+                            isHired
+                              ? void act(candidate.id, () => dismissExecutive(candidate.id))
+                              : void act(candidate.id, () => hireExecutive(candidate.id))
+                          }
+                        >
+                          {isHired ? 'Let go' : locked ? 'No free office' : `Hire ${given}`}
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          </div>
+        </div>
+
+        {floor !== null && (
+          <aside className="csuite-page__floor" aria-label="Executive floor">
+            <ExecutiveFloorPlan
+              execState={floor}
+              busy={execBusy}
+              error={execError}
+              onUnlockFloor={() => void runExec(() => unlockExecutiveFloor())}
+              onOpenOffice={() => void runExec(() => unlockExecutiveOffice())}
+            />
+          </aside>
+        )}
       </div>
     </section>
   );

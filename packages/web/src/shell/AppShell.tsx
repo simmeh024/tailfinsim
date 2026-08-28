@@ -141,9 +141,15 @@ function ContextPanel({
   onSelectOffice: (seat: OfficeSeatId) => void;
 }): ReactNode {
   const { selection, clear, attachPanelBody } = useContextSelection();
+  const pathname = useLocation().pathname;
   // The Head Office floor-plan belongs to the Headquarters page, not to every
   // screen — elsewhere the panel is the plain selection surface it started as.
-  const onHeadquarters = useLocation().pathname.startsWith('/headquarters');
+  const onHeadquarters = pathname.startsWith('/headquarters');
+  // The C-Suite page carries its own executive floor now, so it wants no context
+  // window beside it — the panel steps aside entirely and the page takes the width.
+  const onCSuite = pathname.startsWith('/c-suite');
+
+  if (onCSuite) return null;
 
   if (!open) {
     return (

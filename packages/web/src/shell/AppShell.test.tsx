@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -90,7 +90,17 @@ beforeEach(() => {
                     immutableFields: ['iataCode', 'icaoCode', 'cash', 'reputation'],
                   },
                 }
-              : {};
+              : url === '/api/office/executive'
+                ? {
+                    unlocked: false,
+                    officesUnlocked: 0,
+                    unlockCostMinor: 10_000_000_000,
+                    revenueGateMinor: 5_000_000_000,
+                    monthlyRevenueMinor: 0,
+                    nextOffice: null,
+                    hires: [],
+                  }
+                : {};
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
     }),
   );
@@ -120,6 +130,25 @@ describe('layout', () => {
 
     const hq = await renderAt('/headquarters');
     expect(hq.container.querySelector('.hq-layout__floor')).not.toBeNull();
+  });
+
+  it('drops the context panel on the C-Suite page and shows the executive floor inline', async () => {
+    // Freeze the clock so the C-Suite page's once-a-second countdown is a no-op
+    // (setNow to the same value bails the re-render) — otherwise it lands a state
+    // update after the test, as an unwrapped act warning.
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(Date.UTC(2026, 7, 28, 9, 0, 0));
+    try {
+      const { container } = await renderAt('/c-suite');
+      // No context window beside the page…
+      expect(screen.queryByRole('complementary', { name: 'Context' })).toBeNull();
+      // …and the executive floor plan is rendered on the page itself instead, once
+      // the page's floor fetch resolves.
+      await waitFor(() =>
+        expect(container.querySelector('.hq-layout__floor--exec')).not.toBeNull(),
+      );
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it('renders the world on the World page and nowhere else', async () => {
