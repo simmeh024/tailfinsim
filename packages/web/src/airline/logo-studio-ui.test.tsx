@@ -2,9 +2,9 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { OwnAirlineResponse } from '@tailfin/shared';
+import { newLayer, type OwnAirlineResponse } from '@tailfin/shared';
 
-import { LogoStudioPage } from './LogoStudioPage';
+import { LogoStudioPage, resizeLayerContent } from './LogoStudioPage';
 
 const OWN: OwnAirlineResponse = {
   airline: {
@@ -147,5 +147,41 @@ describe('the logo studio', () => {
     stub({ airline: { ...OWN.airline!, status: 'ceased' }, rebrand: null });
     renderStudio();
     expect(await screen.findByText(/cannot be rebranded right now/i)).toBeInTheDocument();
+  });
+});
+
+/**
+ * Corner-handle resizing. jsdom lays out no SVG geometry, so the pointer drag is
+ * the browser's job; what is testable is the pure resize maths the drag feeds —
+ * that a corner dragged to (px, py) sizes a centred layer to match, clamped to
+ * the schema's ranges.
+ */
+describe('resizeLayerContent', () => {
+  it('sets a circle radius from the corner distance, clamped', () => {
+    const circle = newLayer('circle').content; // centred at 0.5, 0.5
+    const bigger = resizeLayerContent(circle, 0.8, 0.5);
+    expect(bigger.type === 'circle' && bigger.r).toBeCloseTo(0.3, 5);
+    // Dragging onto the centre collapses to the schema minimum, not to zero.
+    const tiny = resizeLayerContent(circle, 0.5, 0.5);
+    expect(tiny.type === 'circle' && tiny.r).toBe(0.01);
+  });
+
+  it('resizes a rectangle’s width and height independently', () => {
+    const rect = newLayer('rect').content; // centred at 0.5, 0.5
+    const next = resizeLayerContent(rect, 0.7, 0.65);
+    expect(next.type === 'rect' && next.w).toBeCloseTo(0.4, 5);
+    expect(next.type === 'rect' && next.h).toBeCloseTo(0.3, 5);
+  });
+
+  it('scales a path out from its centre', () => {
+    const path = newLayer('path').content;
+    const before = path.type === 'path' ? path : null;
+    const grown = resizeLayerContent(path, 0.95, 0.95);
+    expect(grown.type).toBe('path');
+    if (grown.type === 'path' && before) {
+      const spread = (pts: { x: number; y: number }[]): number =>
+        Math.max(...pts.map((p) => Math.abs(p.x - 0.5)));
+      expect(spread(grown.points)).toBeGreaterThan(spread(before.points));
+    }
   });
 });

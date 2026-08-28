@@ -176,6 +176,69 @@ function layerBounds(content: AirlineLogoLayerContent): {
   }
 }
 
+const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
+
+/**
+ * Resize a layer's content to a corner dragged to (px, py), keeping its centre
+ * fixed. Sizes clamp to the same ranges the schema allows, so a resize can never
+ * produce a value the save would reject. rect resizes width and height
+ * independently; everything else scales uniformly, and line/path scale their
+ * points out from the centre.
+ */
+export function resizeLayerContent(
+  content: AirlineLogoLayerContent,
+  px: number,
+  py: number,
+): AirlineLogoLayerContent {
+  const centre = layerCenter(content);
+  const halfW = Math.max(0.005, Math.abs(px - centre.x));
+  const halfH = Math.max(0.005, Math.abs(py - centre.y));
+  const uniform = Math.max(halfW, halfH);
+
+  switch (content.type) {
+    case 'circle':
+      return { ...content, r: clamp(uniform, 0.01, 0.6) };
+    case 'rect':
+      return { ...content, w: clamp(halfW * 2, 0.01, 1), h: clamp(halfH * 2, 0.01, 1) };
+    case 'triangle':
+      return { ...content, size: clamp(uniform * 2, 0.02, 1) };
+    case 'text':
+    case 'symbol':
+      return { ...content, size: clamp(uniform * 2, 0.05, 1) };
+    case 'line': {
+      const extent = Math.max(
+        1e-3,
+        Math.abs(content.x1 - centre.x),
+        Math.abs(content.y1 - centre.y),
+        Math.abs(content.x2 - centre.x),
+        Math.abs(content.y2 - centre.y),
+      );
+      const f = clamp(uniform / extent, 0.1, 12);
+      return {
+        ...content,
+        x1: clamp01(centre.x + (content.x1 - centre.x) * f),
+        y1: clamp01(centre.y + (content.y1 - centre.y) * f),
+        x2: clamp01(centre.x + (content.x2 - centre.x) * f),
+        y2: clamp01(centre.y + (content.y2 - centre.y) * f),
+      };
+    }
+    case 'path': {
+      const extent = Math.max(
+        1e-3,
+        ...content.points.flatMap((p) => [Math.abs(p.x - centre.x), Math.abs(p.y - centre.y)]),
+      );
+      const f = clamp(uniform / extent, 0.1, 12);
+      return {
+        ...content,
+        points: content.points.map((p) => ({
+          x: clamp01(centre.x + (p.x - centre.x) * f),
+          y: clamp01(centre.y + (p.y - centre.y) * f),
+        })),
+      };
+    }
+  }
+}
+
 /* ------------------------------------------------------------------ labels -- */
 
 const SHAPE_LABELS: Record<AirlineLogoShape, string> = {
@@ -306,19 +369,21 @@ function StudioCanvas({
   showGuides,
   onSelect,
   onMoveLive,
-  onMoveStart,
-  onMoveEnd,
+  onResizeLive,
+  onGestureStart,
+  onGestureEnd,
 }: {
   logo: ComposedAirlineLogo;
   selectedId: string | null;
   showGuides: boolean;
   onSelect: (id: string) => void;
   onMoveLive: (id: string, nx: number, ny: number) => void;
-  onMoveStart: () => void;
-  onMoveEnd: () => void;
+  onResizeLive: (id: string, px: number, py: number) => void;
+  onGestureStart: () => void;
+  onGestureEnd: () => void;
 }): ReactNode {
   const svgRef = useRef<SVGSVGElement>(null);
-  const dragging = useRef<string | null>(null);
+  const dragging = useRef<{ id: string; mode: 'move' | 'resize' } | null>(null);
 
   const pointerUnit = (event: ReactPointerEvent): { x: number; y: number } => {
     const svg = svgRef.current!;
@@ -329,9 +394,31 @@ function StudioCanvas({
     };
   };
 
+  const selected = logo.layers.find((l) => l.id === selectedId) ?? null;
+  const box = selected ? layerBounds(selected.content) : null;
+
   const onDown = (event: ReactPointerEvent): void => {
     const point = pointerUnit(event);
-    // Select the nearest visible, unlocked layer centre within reach and drag it.
+
+    // A drag that starts on a corner handle of the selected, unlocked layer is a
+    // resize — checked first, because a handle can sit far from the layer centre.
+    if (selected && !selected.locked && box) {
+      const corners = [
+        [box.x, box.y],
+        [box.x + box.w, box.y],
+        [box.x, box.y + box.h],
+        [box.x + box.w, box.y + box.h],
+      ];
+      const onHandle = corners.some(([hx, hy]) => Math.hypot(hx! - point.x, hy! - point.y) < 0.06);
+      if (onHandle) {
+        dragging.current = { id: selected.id, mode: 'resize' };
+        onGestureStart();
+        svgRef.current?.setPointerCapture(event.pointerId);
+        return;
+      }
+    }
+
+    // Otherwise select the nearest visible, unlocked layer centre and move it.
     let best: string | null = null;
     let bestDistance = 0.28;
     for (const layer of logo.layers) {
@@ -345,29 +432,28 @@ function StudioCanvas({
     }
     if (best === null) return;
     onSelect(best);
-    dragging.current = best;
-    onMoveStart();
+    dragging.current = { id: best, mode: 'move' };
+    onGestureStart();
     svgRef.current?.setPointerCapture(event.pointerId);
   };
 
   const onMove = (event: ReactPointerEvent): void => {
     if (dragging.current === null) return;
     const point = pointerUnit(event);
-    onMoveLive(dragging.current, point.x, point.y);
+    if (dragging.current.mode === 'resize') onResizeLive(dragging.current.id, point.x, point.y);
+    else onMoveLive(dragging.current.id, point.x, point.y);
   };
 
   const onUp = (): void => {
     if (dragging.current === null) return;
     dragging.current = null;
-    onMoveEnd();
+    onGestureEnd();
   };
 
   const frame = framePath(logo.shape);
   const FrameTag = frame.tag;
   const frameFill = resolvePaint(logo.palette, logo.frameFill) ?? 'none';
   const frameStroke = resolvePaint(logo.palette, logo.frameStroke);
-  const selected = logo.layers.find((l) => l.id === selectedId) ?? null;
-  const box = selected ? layerBounds(selected.content) : null;
 
   return (
     <svg
@@ -767,13 +853,21 @@ export function LogoStudioPage(): ReactNode {
               selectedId={selectedId}
               showGuides={showGuides}
               onSelect={setSelectedId}
-              onMoveStart={startGesture}
-              onMoveEnd={endGesture}
+              onGestureStart={startGesture}
+              onGestureEnd={endGesture}
               onMoveLive={(id, nx, ny) =>
                 history.live({
                   ...logo,
                   layers: logo.layers.map((l) =>
                     l.id === id ? { ...l, content: moveLayerContent(l.content, nx, ny) } : l,
+                  ),
+                })
+              }
+              onResizeLive={(id, px, py) =>
+                history.live({
+                  ...logo,
+                  layers: logo.layers.map((l) =>
+                    l.id === id ? { ...l, content: resizeLayerContent(l.content, px, py) } : l,
                   ),
                 })
               }
