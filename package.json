@@ -14,6 +14,7 @@
     "build": "pnpm --filter @tailfin/server build && pnpm --filter @tailfin/web build",
     "assets:build": "pnpm --filter @tailfin/assets build",
     "assets:meshy": "pnpm --filter @tailfin/assets meshy",
+    "assets:meshy-run": "pnpm --filter @tailfin/assets meshy-run",
     "assets:intake": "pnpm --filter @tailfin/assets intake",
     "assets:salvage:a320neo": "pnpm --filter @tailfin/assets salvage:a320neo",
     "assets:validate": "pnpm --filter @tailfin/assets validate",

@@ -1,7 +1,7 @@
 import { build } from 'esbuild';
 
 await build({
-  entryPoints: ['src/cli.ts', 'src/meshy-cli.ts'],
+  entryPoints: ['src/cli.ts', 'src/meshy-cli.ts', 'src/meshy-run-cli.ts'],
   outdir: 'dist',
   bundle: true,
   external: ['@gltf-transform/*', 'gltf-validator', 'meshoptimizer', 'sharp', 'watlas', 'zod'],
