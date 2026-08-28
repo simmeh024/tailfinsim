@@ -47,7 +47,7 @@ export default defineConfig({
   webServer: configuredBaseUrl
     ? undefined
     : {
-        command: 'node e2e/start-server.mjs',
+        command: 'pnpm exec tsx packages/server/src/e2e/prepare.ts && node e2e/start-server.mjs',
         url: `${baseURL}/healthz`,
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,
