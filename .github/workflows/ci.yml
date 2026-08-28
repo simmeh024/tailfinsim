@@ -56,7 +56,8 @@ jobs:
 
       - name: Set up pnpm
         # Version comes from the "packageManager" field in package.json.
-        uses: pnpm/action-setup@v6
+        # pnpm/action-setup v6.0.10
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
 
       - name: Set up Node
         uses: actions/setup-node@v7
@@ -220,5 +221,75 @@ jobs:
         with:
           name: coverage
           path: coverage/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # Kept separate from `verify`: browser coverage must run beside the existing
+  # gate, never make its fast feedback wait behind Chromium or a second database.
+  # It is deliberately not required by branch protection yet. Make it required
+  # only after two weeks of green PR runs with no unexplained retries.
+  e2e-chromium:
+    name: e2e · chromium
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tailfin
+          POSTGRES_PASSWORD: tailfin_ci
+          POSTGRES_DB: tailfin_e2e_ci
+          POSTGRES_INITDB_ARGS: '--locale=C --encoding=UTF8'
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tailfin -d tailfin_e2e_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      E2E_DATABASE_URL: postgres://tailfin:tailfin_ci@127.0.0.1:5432/tailfin_e2e_ci
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        # pnpm/action-setup v6.0.10
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Restore Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      # The managed Playwright server runs `prepare.ts`, which migrations and
+      # resets this database before each suite; it never contacts dev or prod.
+      - name: Run Chromium smoke suite
+        run: pnpm exec playwright test --grep @smoke
+
+      - name: Upload Playwright diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-diagnostics
+          path: |
+            test-results/
+            playwright-report/
           retention-days: 7
           if-no-files-found: ignore
