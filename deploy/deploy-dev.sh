@@ -22,6 +22,11 @@ export REPO_DIR="${REPO_DIR:-/srv/tailfin-dev}"
 export SERVICE="${SERVICE:-tailfin-dev}"
 export HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3001/healthz}"
 export MIGRATION_DATABASE="${MIGRATION_DATABASE:-tailfin_dev}"
+# The public origin is intentional: the post-deploy browser smoke must exercise
+# Caddy, TLS and the built client, rather than merely the loopback health port.
+export POST_DEPLOY_BASE_URL="${POST_DEPLOY_BASE_URL:-https://dev.tailfinsim.com}"
+export POST_DEPLOY_EXPECTED_ENVIRONMENT="${POST_DEPLOY_EXPECTED_ENVIRONMENT:-dev}"
+export ROLLBACK_COMMAND="${ROLLBACK_COMMAND:-./deploy/deploy-dev.sh}"
 
 # Dev exists to run code that is not on main yet — reviewing work before it is
 # merged is the entire job. deploy.sh refuses a ref that is not on main
