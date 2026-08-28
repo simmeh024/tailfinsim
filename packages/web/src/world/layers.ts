@@ -28,20 +28,29 @@ export interface WorldRoute {
   target: LngLat;
 }
 
-/** One airport/city dot on the world map. */
+/** One airport/city a player could serve, as a dot on the world map. */
 export interface WorldAirport {
   /** `[longitude, latitude]`. */
   position: LngLat;
   name: string;
-  /** OurAirports kind — large_airport, medium_airport, … — sets the dot's size. */
-  kind: string;
+  /** App. B.3 tier — flagship, large, medium, small, regional — sets the dot's size. */
+  tier: string;
 }
 
-/** Dot radius in pixels by airport kind — a hub reads larger than a regional field. */
-function airportRadius(kind: string): number {
-  if (kind === 'large_airport') return 2.6;
-  if (kind === 'medium_airport') return 1.8;
-  return 1.2;
+/** Dot radius in pixels by tier — a flagship hub reads larger than a regional field. */
+function airportRadius(tier: string): number {
+  switch (tier) {
+    case 'flagship':
+      return 3;
+    case 'large':
+      return 2.4;
+    case 'medium':
+      return 1.8;
+    case 'small':
+      return 1.4;
+    default:
+      return 1.1;
+  }
 }
 
 export interface CreateWorldLayersOptions {
@@ -548,7 +557,7 @@ export function createWorldLayers({
         id: 'world-airports',
         data: airports,
         getPosition: ({ position }) => position,
-        getRadius: ({ kind }) => airportRadius(kind),
+        getRadius: ({ tier }) => airportRadius(tier),
         radiusUnits: 'pixels',
         radiusMinPixels: 1,
         radiusMaxPixels: 5,

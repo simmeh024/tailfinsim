@@ -292,8 +292,8 @@ describe('projection-independent world layers', () => {
 
   it('draws the airports layer only when the airports toggle is on', () => {
     const airports: WorldAirport[] = [
-      { position: [4.76, 52.31], name: 'Amsterdam', kind: 'large_airport' },
-      { position: [-73.78, 40.64], name: 'New York', kind: 'medium_airport' },
+      { position: [4.76, 52.31], name: 'Amsterdam', tier: 'flagship' },
+      { position: [-73.78, 40.64], name: 'New York', tier: 'large' },
     ];
     const build = (show: boolean): (Layer | false)[] =>
       createWorldLayers({
