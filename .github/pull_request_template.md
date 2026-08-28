@@ -41,5 +41,10 @@ Closes #
 **Docs** —
 <!-- none needed · or what changed alongside the behaviour. -->
 
+**E2E coverage** —
+<!-- player-facing: the critical happy-path journey and whether it joins nightly or the PR
+     suite; non-player-facing: none. Keep calculations, permutations and implementation
+     details in focused tests. See CONTRIBUTING.md. -->
+
 Merging this stages a release. Production moves only when a human runs
 `./deploy/deploy.sh` on the box.
