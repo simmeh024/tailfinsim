@@ -79,7 +79,6 @@ export default tseslint.config(
           // any package's `rootDir` and so belong to no project.
           allowDefaultProject: [
             '*.js',
-            '*.ts',
             'packages/*/drizzle.config.ts',
             'packages/*/vite.config.ts',
           ],

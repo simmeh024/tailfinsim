@@ -1,6 +1,13 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "files": [],
+  "files": ["playwright.config.ts", "vitest.config.ts"],
+  "compilerOptions": {
+    // This root project owns only tool configuration. The referenced packages
+    // retain their declaration output; config files should be checked, never
+    // emitted beside their sources.
+    "noEmit": true,
+    "types": ["node"]
+  },
   "references": [
     { "path": "./packages/shared" },
     { "path": "./packages/assets" },

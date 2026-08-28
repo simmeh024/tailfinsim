@@ -10,6 +10,10 @@ build/
 # Test / coverage
 coverage/
 .vitest/
+.e2e-types/
+playwright-report/
+test-results/
+e2e/.auth/
 
 # Environment — never commit secrets (M0-05: connection config from env)
 .env
