@@ -1,7 +1,12 @@
 import { eq, inArray } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { FLAGSHIP_CONFIG, OwnAirlineResponse, UpdateOwnAirlineResponse } from '@tailfin/shared';
+import {
+  FLAGSHIP_CONFIG,
+  OwnAirlineResponse,
+  UpdateOwnAirlineResponse,
+  defaultAirlineLogo,
+} from '@tailfin/shared';
 
 import { buildApp } from '../app';
 import { createSession, SESSION_COOKIE } from '../auth/session';
@@ -387,6 +392,99 @@ describeDb('reading and changing your own airline', () => {
         .where(eq(airlineIdentityChange.airlineId, own.id)),
     ).toEqual([]);
   });
+
+  it('reads unsupported saved artwork without losing it, and preserves it on identity-only edits', async () => {
+    const playerId = await makePlayer();
+    const own = await makeAirline(playerId);
+    const token = await tokenFor(playerId);
+    const futureLogo = { v: 99, shape: 'roundel', layers: [], palette: ['#123456'] };
+    await db.db
+      .update(airline)
+      .set({ logo: futureLogo as unknown as NonNullable<typeof own.logo> })
+      .where(eq(airline.id, own.id));
+    const read = await app.inject({
+      method: 'GET',
+      url: '/api/airlines/me',
+      cookies: { [SESSION_COOKIE]: token },
+    });
+    expect(read.statusCode).toBe(200);
+    expect(OwnAirlineResponse.safeParse(read.json()).success).toBe(true);
+    expect(read.json()).toMatchObject({ airline: { id: own.id, logo: null } });
+    const unchanged = await app.inject({
+      method: 'PATCH',
+      url: '/api/airlines/me',
+      cookies: { [SESSION_COOKIE]: token },
+      payload: { name: own.name, callsign: own.callsign, baseCountry: own.baseCountry },
+    });
+    expect(unchanged.statusCode).toBe(200);
+    expect(unchanged.json()).toMatchObject({ changed: false, chargedMinor: 0 });
+    const edited = await app.inject({
+      method: 'PATCH',
+      url: '/api/airlines/me',
+      cookies: { [SESSION_COOKIE]: token },
+      payload: {
+        name: 'Renamed Example Air',
+        callsign: own.callsign,
+        baseCountry: own.baseCountry,
+      },
+    });
+    expect(edited.statusCode).toBe(200);
+    expect(UpdateOwnAirlineResponse.safeParse(edited.json()).success).toBe(true);
+    expect(edited.json()).toMatchObject({ changed: true, airline: { logo: null } });
+    const [stored] = await db.db.select().from(airline).where(eq(airline.id, own.id));
+    expect(stored?.logo).toEqual(futureLogo);
+    const events = await db.db
+      .select()
+      .from(airlineIdentityChange)
+      .where(eq(airlineIdentityChange.airlineId, own.id));
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ beforeLogo: futureLogo, afterLogo: futureLogo });
+    expect(await reconcileAirlineCash(db.db, own.id)).toMatchObject({ reconciles: true });
+  });
+
+  it.each([null, defaultAirlineLogo('EA')])(
+    'refuses replacing unsupported artwork with %j without changing identity, cash or audit',
+    async (logo) => {
+      const playerId = await makePlayer();
+      const own = await makeAirline(playerId);
+      const futureLogo = { v: 99, shape: 'roundel', layers: [], palette: ['#123456'] };
+      await db.db
+        .update(airline)
+        .set({ logo: futureLogo as unknown as NonNullable<typeof own.logo> })
+        .where(eq(airline.id, own.id));
+      const before = await db.db.select().from(airline).where(eq(airline.id, own.id));
+      const cashBefore = await db.db
+        .select()
+        .from(cashMovement)
+        .where(eq(cashMovement.airlineId, own.id));
+      const response = await app.inject({
+        method: 'PATCH',
+        url: '/api/airlines/me',
+        cookies: { [SESSION_COOKIE]: await tokenFor(playerId) },
+        payload: {
+          name: 'Must Not Change',
+          callsign: own.callsign,
+          baseCountry: own.baseCountry,
+          logo,
+        },
+      });
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({
+        code: 'logo_version_unsupported',
+        fields: { logo: expect.any(Array) },
+      });
+      expect(await db.db.select().from(airline).where(eq(airline.id, own.id))).toEqual(before);
+      expect(
+        await db.db.select().from(cashMovement).where(eq(cashMovement.airlineId, own.id)),
+      ).toEqual(cashBefore);
+      expect(
+        await db.db
+          .select()
+          .from(airlineIdentityChange)
+          .where(eq(airlineIdentityChange.airlineId, own.id)),
+      ).toEqual([]);
+    },
+  );
 
   it.each([
     ['cash', 900_000_000],

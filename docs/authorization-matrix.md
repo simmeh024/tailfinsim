@@ -30,6 +30,12 @@ signed-in non-admin. The airline guards compose `requireAuth` with session-deriv
 restricted or ceased airline, and `requireOperatingAirline` refuses a ceased airline while
 allowing an existing operation to continue when restricted.
 
+Persisted logo JSON does not grant authority. An unsupported logo format uses the default
+emblem in airline projections without changing the stored source or owner. After the normal
+owner/active-airline guards, an explicit logo replacement or clear on an incompatible build
+returns `409 logo_version_unsupported` before any identity, cash or audit mutation. Omitted
+logos remain untouched during identity-only edits. The shared request schema stays strict.
+
 ## Response policy
 
 | Situation                                                   | Status | Contract                                                                         |

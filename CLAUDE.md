@@ -182,6 +182,14 @@ change that to preserve a convenient cookie: the pre-change token must receive 4
 player sessions default to 30 days, admin sessions to 12 hours, and production refuses a
 non-HTTPS `PUBLIC_ORIGIN`; see ADR-0015.
 
+**Logo preview rollback must preserve saved artwork.** `wireAirline` validates persisted
+logo JSON against the running build's schema. Unsupported artwork projects as `null` (the
+default emblem), never as a broken airline response; the database source remains untouched.
+Rebranding with an explicit logo on such a build returns `409 logo_version_unsupported`
+before changing identity, cash or audit. Omitting the logo preserves it, including in an
+identity-only rebrand's audit. A compatible logo-studio release restores its display and
+editing. Do not repair this by clearing saved JSON or weakening the shared write schema.
+
 **Private resources are concealed by resolution, not by a post-query owner check.** ADR-0020
 sets the HTTP vocabulary: 401 means no valid session, 403 means a valid identity lacks a safe-
 to-disclose permission, and malformed, missing or cross-owner private path ids receive the

@@ -188,6 +188,14 @@ export function registerAirlineRoutes(
         { identityModerator },
       );
       if (!result.ok) {
+        if (result.kind === 'logo-version-unsupported') {
+          return reply.code(409).send({
+            code: 'logo_version_unsupported',
+            message:
+              'Your saved logo uses a format this build cannot edit. It is preserved; use a compatible logo-studio build to change it.',
+            fields: { logo: ['Saved logo preserved. This build cannot replace or clear it.'] },
+          });
+        }
         if (result.kind === 'airline-restricted') {
           return reply.code(409).send({
             code: 'airline_restricted',

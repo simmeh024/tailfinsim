@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 
-import { airlineLogoEquals } from '@tailfin/shared';
+import { AirlineLogo, airlineLogoEquals } from '@tailfin/shared';
 import type {
   Airline as AirlineContract,
   OwnAirlineResponse,
@@ -100,6 +100,7 @@ export type UpdateOwnAirlineResult =
       reason: string;
     }
   | { ok: false; kind: 'airline-restricted' }
+  | { ok: false; kind: 'logo-version-unsupported' }
   | { ok: false; kind: 'airline-ceased' };
 
 /**
@@ -146,6 +147,12 @@ export async function updateOwnAirline(
     // provided-and-different logo is a change. null clears it to the default.
     const currentLogo = current.row.logo ?? null;
     const logoProvided = input.logo !== undefined;
+    // jsonb's TypeScript annotation cannot validate artwork saved by a newer
+    // release. Never compare or overwrite unsupported source through a fallback
+    // emblem. Omission still preserves it for ordinary identity-only changes.
+    if (logoProvided && currentLogo !== null && !AirlineLogo.safeParse(currentLogo).success) {
+      return { ok: false, kind: 'logo-version-unsupported' };
+    }
     const nextLogo = logoProvided ? (input.logo ?? null) : currentLogo;
     const logoChanged = logoProvided && !airlineLogoEquals(currentLogo, nextLogo);
 

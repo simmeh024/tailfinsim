@@ -1,9 +1,13 @@
-import { type Airline as AirlineContract } from '@tailfin/shared';
+import { AirlineLogo, type Airline as AirlineContract } from '@tailfin/shared';
 
 import { type AirlineRow } from '../db/schema';
 
 /** Normalise one stored airline into the shared wire contract. */
 export function wireAirline(row: AirlineRow): AirlineContract {
+  // A newer preview may have persisted a logo this release cannot render.
+  // Fall back only in the projection, never rewrite the stored artwork. The
+  // rebrand boundary also refuses logo edits until a compatible build returns.
+  const logo = AirlineLogo.safeParse(row.logo);
   return {
     id: row.id,
     worldId: row.worldId,
@@ -15,7 +19,7 @@ export function wireAirline(row: AirlineRow): AirlineContract {
     icaoCode: row.icaoCode,
     callsign: row.callsign,
     baseCountry: row.baseCountry,
-    logo: row.logo ?? null,
+    logo: logo.success ? logo.data : null,
     cash: row.cashMinor,
     // `numeric(3,2)` is a string at the database boundary. The shared wire
     // schema is deliberately a number, so normalise once here.
