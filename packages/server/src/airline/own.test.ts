@@ -471,7 +471,7 @@ describeDb('reading and changing your own airline', () => {
       expect(response.statusCode).toBe(409);
       expect(response.json()).toMatchObject({
         code: 'logo_version_unsupported',
-        fields: { logo: expect.any(Array) },
+        fields: { logo: ['Saved logo preserved. This build cannot replace or clear it.'] },
       });
       expect(await db.db.select().from(airline).where(eq(airline.id, own.id))).toEqual(before);
       expect(
