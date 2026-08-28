@@ -96,4 +96,49 @@ test.describe('console freshness under API failures', () => {
     await expect(page.getByText(world!.tickDetail, { exact: true })).toBeVisible();
     expect(intercepted).toBe(1);
   });
+
+  test('shows loading while an overview response is delayed, then resolves', async ({ page }) => {
+    let release: (() => void) | undefined;
+    const delayed = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route('**/api/admin/overview', async (route) => {
+      await delayed;
+      await route.continue();
+    });
+    const navigation = page.goto('/admin');
+    await expect(page.getByText('Loading overview…')).toBeVisible();
+    release!();
+    await navigation;
+    await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
+  });
+
+  test('renders valid empty player and world lists as empty states', async ({ page }) => {
+    await page.route('**/api/admin/worlds', async (route) => {
+      await route.fulfill({ contentType: 'application/json', body: '{"worlds":[]}' });
+    });
+    await page.goto('/admin/worlds');
+    await expect(page.getByText('No worlds yet.')).toBeVisible();
+    await page.unroute('**/api/admin/worlds');
+    await page.route('**/api/admin/players', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: '{"players":[],"total":0,"query":""}',
+      });
+    });
+    await page.goto('/admin/players');
+    await expect(page.getByText('No players yet.')).toBeVisible();
+  });
+
+  test('does not render a half-populated worlds list after a 403', async ({ page }) => {
+    let intercepted = 0;
+    await page.route('**/api/admin/worlds', async (route) => {
+      intercepted += 1;
+      await route.fulfill({ status: 403, contentType: 'application/json', body: '{}' });
+    });
+    await page.goto('/admin/worlds');
+    await expect(page.getByText('Could not load the world list.')).toBeVisible();
+    await expect(page.getByRole('table')).toHaveCount(0);
+    expect(intercepted).toBe(1);
+  });
 });
