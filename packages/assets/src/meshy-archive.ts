@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   closeSync,
+  constants,
   existsSync,
   fstatSync,
   fsyncSync,
@@ -79,23 +80,35 @@ function directory(path: string): void {
 
 /** Bound allocation even if a file grows, and refuse redirected/hard-linked archive objects. */
 function readObject(path: string, limit: number): Buffer {
-  if (realpathSync(dirname(path)) !== resolve(dirname(path))) throw new Error(REFUSED);
-  const info = lstatSync(path);
-  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.size > limit)
-    throw new Error(REFUSED);
-  const fd = openSync(path, 'r');
+  // Open first, then inspect/read that same handle: a path precheck cannot authorize
+  // a later open. POSIX additionally refuses symlinks and avoids blocking on FIFOs.
+  // Windows does not expose those flags; its handle/path checks still precede all reads.
+  const flags =
+    process.platform === 'win32'
+      ? constants.O_RDONLY
+      : constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK;
+  const fd = openSync(path, flags);
   try {
     const opened = fstatSync(fd);
-    if (opened.ino !== info.ino || opened.size !== info.size || opened.nlink !== 1)
+    if (!opened.isFile() || opened.nlink !== 1 || opened.size > limit) throw new Error(REFUSED);
+    const info = lstatSync(path);
+    if (
+      info.isSymbolicLink() ||
+      info.ino !== opened.ino ||
+      info.dev !== opened.dev ||
+      info.nlink !== 1 ||
+      info.size !== opened.size ||
+      realpathSync(dirname(path)) !== resolve(dirname(path))
+    )
       throw new Error(REFUSED);
-    const bytes = Buffer.alloc(info.size);
+    const bytes = Buffer.alloc(opened.size);
     let offset = 0;
     while (offset < bytes.length) {
       const count = readSync(fd, bytes, offset, bytes.length - offset, offset);
       if (!count) throw new Error(REFUSED);
       offset += count;
     }
-    if (fstatSync(fd).size !== info.size) throw new Error(REFUSED);
+    if (fstatSync(fd).size !== opened.size) throw new Error(REFUSED);
     return bytes;
   } finally {
     closeSync(fd);

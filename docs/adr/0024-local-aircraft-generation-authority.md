@@ -84,6 +84,9 @@ file contents are flushed but Node cannot flush a directory; interrupted/missing
 require inspection, never an automatic overwrite. POSIX also flushes the directory. A process crash
 can leave an orphan temporary link; preserve it for inspection. Duplicate polling cannot change an
 archived receipt's timestamp. Signed URLs remain ephemeral and no raw task JSON is persisted.
+Archive reads open first, validate the opened descriptor and its current path, then read that same
+handle. POSIX additionally uses `O_NOFOLLOW` and `O_NONBLOCK`; Windows lacks those flags and checks
+for redirection before reading bytes. A path precheck is never authority for a subsequent open.
 
 No paid generation transport, candidate promotion or registry mutation is enabled by this decision.
 Complete provenance and paid orchestration remain #791 follow-ups; authoring/selection belongs to #792 and

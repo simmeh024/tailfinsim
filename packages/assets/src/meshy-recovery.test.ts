@@ -434,6 +434,25 @@ describe('credential-free immutable export quarantine', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it.skipIf(process.platform === 'win32')(
+    'refuses a final-component POSIX symlink before reading an export',
+    async () => {
+      fetch.mockResolvedValueOnce(json(providerTask())).mockResolvedValueOnce(binary());
+      await syncMeshyCandidate(store, archive, spec, 40, 'candidate-1', credential, deps);
+      const objectPath = join(archive, `${sha256(glb)}.glb`);
+      const target = join(root, 'other-export.glb');
+      await writeFile(target, glb);
+      await rm(objectPath);
+      await symlink(target, objectPath);
+      fetch.mockClear();
+      await expect(
+        syncMeshyCandidate(store, archive, spec, 40, 'candidate-1', credential, deps),
+      ).rejects.toThrow('archive refused');
+      expect(fetch).not.toHaveBeenCalled();
+      expect(await readFile(target)).toEqual(glb);
+    },
+  );
+
   it('concurrent polls retain one receipt and one immutable export', async () => {
     fetch.mockImplementation((url) =>
       Promise.resolve(
