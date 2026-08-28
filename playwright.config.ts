@@ -22,6 +22,7 @@ export default defineConfig({
   // Keep browser specs physically outside the Vitest projects.  The explicit
   // path makes the separation contractual rather than an accident of globs.
   testMatch: '**/*.spec.ts',
+  globalSetup: './packages/server/src/e2e/auth-setup.ts',
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 1 : undefined,

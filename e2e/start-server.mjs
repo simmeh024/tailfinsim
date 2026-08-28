@@ -32,6 +32,12 @@ const server = spawn(process.execPath, ['packages/server/dist/main.js'], {
     WEB_SURFACE: 'app',
     PUBLIC_ORIGIN: `http://127.0.0.1:${port}`,
     ENVIRONMENT_LABEL: 'local',
+    // Authentication stays fully enabled in browser tests. The setup mints
+    // sessions directly in the disposable database, so Google is never called.
+    GOOGLE_CLIENT_ID: 'e2e-client.apps.googleusercontent.com',
+    GOOGLE_CLIENT_SECRET: 'e2e-client-secret',
+    SESSION_SECRET: 'e2e-session-secret-that-is-longer-than-thirty-two-characters',
+    ALLOW_REGISTRATION: 'false',
   },
 });
 

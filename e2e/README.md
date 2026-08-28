@@ -45,11 +45,17 @@ video is disabled. Do not use `test.only`: CI rejects it.
 
 ## Authentication boundary
 
-The only supported test authentication will be real database-backed sessions
-minted during global setup (E2E-03). Do not add a test login endpoint or an
-environment bypass to the server. Google OAuth callback coverage remains in
-the server suite until a deliberate provider-mock decision is made; browser
-specs must never store session tokens in committed files, logs or CI artefacts.
+The only supported test authentication is real database-backed sessions minted
+once during global setup (E2E-03). `player.json` and `admin.json` are temporary
+Playwright storage states, reused by tests in a run and removed afterwards.
+Do not add a test login endpoint or an environment bypass to the server.
+
+The server runs with normal authentication enabled, but setup writes the opaque
+`tailfin_session` cookie only after calling the ordinary `createSession()`
+function. Google is never called. The callback's exchange, identity matching
+and first-sign-in creation remain server-test coverage until a deliberate
+provider-mock decision is made. Browser specs must never log, commit or upload
+session tokens or their storage-state files.
 
 ## Database boundary
 

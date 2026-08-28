@@ -32,7 +32,7 @@ const e2eWorldConfig: WorldConfig = {
   name: E2E_FIXTURES.worldName,
 };
 
-function e2eDatabaseUrl(): string {
+export function e2eDatabaseUrl(): string {
   const url = process.env.E2E_DATABASE_URL ?? DEFAULT_E2E_DATABASE_URL;
   // This is deliberately the server suite's guard, not a copied suffix check.
   assertDisposableDatabaseUrl(url);
