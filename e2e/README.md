@@ -46,8 +46,10 @@ video is disabled. Do not use `test.only`: CI rejects it.
 ## Authentication boundary
 
 The only supported test authentication is real database-backed sessions minted
-once during global setup (E2E-03). `player.json` and `admin.json` are temporary
-Playwright storage states, reused by tests in a run and removed afterwards.
+once during global setup (E2E-03). `player.json`, `admin.json`, and the
+logout-only `logout-player.json` are temporary Playwright storage states,
+reused by tests in a run and removed afterwards. The logout identity prevents a
+sign-out journey from revoking the player session another parallel spec needs.
 Do not add a test login endpoint or an environment bypass to the server.
 
 The server runs with normal authentication enabled, but setup writes the opaque

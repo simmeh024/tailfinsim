@@ -25,6 +25,13 @@ export const E2E_FIXTURES = {
     id: '00000000-0000-4000-8000-000000000202',
     displayName: 'E2E Administrator',
   },
+  // Logout revokes a server-side session. Keep that destructive browser journey
+  // on a dedicated identity so it cannot invalidate the shared player state
+  // while Playwright is running another player spec in parallel.
+  logoutPlayer: {
+    id: '00000000-0000-4000-8000-000000000203',
+    displayName: 'E2E Sign-out Player',
+  },
 } as const;
 
 const e2eWorldConfig: WorldConfig = {
@@ -58,9 +65,17 @@ export async function prepareE2eDatabase(): Promise<void> {
     // identities; their old audit facts remain as harmless E2E history.
     await database.db
       .delete(player)
-      .where(inArray(player.id, [E2E_FIXTURES.player.id, E2E_FIXTURES.admin.id]));
+      .where(
+        inArray(player.id, [
+          E2E_FIXTURES.player.id,
+          E2E_FIXTURES.admin.id,
+          E2E_FIXTURES.logoutPlayer.id,
+        ]),
+      );
 
-    await database.db.insert(player).values([E2E_FIXTURES.player, E2E_FIXTURES.admin]);
+    await database.db
+      .insert(player)
+      .values([E2E_FIXTURES.player, E2E_FIXTURES.admin, E2E_FIXTURES.logoutPlayer]);
     await grantAdmin(database.db, E2E_FIXTURES.admin.id, BOOTSTRAP_ACTOR);
 
     const fixtureWorld = await database.db

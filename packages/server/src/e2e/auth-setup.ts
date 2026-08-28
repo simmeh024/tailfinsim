@@ -50,9 +50,10 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   try {
     // Each run creates fresh opaque tokens. They are never logged, committed or
     // reused across runs; the files only let every test reuse its identity.
-    const [playerSession, adminSession] = await Promise.all([
+    const [playerSession, adminSession, logoutPlayerSession] = await Promise.all([
       createSession(database.db, E2E_FIXTURES.player.id, 24),
       createSession(database.db, E2E_FIXTURES.admin.id, 24),
+      createSession(database.db, E2E_FIXTURES.logoutPlayer.id, 24),
     ]);
 
     await mkdir(authDirectory, { recursive: true });
@@ -65,6 +66,11 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       writeFile(
         resolve(authDirectory, 'admin.json'),
         JSON.stringify(stateFor(adminSession.token, adminSession.expiresAt)),
+        { mode: 0o600 },
+      ),
+      writeFile(
+        resolve(authDirectory, 'logout-player.json'),
+        JSON.stringify(stateFor(logoutPlayerSession.token, logoutPlayerSession.expiresAt)),
         { mode: 0o600 },
       ),
     ]);
