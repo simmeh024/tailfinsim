@@ -27,7 +27,7 @@ the referenced consent. Keep its source evidence privately alongside other facto
 SQLite `BEGIN IMMEDIATE` serializes writers. `journal_mode=DELETE` and `synchronous=EXTRA` are
 checked at runtime before writing; EXTRA includes the rollback-journal directory synchronization
 that FULL alone can omit. Transactions contain only local validation and append-only snapshots.
-The expected future sequence is:
+The enforced candidate sequence is:
 
 ```text
 reserve + COMMIT → submit once → persist returned task ID → reconcile terminal charge
@@ -88,13 +88,37 @@ Archive reads open first, validate the opened descriptor and its current path, t
 handle. POSIX additionally uses `O_NOFOLLOW` and `O_NONBLOCK`; Windows lacks those flags and checks
 for redirection before reading bytes. A path precheck is never authority for a subsequent open.
 
-No paid generation transport, candidate promotion or registry mutation is enabled by this decision.
-Complete provenance and paid orchestration remain #791 follow-ups; authoring/selection belongs to #792 and
-admission/licensing to #793. Paid submission must validate actual reference/evidence bytes and
-fresh provider pricing before using a durable reservation.
-Serialize paid candidates until prior charges are terminal: nonterminal `consumed_credits` is only
-an observation and the ledger does not certify its final value. Separate texture maps, thumbnails
-and retexture outputs are outside this GLB-only recovery increment.
+## Paid candidate boundary
+
+`prepare` records verified original reference/prompt/authoring-chain, consent, terms, ownership and
+private receipt bytes in a separate immutable evidence directory. The consent hash must match
+the existing approval; the original two-image chain and operator review must be explicit. Only
+the neutral, bounded, decoded PNG crosses the upload boundary. No PDF, prompt, consent or key file
+is uploaded. The private PDF remains opaque; human receipt review and paid-period attestation are
+not a provider-certified association between receipt and key. Pro/private is not a training opt-out
+or commercial aircraft-design clearance. Runtime admission remains separate and pending.
+
+`submit` obtains current balance, requires a verified operator pricing observation no older than
+one hour, and rechecks evidence/paid period before committing a reservation. A submission proof
+binds approval/spec, evidence bundle, actual body hash, pricing snapshot, sanitized account report
+and authorization time. No live provider-enforced quote exists here: reservations constrain our
+requests, but cannot cap an unexpected charge imposed by the vendor on an already submitted task.
+Any observed increase stops further reservations, even if the total remains below the ceiling.
+
+Exactly one fixed-host T2 POST follows COMMIT, with a 30-second abort deadline and 4 KiB JSON
+receipt limit. There are no POST retries, including for 429/5xx, interrupted bodies or failed receipt
+persistence. The CLI's uncertain-outcome message explicitly retains the reservation; it never
+claims no request was submitted. Unknown outcomes require manual provider reconciliation; no
+automatic adoption/reset operation exists. Candidate order and prior terminal charges are checked
+again inside the SQLite write transaction. Earlier successful GLBs must be archived and verified
+before spending again. All four candidates must share the same evidence/body identities.
+
+`provenance` seals a private quarantine descriptor after re-verifying the complete historical
+evidence chain and untouched export. It may inspect historical authority after the paid period
+ends but cannot authorize new spending. Candidate promotion, registry mutation, human selection,
+paid retexturing and fallback experiments remain unavailable. Authoring/selection belongs to #792,
+admission/licensing to #793. Separate texture maps, thumbnails and retexture outputs need their
+own retrieval/review boundary before paid texturing.
 
 ## Recovery and limitations
 

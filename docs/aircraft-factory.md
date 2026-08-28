@@ -1,4 +1,4 @@
-# Aircraft factory: offline preparation and review boundaries (M6-25)
+# Aircraft factory: guarded generation and review boundaries (M6-25)
 
 The factory prepares candidates for the existing [licensed intake](aircraft-3d-assets.md) and
 [deterministic runtime pipeline](aircraft-asset-pipeline.md). It does not replace either admission
@@ -40,8 +40,8 @@ The pure accounting kernel reserves credits before an operation, rejects duplica
 and binds the budget to a specification hash. Unknown outcomes retain their reservation. A smaller
 reported charge does not release speculative retry capacity; an unexpected overcharge is retained
 and prevents further reservations. This kernel alone is **not a durable ledger**; use the SQLite
-run wrapper below for reservations and receipts. Paid submission, provider reconciliation and
-complete provenance remain [#791](https://github.com/simmeh024/tailfinsim/issues/791) follow-ups.
+run wrapper below for reservations and receipts. Retexture transport and uncertain-submission
+reconciliation remain [#791](https://github.com/simmeh024/tailfinsim/issues/791) follow-ups.
 
 ## One approved run and a read-only account check
 
@@ -65,10 +65,11 @@ Account checks must pass **the same** ceiling; `40` above is an example, not bla
 
 The store is in the Git common directory at `tailfin-aircraft-factory/a320neo-first-run.sqlite`,
 shared across this repository's linked worktrees. No CLI override can create another first run.
-Reservations commit before a future paid call, unknown outcomes block further reservations,
+Reservations commit before each paid call, unknown outcomes block further reservations,
 task identities cannot be reused, and retexture reservation requires one recorded human selection
 after four terminal candidates. Selection records refer to evidence; the tooling cannot substitute
-for the actual human review. There is no generation or selection CLI yet.
+for the actual human review. Candidate submission is available below; selection and retexturing
+are not exposed by this CLI.
 
 `account` makes only a fixed-host HTTPS GET, bounded to three attempts, ten seconds each and
 4 KiB decoded JSON. It reports authentication, numeric API balance and whether that balance covers
@@ -84,8 +85,8 @@ Task GETs use the fixed Image-to-3D endpoint, at most three attempts, ten second
 64 KiB decoded JSON. Repeated status/charge observations retain their first durable timestamp,
 including concurrent polls, so progress polling does not exhaust the ledger's snapshot limit.
 Terminal charges are committed before attempting a download; expired/broken URLs cannot erase them.
-Mid-flight charges are reported but not confirmed as terminal. The future paid runner must serialize
-candidates until earlier tasks have terminal charges, and stop on any price drift.
+Mid-flight charges are reported but not confirmed as terminal. Paid submissions serialize
+candidates until earlier tasks have terminal charges, and stop on any price increase.
 
 Successful, charged candidates archive their untouched GLB under the Git-common directory's
 `tailfin-aircraft-factory/a320neo-first-run-exports/`. The downloader accepts only HTTPS
@@ -107,15 +108,83 @@ separately from the active credit ledger; never restore an old ledger to recover
 
 The quarantine-only provenance descriptor records task IDs and content identities, including an
 input task for retexturing. Incomplete rights, plan, terms, reference and export evidence cannot
-become a licensed runtime asset. Reference/rights/terms/plan byte verification and paid-generation
-gating must still be connected before the first paid submission. An export archive is not complete
-candidate provenance, and a Pro receipt alone does not establish reference or aircraft-design rights.
+become a licensed runtime asset. Use `provenance` after export archival to verify and seal its linked
+evidence. A Pro receipt alone does not establish reference or aircraft-design rights.
 
 Recovery is fail-closed: **do not delete or rewind the ledger**. An incomplete/corrupt store, lost
 response or capacity limit requires reconciliation, not a fresh `init`. Preserve its journal too.
 Use a local filesystem, not a network share, and do not move an active run between clones/hosts.
 See [ADR-0024](adr/0024-local-aircraft-generation-authority.md) for durability, bounds, consent and
 workstation-trust limitations. No shared livery/asset admission or application database changes.
+
+## Verified evidence and one-shot candidate submission
+
+This is a deliberately bounded **first-run** operator workflow, not yet a general fleet factory.
+It requires the existing approval and the same explicit ceiling on every invocation:
+
+```bash
+pnpm assets:meshy-run -- prepare --evidence-file /private/evidence-import.json --max-credits 40
+pnpm assets:meshy-run -- submit --operation candidate-1 --pricing-file /private/pricing-review.json --max-credits 40 --key-file /private/meshy.txt
+pnpm assets:meshy-run -- sync --operation candidate-1 --max-credits 40 --key-file /private/meshy.txt
+pnpm assets:meshy-run -- provenance --operation candidate-1 --max-credits 40
+```
+
+`prepare` is offline and refuses preparation after any reservation. Its strict input has
+`format: "tailfin-meshy-evidence-import"`, `formatVersion: 1`, `review` and `files`.
+The complete review contract is in `packages/assets/src/meshy-evidence.ts`; it records actual
+operator observations, not machine-certified ownership. All nine file roles are required:
+`referenceImage`, `referencePrompt`, `parentImage`, `parentPrompt`, `authoringRecord`,
+`termsSnapshot`, `ownershipSnapshot`, `privatePlanEvidence`, `consent`. The original two-image
+AI-authoring chain must bind both images and prompts by hash, declare no third-party image input
+and explicitly record that the authoring tool did not disclose its model version. This first-run
+contract intentionally does not accept arbitrary imported reference-image rights declarations.
+
+Preparation copies original bytes into immutable hash-addressed private evidence beside the
+Git-common ledger, then writes `prepared.json` last. Images must be single-frame PNG, at most 4 MiB,
+4096 pixels per dimension and 16,777,216 decoded pixels; APNG is refused. Text/JSON, HTML and PDF
+have separate size/type limits. The PDF is retained opaquely and never evaluated by the CLI:
+magic bytes are not proof of a valid receipt, so prior human visual review is mandatory. Consent
+bytes must match the existing approval. A changed prepared record cannot overwrite the original.
+
+`submit` accepts only candidate-1 through candidate-4, in order, with one fixed PNG and exact
+pinned T2 settings. It re-verifies every evidence byte, including terms and private plan evidence,
+checks the paid period and obtains a fresh balance that covers the entire approved ceiling.
+The strict pricing import contains `format: "tailfin-meshy-pricing-review"`, `formatVersion: 1`,
+the exact official pricing `source`, `reviewedAt`, `reviewedBy: "local-operator"`,
+`untexturedCandidateCredits: 5`, `selectedRetextureCredits: 10`, `snapshotFile` and a
+`snapshot` digest/byte-count/`text/html` descriptor. The operator must actually inspect current
+pricing; timestamps must be no older than one hour and not future-dated. The snapshot and review
+are preserved immutably; a refreshed pricing review does not change the reference bundle.
+
+Only the reference PNG is sent to Meshy. **Receipt, consent, terms, prompts and key file are never
+uploaded.** The API credential is used only in the fixed API-host Authorization header. A private
+submission proof binds actual request-body hash, prepared evidence, pricing evidence, sanitized
+account readiness, authorization time, approval and specification. Its hash is committed in the
+durable reservation before exactly one POST (30-second deadline, no redirects, 4 KiB JSON receipt).
+HTTP errors, malformed responses, lost connections and receipt-persistence failures all retain
+the reservation and halt; **never retry an uncertain POST**. The CLI does not adopt provider tasks
+automatically. Preserve the ledger and reconcile with the provider before any further paid work.
+
+Prior tasks must have terminal charges; successful outputs must also be locally archived and
+hash-verified before the next submission. Failures/refunds never release a slot or reservation.
+The transaction rechecks sequencing, so concurrent processes cannot both authorize the same or
+next candidate. A pricing review is an operator attestation, **not a provider-enforced quote**:
+the local ceiling limits approved reservations, cannot prevent a vendor from overcharging one
+already-submitted request, and stops all further spending when a higher actual charge is reported.
+
+`provenance` is an offline, idempotent seal linking the successful untouched export to the exact
+spec, task/timestamps and verified private evidence chain. It remains usable after the subscription
+period ends by checking historical submission authority; it cannot grant new spending authority.
+All four licence/technical/visual/performance reviews remain pending. Keep evidence and provenance
+private: only reviewed runtime derivatives may later be admitted. A Pro receipt represents the
+user's account assertion, not a cryptographic link between that receipt and the API key.
+
+Pro/private output is not a general training opt-out or aircraft-design clearance. Terms and
+reference-input rights still require admission review; never post candidates to Meshy Community.
+See [Meshy ownership guidance](https://help.meshy.ai/en/articles/10137554-what-is-the-ownership-of-the-generated-models)
+and [data/training guidance](https://help.meshy.ai/en/articles/15724182-is-meshy-safe-and-private-data-and-training-faq).
+There is no automated winner selection, paid retexture, fallback geometry experiment or fleet
+publication in this increment. After four candidates, stop for human comparison/selection (#792).
 
 ## Pinned strategy and vendor evidence
 

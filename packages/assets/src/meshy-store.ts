@@ -179,6 +179,19 @@ export class MeshyRunStore {
     );
   }
 
+  /** Paid candidates are sequential, including terminal charge reconciliation. No state format change. */
+  reserveCandidate(
+    spec: MeshyGenerationSpec,
+    maxCredits: number,
+    operationId: MeshyOperationId,
+    requestSha256: string,
+  ): MeshyRunState {
+    return this.update((state) => {
+      assertMeshyCandidateSequence(state, operationId);
+      return reserveMeshyRunOperation(state, spec, maxCredits, operationId, requestSha256);
+    });
+  }
+
   observe(task: MeshyTaskReceipt): MeshyRunState {
     return this.update((state) => observeMeshyRunTask(state, task));
   }
@@ -241,4 +254,23 @@ export class MeshyRunStore {
       db?.close();
     }
   }
+}
+
+export function assertMeshyCandidateSequence(state: MeshyRunState, operationId: string): void {
+  if (
+    state.requests.length >= 4 ||
+    operationId !== `candidate-${String(state.requests.length + 1)}` ||
+    state.requests.some(
+      (request) =>
+        !state.tasks.some(
+          (task) =>
+            task.operationId === request.operationId &&
+            ['SUCCEEDED', 'FAILED', 'CANCELED'].includes(task.status) &&
+            task.consumedCredits !== null,
+        ),
+    )
+  )
+    throw new Error(
+      'Candidate sequence requires reconciled prior tasks and an unused next operation.',
+    );
 }

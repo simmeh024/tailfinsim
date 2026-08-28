@@ -228,7 +228,7 @@ export function createMeshyPreflight(
       ...(ceiling === null ? ['explicit-credit-ceiling-needed'] : []),
       ...(ceiling !== null && ceiling < estimatedCredits ? ['plan-exceeds-proposed-ceiling'] : []),
       'explicit-user-approval-not-recorded-by-dry-run',
-      'paid-generation-client-not-implemented',
+      'offline-preflight-cannot-authorize-paid-submission',
       'api-pricing-and-balance-not-rechecked',
       'reference-image-rights-and-provenance-incomplete',
     ],

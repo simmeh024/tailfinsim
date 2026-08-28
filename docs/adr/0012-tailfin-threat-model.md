@@ -124,14 +124,20 @@ Candidate recovery now accepts untrusted GLB downloads into a private quarantine
 host, no forwarded API credential, no redirects, bounded decoded bytes/deadlines, container-envelope
 validation, immutable hashed objects and a sanitized completion manifest written last. It never
 executes embedded/external glTF resources or emits provider errors/signed URLs. Only already recorded
-task IDs can be recovered; no arbitrary adoption or paid POST is exposed. Corrupt or redirected
+task IDs can be recovered; recovery exposes no arbitrary adoption or paid POST. Corrupt or redirected
 local archives fail closed. These controls do not replace conformance, resource, licence or visual QA.
 
-The future paid Meshy client introduces external spending and further model/texture downloads.
-Before enabling it, #791 must connect the reservation gate to paid transport, ambiguous-submission
-reconciliation, fresh pricing checks, bounded downloads and verified immutable provenance bytes.
-Subscription or balance is not spending authority. Candidate quarantine is not licensing or
-distribution approval; #793 owns admission evidence. No paid provider boundary is enabled here.
+The separate candidate submit command introduces external spending under ADR-0024. It verifies
+immutable reference/consent/rights/terms/private-plan bytes, bounded nonanimated PNG decoding,
+paid-period and recent operator pricing attestations plus fresh account readiness. Only the PNG
+is uploaded; receipt/consent/terms remain private. Request proofs bind all identities and COMMIT
+before one fixed-host, bounded POST. Unknown outcomes retain reservations and block further
+spending; there are no POST retries or automatic adoption. Sequential terminal charge checks and
+archive-before-next-spend prevent speculative concurrency; the transaction arbitrates races.
+Operator pricing is not a provider-enforced quote, and subscription/balance is not spending
+authority. A workstation owner can still replace code or all history; hashes are not signatures.
+Quarantine provenance is not licensing/distribution approval (#793), and Pro/private is not a
+training opt-out. No retexture/fallback transport, application endpoint or runtime promotion exists.
 
 ### Boundaries that do not exist yet
 
