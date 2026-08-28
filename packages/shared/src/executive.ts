@@ -511,6 +511,98 @@ export const EXECUTIVE_CANDIDATES: readonly ExecutiveCandidate[] = [
       description: 'Tighter scheduling flies each aircraft a little more each day.',
     },
   },
+  // ── New arrivals (csuit2.zip) ──────────────────────────────────────────────
+  {
+    id: 'csuite-25',
+    name: 'Reginald Ashford',
+    tier: 'President',
+    role: 'President, Corporate Development',
+    monthlySalaryMinor: 86_000_000,
+    boost: {
+      lever: 'corporate-demand',
+      magnitude: 0.04,
+      label: 'Corporate demand +4%',
+      description: 'Wins big-ticket corporate accounts across the network.',
+    },
+  },
+  {
+    id: 'csuite-26',
+    name: 'Helena Grant',
+    tier: 'VP',
+    role: 'VP, Investor Relations',
+    monthlySalaryMinor: 48_000_000,
+    boost: {
+      lever: 'interest-income',
+      magnitude: 0.03,
+      label: 'Treasury +3%',
+      description: 'Sharper capital management earns a little more on reserves.',
+    },
+  },
+  {
+    id: 'csuite-27',
+    name: 'Tariq Al-Rashid',
+    tier: 'Director',
+    role: 'Director of Gulf Markets',
+    monthlySalaryMinor: 28_000_000,
+    boost: {
+      lever: 'long-haul-demand',
+      magnitude: 0.02,
+      label: 'Long-haul demand +2%',
+      description: 'Opens Gulf and long-haul markets others overlook.',
+    },
+  },
+  {
+    id: 'csuite-28',
+    name: 'Leila Nasser',
+    tier: 'VP',
+    role: 'VP, Guest Experience',
+    monthlySalaryMinor: 52_000_000,
+    boost: {
+      lever: 'loyalty',
+      magnitude: 0.03,
+      label: 'Loyalty +3%',
+      description: 'Service touches through the journey bring more passengers back.',
+    },
+  },
+  {
+    id: 'csuite-29',
+    name: 'Fatima Bello',
+    tier: 'VP',
+    role: 'VP, Airport Services',
+    monthlySalaryMinor: 44_000_000,
+    boost: {
+      lever: 'ground-cost',
+      magnitude: -0.025,
+      label: 'Ground cost −2.5%',
+      description: 'Tighter station contracts trim ground-handling costs.',
+    },
+  },
+  {
+    id: 'csuite-30',
+    name: 'Beatriz Salazar',
+    tier: 'President',
+    role: 'President, Human Capital',
+    monthlySalaryMinor: 92_000_000,
+    boost: {
+      lever: 'crew-morale',
+      magnitude: 4,
+      label: 'Crew morale +4',
+      description: 'Company-wide people programmes lift morale at every base.',
+    },
+  },
+  {
+    id: 'csuite-31',
+    name: 'Victor Zhang',
+    tier: 'President',
+    role: 'President, Corporate Strategy',
+    monthlySalaryMinor: 96_000_000,
+    boost: {
+      lever: 'overhead-cost',
+      magnitude: -0.03,
+      label: 'Overhead −3%',
+      description: 'Group-wide efficiency programmes cut fixed cost.',
+    },
+  },
 ];
 
 /** The executive candidate with this id, or undefined — the server's billing lookup. */

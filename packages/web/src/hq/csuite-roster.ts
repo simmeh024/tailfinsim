@@ -39,6 +39,13 @@ import csuite21 from './assets/portraits/csuite-21.webp';
 import csuite22 from './assets/portraits/csuite-22.webp';
 import csuite23 from './assets/portraits/csuite-23.webp';
 import csuite24 from './assets/portraits/csuite-24.webp';
+import csuite25 from './assets/portraits/csuite-25.webp';
+import csuite26 from './assets/portraits/csuite-26.webp';
+import csuite27 from './assets/portraits/csuite-27.webp';
+import csuite28 from './assets/portraits/csuite-28.webp';
+import csuite29 from './assets/portraits/csuite-29.webp';
+import csuite30 from './assets/portraits/csuite-30.webp';
+import csuite31 from './assets/portraits/csuite-31.webp';
 import placeholder from './assets/portraits/csuite-placeholder.svg';
 
 export interface CSuiteCandidate extends ExecutiveCandidate {
@@ -72,6 +79,13 @@ const PORTRAITS: Readonly<Record<string, string>> = {
   'csuite-22': csuite22,
   'csuite-23': csuite23,
   'csuite-24': csuite24,
+  'csuite-25': csuite25,
+  'csuite-26': csuite26,
+  'csuite-27': csuite27,
+  'csuite-28': csuite28,
+  'csuite-29': csuite29,
+  'csuite-30': csuite30,
+  'csuite-31': csuite31,
 };
 
 /** The whole roster, in catalogue order, each with its portrait. */
