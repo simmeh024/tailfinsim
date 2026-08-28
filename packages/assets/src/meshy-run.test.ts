@@ -18,6 +18,7 @@ import {
   meshySpecIdentity,
 } from './meshy';
 import { checkMeshyAccount, type MeshyAccountDeps } from './meshy-account';
+import { meshyArchiveDirectory, syncMeshyCandidate } from './meshy-archive';
 import {
   MeshyCandidateProvenance,
   MeshyRunApproval,
@@ -29,6 +30,7 @@ import {
 } from './meshy-run';
 import { parseMeshyRunArguments } from './meshy-run-command';
 import { MeshyRunStore, meshyRunDatabasePath } from './meshy-store';
+import { fixture, pack } from './meshy-test-fixture';
 
 const spec = MeshyGenerationSpec.parse(
   JSON.parse(
@@ -520,6 +522,12 @@ describe('operator command authority boundary', () => {
     async () => {
       expect(spawnSync('git', ['init', '-q'], { cwd: directory }).status).toBe(0);
       const module = join(directory, 'packages', 'assets', 'dist', 'meshy-run-cli.mjs');
+      const externalAliases = Object.fromEntries(
+        ['sharp', 'gltf-validator'].map((name) => [
+          name,
+          pathToFileURL(createRequire(import.meta.url).resolve(name)).href,
+        ]),
+      );
       buildSync({
         entryPoints: [fileURLToPath(new URL('./meshy-run-cli.ts', import.meta.url))],
         outfile: module,
@@ -527,9 +535,9 @@ describe('operator command authority boundary', () => {
         platform: 'node',
         format: 'esm',
         logLevel: 'silent',
-        // Native decoder resolves from this test's installed dependency, never the temporary repo.
-        external: [pathToFileURL(createRequire(import.meta.url).resolve('sharp')).href],
-        alias: { sharp: pathToFileURL(createRequire(import.meta.url).resolve('sharp')).href },
+        // Match production's external native/Dart decoders, resolved from installed dependencies.
+        external: Object.values(externalAliases),
+        alias: externalAliases,
       });
       const specDirectory = join(directory, 'assets', 'aircraft', 'generation');
       await mkdir(specDirectory, { recursive: true });
@@ -565,6 +573,7 @@ describe('operator command authority boundary', () => {
         ['init', '--approval-file', approvalFile],
         ['account', '--max-credits', '39'],
         ['account', '--max-credits', '40', '--api-key', sentinel],
+        ['review', '--operation', 'candidate-1'],
       ]) {
         const result = run(args);
         expect(result.status).toBe(1);
@@ -573,6 +582,56 @@ describe('operator command authority boundary', () => {
         expect(result.stderr).not.toContain('TEST_NETWORK_BLOCKED');
         expect(result.stderr).toContain('invalid-input-or-run-state');
       }
+      const cliDatabase = meshyRunDatabasePath(directory);
+      const cliStore = new MeshyRunStore(cliDatabase);
+      cliStore.reserve(spec, 40, 'candidate-1', 'b'.repeat(64));
+      cliStore.observe(task());
+      const source = pack(fixture());
+      await syncMeshyCandidate(
+        cliStore,
+        meshyArchiveDirectory(cliDatabase),
+        spec,
+        40,
+        'candidate-1',
+        sentinel,
+        {
+          now: () => new Date(now),
+          pause: () => Promise.resolve(),
+          fetch: vi
+            .fn<typeof globalThis.fetch>()
+            .mockResolvedValueOnce(
+              Response.json({
+                id: task().taskId,
+                type: 'image-to-3d',
+                status: 'SUCCEEDED',
+                consumed_credits: 5,
+                created_at: Date.parse(now),
+                finished_at: Date.parse(now),
+                model_urls: { glb: 'https://assets.meshy.ai/fixture.glb' },
+              }),
+            )
+            .mockResolvedValueOnce(
+              new Response(new Uint8Array(source), {
+                headers: { 'content-type': 'model/gltf-binary' },
+              }),
+            ),
+        },
+      );
+      const priorState = canonicalJson(cliStore.read());
+      const reviewed = run(['review', '--operation', 'candidate-1']);
+      expect(reviewed.status, reviewed.stderr.replaceAll(sentinel, '[redacted]')).toBe(0);
+      expect(JSON.parse(reviewed.stdout)).toMatchObject({
+        components: 1,
+        triangles: 4,
+        state: 'quarantine',
+        liveryReady: false,
+        creditsSpentByThisCommand: 0,
+      });
+      expect(reviewed.stdout).not.toContain('sourceTriangles');
+      expect(reviewed.stdout).not.toContain('boundaryEdges');
+      expect(reviewed.stdout + reviewed.stderr).not.toContain(sentinel);
+      expect(run(['review', '--operation', 'candidate-1']).stdout).toBe(reviewed.stdout);
+      expect(canonicalJson(cliStore.read())).toBe(priorState);
     },
   );
 

@@ -91,6 +91,15 @@ interface Geometry {
   nonUnitNormals: number;
   uvVertices: number;
 }
+
+/** Shared bounded decoder for offline preparation; never exposes parser/provider text. */
+export function decodeMeshyGeometry(bytes: Uint8Array): Geometry {
+  try {
+    return decode(bytes);
+  } catch {
+    throw new Error(REFUSED);
+  }
+}
 const REFUSED = 'Geometry audit refused: unsupported or malformed bounded untextured GLB profile.';
 
 /** Decode only flat, identity-transform triangle exports, with no external IO. */
