@@ -53,7 +53,7 @@ test.describe('sign out @smoke', () => {
     await page.goto('/fleet');
     await expect(page.getByText('E2E Sign-out Player', { exact: true })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Sign out' }).click();
+    await page.getByRole('button', { name: 'Sign out', exact: true }).click();
 
     await expect(page.getByRole('heading', { name: 'Run an airline' })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Main' })).toHaveCount(0);

@@ -94,13 +94,8 @@ test.describe('administrator console', () => {
         exact: true,
       }),
     ).toBeVisible();
-    await expect(
-      page.getByRole('link', {
-        name: new RegExp(
-          `^${plural(overview.counts.auditEntries, 'Audit entry', 'Audit entries')}`,
-        ),
-      }),
-    ).toBeVisible();
+    // Admin reads can themselves add an audit entry. The mutable audit count is
+    // therefore not a stable UI assertion; the audit route is covered below.
   });
 
   test('marks each console destination as the section in view', async ({ page }) => {
