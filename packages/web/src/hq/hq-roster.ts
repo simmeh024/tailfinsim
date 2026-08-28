@@ -71,8 +71,8 @@ export type HqRoleId = OfficeRole;
 /** The roles that are also **seats** — the six with a fixed room. */
 export type HqSeatRoleId = Exclude<OfficeRole, 'social-media'>;
 
-/** A candidate's seniority band. */
-export type HqTier = 'Analyst' | 'Manager' | 'Director';
+/** A candidate's seniority band, low to high — the head-office bands (not C-Suite). */
+export type HqTier = 'Supervisor' | 'Manager' | 'Senior Manager';
 
 export interface HqRole {
   id: HqSeatRoleId;
@@ -277,8 +277,8 @@ const TRAITS: Readonly<Record<string, HqCandidateTrait>> = {
   },
 };
 
-const placeholderTier = (tier: string): HqTier =>
-  tier === 'Analyst' || tier === 'Manager' || tier === 'Director' ? tier : 'Manager';
+const asTier = (tier: string): HqTier =>
+  tier === 'Supervisor' || tier === 'Manager' || tier === 'Senior Manager' ? tier : 'Manager';
 
 /** Every candidate — seat candidates and specialists — built from the shared catalogue. */
 const ALL_CANDIDATES: readonly HqCandidate[] = OFFICE_CANDIDATES.map((candidate) => {
@@ -288,7 +288,7 @@ const ALL_CANDIDATES: readonly HqCandidate[] = OFFICE_CANDIDATES.map((candidate)
     id: candidate.id,
     roleId: candidate.role,
     name: candidate.name,
-    tier: placeholderTier(candidate.tier),
+    tier: asTier(candidate.tier),
     salaryPerMonthMinor: candidate.monthlySalaryMinor,
     boost: candidate.boost,
     trait: TRAITS[candidate.id],

@@ -18,9 +18,8 @@ import {
   rotatingExecutiveRoster,
   ROSTER_SIZE,
 } from './csuite-rotation';
+import { ExecutiveStaffDrawer } from './ExecutiveStaffDrawer';
 import { formatSalary } from './hq-roster';
-import { executiveOfficeLabel } from './HqLayoutPanel';
-import { StaffExecDrawer } from './StaffExecDrawer';
 
 import type { OwnAirlineShellContext } from '../shell/AppShell';
 import type { ReactNode } from 'react';
@@ -70,12 +69,9 @@ export function ExecutiveSuitePage(): ReactNode {
   // it, fetching once and keeping local selection.
   const [localFloor, setLocalFloor] = useState<ExecutiveFloorState | null>(null);
   const [localLoading, setLocalLoading] = useState(true);
-  const [localSelected, setLocalSelected] = useState<number | null>(null);
 
   const floor = shell ? shell.execFloor : localFloor;
   const loading = shell ? shell.execFloor === null : localLoading;
-  const selectedExec = shell ? shell.selectedExecOffice : localSelected;
-  const setSelectedExec = shell ? shell.selectExecOffice : setLocalSelected;
 
   useEffect(() => {
     if (shell) return; // The shell owns the fetch when it is present.
@@ -96,11 +92,6 @@ export function ExecutiveSuitePage(): ReactNode {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
-
-  // Leaving the page drops any office the plan had selected, so returning does not
-  // reopen the drawer on a stale pick. Selection lives in the shell, which outlives
-  // this page, so the clear is explicit.
-  useEffect(() => () => setSelectedExec(null), [setSelectedExec]);
 
   const syncFloor = useCallback(
     (state: ExecutiveFloorState) => {
@@ -147,30 +138,6 @@ export function ExecutiveSuitePage(): ReactNode {
     () => aggregateExecutiveBoosts((floor?.hires ?? []).map((hire) => hire.candidateId)),
     [floor?.hires],
   );
-
-  // The drawer opened from the plan: which office, who is in it, and who is free
-  // to hire (today's shortlist minus everyone already employed).
-  const occupant = selectedExec !== null && floor ? (floor.hires[selectedExec] ?? null) : null;
-  const drawerCandidates = useMemo<CSuiteCandidate[]>(() => {
-    const hiredIds = new Set((floor?.hires ?? []).map((hire) => hire.candidateId));
-    return rotatingExecutiveRoster(CSUITE_CANDIDATES, dayIndex, ROSTER_SIZE).filter(
-      (candidate) => !hiredIds.has(candidate.id),
-    );
-  }, [dayIndex, floor?.hires]);
-
-  const hireInto = useCallback(
-    async (candidate: CSuiteCandidate): Promise<void> => {
-      const ok = await act(candidate.id, () => hireExecutive(candidate.id));
-      if (ok) setSelectedExec(null);
-    },
-    [act, setSelectedExec],
-  );
-
-  const removeOccupant = useCallback(async (): Promise<void> => {
-    if (occupant === null) return;
-    const ok = await act(occupant.candidateId, () => dismissExecutive(occupant.candidateId));
-    if (ok) setSelectedExec(null);
-  }, [act, occupant, setSelectedExec]);
 
   const countdown = formatCountdown(msUntilRefresh(now));
 
@@ -309,21 +276,7 @@ export function ExecutiveSuitePage(): ReactNode {
         </section>
       </div>
 
-      {selectedExec !== null && floor !== null && (
-        <StaffExecDrawer
-          officeName={executiveOfficeLabel(selectedExec)}
-          occupant={
-            occupant !== null
-              ? { candidateId: occupant.candidateId, candidateName: occupant.candidateName }
-              : null
-          }
-          candidates={drawerCandidates}
-          busy={pending !== null}
-          onHire={(candidate) => void hireInto(candidate)}
-          onRemove={() => void removeOccupant()}
-          onClose={() => setSelectedExec(null)}
-        />
-      )}
+      <ExecutiveStaffDrawer />
     </section>
   );
 }

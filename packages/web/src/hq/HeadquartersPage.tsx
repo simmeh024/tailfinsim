@@ -10,6 +10,7 @@ import {
 
 import { dismissOffice, fetchOffice, hireOffice } from './api';
 import { formatCountdown, msUntilRefresh, rosterDayIndex, rotatingRoster } from './csuite-rotation';
+import { ExecutiveStaffDrawer } from './ExecutiveStaffDrawer';
 import {
   candidatesForRole,
   formatSalary,
@@ -365,15 +366,6 @@ export function HeadquartersPage(): ReactNode {
                           </span>
                         </p>
 
-                        {candidate.trait !== undefined && (
-                          <p className="hq-card__trait">
-                            <span className="hq-card__trait-badge">{given}</span>
-                            <span>
-                              <strong>{candidate.trait.label}.</strong> {candidate.trait.detail}
-                            </span>
-                          </p>
-                        )}
-
                         <button
                           type="button"
                           className="hq-card__action"
@@ -413,6 +405,9 @@ export function HeadquartersPage(): ReactNode {
           onClose={() => setSelectedSeat(null)}
         />
       )}
+
+      {/* The executive floor plan (up a floor on the panel) opens its drawer here too. */}
+      <ExecutiveStaffDrawer />
     </section>
   );
 }

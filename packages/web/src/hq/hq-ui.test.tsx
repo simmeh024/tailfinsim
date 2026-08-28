@@ -4,6 +4,7 @@ import { MemoryRouter, Outlet, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  executiveCandidate,
   officeCandidate,
   type ExecutiveFloorState,
   type OfficeSeatId,
@@ -11,7 +12,8 @@ import {
 } from '@tailfin/shared';
 
 import { fetchExecutiveFloor, unlockExecutiveFloor, unlockExecutiveOffice } from './api';
-import { rosterDayIndex, rotatingRoster } from './csuite-rotation';
+import { CSUITE_CANDIDATES } from './csuite-roster';
+import { rosterDayIndex, rotatingExecutiveRoster, rotatingRoster } from './csuite-rotation';
 import { HeadquartersPage } from './HeadquartersPage';
 import {
   candidatesForRole,
@@ -31,6 +33,7 @@ function shortlistFor(role: HqRoleId): { name: string; id: string }[] {
   return rotatingRoster(candidatesForRole(role), rosterDayIndex(FIXED_NOW), SEAT_MARKET_SIZE);
 }
 const routePlannerShortlist = shortlistFor('route-planner');
+const execShortlist = rotatingExecutiveRoster(CSUITE_CANDIDATES, rosterDayIndex(FIXED_NOW));
 
 import type { OwnAirlineShellContext } from '../shell/AppShell';
 import type { ReactNode } from 'react';
@@ -108,8 +111,8 @@ function ShellHarness({ onExpand }: { onExpand?: () => Promise<ExpandResult> }):
 
 function renderHq(
   onExpand: () => Promise<ExpandResult> = vi.fn().mockResolvedValue({ ok: true }),
-): void {
-  render(
+): ReturnType<typeof render> {
+  return render(
     <MemoryRouter initialEntries={['/headquarters']}>
       <Routes>
         <Route element={<ShellHarness onExpand={onExpand} />}>
@@ -215,6 +218,12 @@ describe('the Headquarters page', () => {
   let automation: { settings: unknown[]; tasks: unknown[] } = { settings: [], tasks: [] };
   // The panel fetches the executive floor on mount; a closed floor with no
   // revenue is the default so the pager appears and the gate reads locked.
+  interface ExecHire {
+    candidateId: string;
+    candidateName: string;
+    monthlySalaryMinor: number;
+    hiredAt: string;
+  }
   let execFloor = {
     unlocked: false,
     officesUnlocked: 0,
@@ -222,6 +231,7 @@ describe('the Headquarters page', () => {
     revenueGateMinor: 5_000_000_000,
     monthlyRevenueMinor: 0,
     nextOffice: null as { index: number; costMinor: number } | null,
+    hires: [] as ExecHire[],
   };
 
   function officeState() {
@@ -249,6 +259,7 @@ describe('the Headquarters page', () => {
       revenueGateMinor: 5_000_000_000,
       monthlyRevenueMinor: 0,
       nextOffice: null,
+      hires: [],
     };
     offeredSpecialist = 'social-media-reputation';
     automation = { settings: [], tasks: [] };
@@ -282,6 +293,33 @@ describe('the Headquarters page', () => {
         if (url === '/api/office/executive/offices' && method === 'POST') {
           const officesUnlocked = execFloor.officesUnlocked + 1;
           execFloor = { ...execFloor, officesUnlocked, nextOffice: null };
+          return Promise.resolve(new Response(JSON.stringify(execFloor), { status: 200 }));
+        }
+        if (url === '/api/office/executive/hires' && method === 'POST') {
+          const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+            candidateId: string;
+          };
+          const c = executiveCandidate(body.candidateId)!;
+          execFloor = {
+            ...execFloor,
+            hires: [
+              ...execFloor.hires,
+              {
+                candidateId: c.id,
+                candidateName: c.name,
+                monthlySalaryMinor: c.monthlySalaryMinor,
+                hiredAt: '2024-10-20T00:00:00.000Z',
+              },
+            ],
+          };
+          return Promise.resolve(new Response(JSON.stringify(execFloor), { status: 200 }));
+        }
+        if (url.startsWith('/api/office/executive/hires/') && method === 'DELETE') {
+          const id = decodeURIComponent(url.slice('/api/office/executive/hires/'.length));
+          execFloor = {
+            ...execFloor,
+            hires: execFloor.hires.filter((h) => h.candidateId !== id),
+          };
           return Promise.resolve(new Response(JSON.stringify(execFloor), { status: 200 }));
         }
         if (url === '/api/office' && method === 'GET') return ok();
@@ -509,6 +547,48 @@ describe('the Headquarters page', () => {
     fireEvent.click(unlock);
     // The open floor offers its first office.
     expect(await screen.findByRole('button', { name: /Open office 1 of 10/i })).toBeInTheDocument();
+  });
+
+  it('hires an executive straight from the plan, on the Headquarters page', async () => {
+    execFloor = {
+      unlocked: true,
+      officesUnlocked: 1,
+      unlockCostMinor: 10_000_000_000,
+      revenueGateMinor: 5_000_000_000,
+      monthlyRevenueMinor: 6_000_000_000,
+      nextOffice: null,
+      hires: [],
+    };
+    renderHq();
+    // Page up to the executive floor and hire into its one open office from the plan.
+    fireEvent.click(await screen.findByRole('tab', { name: /Executive/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Executive Office 01, Vacant/i }));
+    const dialog = await screen.findByRole('dialog', { name: /Staff Executive Office 01/i });
+    const first = execShortlist[0]!;
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: new RegExp(`Hire ${first.name.split(' ')[0]!}`) }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: /Executive Office 01/i })).toBeNull(),
+    );
+    expect(execFloor.hires.find((h) => h.candidateId === first.id)).toBeDefined();
+  });
+
+  it('shows not-yet-built executive offices as locked', async () => {
+    execFloor = {
+      unlocked: true,
+      officesUnlocked: 1,
+      unlockCostMinor: 10_000_000_000,
+      revenueGateMinor: 5_000_000_000,
+      monthlyRevenueMinor: 6_000_000_000,
+      nextOffice: { index: 1, costMinor: 10_000_000_000 },
+      hires: [],
+    };
+    const { container } = renderHq();
+    fireEvent.click(await screen.findByRole('tab', { name: /Executive/i }));
+    // Office 01 is open (hireable); the other nine are locked padlock cells.
+    await screen.findByRole('button', { name: /Executive Office 01, Vacant/i });
+    expect(container.querySelectorAll('.hq-cell--locked')).toHaveLength(9);
   });
 
   it('renders the seats the server already reports as filled, on load', async () => {

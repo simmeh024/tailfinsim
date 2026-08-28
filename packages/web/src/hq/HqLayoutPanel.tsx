@@ -229,21 +229,27 @@ export function HqLayoutPanel({
             type="button"
             role="tab"
             className="hq-layout__pager-btn"
-            data-active={floor === 'ground'}
-            aria-selected={floor === 'ground'}
-            onClick={() => setFloor('ground')}
+            data-active={floor === 'executive'}
+            aria-selected={floor === 'executive'}
+            onClick={() => setFloor('executive')}
           >
-            ‹ Ground
+            <span className="hq-layout__pager-arrow" aria-hidden="true">
+              ▲
+            </span>{' '}
+            Executive
           </button>
           <button
             type="button"
             role="tab"
             className="hq-layout__pager-btn"
-            data-active={floor === 'executive'}
-            aria-selected={floor === 'executive'}
-            onClick={() => setFloor('executive')}
+            data-active={floor === 'ground'}
+            aria-selected={floor === 'ground'}
+            onClick={() => setFloor('ground')}
           >
-            Executive ›
+            <span className="hq-layout__pager-arrow" aria-hidden="true">
+              ▼
+            </span>{' '}
+            Ground
           </button>
         </div>
       )}
@@ -266,7 +272,7 @@ export function HqLayoutPanel({
 
       {floor === 'ground' && (
         <div
-          className="hq-layout__floor"
+          className="hq-layout__floor hq-layout__floor--arrive-down"
           style={{
             backgroundImage: `url(${plan?.src ?? ''})`,
             aspectRatio: plan?.aspect ?? '2 / 3',
@@ -358,7 +364,7 @@ export function HqLayoutPanel({
 
       {floor === 'executive' && execState !== null && (
         <div
-          className="hq-layout__floor hq-layout__floor--exec"
+          className="hq-layout__floor hq-layout__floor--exec hq-layout__floor--arrive-up"
           style={{
             backgroundImage: `url(${execFloorImage(execState.officesUnlocked)})`,
             aspectRatio: EXEC_FLOOR_ASPECT,
@@ -398,17 +404,36 @@ export function HqLayoutPanel({
             </div>
           ) : (
             <>
-              {EXEC_SEAT_GRID.slice(0, execState.officesUnlocked).map((pos, index) => {
-                const hire = execState.hires[index];
-                const occupant =
-                  hire !== undefined ? (csuiteCandidate(hire.candidateId) ?? null) : null;
-                const interactive = onSelectExecOffice !== undefined;
+              {EXEC_SEAT_GRID.map((pos, index) => {
                 const label = executiveOfficeLabel(index);
                 const num = String(index + 1).padStart(2, '0');
                 const style = {
                   left: `${String((EXEC_COLUMN_X[pos.col] ?? 0.5) * 100)}%`,
                   top: `${String((EXEC_ROW_Y[pos.row] ?? 0.5) * 100)}%`,
                 };
+
+                // Offices past the ones the airline has opened are not built yet:
+                // shown locked, with a padlock, and never interactive.
+                if (index >= execState.officesUnlocked) {
+                  return (
+                    <div
+                      key={index}
+                      className="hq-cell hq-cell--locked"
+                      style={style}
+                      title={`${label} — not built yet`}
+                    >
+                      <span className="hq-cell__num">{num}</span>
+                      <span className="hq-cell__lock" aria-hidden="true">
+                        🔒
+                      </span>
+                    </div>
+                  );
+                }
+
+                const hire = execState.hires[index];
+                const occupant =
+                  hire !== undefined ? (csuiteCandidate(hire.candidateId) ?? null) : null;
+                const interactive = onSelectExecOffice !== undefined;
 
                 const inner =
                   hire !== undefined ? (

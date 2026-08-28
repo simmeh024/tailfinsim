@@ -279,8 +279,13 @@ export function offeredSocialMediaSpecialistId(worldId: string): string {
   return chosen.id;
 }
 
-/** A candidate's seniority band. Sets the pay: a Director costs more than an Analyst. */
-export type OfficeCandidateTier = 'Analyst' | 'Manager' | 'Director';
+/**
+ * A candidate's seniority band, low to high: **Supervisor → Manager → Senior
+ * Manager**. Distinct from the C-Suite's Director/VP/President bands on purpose —
+ * a head-office hire never carries a C-Suite title. Sets the pay: a Senior Manager
+ * costs more than a Supervisor.
+ */
+export type OfficeCandidateTier = 'Supervisor' | 'Manager' | 'Senior Manager';
 
 /**
  * One person in the hiring market (§9.1), as all three parties must agree on them.
@@ -378,14 +383,14 @@ const RAW_OFFICE_CANDIDATES: readonly Omit<OfficeCandidate, 'boost'>[] = [
     id: 'route-planner-tom',
     role: 'route-planner',
     name: 'Tom Bakker',
-    tier: 'Analyst',
+    tier: 'Supervisor',
     monthlySalaryMinor: 1_200_000,
   },
   {
     id: 'route-planner-victor',
     role: 'route-planner',
     name: 'Victor Lindqvist',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 2_600_000,
   },
   {
@@ -406,14 +411,14 @@ const RAW_OFFICE_CANDIDATES: readonly Omit<OfficeCandidate, 'boost'>[] = [
     id: 'revenue-manager-anders',
     role: 'revenue-manager',
     name: 'Anders Holm',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 2_900_000,
   },
   {
     id: 'ops-controller-diego',
     role: 'ops-controller',
     name: 'Diego Alvarez',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 2_600_000,
   },
   {
@@ -427,42 +432,42 @@ const RAW_OFFICE_CANDIDATES: readonly Omit<OfficeCandidate, 'boost'>[] = [
     id: 'ops-controller-jun',
     role: 'ops-controller',
     name: 'Jun Park',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 2_700_000,
   },
   {
     id: 'chief-pilot-sten',
     role: 'chief-pilot',
     name: 'Sten Halvorsen',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 2_800_000,
   },
   {
     id: 'chief-pilot-fiona',
     role: 'chief-pilot',
     name: 'Fiona Brennan',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 2_900_000,
   },
   {
     id: 'chief-pilot-grant',
     role: 'chief-pilot',
     name: 'Grant Wexford',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 3_000_000,
   },
   {
     id: 'ground-ops-nadia',
     role: 'ground-ops',
     name: 'Nadia Kovač',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 2_400_000,
   },
   {
     id: 'ground-ops-omar',
     role: 'ground-ops',
     name: 'Omar Haddad',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 2_500_000,
   },
   {
@@ -476,14 +481,14 @@ const RAW_OFFICE_CANDIDATES: readonly Omit<OfficeCandidate, 'boost'>[] = [
     id: 'safety-compliance-claire',
     role: 'safety-compliance',
     name: 'Claire Fontaine',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 3_000_000,
   },
   {
     id: 'safety-compliance-hiroshi',
     role: 'safety-compliance',
     name: 'Hiroshi Tanaka',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 3_100_000,
   },
   {
@@ -505,28 +510,28 @@ const RAW_OFFICE_CANDIDATES: readonly Omit<OfficeCandidate, 'boost'>[] = [
     id: 'route-planner-bianchi',
     role: 'route-planner',
     name: 'Marco Bianchi',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 2_700_000,
   },
   {
     id: 'route-planner-novak',
     role: 'route-planner',
     name: 'Ella Novak',
-    tier: 'Analyst',
+    tier: 'Supervisor',
     monthlySalaryMinor: 1_300_000,
   },
   {
     id: 'route-planner-park',
     role: 'route-planner',
     name: 'Zoe Park',
-    tier: 'Analyst',
+    tier: 'Supervisor',
     monthlySalaryMinor: 1_250_000,
   },
   {
     id: 'revenue-manager-lim',
     role: 'revenue-manager',
     name: 'Grace Lim',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 2_800_000,
   },
   {
@@ -547,14 +552,14 @@ const RAW_OFFICE_CANDIDATES: readonly Omit<OfficeCandidate, 'boost'>[] = [
     id: 'ops-controller-chen',
     role: 'ops-controller',
     name: 'Wei Chen',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 2_750_000,
   },
   {
     id: 'ops-controller-doyle',
     role: 'ops-controller',
     name: 'Karen Doyle',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 2_650_000,
   },
   {
@@ -568,35 +573,35 @@ const RAW_OFFICE_CANDIDATES: readonly Omit<OfficeCandidate, 'boost'>[] = [
     id: 'chief-pilot-nordheim',
     role: 'chief-pilot',
     name: 'Astrid Nordheim',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 2_950_000,
   },
   {
     id: 'chief-pilot-holloway',
     role: 'chief-pilot',
     name: 'Ray Holloway',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 3_050_000,
   },
   {
     id: 'chief-pilot-kelly',
     role: 'chief-pilot',
     name: 'Moira Kelly',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 2_850_000,
   },
   {
     id: 'chief-pilot-sokolova',
     role: 'chief-pilot',
     name: 'Elena Sokolova',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 3_020_000,
   },
   {
     id: 'ground-ops-okafor',
     role: 'ground-ops',
     name: 'Amara Okafor',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 2_450_000,
   },
   {
@@ -610,7 +615,7 @@ const RAW_OFFICE_CANDIDATES: readonly Omit<OfficeCandidate, 'boost'>[] = [
     id: 'ground-ops-kwon',
     role: 'ground-ops',
     name: 'David Kwon',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 2_520_000,
   },
   {
@@ -631,14 +636,14 @@ const RAW_OFFICE_CANDIDATES: readonly Omit<OfficeCandidate, 'boost'>[] = [
     id: 'safety-compliance-braun',
     role: 'safety-compliance',
     name: 'Wolfgang Braun',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 3_150_000,
   },
   {
     id: 'safety-compliance-weiss',
     role: 'safety-compliance',
     name: 'Marion Weiss',
-    tier: 'Director',
+    tier: 'Senior Manager',
     monthlySalaryMinor: 3_050_000,
   },
   {

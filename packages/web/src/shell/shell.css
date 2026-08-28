@@ -6072,6 +6072,15 @@ body {
   color: var(--text-muted);
   font-size: var(--text-xs);
   line-height: 1.4;
+  /* Reserve two lines so a short and a long description leave their cards the same
+     height, and the action buttons line up across a row. */
+  min-height: 2.5em;
+}
+
+/* Every card in a row is the same height, so the boost sits above a bottom-aligned
+   action on all of them. */
+.hq-grid {
+  align-items: stretch;
 }
 
 /*
@@ -6137,6 +6146,67 @@ body {
   background-size: 100% 100%;
   background-position: center;
   background-repeat: no-repeat;
+}
+
+/*
+ * Switching floors is an elevator, and the move has a direction: the executive
+ * floor rises up into view, the ground floor drops down. Each floor renders fresh
+ * when its pager tab is chosen, so the animation plays on mount.
+ */
+@keyframes hqFloorRiseUp {
+  from {
+    transform: translateY(24px);
+    opacity: 0.1;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes hqFloorDropDown {
+  from {
+    transform: translateY(-24px);
+    opacity: 0.1;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.hq-layout__floor--arrive-up {
+  animation: hqFloorRiseUp 260ms ease;
+}
+
+.hq-layout__floor--arrive-down {
+  animation: hqFloorDropDown 260ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hq-layout__floor--arrive-up,
+  .hq-layout__floor--arrive-down {
+    animation: none;
+  }
+}
+
+.hq-layout__pager-arrow {
+  font-size: 0.7em;
+  opacity: 0.8;
+}
+
+/* A not-yet-built executive office: shown in place with a padlock, never a button. */
+.hq-cell--locked {
+  pointer-events: none;
+}
+
+.hq-cell--locked .hq-cell__num {
+  opacity: 0.7;
+}
+
+.hq-cell__lock {
+  font-size: 0.95rem;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
 }
 
 /* The executive floor's gate and unlock affordances, laid over its render. */
