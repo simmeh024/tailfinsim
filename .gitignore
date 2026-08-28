@@ -21,6 +21,11 @@ e2e/.auth/
 .env.*
 !.env.example
 
+# Local aircraft-generation credentials, private evidence and candidate experiments.
+# Accepted assets still enter through assets:intake; never force-add quarantine data.
+meshy.txt
+.aircraft-factory/
+
 # Keys and credentials. A private key was once committed here from an
 # OpenStack keypair download landing in the repo root, so this is not
 # hypothetical — keys belong in ~/.ssh, never in a checkout.

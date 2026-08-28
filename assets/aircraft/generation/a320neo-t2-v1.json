@@ -1,0 +1,29 @@
+{
+  "format": "tailfin-meshy-generation-spec",
+  "formatVersion": 1,
+  "id": "a320neo-t2-v1",
+  "aircraftAssetId": "a320neo",
+  "referencePrompt": "Neutral accurate A320neo aircraft, gear up, complete fuselage, symmetric wings and sharklets, two underwing turbofans, defined opaque cockpit glazing, individual cabin windows and door outlines. Plain neutral paint. No airline branding, logos, text, stands, ground equipment, contrails or background clutter. Consistent unobstructed three-quarter aircraft reference; verify proportions and both engines before approval.",
+  "generation": {
+    "model_type": "smart-topology",
+    "ai_model": "meshy-t2",
+    "target_polycount": 15000,
+    "should_texture": false,
+    "target_formats": ["glb"]
+  },
+  "candidateCount": 4,
+  "retexture": {
+    "ai_model": "meshy-7",
+    "enable_pbr": true,
+    "enable_original_uv": false,
+    "texture_resolution": "4k",
+    "text_style_prompt": "Neutral clean aircraft source PBR: plain white paintable exterior, opaque cockpit and cabin glazing, defined door outlines, metallic engine detail. No airline paint, logos, titles, registrations or decorative markings. No baked shadows or ambient-occlusion stains in base colour. Tailfin will apply all livery artwork separately."
+  },
+  "pricing": {
+    "snapshotId": "meshy-api-2026-08-28",
+    "observedAt": "2026-08-28",
+    "source": "https://docs.meshy.ai/en/api/pricing",
+    "untexturedCandidateCredits": 5,
+    "selectedRetextureCredits": 10
+  }
+}

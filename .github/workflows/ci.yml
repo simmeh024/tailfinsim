@@ -108,6 +108,10 @@ jobs:
         # generated output while the authoring tool itself is broken.
         run: pnpm assets:validate
 
+      - name: Exercise offline aircraft-generation preflight
+        # No Meshy credential, account lookup, network call or paid operation.
+        run: node packages/assets/dist/meshy-cli.js --dry-run --max-credits 40
+
       - name: Test the running Caddy security policy
         # Exercise the committed Caddyfile itself in report-only and enforced
         # modes. The release archive is pinned and verified before execution;

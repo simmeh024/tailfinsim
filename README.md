@@ -18,6 +18,7 @@ wall-clock time, that never pauses.
 - **Feature contracts:** [`docs/aircraft-acquisition.md`](docs/aircraft-acquisition.md) ·
   [`docs/aircraft-3d-assets.md`](docs/aircraft-3d-assets.md) ·
   [`docs/aircraft-asset-pipeline.md`](docs/aircraft-asset-pipeline.md) ·
+  [`docs/aircraft-factory.md`](docs/aircraft-factory.md) ·
   [`docs/fleet-marketplace.md`](docs/fleet-marketplace.md) ·
   [`docs/used-aircraft-market.md`](docs/used-aircraft-market.md) ·
   [`docs/maintenance.md`](docs/maintenance.md) ·
