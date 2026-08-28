@@ -15,6 +15,20 @@ if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
 
 const configuredBaseUrl = process.env.E2E_BASE_URL;
 const baseURL = configuredBaseUrl ?? `http://127.0.0.1:${port}`;
+const requestedBrowsers = (process.env.E2E_BROWSERS ?? 'chromium')
+  .split(',')
+  .map((browser) => browser.trim())
+  .filter((browser) => browser !== '');
+const browserDevices = {
+  chromium: devices['Desktop Chrome'],
+  firefox: devices['Desktop Firefox'],
+  webkit: devices['Desktop Safari'],
+} as const;
+for (const browser of requestedBrowsers) {
+  if (!(browser in browserDevices)) {
+    throw new Error(`E2E_BROWSERS has unsupported browser ${JSON.stringify(browser)}.`);
+  }
+}
 
 export default defineConfig({
   testDir: './e2e',
@@ -37,12 +51,10 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     video: 'off',
   },
-  projects: [
-    {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
-    },
-  ],
+  projects: requestedBrowsers.map((browser) => ({
+    name: browser,
+    use: { ...browserDevices[browser as keyof typeof browserDevices] },
+  })),
   // Supplying E2E_BASE_URL is an intentional escape hatch for diagnosing an
   // already-running local server. Normal and CI runs build before they start.
   webServer: configuredBaseUrl

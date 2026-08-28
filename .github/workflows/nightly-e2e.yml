@@ -1,0 +1,73 @@
+name: Nightly browser suite
+
+on:
+  schedule:
+    # Clear of the production backup timer at 03:15 UTC.
+    - cron: '7 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    name: nightly · ${{ matrix.browser }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tailfin
+          POSTGRES_PASSWORD: tailfin_ci
+          POSTGRES_DB: tailfin_e2e_ci
+          POSTGRES_INITDB_ARGS: '--locale=C --encoding=UTF8'
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tailfin -d tailfin_e2e_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      E2E_BROWSERS: ${{ matrix.browser }}
+      E2E_DATABASE_URL: postgres://tailfin:tailfin_ci@127.0.0.1:5432/tailfin_e2e_ci
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up pnpm
+        # pnpm/action-setup v6.0.10
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Restore Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ matrix.browser }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Install browser
+        run: pnpm exec playwright install --with-deps ${{ matrix.browser }}
+      - name: Run full browser suite
+        run: pnpm exec playwright test
+      - name: Upload Playwright diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-diagnostics-${{ matrix.browser }}
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
