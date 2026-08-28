@@ -79,7 +79,7 @@ function directory(path: string): void {
 }
 
 /** Bound allocation even if a file grows, and refuse redirected/hard-linked archive objects. */
-function readObject(path: string, limit: number): Buffer {
+export function readMeshyArtifact(path: string, limit: number): Buffer {
   // Open first, then inspect/read that same handle: a path precheck cannot authorize
   // a later open. POSIX additionally refuses symlinks and avoids blocking on FIFOs.
   // Windows does not expose those flags; its handle/path checks still precede all reads.
@@ -116,11 +116,11 @@ function readObject(path: string, limit: number): Buffer {
 }
 
 /** No partial final names and no overwrites, even when two recovery processes race. */
-function writeImmutable(path: string, bytes: Buffer): void {
+export function writeImmutableMeshyArtifact(path: string, bytes: Buffer): void {
   const parent = dirname(path);
   directory(parent);
   const verify = () => {
-    const existing = readObject(path, bytes.length);
+    const existing = readMeshyArtifact(path, bytes.length);
     if (existing.length !== bytes.length || sha256(existing) !== sha256(bytes))
       throw new Error(REFUSED);
   };
@@ -167,12 +167,18 @@ function assertBinding(archive: Archive, state: MeshyRunState, operationId: stri
     throw new Error(REFUSED);
 }
 
-function savedArchive(root: string, operationId: string, state: MeshyRunState): Archive | null {
+export function savedMeshyArchive(
+  root: string,
+  operationId: string,
+  state: MeshyRunState,
+): Archive | null {
   const path = join(root, `${Candidate.parse(operationId)}.json`);
   if (!existsSync(path)) return null;
-  const archive = Archive.parse(JSON.parse(readObject(path, 8_192).toString('utf8')) as unknown);
+  const archive = Archive.parse(
+    JSON.parse(readMeshyArtifact(path, 8_192).toString('utf8')) as unknown,
+  );
   assertBinding(archive, state, operationId);
-  const bytes = readObject(
+  const bytes = readMeshyArtifact(
     join(root, `${archive.untouchedExport.sha256}.glb`),
     MESHY_GLB_DOWNLOAD_LIMIT,
   );
@@ -200,7 +206,7 @@ export async function syncMeshyCandidate(
     assertMeshyRunCap(state, maxCredits);
     Candidate.parse(operationId);
     if (state.approval.specSha256 !== meshySpecIdentity(spec)) throw new Error(REFUSED);
-    const existing = savedArchive(root, operationId, state);
+    const existing = savedMeshyArchive(root, operationId, state);
     if (existing)
       return { operationId, status: 'SUCCEEDED', archived: true, export: existing.untouchedExport };
     const result = await recoverMeshyCandidate(
@@ -243,9 +249,12 @@ export async function syncMeshyCandidate(
       runtimeAdmission: 'not-reviewed',
     });
     assertBinding(archive, current, operationId);
-    writeImmutable(join(root, `${archive.untouchedExport.sha256}.glb`), bytes);
+    writeImmutableMeshyArtifact(join(root, `${archive.untouchedExport.sha256}.glb`), bytes);
     // Write the completion record last; a blob alone never means a completed archive.
-    writeImmutable(join(root, `${operationId}.json`), Buffer.from(canonicalJson(archive)));
+    writeImmutableMeshyArtifact(
+      join(root, `${operationId}.json`),
+      Buffer.from(canonicalJson(archive)),
+    );
     return { operationId, status: 'SUCCEEDED', archived: true, export: archive.untouchedExport };
   } catch {
     throw new Error(REFUSED);

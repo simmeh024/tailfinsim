@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -526,6 +527,9 @@ describe('operator command authority boundary', () => {
         platform: 'node',
         format: 'esm',
         logLevel: 'silent',
+        // Native decoder resolves from this test's installed dependency, never the temporary repo.
+        external: [pathToFileURL(createRequire(import.meta.url).resolve('sharp')).href],
+        alias: { sharp: pathToFileURL(createRequire(import.meta.url).resolve('sharp')).href },
       });
       const specDirectory = join(directory, 'assets', 'aircraft', 'generation');
       await mkdir(specDirectory, { recursive: true });
@@ -549,7 +553,8 @@ describe('operator command authority boundary', () => {
             env: { ...process.env, MESHY_API_KEY: sentinel },
           },
         );
-      expect(run(['init', '--approval-file', approvalFile]).status).toBe(0);
+      const initialized = run(['init', '--approval-file', approvalFile]);
+      expect(initialized.status, initialized.stderr.replaceAll(sentinel, '[redacted]')).toBe(0);
       const status = run(['status']);
       expect(status.status).toBe(0);
       expect(JSON.parse(status.stdout)).toMatchObject({

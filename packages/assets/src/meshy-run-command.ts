@@ -4,32 +4,48 @@ import { canonicalJson } from './canonical';
 import { MeshyGenerationSpec, meshyCreditExposure, meshySpecIdentity } from './meshy';
 import { checkMeshyAccount } from './meshy-account';
 import { meshyArchiveDirectory, syncMeshyCandidate } from './meshy-archive';
+import { meshyEvidenceDirectory, prepareMeshyEvidence } from './meshy-evidence';
 import { readBoundedMeshyInput } from './meshy-preflight';
+import { sealMeshyCandidateProvenance } from './meshy-provenance';
 import { assertMeshyRunCap, meshyRunApprovalIdentity } from './meshy-run';
 import { MeshyRunStore, meshyRunDatabasePath } from './meshy-store';
+import { submitMeshyCandidate } from './meshy-submit';
 
 export const MESHY_RUN_USAGE =
   'Usage: assets:meshy-run init --approval-file PATH\n' +
   '       assets:meshy-run status\n' +
   '       assets:meshy-run account --max-credits 1..40 [--key-file PATH]\n' +
+  '       assets:meshy-run prepare --evidence-file PATH --max-credits 1..40\n' +
+  '       assets:meshy-run provenance --operation candidate-1..4 --max-credits 1..40\n' +
+  '       assets:meshy-run submit --operation candidate-1..4 --pricing-file PATH --max-credits 1..40 [--key-file PATH]\n' +
   '       assets:meshy-run sync --operation candidate-1..4 --max-credits 1..40 [--key-file PATH]\n' +
-  'One immutable first-run approval per repository. Account is GET-only. No generation command exists.\n';
+  'One immutable first-run approval per repository. Submit spends credits; never retry an uncertain submission. No retexture command.\n';
 
 export function parseMeshyRunArguments(argv: readonly string[]) {
   const args = argv[0] === '--' ? argv.slice(1) : argv;
   if (args.length === 1 && args[0] === '--help')
     return { command: 'help' as const, options: new Map<string, string>() };
   const command = args[0];
-  if (!['init', 'status', 'account', 'sync'].includes(command ?? ''))
+  if (
+    !['init', 'status', 'account', 'prepare', 'submit', 'sync', 'provenance'].includes(
+      command ?? '',
+    )
+  )
     throw new Error('Unknown Meshy run command.');
   const allowed =
     command === 'init'
       ? ['--approval-file']
-      : command === 'sync'
-        ? ['--operation', '--max-credits', '--key-file']
-        : command === 'account'
-          ? ['--max-credits', '--key-file']
-          : [];
+      : command === 'prepare'
+        ? ['--evidence-file', '--max-credits']
+        : command === 'provenance'
+          ? ['--operation', '--max-credits']
+          : command === 'submit'
+            ? ['--operation', '--pricing-file', '--max-credits', '--key-file']
+            : command === 'sync'
+              ? ['--operation', '--max-credits', '--key-file']
+              : command === 'account'
+                ? ['--max-credits', '--key-file']
+                : [];
   const options = new Map<string, string>();
   for (let index = 1; index < args.length; index += 2) {
     const key = args[index];
@@ -42,13 +58,20 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
   if (command === 'init' && !options.has('--approval-file'))
     throw new Error('Approval file is required.');
   if (
-    (command === 'account' || command === 'sync') &&
+    ['account', 'sync', 'prepare', 'submit', 'provenance'].includes(command!) &&
     !/^(?:[1-9]|[1-3][0-9]|40)$/.test(options.get('--max-credits') ?? '')
   ) {
     throw new Error('The approved whole-number ceiling is required.');
   }
-  if (command === 'sync' && !/^candidate-[1-4]$/.test(options.get('--operation') ?? ''))
+  if (
+    ['sync', 'submit', 'provenance'].includes(command!) &&
+    !/^candidate-[1-4]$/.test(options.get('--operation') ?? '')
+  )
     throw new Error('One recorded candidate operation is required.');
+  if (command === 'prepare' && !options.has('--evidence-file'))
+    throw new Error('Evidence import required.');
+  if (command === 'submit' && !options.has('--pricing-file'))
+    throw new Error('Fresh pricing review required.');
   return { command, options };
 }
 
@@ -81,7 +104,8 @@ export async function runMeshyRunCommand(
       approvalSha256: meshyRunApprovalIdentity(state.approval),
       approvedMaxCredits: state.approval.maxCredits,
       reservedOrChargedCredits: 0,
-      generationAvailable: false,
+      candidateSubmissionImplemented: true,
+      spendingAuthorizedByThisCommand: false,
     });
   }
   const state = store.read();
@@ -97,15 +121,49 @@ export async function runMeshyRunCommand(
         .filter((r) => !state.tasks.some((t) => t.operationId === r.operationId))
         .map((r) => r.operationId),
       taskCount: state.tasks.length,
-      generationAvailable: false,
+      candidateSubmissionImplemented: true,
+      spendingAuthorizedByThisCommand: false,
     });
   const maxCredits = Number(options.get('--max-credits'));
   assertMeshyRunCap(state, maxCredits);
+  if (command === 'provenance')
+    return canonicalJson(
+      await sealMeshyCandidateProvenance(
+        store,
+        meshyEvidenceDirectory(database),
+        meshyArchiveDirectory(database),
+        spec,
+        maxCredits,
+        options.get('--operation')!,
+      ),
+    );
+  if (command === 'prepare')
+    return canonicalJson(
+      await prepareMeshyEvidence(
+        meshyEvidenceDirectory(database),
+        JSON.parse(await readBoundedMeshyInput(options.get('--evidence-file')!, 32_768)) as unknown,
+        state,
+        spec,
+      ),
+    );
   const keyFile = options.get('--key-file');
   const credential =
     keyFile === undefined
       ? (environment.MESHY_API_KEY ?? '')
       : await readBoundedMeshyInput(keyFile, 4_096);
+  if (command === 'submit')
+    return canonicalJson(
+      await submitMeshyCandidate(
+        store,
+        meshyEvidenceDirectory(database),
+        meshyArchiveDirectory(database),
+        spec,
+        maxCredits,
+        options.get('--operation')!,
+        JSON.parse(await readBoundedMeshyInput(options.get('--pricing-file')!, 8_192)) as unknown,
+        credential,
+      ),
+    );
   if (command === 'sync')
     return canonicalJson({
       ...(await syncMeshyCandidate(
