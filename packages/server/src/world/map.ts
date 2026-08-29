@@ -1,6 +1,8 @@
 import { and, eq } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
+import { airlineMapColour } from '@tailfin/shared';
+
 import { airline, airlineHub, airport, route } from '../db/schema';
 
 import type { Database } from '../db/client';
@@ -43,6 +45,8 @@ export interface WorldMapTrafficRoute extends WorldMapRoute {
   airlineName: string;
   /** True for the player's own route, false for an NPC (or another player's). */
   own: boolean;
+  /** The carrier's brand colour (`#RRGGBB`), for the plane/mark and its route line (M7-02). */
+  colour: string;
 }
 
 export interface WorldMap {
@@ -94,6 +98,8 @@ export async function readWorldMap(
         id: route.id,
         airlineId: route.airlineId,
         airlineName: airline.name,
+        airlineIcao: airline.icaoCode,
+        airlineLogo: airline.logo,
         originIcao: route.originIcao,
         destinationIcao: route.destinationIcao,
         originName: origin.name,
@@ -136,6 +142,9 @@ export async function readWorldMap(
       airlineId: row.airlineId,
       airlineName: row.airlineName,
       own: row.airlineId === airlineId,
+      // The carrier's brand hue, from its emblem (or a stable fallback keyed on
+      // its ICAO) so even an unbranded NPC reads as itself. §H.3's "dominant colour".
+      colour: airlineMapColour(row.airlineLogo, row.airlineIcao || row.airlineId),
     })),
   };
 }
