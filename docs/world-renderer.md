@@ -195,14 +195,21 @@ scanline _before_ the supersampled grid could smooth anything — so the shape b
 already a staircase and no amount of supersampling recovered it. Longitude never had the problem,
 which is why the artefact read as horizontal steps rather than as general roughness.
 
-Routes are `ArcLayer` instances with `greatCircle: true`. That one implementation is used in
-both projections. In flat mode deck.gl splits/wraps the great-circle arc at the antimeridian;
-do not pre-flatten or manually splice routes for `MapView`. Reduced detail halves the arc
-tessellation from 100 to 50 segments.
+Routes are a `PathLayer` whose path is a flat track on the surface — `flightPath` in
+`flight.ts` takes the great circle (`greatCirclePath`/`interpolateGreatCircle`, which
+**unwrap** longitudes so an antimeridian crossing climbs past ±180 rather than snapping back)
+and adds a **seeded lateral wander**: a sum of a few sine waves whose amplitude, frequency and
+phase come from `routeSeed(route.id)`, enveloped to zero at both ends so the track still starts
+and ends exactly at the two airports. Every route gets its own shape, and it is the same shape
+each render, so the simulated plane (`planesForRoutes` → `arcVec`) rides the identical track
+rather than cutting a clean great circle through the bends. This is the FlightRadar look — a
+route that bends the way a real track does while staying on the ground — replacing the
+`ArcLayer` rainbow that lifted the route into 3D. The one implementation serves both
+projections. Reduced detail samples the line with fewer points (64→32 segments).
 
-M7-01 intentionally supplies no invented airline or aircraft data. The renderer accepts
-typed `WorldRoute` input, but the shell passes an empty list until M7-02 supplies live,
-server-owned aircraft and operational-route state.
+M7's world map draws the player's own hubs and operational routes from `GET /api/world/map`,
+with a small plane animated along each route. The renderer still accepts an explicit typed
+`WorldRoute` list (used by tests), falling back to the server-owned overlay otherwise.
 
 ## Day and night
 

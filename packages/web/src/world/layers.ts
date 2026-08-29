@@ -1,5 +1,6 @@
-import { ArcLayer, BitmapLayer, GeoJsonLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
+import { BitmapLayer, GeoJsonLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 
+import { altitudeProfile, flightPath, routeSeed } from './flight';
 import { WEB_MERCATOR_MAX_LATITUDE } from './terminator';
 import { terrainImage } from './terrain';
 
@@ -44,16 +45,59 @@ export interface WorldAirport {
 function airportRadius(tier: string): number {
   switch (tier) {
     case 'flagship':
-      return 3;
+      return 8;
     case 'large':
-      return 2.4;
+      return 6.5;
     case 'medium':
-      return 1.8;
+      return 5.5;
     case 'small':
-      return 1.4;
+      return 4.5;
     default:
-      return 1.1;
+      return 4;
   }
+}
+
+/**
+ * Tier importance, 0 (biggest) to 3 (smallest) — the order the map reveals them as
+ * the camera comes in.
+ */
+function airportTierLevel(tier: string): number {
+  switch (tier) {
+    case 'flagship':
+    case 'large':
+      return 0;
+    case 'medium':
+      return 1;
+    case 'small':
+      return 2;
+    default:
+      return 3;
+  }
+}
+
+/**
+ * The smallest tier level to draw at a given zoom — the map-app declutter every
+ * atlas does: only the majors on the whole-world view, medium fields as countries
+ * fill the frame, then small and regional strips once the camera is in close. The
+ * flagship and large hubs (level 0) are always on, so the map is never empty.
+ *
+ * Returned as a discrete level so the airport list is refiltered only when the zoom
+ * crosses a threshold, not on every scroll tick — the same bucketing the day/night
+ * field uses for the clock.
+ */
+export function airportLevelForZoom(zoom: number): number {
+  if (zoom >= 5.5) return 3;
+  if (zoom >= 4) return 2;
+  if (zoom >= 2.5) return 1;
+  return 0;
+}
+
+/** The airports to draw at a zoom level: every tier at or above the level's cutoff. */
+export function visibleAirportsAtLevel(
+  airports: readonly WorldAirport[],
+  level: number,
+): WorldAirport[] {
+  return airports.filter((airport) => airportTierLevel(airport.tier) <= level);
 }
 
 export interface CreateWorldLayersOptions {
@@ -62,6 +106,13 @@ export interface CreateWorldLayersOptions {
   routes: readonly WorldRoute[];
   airports: readonly WorldAirport[];
   hubs: readonly WorldHub[];
+  /**
+   * ICAOs of the airports the player's fleet can reach from a hub, for the map's
+   * highlight. When given, an out-of-range airport is drawn dimmer, so the ones a
+   * plane could actually fly to stand out. Undefined leaves every airport at full
+   * strength (the pre-fleet map, and the tests).
+   */
+  reachableIcaos?: ReadonlySet<string>;
   /** Called when a served airport is clicked, so the page can open its route panel. */
   onAirportClick?: (airport: WorldAirport) => void;
   darkness: DarknessField;
@@ -228,6 +279,26 @@ const DATA_TEXTURE_SAMPLER = {
 const TERMINATOR_POLYGON_OFFSET = (): [number, number] => [0, -20000];
 
 /**
+ * Depth bias that lifts the route/airport/hub overlay in front of the surface it
+ * sits on.
+ *
+ * **This is why the markers vanished at the whole-globe zoom.** An airport dot and
+ * a hub sit *on* the sphere, at the same depth as the ocean fill and the terrain
+ * that cover it. Coincident depth is a coin toss the surface wins, and it wins most
+ * at the far-out zoom where the depth buffer's precision near the surface is
+ * coarsest — so the dots were being depth-rejected there while the same dots showed
+ * once the camera came close. The grid and borders survived because deck.gl's
+ * default per-layer offset was just enough for thin lines and not for a disk.
+ *
+ * The fix is the terminator's: a uniform negative offset pulls the whole overlay a
+ * hair towards the camera, clearing the surface at every zoom. Uniform, so the near
+ * and far hemispheres keep their order and the far side stays hidden behind the
+ * globe rather than showing through it — the reason this is an offset and not
+ * `depthTest: false`.
+ */
+const OVERLAY_POLYGON_OFFSET = (): [number, number] => [0, -60000];
+
+/**
  * A `BitmapLayer` that rebuilds its mesh when the viewport that draws it changes.
  *
  * **This is what keeps the globe from going black after a projection switch.**
@@ -367,10 +438,42 @@ export function createWorldLayers({
   routes,
   airports,
   hubs,
+  reachableIcaos,
   onAirportClick,
   visibility,
 }: CreateWorldLayersOptions): (Layer | false)[] {
   const bounds = worldBounds(projection, quality);
+  // An out-of-range airport keeps its colour but fades back, so the field the fleet
+  // can actually reach reads as the foreground. Full strength when no reach set is
+  // given (before an airline exists, and in the layer tests).
+  const dimmed = palette.airport.map((c, i) => (i === 3 ? Math.round(c * 0.55) : c)) as [
+    number,
+    number,
+    number,
+    number,
+  ];
+  const airportFill = (airport: WorldAirport): [number, number, number, number] =>
+    reachableIcaos === undefined || reachableIcaos.has(airport.icao) ? palette.airport : dimmed;
+
+  // A FlightRadar-style altitude wash for the route line: warm and low near the
+  // airports, cool and high across the cruise. Interpolated between two existing
+  // palette tokens — the amber airport colour for the ground, the route blue for
+  // altitude — so it stays theme-aware with no colour literal here. The ramp is by
+  // fraction along the leg, identical for every route, so it is built once and the
+  // path layer hands the same per-vertex array to each line.
+  const routeSegments = quality === 'full' ? 64 : 32;
+  const lowAltitude = palette.airport;
+  const highAltitude = palette.route;
+  const routeColors: [number, number, number, number][] = [];
+  for (let i = 0; i <= routeSegments; i += 1) {
+    const climb = altitudeProfile(i / routeSegments);
+    routeColors.push([
+      Math.round(lowAltitude[0] + (highAltitude[0] - lowAltitude[0]) * climb),
+      Math.round(lowAltitude[1] + (highAltitude[1] - lowAltitude[1]) * climb),
+      Math.round(lowAltitude[2] + (highAltitude[2] - lowAltitude[2]) * climb),
+      255,
+    ]);
+  }
   return [
     new WorldBitmapLayer({
       id: 'world-ocean',
@@ -546,19 +649,30 @@ export function createWorldLayers({
         getPolygonOffset: TERMINATOR_POLYGON_OFFSET,
       }),
     visibility.routes &&
-      new ArcLayer<WorldRoute>({
+      new PathLayer<WorldRoute>({
         id: 'world-routes',
         data: routes,
-        getSourcePosition: ({ source }) => source,
-        getTargetPosition: ({ target }) => target,
-        getSourceColor: palette.route,
-        getTargetColor: palette.route,
-        getWidth: 1.5,
-        widthMinPixels: 1,
-        widthMaxPixels: 3,
-        greatCircle: true,
-        numSegments: quality === 'full' ? 100 : 50,
+        // A flat track on the surface, not an `ArcLayer` rainbow lifted into 3D:
+        // this is the FlightRadar look — a route that bends the way a real track
+        // does while staying on the ground, with its own seeded wander so no two
+        // legs are identical. The plane rides the same track, since both come from
+        // `flightPath`/`arcVec` seeded on the route id.
+        getPath: ({ id, source, target }) =>
+          flightPath(source, target, routeSeed(id), routeSegments),
+        // Per-vertex colour: the altitude wash, one colour per point of the path.
+        // The array matches the path's `routeSegments + 1` points and is the same
+        // for every route, so PathLayer gradients each line without a per-route cost.
+        getColor: () => routeColors,
+        // The player's own routes, so drawn boldly — thicker than the airport rings,
+        // and with a floor so a line never thins to nothing on the globe.
+        getWidth: 3,
+        widthUnits: 'pixels',
+        widthMinPixels: 2.5,
+        widthMaxPixels: 7,
+        capRounded: true,
+        jointRounded: true,
         parameters: { cullMode: 'none' },
+        getPolygonOffset: OVERLAY_POLYGON_OFFSET,
       }),
     visibility.airports &&
       new ScatterplotLayer<WorldAirport>({
@@ -567,10 +681,28 @@ export function createWorldLayers({
         getPosition: ({ position }) => position,
         getRadius: ({ tier }) => airportRadius(tier),
         radiusUnits: 'pixels',
-        radiusMinPixels: 1,
-        radiusMaxPixels: 5,
-        getFillColor: palette.airport,
-        stroked: false,
+        // A firm floor so the dots stay findable even at the whole-globe zoom, where
+        // a tier-scaled radius would otherwise shrink them to nothing.
+        radiusMinPixels: 5,
+        radiusMaxPixels: 18,
+        // A plain array while nothing is highlighted (the pre-fleet map and the
+        // tests); a per-airport accessor once a reachable set fades the rest back.
+        getFillColor: reachableIcaos === undefined ? palette.airport : airportFill,
+        // Re-evaluate the fill when the reachable set changes (a new plane, a new hub).
+        updateTriggers: { getFillColor: reachableIcaos },
+        // Billboarded so each dot faces the camera at a steady pixel size on the
+        // globe, and lifted off the surface so it is not depth-rejected by the
+        // terrain at the far-out zoom (see OVERLAY_POLYGON_OFFSET).
+        billboard: true,
+        getPolygonOffset: OVERLAY_POLYGON_OFFSET,
+        // A dark ring so a bright dot still reads where it sits on pale terrain, not
+        // just against the ocean. One draw call for the whole field.
+        stroked: true,
+        getLineColor: palette.night,
+        lineWidthUnits: 'pixels',
+        getLineWidth: 1.25,
+        lineWidthMinPixels: 1,
+        lineWidthMaxPixels: 2.5,
         // Clickable so the page can open a route panel; a fatter pick radius makes
         // the small dots easy to hit without changing how they look.
         pickable: onAirportClick !== undefined,
@@ -590,15 +722,20 @@ export function createWorldLayers({
         id: 'world-hubs',
         data: hubs,
         getPosition: ({ position }) => position,
-        getRadius: 5,
+        getRadius: 11,
         radiusUnits: 'pixels',
-        radiusMinPixels: 4,
-        radiusMaxPixels: 8,
+        radiusMinPixels: 8,
+        radiusMaxPixels: 22,
         getFillColor: palette.airport,
         stroked: true,
         getLineColor: palette.route,
         lineWidthUnits: 'pixels',
-        getLineWidth: 1.5,
+        getLineWidth: 2.5,
+        lineWidthMinPixels: 2,
+        // Same as the airports: face the camera and clear the surface depth so a hub
+        // is never swallowed by the terrain at the whole-globe zoom.
+        billboard: true,
+        getPolygonOffset: OVERLAY_POLYGON_OFFSET,
         parameters: { cullMode: 'none' },
       }),
   ];

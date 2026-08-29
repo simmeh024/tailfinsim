@@ -94,7 +94,8 @@ export type OpenRouteFailure =
   | { kind: 'active-world-required' }
   | { kind: 'same-airport' }
   | { kind: 'duplicate' }
-  | { kind: 'unreachable'; reachability: { reason: string; detail: string } };
+  | { kind: 'unreachable'; reachability: { reason: string; detail: string } }
+  | { kind: 'authority-required'; detail: string };
 
 export type OpenRouteOutcome =
   { ok: true; routeId: string; greatCircleNm: number } | ({ ok: false } & OpenRouteFailure);
@@ -122,8 +123,56 @@ export async function openRoute(
     if (code === 'airline_required') return { ok: false, kind: 'no-airline' };
     if (code === 'active_world_required') return { ok: false, kind: 'active-world-required' };
   }
-  if (status === 422) return body as OpenRouteOutcome;
+  if (status === 422) {
+    // A route refused for needing an office unlock (M5-04) is a *different* 422
+    // shape from the reachability refusals — it carries a code and a message rather
+    // than `{ ok, kind }`. Translate it, or the panel would render an empty alert.
+    const code = (body as { code?: unknown }).code;
+    if (code === 'office_authority_required') {
+      const message = (body as { message?: unknown }).message;
+      return {
+        ok: false,
+        kind: 'authority-required',
+        detail: typeof message === 'string' ? message : 'This route needs an office unlock first.',
+      };
+    }
+    return body as OpenRouteOutcome;
+  }
   throw new Error(`Opening a route failed with ${String(status)}`);
+}
+
+/**
+ * Close a route — remove it from the network.
+ *
+ * The counterpart to {@link openRoute}. A 404 (someone else's route, or a stale
+ * id) is the server's considered answer and would only mislead as a thrown error;
+ * a genuinely broken request still throws.
+ */
+export async function closeRoute(routeId: string): Promise<{ ok: boolean }> {
+  const { status } = await json(`/api/routes/${routeId}`, { method: 'DELETE' });
+  if (status === 200) return { ok: true };
+  if (status === 404 || status === 409) return { ok: false };
+  throw new Error(`Closing a route failed with ${String(status)}`);
+}
+
+/**
+ * Pause or reopen a route — flip its `active` flag without losing it.
+ *
+ * The reversible alternative to {@link closeRoute}: a paused route stops selling
+ * but keeps its schedule and fares. A 404/409 comes back as `ok: false` rather than
+ * throwing; a broken request throws.
+ */
+export async function setRouteActive(
+  routeId: string,
+  active: boolean,
+): Promise<{ ok: boolean; active?: boolean }> {
+  const { status, body } = await json(`/api/routes/${routeId}/active`, {
+    method: 'PUT',
+    body: JSON.stringify({ active }),
+  });
+  if (status === 200) return { ok: true, active: (body as { active?: boolean }).active };
+  if (status === 404 || status === 409) return { ok: false };
+  throw new Error(`Setting a route active failed with ${String(status)}`);
 }
 
 /** Who else sells this pair, and in which cabins. */

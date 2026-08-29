@@ -6,12 +6,13 @@ import type { FareWaterfallResponse, FarePreviewResponse, SetFaresResponse } fro
 import { NetworkPage } from './NetworkPage';
 
 /**
- * The pricing panel (M3-09).
+ * The Network workspace (M2/M3).
  *
- * The page computes nothing, so these tests are about whether it *shows* what
- * the server said — particularly the floor, which M3-09 requires a refusal to
- * explain, and which is exactly the thing a UI is tempted to reduce to "too
- * low".
+ * The redesign moved fares into a Pricing tab and opened a route from the rail,
+ * but the acceptance criteria are unchanged: the page computes nothing, so these
+ * tests are about whether it *shows* what the server said — the floor a refusal
+ * must explain, the PriceRel, and A.9's decomposition. The navigation is new; the
+ * assertions are the same ones M3-09 and M3-10 have always required.
  */
 
 const ROUTE = {
@@ -65,13 +66,6 @@ const REFUSAL: SetFaresResponse = {
 
 const OPENED = { ok: true as const, routeId: 'route-2', greatCircleNm: 700 };
 
-/**
- * App. A.9's published table, as the server would send it (M3-10).
- *
- * The doc's own figures: price −0.770, frequency −0.460, product +0.192,
- * reputation +0.050, netting to the −0.988 that gives 24.3% against 65.4%.
- * The page has no economics in it, so these are the only numbers it can show.
- */
 const WATERFALL: FareWaterfallResponse = {
   routeId: 'route-1',
   cabin: 'economy',
@@ -123,7 +117,11 @@ const WATERFALL: FareWaterfallResponse = {
   ],
 };
 
-/** Serve the waterfall endpoint alongside everything else the page asks for. */
+/** Serve the fleet endpoint the page loads for the planner's aircraft rows. */
+function fleetResponse(): { status: number; json: () => Promise<unknown> } {
+  return { status: 200, json: () => Promise.resolve({ airframes: [] }) };
+}
+
 function stubWaterfall(
   answer: unknown = WATERFALL,
   status = 200,
@@ -134,7 +132,7 @@ function stubWaterfall(
     vi.fn((input: unknown, init?: RequestInit) => {
       const url = String(input);
       calls.push(`${init?.method ?? 'GET'} ${url}`);
-
+      if (url.includes('/fleet/airframes')) return Promise.resolve(fleetResponse());
       if (url.includes('/waterfall')) {
         return Promise.resolve({ status, json: () => Promise.resolve(answer) });
       }
@@ -156,16 +154,6 @@ function stubWaterfall(
   return { calls, answered: () => calls.filter((c) => c.includes('/waterfall')).length };
 }
 
-/** Open the panel and click through to the chart. */
-async function openWaterfall(): Promise<void> {
-  render(<NetworkPage />);
-  await screen.findByText('EHAM → LEBL');
-  await vi.advanceTimersByTimeAsync(500);
-
-  const toggle = await screen.findByRole('button', { name: /why am i losing/i });
-  fireEvent.click(toggle);
-}
-
 function stub(
   save: SetFaresResponse = { ok: true, fares: ROUTE.fares },
   opened: { ok: boolean } & Record<string, unknown> = OPENED,
@@ -176,6 +164,21 @@ function stub(
     vi.fn((input: unknown, init?: RequestInit) => {
       const url = String(input);
       calls.push(`${init?.method ?? 'GET'} ${url}`);
+      if (url.includes('/fleet/airframes')) return Promise.resolve(fleetResponse());
+
+      if (url.startsWith('/api/routes/') && init?.method === 'DELETE') {
+        return Promise.resolve({
+          status: 200,
+          json: () => Promise.resolve({ ok: true, routeId: 'route-1' }),
+        });
+      }
+
+      if (url.endsWith('/active') && init?.method === 'PUT') {
+        return Promise.resolve({
+          status: 200,
+          json: () => Promise.resolve({ ok: true, active: false }),
+        });
+      }
 
       if (url === '/api/routes' && init?.method === 'POST') {
         if (opened.kind === 'no-airline') {
@@ -228,6 +231,21 @@ function stub(
   return calls;
 }
 
+/** Wait for the route to load, then open its Pricing tab. */
+async function openPricing(): Promise<void> {
+  await screen.findByText('EHAM → LEBL');
+  fireEvent.click(screen.getByRole('tab', { name: 'Pricing' }));
+}
+
+/** Open the Pricing tab and click through to the chart. */
+async function openWaterfall(): Promise<void> {
+  render(<NetworkPage />);
+  await openPricing();
+  await vi.advanceTimersByTimeAsync(500);
+  const toggle = await screen.findByRole('button', { name: /why am i losing/i });
+  fireEvent.click(toggle);
+}
+
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
 });
@@ -235,18 +253,16 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  window.history.pushState({}, '', '/');
 });
 
-describe('the pricing panel', () => {
+describe('the pricing tab', () => {
   it('shows the market average and the position against it', async () => {
     stub();
     render(<NetworkPage />);
-
-    expect(await screen.findByText('EHAM → LEBL')).toBeInTheDocument();
+    await openPricing();
     await vi.advanceTimersByTimeAsync(500);
 
-    // 30,000 against a 28,000 average is 107% — A.3's PriceRel, shown as the
-    // logit's own input rather than a rephrasing of it.
     await waitFor(() => {
       expect(screen.getByText('107%')).toBeInTheDocument();
     });
@@ -257,21 +273,19 @@ describe('the pricing panel', () => {
   it('shows the projected passengers and the change against what is saved', async () => {
     stub();
     render(<NetworkPage />);
-    await screen.findByText('EHAM → LEBL');
+    await openPricing();
     await vi.advanceTimersByTimeAsync(500);
 
     await waitFor(() => {
       expect(screen.getByText('88')).toBeInTheDocument();
     });
-    // 88 against 74 saved. The delta is what a player can act on; the absolute
-    // is a number nobody can calibrate.
     expect(screen.getByText(/14 against what is saved/)).toBeInTheDocument();
   });
 
   it('explains the floor when a fare is refused — the acceptance criterion', async () => {
     stub(REFUSAL);
     render(<NetworkPage />);
-    await screen.findByText('EHAM → LEBL');
+    await openPricing();
     await vi.advanceTimersByTimeAsync(500);
 
     await waitFor(() => {
@@ -279,8 +293,6 @@ describe('the pricing panel', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /save fares/i }));
 
-    // Not "too low". The floor, the ratio, the cost it is a share of, and the
-    // shortfall — every number the player needs to choose a legal fare.
     const message = await screen.findByRole('alert');
     expect(message).toHaveTextContent(/94\.61/);
     expect(message).toHaveTextContent(/60%/);
@@ -291,7 +303,7 @@ describe('the pricing panel', () => {
   it('marks the refused cabin’s field, not just the message', async () => {
     stub(REFUSAL);
     render(<NetworkPage />);
-    await screen.findByText('EHAM → LEBL');
+    await openPricing();
     await vi.advanceTimersByTimeAsync(500);
 
     await waitFor(() => {
@@ -302,18 +314,13 @@ describe('the pricing panel', () => {
     await waitFor(() => {
       expect(screen.getByLabelText('Economy fare')).toHaveAttribute('aria-invalid', 'true');
     });
-    // And the business field, which cleared, is untouched.
     expect(screen.getByLabelText('Business fare')).toHaveAttribute('aria-invalid', 'false');
   });
 
   it('asks the server for the preview rather than working it out', async () => {
-    // The architectural criterion, asserted as a request. There is no economics
-    // in this package to compute a share with — ESLint refuses the client an
-    // import of `@tailfin/sim` — so the only way a number appears is if the
-    // server sent it.
     const calls = stub();
     render(<NetworkPage />);
-    await screen.findByText('EHAM → LEBL');
+    await openPricing();
     await vi.advanceTimersByTimeAsync(500);
 
     await waitFor(() => {
@@ -324,17 +331,15 @@ describe('the pricing panel', () => {
   it('does not ask on every keystroke', async () => {
     const calls = stub();
     render(<NetworkPage />);
-    await screen.findByText('EHAM → LEBL');
+    await openPricing();
     await vi.advanceTimersByTimeAsync(500);
 
-    // The rows only exist once the first preview has come back.
     await waitFor(() => {
       expect(screen.getByLabelText('Economy fare')).toBeInTheDocument();
     });
 
     const before = calls.filter((c) => c.includes('preview')).length;
     fireEvent.change(screen.getByLabelText('Economy fare'), { target: { value: '99.00' } });
-    // Mid-debounce: nothing yet.
     expect(calls.filter((c) => c.includes('preview'))).toHaveLength(before);
 
     await vi.advanceTimersByTimeAsync(500);
@@ -346,33 +351,33 @@ describe('the pricing panel', () => {
   it('disables a cabin the aircraft does not have', async () => {
     stub();
     render(<NetworkPage />);
-    await screen.findByText('EHAM → LEBL');
+    await openPricing();
     await vi.advanceTimersByTimeAsync(500);
 
     await waitFor(() => {
       expect(screen.getByLabelText('Economy fare')).toBeEnabled();
     });
-    // Only business and economy are in the preview, so first and premium
-    // economy have no row at all — the panel shows what the aeroplane has.
     expect(screen.queryByLabelText('First fare')).toBeNull();
   });
+});
 
+describe('opening a route from the rail', () => {
   it('says so when there are no routes yet, and offers to open one', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(() => Promise.resolve({ status: 200, json: () => Promise.resolve({ routes: [] }) })),
+      vi.fn((input: unknown) => {
+        const url = String(input);
+        if (url.includes('/fleet/airframes')) return Promise.resolve(fleetResponse());
+        return Promise.resolve({ status: 200, json: () => Promise.resolve({ routes: [] }) });
+      }),
     );
     render(<NetworkPage />);
 
     expect(await screen.findByText(/No routes yet/)).toBeInTheDocument();
-    // The empty state has to be actionable. Naming a milestone at the player
-    // was honest while nothing could be done about it and is not any more.
     expect(screen.getByRole('button', { name: /^open$/i })).toBeInTheDocument();
   });
 
   it('names the check that refused a route — App. B.4', async () => {
-    // "Never a generic unavailable." A route refused for range needs a
-    // different aeroplane; one refused for a curfew needs a different time.
     stub(undefined, {
       ok: false,
       kind: 'unreachable',
@@ -390,6 +395,24 @@ describe('the pricing panel', () => {
     expect(alert).toHaveTextContent(/1,850 nm required/);
   });
 
+  it('explains when an international route needs an office hire, not a blank alert', async () => {
+    // EHAM → EDDM crosses a border, so the server refuses with a 422 whose shape is
+    // a code+message, not `{ ok, kind }`. The panel must still show the reason.
+    stub(undefined, {
+      ok: false,
+      code: 'office_authority_required',
+      message: 'An international route needs a Safety & Compliance hire in your office.',
+    });
+    render(<NetworkPage />);
+    await screen.findByText('EHAM → LEBL');
+
+    fireEvent.change(screen.getByLabelText('Origin ICAO'), { target: { value: 'EHAM' } });
+    fireEvent.change(screen.getByLabelText('Destination ICAO'), { target: { value: 'EDDM' } });
+    fireEvent.click(screen.getByRole('button', { name: /^open$/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Safety & Compliance/i);
+  });
+
   it('refuses a pair already flown, differently from a rule refusal', async () => {
     stub(undefined, { ok: false, kind: 'duplicate' });
     render(<NetworkPage />);
@@ -403,9 +426,6 @@ describe('the pricing panel', () => {
   });
 
   it('says you have no airline rather than blaming the airport', async () => {
-    // The bug this replaced: a player with no airline was told "No airport
-    // with the code EHAM", which is false and unactionable. Found by checking
-    // dev rather than by a test, which is why there is now a test.
     stub(undefined, { ok: false, kind: 'no-airline' });
     render(<NetworkPage />);
     await screen.findByText('EHAM → LEBL');
@@ -431,6 +451,16 @@ describe('the pricing panel', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/Choose which world/i);
   });
 
+  it('prefills the open-route form from ?from= and ?to= (the world map deep link)', async () => {
+    window.history.pushState({}, '', '/network?from=KJFK&to=KLAX');
+    stub();
+    render(<NetworkPage />);
+    await screen.findByText('EHAM → LEBL');
+
+    expect(screen.getByLabelText('Origin ICAO')).toHaveValue('KJFK');
+    expect(screen.getByLabelText('Destination ICAO')).toHaveValue('KLAX');
+  });
+
   it('will not submit a code that is not four letters', async () => {
     stub();
     render(<NetworkPage />);
@@ -439,17 +469,47 @@ describe('the pricing panel', () => {
     fireEvent.change(screen.getByLabelText('Origin ICAO'), { target: { value: 'EH' } });
     expect(screen.getByRole('button', { name: /^open$/i })).toBeDisabled();
   });
+
+  it('pauses a route from the header, flipping the chip and the action', async () => {
+    const calls = stub();
+    render(<NetworkPage />);
+    await screen.findByText('EHAM → LEBL');
+    expect(screen.getByText('Active')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+
+    await waitFor(() => {
+      expect(calls).toContain('PUT /api/routes/route-1/active');
+    });
+    expect(await screen.findByText('Paused')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reopen' })).toBeInTheDocument();
+  });
+
+  it('closes a route from the header after a confirm, and the workspace empties', async () => {
+    const calls = stub();
+    render(<NetworkPage />);
+    await screen.findByText('EHAM → LEBL');
+
+    // First press asks to confirm rather than closing straight away.
+    fireEvent.click(screen.getByRole('button', { name: 'Close route' }));
+    expect(await screen.findByText('Close this route?')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close route' }));
+
+    await waitFor(() => {
+      expect(calls).toContain('DELETE /api/routes/route-1');
+    });
+    await screen.findByText('No routes yet');
+  });
 });
 
 describe('the waterfall — “why am I losing?” (M3-10, App. A.9)', () => {
-  it('is one click from the route, not behind a page', async () => {
+  it('is one click from the pricing tab, not behind a page', async () => {
     stubWaterfall();
     render(<NetworkPage />);
-    await screen.findByText('EHAM → LEBL');
+    await openPricing();
     await vi.advanceTimersByTimeAsync(500);
 
-    // A.9 is the surface the game is learned through, so the chart is not
-    // asked for until it is wanted — and then it is one press away.
     const toggle = await screen.findByRole('button', { name: /why am i losing/i });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
 
@@ -466,8 +526,6 @@ describe('the waterfall — “why am I losing?” (M3-10, App. A.9)', () => {
     stubWaterfall();
     await openWaterfall();
 
-    // The doc's leisure row, to the digit. Every one of these is a number the
-    // server sent; the page has no economics to derive them with.
     await waitFor(() => {
       expect(screen.getByText(/-0\.770/)).toBeInTheDocument();
     });
@@ -483,7 +541,6 @@ describe('the waterfall — “why am I losing?” (M3-10, App. A.9)', () => {
     await waitFor(() => {
       expect(screen.getByText('-0.988')).toBeInTheDocument();
     });
-    // A.9's closing line: the gap *is* 24.3% against 65.4%.
     expect(screen.getByText('24.3%')).toBeInTheDocument();
     expect(screen.getByText('65.4%')).toBeInTheDocument();
   });
@@ -503,8 +560,6 @@ describe('the waterfall — “why am I losing?” (M3-10, App. A.9)', () => {
     stubWaterfall();
     await openWaterfall();
 
-    // H.4: the sign has to survive a monochrome screen and a red-green reader,
-    // so colour is never the only carrier of it.
     await waitFor(() => {
       expect(screen.getByText(/▼ -0\.770/)).toBeInTheDocument();
     });
@@ -512,9 +567,6 @@ describe('the waterfall — “why am I losing?” (M3-10, App. A.9)', () => {
   });
 
   it('names every factor the model can produce, never a raw key', async () => {
-    // A.3 has eight terms. Five are live and three are post-MVP, and the one
-    // thing that must not happen is `connectionPenalty` appearing in front of
-    // a player the first time one of them goes non-zero.
     stubWaterfall({
       ...WATERFALL,
       bySegment: [
@@ -545,7 +597,6 @@ describe('the waterfall — “why am I losing?” (M3-10, App. A.9)', () => {
   });
 
   it('says you have the route to yourself rather than drawing an empty chart', async () => {
-    // The honest state of every route today — no AI carriers until M3-12.
     stubWaterfall({ ok: false, kind: 'no-rival', rivals: [] }, 422);
     await openWaterfall();
 
@@ -553,9 +604,6 @@ describe('the waterfall — “why am I losing?” (M3-10, App. A.9)', () => {
   });
 
   it('keeps the cabin picker when a cabin is not contested', async () => {
-    // The dead end this replaced: the panel returned early on this refusal, so
-    // a player told nobody sells economy here had no control left to ask about
-    // business. §14.1 has no dead ends in it.
     stubWaterfall(
       {
         ok: false,
@@ -572,7 +620,6 @@ describe('the waterfall — “why am I losing?” (M3-10, App. A.9)', () => {
   });
 
   it('lets the player choose which rival, and asks the server again', async () => {
-    // A.8's route has two rivals and you lose to them for opposite reasons.
     const { calls, answered } = stubWaterfall();
     await openWaterfall();
 
@@ -587,8 +634,6 @@ describe('the waterfall — “why am I losing?” (M3-10, App. A.9)', () => {
   });
 
   it('asks the server for the decomposition rather than working it out', async () => {
-    // Invariant 1, asserted as a request. ESLint refuses this package an import
-    // of `@tailfin/sim`, so a bar can only appear if the server drew it.
     const { calls } = stubWaterfall();
     await openWaterfall();
 

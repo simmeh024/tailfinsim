@@ -89,6 +89,23 @@ async function notFound(reply: FastifyReply): Promise<void> {
   await reply.code(404).send({ code: 'not_found', message: 'No such route' });
 }
 
+/**
+ * Pause or reopen a route — the only client-writable field is the `active` flag.
+ *
+ * A hand-written strict parser rather than a zod schema: `@tailfin/server` does not
+ * depend on zod directly, and this shape is a single boolean. Extra keys are
+ * rejected (SEC-06's mass-assignment guard) so a body cannot smuggle another field.
+ */
+function parseActiveBody(input: unknown): { success: true; active: boolean } | { success: false } {
+  if (typeof input !== 'object' || input === null) return { success: false };
+  const keys = Object.keys(input);
+  const active = (input as { active?: unknown }).active;
+  if (keys.length === 1 && keys[0] === 'active' && typeof active === 'boolean') {
+    return { success: true, active };
+  }
+  return { success: false };
+}
+
 export function registerNetworkRoutes(
   app: FastifyInstance,
   { db, economicsFor }: NetworkRoutesOptions,
@@ -281,6 +298,63 @@ export function registerNetworkRoutes(
       if (!row) return notFound(reply);
 
       return reply.code(200).send(previewFares(row, parsed.data.fares, await economicsFor(row)));
+    },
+  );
+
+  /**
+   * Close a route — remove it from the airline's network.
+   *
+   * The counterpart to opening one. A hard delete, scoped to the resolved airline:
+   * a route belonging to somebody else is not in the query, so it gets the same
+   * 404 as one that never existed (ADR-0020) and the endpoint is not an oracle for
+   * which route ids are real. No foreign key references `route.id`, so nothing
+   * cascades — the AIR-06 ledger keeps its rows, whose `route_id` simply no longer
+   * resolves; the money moved regardless of whether the route still exists.
+   */
+  app.delete<{ Params: { routeId: string } }>(
+    '/api/routes/:routeId',
+    { onRequest: app.requireOperatingAirline },
+    async (request, reply) => {
+      const own = resolvedAirlineOf(request);
+      const row = await ownedRoute(db.db, own.id, request.params.routeId);
+      if (!row) return notFound(reply);
+
+      await db.db.delete(route).where(and(eq(route.id, row.id), eq(route.airlineId, own.id)));
+
+      return reply.code(200).send({ ok: true, routeId: row.id });
+    },
+  );
+
+  /**
+   * Pause or reopen a route — flip its `active` flag without losing the route.
+   *
+   * The reversible middle ground between flying and closing: a paused route keeps
+   * its schedule and fares but stops selling, so a seasonal route can be mothballed
+   * and brought back rather than rebuilt. Owner-scoped like the rest; a stranger's
+   * route is the same 404. Only `active` is writable — the body is `.strict()`.
+   */
+  app.put<{ Params: { routeId: string }; Body: unknown }>(
+    '/api/routes/:routeId/active',
+    { onRequest: app.requireOperatingAirline },
+    async (request, reply) => {
+      const own = resolvedAirlineOf(request);
+
+      const parsed = parseRequestBody(request, parseActiveBody);
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send({ code: 'invalid_active', message: 'active must be a boolean' });
+      }
+
+      const row = await ownedRoute(db.db, own.id, request.params.routeId);
+      if (!row) return notFound(reply);
+
+      await db.db
+        .update(route)
+        .set({ active: parsed.active, updatedAt: new Date() })
+        .where(and(eq(route.id, row.id), eq(route.airlineId, own.id)));
+
+      return reply.code(200).send({ ok: true, active: parsed.active });
     },
   );
 }

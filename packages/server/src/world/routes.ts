@@ -43,7 +43,7 @@ export function registerWorldRoutes(app: FastifyInstance, { db }: { db: Database
     { onRequest: app.requireAirline },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const own = resolvedAirlineOf(request);
-      const map = await readWorldMap(db.db, own.id);
+      const map = await readWorldMap(db.db, own.id, own.worldId);
       return reply.code(200).send(map);
     },
   );

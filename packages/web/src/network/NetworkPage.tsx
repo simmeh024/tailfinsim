@@ -1,627 +1,90 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { CABIN_ORDER } from '@tailfin/shared';
-import type {
-  CabinClass,
-  CabinMarketPosition,
-  FarePreviewResponse,
-  FareFloorViolation,
-  FareTable,
-  WaterfallSegment,
-} from '@tailfin/shared';
+import type { FleetAirframeView } from '@tailfin/shared';
 
-import {
-  fetchRoutes,
-  fetchWaterfall,
-  openRoute,
-  type OpenRouteOutcome,
-  previewFares,
-  rivalsOf,
-  type RouteSummary,
-  saveFares,
-  type WaterfallOutcome,
-} from './api';
+import { fetchFleetAirframes } from '../fleet/api';
+import { useContextSelection } from '../shell/context-selection';
 
+import { closeRoute, fetchRoutes, setRouteActive, type RouteSummary } from './api';
+import { liveEconomics } from './planner/analysis';
+import { CompetitionTab } from './planner/CompetitionTab';
+import { describeSelection } from './planner/ContextBodies';
+import { useScheduleEditor } from './planner/editor';
+import { FleetScheduleView } from './planner/FleetScheduleView';
+import { buildRoutePlan, plannerAircraft } from './planner/mock';
+import { OpenRouteForm } from './planner/OpenRouteForm';
+import { OverviewTab } from './planner/OverviewTab';
+import { PerformanceTab } from './planner/PerformanceTab';
+import { PricingTab } from './planner/PricingTab';
+import { ScheduleTab } from './planner/ScheduleTab';
+import { Chip, Segmented } from './planner/ui';
+
+import type { NetworkSelection } from './planner/types';
 import type { ReactNode } from 'react';
 
-/**
- * Routes and per-class fares (M3-09, §8.3, App. A.10).
- *
- * Every number on this page comes from the server. The projected share, the
- * market average and the price floor are all computed by `@tailfin/sim` behind
- * `/api/routes/:id/fares/preview` — this file has no economics in it at all,
- * because invariant 1 says the server is authoritative and ESLint refuses the
- * client an import of the sim.
- *
- * That is what makes M3-09's second criterion true by construction: there is no
- * second estimate here to drift from resolution, because there is no estimate
- * here.
- */
-
-/** `12345` minor units → `123.45`. Display only; the wire stays integer. */
-function major(minor: number): string {
-  return (minor / 100).toFixed(2);
-}
-
-/** Parse a typed major-unit fare back to whole minor units, or nothing. */
-function toMinor(input: string): number | undefined {
-  const trimmed = input.trim();
-  if (trimmed === '') return undefined;
-  const value = Number(trimmed);
-  if (!Number.isFinite(value) || value < 0) return undefined;
-  return Math.round(value * 100);
-}
-
-const CABIN_LABEL: Record<CabinClass, string> = {
-  first: 'First',
-  business: 'Business',
-  premium_economy: 'Premium economy',
-  economy: 'Economy',
-};
-
-function Position({
-  position,
-  draft,
-  onChange,
-  violation,
-}: {
-  position: CabinMarketPosition;
-  draft: string;
-  onChange: (value: string) => void;
-  violation: FareFloorViolation | undefined;
-}): ReactNode {
-  const { cabin } = position;
-
-  return (
-    <tr className={violation ? 'fares__row fares__row--refused' : 'fares__row'}>
-      <th scope="row" className="fares__cabin">
-        {CABIN_LABEL[cabin]}
-        <span className="fares__seats">
-          {position.seats === 0 ? 'not fitted' : `${String(position.seats)} seats`}
-        </span>
-      </th>
-
-      <td>
-        <label className="fares__field">
-          <span className="visually-hidden">{CABIN_LABEL[cabin]} fare</span>
-          <input
-            className="fares__input figure"
-            type="text"
-            inputMode="decimal"
-            value={draft}
-            disabled={position.seats === 0}
-            aria-invalid={violation !== undefined}
-            aria-describedby={violation ? `floor-${cabin}` : undefined}
-            onChange={(event) => {
-              onChange(event.target.value);
-            }}
-          />
-        </label>
-      </td>
-
-      <td className="figure">{major(position.marketAverageMinor)}</td>
-
-      <td className="figure">
-        {/* A.3's PriceRel — the number the logit actually uses, so a player can
-            see the input to their own share rather than a rephrasing of it. */}
-        {position.priceRel === null ? '—' : `${(position.priceRel * 100).toFixed(0)}%`}
-      </td>
-
-      <td className="figure">{major(position.floorMinor)}</td>
-
-      <td className="figure">
-        {position.projectedShare === null ? '—' : `${(position.projectedShare * 100).toFixed(1)}%`}
-      </td>
-    </tr>
-  );
-}
+import './network.css';
 
 /**
- * Which of B.4's seven checks refused it, in words.
+ * The Network page — a route-planning workspace (M2/M3, App. B & §8).
  *
- * The reason enum is on the wire precisely so the client does not have to
- * match on prose — B.4 requires the player to be told which check failed and
- * "never a generic unavailable", and a route refused for range needs a
- * different aeroplane while one refused for a curfew needs a different time.
+ * A route rail with the "Open a route" flow on the left; a per-route workspace of
+ * tabs (Overview, Schedule, Pricing, Competition, Performance) in the middle; and
+ * the shell's context panel on the right, which this page fills with detail for
+ * whatever is selected — a route, a flight, an aircraft or a slot. A second view
+ * switches the middle to the whole-airline Fleet Schedule.
+ *
+ * Real data: routes and fares (the endpoints that exist). Mock data, structured to
+ * mirror the future endpoints (`planner/mock.ts`): the schedule, slots, competition
+ * and performance surfaces — there is no M2-03 schedule API yet.
  */
-const REACHABILITY_LABEL: Record<string, string> = {
-  range: 'Out of range',
-  runway: 'Runway too short',
-  wingspan: 'Aircraft too large for the stand',
-  etops: 'Beyond the diversion limit',
-  curfew: 'Outside operating hours',
-  traffic_rights: 'No traffic rights for that country pair',
-  slots: 'No slot in that band',
-};
 
-function OpenRouteForm({ onOpened }: { onOpened: () => void }): ReactNode {
-  const [origin, setOrigin] = useState('');
-  const [destination, setDestination] = useState('');
-  const [outcome, setOutcome] = useState<OpenRouteOutcome | null>(null);
-  const [busy, setBusy] = useState(false);
+type Tab = 'overview' | 'schedule' | 'pricing' | 'competition' | 'performance';
+type View = 'route' | 'fleet';
+type RouteSort = 'name' | 'profit' | 'load' | 'distance';
 
-  const submit = async () => {
-    setBusy(true);
-    setOutcome(null);
-    try {
-      const result = await openRoute(origin, destination);
-      setOutcome(result);
-      if (result.ok) {
-        setOrigin('');
-        setDestination('');
-        onOpened();
-      }
-    } catch {
-      setOutcome(null);
-    } finally {
-      setBusy(false);
-    }
-  };
+const SORTS: readonly { value: RouteSort; label: string }[] = [
+  { value: 'name', label: 'A–Z' },
+  { value: 'profit', label: 'Profit' },
+  { value: 'load', label: 'Load' },
+  { value: 'distance', label: 'Distance' },
+];
 
-  return (
-    <section className="card">
-      <h2 className="card__heading">Open a route</h2>
-
-      <div className="fares__actions">
-        <label className="fares__field">
-          <span className="visually-hidden">Origin ICAO</span>
-          <input
-            className="fares__input figure"
-            type="text"
-            placeholder="EHAM"
-            maxLength={4}
-            value={origin}
-            onChange={(event) => {
-              setOrigin(event.target.value.toUpperCase());
-            }}
-          />
-        </label>
-
-        <span aria-hidden="true">→</span>
-
-        <label className="fares__field">
-          <span className="visually-hidden">Destination ICAO</span>
-          <input
-            className="fares__input figure"
-            type="text"
-            placeholder="LEBL"
-            maxLength={4}
-            value={destination}
-            onChange={(event) => {
-              setDestination(event.target.value.toUpperCase());
-            }}
-          />
-        </label>
-
-        <button
-          className="admin__submit"
-          type="button"
-          disabled={busy || origin.length < 4 || destination.length < 4}
-          onClick={() => void submit()}
-        >
-          Open
-        </button>
-      </div>
-
-      {outcome !== null && !outcome.ok && (
-        <p className="fares__violation" role="alert">
-          {outcome.kind === 'unreachable' && (
-            <>
-              <strong>
-                {REACHABILITY_LABEL[outcome.reachability.reason] ?? outcome.reachability.reason}
-              </strong>{' '}
-              — {outcome.reachability.detail}
-            </>
-          )}
-          {outcome.kind === 'unknown-airport' && <>No airport with the code {outcome.icao}.</>}
-          {outcome.kind === 'same-airport' && <>A route needs two different airports.</>}
-          {outcome.kind === 'no-airline' && (
-            <>You do not have an airline in this world yet, so there is nothing to fly the route.</>
-          )}
-          {outcome.kind === 'active-world-required' && (
-            <>Choose which world you want to operate in before opening a route.</>
-          )}
-          {outcome.kind === 'duplicate' && <>You already fly that pair.</>}
-        </p>
-      )}
-    </section>
-  );
-}
-
-/**
- * A.9's factor names, in the player's words rather than the model's.
- *
- * The model calls it `product`; a player is choosing between a seat pitch and a
- * lounge. A chart that explains the game in the vocabulary of its own source
- * code is explaining it to the wrong audience.
- */
-const FACTOR_LABEL: Record<string, string> = {
-  price: 'Price',
-  frequency: 'Frequency',
-  product: 'Product',
-  reputation: 'Reputation',
-  schedule: 'Schedule fit',
-  // A.3's remaining terms. Loyalty and alliance are post-MVP and read zero
-  // today, so they are filtered out before they reach here — but they are
-  // named anyway, because the alternative when one first goes non-zero is a
-  // raw `connectionPenalty` appearing in front of a player.
-  loyalty: 'Loyalty',
-  alliance: 'Alliance',
-  attractiveness: 'Social media',
-  connectionPenalty: 'Connection',
-};
-
-const SEGMENT_LABEL: Record<string, string> = {
-  business: 'Business',
-  leisure: 'Leisure',
-  vfr: 'VFR',
-};
-
-/**
- * One segment's decomposition, drawn as bars either side of a zero line.
- *
- * Scaled against the largest bar in *this* segment, so the shape of the answer
- * is readable whether the gap is 0.05 or 2.0. A shared scale would make the
- * business column — where price matters far less, so every term is smaller —
- * look like nothing was happening in it.
- */
-function SegmentWaterfall({ segment }: { segment: WaterfallSegment }): ReactNode {
-  const widest = Math.max(
-    ...segment.factors.map((f) => Math.abs(f.delta)),
-    Math.abs(segment.netDelta),
-  );
-  const width = (value: number) => `${((Math.abs(value) / (widest || 1)) * 100).toFixed(1)}%`;
-
-  return (
-    <div className="waterfall__segment">
-      <h4 className="waterfall__segment-name">
-        {SEGMENT_LABEL[segment.segment] ?? segment.segment}
-      </h4>
-
-      <ul className="waterfall__bars">
-        {segment.factors.map((factor) => (
-          <li key={factor.factor} className="waterfall__bar-row">
-            <span className="waterfall__factor">
-              {FACTOR_LABEL[factor.factor] ?? factor.factor}
-            </span>
-            <span className="waterfall__track">
-              <span
-                className={
-                  factor.delta < 0
-                    ? 'waterfall__bar waterfall__bar--against'
-                    : 'waterfall__bar waterfall__bar--for'
-                }
-                style={{ width: width(factor.delta) }}
-              />
-            </span>
-            {/* Glyph as well as colour, per H.4: the sign has to survive a
-                monochrome screen and a red-green reader. */}
-            <span
-              className={
-                factor.delta < 0
-                  ? 'waterfall__delta figure waterfall__delta--against'
-                  : 'waterfall__delta figure waterfall__delta--for'
-              }
-            >
-              {factor.delta < 0 ? '▼' : '▲'} {factor.delta.toFixed(3)}
-            </span>
-          </li>
-        ))}
-      </ul>
-
-      <p className="waterfall__net">
-        {/* No residual line, and there cannot be one: the factors sum to this
-            exactly. That is A.9's claim, and why the chart can be trusted. */}
-        Net{' '}
-        <strong
-          className={
-            segment.netDelta < 0
-              ? 'figure waterfall__delta--against'
-              : 'figure waterfall__delta--for'
-          }
-        >
-          {segment.netDelta.toFixed(3)}
-        </strong>{' '}
-        — you hold <span className="figure">{(segment.yourShare * 100).toFixed(1)}%</span> of this
-        segment against their{' '}
-        <span className="figure">{(segment.theirShare * 100).toFixed(1)}%</span>
-      </p>
-    </div>
-  );
-}
-
-/**
- * "Why am I losing?" (M3-10, App. A.9).
- *
- * One click from the route opens it against whichever rival the server names
- * first; a second changes the cabin. That is the two-click requirement met with
- * the common case at one.
- *
- * All three segments at once, because the interesting thing about a route is
- * usually that the answer differs between them.
- */
-function Waterfall({ route }: { route: RouteSummary }): ReactNode {
-  const [cabin, setCabin] = useState<CabinClass>('economy');
-  const [rival, setRival] = useState<string | undefined>(undefined);
-  const [outcome, setOutcome] = useState<WaterfallOutcome | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    // Guarded because the pickers are not debounced: clicking cabin twice
-    // quickly puts two requests in flight, and without this the slower one
-    // wins and draws a chart for the cabin the player just left.
-    let current = true;
-    void (async () => {
-      try {
-        const answer = await fetchWaterfall(route.id, cabin, rival);
-        if (!current) return;
-        setOutcome(answer);
-        setFailed(false);
-      } catch {
-        if (current) setFailed(true);
-      }
-    })();
-
-    return () => {
-      current = false;
-    };
-  }, [route.id, cabin, rival]);
-
-  if (failed) {
-    return (
-      <p className="admin__note" role="alert">
-        The market would not answer just now.
-      </p>
-    );
-  }
-  if (outcome === null) return <p className="admin__note">Working out why…</p>;
-
-  // The one outcome with no controls to keep: there is nobody to pick between,
-  // and no cabin would change that.
-  if (!outcome.ok && outcome.kind === 'no-rival') {
-    return (
-      <p className="admin__note">
-        Nobody else is selling {route.originIcao} → {route.destinationIcao}, so there is no gap to
-        decompose. You have the route to yourself.
-      </p>
-    );
-  }
-
-  const rivals = rivalsOf(outcome);
-  const against = outcome.ok ? outcome.waterfall.rivalId : rival;
-
-  /*
-   * The pickers render above whatever the outcome turned out to be, refusal
-   * included. Returning early on `cabin-not-contested` used to remove the only
-   * control that could recover from it — the player was told nobody sells
-   * economy here and left with no way to ask about business.
-   */
-  return (
-    <div className="waterfall">
-      <div className="waterfall__controls">
-        <label className="fares__field">
-          <span className="visually-hidden">Cabin</span>
-          <select
-            className="fares__input"
-            value={cabin}
-            onChange={(event) => {
-              setCabin(event.target.value as CabinClass);
-            }}
-          >
-            {CABIN_ORDER.map((c) => (
-              <option key={c} value={c}>
-                {CABIN_LABEL[c]}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {/* A.8's route has two rivals and you lose to them for opposite
-            reasons — the LCC on price, the legacy carrier on product. A fixed
-            comparison would show one of those and hide the other. */}
-        {rivals.length > 1 ? (
-          <label className="fares__field">
-            <span className="visually-hidden">Compare against</span>
-            <select
-              className="fares__input"
-              value={against ?? rivals[0]?.id}
-              onChange={(event) => {
-                setRival(event.target.value);
-              }}
-            >
-              {rivals.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.id}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : (
-          <p className="waterfall__against">
-            against <strong>{against ?? rivals[0]?.id}</strong>
-          </p>
-        )}
-      </div>
-
-      {outcome.ok ? (
-        <div className="waterfall__segments">
-          {outcome.waterfall.bySegment.map((segment) => (
-            <SegmentWaterfall key={segment.segment} segment={segment} />
-          ))}
-        </div>
-      ) : (
-        <p className="admin__note">
-          {outcome.kind === 'cabin-not-contested'
-            ? `Nobody else sells ${CABIN_LABEL[outcome.cabin].toLowerCase()} on this route.`
-            : 'That airline does not fly this route.'}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function RoutePanel({ route }: { route: RouteSummary }): ReactNode {
-  const [draft, setDraft] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      CABIN_ORDER.map((cabin) => [
-        cabin,
-        route.fares[cabin] === undefined ? '' : major(route.fares[cabin]),
-      ]),
-    ),
-  );
-  const [preview, setPreview] = useState<FarePreviewResponse | null>(null);
-  const [violations, setViolations] = useState<FareFloorViolation[]>([]);
-  const [saved, setSaved] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const [why, setWhy] = useState(false);
-
-  const proposed = useCallback((): FareTable => {
-    const fares: FareTable = {};
-    for (const cabin of CABIN_ORDER) {
-      const minor = toMinor(draft[cabin] ?? '');
-      if (minor !== undefined) fares[cabin] = minor;
-    }
-    return fares;
-  }, [draft]);
-
-  // The live preview. Debounced, because it runs the whole demand model on the
-  // server and a request per keystroke would be a denial of service written by
-  // its own author.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      void (async () => {
-        try {
-          setPreview(await previewFares(route.id, proposed()));
-          setFailed(false);
-        } catch {
-          setFailed(true);
-        }
-      })();
-    }, 400);
-
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [route.id, proposed]);
-
-  const onSave = async () => {
-    setSaved(false);
-    try {
-      const result = await saveFares(route.id, proposed());
-      if (result.ok) {
-        setViolations([]);
-        setSaved(true);
-      } else {
-        // Not an error state: the server's considered answer, with the floor.
-        setViolations(result.violations);
-      }
-    } catch {
-      setFailed(true);
-    }
-  };
-
-  const violationFor = (cabin: CabinClass) => violations.find((v) => v.cabin === cabin);
-  const delta = preview === null ? null : preview.projectedPassengers - preview.currentPassengers;
-
-  return (
-    <section className="card">
-      <h2 className="card__heading">
-        {route.originIcao} → {route.destinationIcao}
-        <span className="fares__distance figure">{route.greatCircleNm.toFixed(0)} nm</span>
-      </h2>
-
-      <table className="admin__table fares__table">
-        <thead>
-          <tr>
-            <th scope="col">Cabin</th>
-            <th scope="col">Your fare</th>
-            <th scope="col">Market avg</th>
-            <th scope="col">vs market</th>
-            <th scope="col">Floor</th>
-            <th scope="col">Projected share</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(preview?.positions ?? []).map((position) => (
-            <Position
-              key={position.cabin}
-              position={position}
-              draft={draft[position.cabin] ?? ''}
-              onChange={(value) => {
-                setDraft((current) => ({ ...current, [position.cabin]: value }));
-                setSaved(false);
-              }}
-              violation={violationFor(position.cabin)}
-            />
-          ))}
-        </tbody>
-      </table>
-
-      {preview === null && !failed && <p className="admin__note">Working out the market…</p>}
-      {failed && (
-        <p className="admin__note" role="alert">
-          Could not reach the market model. The figures above may be stale.
-        </p>
-      )}
-
-      {preview !== null && (
-        <p className="fares__projection">
-          <strong className="figure">{preview.projectedPassengers.toFixed(0)}</strong> passengers a
-          day at these fares
-          {delta !== null && Math.abs(delta) >= 0.5 && (
-            <span
-              className={
-                delta > 0 ? 'fares__delta fares__delta--up' : 'fares__delta fares__delta--down'
-              }
-            >
-              {delta > 0 ? '▲' : '▼'} {Math.abs(delta).toFixed(0)} against what is saved
-            </span>
-          )}
-        </p>
-      )}
-
-      {violations.length > 0 && (
-        <ul className="fares__violations" role="alert">
-          {violations.map((v) => (
-            <li key={v.cabin} id={`floor-${v.cabin}`} className="fares__violation">
-              <strong>{CABIN_LABEL[v.cabin]}</strong> may not be priced below{' '}
-              <span className="figure">{major(v.floorMinor)}</span> — that is{' '}
-              {(v.ratio * 100).toFixed(0)}% of the{' '}
-              <span className="figure">{major(v.variableCostPerSeatMinor)}</span> it costs to fly a
-              seat on this route. You are <span className="figure">{major(v.shortfallMinor)}</span>{' '}
-              under.
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <div className="fares__actions">
-        <button className="admin__submit" type="button" onClick={() => void onSave()}>
-          Save fares
-        </button>
-        {/* One click to the chart. A.9 is the surface the game is learned
-            through, so it is not behind a tab or a second page. */}
-        <button
-          className="waterfall__toggle"
-          type="button"
-          aria-expanded={why}
-          onClick={() => {
-            setWhy(!why);
-          }}
-        >
-          Why am I losing?
-        </button>
-        {saved && <span className="fares__saved">Saved.</span>}
-      </div>
-
-      {why && <Waterfall route={route} />}
-    </section>
-  );
-}
+const TABS: readonly { value: Tab; label: string }[] = [
+  { value: 'overview', label: 'Overview' },
+  { value: 'schedule', label: 'Schedule' },
+  { value: 'pricing', label: 'Pricing' },
+  { value: 'competition', label: 'Competition' },
+  { value: 'performance', label: 'Performance' },
+];
 
 export function NetworkPage(): ReactNode {
   const [routes, setRoutes] = useState<RouteSummary[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [fleet, setFleet] = useState<readonly FleetAirframeView[]>([]);
+  const [view, setView] = useState<View>('route');
+  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>('overview');
+  const [selection, setSelection] = useState<NetworkSelection | null>(null);
+  const [confirmClose, setConfirmClose] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<RouteSort>('name');
+
+  const { select, clear } = useContextSelection();
+
+  // Deep-link prefill: the world map links here as `/network?from=EHAM&to=LEBL` so
+  // the "Open a route" form arrives filled in. Read from the URL rather than a
+  // router hook, so a bare-rendered test needs no Router around the page. Read once
+  // at mount — the page mounts fresh when navigated to.
+  const prefill = useMemo(() => {
+    const params = new URLSearchParams(globalThis.location?.search ?? '');
+    return {
+      from: (params.get('from') ?? '').toUpperCase().slice(0, 4),
+      to: (params.get('to') ?? '').toUpperCase().slice(0, 4),
+    };
+  }, []);
+  const prefillFrom = prefill.from;
+  const prefillTo = prefill.to;
 
   const load = useCallback(async () => {
     try {
@@ -635,29 +98,380 @@ export function NetworkPage(): ReactNode {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    let live = true;
+    void fetchFleetAirframes()
+      .then((response) => {
+        if (live) setFleet(response.airframes);
+      })
+      .catch(() => {
+        /* no fleet yet, or not signed in — the planner shows the pool row only. */
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const aircraft = useMemo(() => plannerAircraft(fleet), [fleet]);
+  const editor = useScheduleEditor(routes ?? [], aircraft);
+
+  // Base plans hold the stable mock (demand, slots, competitors, unit economics); the
+  // live layer overlays the editor's current flights/frequency and recomputes the
+  // economics from them, so every tab reflects the schedule as it is being edited.
+  const basePlans = useMemo(
+    () => (routes ?? []).map((route) => buildRoutePlan(route, aircraft)),
+    [routes, aircraft],
+  );
+  const livePlans = useMemo(
+    () =>
+      basePlans.map((base) => {
+        const flights = editor.flightsFor(base.route.id);
+        const withLive = { ...base, flights, frequency: editor.frequencyFor(base.route.id) };
+        return { ...withLive, economics: liveEconomics(withLive, flights) };
+      }),
+    [basePlans, editor],
+  );
+  const planById = useMemo(
+    () => new Map(livePlans.map((plan) => [plan.route.id, plan])),
+    [livePlans],
+  );
+  const allFlights = useMemo(() => livePlans.flatMap((plan) => plan.flights), [livePlans]);
+  const currentPlan = selectedRouteId !== null ? (planById.get(selectedRouteId) ?? null) : null;
+
+  // Land on the first route once they load.
+  useEffect(() => {
+    if (routes !== null && routes.length > 0 && selectedRouteId === null) {
+      setSelectedRouteId(routes[0]?.id ?? null);
+    }
+  }, [routes, selectedRouteId]);
+
+  // The panel defaults to the selected route, and clears when the whole-fleet view
+  // takes over until a flight or aircraft is picked there.
+  useEffect(() => {
+    if (view === 'route' && selectedRouteId !== null) {
+      setSelection({ kind: 'route', id: selectedRouteId });
+    } else if (view === 'fleet') {
+      setSelection(null);
+    }
+  }, [view, selectedRouteId]);
+
+  // Push the selection into the shell's context panel, and rebuild it when the
+  // underlying plan changes (a frequency edit). Cleared on unmount so a route's
+  // detail does not linger over the next page.
+  useEffect(() => {
+    const planForContext = currentPlan ?? livePlans[0];
+    if (selection === null || planForContext === undefined) {
+      clear();
+      return;
+    }
+    const described = describeSelection(selection, planForContext, aircraft, allFlights, {
+      addRotation: (aircraftId, hour) => {
+        const frame = aircraft.find((a) => a.id === aircraftId);
+        if (frame) editor.addRotation(planForContext.route, frame, hour);
+      },
+      removeFlight: (flightId) => {
+        editor.removeFlight(planForContext.route.id, flightId);
+      },
+      reassignFlight: (flightId, aircraftId) => {
+        const flight = allFlights.find((f) => f.id === flightId);
+        if (flight)
+          editor.moveFlight(planForContext.route.id, flightId, flight.departureMinute, aircraftId);
+      },
+      removeAircraft: (aircraftId) => {
+        editor.removeAircraft(planForContext.route.id, aircraftId);
+      },
+    });
+    if (described === null) {
+      clear();
+      return;
+    }
+    select({
+      kind: selection.kind,
+      id: selection.id,
+      title: described.title,
+      subtitle: described.subtitle,
+      body: described.body,
+      onClear: () => {
+        setSelection(null);
+      },
+    });
+  }, [selection, currentPlan, livePlans, aircraft, allFlights, editor, select, clear]);
+
+  useEffect(() => () => clear(), [clear]);
+
+  const selectRoute = useCallback((id: string) => {
+    setView('route');
+    setSelectedRouteId(id);
+    setConfirmClose(false);
+  }, []);
+
+  const onCloseRoute = useCallback(async () => {
+    if (selectedRouteId === null) return;
+    setClosing(true);
+    try {
+      const outcome = await closeRoute(selectedRouteId);
+      if (outcome.ok) {
+        const remaining = (routes ?? []).filter((r) => r.id !== selectedRouteId);
+        setRoutes(remaining);
+        setSelectedRouteId(remaining[0]?.id ?? null);
+        setSelection(remaining[0] ? { kind: 'route', id: remaining[0].id } : null);
+      }
+    } catch {
+      /* leave the route in place; a transient failure is not a close. */
+    } finally {
+      setClosing(false);
+      setConfirmClose(false);
+    }
+  }, [selectedRouteId, routes]);
+
+  const onToggleActive = useCallback(async () => {
+    if (selectedRouteId === null) return;
+    const row = (routes ?? []).find((r) => r.id === selectedRouteId);
+    if (!row) return;
+    const next = !row.active;
+    const outcome = await setRouteActive(selectedRouteId, next);
+    if (outcome.ok) {
+      setRoutes((current) =>
+        (current ?? []).map((r) => (r.id === selectedRouteId ? { ...r, active: next } : r)),
+      );
+    }
+  }, [selectedRouteId, routes]);
+
+  // The rail's route list: filtered by an ICAO search and sorted by the chosen key.
+  const railPlans = useMemo(() => {
+    const needle = search.trim().toUpperCase();
+    const filtered = needle
+      ? livePlans.filter(
+          (p) => p.route.originIcao.includes(needle) || p.route.destinationIcao.includes(needle),
+        )
+      : livePlans;
+    const profit = (p: (typeof livePlans)[number]) =>
+      p.economics.weeklyRevenueMinor - p.economics.weeklyCostMinor;
+    return [...filtered].sort((a, b) => {
+      if (sort === 'profit') return profit(b) - profit(a);
+      if (sort === 'load') return b.economics.loadFactor - a.economics.loadFactor;
+      if (sort === 'distance') return b.route.greatCircleNm - a.route.greatCircleNm;
+      return `${a.route.originIcao}${a.route.destinationIcao}`.localeCompare(
+        `${b.route.originIcao}${b.route.destinationIcao}`,
+      );
+    });
+  }, [livePlans, search, sort]);
+
   return (
-    <section className="page">
-      <h1 className="page__title">Network</h1>
+    <section className="page net-page">
+      <header className="net-page__head">
+        <div>
+          <h1 className="page__title">Network</h1>
+          <p className="net-page__sub">
+            {routes === null ? 'Loading…' : `${String(routes.length)} routes`}
+          </p>
+        </div>
+        <Segmented
+          label="Workspace view"
+          value={view}
+          onChange={setView}
+          options={[
+            { value: 'route', label: 'Route planner' },
+            { value: 'fleet', label: 'Fleet schedule' },
+          ]}
+        />
+      </header>
 
       {failed && (
         <p className="page__note" role="alert">
           Could not load your routes.
         </p>
       )}
-      {routes === null && !failed && <p className="page__note">Loading…</p>}
-      <OpenRouteForm
-        onOpened={() => {
-          void load();
-        }}
-      />
 
-      {routes !== null && routes.length === 0 && (
-        <p className="page__note">No routes yet. Open one above, and its fares are set here.</p>
-      )}
+      <div className="net-layout">
+        <aside className="net-rail" aria-label="Routes">
+          <div className="net-rail__open">
+            <h2 className="net-rail__title">Open a route</h2>
+            <OpenRouteForm
+              key={`${prefillFrom}:${prefillTo}`}
+              initialOrigin={prefillFrom}
+              initialDestination={prefillTo}
+              onOpened={(id) => {
+                void load();
+                selectRoute(id);
+              }}
+            />
+          </div>
 
-      {(routes ?? []).map((route) => (
-        <RoutePanel key={route.id} route={route} />
-      ))}
+          <button
+            type="button"
+            className={`net-rail__fleet${view === 'fleet' ? ' net-rail__fleet--active' : ''}`}
+            onClick={() => {
+              setView('fleet');
+            }}
+          >
+            <span className="net-rail__fleet-glyph" aria-hidden="true">
+              ⛴
+            </span>
+            Fleet schedule
+          </button>
+
+          <div className="net-rail__list-head">Routes</div>
+          {livePlans.length > 1 && (
+            <div className="net-rail__filter">
+              <input
+                type="search"
+                className="net-rail__search"
+                placeholder="Search ICAO…"
+                value={search}
+                aria-label="Search routes by ICAO"
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                }}
+              />
+              <label className="net-rail__sort">
+                <span className="visually-hidden">Sort routes</span>
+                <select
+                  value={sort}
+                  onChange={(event) => {
+                    setSort(event.target.value as RouteSort);
+                  }}
+                >
+                  {SORTS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
+          <ul className="net-rail__list">
+            {railPlans.map((plan) => {
+              const isActive = view === 'route' && plan.route.id === selectedRouteId;
+              return (
+                <li key={plan.route.id}>
+                  <button
+                    type="button"
+                    className={`net-rail__route${isActive ? ' net-rail__route--active' : ''}${
+                      plan.route.active ? '' : ' net-rail__route--paused'
+                    }`}
+                    onClick={() => {
+                      selectRoute(plan.route.id);
+                    }}
+                  >
+                    <span className="net-rail__route-pair">
+                      <span>{plan.route.originIcao}</span>
+                      <span className="net-rail__route-arrow" aria-hidden="true">
+                        →
+                      </span>
+                      <span>{plan.route.destinationIcao}</span>
+                    </span>
+                    <span className="net-rail__route-meta figure">
+                      {plan.economics.weeklyFrequency}× · {plan.route.greatCircleNm.toFixed(0)} nm
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+            {routes !== null && routes.length === 0 && (
+              <li className="net-rail__empty">No routes yet.</li>
+            )}
+            {routes !== null && routes.length > 0 && railPlans.length === 0 && (
+              <li className="net-rail__empty">No route matches “{search}”.</li>
+            )}
+          </ul>
+        </aside>
+
+        <div className="net-main">
+          {view === 'fleet' ? (
+            <FleetScheduleView
+              plans={livePlans}
+              aircraft={aircraft}
+              selection={selection}
+              onSelect={setSelection}
+            />
+          ) : currentPlan ? (
+            <>
+              <div className="net-route__header">
+                <h2 className="net-route__pair">
+                  {currentPlan.route.originIcao} → {currentPlan.route.destinationIcao}
+                </h2>
+                <span className="net-route__distance figure">
+                  {currentPlan.route.greatCircleNm.toFixed(0)} nm
+                </span>
+                <Chip tone={currentPlan.route.active ? 'positive' : 'neutral'}>
+                  {currentPlan.route.active ? 'Active' : 'Paused'}
+                </Chip>
+                <div className="net-route__actions">
+                  {!confirmClose && (
+                    <button
+                      type="button"
+                      className="net-route__close"
+                      onClick={() => void onToggleActive()}
+                    >
+                      {currentPlan.route.active ? 'Pause' : 'Reopen'}
+                    </button>
+                  )}
+                  {confirmClose ? (
+                    <>
+                      <span className="net-route__confirm">Close this route?</span>
+                      <button
+                        type="button"
+                        className="net-route__close net-route__close--danger"
+                        disabled={closing}
+                        onClick={() => void onCloseRoute()}
+                      >
+                        {closing ? 'Closing…' : 'Close route'}
+                      </button>
+                      <button
+                        type="button"
+                        className="net-route__close"
+                        onClick={() => {
+                          setConfirmClose(false);
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="net-route__close"
+                      onClick={() => {
+                        setConfirmClose(true);
+                      }}
+                    >
+                      Close route
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <Segmented label="Route tabs" value={tab} onChange={setTab} options={TABS} />
+
+              <div className="net-tabpanel">
+                {tab === 'overview' && <OverviewTab plan={currentPlan} />}
+                {tab === 'schedule' && (
+                  <ScheduleTab
+                    plan={currentPlan}
+                    aircraft={aircraft}
+                    selection={selection}
+                    onSelect={setSelection}
+                    editor={editor}
+                  />
+                )}
+                {tab === 'pricing' && <PricingTab route={currentPlan.route} />}
+                {tab === 'competition' && <CompetitionTab plan={currentPlan} />}
+                {tab === 'performance' && <PerformanceTab plan={currentPlan} />}
+              </div>
+            </>
+          ) : (
+            <div className="net-empty">
+              <h2 className="net-empty__title">No routes yet</h2>
+              <p className="net-empty__note">
+                Open your first route with the form on the left, and it becomes a full planning
+                workspace here — schedule, pricing, competition and performance.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
     </section>
   );
 }
