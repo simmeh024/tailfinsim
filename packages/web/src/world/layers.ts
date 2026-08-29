@@ -57,6 +57,49 @@ function airportRadius(tier: string): number {
   }
 }
 
+/**
+ * Tier importance, 0 (biggest) to 3 (smallest) — the order the map reveals them as
+ * the camera comes in.
+ */
+function airportTierLevel(tier: string): number {
+  switch (tier) {
+    case 'flagship':
+    case 'large':
+      return 0;
+    case 'medium':
+      return 1;
+    case 'small':
+      return 2;
+    default:
+      return 3;
+  }
+}
+
+/**
+ * The smallest tier level to draw at a given zoom — the map-app declutter every
+ * atlas does: only the majors on the whole-world view, medium fields as countries
+ * fill the frame, then small and regional strips once the camera is in close. The
+ * flagship and large hubs (level 0) are always on, so the map is never empty.
+ *
+ * Returned as a discrete level so the airport list is refiltered only when the zoom
+ * crosses a threshold, not on every scroll tick — the same bucketing the day/night
+ * field uses for the clock.
+ */
+export function airportLevelForZoom(zoom: number): number {
+  if (zoom >= 5.5) return 3;
+  if (zoom >= 4) return 2;
+  if (zoom >= 2.5) return 1;
+  return 0;
+}
+
+/** The airports to draw at a zoom level: every tier at or above the level's cutoff. */
+export function visibleAirportsAtLevel(
+  airports: readonly WorldAirport[],
+  level: number,
+): WorldAirport[] {
+  return airports.filter((airport) => airportTierLevel(airport.tier) <= level);
+}
+
 export interface CreateWorldLayersOptions {
   palette: WorldPalette;
   quality: RendererQuality;

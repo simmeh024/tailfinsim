@@ -2,7 +2,7 @@ import { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 import { describe, expect, it } from 'vitest';
 
 import { COARSE_WORLD } from './land';
-import { createWorldLayers } from './layers';
+import { airportLevelForZoom, createWorldLayers, visibleAirportsAtLevel } from './layers';
 import { createDarknessField, WEB_MERCATOR_MAX_LATITUDE } from './terminator';
 import { terrainImage } from './terrain';
 
@@ -354,6 +354,27 @@ describe('projection-independent world layers', () => {
 
     const hidden = build(false).some((layer) => layer !== false && layer.id === 'world-airports');
     expect(hidden).toBe(false);
+  });
+
+  it('reveals smaller airport tiers only as the zoom increases', () => {
+    const airports: WorldAirport[] = [
+      { position: [0, 0], name: 'Flag', icao: 'AAAA', tier: 'flagship' },
+      { position: [0, 0], name: 'Large', icao: 'BBBB', tier: 'large' },
+      { position: [0, 0], name: 'Medium', icao: 'CCCC', tier: 'medium' },
+      { position: [0, 0], name: 'Small', icao: 'DDDD', tier: 'small' },
+      { position: [0, 0], name: 'Regional', icao: 'EEEE', tier: 'regional' },
+    ];
+    // Whole-world view: only the majors.
+    expect(airportLevelForZoom(0.35)).toBe(0);
+    expect(visibleAirportsAtLevel(airports, airportLevelForZoom(0.35)).map((a) => a.icao)).toEqual([
+      'AAAA',
+      'BBBB',
+    ]);
+    // The level climbs with zoom, and each step adds the next tier down.
+    expect(airportLevelForZoom(3)).toBe(1);
+    expect(airportLevelForZoom(4.5)).toBe(2);
+    expect(airportLevelForZoom(6)).toBe(3);
+    expect(visibleAirportsAtLevel(airports, airportLevelForZoom(6))).toHaveLength(5);
   });
 
   it('fades an out-of-range airport back when a reachable set is given', () => {

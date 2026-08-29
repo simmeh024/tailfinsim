@@ -12,7 +12,9 @@ import { clampViewState, focusViewState } from './camera';
 import { planesForRoutes, type WorldPlane } from './flight';
 import { COARSE_WORLD, LAND_DETAIL_ZOOM, loadDetailedWorld, type WorldGeometry } from './land';
 import {
+  airportLevelForZoom,
   createWorldLayers,
+  visibleAirportsAtLevel,
   type RendererQuality,
   type WorldAirport,
   type WorldLayerVisibility,
@@ -306,18 +308,28 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   );
   const hubIcaos = useMemo(() => new Set(map.hubs.map((h) => h.icao)), [map.hubs]);
 
+  // Declutter by zoom: only the major airports on the whole-world view, smaller
+  // fields revealing as the camera comes in. Keyed to a discrete level so the list
+  // is refiltered on a threshold crossing, not on every scroll frame.
+  const airportLevel = airportLevelForZoom(viewState.zoom);
+  const visibleAirports = useMemo(
+    () => visibleAirportsAtLevel(airports, airportLevel),
+    [airports, airportLevel],
+  );
+
   // Which airports the fleet can reach from a hub, for the map's highlight — but
   // only when there is a fleet and a hub to highlight *against*. With no aircraft
   // yet (or before the fleet loads) there is no in-range subset, so the highlight is
   // `undefined` and every airport draws at full strength: a new player must still
   // see the whole map, not a field faded to nothing. The reachable set fades the
-  // rest back only once some airports genuinely stand out from it.
+  // rest back only once some airports genuinely stand out from it. Scoped to the
+  // airports actually shown at this zoom.
   const reachableIcaos = useMemo(
     () =>
       maxRangeNm > 0 && map.hubs.length > 0
-        ? reachableAirportIcaos(airports, map.hubs, maxRangeNm)
+        ? reachableAirportIcaos(visibleAirports, map.hubs, maxRangeNm)
         : undefined,
-    [airports, map.hubs, maxRangeNm],
+    [visibleAirports, map.hubs, maxRangeNm],
   );
 
   // Any airport opens the panel now — reachable or not — so a click can offer to
@@ -355,7 +367,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
         projection,
         quality,
         routes: playerRoutes,
-        airports,
+        airports: visibleAirports,
         hubs: map.hubs,
         reachableIcaos,
         onAirportClick,
@@ -369,7 +381,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       projection,
       quality,
       playerRoutes,
-      airports,
+      visibleAirports,
       map.hubs,
       reachableIcaos,
       onAirportClick,
