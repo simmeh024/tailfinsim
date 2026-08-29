@@ -3,7 +3,7 @@ import { decodeMeshyGeometry } from './meshy-geometry';
 
 type Point = readonly [number, number, number];
 
-const semanticTargets = [
+export const MESHY_SEMANTIC_TARGETS = [
   ['fuselage', 'paintable', 'fuselage', true],
   ['cockpit_glass', 'protected', 'cockpit_glass', true],
   ['cabin_windows_left', 'protected', 'cabin_windows', true],
@@ -150,7 +150,7 @@ export function inventoryMeshySemanticComponents(correctionGlb: Uint8Array) {
     liveryReady: false,
     aircraftBoundsCanonicalMetres: aircraftBounds,
     components: withCandidates,
-    requiredSemanticTargets: semanticTargets.map(([id, role, materialClass, required]) => ({
+    requiredSemanticTargets: MESHY_SEMANTIC_TARGETS.map(([id, role, materialClass, required]) => ({
       id,
       role,
       materialClass,

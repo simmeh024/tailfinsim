@@ -372,6 +372,29 @@ review. The strongest whole-component bilateral evidence includes 001/004, 006/0
 The immutable inventory report SHA is
 `0127aaa892132b5ea5f1d4851ff3f93dfe9b91067952541fb45cab8781b14001`.
 
+### Explicit semantic review contract
+
+```bash
+pnpm assets:meshy-run -- semantics \
+  --operation candidate-1 \
+  --review-file path/to/semantic-review.json
+```
+
+The versioned `tailfin-meshy-semantic-review` document binds the reviewer, timestamp, corrected
+derivative and inventory hashes. It records every required target as `unreviewed`, `present`,
+`missing_requires_modeling` or, only for optional targets, `not_applicable`. Present geometry uses
+component-local half-open triangle ranges; the special `discarded_artifact` disposition makes an
+intentional exclusion visible without turning it into an aircraft part.
+
+The assessment rejects stale hashes, unknown components, out-of-range or overlapping selections,
+duplicate/missing target findings, required targets marked not-applicable, and disagreement between
+`present` findings and triangle dispositions. It reports every uncovered source triangle and every
+missing/unreviewed target. Only complete single-coverage with no missing/unreviewed required target
+is ready for the subsequent repair stage. Even then, the result remains quarantined: it does not
+repair topology, generate missing geometry, create materials/UVs, admit an asset or mutate the
+credit ledger. The untouched authored JSON and deterministic assessment are stored under their own
+content hashes, so a later reviewer cannot silently rewrite the evidence.
+
 ## Pinned strategy and vendor evidence
 
 The planning observation is dated 2026-08-28. Four untextured T2 candidates cost 5 credits each;
