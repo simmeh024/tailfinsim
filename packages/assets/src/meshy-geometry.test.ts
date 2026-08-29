@@ -391,6 +391,9 @@ describe('immutable recorded-candidate geometry report', () => {
       ['audit', '--operation', '../x'],
       ['audit', '--operation', 'candidate-1', '--key-file', 'private'],
       ['audit', '--operation', 'candidate-1', '--max-credits', '40'],
+      ['correct'],
+      ['correct', '--operation', 'candidate-5'],
+      ['correct', '--operation', 'candidate-1', '--key-file', 'secret'],
     ])
       expect(() => parseMeshyRunArguments(args)).toThrow();
     expect(

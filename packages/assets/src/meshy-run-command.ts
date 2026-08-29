@@ -4,6 +4,7 @@ import { canonicalJson } from './canonical';
 import { MeshyGenerationSpec, meshyCreditExposure, meshySpecIdentity } from './meshy';
 import { checkMeshyAccount } from './meshy-account';
 import { meshyArchiveDirectory, syncMeshyCandidate } from './meshy-archive';
+import { archiveMeshyCorrection } from './meshy-correction-archive';
 import { meshyEvidenceDirectory, prepareMeshyEvidence } from './meshy-evidence';
 import { archiveMeshyFrameAssessment } from './meshy-frame-archive';
 import { reportMeshyGeometry } from './meshy-geometry-report';
@@ -20,6 +21,7 @@ export const MESHY_RUN_USAGE =
   '       assets:meshy-run audit --operation candidate-1..4\n' +
   '       assets:meshy-run review --operation candidate-1..4\n' +
   '       assets:meshy-run frame --operation candidate-1..4 --axis-review-file PATH\n' +
+  '       assets:meshy-run correct --operation candidate-1..4\n' +
   '       assets:meshy-run account --max-credits 1..40 [--key-file PATH]\n' +
   '       assets:meshy-run prepare --evidence-file PATH --max-credits 1..40\n' +
   '       assets:meshy-run provenance --operation candidate-1..4 --max-credits 1..40\n' +
@@ -44,6 +46,7 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
       'audit',
       'review',
       'frame',
+      'correct',
     ].includes(command ?? '')
   )
     throw new Error('Unknown Meshy run command.');
@@ -62,7 +65,7 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
                 ? ['--max-credits', '--key-file']
                 : command === 'frame'
                   ? ['--operation', '--axis-review-file']
-                  : command === 'audit' || command === 'review'
+                  : command === 'audit' || command === 'review' || command === 'correct'
                     ? ['--operation']
                     : [];
   const options = new Map<string, string>();
@@ -83,7 +86,7 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
     throw new Error('The approved whole-number ceiling is required.');
   }
   if (
-    ['sync', 'submit', 'provenance', 'audit', 'review', 'frame'].includes(command!) &&
+    ['sync', 'submit', 'provenance', 'audit', 'review', 'frame', 'correct'].includes(command!) &&
     !/^candidate-[1-4]$/.test(options.get('--operation') ?? '')
   )
     throw new Error('One recorded candidate operation is required.');
@@ -190,6 +193,28 @@ export async function runMeshyRunCommand(
       deviations: report.deviations,
       blockingReasons: report.blockingReasons,
       state: report.state,
+      creditsSpentByThisCommand: 0,
+    });
+  }
+  if (command === 'correct') {
+    const { operationId, reportSha256, report } = await archiveMeshyCorrection(
+      store,
+      meshyArchiveDirectory(database),
+      options.get('--operation')!,
+    );
+    return canonicalJson({
+      operationId,
+      reportSha256,
+      reportFile: `${operationId}-correction-v1.json`,
+      derivativeFile: `correction-${report.derivativeSha256}.glb`,
+      derivativeSha256: report.derivativeSha256,
+      dimensionsMet: report.targetDimensionsMet,
+      lengthMetres: report.after.boundsSourceUnits.extent[2],
+      wingspanMetres: report.after.boundsSourceUnits.extent[0],
+      maxVertexDisplacementMetres: report.transform.maxVertexDisplacementMetres,
+      state: report.state,
+      runtimeAdmission: report.runtimeAdmission,
+      liveryReady: report.liveryReady,
       creditsSpentByThisCommand: 0,
     });
   }
