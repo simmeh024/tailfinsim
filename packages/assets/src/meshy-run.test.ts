@@ -575,6 +575,7 @@ describe('operator command authority boundary', () => {
         ['account', '--max-credits', '40', '--api-key', sentinel],
         ['review', '--operation', 'candidate-1'],
         ['frame', '--operation', 'candidate-1', '--axis-review-file', 'missing.json'],
+        ['correct', '--operation', 'candidate-1'],
       ]) {
         const result = run(args);
         expect(result.status).toBe(1);
@@ -667,6 +668,21 @@ describe('operator command authority boundary', () => {
       expect(
         run(['frame', '--operation', 'candidate-1', '--axis-review-file', axisReviewFile]).stdout,
       ).toBe(framed.stdout);
+      const corrected = run(['correct', '--operation', 'candidate-1']);
+      expect(corrected.status, corrected.stderr.replaceAll(sentinel, '[redacted]')).toBe(0);
+      const correctedOutput = JSON.parse(corrected.stdout) as Record<string, unknown>;
+      expect(correctedOutput).toMatchObject({
+        operationId: 'candidate-1',
+        dimensionsMet: true,
+        state: 'quarantine',
+        runtimeAdmission: 'not-reviewed',
+        liveryReady: false,
+        creditsSpentByThisCommand: 0,
+      });
+      expect(correctedOutput.lengthMetres).toBeCloseTo(37.57, 4);
+      expect(correctedOutput.wingspanMetres).toBeCloseTo(35.8, 4);
+      expect(corrected.stdout + corrected.stderr).not.toContain(sentinel);
+      expect(run(['correct', '--operation', 'candidate-1']).stdout).toBe(corrected.stdout);
       expect(canonicalJson(cliStore.read())).toBe(priorState);
     },
   );

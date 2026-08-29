@@ -86,6 +86,14 @@ type Point = readonly [number, number, number];
 interface Geometry {
   positions: Point[];
   triangles: [number, number, number][];
+  parts: {
+    name: string | null;
+    positionStart: number;
+    positionCount: number;
+    triangleStart: number;
+    triangleCount: number;
+    indexed: boolean;
+  }[];
   primitives: number;
   normalsVertices: number;
   nonUnitNormals: number;
@@ -189,6 +197,7 @@ function decode(bytes: Uint8Array): Geometry {
   const result: Geometry = {
     positions: [],
     triangles: [],
+    parts: [],
     primitives: 0,
     normalsVertices: 0,
     nonUnitNormals: 0,
@@ -205,6 +214,7 @@ function decode(bytes: Uint8Array): Geometry {
         throw new Error(REFUSED);
       const positions = attribute(primitive.attributes.POSITION, 'VEC3');
       const base = result.positions.length;
+      const triangleStart = result.triangles.length;
       for (let i = 0; i < positions.length; i += 3)
         result.positions.push([positions[i]!, positions[i + 1]!, positions[i + 2]!]);
       const indexCount =
@@ -222,6 +232,14 @@ function decode(bytes: Uint8Array): Geometry {
       if (indices.some((i) => i >= count)) throw new Error(REFUSED);
       for (let i = 0; i < indices.length; i += 3)
         result.triangles.push([base + indices[i]!, base + indices[i + 1]!, base + indices[i + 2]!]);
+      result.parts.push({
+        name: node.name ?? profile.meshes[node.mesh]!.name ?? null,
+        positionStart: base,
+        positionCount: count,
+        triangleStart,
+        triangleCount: indices.length / 3,
+        indexed: primitive.indices !== undefined,
+      });
       for (const [name, type] of [
         ['NORMAL', 'VEC3'],
         ['TEXCOORD_0', 'VEC2'],

@@ -311,6 +311,36 @@ about 36.16 m length and 37.17 m span, approximately -3.76% and +3.84%. It there
 gate. Geometry correction or a better candidate is required before axes/scale/origin may be baked;
 the tool does not silently stretch the chosen mesh.
 
+## Quarantined proportion correction (M6-27)
+
+```bash
+pnpm assets:meshy-run -- correct --operation candidate-1
+```
+
+`correct` is an explicit geometry-authoring step enabled only after the immutable frame assessment
+has failed. It accepts no file, key or budget option, rechecks the source/frame/review identities and
+creates a new immutable derivative; it never overwrites the untouched Meshy export or review GLB.
+The result is still quarantine-only, with no semantic classes, paint protection, UVs, registry entry
+or fleet binding. The pinned glTF validator must report zero errors and warnings before the GLB and
+completion report are sealed.
+
+For candidate 1, the correction first applies the reviewed canonical axes and a uniform scale that
+preserves Airbus's 37.57 m overall length. It preserves the 3.95 m centre-body width and remaps only
+the outboard lateral coordinate to the 35.80 m sharklet span. The largest connected review component
+receives the continuous outboard remap. Every smaller disconnected component retains its local shape
+and is moved laterally as a rigid piece according to its bounds centre; this avoids squeezing the two
+detached nacelle-like components while making no semantic claim about them. Flat normals are then
+regenerated from the retained face winding. [Airbus A320 Aircraft Characteristics — Airport and Maintenance Planning, §2-2-0](https://www.aircraft.airbus.com/sites/g/files/jlcbta126/files/2024-06/AC_A320_0624.pdf).
+
+The candidate 1 derivative measures 37.5699997 m long and 35.7999992 m wide after float32 encoding;
+the maximum vertex displacement is 1.4131 m. Source/review triangle count remains 15,423. Private
+derivative SHA is `ed13353213acee53158f3f20aa8a3184ddea53172e94ba8336ee9fa47d5257ff`;
+report SHA is `ee2a4d201ebb84abea3e3a1b42d27ef1651bcb7926559650dfb12dc5d19c176e`.
+Standard-angle browser review shows both detached nacelle forms retained and the wing tips within
+frame; it does not resolve the pre-existing rough nose/nacelles, mixed main component, disconnected
+marking-like pieces, openings or missing protected windows/doors. Those remain blocking semantic and
+topology work, not reasons to pretend the dimensional correction is a completed aircraft.
+
 ## Pinned strategy and vendor evidence
 
 The planning observation is dated 2026-08-28. Four untextured T2 candidates cost 5 credits each;
