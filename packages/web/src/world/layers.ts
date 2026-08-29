@@ -1,6 +1,6 @@
 import { BitmapLayer, GeoJsonLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 
-import { greatCirclePath } from './flight';
+import { altitudeProfile, greatCirclePath } from './flight';
 import { WEB_MERCATOR_MAX_LATITUDE } from './terminator';
 import { terrainImage } from './terrain';
 
@@ -391,6 +391,26 @@ export function createWorldLayers({
   ];
   const airportFill = (airport: WorldAirport): [number, number, number, number] =>
     reachableIcaos === undefined || reachableIcaos.has(airport.icao) ? palette.airport : dimmed;
+
+  // A FlightRadar-style altitude wash for the route line: warm and low near the
+  // airports, cool and high across the cruise. Interpolated between two existing
+  // palette tokens — the amber airport colour for the ground, the route blue for
+  // altitude — so it stays theme-aware with no colour literal here. The ramp is by
+  // fraction along the leg, identical for every route, so it is built once and the
+  // path layer hands the same per-vertex array to each line.
+  const routeSegments = quality === 'full' ? 64 : 32;
+  const lowAltitude = palette.airport;
+  const highAltitude = palette.route;
+  const routeColors: [number, number, number, number][] = [];
+  for (let i = 0; i <= routeSegments; i += 1) {
+    const climb = altitudeProfile(i / routeSegments);
+    routeColors.push([
+      Math.round(lowAltitude[0] + (highAltitude[0] - lowAltitude[0]) * climb),
+      Math.round(lowAltitude[1] + (highAltitude[1] - lowAltitude[1]) * climb),
+      Math.round(lowAltitude[2] + (highAltitude[2] - lowAltitude[2]) * climb),
+      255,
+    ]);
+  }
   return [
     new WorldBitmapLayer({
       id: 'world-ocean',
@@ -573,13 +593,17 @@ export function createWorldLayers({
         // into 3D: this is the FlightRadar look — a route that bends north or south
         // the way a real track does while staying on the ground. The plane rides the
         // same curve, since both come from `greatCirclePath`/`interpolateGreatCircle`.
-        getPath: ({ source, target }) =>
-          greatCirclePath(source, target, quality === 'full' ? 64 : 32),
-        getColor: palette.route,
-        getWidth: 1.5,
+        getPath: ({ source, target }) => greatCirclePath(source, target, routeSegments),
+        // Per-vertex colour: the altitude wash, one colour per point of the path.
+        // The array matches the path's `routeSegments + 1` points and is the same
+        // for every route, so PathLayer gradients each line without a per-route cost.
+        getColor: () => routeColors,
+        // The player's own routes, so drawn boldly — thicker than the airport rings,
+        // and with a floor so a line never thins to nothing on the globe.
+        getWidth: 3,
         widthUnits: 'pixels',
-        widthMinPixels: 1,
-        widthMaxPixels: 3,
+        widthMinPixels: 2.5,
+        widthMaxPixels: 7,
         capRounded: true,
         jointRounded: true,
         parameters: { cullMode: 'none' },
@@ -591,7 +615,9 @@ export function createWorldLayers({
         getPosition: ({ position }) => position,
         getRadius: ({ tier }) => airportRadius(tier),
         radiusUnits: 'pixels',
-        radiusMinPixels: 4,
+        // A firm floor so the dots stay findable even at the whole-globe zoom, where
+        // a tier-scaled radius would otherwise shrink them to nothing.
+        radiusMinPixels: 5,
         radiusMaxPixels: 18,
         // A plain array while nothing is highlighted (the pre-fleet map and the
         // tests); a per-airport accessor once a reachable set fades the rest back.

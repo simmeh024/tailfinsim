@@ -66,6 +66,22 @@ export function greatCirclePath(a: LngLat, b: LngLat, segments = 64): LngLat[] {
   return path;
 }
 
+/**
+ * A simulated altitude at fraction `t` along a leg (0 on the ground → 1 at cruise).
+ *
+ * FlightRadar colours a trail by height: near the ground on climb-out and on
+ * approach, high in the long middle. This is that profile — a quick climb over the
+ * first stretch, a flat cruise, a descent into the far end — used only to colour
+ * the route line, not to move the plane. Symmetric, so it reads the same whichever
+ * way the leg is drawn.
+ */
+export function altitudeProfile(t: number): number {
+  const ramp = 0.12;
+  if (t <= ramp) return t / ramp;
+  if (t >= 1 - ramp) return (1 - t) / ramp;
+  return 1;
+}
+
 /** Initial bearing from a to b, degrees clockwise from north (0–360). */
 export function bearing(a: LngLat, b: LngLat): number {
   const φ1 = a[1] * RAD;

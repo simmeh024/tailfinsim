@@ -70,6 +70,15 @@ describe('projection-independent world layers', () => {
       expect(Math.abs(path[i]![0] - path[i - 1]![0])).toBeLessThan(180);
     }
     expect(Math.max(...path.map(([lon]) => lon))).toBeGreaterThan(180);
+
+    // The colour is an altitude gradient: one colour per path vertex, warm on the
+    // ground at the ends and the route blue at cruise in the middle.
+    const getColor = routes?.props.getColor as () => [number, number, number, number][];
+    const colors = getColor();
+    expect(colors).toHaveLength(path.length);
+    expect(colors[0]).toEqual([...palette.airport.slice(0, 3), 255]);
+    const mid = colors[Math.floor(colors.length / 2)]!;
+    expect(mid.slice(0, 3)).toEqual(palette.route.slice(0, 3));
   });
 
   it('keeps the layer ids and visibility independent of projection', () => {

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { bearing, headingAt, interpolateGreatCircle, planesForRoutes } from './flight';
+import {
+  altitudeProfile,
+  bearing,
+  headingAt,
+  interpolateGreatCircle,
+  planesForRoutes,
+} from './flight';
 
 import type { LngLat } from './terminator';
 
@@ -47,6 +53,19 @@ describe('bearing', () => {
     const h = headingAt([170, 10], [-170, 12], 0.5);
     expect(h).toBeGreaterThanOrEqual(0);
     expect(h).toBeLessThan(360);
+  });
+});
+
+describe('altitudeProfile', () => {
+  it('is on the ground at both ends and at cruise in the middle', () => {
+    expect(altitudeProfile(0)).toBeCloseTo(0, 6);
+    expect(altitudeProfile(1)).toBeCloseTo(0, 6);
+    expect(altitudeProfile(0.5)).toBe(1);
+  });
+
+  it('climbs and descends monotonically at the ends', () => {
+    expect(altitudeProfile(0.06)).toBeGreaterThan(altitudeProfile(0.02));
+    expect(altitudeProfile(0.94)).toBeGreaterThan(altitudeProfile(0.98));
   });
 });
 
