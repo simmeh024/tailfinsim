@@ -29,6 +29,7 @@ import {
   type MeshyTaskReceipt,
 } from './meshy-run';
 import { parseMeshyRunArguments } from './meshy-run-command';
+import { MESHY_SEMANTIC_TARGETS } from './meshy-semantic-inventory';
 import { MeshyRunStore, meshyRunDatabasePath } from './meshy-store';
 import { fixture, pack } from './meshy-test-fixture';
 
@@ -577,6 +578,7 @@ describe('operator command authority boundary', () => {
         ['frame', '--operation', 'candidate-1', '--axis-review-file', 'missing.json'],
         ['correct', '--operation', 'candidate-1'],
         ['inventory', '--operation', 'candidate-1'],
+        ['semantics', '--operation', 'candidate-1', '--review-file', 'missing.json'],
       ]) {
         const result = run(args);
         expect(result.status).toBe(1);
@@ -698,6 +700,70 @@ describe('operator command authority boundary', () => {
       });
       expect(inventoried.stdout + inventoried.stderr).not.toContain(sentinel);
       expect(run(['inventory', '--operation', 'candidate-1']).stdout).toBe(inventoried.stdout);
+      const inventoryOutput = JSON.parse(inventoried.stdout) as Record<string, unknown>;
+      const semanticReviewFile = join(directory, 'semantic-review.json');
+      await writeFile(
+        semanticReviewFile,
+        canonicalJson({
+          format: 'tailfin-meshy-semantic-review',
+          formatVersion: 1,
+          operationId: 'candidate-1',
+          derivativeSha256: inventoryOutput.derivativeSha256,
+          inventoryReportSha256: inventoryOutput.reportSha256,
+          reviewedAt: '2026-08-29T22:00:00.000+02:00',
+          reviewedBy: 'local-operator',
+          targetFindings: MESHY_SEMANTIC_TARGETS.map(([targetId, , , required]) => ({
+            targetId,
+            status: required ? 'missing_requires_modeling' : 'not_applicable',
+            rationale: `Fixture does not contain reviewed ${targetId} geometry.`,
+          })),
+          dispositions: [],
+          notes: [],
+        }),
+      );
+      const semanticReview = run([
+        'semantics',
+        '--operation',
+        'candidate-1',
+        '--review-file',
+        semanticReviewFile,
+      ]);
+      expect(semanticReview.status, semanticReview.stderr.replaceAll(sentinel, '[redacted]')).toBe(
+        0,
+      );
+      expect(JSON.parse(semanticReview.stdout)).toMatchObject({
+        operationId: 'candidate-1',
+        semanticAssignmentsMade: false,
+        readyForSemanticRepair: false,
+        uncoveredTriangles: 4,
+        state: 'quarantine',
+        runtimeAdmission: 'not-reviewed',
+        liveryReady: false,
+        creditsSpentByThisCommand: 0,
+      });
+      expect(semanticReview.stdout + semanticReview.stderr).not.toContain(sentinel);
+      expect(
+        run(['semantics', '--operation', 'candidate-1', '--review-file', semanticReviewFile])
+          .stdout,
+      ).toBe(semanticReview.stdout);
+      const mismatchedReviewFile = join(directory, 'semantic-review-mismatched.json');
+      await writeFile(
+        mismatchedReviewFile,
+        canonicalJson({
+          ...(JSON.parse(await readFile(semanticReviewFile, 'utf8')) as Record<string, unknown>),
+          operationId: 'candidate-2',
+        }),
+      );
+      const mismatchedReview = run([
+        'semantics',
+        '--operation',
+        'candidate-1',
+        '--review-file',
+        mismatchedReviewFile,
+      ]);
+      expect(mismatchedReview.status).toBe(1);
+      expect(mismatchedReview.stdout).toBe('');
+      expect(mismatchedReview.stderr).toContain('invalid-input-or-run-state');
       expect(canonicalJson(cliStore.read())).toBe(priorState);
     },
   );

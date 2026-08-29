@@ -13,6 +13,7 @@ import { sealMeshyCandidateProvenance } from './meshy-provenance';
 import { archiveMeshyReview } from './meshy-review-archive';
 import { assertMeshyRunCap, meshyRunApprovalIdentity } from './meshy-run';
 import { archiveMeshySemanticInventory } from './meshy-semantic-inventory-archive';
+import { archiveMeshySemanticReview } from './meshy-semantic-review-archive';
 import { MeshyRunStore, meshyRunDatabasePath } from './meshy-store';
 import { submitMeshyCandidate } from './meshy-submit';
 
@@ -24,6 +25,7 @@ export const MESHY_RUN_USAGE =
   '       assets:meshy-run frame --operation candidate-1..4 --axis-review-file PATH\n' +
   '       assets:meshy-run correct --operation candidate-1..4\n' +
   '       assets:meshy-run inventory --operation candidate-1..4\n' +
+  '       assets:meshy-run semantics --operation candidate-1..4 --review-file PATH\n' +
   '       assets:meshy-run account --max-credits 1..40 [--key-file PATH]\n' +
   '       assets:meshy-run prepare --evidence-file PATH --max-credits 1..40\n' +
   '       assets:meshy-run provenance --operation candidate-1..4 --max-credits 1..40\n' +
@@ -50,6 +52,7 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
       'frame',
       'correct',
       'inventory',
+      'semantics',
     ].includes(command ?? '')
   )
     throw new Error('Unknown Meshy run command.');
@@ -68,9 +71,11 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
                 ? ['--max-credits', '--key-file']
                 : command === 'frame'
                   ? ['--operation', '--axis-review-file']
-                  : ['audit', 'review', 'correct', 'inventory'].includes(command ?? '')
-                    ? ['--operation']
-                    : [];
+                  : command === 'semantics'
+                    ? ['--operation', '--review-file']
+                    : ['audit', 'review', 'correct', 'inventory'].includes(command ?? '')
+                      ? ['--operation']
+                      : [];
   const options = new Map<string, string>();
   for (let index = 1; index < args.length; index += 2) {
     const key = args[index];
@@ -89,9 +94,17 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
     throw new Error('The approved whole-number ceiling is required.');
   }
   if (
-    ['sync', 'submit', 'provenance', 'audit', 'review', 'frame', 'correct', 'inventory'].includes(
-      command!,
-    ) &&
+    [
+      'sync',
+      'submit',
+      'provenance',
+      'audit',
+      'review',
+      'frame',
+      'correct',
+      'inventory',
+      'semantics',
+    ].includes(command!) &&
     !/^candidate-[1-4]$/.test(options.get('--operation') ?? '')
   )
     throw new Error('One recorded candidate operation is required.');
@@ -101,6 +114,8 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
     throw new Error('Fresh pricing review required.');
   if (command === 'frame' && !options.has('--axis-review-file'))
     throw new Error('Axis review required.');
+  if (command === 'semantics' && !options.has('--review-file'))
+    throw new Error('Semantic review required.');
   return { command, options };
 }
 
@@ -241,6 +256,30 @@ export async function runMeshyRunCommand(
       state: report.state,
       runtimeAdmission: report.runtimeAdmission,
       liveryReady: report.liveryReady,
+      creditsSpentByThisCommand: 0,
+    });
+  }
+  if (command === 'semantics') {
+    const { operationId, assessmentSha256, assessment } = await archiveMeshySemanticReview(
+      meshyArchiveDirectory(database),
+      options.get('--operation')!,
+      options.get('--review-file')!,
+    );
+    return canonicalJson({
+      operationId,
+      assessmentSha256,
+      reviewSourceSha256: assessment.reviewSourceSha256,
+      semanticAssignmentsMade: assessment.semanticAssignmentsMade,
+      readyForSemanticRepair: assessment.readyForSemanticRepair,
+      uncoveredTriangles: assessment.uncoveredByComponent.reduce(
+        (sum, component) => sum + component.triangles,
+        0,
+      ),
+      missingTargets: assessment.missingTargets,
+      unreviewedTargets: assessment.unreviewedTargets,
+      state: assessment.state,
+      runtimeAdmission: assessment.runtimeAdmission,
+      liveryReady: assessment.liveryReady,
       creditsSpentByThisCommand: 0,
     });
   }
