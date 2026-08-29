@@ -253,6 +253,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  window.history.pushState({}, '', '/');
 });
 
 describe('the pricing tab', () => {
@@ -430,6 +431,16 @@ describe('opening a route from the rail', () => {
     fireEvent.click(screen.getByRole('button', { name: /^open$/i }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/Choose which world/i);
+  });
+
+  it('prefills the open-route form from ?from= and ?to= (the world map deep link)', async () => {
+    window.history.pushState({}, '', '/network?from=KJFK&to=KLAX');
+    stub();
+    render(<NetworkPage />);
+    await screen.findByText('EHAM → LEBL');
+
+    expect(screen.getByLabelText('Origin ICAO')).toHaveValue('KJFK');
+    expect(screen.getByLabelText('Destination ICAO')).toHaveValue('KLAX');
   });
 
   it('will not submit a code that is not four letters', async () => {

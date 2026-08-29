@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ThemeProvider } from '../theme/ThemeProvider';
@@ -29,9 +30,11 @@ vi.mock('@deck.gl/react', () => ({
 
 function renderRenderer(): void {
   render(
-    <ThemeProvider>
-      <WorldRenderer routes={[{ id: 'date-line', source: [170, 35], target: [-170, 40] }]} />
-    </ThemeProvider>,
+    <MemoryRouter>
+      <ThemeProvider>
+        <WorldRenderer routes={[{ id: 'date-line', source: [170, 35], target: [-170, 40] }]} />
+      </ThemeProvider>
+    </MemoryRouter>,
   );
 }
 

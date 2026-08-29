@@ -22,9 +22,18 @@ const REACHABILITY_LABEL: Record<string, string> = {
   slots: 'No slot in that band',
 };
 
-export function OpenRouteForm({ onOpened }: { onOpened: (routeId: string) => void }): ReactNode {
-  const [origin, setOrigin] = useState('');
-  const [destination, setDestination] = useState('');
+export function OpenRouteForm({
+  onOpened,
+  initialOrigin = '',
+  initialDestination = '',
+}: {
+  onOpened: (routeId: string) => void;
+  /** Pre-fill from a deep link (e.g. the world map's "open route from" action). */
+  initialOrigin?: string;
+  initialDestination?: string;
+}): ReactNode {
+  const [origin, setOrigin] = useState(initialOrigin.toUpperCase());
+  const [destination, setDestination] = useState(initialDestination.toUpperCase());
   const [outcome, setOutcome] = useState<OpenRouteOutcome | null>(null);
   const [busy, setBusy] = useState(false);
 

@@ -2,9 +2,9 @@ import { MapView, _GlobeView as GlobeView, type MapViewState } from '@deck.gl/co
 import { IconLayer } from '@deck.gl/layers';
 import DeckGL, { type DeckGLRef } from '@deck.gl/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router';
 
 import { fetchFleetAirframes, fetchFleetCatalogue } from '../fleet/api';
-import { openRoute, type OpenRouteOutcome } from '../network/api';
 import { useTheme } from '../theme/ThemeProvider';
 
 import { fetchWorldAirports } from './airports-api';
@@ -89,24 +89,6 @@ const PLANE_ICON = 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.o
 /** How fast a plane crosses its whole route: ~1/26 per second, so a full pass is ~26s. */
 const PLANE_SPEED_PER_SECOND = 0.038;
 
-/** The server's route refusal, in the player's words. */
-function describeOpenFailure(outcome: Extract<OpenRouteOutcome, { ok: false }>): string {
-  switch (outcome.kind) {
-    case 'duplicate':
-      return 'You already fly this route.';
-    case 'same-airport':
-      return 'Choose an airport away from your hub.';
-    case 'unknown-airport':
-      return 'That airport is not on file.';
-    case 'no-airline':
-      return 'Found an airline first.';
-    case 'active-world-required':
-      return 'Select an active world first.';
-    case 'unreachable':
-      return outcome.reachability.detail || `Out of reach (${outcome.reachability.reason}).`;
-  }
-}
-
 export interface WorldRendererProps {
   routes?: readonly WorldRoute[];
 }
@@ -130,8 +112,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   const [maxRangeNm, setMaxRangeNm] = useState(0);
   const [phase, setPhase] = useState(0);
   const [selectedAirport, setSelectedAirport] = useState<WorldAirport | null>(null);
-  const [opening, setOpening] = useState(false);
-  const [openNote, setOpenNote] = useState<string | null>(null);
+  const navigate = useNavigate();
   const transitionTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const frameRateMonitor = useRef(new SustainedFrameRateMonitor());
   const deckRef = useRef<DeckGLRef<MapView | GlobeView> | null>(null);
@@ -155,12 +136,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   }, []);
 
   // The player's own overlay — hubs and routes. Also resilient: no airline yet is a
-  // 409, which resolves to an empty overlay, so the map draws without it. Kept as a
-  // callback so opening a route can pull the fresh overlay straight after.
-  const refreshMap = useCallback(async () => {
-    const data = await fetchWorldMap();
-    setMap(data);
-  }, []);
+  // 409, which resolves to an empty overlay, so the map draws without it.
   useEffect(() => {
     let live = true;
     void fetchWorldMap().then((data) => {
@@ -333,31 +309,18 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   );
 
   // Any airport opens the panel now — reachable or not — so a click can offer to
-  // open a route, show why it can't, or list the routes already there.
+  // plan a route, show why it can't, or list the routes already there.
   const onAirportClick = useCallback((airport: WorldAirport) => {
     setSelectedAirport(airport);
-    setOpenNote(null);
   }, []);
 
-  const openRouteFrom = useCallback(
-    async (originIcao: string, destinationIcao: string) => {
-      setOpening(true);
-      setOpenNote(null);
-      try {
-        const outcome = await openRoute(originIcao, destinationIcao);
-        if (outcome.ok) {
-          setOpenNote('Route opened.');
-          await refreshMap();
-        } else {
-          setOpenNote(describeOpenFailure(outcome));
-        }
-      } catch {
-        setOpenNote('Could not open the route just now. Try again.');
-      } finally {
-        setOpening(false);
-      }
+  // The map is for discovery; opening a route happens in the route planner. Hand it
+  // the origin and destination so the "Open a route" form arrives pre-filled.
+  const planRoute = useCallback(
+    (originIcao: string, destinationIcao: string) => {
+      void navigate(`/network?from=${originIcao}&to=${destinationIcao}`);
     },
-    [refreshMap],
+    [navigate],
   );
 
   const layers = useMemo(
@@ -601,22 +564,16 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
                   <button
                     type="button"
                     className="world-renderer__route-cta"
-                    disabled={opening}
-                    onClick={() => void openRouteFrom(reach.hub.icao, airport.icao)}
+                    onClick={() => {
+                      planRoute(reach.hub.icao, airport.icao);
+                    }}
                   >
-                    {opening
-                      ? 'Opening…'
-                      : `Open route from ${reach.hub.name} · ${distance(reach.distanceNm)} nm`}
+                    Open route from {reach.hub.name} · {distance(reach.distanceNm)} nm
                   </button>
                 ) : (
                   <p className="world-renderer__route-muted">
                     Out of range — {distance(reach.distanceNm)} nm from {reach.hub.name}, but your
                     aircraft reach {distance(maxRangeNm)} nm.
-                  </p>
-                )}
-                {openNote !== null && (
-                  <p className="world-renderer__route-note" role="status">
-                    {openNote}
                   </p>
                 )}
               </div>
@@ -640,7 +597,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
                 </ul>
               )}
 
-              <a href="/network" className="world-renderer__route-link">
+              <a href={`/network?to=${airport.icao}`} className="world-renderer__route-link">
                 Open route planner
               </a>
             </div>

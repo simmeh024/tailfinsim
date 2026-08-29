@@ -72,6 +72,20 @@ export function NetworkPage(): ReactNode {
 
   const { select, clear } = useContextSelection();
 
+  // Deep-link prefill: the world map links here as `/network?from=EHAM&to=LEBL` so
+  // the "Open a route" form arrives filled in. Read from the URL rather than a
+  // router hook, so a bare-rendered test needs no Router around the page. Read once
+  // at mount — the page mounts fresh when navigated to.
+  const prefill = useMemo(() => {
+    const params = new URLSearchParams(globalThis.location?.search ?? '');
+    return {
+      from: (params.get('from') ?? '').toUpperCase().slice(0, 4),
+      to: (params.get('to') ?? '').toUpperCase().slice(0, 4),
+    };
+  }, []);
+  const prefillFrom = prefill.from;
+  const prefillTo = prefill.to;
+
   const load = useCallback(async () => {
     try {
       setRoutes(await fetchRoutes());
@@ -271,6 +285,9 @@ export function NetworkPage(): ReactNode {
           <div className="net-rail__open">
             <h2 className="net-rail__title">Open a route</h2>
             <OpenRouteForm
+              key={`${prefillFrom}:${prefillTo}`}
+              initialOrigin={prefillFrom}
+              initialDestination={prefillTo}
               onOpened={(id) => {
                 void load();
                 selectRoute(id);
