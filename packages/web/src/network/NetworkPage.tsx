@@ -177,6 +177,9 @@ export function NetworkPage(): ReactNode {
         if (flight)
           editor.moveFlight(planForContext.route.id, flightId, flight.departureMinute, aircraftId);
       },
+      removeAircraft: (aircraftId) => {
+        editor.removeAircraft(planForContext.route.id, aircraftId);
+      },
     });
     if (described === null) {
       clear();

@@ -24,6 +24,7 @@ export interface SelectionActions {
   addRotation: (aircraftId: string, hour: number) => void;
   removeFlight: (flightId: string) => void;
   reassignFlight: (flightId: string, aircraftId: string) => void;
+  removeAircraft: (aircraftId: string) => void;
 }
 
 function Row({ label, value }: { label: string; value: ReactNode }): ReactNode {
@@ -154,8 +155,21 @@ export function describeSelection(
           <p className="net-ctx__hint">
             {frame.isPool
               ? 'Flights left in the pool are flown by any spare airframe.'
-              : 'A fixed aircraft flies a set rotation; move it to the pool to share it.'}
+              : rowFlights.length > 0
+                ? 'A fixed aircraft flies a set rotation. Remove it from the route to clear its flights here and leave the airframe idle.'
+                : 'This aircraft is idle on the route. Drag a flight onto its row, or add a rotation from a slot.'}
           </p>
+          {!frame.isPool && rowFlights.length > 0 && (
+            <button
+              type="button"
+              className="net-btn net-btn--sm net-btn--danger"
+              onClick={() => {
+                actions.removeAircraft(frame.id);
+              }}
+            >
+              Remove from route
+            </button>
+          )}
         </div>
       ),
     };

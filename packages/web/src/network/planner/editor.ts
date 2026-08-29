@@ -185,6 +185,8 @@ export interface ScheduleEditor {
   setFrequency: (routeId: string, frequency: Frequency) => void;
   addRotation: (route: RouteSummary, aircraft: PlannerAircraft, hour: number) => void;
   removeFlight: (routeId: string, flightId: string) => void;
+  /** Drop every flight this aircraft flies on the route, leaving the airframe idle. */
+  removeAircraft: (routeId: string, aircraftId: string) => void;
   moveFlight: (
     routeId: string,
     flightId: string,
@@ -270,6 +272,17 @@ export function useScheduleEditor(
     },
     [state.present.flights],
   );
+  const removeAircraft = useCallback(
+    (routeId: string, aircraftId: string) => {
+      const existing = state.present.flights[routeId] ?? [];
+      dispatch({
+        type: 'set-flights',
+        routeId,
+        flights: existing.filter((f) => f.aircraftId !== aircraftId),
+      });
+    },
+    [state.present.flights],
+  );
   const moveFlight = useCallback(
     (routeId: string, flightId: string, departureMinute: number, aircraftId?: string) => {
       const existing = state.present.flights[routeId] ?? [];
@@ -319,6 +332,7 @@ export function useScheduleEditor(
       setFrequency,
       addRotation,
       removeFlight,
+      removeAircraft,
       moveFlight,
       resetRoute,
       publish,
@@ -335,6 +349,7 @@ export function useScheduleEditor(
       setFrequency,
       addRotation,
       removeFlight,
+      removeAircraft,
       moveFlight,
       resetRoute,
       publish,
