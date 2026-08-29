@@ -22,24 +22,28 @@ export function OverviewTab({ plan }: { plan: RoutePlan }): ReactNode {
           label="Weekly frequency"
           value={`${String(e.weeklyFrequency)}×`}
           sub="departures / week"
+          tip="How many times you fly this route in a week — more frequency wins schedule-sensitive demand but adds cost."
         />
         <StatTile
           label="Load factor"
           value={`${(e.loadFactor * 100).toFixed(0)}%`}
           tone={e.loadFactor >= 0.7 ? 'positive' : 'warn'}
           sub={<Meter value={e.loadFactor} tone={e.loadFactor >= 0.7 ? 'positive' : 'warn'} />}
+          tip="Share of your seats that sell. Add frequency and it falls unless demand grows to match."
         />
         <StatTile
           label="Weekly revenue"
           value={compactMoney(e.weeklyRevenueMinor)}
           tone="accent"
           sub={`RASK ${major(e.raskMinor)}`}
+          tip="Revenue per available seat-kilometre — the fares you take per seat you fly, per km."
         />
         <StatTile
           label="Weekly profit"
           value={compactMoney(weeklyProfit)}
           tone={marginTone}
           sub={`CASK ${major(e.caskMinor)}`}
+          tip="Revenue minus cost. Cost per available seat-km (CASK) is what a seat costs to fly."
         />
         <StatTile
           label="Utilisation"

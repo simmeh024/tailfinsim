@@ -25,20 +25,34 @@ export function compactMoney(minor: number): string {
   return value.toFixed(0);
 }
 
+/** A small ⓘ that explains a term on hover/focus — the cheapest onboarding ramp. */
+export function Tip({ text }: { text: string }): ReactNode {
+  return (
+    <span className="net-tip" tabIndex={0} role="note" aria-label={text} title={text}>
+      ⓘ
+    </span>
+  );
+}
+
 export function StatTile({
   label,
   value,
   sub,
   tone = 'neutral',
+  tip,
 }: {
   label: string;
   value: ReactNode;
   sub?: ReactNode;
   tone?: Tone;
+  tip?: string;
 }): ReactNode {
   return (
     <div className={`net-tile net-tile--${tone}`}>
-      <span className="net-tile__label">{label}</span>
+      <span className="net-tile__label">
+        {label}
+        {tip !== undefined && <Tip text={tip} />}
+      </span>
       <span className="net-tile__value figure">{value}</span>
       {sub !== undefined && <span className="net-tile__sub">{sub}</span>}
     </div>

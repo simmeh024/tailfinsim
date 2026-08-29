@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react';
 
 import type { Tone } from './ui';
-import type { ReactNode } from 'react';
+import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 
 /**
  * A horizontal 24-hour timeline: an hour axis, aircraft rows down the side, and
@@ -70,6 +70,7 @@ export function TimelineRow({
   meter,
   selected = false,
   onLabelClick,
+  trackAttrs,
   children,
 }: {
   label: ReactNode;
@@ -77,6 +78,8 @@ export function TimelineRow({
   meter?: ReactNode;
   selected?: boolean;
   onLabelClick?: () => void;
+  /** Extra data-* attributes on the track, e.g. `data-aircraft-id` for drop hit-testing. */
+  trackAttrs?: Record<string, string>;
   children: ReactNode;
 }): ReactNode {
   return (
@@ -91,7 +94,7 @@ export function TimelineRow({
         {sub !== undefined && <span className="net-row__label-sub">{sub}</span>}
         {meter}
       </button>
-      <div className="net-row__track">
+      <div className="net-row__track" data-net-track="" {...trackAttrs}>
         {/* Faint hour gridlines behind the blocks. */}
         <RowGrid />
         {children}
@@ -128,6 +131,7 @@ export function TimelineBlock({
   label,
   title,
   onClick,
+  onPointerDown,
 }: {
   startMinute: number;
   durationMinutes: number;
@@ -137,6 +141,7 @@ export function TimelineBlock({
   label: ReactNode;
   title?: string;
   onClick?: () => void;
+  onPointerDown?: (event: ReactPointerEvent) => void;
 }): ReactNode {
   const scale = useContext(ScaleContext);
   const left = pct(startMinute, scale);
@@ -147,9 +152,12 @@ export function TimelineBlock({
       <button
         type="button"
         title={title}
-        className={`net-block net-block--${tone}${selected ? ' net-block--selected' : ''}`}
+        className={`net-block net-block--${tone}${selected ? ' net-block--selected' : ''}${
+          onPointerDown ? ' net-block--draggable' : ''
+        }`}
         style={{ left: `${left}%`, width: `${Math.max(width, 1.2)}%` }}
         onClick={onClick}
+        onPointerDown={onPointerDown}
       >
         <span className="net-block__label">{label}</span>
       </button>

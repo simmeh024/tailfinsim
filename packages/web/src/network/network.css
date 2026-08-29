@@ -672,23 +672,161 @@
   background: var(--bg-raised);
 }
 
-.net-schedule__freq {
+.net-schedule__group {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
 }
 
-.net-schedule__freq-label {
+.net-schedule__group--right {
+  margin-left: auto;
+}
+
+.net-schedule__group-label {
   font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
 }
 
-.net-schedule__summary {
+.net-schedule__footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-inset);
   font-size: var(--text-sm);
   color: var(--text-secondary);
+}
+
+.net-schedule__profit--up {
+  color: var(--status-profit);
+}
+.net-schedule__profit--down {
+  color: var(--status-loss);
+}
+
+/* Small buttons used across the toolbar and context actions. */
+.net-btn {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+
+.net-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+.net-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.net-btn--sm {
+  font-size: var(--text-xs);
+  padding: 2px var(--space-2);
+}
+
+.net-btn--accent {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-quiet);
+}
+
+.net-btn--publish {
+  border-color: var(--status-ontime);
+  color: var(--text-on-accent);
+  background: var(--status-ontime);
+  font-weight: 600;
+}
+
+.net-btn--publish:disabled {
+  background: var(--bg-inset);
+  color: var(--text-muted);
+  border-color: var(--border-strong);
+}
+
+.net-btn--danger {
+  border-color: var(--status-cancelled);
+  color: var(--status-cancelled);
+  background: var(--status-cancelled-quiet);
+}
+
+/* Live schedule warnings. */
+.net-warnings {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--status-delayed);
+  border-radius: var(--radius-md);
+  background: var(--status-delayed-quiet);
+  font-size: var(--text-sm);
+}
+
+.net-warnings__count {
+  font-weight: 600;
+  color: var(--status-delayed);
+  white-space: nowrap;
+}
+
+.net-warnings__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--text-secondary);
+}
+
+.net-tip {
+  margin-left: 4px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  cursor: help;
+}
+
+.net-row__flag {
+  margin-left: var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--status-cancelled);
+  text-transform: uppercase;
+}
+
+.net-block--draggable {
+  cursor: grab;
+  touch-action: none;
+}
+
+.net-block--draggable:active {
+  cursor: grabbing;
+}
+
+.net-ctx__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  padding-top: var(--space-2);
+}
+
+.net-ctx__actions-label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  width: 100%;
 }
 
 .net-schedule__legend {
@@ -710,6 +848,10 @@
 .net-legend__swatch--accent {
   background: var(--accent-quiet);
   border: 1px solid var(--accent);
+}
+.net-legend__swatch--negative {
+  background: var(--status-cancelled-quiet);
+  border: 1px solid var(--status-cancelled);
 }
 .net-legend__swatch--positive {
   background: var(--status-ontime-quiet);

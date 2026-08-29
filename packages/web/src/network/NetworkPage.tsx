@@ -6,8 +6,10 @@ import { fetchFleetAirframes } from '../fleet/api';
 import { useContextSelection } from '../shell/context-selection';
 
 import { closeRoute, fetchRoutes, type RouteSummary } from './api';
+import { liveEconomics } from './planner/analysis';
 import { CompetitionTab } from './planner/CompetitionTab';
 import { describeSelection } from './planner/ContextBodies';
+import { useScheduleEditor } from './planner/editor';
 import { FleetScheduleView } from './planner/FleetScheduleView';
 import { buildRoutePlan, plannerAircraft } from './planner/mock';
 import { OpenRouteForm } from './planner/OpenRouteForm';
@@ -17,7 +19,7 @@ import { PricingTab } from './planner/PricingTab';
 import { ScheduleTab } from './planner/ScheduleTab';
 import { Chip, Segmented } from './planner/ui';
 
-import type { Frequency, NetworkSelection } from './planner/types';
+import type { NetworkSelection } from './planner/types';
 import type { ReactNode } from 'react';
 
 import './network.css';
@@ -51,7 +53,6 @@ export function NetworkPage(): ReactNode {
   const [routes, setRoutes] = useState<RouteSummary[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [fleet, setFleet] = useState<readonly FleetAirframeView[]>([]);
-  const [frequencies, setFrequencies] = useState<Record<string, Frequency>>({});
   const [view, setView] = useState<View>('route');
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('overview');
@@ -88,15 +89,29 @@ export function NetworkPage(): ReactNode {
   }, []);
 
   const aircraft = useMemo(() => plannerAircraft(fleet), [fleet]);
-  const plans = useMemo(
-    () =>
-      (routes ?? []).map((route) =>
-        buildRoutePlan(route, aircraft, frequencies[route.id] ?? { kind: 'daily' }),
-      ),
-    [routes, aircraft, frequencies],
+  const editor = useScheduleEditor(routes ?? [], aircraft);
+
+  // Base plans hold the stable mock (demand, slots, competitors, unit economics); the
+  // live layer overlays the editor's current flights/frequency and recomputes the
+  // economics from them, so every tab reflects the schedule as it is being edited.
+  const basePlans = useMemo(
+    () => (routes ?? []).map((route) => buildRoutePlan(route, aircraft)),
+    [routes, aircraft],
   );
-  const planById = useMemo(() => new Map(plans.map((plan) => [plan.route.id, plan])), [plans]);
-  const allFlights = useMemo(() => plans.flatMap((plan) => plan.flights), [plans]);
+  const livePlans = useMemo(
+    () =>
+      basePlans.map((base) => {
+        const flights = editor.flightsFor(base.route.id);
+        const withLive = { ...base, flights, frequency: editor.frequencyFor(base.route.id) };
+        return { ...withLive, economics: liveEconomics(withLive, flights) };
+      }),
+    [basePlans, editor],
+  );
+  const planById = useMemo(
+    () => new Map(livePlans.map((plan) => [plan.route.id, plan])),
+    [livePlans],
+  );
+  const allFlights = useMemo(() => livePlans.flatMap((plan) => plan.flights), [livePlans]);
   const currentPlan = selectedRouteId !== null ? (planById.get(selectedRouteId) ?? null) : null;
 
   // Land on the first route once they load.
@@ -120,12 +135,25 @@ export function NetworkPage(): ReactNode {
   // underlying plan changes (a frequency edit). Cleared on unmount so a route's
   // detail does not linger over the next page.
   useEffect(() => {
-    const planForContext = currentPlan ?? plans[0];
+    const planForContext = currentPlan ?? livePlans[0];
     if (selection === null || planForContext === undefined) {
       clear();
       return;
     }
-    const described = describeSelection(selection, planForContext, aircraft, allFlights);
+    const described = describeSelection(selection, planForContext, aircraft, allFlights, {
+      addRotation: (aircraftId, hour) => {
+        const frame = aircraft.find((a) => a.id === aircraftId);
+        if (frame) editor.addRotation(planForContext.route, frame, hour);
+      },
+      removeFlight: (flightId) => {
+        editor.removeFlight(planForContext.route.id, flightId);
+      },
+      reassignFlight: (flightId, aircraftId) => {
+        const flight = allFlights.find((f) => f.id === flightId);
+        if (flight)
+          editor.moveFlight(planForContext.route.id, flightId, flight.departureMinute, aircraftId);
+      },
+    });
     if (described === null) {
       clear();
       return;
@@ -140,17 +168,9 @@ export function NetworkPage(): ReactNode {
         setSelection(null);
       },
     });
-  }, [selection, currentPlan, plans, aircraft, allFlights, select, clear]);
+  }, [selection, currentPlan, livePlans, aircraft, allFlights, editor, select, clear]);
 
   useEffect(() => () => clear(), [clear]);
-
-  const setFrequency = useCallback(
-    (frequency: Frequency) => {
-      if (selectedRouteId === null) return;
-      setFrequencies((current) => ({ ...current, [selectedRouteId]: frequency }));
-    },
-    [selectedRouteId],
-  );
 
   const selectRoute = useCallback((id: string) => {
     setView('route');
@@ -230,7 +250,7 @@ export function NetworkPage(): ReactNode {
 
           <div className="net-rail__list-head">Routes</div>
           <ul className="net-rail__list">
-            {plans.map((plan) => {
+            {livePlans.map((plan) => {
               const isActive = view === 'route' && plan.route.id === selectedRouteId;
               return (
                 <li key={plan.route.id}>
@@ -264,7 +284,7 @@ export function NetworkPage(): ReactNode {
         <div className="net-main">
           {view === 'fleet' ? (
             <FleetScheduleView
-              plans={plans}
+              plans={livePlans}
               aircraft={aircraft}
               selection={selection}
               onSelect={setSelection}
@@ -327,7 +347,7 @@ export function NetworkPage(): ReactNode {
                     aircraft={aircraft}
                     selection={selection}
                     onSelect={setSelection}
-                    onSetFrequency={setFrequency}
+                    editor={editor}
                   />
                 )}
                 {tab === 'pricing' && <PricingTab route={currentPlan.route} />}

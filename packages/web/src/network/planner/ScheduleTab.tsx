@@ -1,8 +1,18 @@
-import { Timeline, TimelineBlock, TimelineRow, TimelineSlot, minuteLabel } from './Timeline';
-import { DayPicker, Meter, Segmented } from './ui';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import {
+  rankedSlots,
+  scheduleIssues,
+  slotContribution,
+  utilisationByAircraft,
+  type FlightIssue,
+} from './analysis';
+import { buildRotation } from './editor';
+import { Timeline, TimelineBlock, TimelineRow, TimelineSlot, minuteLabel } from './Timeline';
+import { Chip, compactMoney, DayPicker, Meter, Segmented } from './ui';
+
+import type { ScheduleEditor } from './editor';
 import type {
-  Frequency,
   NetworkSelection,
   PlannedFlight,
   PlannerAircraft,
@@ -11,20 +21,11 @@ import type {
   Weekday,
 } from './types';
 import type { Tone } from './ui';
-import type { ReactNode } from 'react';
-
-/**
- * The schedule planner — the workspace centrepiece.
- *
- * A 24-hour timeline with the airline's aircraft down the side and their flights
- * laid across it, plus a departure-slot strip and the frequency template. Every
- * flight and slot is selectable, driving the right-hand context panel. The
- * schedule data is mock (`planner/mock.ts`) — there is no M2-03 schedule endpoint
- * yet — but the interactions and shapes are the ones the real planner will use.
- */
+import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 
 const HOUR_START = 4;
 const HOUR_END = 24;
+const UTILISATION_TARGET = 8; // block hours a day before an aircraft reads "well used"
 
 const SLOT_TONE: Record<Timeslot['availability'], Tone> = {
   available: 'positive',
@@ -32,14 +33,27 @@ const SLOT_TONE: Record<Timeslot['availability'], Tone> = {
   full: 'negative',
 };
 
+interface DragState {
+  flightId: string;
+  originAircraftId: string;
+  originDeparture: number;
+  minutesPerPx: number;
+  startClientX: number;
+  deltaMinutes: number;
+  overAircraftId: string | null;
+}
+
+function snap(minute: number): number {
+  return Math.round(minute / 5) * 5;
+}
+
 /** Turnaround/ground time before this aircraft's next flight, capped for the tail. */
-function tailMinutes(flight: PlannedFlight, flights: PlannedFlight[]): number {
+function tailMinutes(flight: PlannedFlight, flights: readonly PlannedFlight[]): number {
   const arrival = flight.departureMinute + flight.blockMinutes;
   const next = flights
     .filter((f) => f.aircraftId === flight.aircraftId && f.departureMinute >= arrival)
     .sort((a, b) => a.departureMinute - b.departureMinute)[0];
-  if (next === undefined) return 0;
-  return Math.max(0, Math.min(next.departureMinute - arrival, 120));
+  return next === undefined ? 0 : Math.max(0, Math.min(next.departureMinute - arrival, 120));
 }
 
 export function ScheduleTab({
@@ -47,42 +61,159 @@ export function ScheduleTab({
   aircraft,
   selection,
   onSelect,
-  onSetFrequency,
+  editor,
 }: {
   plan: RoutePlan;
   aircraft: readonly PlannerAircraft[];
   selection: NetworkSelection | null;
   onSelect: (selection: NetworkSelection) => void;
-  onSetFrequency: (frequency: Frequency) => void;
+  editor: ScheduleEditor;
 }): ReactNode {
-  const { frequency, flights, slots } = plan;
+  const { route } = plan;
+  const flights = plan.flights;
+  const frequency = plan.frequency;
+  const [drag, setDrag] = useState<DragState | null>(null);
+  const dragRef = useRef<DragState | null>(null);
+  dragRef.current = drag;
+
+  const issues = useMemo(
+    () => scheduleIssues(flights, aircraft, plan.slots),
+    [flights, aircraft, plan.slots],
+  );
+  const issueByFlight = useMemo(() => {
+    const map = new Map<string, FlightIssue>();
+    for (const issue of issues) if (!map.has(issue.flightId)) map.set(issue.flightId, issue);
+    return map;
+  }, [issues]);
+  const utilisation = useMemo(() => utilisationByAircraft(flights), [flights]);
+  const bestSlotHour = useMemo(() => rankedSlots(plan, flights)[0]?.slot.hour, [plan, flights]);
 
   const frequencyKind: 'daily' | 'weekdays' = frequency.kind;
   const days: Weekday[] = frequency.kind === 'weekdays' ? frequency.days : [1, 2, 3, 4, 5, 6, 7];
-  const dailyDepartures = flights.length;
-  const weekly = dailyDepartures * (frequency.kind === 'daily' ? 7 : frequency.days.length);
+  const weekly = flights.length * (frequency.kind === 'daily' ? 7 : frequency.days.length);
+  const flyers = aircraft.filter((a) => !a.isPool);
 
   const toggleDay = (day: Weekday) => {
     if (frequency.kind !== 'weekdays') {
-      onSetFrequency({ kind: 'weekdays', days: [day] });
+      editor.setFrequency(route.id, { kind: 'weekdays', days: [day] });
       return;
     }
-    const has = frequency.days.includes(day);
-    const next = has ? frequency.days.filter((d) => d !== day) : [...frequency.days, day];
+    const next = frequency.days.includes(day)
+      ? frequency.days.filter((d) => d !== day)
+      : [...frequency.days, day];
     if (next.length === 0) return;
-    onSetFrequency({ kind: 'weekdays', days: next.sort((a, b) => a - b) });
+    editor.setFrequency(route.id, { kind: 'weekdays', days: next.sort((a, b) => a - b) });
   };
+
+  // --- Templates & suggest (idea 4, 5) --------------------------------------
+
+  const applyTemplate = useCallback(
+    (kind: 'peaks' | 'spread' | 'clear') => {
+      const frame = flyers[0];
+      if (!frame && kind !== 'clear') return;
+      if (kind === 'clear') {
+        editor.setFlights(route.id, []);
+        return;
+      }
+      const hours = kind === 'peaks' ? [7, 17] : [6, 10, 14, 18];
+      const built = hours.flatMap((hour) => buildRotation(route, frame!, hour));
+      editor.setFlights(route.id, built);
+    },
+    [editor, route, flyers],
+  );
+
+  const suggest = useCallback(() => {
+    if (flyers.length === 0) return;
+    const ranked = rankedSlots(plan, []).filter((entry) => entry.contribution > 0);
+    // Round-robin the best slots across the aircraft, a couple of rotations each.
+    const built: PlannedFlight[] = [];
+    ranked.slice(0, flyers.length * 2).forEach((entry, index) => {
+      const frame = flyers[index % flyers.length]!;
+      built.push(...buildRotation(route, frame, entry.slot.hour));
+    });
+    editor.setFlights(route.id, built);
+  }, [editor, plan, route, flyers]);
+
+  // --- Drag to retime / reassign (idea 1) -----------------------------------
+
+  const onBlockPointerDown = useCallback(
+    (event: ReactPointerEvent, flight: PlannedFlight) => {
+      const track = (event.target as HTMLElement).closest('[data-net-track]');
+      if (!(track instanceof HTMLElement)) return;
+      const rect = track.getBoundingClientRect();
+      const minutesPerPx = ((HOUR_END - HOUR_START) * 60) / rect.width;
+      setDrag({
+        flightId: flight.id,
+        originAircraftId: flight.aircraftId,
+        originDeparture: flight.departureMinute,
+        minutesPerPx,
+        startClientX: event.clientX,
+        deltaMinutes: 0,
+        overAircraftId: flight.aircraftId,
+      });
+      onSelect({ kind: 'flight', id: flight.id });
+    },
+    [onSelect],
+  );
+
+  const dragActive = drag !== null;
+  useEffect(() => {
+    if (!dragActive) return;
+    const move = (event: PointerEvent): void => {
+      const current = dragRef.current;
+      if (!current) return;
+      const deltaMinutes = (event.clientX - current.startClientX) * current.minutesPerPx;
+      const row = (
+        document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null
+      )?.closest('[data-aircraft-id]');
+      const overAircraftId =
+        row instanceof HTMLElement
+          ? (row.dataset.aircraftId ?? current.overAircraftId)
+          : current.overAircraftId;
+      setDrag({ ...current, deltaMinutes, overAircraftId });
+    };
+    const up = (): void => {
+      const current = dragRef.current;
+      if (current) {
+        const newDeparture = snap(current.originDeparture + current.deltaMinutes);
+        const moved = Math.abs(newDeparture - current.originDeparture) >= 5;
+        const reassigned =
+          current.overAircraftId !== null && current.overAircraftId !== current.originAircraftId;
+        if (moved || reassigned) {
+          editor.moveFlight(
+            route.id,
+            current.flightId,
+            newDeparture,
+            current.overAircraftId ?? undefined,
+          );
+        }
+      }
+      setDrag(null);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+  }, [dragActive, editor, route.id]);
+
+  const dirty = editor.isDirty(route.id);
 
   return (
     <div className="net-schedule">
+      {/* Toolbar: frequency, templates, suggest, draft controls */}
       <div className="net-schedule__bar">
-        <div className="net-schedule__freq">
-          <span className="net-schedule__freq-label">Frequency</span>
+        <div className="net-schedule__group">
+          <span className="net-schedule__group-label">Frequency</span>
           <Segmented
             label="Frequency template"
             value={frequencyKind}
             onChange={(kind) => {
-              onSetFrequency(kind === 'daily' ? { kind: 'daily' } : { kind: 'weekdays', days });
+              editor.setFrequency(
+                route.id,
+                kind === 'daily' ? { kind: 'daily' } : { kind: 'weekdays', days },
+              );
             }}
             options={[
               { value: 'daily', label: 'Daily' },
@@ -91,23 +222,91 @@ export function ScheduleTab({
           />
           {frequency.kind === 'weekdays' && <DayPicker days={days} onToggle={toggleDay} />}
         </div>
-        <div className="net-schedule__summary">
-          <strong className="figure">{dailyDepartures}</strong> departures/day ·{' '}
-          <strong className="figure">{weekly}</strong>/week
+
+        <div className="net-schedule__group">
+          <span className="net-schedule__group-label">Templates</span>
+          <button type="button" className="net-btn" onClick={() => applyTemplate('peaks')}>
+            Peak banks
+          </button>
+          <button type="button" className="net-btn" onClick={() => applyTemplate('spread')}>
+            Even spread
+          </button>
+          <button type="button" className="net-btn net-btn--accent" onClick={suggest}>
+            ✨ Suggest
+          </button>
+          <button type="button" className="net-btn" onClick={() => applyTemplate('clear')}>
+            Clear
+          </button>
+        </div>
+
+        <div className="net-schedule__group net-schedule__group--right">
+          <button
+            type="button"
+            className="net-btn"
+            disabled={!editor.canUndo}
+            onClick={editor.undo}
+          >
+            ↩ Undo
+          </button>
+          <button
+            type="button"
+            className="net-btn"
+            disabled={!editor.canRedo}
+            onClick={editor.redo}
+          >
+            Redo ↪
+          </button>
+          <button
+            type="button"
+            className="net-btn"
+            onClick={() => {
+              editor.resetRoute(route, aircraft);
+            }}
+          >
+            Reset
+          </button>
+          <button
+            type="button"
+            className="net-btn net-btn--publish"
+            disabled={!dirty}
+            onClick={() => {
+              editor.publish(route.id);
+            }}
+          >
+            {dirty ? 'Publish' : 'Published'}
+          </button>
+          {dirty && <Chip tone="warn">Unsaved</Chip>}
         </div>
       </div>
 
+      {/* Live warnings (idea 2) */}
+      {issues.length > 0 && (
+        <div className="net-warnings" role="status">
+          <span className="net-warnings__count">
+            ⚠ {issues.length} issue{issues.length > 1 ? 's' : ''}
+          </span>
+          <ul className="net-warnings__list">
+            {issues.slice(0, 4).map((issue) => (
+              <li key={`${issue.flightId}:${issue.kind}`}>{issue.detail}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <Timeline hourStart={HOUR_START} hourEnd={HOUR_END}>
         <TimelineRow label="Departure slots" sub="cost · quality">
-          {slots
+          {plan.slots
             .filter((slot) => slot.hour >= HOUR_START && slot.hour < HOUR_END)
             .map((slot) => (
               <TimelineSlot
                 key={slot.hour}
                 hour={slot.hour}
                 tone={SLOT_TONE[slot.availability]}
-                selected={selection?.kind === 'slot' && selection.id === String(slot.hour)}
-                title={`${minuteLabel(slot.hour * 60)} · ${slot.quality} · ${slot.availability}`}
+                selected={
+                  (selection?.kind === 'slot' && selection.id === String(slot.hour)) ||
+                  slot.hour === bestSlotHour
+                }
+                title={`${minuteLabel(slot.hour * 60)} · ${slot.quality} · ${slot.availability} · value ${compactMoney(slotContribution(plan, slot))}`}
                 onClick={() => {
                   onSelect({ kind: 'slot', id: String(slot.hour) });
                 }}
@@ -117,59 +316,109 @@ export function ScheduleTab({
 
         {aircraft.map((frame) => {
           const rowFlights = flights.filter((f) => f.aircraftId === frame.id);
+          const hours = utilisation.get(frame.id) ?? 0;
+          const idle = !frame.isPool && rowFlights.length === 0;
           return (
             <TimelineRow
               key={frame.id}
-              label={frame.isPool ? 'Fleet pool' : frame.registration}
-              sub={frame.isPool ? 'unassigned' : frame.typeDesignation}
-              selected={selection?.kind === 'aircraft' && selection.id === frame.id}
+              label={
+                <>
+                  {frame.isPool ? 'Fleet pool' : frame.registration}
+                  {idle && <span className="net-row__flag">idle</span>}
+                </>
+              }
+              sub={frame.isPool ? 'unassigned' : `${frame.typeDesignation} · ${hours.toFixed(1)}h`}
+              selected={
+                (selection?.kind === 'aircraft' && selection.id === frame.id) ||
+                drag?.overAircraftId === frame.id
+              }
               onLabelClick={() => {
                 onSelect({ kind: 'aircraft', id: frame.id });
               }}
               meter={
                 frame.isPool ? undefined : (
                   <Meter
-                    value={Math.min(1, frame.utilisationHoursPerDay / 14)}
-                    tone={frame.utilisationHoursPerDay >= 8 ? 'positive' : 'warn'}
-                    label={`${frame.utilisationHoursPerDay.toFixed(1)} block hours a day`}
+                    value={Math.min(1, hours / 14)}
+                    tone={hours >= UTILISATION_TARGET ? 'positive' : idle ? 'negative' : 'warn'}
+                    label={`${hours.toFixed(1)} block hours a day`}
                   />
                 )
               }
+              trackAttrs={{ 'data-aircraft-id': frame.id }}
             >
-              {rowFlights.map((flight) => (
-                <TimelineBlock
-                  key={flight.id}
-                  startMinute={flight.departureMinute}
-                  durationMinutes={flight.blockMinutes}
-                  turnaroundMinutes={tailMinutes(flight, flights)}
-                  tone={flight.direction === 'out' ? 'accent' : 'positive'}
-                  selected={selection?.kind === 'flight' && selection.id === flight.id}
-                  title={`${flight.originIcao} → ${flight.destinationIcao} dep ${minuteLabel(
-                    flight.departureMinute,
-                  )} arr ${minuteLabel(flight.departureMinute + flight.blockMinutes)}`}
-                  label={
-                    <>
-                      {flight.direction === 'out' ? '→' : '←'} {flight.destinationIcao}
-                    </>
-                  }
-                  onClick={() => {
-                    onSelect({ kind: 'flight', id: flight.id });
-                  }}
-                />
-              ))}
-              {rowFlights.length === 0 && !frame.isPool && (
-                <span className="net-row__empty">
-                  No flights — assign a slot to fly this aircraft
-                </span>
+              {rowFlights.map((flight) => {
+                const isDragging = drag?.flightId === flight.id;
+                const startMinute = isDragging
+                  ? snap(flight.departureMinute + (drag?.deltaMinutes ?? 0))
+                  : flight.departureMinute;
+                const issue = issueByFlight.get(flight.id);
+                return (
+                  <TimelineBlock
+                    key={flight.id}
+                    startMinute={startMinute}
+                    durationMinutes={flight.blockMinutes}
+                    turnaroundMinutes={isDragging ? 0 : tailMinutes(flight, flights)}
+                    tone={issue ? 'negative' : flight.direction === 'out' ? 'accent' : 'positive'}
+                    selected={selection?.kind === 'flight' && selection.id === flight.id}
+                    title={
+                      issue
+                        ? issue.detail
+                        : `${flight.originIcao} → ${flight.destinationIcao} dep ${minuteLabel(startMinute)} — drag to retime or move rows`
+                    }
+                    label={
+                      <>
+                        {flight.direction === 'out' ? '→' : '←'} {flight.destinationIcao}
+                      </>
+                    }
+                    onPointerDown={(event) => {
+                      onBlockPointerDown(event, flight);
+                    }}
+                    onClick={() => {
+                      onSelect({ kind: 'flight', id: flight.id });
+                    }}
+                  />
+                );
+              })}
+              {idle && (
+                <span className="net-row__empty">Idle — drag a flight here, or use a slot</span>
               )}
             </TimelineRow>
           );
         })}
       </Timeline>
 
+      {/* Live economics footer (idea 3) */}
+      <div className="net-schedule__footer">
+        <span>
+          <strong className="figure">{flights.length}</strong> departures/day ·{' '}
+          <strong className="figure">{weekly}</strong>/week
+        </span>
+        <span>
+          Load <strong className="figure">{(plan.economics.loadFactor * 100).toFixed(0)}%</strong>
+        </span>
+        <span>
+          Revenue{' '}
+          <strong className="figure">{compactMoney(plan.economics.weeklyRevenueMinor)}</strong>/wk
+        </span>
+        <span
+          className={
+            plan.economics.weeklyRevenueMinor - plan.economics.weeklyCostMinor >= 0
+              ? 'net-schedule__profit net-schedule__profit--up'
+              : 'net-schedule__profit net-schedule__profit--down'
+          }
+        >
+          Profit{' '}
+          <strong className="figure">
+            {compactMoney(plan.economics.weeklyRevenueMinor - plan.economics.weeklyCostMinor)}
+          </strong>
+          /wk
+        </span>
+      </div>
+
       <p className="net-schedule__legend">
         <span className="net-legend__swatch net-legend__swatch--accent" /> Outbound
         <span className="net-legend__swatch net-legend__swatch--positive" /> Return
+        <span className="net-legend__swatch net-legend__swatch--negative" /> Issue
         <span className="net-legend__swatch net-legend__swatch--turn" /> Turnaround
       </p>
     </div>

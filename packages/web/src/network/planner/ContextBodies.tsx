@@ -19,6 +19,13 @@ export interface DescribedSelection {
   body: ReactNode;
 }
 
+/** The edits the context panel can trigger on the current selection. */
+export interface SelectionActions {
+  addRotation: (aircraftId: string, hour: number) => void;
+  removeFlight: (flightId: string) => void;
+  reassignFlight: (flightId: string, aircraftId: string) => void;
+}
+
 function Row({ label, value }: { label: string; value: ReactNode }): ReactNode {
   return (
     <div className="net-ctx__row">
@@ -33,8 +40,10 @@ export function describeSelection(
   plan: RoutePlan,
   aircraft: readonly PlannerAircraft[],
   allFlights: readonly RoutePlan['flights'][number][],
+  actions: SelectionActions,
 ): DescribedSelection | null {
   const { route } = plan;
+  const flyers = aircraft.filter((a) => !a.isPool);
 
   if (selection.kind === 'route') {
     const e = plan.economics;
@@ -84,6 +93,34 @@ export function describeSelection(
                 : `${String(flight.frequency.days.length)} days/wk`
             }
           />
+          {flyers.filter((a) => a.id !== flight.aircraftId).length > 0 && (
+            <div className="net-ctx__actions">
+              <span className="net-ctx__actions-label">Move to</span>
+              {flyers
+                .filter((a) => a.id !== flight.aircraftId)
+                .map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    className="net-btn net-btn--sm"
+                    onClick={() => {
+                      actions.reassignFlight(flight.id, a.id);
+                    }}
+                  >
+                    {a.registration}
+                  </button>
+                ))}
+            </div>
+          )}
+          <button
+            type="button"
+            className="net-btn net-btn--sm net-btn--danger"
+            onClick={() => {
+              actions.removeFlight(flight.id);
+            }}
+          >
+            Remove flight
+          </button>
         </div>
       ),
     };
@@ -154,6 +191,23 @@ export function describeSelection(
           </span>
         </div>
         <Row label="Slot cost" value={major(slot.costMinor)} />
+        {slot.availability !== 'full' && flyers.length > 0 && (
+          <div className="net-ctx__actions">
+            <span className="net-ctx__actions-label">Add rotation</span>
+            {flyers.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                className="net-btn net-btn--sm"
+                onClick={() => {
+                  actions.addRotation(a.id, hour);
+                }}
+              >
+                {a.registration}
+              </button>
+            ))}
+          </div>
+        )}
         <p className="net-ctx__hint">
           {slot.availability === 'full'
             ? 'This band is full — no slot to take here.'
