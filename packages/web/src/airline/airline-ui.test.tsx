@@ -155,27 +155,20 @@ describe('your airline page', () => {
     expect(screen.getByRole('button', { name: 'Rebrand for 25,000.00' })).toBeDisabled();
   });
 
-  it('shows the logo viewer and editor, and a logo change enables and is sent with the paid rebrand', async () => {
-    const updates = stubApi();
+  it('shows the logo viewer and a link to the dedicated logo studio', async () => {
+    stubApi();
     await renderPage();
 
-    // The viewer emblem renders for the airline, and the editor is present.
-    expect(await screen.findByLabelText('Tailfin Air logo')).toBeInTheDocument();
+    // The viewer emblem renders for the airline in the brand-logo section.
+    expect(await screen.findByLabelText('Current brand logo')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Brand logo' })).toBeInTheDocument();
 
-    // An untouched (default) logo is not a change, so the rebrand stays disabled.
-    const rebrand = screen.getByRole('button', { name: 'Rebrand for 25,000.00' });
-    expect(rebrand).toBeDisabled();
+    // Editing the logo is its own page, reached by a link rather than inline controls.
+    const edit = screen.getByRole('link', { name: 'Edit logo' });
+    expect(edit).toHaveAttribute('href', '/airline/logo');
 
-    // Changing the shape is a change — the paid rebrand unlocks.
-    fireEvent.click(screen.getByRole('button', { name: 'Shield' }));
-    expect(rebrand).toBeEnabled();
-
-    fireEvent.click(rebrand);
-    await screen.findByRole('status');
-
-    const body = updates.at(-1) as { logo?: { shape?: string } };
-    expect(body.logo?.shape).toBe('shield');
+    // The identity rebrand button is unrelated to the logo, and stays disabled clean.
+    expect(screen.getByRole('button', { name: 'Rebrand for 25,000.00' })).toBeDisabled();
   });
 
   it('sends only mutable fields, applies the server result, and updates shell cash', async () => {

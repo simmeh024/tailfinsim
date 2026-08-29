@@ -1,24 +1,32 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AIRLINE_LOGO_LAYER_TYPES,
   AirlineLogo,
   AirlineLogoCustomDesign,
   airlineLogoEquals,
+  ComposedAirlineLogo,
   CUSTOM_GRID_SIZE,
   defaultAirlineLogo,
   defaultCustomDesign,
+  isComposedLogo,
+  legacyToComposed,
+  newLayer,
+  type LegacyAirlineLogo,
 } from './airline-logo';
 
 /**
  * The brand logo spec (§15/§16).
  *
- * It is stored and compared as a value, so the two things that must hold are that
- * the schema refuses malformed emblems (a client cannot persist a bad colour or a
- * four-character monogram) and that `airlineLogoEquals` decides change correctly —
- * that equality is what the paid-rebrand dirty check turns on.
+ * It is stored and compared as a value across two shapes — a **legacy** emblem
+ * (#789: frame + single mark + three colours) and a **composed** one (the studio:
+ * frame + palette + a stack of layers). The two things that must hold are that the
+ * schema refuses malformed emblems of either shape, and that `airlineLogoEquals`
+ * decides change correctly — that equality is what the paid-rebrand dirty check
+ * turns on.
  */
 
-const BASE: AirlineLogo = {
+const LEGACY: LegacyAirlineLogo = {
   shape: 'roundel',
   mark: { kind: 'monogram', text: 'TF' },
   background: '#0b3d91',
@@ -26,77 +34,182 @@ const BASE: AirlineLogo = {
   accent: '#e6b800',
 };
 
-describe('the airline logo schema', () => {
+describe('the legacy logo schema (still readable)', () => {
   it('accepts a well-formed monogram and symbol emblem', () => {
-    expect(AirlineLogo.safeParse(BASE).success).toBe(true);
+    expect(AirlineLogo.safeParse(LEGACY).success).toBe(true);
     expect(
-      AirlineLogo.safeParse({ ...BASE, mark: { kind: 'symbol', symbol: 'wings' } }).success,
+      AirlineLogo.safeParse({ ...LEGACY, mark: { kind: 'symbol', symbol: 'wings' } }).success,
     ).toBe(true);
   });
 
   it('refuses a bad colour, an over-long monogram and an unknown symbol', () => {
-    expect(AirlineLogo.safeParse({ ...BASE, background: 'blue' }).success).toBe(false);
+    expect(AirlineLogo.safeParse({ ...LEGACY, background: 'blue' }).success).toBe(false);
     expect(
-      AirlineLogo.safeParse({ ...BASE, mark: { kind: 'monogram', text: 'TOOLONG' } }).success,
+      AirlineLogo.safeParse({ ...LEGACY, mark: { kind: 'monogram', text: 'TOOLONG' } }).success,
     ).toBe(false);
     expect(
-      AirlineLogo.safeParse({ ...BASE, mark: { kind: 'symbol', symbol: 'rocket' } }).success,
+      AirlineLogo.safeParse({ ...LEGACY, mark: { kind: 'symbol', symbol: 'rocket' } }).success,
     ).toBe(false);
   });
 
   it('rejects unknown keys — the emblem is a closed shape', () => {
-    expect(AirlineLogo.safeParse({ ...BASE, extra: true }).success).toBe(false);
+    expect(AirlineLogo.safeParse({ ...LEGACY, extra: true }).success).toBe(false);
+  });
+});
+
+describe('the composed logo schema', () => {
+  const COMPOSED = defaultAirlineLogo('TF');
+
+  it('accepts the default composed emblem, in the union and on its own', () => {
+    expect(ComposedAirlineLogo.safeParse(COMPOSED).success).toBe(true);
+    expect(AirlineLogo.safeParse(COMPOSED).success).toBe(true);
+    expect(isComposedLogo(COMPOSED)).toBe(true);
+  });
+
+  it('rejects an empty and an over-full layer stack', () => {
+    expect(ComposedAirlineLogo.safeParse({ ...COMPOSED, layers: [] }).success).toBe(false);
+    const many = Array.from({ length: 25 }, () => newLayer('circle'));
+    expect(ComposedAirlineLogo.safeParse({ ...COMPOSED, layers: many }).success).toBe(false);
+  });
+
+  it('rejects an out-of-range opacity and a paint that is neither slot, hex nor none', () => {
+    const bad = { ...COMPOSED, layers: [{ ...COMPOSED.layers[0], opacity: 2 }] };
+    expect(ComposedAirlineLogo.safeParse(bad).success).toBe(false);
+    const badPaint = { ...COMPOSED, layers: [{ ...COMPOSED.layers[0], fill: 'gold' }] };
+    expect(ComposedAirlineLogo.safeParse(badPaint).success).toBe(false);
+  });
+
+  it('accepts a layer painted with its own hex colour, and a transparent fill', () => {
+    const ownColour = { ...COMPOSED, layers: [{ ...COMPOSED.layers[0], fill: '#12ab34' }] };
+    expect(ComposedAirlineLogo.safeParse(ownColour).success).toBe(true);
+    const transparent = { ...COMPOSED, layers: [{ ...COMPOSED.layers[0], fill: 'none' }] };
+    expect(ComposedAirlineLogo.safeParse(transparent).success).toBe(true);
+  });
+
+  it('carries a rotation on the layer, rejecting one out of range', () => {
+    const rotated = { ...COMPOSED, layers: [{ ...COMPOSED.layers[0], rotation: 45 }] };
+    expect(ComposedAirlineLogo.safeParse(rotated).success).toBe(true);
+    const bad = { ...COMPOSED, layers: [{ ...COMPOSED.layers[0], rotation: 900 }] };
+    expect(ComposedAirlineLogo.safeParse(bad).success).toBe(false);
+  });
+
+  it('rejects a bad palette colour and unknown keys', () => {
+    expect(
+      ComposedAirlineLogo.safeParse({
+        ...COMPOSED,
+        palette: { ...COMPOSED.palette, mark: 'white' },
+      }).success,
+    ).toBe(false);
+    expect(ComposedAirlineLogo.safeParse({ ...COMPOSED, extra: true }).success).toBe(false);
+  });
+
+  it('accepts every layer content type from newLayer', () => {
+    for (const type of AIRLINE_LOGO_LAYER_TYPES) {
+      const logo = { ...COMPOSED, layers: [newLayer(type)] };
+      expect(ComposedAirlineLogo.safeParse(logo).success).toBe(true);
+    }
   });
 });
 
 describe('defaultAirlineLogo', () => {
-  it('uses the code as its monogram, upper-cased and clamped to three characters', () => {
+  it('returns a composed emblem whose initials layer carries the clamped code', () => {
     const logo = defaultAirlineLogo('tf');
-    expect(logo.mark).toEqual({ kind: 'monogram', text: 'TF' });
+    expect(logo.v).toBe(2);
+    const first = logo.layers[0]!.content;
+    expect(first.type === 'text' && first.text).toBe('TF');
     expect(AirlineLogo.safeParse(logo).success).toBe(true);
   });
 
   it('falls back to a valid monogram when the code has nothing usable', () => {
-    expect(defaultAirlineLogo('--').mark).toEqual({ kind: 'monogram', text: 'AIR' });
+    const first = defaultAirlineLogo('--').layers[0]!.content;
+    expect(first.type === 'text' && first.text).toBe('AIR');
+  });
+});
+
+describe('legacyToComposed', () => {
+  it('lifts a monogram legacy logo into a composed one that parses', () => {
+    const composed = legacyToComposed(LEGACY);
+    expect(isComposedLogo(composed)).toBe(true);
+    expect(ComposedAirlineLogo.safeParse(composed).success).toBe(true);
+    // Colours map onto the palette: mark = the old foreground, ring = the old accent.
+    expect(composed.palette.mark).toBe(LEGACY.foreground);
+    expect(composed.palette.ring).toBe(LEGACY.accent);
+    const first = composed.layers[0]!.content;
+    expect(first.type === 'text' && first.text).toBe('TF');
+  });
+
+  it('lifts a custom-shapes legacy logo, one layer per primitive', () => {
+    const legacy: LegacyAirlineLogo = {
+      ...LEGACY,
+      mark: {
+        kind: 'custom',
+        custom: {
+          design: 'shapes',
+          shapes: [
+            { type: 'circle', cx: 0.5, cy: 0.5, r: 0.3 },
+            { type: 'rect', cx: 0.4, cy: 0.4, w: 0.2, h: 0.2, rot: 10 },
+          ],
+        },
+      },
+    };
+    const composed = legacyToComposed(legacy);
+    expect(composed.layers).toHaveLength(2);
+    expect(ComposedAirlineLogo.safeParse(composed).success).toBe(true);
+  });
+
+  it('gives a legacy grid a valid fallback layer rather than an empty stack', () => {
+    const grid = '1'.repeat(CUSTOM_GRID_SIZE * CUSTOM_GRID_SIZE);
+    const legacy: LegacyAirlineLogo = {
+      ...LEGACY,
+      mark: { kind: 'custom', custom: { design: 'grid', cells: grid } },
+    };
+    const composed = legacyToComposed(legacy);
+    expect(composed.layers.length).toBeGreaterThanOrEqual(1);
+    expect(ComposedAirlineLogo.safeParse(composed).success).toBe(true);
   });
 });
 
 describe('airlineLogoEquals', () => {
+  const COMPOSED = defaultAirlineLogo('TF');
+
   it('treats two absent logos as equal, and one present as different', () => {
     expect(airlineLogoEquals(null, null)).toBe(true);
-    expect(airlineLogoEquals(BASE, null)).toBe(false);
-    expect(airlineLogoEquals(null, BASE)).toBe(false);
+    expect(airlineLogoEquals(COMPOSED, null)).toBe(false);
+    expect(airlineLogoEquals(null, COMPOSED)).toBe(false);
   });
 
-  it('compares by value across shape, colours and the mark', () => {
-    expect(airlineLogoEquals(BASE, { ...BASE })).toBe(true);
-    expect(airlineLogoEquals(BASE, { ...BASE, shape: 'shield' })).toBe(false);
-    expect(airlineLogoEquals(BASE, { ...BASE, accent: '#000000' })).toBe(false);
-    expect(airlineLogoEquals(BASE, { ...BASE, mark: { kind: 'monogram', text: 'XX' } })).toBe(
-      false,
-    );
+  it('compares composed logos by value, independent of key order', () => {
     expect(
-      airlineLogoEquals(
-        { ...BASE, mark: { kind: 'symbol', symbol: 'star' } },
-        { ...BASE, mark: { kind: 'symbol', symbol: 'star' } },
-      ),
+      airlineLogoEquals(COMPOSED, JSON.parse(JSON.stringify(COMPOSED)) as ComposedAirlineLogo),
     ).toBe(true);
-    expect(airlineLogoEquals(BASE, { ...BASE, mark: { kind: 'symbol', symbol: 'star' } })).toBe(
-      false,
-    );
+    expect(airlineLogoEquals(COMPOSED, { ...COMPOSED, shape: 'shield' })).toBe(false);
+    expect(
+      airlineLogoEquals(COMPOSED, {
+        ...COMPOSED,
+        palette: { ...COMPOSED.palette, accent: '#000000' },
+      }),
+    ).toBe(false);
+    // Same value, layer object keys built in a different order — jsonb does this.
+    const reordered: ComposedAirlineLogo = {
+      layers: COMPOSED.layers,
+      palette: COMPOSED.palette,
+      frameStroke: COMPOSED.frameStroke,
+      frameFill: COMPOSED.frameFill,
+      shape: COMPOSED.shape,
+      v: 2,
+    };
+    expect(airlineLogoEquals(COMPOSED, reordered)).toBe(true);
+  });
+
+  it('never equates a legacy logo with a composed one', () => {
+    expect(airlineLogoEquals(LEGACY, COMPOSED)).toBe(false);
   });
 });
 
-describe('the custom symbol design', () => {
+describe('the legacy custom symbol design (unchanged)', () => {
   const grid = '1'.repeat(CUSTOM_GRID_SIZE * CUSTOM_GRID_SIZE);
 
-  it('accepts a valid grid, shapes and path, inside AirlineLogo', () => {
-    const base = {
-      shape: 'roundel',
-      background: '#111111',
-      foreground: '#ffffff',
-      accent: '#e6b800',
-    };
+  it('accepts a valid grid, shapes and path inside a legacy logo', () => {
     for (const custom of [
       { design: 'grid', cells: grid },
       { design: 'shapes', shapes: [{ type: 'circle', cx: 0.5, cy: 0.5, r: 0.3 }] },
@@ -109,27 +222,10 @@ describe('the custom symbol design', () => {
         closed: false,
       },
     ]) {
-      expect(AirlineLogo.safeParse({ ...base, mark: { kind: 'custom', custom } }).success).toBe(
+      expect(AirlineLogo.safeParse({ ...LEGACY, mark: { kind: 'custom', custom } }).success).toBe(
         true,
       );
     }
-  });
-
-  it('refuses a wrong-length grid, an empty or over-full shape stack, and a one-point path', () => {
-    expect(
-      AirlineLogoCustomDesign.safeParse({ design: 'grid', cells: grid.slice(1) }).success,
-    ).toBe(false);
-    expect(AirlineLogoCustomDesign.safeParse({ design: 'shapes', shapes: [] }).success).toBe(false);
-    expect(
-      AirlineLogoCustomDesign.safeParse({
-        design: 'shapes',
-        shapes: Array.from({ length: 25 }, () => ({ type: 'circle', cx: 0.5, cy: 0.5, r: 0.2 })),
-      }).success,
-    ).toBe(false);
-    expect(
-      AirlineLogoCustomDesign.safeParse({ design: 'path', points: [{ x: 0, y: 0 }], closed: true })
-        .success,
-    ).toBe(false);
   });
 
   it('has a valid default for each tool', () => {
@@ -137,41 +233,5 @@ describe('the custom symbol design', () => {
       expect(AirlineLogoCustomDesign.safeParse(defaultCustomDesign(design)).success).toBe(true);
       expect(defaultCustomDesign(design).design).toBe(design);
     }
-  });
-
-  it('compares custom marks by value, independent of key order', () => {
-    const base = {
-      shape: 'square' as const,
-      background: '#111111',
-      foreground: '#ffffff',
-      accent: '#000000',
-    };
-    const a = {
-      ...base,
-      mark: {
-        kind: 'custom' as const,
-        custom: {
-          design: 'shapes' as const,
-          shapes: [{ type: 'rect' as const, cx: 0.5, cy: 0.5, w: 0.3, h: 0.3, rot: 0 }],
-        },
-      },
-    };
-    // Same value, object keys built in a different order — jsonb round-trips do this.
-    const b = {
-      ...base,
-      mark: {
-        kind: 'custom' as const,
-        custom: {
-          shapes: [{ h: 0.3, rot: 0, w: 0.3, cy: 0.5, cx: 0.5, type: 'rect' as const }],
-          design: 'shapes' as const,
-        },
-      },
-    };
-    expect(airlineLogoEquals(a, b)).toBe(true);
-    const c = {
-      ...base,
-      mark: { kind: 'custom' as const, custom: { design: 'grid' as const, cells: grid } },
-    };
-    expect(airlineLogoEquals(a, c)).toBe(false);
   });
 });

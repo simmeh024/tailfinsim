@@ -10,6 +10,7 @@ import { PlayersPage } from './admin/PlayersPage';
 import { SystemHealthPage } from './admin/SystemHealthPage';
 import { WorldsPage } from './admin/WorldsPage';
 import { AirlinePage } from './airline/AirlinePage';
+import { LogoStudioPage } from './airline/LogoStudioPage';
 import { RequireSession } from './auth/RequireSession';
 import { SessionProvider } from './auth/SessionProvider';
 import { CrewPage } from './crew/CrewPage';
@@ -99,6 +100,13 @@ export function App(): ReactNode {
                 make sense until an airline exists. */}
             <Route index element={<IndexRedirect />} />
             <Route path="/found" element={<FoundingPage />} />
+            {/*
+              The logo studio is a full-screen takeover, like the founding desk —
+              it fetches its own airline and saves the logo as its own rebrand, so
+              it sits outside the AppShell chrome rather than inside the `/airline`
+              page it is reached from.
+            */}
+            <Route path="/airline/logo" element={<LogoStudioPage />} />
             <Route element={<AppShell />}>
               <Route path="world" element={<WorldPage />} />
               <Route path="airline" element={<AirlinePage />} />
