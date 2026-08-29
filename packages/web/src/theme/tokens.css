@@ -96,6 +96,7 @@
   --world-grid: #dcecf750;
   --world-night: #02050978;
   --world-route: #7fd4ffe6;
+  --world-airport: #ffd27f;
   /*
    * The terrain basemap's tint and opacity (App. H.2).
    *
@@ -121,6 +122,11 @@
   --hq-accent-ground-ops: #e6cf5a;
   --hq-accent-safety-compliance: #4fd6c0;
   --hq-accent-neutral: #cbb389;
+  /* Decorative metals and label shadow retain the preview's existing colours. */
+  --hq-metal-bronze: #b0713a;
+  --hq-metal-silver: #a7b2bf;
+  --hq-metal-gold: #cba62f;
+  --world-label-shadow: rgb(0 0 0 / 60%);
 
   /*
    * The console's own surfaces.
@@ -206,6 +212,7 @@
      it much faster, and 0x78 there costs this one its AA contrast at night. */
   --world-night: #16283c50;
   --world-route: #0a63b0e6;
+  --world-airport: #b5651d;
   /* Darkened, where the dark theme leaves the terrain alone. This theme's sea is
      nearly white and its land is a deep green, so an untinted basemap — pale
      sage, pale tan, white ice — is *lighter than the ocean it sits in* and the
@@ -228,6 +235,10 @@
   --hq-accent-ground-ops: #8a6f0f;
   --hq-accent-safety-compliance: #12897a;
   --hq-accent-neutral: #7a6238;
+  --hq-metal-bronze: #b0713a;
+  --hq-metal-silver: #a7b2bf;
+  --hq-metal-gold: #cba62f;
+  --world-label-shadow: rgb(0 0 0 / 60%);
 
   /* See the dark set for why the console has its own ground. */
   --console-bg: #eeeae3;

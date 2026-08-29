@@ -4,11 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useTheme } from '../theme/ThemeProvider';
 
+import { fetchWorldAirports } from './airports-api';
 import { clampViewState, focusViewState } from './camera';
 import { COARSE_WORLD, LAND_DETAIL_ZOOM, loadDetailedWorld, type WorldGeometry } from './land';
 import {
   createWorldLayers,
   type RendererQuality,
+  type WorldAirport,
   type WorldLayerVisibility,
   type WorldRoute,
 } from './layers';
@@ -65,6 +67,7 @@ const DEFAULT_VISIBILITY: WorldLayerVisibility = {
   terminator: true,
   borders: true,
   terrain: true,
+  airports: true,
 };
 
 export interface WorldRendererProps {
@@ -85,6 +88,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   const [rendererFailed, setRendererFailed] = useState(false);
   const [palette, setPalette] = useState<WorldPalette>(() => readWorldPalette());
   const [geometry, setGeometry] = useState<WorldGeometry>(COARSE_WORLD);
+  const [airports, setAirports] = useState<readonly WorldAirport[]>([]);
   const transitionTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const frameRateMonitor = useRef(new SustainedFrameRateMonitor());
   const deckRef = useRef<DeckGLRef<MapView | GlobeView> | null>(null);
@@ -93,6 +97,18 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   useEffect(() => {
     const timer = globalThis.setInterval(() => setNow(new Date()), 60_000);
     return () => globalThis.clearInterval(timer);
+  }, []);
+
+  // The served airports/cities, fetched once. A resilient read: it resolves to an
+  // empty list rather than throwing, so the globe renders with or without dots.
+  useEffect(() => {
+    let live = true;
+    void fetchWorldAirports().then((list) => {
+      if (live) setAirports(list);
+    });
+    return () => {
+      live = false;
+    };
   }, []);
 
   const { inGameTime, speedMultiplier } = useWorldClock();
@@ -191,12 +207,13 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
         projection,
         quality,
         routes,
+        airports,
         darkness,
         land: geometry.land,
         borders: geometry.borders,
         visibility,
       }),
-    [palette, projection, quality, routes, darkness, geometry, visibility],
+    [palette, projection, quality, routes, airports, darkness, geometry, visibility],
   );
   const view = useMemo(
     () =>
@@ -363,6 +380,13 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
             onClick={() => toggleLayer('routes')}
           >
             Routes
+          </button>
+          <button
+            type="button"
+            aria-pressed={visibility.airports}
+            onClick={() => toggleLayer('airports')}
+          >
+            Airports
           </button>
           <button
             type="button"

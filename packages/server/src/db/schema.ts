@@ -3290,10 +3290,21 @@ export const executiveHire = pgTable(
     candidateName: text('candidate_name').notNull(),
     /** Salary per game month, minor units, snapshotted at hire. */
     monthlySalaryMinor: bigint('monthly_salary_minor', { mode: 'number' }).notNull(),
+    /**
+     * Which executive office (0-based) this hire sits in. Offices are generic, so
+     * this is placement, not a role — it just makes the person appear in the office
+     * the player clicked. Nullable for rows written before it existed; the hire
+     * logic always sets it now, and never to an occupied office.
+     */
+    officeIndex: integer('office_index'),
     hiredAt: timestamp('hired_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex('executive_hire_airline_candidate_key').on(table.airlineId, table.candidateId),
+    // One person per office: a non-null office_index is unique within an airline.
+    uniqueIndex('executive_hire_airline_office_key')
+      .on(table.airlineId, table.officeIndex)
+      .where(sql`${table.officeIndex} is not null`),
   ],
 );
 

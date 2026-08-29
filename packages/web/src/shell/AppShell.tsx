@@ -1,11 +1,22 @@
 import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router';
 
-import type { OfficeSeatId, OfficeStateResponse, OwnAirlineResponse } from '@tailfin/shared';
+import type {
+  ExecutiveFloorState,
+  OfficeSeatId,
+  OfficeStateResponse,
+  OwnAirlineResponse,
+} from '@tailfin/shared';
 
 import { fetchOwnAirline, formatMinorUnits } from '../airline/api';
 import { AccountBadge } from '../auth/AccountBadge';
-import { expandOffice, fetchOffice } from '../hq/api';
+import {
+  expandOffice,
+  fetchExecutiveFloor,
+  fetchOffice,
+  unlockExecutiveFloor,
+  unlockExecutiveOffice,
+} from '../hq/api';
 import { HqLayoutPanel, type ExpandResult } from '../hq/HqLayoutPanel';
 import { useTheme } from '../theme/ThemeProvider';
 import { BuildBadge } from '../version/BuildBadge';
@@ -130,6 +141,11 @@ function ContextPanel({
   onExpand,
   selectedOffice,
   onSelectOffice,
+  execFloor,
+  onUnlockExecFloor,
+  onOpenExecOffice,
+  selectedExecOffice,
+  onSelectExecOffice,
 }: {
   open: boolean;
   onToggle: () => void;
@@ -139,11 +155,24 @@ function ContextPanel({
   selectedOffice: OfficeSeatId | null;
   /** Pick an office on the plan — the Headquarters page opens its drawer on it. */
   onSelectOffice: (seat: OfficeSeatId) => void;
+  /** The executive floor's state — the same the C-Suite page reads. */
+  execFloor: ExecutiveFloorState | null;
+  onUnlockExecFloor: () => Promise<ExpandResult>;
+  onOpenExecOffice: () => Promise<ExpandResult>;
+  /** The executive office the C-Suite page is managing (its drawer). */
+  selectedExecOffice: number | null;
+  /** Pick an executive office on the plan — the C-Suite page opens its drawer on it. */
+  onSelectExecOffice: (index: number | null) => void;
 }): ReactNode {
   const { selection, clear, attachPanelBody } = useContextSelection();
-  // The Head Office floor-plan belongs to the Headquarters page, not to every
-  // screen — elsewhere the panel is the plain selection surface it started as.
-  const onHeadquarters = useLocation().pathname.startsWith('/headquarters');
+  const pathname = useLocation().pathname;
+  // The Head Office floor-plan is the panel's home on the two office screens —
+  // Headquarters (defaulting to the ground floor) and the C-Suite (defaulting to
+  // the executive floor). Both get the same panel and the same floor pager;
+  // elsewhere the panel is the plain selection surface it started as.
+  const onHeadquarters = pathname.startsWith('/headquarters');
+  const onCSuite = pathname.startsWith('/c-suite');
+  const onOfficeScreen = onHeadquarters || onCSuite;
 
   if (!open) {
     return (
@@ -162,7 +191,7 @@ function ContextPanel({
             className="panel__title"
             tabIndex={selection === null ? undefined : -1}
           >
-            {selection?.title ?? (onHeadquarters ? 'Head Office' : 'Context')}
+            {selection?.title ?? (onOfficeScreen ? 'Head Office' : 'Context')}
           </h2>
           {selection?.subtitle !== undefined && (
             <p className="panel__subtitle">{selection.subtitle}</p>
@@ -192,12 +221,18 @@ function ContextPanel({
       </div>
       <div className="panel__body">
         {selection === null ? (
-          onHeadquarters ? (
+          onOfficeScreen ? (
             <HqLayoutPanel
               office={office}
               onExpand={onExpand}
               onSelectSeat={onSelectOffice}
               selectedSeat={selectedOffice}
+              initialFloor={onCSuite ? 'executive' : 'ground'}
+              execFloor={execFloor}
+              onUnlockExecFloor={onUnlockExecFloor}
+              onOpenExecOffice={onOpenExecOffice}
+              selectedExecOffice={selectedExecOffice}
+              onSelectExecOffice={onSelectExecOffice}
             />
           ) : (
             <p>
@@ -267,6 +302,12 @@ export function AppShell(): ReactNode {
   // interactive plan is the context panel, which the shell owns; the Headquarters
   // page reads it to open its drawer and clears it on a hire or on unmount.
   const [selectedOffice, setSelectedOffice] = useState<OfficeSeatId | null>(null);
+  // The executive floor is the panel's second floor, owned here for the same
+  // reason the ground floor is: the plan that manages it is the shell's context
+  // panel, and the C-Suite page reads the same state so the roster and the plan
+  // never disagree. `selectedExecOffice` is the office the C-Suite drawer is on.
+  const [execFloor, setExecFloor] = useState<ExecutiveFloorState | null>(null);
+  const [selectedExecOffice, setSelectedExecOffice] = useState<number | null>(null);
 
   const loadOwnAirline = useCallback(async () => {
     setOwnAirlineLoading(true);
@@ -284,6 +325,10 @@ export function AppShell(): ReactNode {
     setOffice(await fetchOffice());
   }, []);
 
+  const loadExecFloor = useCallback(async () => {
+    setExecFloor(await fetchExecutiveFloor());
+  }, []);
+
   // Buying an expansion moves real money, so it lives with the office state the
   // shell owns; the panel drives it and shows the result. Success replaces the
   // office in place, so the plan grows without a refetch.
@@ -296,10 +341,32 @@ export function AppShell(): ReactNode {
     return { ok: false, message: outcome.failure.message };
   }, []);
 
+  // Opening the executive floor and its offices both move money, so they live with
+  // the exec state the shell owns, exactly like expansion — the plan drives them
+  // and the C-Suite page sees the result through the shared state.
+  const onUnlockExecFloor = useCallback(async (): Promise<ExpandResult> => {
+    const outcome = await unlockExecutiveFloor();
+    if (outcome.ok) {
+      setExecFloor(outcome.state);
+      return { ok: true };
+    }
+    return { ok: false, message: outcome.failure.message };
+  }, []);
+
+  const onOpenExecOffice = useCallback(async (): Promise<ExpandResult> => {
+    const outcome = await unlockExecutiveOffice();
+    if (outcome.ok) {
+      setExecFloor(outcome.state);
+      return { ok: true };
+    }
+    return { ok: false, message: outcome.failure.message };
+  }, []);
+
   useEffect(() => {
     void loadOwnAirline();
     void loadOffice();
-  }, [loadOwnAirline, loadOffice]);
+    void loadExecFloor();
+  }, [loadOwnAirline, loadOffice, loadExecFloor]);
 
   const outletContext: OwnAirlineShellContext = {
     ownAirline,
@@ -312,6 +379,11 @@ export function AppShell(): ReactNode {
     reloadOffice: loadOffice,
     selectedOffice,
     selectOffice: setSelectedOffice,
+    execFloor,
+    replaceExecFloor: setExecFloor,
+    reloadExecFloor: loadExecFloor,
+    selectedExecOffice,
+    selectExecOffice: setSelectedExecOffice,
   };
 
   return (
@@ -328,6 +400,11 @@ export function AppShell(): ReactNode {
           onExpand={onExpand}
           selectedOffice={selectedOffice}
           onSelectOffice={setSelectedOffice}
+          execFloor={execFloor}
+          onUnlockExecFloor={onUnlockExecFloor}
+          onOpenExecOffice={onOpenExecOffice}
+          selectedExecOffice={selectedExecOffice}
+          onSelectExecOffice={setSelectedExecOffice}
         />
         <StatusStrip ownAirline={ownAirline} />
       </div>
@@ -354,4 +431,16 @@ export interface OwnAirlineShellContext {
   selectedOffice: OfficeSeatId | null;
   /** Select an office (or clear with null). The plan and the page share this. */
   selectOffice: (seat: OfficeSeatId | null) => void;
+  /** The executive floor behind the panel; null until loaded or when unfounded. */
+  execFloor: ExecutiveFloorState | null;
+  /** Push a fresh executive-floor state (a hire, a fire, an unlock) into the panel. */
+  replaceExecFloor: (value: ExecutiveFloorState | null) => void;
+  reloadExecFloor: () => Promise<void>;
+  /**
+   * The executive office selected on the plan, or null. The C-Suite page reads it
+   * to open its staffing drawer on that office.
+   */
+  selectedExecOffice: number | null;
+  /** Select an executive office by index (or clear with null). Shared plan ↔ page. */
+  selectExecOffice: (index: number | null) => void;
 }

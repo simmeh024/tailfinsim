@@ -208,4 +208,34 @@ describeDb('the executive floor, on the database', () => {
     expect(now.ok).toBe(true);
     expect(now.ok && now.state.hires.map((h) => h.candidateId)).toEqual([second!.id]);
   });
+
+  it('places a hire in the office the player clicked, not the first free one', async () => {
+    const a = await fixtures.create();
+    await seedOpenFloor(a, 4);
+    // Offices 0 and 1 are empty; hiring into office 2 must land in office 2.
+    const result = await hireExecutive(db.db, own(a), first!.id, 2);
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.state.hires).toEqual([
+      expect.objectContaining({ candidateId: first!.id, officeIndex: 2 }),
+    ]);
+  });
+
+  it('refuses a hire into an office that is already taken', async () => {
+    const a = await fixtures.create();
+    await seedOpenFloor(a, 4);
+    await hireExecutive(db.db, own(a), first!.id, 2);
+    const clash = await hireExecutive(db.db, own(a), second!.id, 2);
+    expect(clash).toEqual({ ok: false, code: 'office_occupied' });
+  });
+
+  it('falls back to the lowest free office when none is named', async () => {
+    const a = await fixtures.create();
+    await seedOpenFloor(a, 4);
+    await hireExecutive(db.db, own(a), first!.id, 1); // office 1 taken
+    const auto = await hireExecutive(db.db, own(a), second!.id); // no office named
+    // Lowest free is office 0.
+    expect(auto.ok && auto.state.hires.find((h) => h.candidateId === second!.id)?.officeIndex).toBe(
+      0,
+    );
+  });
 });
