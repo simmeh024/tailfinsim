@@ -320,7 +320,7 @@ export function OverviewPage(): ReactNode {
           The last refresh failed. These figures are from <Ago at={overview.lastLoadedAt} />.
         </p>
       )}
-      {overview.loading && <p className="admin__note">Loading…</p>}
+      {overview.loading && <p className="admin__note">Loading overview…</p>}
       {overview.failed && value === null && (
         <p className="admin__note" role="alert">
           Could not load the overview.
