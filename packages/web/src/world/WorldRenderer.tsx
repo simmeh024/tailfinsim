@@ -502,13 +502,13 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     });
   }, [selectedRoute, palette.route, quality]);
 
-  // The competition's routes as their own togglable layer — grey, so ownership reads
+  // The competition's routes as their own togglable layer — neutral, so ownership reads
   // as colour (M7-03). Below the un-bundle zoom they collapse into corridors so the
   // whole-world "all traffic" view is legible rather than a hairball; above it, every
   // leg draws on its own. The player's own routes always stay individual.
   const rivals = useMemo(() => map.traffic.filter((r) => !r.own), [map.traffic]);
   const corridorGrid = corridorGridForZoom(viewState.zoom);
-  const grey: RgbaColor = palette.border;
+  const neutral: RgbaColor = palette.border;
 
   const rivalLinesLayer = useMemo(() => {
     if (!showRivals || corridorGrid > 0 || rivals.length === 0) return false;
@@ -516,7 +516,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       id: 'world-rival-routes',
       data: rivals,
       getPath: (r) => flightPath(r.source, r.target, routeSeed(r.id), quality === 'full' ? 64 : 32),
-      getColor: [grey[0], grey[1], grey[2], 175],
+      getColor: [neutral[0], neutral[1], neutral[2], 175],
       getWidth: 1.5,
       widthUnits: 'pixels',
       widthMinPixels: 1,
@@ -528,7 +528,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       parameters: { cullMode: 'none' },
       getPolygonOffset: () => [0, -60000],
     });
-  }, [showRivals, corridorGrid, rivals, grey, quality, onPlaneClick]);
+  }, [showRivals, corridorGrid, rivals, neutral, quality, onPlaneClick]);
 
   const corridorLayer = useMemo(() => {
     if (!showRivals || corridorGrid === 0 || rivals.length === 0) return false;
@@ -540,7 +540,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       getPath: (c) => greatCirclePath(c.source, c.target, 24),
       // Weight says how many routes run the corridor; a lone leg reads as thin as it
       // would un-bundled, a trunk corridor as a fat band.
-      getColor: [grey[0], grey[1], grey[2], 205],
+      getColor: [neutral[0], neutral[1], neutral[2], 205],
       getWidth: (c) => 1 + 5 * (c.count / busiest),
       widthUnits: 'pixels',
       widthMinPixels: 1,
@@ -551,7 +551,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       parameters: { cullMode: 'none' },
       getPolygonOffset: () => [0, -60000],
     });
-  }, [showRivals, corridorGrid, rivals, grey]);
+  }, [showRivals, corridorGrid, rivals, neutral]);
 
   // A slow directional shimmer travelling along the player's own routes — a short
   // brightened window sliding from origin to destination. Purely `phase`-driven, and
@@ -964,7 +964,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
             </li>
             <li>
               <span className="world-renderer__legend-line world-renderer__legend-line--rival" />
-              Rivals — grey (toggle “Rivals”)
+              Rivals — the competition’s routes (toggle “Rivals”)
             </li>
             <li>
               <span className="world-renderer__legend-line world-renderer__legend-line--corridor" />
