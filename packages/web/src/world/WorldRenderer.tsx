@@ -306,10 +306,17 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   );
   const hubIcaos = useMemo(() => new Set(map.hubs.map((h) => h.icao)), [map.hubs]);
 
-  // Which airports the fleet can reach from a hub, for the map's highlight. Only
-  // meaningful once there is a hub and a plane; otherwise it lights nothing.
+  // Which airports the fleet can reach from a hub, for the map's highlight — but
+  // only when there is a fleet and a hub to highlight *against*. With no aircraft
+  // yet (or before the fleet loads) there is no in-range subset, so the highlight is
+  // `undefined` and every airport draws at full strength: a new player must still
+  // see the whole map, not a field faded to nothing. The reachable set fades the
+  // rest back only once some airports genuinely stand out from it.
   const reachableIcaos = useMemo(
-    () => reachableAirportIcaos(airports, map.hubs, maxRangeNm),
+    () =>
+      maxRangeNm > 0 && map.hubs.length > 0
+        ? reachableAirportIcaos(airports, map.hubs, maxRangeNm)
+        : undefined,
     [airports, map.hubs, maxRangeNm],
   );
 
@@ -387,6 +394,9 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       getAngle: (p) => p.angle,
       getColor: palette.route,
       billboard: true,
+      // Lift the plane off the surface like the routes and airports, so it is not
+      // depth-rejected by the terrain at the whole-globe zoom.
+      getPolygonOffset: () => [0, -60000],
       parameters: { cullMode: 'none' },
     });
   }, [map.routes, phase, palette.route]);

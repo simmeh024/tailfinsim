@@ -236,6 +236,26 @@ const DATA_TEXTURE_SAMPLER = {
 const TERMINATOR_POLYGON_OFFSET = (): [number, number] => [0, -20000];
 
 /**
+ * Depth bias that lifts the route/airport/hub overlay in front of the surface it
+ * sits on.
+ *
+ * **This is why the markers vanished at the whole-globe zoom.** An airport dot and
+ * a hub sit *on* the sphere, at the same depth as the ocean fill and the terrain
+ * that cover it. Coincident depth is a coin toss the surface wins, and it wins most
+ * at the far-out zoom where the depth buffer's precision near the surface is
+ * coarsest — so the dots were being depth-rejected there while the same dots showed
+ * once the camera came close. The grid and borders survived because deck.gl's
+ * default per-layer offset was just enough for thin lines and not for a disk.
+ *
+ * The fix is the terminator's: a uniform negative offset pulls the whole overlay a
+ * hair towards the camera, clearing the surface at every zoom. Uniform, so the near
+ * and far hemispheres keep their order and the far side stays hidden behind the
+ * globe rather than showing through it — the reason this is an offset and not
+ * `depthTest: false`.
+ */
+const OVERLAY_POLYGON_OFFSET = (): [number, number] => [0, -60000];
+
+/**
  * A `BitmapLayer` that rebuilds its mesh when the viewport that draws it changes.
  *
  * **This is what keeps the globe from going black after a projection switch.**
@@ -607,6 +627,7 @@ export function createWorldLayers({
         capRounded: true,
         jointRounded: true,
         parameters: { cullMode: 'none' },
+        getPolygonOffset: OVERLAY_POLYGON_OFFSET,
       }),
     visibility.airports &&
       new ScatterplotLayer<WorldAirport>({
@@ -624,6 +645,11 @@ export function createWorldLayers({
         getFillColor: reachableIcaos === undefined ? palette.airport : airportFill,
         // Re-evaluate the fill when the reachable set changes (a new plane, a new hub).
         updateTriggers: { getFillColor: reachableIcaos },
+        // Billboarded so each dot faces the camera at a steady pixel size on the
+        // globe, and lifted off the surface so it is not depth-rejected by the
+        // terrain at the far-out zoom (see OVERLAY_POLYGON_OFFSET).
+        billboard: true,
+        getPolygonOffset: OVERLAY_POLYGON_OFFSET,
         // A dark ring so a bright dot still reads where it sits on pale terrain, not
         // just against the ocean. One draw call for the whole field.
         stroked: true,
@@ -661,6 +687,10 @@ export function createWorldLayers({
         lineWidthUnits: 'pixels',
         getLineWidth: 2.5,
         lineWidthMinPixels: 2,
+        // Same as the airports: face the camera and clear the surface depth so a hub
+        // is never swallowed by the terrain at the whole-globe zoom.
+        billboard: true,
+        getPolygonOffset: OVERLAY_POLYGON_OFFSET,
         parameters: { cullMode: 'none' },
       }),
   ];
