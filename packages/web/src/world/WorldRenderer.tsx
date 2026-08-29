@@ -3,6 +3,8 @@ import { IconLayer } from '@deck.gl/layers';
 import DeckGL, { type DeckGLRef } from '@deck.gl/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { fetchFleetAirframes, fetchFleetCatalogue } from '../fleet/api';
+import { openRoute, type OpenRouteOutcome } from '../network/api';
 import { useTheme } from '../theme/ThemeProvider';
 
 import { fetchWorldAirports } from './airports-api';
@@ -20,6 +22,7 @@ import { fetchWorldMap, type WorldMapData, type WorldMapRoute } from './map-api'
 import { readWorldPalette } from './palette';
 import { SustainedFrameRateMonitor, type FrameRateSample } from './performance';
 import { persistProjection, readInitialProjection, type WorldProjection } from './projection';
+import { bestHub, fleetMaxRangeNm, reachableAirportIcaos } from './route-create';
 import { createDarknessField } from './terminator';
 import { useWorldClock } from './useWorldClock';
 import { WorldClockDisplay } from './WorldClockDisplay';
@@ -84,6 +87,24 @@ const PLANE_ICON = 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.o
 /** How fast a plane crosses its whole route: ~1/26 per second, so a full pass is ~26s. */
 const PLANE_SPEED_PER_SECOND = 0.038;
 
+/** The server's route refusal, in the player's words. */
+function describeOpenFailure(outcome: Extract<OpenRouteOutcome, { ok: false }>): string {
+  switch (outcome.kind) {
+    case 'duplicate':
+      return 'You already fly this route.';
+    case 'same-airport':
+      return 'Choose an airport away from your hub.';
+    case 'unknown-airport':
+      return 'That airport is not on file.';
+    case 'no-airline':
+      return 'Found an airline first.';
+    case 'active-world-required':
+      return 'Select an active world first.';
+    case 'unreachable':
+      return outcome.reachability.detail || `Out of reach (${outcome.reachability.reason}).`;
+  }
+}
+
 export interface WorldRendererProps {
   routes?: readonly WorldRoute[];
 }
@@ -104,8 +125,11 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   const [geometry, setGeometry] = useState<WorldGeometry>(COARSE_WORLD);
   const [airports, setAirports] = useState<readonly WorldAirport[]>([]);
   const [map, setMap] = useState<WorldMapData>({ hubs: [], routes: [] });
+  const [maxRangeNm, setMaxRangeNm] = useState(0);
   const [phase, setPhase] = useState(0);
   const [selectedAirport, setSelectedAirport] = useState<WorldAirport | null>(null);
+  const [opening, setOpening] = useState(false);
+  const [openNote, setOpenNote] = useState<string | null>(null);
   const transitionTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const frameRateMonitor = useRef(new SustainedFrameRateMonitor());
   const deckRef = useRef<DeckGLRef<MapView | GlobeView> | null>(null);
@@ -129,12 +153,35 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   }, []);
 
   // The player's own overlay — hubs and routes. Also resilient: no airline yet is a
-  // 409, which resolves to an empty overlay, so the map draws without it.
+  // 409, which resolves to an empty overlay, so the map draws without it. Kept as a
+  // callback so opening a route can pull the fresh overlay straight after.
+  const refreshMap = useCallback(async () => {
+    const data = await fetchWorldMap();
+    setMap(data);
+  }, []);
   useEffect(() => {
     let live = true;
     void fetchWorldMap().then((data) => {
       if (live) setMap(data);
     });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // The fleet's longest range, joined from owned airframes to the catalogue's
+  // per-type range. It decides which airports the map lights as reachable and
+  // whether the panel offers to open a route. Resilient: any failure leaves it 0,
+  // which simply lights nothing — the same as owning no aircraft.
+  useEffect(() => {
+    let live = true;
+    void Promise.all([fetchFleetAirframes(), fetchFleetCatalogue()])
+      .then(([fleet, catalogue]) => {
+        if (live) setMaxRangeNm(fleetMaxRangeNm(fleet.airframes, catalogue.types));
+      })
+      .catch(() => {
+        /* no fleet yet, or not signed in: nothing is in range, which is correct. */
+      });
     return () => {
       live = false;
     };
@@ -257,11 +304,41 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       map.routes.filter((r) => r.originIcao === icao || r.destinationIcao === icao),
     [map.routes],
   );
-  const onAirportClick = useCallback(
-    (airport: WorldAirport) => {
-      if (routesThrough(airport.icao).length > 0) setSelectedAirport(airport);
+  const hubIcaos = useMemo(() => new Set(map.hubs.map((h) => h.icao)), [map.hubs]);
+
+  // Which airports the fleet can reach from a hub, for the map's highlight. Only
+  // meaningful once there is a hub and a plane; otherwise it lights nothing.
+  const reachableIcaos = useMemo(
+    () => reachableAirportIcaos(airports, map.hubs, maxRangeNm),
+    [airports, map.hubs, maxRangeNm],
+  );
+
+  // Any airport opens the panel now — reachable or not — so a click can offer to
+  // open a route, show why it can't, or list the routes already there.
+  const onAirportClick = useCallback((airport: WorldAirport) => {
+    setSelectedAirport(airport);
+    setOpenNote(null);
+  }, []);
+
+  const openRouteFrom = useCallback(
+    async (originIcao: string, destinationIcao: string) => {
+      setOpening(true);
+      setOpenNote(null);
+      try {
+        const outcome = await openRoute(originIcao, destinationIcao);
+        if (outcome.ok) {
+          setOpenNote('Route opened.');
+          await refreshMap();
+        } else {
+          setOpenNote(describeOpenFailure(outcome));
+        }
+      } catch {
+        setOpenNote('Could not open the route just now. Try again.');
+      } finally {
+        setOpening(false);
+      }
     },
-    [routesThrough],
+    [refreshMap],
   );
 
   const layers = useMemo(
@@ -273,6 +350,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
         routes: playerRoutes,
         airports,
         hubs: map.hubs,
+        reachableIcaos,
         onAirportClick,
         darkness,
         land: geometry.land,
@@ -286,6 +364,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       playerRoutes,
       airports,
       map.hubs,
+      reachableIcaos,
       onAirportClick,
       darkness,
       geometry,
@@ -432,6 +511,8 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
           views={view}
           viewState={viewState}
           layers={allLayers}
+          // A few pixels of slack so the small airport dots are easy to click.
+          pickingRadius={5}
           useDevicePixels={quality === 'full' ? true : 1}
           onViewStateChange={({ viewState: next }) => {
             setViewState(clampViewState(next));
@@ -443,47 +524,106 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
 
       <div className="world-renderer__atmosphere" aria-hidden="true" />
 
-      {selectedAirport !== null && (
-        <div
-          className="world-renderer__route-panel"
-          role="dialog"
-          aria-label={`Routes at ${selectedAirport.name}`}
-        >
-          <div className="world-renderer__route-head">
-            <div>
-              <p className="world-renderer__route-eyebrow">Route planner</p>
-              <p className="world-renderer__route-title">{selectedAirport.name}</p>
-            </div>
-            <button
-              type="button"
-              className="world-renderer__route-close"
-              aria-label="Close"
-              onClick={() => setSelectedAirport(null)}
+      {selectedAirport !== null &&
+        (() => {
+          const airport = selectedAirport;
+          const isHub = hubIcaos.has(airport.icao);
+          const existing = routesThrough(airport.icao);
+          const reach = isHub ? null : bestHub(airport.position, map.hubs, maxRangeNm);
+          const alreadyFromHub =
+            reach !== null &&
+            existing.some(
+              (r) => r.originIcao === reach.hub.icao && r.destinationIcao === airport.icao,
+            );
+          const distance = (nm: number): string => Math.round(nm).toLocaleString();
+          return (
+            <div
+              className="world-renderer__route-panel"
+              role="dialog"
+              aria-label={`Routes at ${airport.name}`}
             >
-              ×
-            </button>
-          </div>
-          <ul className="world-renderer__route-list">
-            {routesThrough(selectedAirport.icao).map((r) => {
-              const outbound = r.originIcao === selectedAirport.icao;
-              const other = outbound ? r.destinationName : r.originName;
-              const otherIcao = outbound ? r.destinationIcao : r.originIcao;
-              return (
-                <li key={r.id} className="world-renderer__route-item">
-                  <span className="world-renderer__route-dir" aria-hidden="true">
-                    {outbound ? '→' : '←'}
-                  </span>
-                  <span className="world-renderer__route-name">{other}</span>
-                  <span className="world-renderer__route-code">{otherIcao}</span>
-                </li>
-              );
-            })}
-          </ul>
-          <a href="/network" className="world-renderer__route-link">
-            Open route planner
-          </a>
-        </div>
-      )}
+              <div className="world-renderer__route-head">
+                <div>
+                  <p className="world-renderer__route-eyebrow">
+                    {isHub ? 'Your hub' : 'Route planner'}
+                  </p>
+                  <p className="world-renderer__route-title">{airport.name}</p>
+                  <p className="world-renderer__route-code">{airport.icao}</p>
+                </div>
+                <button
+                  type="button"
+                  className="world-renderer__route-close"
+                  aria-label="Close"
+                  onClick={() => setSelectedAirport(null)}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="world-renderer__route-create">
+                {isHub ? (
+                  <p className="world-renderer__route-muted">One of your hubs.</p>
+                ) : map.hubs.length === 0 ? (
+                  <p className="world-renderer__route-muted">
+                    Found an airline and a hub to open routes.
+                  </p>
+                ) : maxRangeNm <= 0 ? (
+                  <p className="world-renderer__route-muted">
+                    No aircraft yet — acquire one to open routes from here.
+                  </p>
+                ) : reach === null ? null : alreadyFromHub ? (
+                  <p className="world-renderer__route-muted">
+                    Already flying from {reach.hub.name}.
+                  </p>
+                ) : reach.reachable ? (
+                  <button
+                    type="button"
+                    className="world-renderer__route-cta"
+                    disabled={opening}
+                    onClick={() => void openRouteFrom(reach.hub.icao, airport.icao)}
+                  >
+                    {opening
+                      ? 'Opening…'
+                      : `Open route from ${reach.hub.name} · ${distance(reach.distanceNm)} nm`}
+                  </button>
+                ) : (
+                  <p className="world-renderer__route-muted">
+                    Out of range — {distance(reach.distanceNm)} nm from {reach.hub.name}, but your
+                    aircraft reach {distance(maxRangeNm)} nm.
+                  </p>
+                )}
+                {openNote !== null && (
+                  <p className="world-renderer__route-note" role="status">
+                    {openNote}
+                  </p>
+                )}
+              </div>
+
+              {existing.length > 0 && (
+                <ul className="world-renderer__route-list">
+                  {existing.map((r) => {
+                    const outbound = r.originIcao === airport.icao;
+                    const other = outbound ? r.destinationName : r.originName;
+                    const otherIcao = outbound ? r.destinationIcao : r.originIcao;
+                    return (
+                      <li key={r.id} className="world-renderer__route-item">
+                        <span className="world-renderer__route-dir" aria-hidden="true">
+                          {outbound ? '→' : '←'}
+                        </span>
+                        <span className="world-renderer__route-name">{other}</span>
+                        <span className="world-renderer__route-code">{otherIcao}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+
+              <a href="/network" className="world-renderer__route-link">
+                Open route planner
+              </a>
+            </div>
+          );
+        })()}
 
       <WorldClockDisplay inGameTime={inGameTime} speedMultiplier={speedMultiplier} />
 

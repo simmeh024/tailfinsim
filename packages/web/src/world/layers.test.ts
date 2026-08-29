@@ -1,4 +1,4 @@
-import { ArcLayer, ScatterplotLayer } from '@deck.gl/layers';
+import { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 import { describe, expect, it } from 'vitest';
 
 import { COARSE_WORLD } from './land';
@@ -33,7 +33,7 @@ const antimeridianRoute: WorldRoute = {
 };
 
 describe('projection-independent world layers', () => {
-  it('uses one great-circle arc layer for an antimeridian crossing', () => {
+  it('draws one continuous great-circle line across an antimeridian crossing', () => {
     const layers = createWorldLayers({
       palette,
       quality: 'full',
@@ -54,13 +54,22 @@ describe('projection-independent world layers', () => {
       },
     });
     const routes = layers.find(
-      (layer): layer is ArcLayer<WorldRoute> =>
-        layer instanceof ArcLayer && layer.id === 'world-routes',
+      (layer): layer is PathLayer<WorldRoute> =>
+        layer instanceof PathLayer && layer.id === 'world-routes',
     );
 
-    expect(routes).toBeInstanceOf(ArcLayer);
-    expect(routes?.props.greatCircle).toBe(true);
+    expect(routes).toBeInstanceOf(PathLayer);
     expect(routes?.props.data).toEqual([antimeridianRoute]);
+
+    // The path is a single unwrapped polyline: every step stays under 180° of the
+    // one before it, so there is no stray snap-back line across the whole map, and
+    // the longitude genuinely climbs past ±180 rather than resetting.
+    const getPath = routes?.props.getPath as (route: WorldRoute) => [number, number][];
+    const path = getPath(antimeridianRoute);
+    for (let i = 1; i < path.length; i += 1) {
+      expect(Math.abs(path[i]![0] - path[i - 1]![0])).toBeLessThan(180);
+    }
+    expect(Math.max(...path.map(([lon]) => lon))).toBeGreaterThan(180);
   });
 
   it('keeps the layer ids and visibility independent of projection', () => {
@@ -248,7 +257,7 @@ describe('projection-independent world layers', () => {
     expect(terrain?.props.opacity).toBeCloseTo(palette.terrain[3] / 255, 5);
   });
 
-  it('halves route tessellation in reduced mode', () => {
+  it('samples the route line with fewer points in reduced mode', () => {
     const full = createWorldLayers({
       palette,
       quality: 'full',
@@ -287,16 +296,18 @@ describe('projection-independent world layers', () => {
         airports: false,
       },
     });
-    const fullRoutes = full.find(
-      (layer): layer is ArcLayer<WorldRoute> =>
-        layer instanceof ArcLayer && layer.id === 'world-routes',
-    );
-    const reducedRoutes = reduced.find(
-      (layer): layer is ArcLayer<WorldRoute> =>
-        layer instanceof ArcLayer && layer.id === 'world-routes',
-    );
-    expect(fullRoutes?.props.numSegments).toBe(100);
-    expect(reducedRoutes?.props.numSegments).toBe(50);
+    const pathFor = (layers: (Layer | false)[]): [number, number][] => {
+      const routes = layers.find(
+        (layer): layer is PathLayer<WorldRoute> =>
+          layer instanceof PathLayer && layer.id === 'world-routes',
+      );
+      const getPath = routes?.props.getPath as (route: WorldRoute) => [number, number][];
+      return getPath(antimeridianRoute);
+    };
+    // Reduced mode samples the great circle with fewer points, so the polyline is
+    // coarser — the segment count is what tessellation means for a flat line.
+    expect(pathFor(full)).toHaveLength(65);
+    expect(pathFor(reduced)).toHaveLength(33);
   });
 
   it('draws the airports layer only when the airports toggle is on', () => {
@@ -334,6 +345,43 @@ describe('projection-independent world layers', () => {
 
     const hidden = build(false).some((layer) => layer !== false && layer.id === 'world-airports');
     expect(hidden).toBe(false);
+  });
+
+  it('fades an out-of-range airport back when a reachable set is given', () => {
+    const airports: WorldAirport[] = [
+      { position: [4.76, 52.31], name: 'Amsterdam', icao: 'EHAM', tier: 'flagship' },
+      { position: [-73.78, 40.64], name: 'New York', icao: 'KJFK', tier: 'large' },
+    ];
+    const layer = createWorldLayers({
+      palette,
+      quality: 'full',
+      routes: [],
+      airports,
+      hubs: [],
+      reachableIcaos: new Set(['EHAM']),
+      darkness: DARKNESS,
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
+      projection: 'flat',
+      visibility: {
+        graticule: false,
+        routes: false,
+        terminator: false,
+        borders: false,
+        terrain: false,
+        airports: true,
+      },
+    }).find(
+      (l): l is ScatterplotLayer<WorldAirport> =>
+        l instanceof ScatterplotLayer && l.id === 'world-airports',
+    );
+    const fill = layer?.props.getFillColor as (a: WorldAirport) => [number, number, number, number];
+    // The reachable airport keeps full colour; the out-of-range one keeps its hue
+    // but drops to a fraction of the alpha, so the fleet's range reads as foreground.
+    expect(fill(airports[0]!)).toEqual(palette.airport);
+    const dimmed = fill(airports[1]!);
+    expect(dimmed.slice(0, 3)).toEqual(palette.airport.slice(0, 3));
+    expect(dimmed[3]).toBeLessThan(palette.airport[3]);
   });
 
   it('draws the player’s hubs, larger and ringed, and makes airports clickable', () => {

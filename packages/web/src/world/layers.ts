@@ -1,5 +1,6 @@
-import { ArcLayer, BitmapLayer, GeoJsonLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
+import { BitmapLayer, GeoJsonLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 
+import { greatCirclePath } from './flight';
 import { WEB_MERCATOR_MAX_LATITUDE } from './terminator';
 import { terrainImage } from './terrain';
 
@@ -44,15 +45,15 @@ export interface WorldAirport {
 function airportRadius(tier: string): number {
   switch (tier) {
     case 'flagship':
-      return 3;
+      return 4.5;
     case 'large':
-      return 2.4;
+      return 3.6;
     case 'medium':
-      return 1.8;
+      return 2.9;
     case 'small':
-      return 1.4;
+      return 2.4;
     default:
-      return 1.1;
+      return 2;
   }
 }
 
@@ -62,6 +63,13 @@ export interface CreateWorldLayersOptions {
   routes: readonly WorldRoute[];
   airports: readonly WorldAirport[];
   hubs: readonly WorldHub[];
+  /**
+   * ICAOs of the airports the player's fleet can reach from a hub, for the map's
+   * highlight. When given, an out-of-range airport is drawn dimmer, so the ones a
+   * plane could actually fly to stand out. Undefined leaves every airport at full
+   * strength (the pre-fleet map, and the tests).
+   */
+  reachableIcaos?: ReadonlySet<string>;
   /** Called when a served airport is clicked, so the page can open its route panel. */
   onAirportClick?: (airport: WorldAirport) => void;
   darkness: DarknessField;
@@ -367,10 +375,22 @@ export function createWorldLayers({
   routes,
   airports,
   hubs,
+  reachableIcaos,
   onAirportClick,
   visibility,
 }: CreateWorldLayersOptions): (Layer | false)[] {
   const bounds = worldBounds(projection, quality);
+  // An out-of-range airport keeps its colour but fades back, so the field the fleet
+  // can actually reach reads as the foreground. Full strength when no reach set is
+  // given (before an airline exists, and in the layer tests).
+  const dimmed = palette.airport.map((c, i) => (i === 3 ? Math.round(c * 0.32) : c)) as [
+    number,
+    number,
+    number,
+    number,
+  ];
+  const airportFill = (airport: WorldAirport): [number, number, number, number] =>
+    reachableIcaos === undefined || reachableIcaos.has(airport.icao) ? palette.airport : dimmed;
   return [
     new WorldBitmapLayer({
       id: 'world-ocean',
@@ -546,18 +566,22 @@ export function createWorldLayers({
         getPolygonOffset: TERMINATOR_POLYGON_OFFSET,
       }),
     visibility.routes &&
-      new ArcLayer<WorldRoute>({
+      new PathLayer<WorldRoute>({
         id: 'world-routes',
         data: routes,
-        getSourcePosition: ({ source }) => source,
-        getTargetPosition: ({ target }) => target,
-        getSourceColor: palette.route,
-        getTargetColor: palette.route,
+        // A flat great-circle line on the surface, not an `ArcLayer` rainbow lifted
+        // into 3D: this is the FlightRadar look — a route that bends north or south
+        // the way a real track does while staying on the ground. The plane rides the
+        // same curve, since both come from `greatCirclePath`/`interpolateGreatCircle`.
+        getPath: ({ source, target }) =>
+          greatCirclePath(source, target, quality === 'full' ? 64 : 32),
+        getColor: palette.route,
         getWidth: 1.5,
+        widthUnits: 'pixels',
         widthMinPixels: 1,
         widthMaxPixels: 3,
-        greatCircle: true,
-        numSegments: quality === 'full' ? 100 : 50,
+        capRounded: true,
+        jointRounded: true,
         parameters: { cullMode: 'none' },
       }),
     visibility.airports &&
@@ -567,10 +591,21 @@ export function createWorldLayers({
         getPosition: ({ position }) => position,
         getRadius: ({ tier }) => airportRadius(tier),
         radiusUnits: 'pixels',
-        radiusMinPixels: 1,
-        radiusMaxPixels: 5,
-        getFillColor: palette.airport,
-        stroked: false,
+        radiusMinPixels: 2,
+        radiusMaxPixels: 9,
+        // A plain array while nothing is highlighted (the pre-fleet map and the
+        // tests); a per-airport accessor once a reachable set fades the rest back.
+        getFillColor: reachableIcaos === undefined ? palette.airport : airportFill,
+        // Re-evaluate the fill when the reachable set changes (a new plane, a new hub).
+        updateTriggers: { getFillColor: reachableIcaos },
+        // A thin dark ring so a bright dot still reads where it sits on pale terrain,
+        // not just against the ocean. One draw call for the whole field.
+        stroked: true,
+        getLineColor: palette.night,
+        lineWidthUnits: 'pixels',
+        getLineWidth: 0.75,
+        lineWidthMinPixels: 0.5,
+        lineWidthMaxPixels: 1.5,
         // Clickable so the page can open a route panel; a fatter pick radius makes
         // the small dots easy to hit without changing how they look.
         pickable: onAirportClick !== undefined,

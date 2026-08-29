@@ -6,7 +6,7 @@ import type { LngLat } from './terminator';
  * Not tied to real schedules yet — this is the FlightRadar-style *look*: a plane
  * moving along each route's great circle, nose pointed the way it is going. The
  * maths is spherical (via 3D unit vectors) so a plane follows the same curve the
- * route arc draws rather than cutting a straight line across a Mercator map.
+ * route line draws rather than cutting a straight line across a Mercator map.
  */
 
 const RAD = Math.PI / 180;
@@ -34,6 +34,36 @@ export function interpolateGreatCircle(a: LngLat, b: LngLat, t: number): LngLat 
   const s0 = Math.sin((1 - t) * omega) / Math.sin(omega);
   const s1 = Math.sin(t * omega) / Math.sin(omega);
   return toLngLat([A[0] * s0 + B[0] * s1, A[1] * s0 + B[1] * s1, A[2] * s0 + B[2] * s1]);
+}
+
+/**
+ * The great circle from a to b as a flat polyline on the map surface.
+ *
+ * This is the FlightRadar-style route *line*: it lies on the ground (unlike an
+ * `ArcLayer`, which lifts a rainbow off the surface into 3D), so on a flat map it
+ * reads as a line that bends north or south the way a real long-haul track does.
+ * The plane rides this exact same curve, because both come from
+ * {@link interpolateGreatCircle}.
+ *
+ * Longitudes are **unwrapped** — each point is pulled to within 180° of the one
+ * before it, so a leg crossing the antimeridian keeps climbing past ±180 rather
+ * than snapping back and drawing a stray line straight across the whole map.
+ * deck.gl accepts out-of-range longitudes on both the flat map and the globe.
+ */
+export function greatCirclePath(a: LngLat, b: LngLat, segments = 64): LngLat[] {
+  const path: LngLat[] = [];
+  let previousLon: number | undefined;
+  for (let i = 0; i <= segments; i += 1) {
+    const [lon, lat] = interpolateGreatCircle(a, b, i / segments);
+    let unwrapped = lon;
+    if (previousLon !== undefined) {
+      while (unwrapped - previousLon > 180) unwrapped -= 360;
+      while (unwrapped - previousLon < -180) unwrapped += 360;
+    }
+    previousLon = unwrapped;
+    path.push([unwrapped, lat]);
+  }
+  return path;
 }
 
 /** Initial bearing from a to b, degrees clockwise from north (0–360). */

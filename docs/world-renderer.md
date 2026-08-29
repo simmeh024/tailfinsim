@@ -195,14 +195,18 @@ scanline _before_ the supersampled grid could smooth anything — so the shape b
 already a staircase and no amount of supersampling recovered it. Longitude never had the problem,
 which is why the artefact read as horizontal steps rather than as general roughness.
 
-Routes are `ArcLayer` instances with `greatCircle: true`. That one implementation is used in
-both projections. In flat mode deck.gl splits/wraps the great-circle arc at the antimeridian;
-do not pre-flatten or manually splice routes for `MapView`. Reduced detail halves the arc
-tessellation from 100 to 50 segments.
+Routes are a `PathLayer` whose path is a flat great circle on the surface — `greatCirclePath`
+in `flight.ts` samples `interpolateGreatCircle` and **unwraps** longitudes so a leg crossing
+the antimeridian climbs past ±180 rather than snapping back and drawing a stray line across
+the map. This is the FlightRadar look: a route that bends north or south while staying on the
+ground, rather than the `ArcLayer` rainbow it replaced (which lifted the route into 3D). The
+one implementation serves both projections, and the simulated plane rides the same curve
+because it comes from the same interpolation. Reduced detail samples the line with fewer
+points (64→32 segments).
 
-M7-01 intentionally supplies no invented airline or aircraft data. The renderer accepts
-typed `WorldRoute` input, but the shell passes an empty list until M7-02 supplies live,
-server-owned aircraft and operational-route state.
+M7's world map draws the player's own hubs and operational routes from `GET /api/world/map`,
+with a small plane animated along each route. The renderer still accepts an explicit typed
+`WorldRoute` list (used by tests), falling back to the server-owned overlay otherwise.
 
 ## Day and night
 
