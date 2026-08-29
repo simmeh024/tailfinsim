@@ -5,6 +5,7 @@ import { MeshyGenerationSpec, meshyCreditExposure, meshySpecIdentity } from './m
 import { checkMeshyAccount } from './meshy-account';
 import { meshyArchiveDirectory, syncMeshyCandidate } from './meshy-archive';
 import { meshyEvidenceDirectory, prepareMeshyEvidence } from './meshy-evidence';
+import { archiveMeshyFrameAssessment } from './meshy-frame-archive';
 import { reportMeshyGeometry } from './meshy-geometry-report';
 import { readBoundedMeshyInput } from './meshy-preflight';
 import { sealMeshyCandidateProvenance } from './meshy-provenance';
@@ -18,6 +19,7 @@ export const MESHY_RUN_USAGE =
   '       assets:meshy-run status\n' +
   '       assets:meshy-run audit --operation candidate-1..4\n' +
   '       assets:meshy-run review --operation candidate-1..4\n' +
+  '       assets:meshy-run frame --operation candidate-1..4 --axis-review-file PATH\n' +
   '       assets:meshy-run account --max-credits 1..40 [--key-file PATH]\n' +
   '       assets:meshy-run prepare --evidence-file PATH --max-credits 1..40\n' +
   '       assets:meshy-run provenance --operation candidate-1..4 --max-credits 1..40\n' +
@@ -41,6 +43,7 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
       'provenance',
       'audit',
       'review',
+      'frame',
     ].includes(command ?? '')
   )
     throw new Error('Unknown Meshy run command.');
@@ -57,9 +60,11 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
               ? ['--operation', '--max-credits', '--key-file']
               : command === 'account'
                 ? ['--max-credits', '--key-file']
-                : command === 'audit' || command === 'review'
-                  ? ['--operation']
-                  : [];
+                : command === 'frame'
+                  ? ['--operation', '--axis-review-file']
+                  : command === 'audit' || command === 'review'
+                    ? ['--operation']
+                    : [];
   const options = new Map<string, string>();
   for (let index = 1; index < args.length; index += 2) {
     const key = args[index];
@@ -78,7 +83,7 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
     throw new Error('The approved whole-number ceiling is required.');
   }
   if (
-    ['sync', 'submit', 'provenance', 'audit', 'review'].includes(command!) &&
+    ['sync', 'submit', 'provenance', 'audit', 'review', 'frame'].includes(command!) &&
     !/^candidate-[1-4]$/.test(options.get('--operation') ?? '')
   )
     throw new Error('One recorded candidate operation is required.');
@@ -86,6 +91,8 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
     throw new Error('Evidence import required.');
   if (command === 'submit' && !options.has('--pricing-file'))
     throw new Error('Fresh pricing review required.');
+  if (command === 'frame' && !options.has('--axis-review-file'))
+    throw new Error('Axis review required.');
   return { command, options };
 }
 
@@ -163,6 +170,26 @@ export async function runMeshyRunCommand(
       state: report.state,
       runtimeAdmission: report.runtimeAdmission,
       liveryReady: report.liveryReady,
+      creditsSpentByThisCommand: 0,
+    });
+  }
+  if (command === 'frame') {
+    const { operationId, reportSha256, report } = await archiveMeshyFrameAssessment(
+      store,
+      meshyArchiveDirectory(database),
+      options.get('--operation')!,
+      options.get('--axis-review-file')!,
+    );
+    return canonicalJson({
+      operationId,
+      reportSha256,
+      reportFile: `${operationId}-frame-v1.json`,
+      eligibleForCanonicalTransform: report.eligibleForCanonicalTransform,
+      proposedUniformScaleMetresPerSourceUnit: report.proposedUniformScaleMetresPerSourceUnit,
+      proposedDimensions: report.proposedDimensions,
+      deviations: report.deviations,
+      blockingReasons: report.blockingReasons,
+      state: report.state,
       creditsSpentByThisCommand: 0,
     });
   }

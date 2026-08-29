@@ -282,6 +282,35 @@ completes conformance only. Licensing, real-world dimensions, semantic/protected
 holes, canonical UVs and visual/performance admission remain separate gates. These artifacts enable
 component inspection and an explicit repair plan; they do not certify a completed aircraft.
 
+## Canonical frame assessment (M6-27)
+
+```bash
+pnpm assets:meshy-run -- frame --operation candidate-1 --axis-review-file /private/axis-review.json
+```
+
+`frame` is a zero-credit, assessment-only successor to `review`. It requires the immutable source,
+the completed review report/derivative and a strict private axis-review record containing the exact
+source hash, `local-operator` identity, review time, a right/up/forward declaration and at least two
+SHA-256-bound visual evidence items. It accepts no credential or budget option. The source axes must
+be distinct and right-handed; they map to Tailfin's established `+X right, +Y up, -Z forward` frame.
+
+The A320neo target is pinned to Airbus's June 2026 facts and figures: 37.57 m overall length,
+35.80 m wingspan and 11.76 m overall height. Length and span are assessed with one least-squares
+uniform scale and a conservative 2% per-dimension tolerance. Non-uniform scaling is forbidden: it
+would conceal a proportion error by distorting the fuselage, wings, engines and livery coordinates.
+Overall height is recorded but is not an admission comparison for a gear-up source because Airbus's
+ground-to-tail dimension includes the operational ground reference. The proposed gear-up origin is
+the X/Z bounds centre with the lowest visible geometry at Y=0; this is explicitly not certified
+landing-gear contact. [Airbus A320 Family facts and figures](https://mediaassets.airbus.com/pm_38_914_914157-tlwvtuuhjj.pdf?fileName=airbus-a320-family-facts-and-figures-june-2026.pdf).
+
+The command seals `candidate-N-frame-v1.json` last and never emits a transformed GLB. A failed fit
+stays useful evidence but sets `eligibleForCanonicalTransform: false` and keeps the candidate in
+quarantine. Candidate 1's reviewed native axes are source `-Z right`, `+Y up`, `-X forward`. Its
+source length/span ratio differs materially from the Airbus target: the best uniform fit proposes
+about 36.16 m length and 37.17 m span, approximately -3.76% and +3.84%. It therefore fails the 2%
+gate. Geometry correction or a better candidate is required before axes/scale/origin may be baked;
+the tool does not silently stretch the chosen mesh.
+
 ## Pinned strategy and vendor evidence
 
 The planning observation is dated 2026-08-28. Four untextured T2 candidates cost 5 credits each;

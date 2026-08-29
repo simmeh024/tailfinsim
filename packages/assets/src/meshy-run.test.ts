@@ -574,6 +574,7 @@ describe('operator command authority boundary', () => {
         ['account', '--max-credits', '39'],
         ['account', '--max-credits', '40', '--api-key', sentinel],
         ['review', '--operation', 'candidate-1'],
+        ['frame', '--operation', 'candidate-1', '--axis-review-file', 'missing.json'],
       ]) {
         const result = run(args);
         expect(result.status).toBe(1);
@@ -631,6 +632,41 @@ describe('operator command authority boundary', () => {
       expect(reviewed.stdout).not.toContain('boundaryEdges');
       expect(reviewed.stdout + reviewed.stderr).not.toContain(sentinel);
       expect(run(['review', '--operation', 'candidate-1']).stdout).toBe(reviewed.stdout);
+      const axisReviewFile = join(directory, 'axis-review.json');
+      await writeFile(
+        axisReviewFile,
+        canonicalJson({
+          format: 'tailfin-meshy-axis-review',
+          formatVersion: 1,
+          operationId: 'candidate-1',
+          sourceSha256: sha256(source),
+          reviewedAt: '2026-08-29T12:00:00.000+02:00',
+          reviewedBy: 'local-operator',
+          sourceAxes: { right: '-z', up: '+y', forward: '-x' },
+          evidence: [
+            { sha256: 'c'.repeat(64), description: 'Positive span-axis view' },
+            { sha256: 'd'.repeat(64), description: 'Negative span-axis view' },
+          ],
+        }),
+      );
+      const framed = run([
+        'frame',
+        '--operation',
+        'candidate-1',
+        '--axis-review-file',
+        axisReviewFile,
+      ]);
+      expect(framed.status, framed.stderr.replaceAll(sentinel, '[redacted]')).toBe(0);
+      expect(JSON.parse(framed.stdout)).toMatchObject({
+        operationId: 'candidate-1',
+        eligibleForCanonicalTransform: false,
+        state: 'quarantine',
+        creditsSpentByThisCommand: 0,
+      });
+      expect(framed.stdout + framed.stderr).not.toContain(sentinel);
+      expect(
+        run(['frame', '--operation', 'candidate-1', '--axis-review-file', axisReviewFile]).stdout,
+      ).toBe(framed.stdout);
       expect(canonicalJson(cliStore.read())).toBe(priorState);
     },
   );
