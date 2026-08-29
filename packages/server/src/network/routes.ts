@@ -283,4 +283,28 @@ export function registerNetworkRoutes(
       return reply.code(200).send(previewFares(row, parsed.data.fares, await economicsFor(row)));
     },
   );
+
+  /**
+   * Close a route — remove it from the airline's network.
+   *
+   * The counterpart to opening one. A hard delete, scoped to the resolved airline:
+   * a route belonging to somebody else is not in the query, so it gets the same
+   * 404 as one that never existed (ADR-0020) and the endpoint is not an oracle for
+   * which route ids are real. No foreign key references `route.id`, so nothing
+   * cascades — the AIR-06 ledger keeps its rows, whose `route_id` simply no longer
+   * resolves; the money moved regardless of whether the route still exists.
+   */
+  app.delete<{ Params: { routeId: string } }>(
+    '/api/routes/:routeId',
+    { onRequest: app.requireOperatingAirline },
+    async (request, reply) => {
+      const own = resolvedAirlineOf(request);
+      const row = await ownedRoute(db.db, own.id, request.params.routeId);
+      if (!row) return notFound(reply);
+
+      await db.db.delete(route).where(and(eq(route.id, row.id), eq(route.airlineId, own.id)));
+
+      return reply.code(200).send({ ok: true, routeId: row.id });
+    },
+  );
 }

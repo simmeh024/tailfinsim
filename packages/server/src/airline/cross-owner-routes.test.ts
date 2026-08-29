@@ -324,4 +324,54 @@ describeDb('cross-player ownership on the route endpoints (SEC-05)', () => {
         .where(eq(route.id, ownRouteId)),
     ).toEqual(before);
   });
+
+  // Closing a route (DELETE) is a destructive owner-scoped write, so it gets the
+  // same cross-owner treatment as the fare write: a stranger's route is concealed
+  // as a 404 and — crucially — left standing.
+  it('close conceals another owner’s route and leaves it standing', async () => {
+    for (const routeId of [
+      competitorRouteId,
+      otherWorldRouteId,
+      ABSENT_RESOURCE_UUID,
+      suite.worldMain.id,
+    ]) {
+      const response = await suite.as(
+        { actor: 'playerA', worldId: suite.worldMain.id },
+        { method: 'DELETE', url: `/api/routes/${routeId}` },
+      );
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toEqual({ code: 'not_found', message: 'No such route' });
+    }
+
+    // The refused close deleted nothing: the competitor's route is still there.
+    const rows = await db.db
+      .select({ id: route.id })
+      .from(route)
+      .where(eq(route.id, competitorRouteId));
+    expect(rows).toEqual([{ id: competitorRouteId }]);
+  });
+
+  it('close rejects a malformed id without a 500', async () => {
+    for (const malformed of MALFORMED_RESOURCE_IDS) {
+      const response = await suite.as(
+        { actor: 'playerA', worldId: suite.worldMain.id },
+        { method: 'DELETE', url: `/api/routes/${encodeURIComponent(malformed)}` },
+      );
+      expect([400, 404]).toContain(response.statusCode);
+    }
+  });
+
+  // Last, because it removes the shared own route: playerA can close their own,
+  // and then the row is gone.
+  it('closes the player’s own route, and then it is gone', async () => {
+    const response = await suite.as(
+      { actor: 'playerA', worldId: suite.worldMain.id },
+      { method: 'DELETE', url: `/api/routes/${ownRouteId}` },
+    );
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: true, routeId: ownRouteId });
+
+    const rows = await db.db.select({ id: route.id }).from(route).where(eq(route.id, ownRouteId));
+    expect(rows).toEqual([]);
+  });
 });

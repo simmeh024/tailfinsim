@@ -5,7 +5,7 @@ import type { FleetAirframeView } from '@tailfin/shared';
 import { fetchFleetAirframes } from '../fleet/api';
 import { useContextSelection } from '../shell/context-selection';
 
-import { fetchRoutes, type RouteSummary } from './api';
+import { closeRoute, fetchRoutes, type RouteSummary } from './api';
 import { CompetitionTab } from './planner/CompetitionTab';
 import { describeSelection } from './planner/ContextBodies';
 import { FleetScheduleView } from './planner/FleetScheduleView';
@@ -56,6 +56,8 @@ export function NetworkPage(): ReactNode {
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('overview');
   const [selection, setSelection] = useState<NetworkSelection | null>(null);
+  const [confirmClose, setConfirmClose] = useState(false);
+  const [closing, setClosing] = useState(false);
 
   const { select, clear } = useContextSelection();
 
@@ -153,7 +155,27 @@ export function NetworkPage(): ReactNode {
   const selectRoute = useCallback((id: string) => {
     setView('route');
     setSelectedRouteId(id);
+    setConfirmClose(false);
   }, []);
+
+  const onCloseRoute = useCallback(async () => {
+    if (selectedRouteId === null) return;
+    setClosing(true);
+    try {
+      const outcome = await closeRoute(selectedRouteId);
+      if (outcome.ok) {
+        const remaining = (routes ?? []).filter((r) => r.id !== selectedRouteId);
+        setRoutes(remaining);
+        setSelectedRouteId(remaining[0]?.id ?? null);
+        setSelection(remaining[0] ? { kind: 'route', id: remaining[0].id } : null);
+      }
+    } catch {
+      /* leave the route in place; a transient failure is not a close. */
+    } finally {
+      setClosing(false);
+      setConfirmClose(false);
+    }
+  }, [selectedRouteId, routes]);
 
   return (
     <section className="page net-page">
@@ -259,6 +281,40 @@ export function NetworkPage(): ReactNode {
                 <Chip tone={currentPlan.route.active ? 'positive' : 'neutral'}>
                   {currentPlan.route.active ? 'Active' : 'Paused'}
                 </Chip>
+                <div className="net-route__actions">
+                  {confirmClose ? (
+                    <>
+                      <span className="net-route__confirm">Close this route?</span>
+                      <button
+                        type="button"
+                        className="net-route__close net-route__close--danger"
+                        disabled={closing}
+                        onClick={() => void onCloseRoute()}
+                      >
+                        {closing ? 'Closing…' : 'Close route'}
+                      </button>
+                      <button
+                        type="button"
+                        className="net-route__close"
+                        onClick={() => {
+                          setConfirmClose(false);
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="net-route__close"
+                      onClick={() => {
+                        setConfirmClose(true);
+                      }}
+                    >
+                      Close route
+                    </button>
+                  )}
+                </div>
               </div>
 
               <Segmented label="Route tabs" value={tab} onChange={setTab} options={TABS} />

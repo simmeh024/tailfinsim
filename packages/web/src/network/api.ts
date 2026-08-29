@@ -126,6 +126,20 @@ export async function openRoute(
   throw new Error(`Opening a route failed with ${String(status)}`);
 }
 
+/**
+ * Close a route — remove it from the network.
+ *
+ * The counterpart to {@link openRoute}. A 404 (someone else's route, or a stale
+ * id) is the server's considered answer and would only mislead as a thrown error;
+ * a genuinely broken request still throws.
+ */
+export async function closeRoute(routeId: string): Promise<{ ok: boolean }> {
+  const { status } = await json(`/api/routes/${routeId}`, { method: 'DELETE' });
+  if (status === 200) return { ok: true };
+  if (status === 404 || status === 409) return { ok: false };
+  throw new Error(`Closing a route failed with ${String(status)}`);
+}
+
 /** Who else sells this pair, and in which cabins. */
 export interface RouteRival {
   id: string;

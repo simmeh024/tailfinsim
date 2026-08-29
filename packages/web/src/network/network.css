@@ -5,11 +5,23 @@
  * guard scans this file. `transparent` and the tone tokens are the only paints.
  */
 
-.net-page {
+/*
+ * The shared `.page` centres its content in the stage (place-content: center,
+ * text-align: center) — right for a short status page, wrong for a workspace. The
+ * compound selector out-specifies `.page` regardless of stylesheet order, filling
+ * the whole stage top-to-bottom, left-aligned and scrolling.
+ */
+.page.net-page {
   --net-label-w: 150px;
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  place-content: initial;
+  text-align: left;
+  padding: var(--space-4);
+  overflow-y: auto;
 }
 
 .net-page__head {
@@ -195,6 +207,45 @@
 .net-route__distance {
   font-size: var(--text-sm);
   color: var(--text-muted);
+}
+
+.net-route__actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.net-route__confirm {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.net-route__close {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+
+.net-route__close:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+.net-route__close--danger {
+  border-color: var(--status-cancelled);
+  color: var(--status-cancelled);
+  background: var(--status-cancelled-quiet);
+}
+
+.net-route__close:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 /* --------------------------------------------------------------- segmented */

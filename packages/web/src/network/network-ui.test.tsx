@@ -166,6 +166,13 @@ function stub(
       calls.push(`${init?.method ?? 'GET'} ${url}`);
       if (url.includes('/fleet/airframes')) return Promise.resolve(fleetResponse());
 
+      if (url.startsWith('/api/routes/') && init?.method === 'DELETE') {
+        return Promise.resolve({
+          status: 200,
+          json: () => Promise.resolve({ ok: true, routeId: 'route-1' }),
+        });
+      }
+
       if (url === '/api/routes' && init?.method === 'POST') {
         if (opened.kind === 'no-airline') {
           return Promise.resolve({
@@ -425,6 +432,23 @@ describe('opening a route from the rail', () => {
 
     fireEvent.change(screen.getByLabelText('Origin ICAO'), { target: { value: 'EH' } });
     expect(screen.getByRole('button', { name: /^open$/i })).toBeDisabled();
+  });
+
+  it('closes a route from the header after a confirm, and the workspace empties', async () => {
+    const calls = stub();
+    render(<NetworkPage />);
+    await screen.findByText('EHAM → LEBL');
+
+    // First press asks to confirm rather than closing straight away.
+    fireEvent.click(screen.getByRole('button', { name: 'Close route' }));
+    expect(await screen.findByText('Close this route?')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close route' }));
+
+    await waitFor(() => {
+      expect(calls).toContain('DELETE /api/routes/route-1');
+    });
+    await screen.findByText('No routes yet');
   });
 });
 
