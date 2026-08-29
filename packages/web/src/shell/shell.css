@@ -148,6 +148,77 @@ body {
   box-shadow: 0 8px 24px var(--bg-scrim);
 }
 
+/* The route/encoding legend (M7-03), bottom-left so it clears the route panel. */
+.world-renderer__legend {
+  position: absolute;
+  left: var(--space-3);
+  bottom: var(--space-3);
+  z-index: 5;
+  width: min(22rem, calc(100% - 2 * var(--space-3)));
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px var(--bg-scrim);
+}
+
+.world-renderer__legend-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.world-renderer__legend-list {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.world-renderer__legend-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.world-renderer__legend-line {
+  flex: none;
+  width: 22px;
+  height: 0;
+  border-radius: 2px;
+}
+
+.world-renderer__legend-line--own {
+  border-top: 3px solid var(--world-route);
+}
+
+.world-renderer__legend-line--rival {
+  border-top: 2px solid var(--world-border);
+}
+
+.world-renderer__legend-line--corridor {
+  border-top: 6px solid var(--world-border);
+}
+
+.world-renderer__legend-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--world-route);
+}
+
+.world-renderer__legend-note {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
 .world-renderer__route-head {
   display: flex;
   align-items: start;
