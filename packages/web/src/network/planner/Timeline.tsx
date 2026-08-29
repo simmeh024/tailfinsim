@@ -1,7 +1,11 @@
 import { createContext, useContext } from 'react';
 
 import type { Tone } from './ui';
-import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
+import type {
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+} from 'react';
 
 /**
  * A horizontal 24-hour timeline: an hour axis, aircraft rows down the side, and
@@ -70,6 +74,8 @@ export function TimelineRow({
   meter,
   selected = false,
   onLabelClick,
+  onTrackClick,
+  trackTitle,
   trackAttrs,
   children,
 }: {
@@ -78,6 +84,10 @@ export function TimelineRow({
   meter?: ReactNode;
   selected?: boolean;
   onLabelClick?: () => void;
+  /** Click on the track background (not on a block) — used for click-to-add-a-rotation. */
+  onTrackClick?: (event: ReactMouseEvent<HTMLDivElement>) => void;
+  /** Tooltip for the track, e.g. the click-to-add hint. */
+  trackTitle?: string;
   /** Extra data-* attributes on the track, e.g. `data-aircraft-id` for drop hit-testing. */
   trackAttrs?: Record<string, string>;
   children: ReactNode;
@@ -94,7 +104,13 @@ export function TimelineRow({
         {sub !== undefined && <span className="net-row__label-sub">{sub}</span>}
         {meter}
       </button>
-      <div className="net-row__track" data-net-track="" {...trackAttrs}>
+      <div
+        className={onTrackClick ? 'net-row__track net-row__track--addable' : 'net-row__track'}
+        data-net-track=""
+        title={trackTitle}
+        onClick={onTrackClick}
+        {...trackAttrs}
+      >
         {/* Faint hour gridlines behind the blocks. */}
         <RowGrid />
         {children}

@@ -21,7 +21,11 @@ import type {
   Weekday,
 } from './types';
 import type { Tone } from './ui';
-import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
+import type {
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+} from 'react';
 
 const HOUR_START = 4;
 const HOUR_END = 24;
@@ -154,6 +158,22 @@ export function ScheduleTab({
       onSelect({ kind: 'flight', id: flight.id });
     },
     [onSelect],
+  );
+
+  // --- Click an empty spot on a row to add a rotation there (idea 1, easier add) ---
+
+  const addRotationAtClick = useCallback(
+    (frame: PlannerAircraft, event: ReactMouseEvent<HTMLDivElement>) => {
+      // A click that lands on a flight block — or the idle row's own add button — is
+      // that control's job; the track only handles clicks on its empty background.
+      if ((event.target as HTMLElement).closest('button')) return;
+      const rect = event.currentTarget.getBoundingClientRect();
+      const fraction = (event.clientX - rect.left) / rect.width;
+      const hour = Math.round(HOUR_START + fraction * (HOUR_END - HOUR_START));
+      editor.addRotation(route, frame, Math.max(HOUR_START, Math.min(HOUR_END - 1, hour)));
+      onSelect({ kind: 'aircraft', id: frame.id });
+    },
+    [editor, route, onSelect],
   );
 
   const dragActive = drag !== null;
@@ -344,6 +364,12 @@ export function ScheduleTab({
                   />
                 )
               }
+              onTrackClick={(event) => {
+                addRotationAtClick(frame, event);
+              }}
+              trackTitle={`Click an empty spot to add a rotation on ${
+                frame.isPool ? 'the fleet pool' : frame.registration
+              }`}
               trackAttrs={{ 'data-aircraft-id': frame.id }}
             >
               {rowFlights.map((flight) => {
@@ -380,7 +406,16 @@ export function ScheduleTab({
                 );
               })}
               {idle && (
-                <span className="net-row__empty">Idle — drag a flight here, or use a slot</span>
+                <button
+                  type="button"
+                  className="net-row__empty net-row__empty--add"
+                  onClick={() => {
+                    editor.addRotation(route, frame, bestSlotHour ?? 8);
+                    onSelect({ kind: 'aircraft', id: frame.id });
+                  }}
+                >
+                  ＋ Add a rotation — or drag a flight here
+                </button>
               )}
             </TimelineRow>
           );

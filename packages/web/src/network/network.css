@@ -984,6 +984,11 @@
   overflow: hidden;
 }
 
+/* A row you can click to drop a new rotation onto. */
+.net-row__track--addable {
+  cursor: copy;
+}
+
 .net-row__gridline {
   position: absolute;
   top: 0;
@@ -999,6 +1004,29 @@
   transform: translateY(-50%);
   font-size: var(--text-xs);
   color: var(--text-muted);
+}
+
+/* The idle row's one-click "add a rotation" affordance. */
+.net-row__empty--add {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.net-row__empty--add:hover {
+  color: var(--text-primary);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 /* -------------------------------------------------------------------- blocks */

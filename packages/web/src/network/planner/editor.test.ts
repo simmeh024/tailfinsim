@@ -84,3 +84,24 @@ describe('removeAircraft', () => {
     expect(result.current.flightsFor('route-1')).toEqual(before);
   });
 });
+
+describe('addRotation', () => {
+  it('appends an out-and-back for the aircraft at the given hour', async () => {
+    const target = flyer('ac-a', 'TF-AAA');
+    const { result } = renderHook(() => useScheduleEditor([ROUTE], [target, POOL]));
+
+    await waitFor(() => {
+      expect(result.current.flightsFor('route-1').length).toBeGreaterThan(0);
+    });
+    const before = result.current.flightsFor('route-1').length;
+
+    act(() => {
+      result.current.addRotation(ROUTE, target, 8);
+    });
+
+    const after = result.current.flightsFor('route-1');
+    expect(after.length).toBe(before + 2);
+    const added = after.filter((f) => f.aircraftId === 'ac-a' && f.departureMinute === 8 * 60);
+    expect(added.map((f) => f.direction)).toContain('out');
+  });
+});
