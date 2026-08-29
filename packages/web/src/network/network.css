@@ -1,0 +1,946 @@
+/*
+ * Network route-planner workspace (M2/M3).
+ *
+ * Colour comes only from theme tokens (theme/tokens.css) — the colour-literal
+ * guard scans this file. `transparent` and the tone tokens are the only paints.
+ */
+
+.net-page {
+  --net-label-w: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.net-page__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.net-page__sub {
+  margin: 2px 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.net-layout {
+  display: grid;
+  grid-template-columns: minmax(210px, 250px) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .net-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------------------------------------------------------------- route rail */
+
+.net-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  position: sticky;
+  top: var(--space-3);
+}
+
+.net-rail__open {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.net-rail__title,
+.net-rail__list-head {
+  margin: 0;
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.net-open__fields {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.net-open__fields .fares__input {
+  width: 100%;
+  min-width: 0;
+}
+
+.net-rail__fleet {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  text-align: left;
+}
+
+.net-rail__fleet:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.net-rail__fleet--active {
+  border-color: var(--accent);
+  color: var(--text-primary);
+  background: var(--accent-quiet);
+}
+
+.net-rail__fleet-glyph {
+  font-size: var(--text-base);
+}
+
+.net-rail__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+.net-rail__route {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.net-rail__route:hover {
+  background: var(--bg-inset);
+  color: var(--text-primary);
+}
+
+.net-rail__route--active {
+  background: var(--accent-quiet);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.net-rail__route-pair {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+
+.net-rail__route-arrow {
+  color: var(--text-muted);
+}
+
+.net-rail__route-meta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.net-rail__empty {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  padding: var(--space-2);
+}
+
+/* ------------------------------------------------------------- main workspace */
+
+.net-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.net-route__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.net-route__pair {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.net-route__distance {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* --------------------------------------------------------------- segmented */
+
+.net-segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-inset);
+  flex-wrap: wrap;
+}
+
+.net-segmented__option {
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+
+.net-segmented__option:hover {
+  color: var(--text-primary);
+}
+
+.net-segmented__option[aria-selected='true'] {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-weight: 600;
+}
+
+.net-tabpanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ------------------------------------------------------------------- panels */
+
+.net-panel {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.net-panel__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.net-panel__title {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.net-panel__hint,
+.net-panel__foot {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.net-panel__foot {
+  margin: 0;
+}
+
+/* -------------------------------------------------------------------- tiles */
+
+.net-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-3);
+}
+
+.net-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+}
+
+.net-tile--accent {
+  border-left-color: var(--accent);
+}
+.net-tile--positive {
+  border-left-color: var(--status-profit);
+}
+.net-tile--negative {
+  border-left-color: var(--status-loss);
+}
+.net-tile--warn {
+  border-left-color: var(--status-delayed);
+}
+
+.net-tile__label {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.net-tile__value {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.net-tile__sub {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* -------------------------------------------------------------------- chips */
+
+.net-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px var(--space-2);
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  background: var(--bg-inset);
+  text-transform: capitalize;
+}
+
+.net-chip--accent {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-quiet);
+}
+.net-chip--positive {
+  border-color: var(--status-ontime);
+  color: var(--status-ontime);
+  background: var(--status-ontime-quiet);
+}
+.net-chip--warn {
+  border-color: var(--status-delayed);
+  color: var(--status-delayed);
+  background: var(--status-delayed-quiet);
+}
+.net-chip--negative {
+  border-color: var(--status-cancelled);
+  color: var(--status-cancelled);
+  background: var(--status-cancelled-quiet);
+}
+
+/* ------------------------------------------------------------------- meters */
+
+.net-meter {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-inset);
+  overflow: hidden;
+}
+
+.net-meter__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.net-meter__fill--positive {
+  background: var(--status-ontime);
+}
+.net-meter__fill--warn {
+  background: var(--status-delayed);
+}
+.net-meter__fill--negative {
+  background: var(--status-cancelled);
+}
+
+/* --------------------------------------------------------------------- days */
+
+.net-days {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.net-days__day {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  padding: 2px var(--space-2);
+  cursor: pointer;
+}
+
+.net-days__day[aria-pressed='true'] {
+  background: var(--accent-quiet);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+/* --------------------------------------------------------------- sparkline */
+
+.net-spark {
+  width: 100%;
+  height: 40px;
+  color: var(--accent);
+}
+
+/* ----------------------------------------------------------------- overview */
+
+.net-overview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.net-overview__cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-4);
+}
+
+.net-demand,
+.net-rivals {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.net-demand__row {
+  display: grid;
+  grid-template-columns: 5rem 1fr 2.5rem;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.net-demand__label {
+  color: var(--text-secondary);
+}
+.net-demand__value {
+  text-align: right;
+  color: var(--text-primary);
+}
+
+.net-rivals__row {
+  display: grid;
+  grid-template-columns: 1fr auto 3.5rem 2.5rem;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.net-rivals__name {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.net-rivals__fare,
+.net-rivals__share {
+  text-align: right;
+  color: var(--text-secondary);
+}
+
+/* -------------------------------------------------------------- competition */
+
+.net-share {
+  display: flex;
+  width: 100%;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  font-size: var(--text-xs);
+}
+
+.net-share__seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-on-accent);
+  white-space: nowrap;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.net-share__seg--you {
+  background: var(--accent);
+  font-weight: 600;
+}
+.net-share__seg--r0 {
+  background: var(--status-delayed);
+}
+.net-share__seg--r1 {
+  background: var(--status-cancelled);
+}
+.net-share__seg--r2 {
+  background: var(--text-muted);
+}
+
+.net-comp-table td,
+.net-comp-table th {
+  vertical-align: middle;
+}
+
+.net-comp-product {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.net-comp-product .net-meter {
+  width: 60px;
+}
+
+/* --------------------------------------------------------------- performance */
+
+.net-performance {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.net-trend {
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+.net-trend--up {
+  color: var(--status-profit);
+}
+.net-trend--down {
+  color: var(--status-loss);
+}
+
+.net-trendchart {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-3);
+}
+
+.net-trendchart__scale {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.net-revcost {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.net-revcost__row {
+  display: grid;
+  grid-template-columns: 4rem 1fr auto;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.net-revcost__label {
+  color: var(--text-secondary);
+}
+
+.net-revcost__bar {
+  height: 14px;
+  border-radius: var(--radius-sm);
+  min-width: 2px;
+}
+.net-revcost__bar--rev {
+  background: var(--accent);
+}
+.net-revcost__bar--cost {
+  background: var(--status-delayed);
+}
+
+.net-revcost__value {
+  text-align: right;
+  color: var(--text-primary);
+}
+
+.net-revcost__row--net {
+  grid-template-columns: 4rem 1fr auto;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-2);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------ schedule */
+
+.net-schedule {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.net-schedule__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+}
+
+.net-schedule__freq {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.net-schedule__freq-label {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.net-schedule__summary {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.net-schedule__legend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.net-legend__swatch {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  border-radius: 2px;
+  margin-left: var(--space-2);
+}
+.net-legend__swatch--accent {
+  background: var(--accent-quiet);
+  border: 1px solid var(--accent);
+}
+.net-legend__swatch--positive {
+  background: var(--status-ontime-quiet);
+  border: 1px solid var(--status-ontime);
+}
+.net-legend__swatch--turn {
+  background: repeating-linear-gradient(45deg, var(--border-strong) 0 2px, transparent 2px 5px);
+}
+
+/* ------------------------------------------------------------------ timeline */
+
+.net-timeline {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+
+.net-timeline__axis {
+  display: grid;
+  grid-template-columns: var(--net-label-w, 150px) 1fr;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-inset);
+}
+
+.net-timeline__axis-spacer {
+  border-right: 1px solid var(--border-subtle);
+}
+
+.net-timeline__axis-track {
+  position: relative;
+  height: 22px;
+}
+
+.net-timeline__tick {
+  position: absolute;
+  top: 4px;
+  transform: translateX(-50%);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.net-timeline__rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.net-row {
+  display: grid;
+  grid-template-columns: var(--net-label-w, 150px) 1fr;
+  border-bottom: 1px solid var(--border-subtle);
+  min-height: 44px;
+}
+
+.net-row:last-child {
+  border-bottom: none;
+}
+
+.net-row--selected {
+  background: var(--accent-quiet);
+}
+
+.net-row__label {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border-right: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.net-row__label:disabled {
+  cursor: default;
+}
+
+.net-row__label:not(:disabled):hover {
+  background: var(--bg-inset);
+}
+
+.net-row__label-main {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.net-row__label-sub {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.net-row__track {
+  position: relative;
+  overflow: hidden;
+}
+
+.net-row__gridline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border-subtle);
+}
+
+.net-row__empty {
+  position: absolute;
+  left: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* -------------------------------------------------------------------- blocks */
+
+.net-block {
+  position: absolute;
+  top: 8px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent);
+  background: var(--accent-quiet);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-xs);
+  padding: 0 var(--space-2);
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+}
+
+.net-block__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.net-block--positive {
+  border-color: var(--status-ontime);
+  background: var(--status-ontime-quiet);
+}
+.net-block--warn {
+  border-color: var(--status-delayed);
+  background: var(--status-delayed-quiet);
+}
+.net-block--negative {
+  border-color: var(--status-cancelled);
+  background: var(--status-cancelled-quiet);
+}
+.net-block--neutral {
+  border-color: var(--border-strong);
+  background: var(--bg-inset);
+}
+
+.net-block--selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  z-index: 2;
+}
+
+.net-block:hover {
+  filter: brightness(1.08);
+}
+
+.net-block__turn {
+  position: absolute;
+  top: 16px;
+  height: 10px;
+  background: repeating-linear-gradient(45deg, var(--border-strong) 0 2px, transparent 2px 5px);
+  pointer-events: none;
+}
+
+/* --------------------------------------------------------------------- slots */
+
+.net-slot {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.net-slot--positive {
+  border-color: var(--status-ontime);
+  background: var(--status-ontime-quiet);
+}
+.net-slot--warn {
+  border-color: var(--status-delayed);
+  background: var(--status-delayed-quiet);
+}
+.net-slot--negative {
+  border-color: var(--status-cancelled);
+  background: var(--status-cancelled-quiet);
+}
+
+.net-slot:hover {
+  filter: brightness(1.12);
+}
+
+.net-slot--selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ------------------------------------------------------------ fleet schedule */
+
+.net-fleetsched {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  padding: var(--space-4);
+}
+
+/* --------------------------------------------------------------- empty state */
+
+.net-empty {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: var(--space-6);
+  text-align: center;
+  background: var(--bg-raised);
+}
+
+.net-empty__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+  color: var(--text-primary);
+}
+
+.net-empty__note {
+  margin: 0 auto;
+  max-width: 34rem;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+/* ------------------------------------------------------------- context panel */
+
+.net-ctx {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.net-ctx__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--text-sm);
+}
+
+.net-ctx__row-label {
+  color: var(--text-secondary);
+}
+
+.net-ctx__row-value {
+  color: var(--text-primary);
+  font-weight: 600;
+  min-width: 60px;
+  text-align: right;
+}
+
+.net-ctx__row-value .net-meter {
+  width: 90px;
+}
+
+.net-ctx__hint {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
