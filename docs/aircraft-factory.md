@@ -341,6 +341,37 @@ frame; it does not resolve the pre-existing rough nose/nacelles, mixed main comp
 marking-like pieces, openings or missing protected windows/doors. Those remain blocking semantic and
 topology work, not reasons to pretend the dimensional correction is a completed aircraft.
 
+## Semantic component inventory (M6-27)
+
+```bash
+pnpm assets:meshy-run -- inventory --operation candidate-1
+```
+
+`inventory` is a zero-credit evidence step over the exact corrected derivative. It records each
+source-scoped component's canonical bounds, triangle range, geometric side and up to three
+opposite-side mirror candidates. Mirror scores compare centres, extents and triangle counts; they
+are review aids only and never assign an aircraft semantic. Components crossing X=0 are explicitly
+flagged for triangle-level review rather than being treated as a ready fuselage, wing or tail mesh.
+
+The report also records the complete target mesh inventory. Side-specific mesh identities map onto
+the existing coarser material classes: for example, `wing_left` and `wing_right` both use the
+paintable `wings` class, while `cabin_windows_left` and `cabin_windows_right` both use the protected
+`cabin_windows` class. Doors remain dedicated decals or masks rather than holes. This means the
+factory can satisfy the required mesh detail without changing the shared livery/material-binding
+data model. Missing glazing, doors, lights or engine interiors remain missing; the inventory cannot
+infer geometry into existence or declare the candidate livery-ready.
+
+The immutable `candidate-N-semantic-inventory-v1.json` is bound to both the proportion-correction
+report and derivative hashes. Re-running it must reproduce identical bytes. It does not change the
+run ledger, source, derivative, registry or fleet state.
+
+Candidate 1 produces 20 component records. Only `review_component_002`, the 9,842-triangle mixed
+main body/wing/tail component, crosses the centre plane and is therefore forced into triangle-level
+review. The strongest whole-component bilateral evidence includes 001/004, 006/020, 008/009,
+010/011, 012/014 and 016/017; these are geometric pairs, not engine, window, door or light labels.
+The immutable inventory report SHA is
+`0127aaa892132b5ea5f1d4851ff3f93dfe9b91067952541fb45cab8781b14001`.
+
 ## Pinned strategy and vendor evidence
 
 The planning observation is dated 2026-08-28. Four untextured T2 candidates cost 5 credits each;

@@ -576,6 +576,7 @@ describe('operator command authority boundary', () => {
         ['review', '--operation', 'candidate-1'],
         ['frame', '--operation', 'candidate-1', '--axis-review-file', 'missing.json'],
         ['correct', '--operation', 'candidate-1'],
+        ['inventory', '--operation', 'candidate-1'],
       ]) {
         const result = run(args);
         expect(result.status).toBe(1);
@@ -683,6 +684,20 @@ describe('operator command authority boundary', () => {
       expect(correctedOutput.wingspanMetres).toBeCloseTo(35.8, 4);
       expect(corrected.stdout + corrected.stderr).not.toContain(sentinel);
       expect(run(['correct', '--operation', 'candidate-1']).stdout).toBe(corrected.stdout);
+      const inventoried = run(['inventory', '--operation', 'candidate-1']);
+      expect(inventoried.status, inventoried.stderr.replaceAll(sentinel, '[redacted]')).toBe(0);
+      expect(JSON.parse(inventoried.stdout)).toMatchObject({
+        operationId: 'candidate-1',
+        components: 1,
+        centrePlaneReviewComponents: ['review_component_001'],
+        semanticAssignmentsMade: false,
+        state: 'quarantine',
+        runtimeAdmission: 'not-reviewed',
+        liveryReady: false,
+        creditsSpentByThisCommand: 0,
+      });
+      expect(inventoried.stdout + inventoried.stderr).not.toContain(sentinel);
+      expect(run(['inventory', '--operation', 'candidate-1']).stdout).toBe(inventoried.stdout);
       expect(canonicalJson(cliStore.read())).toBe(priorState);
     },
   );
