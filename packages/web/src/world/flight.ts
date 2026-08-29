@@ -260,7 +260,10 @@ export interface RouteLike {
 
 /** One simulated aircraft: where it is and which way its nose points. */
 export interface WorldPlane {
+  /** Unique per plane (route id plus its index), so deck.gl keys them apart. */
   routeId: string;
+  /** The route this plane flies, for looking up its carrier on a click. */
+  sourceId: string;
   position: LngLat;
   /** deck.gl icon angle — counter-clockwise degrees, so a north-up icon faces travel. */
   angle: number;
@@ -284,6 +287,7 @@ export function planesForRoutes(
       const t = (phase + k / planesPerRoute) % 1;
       planes.push({
         routeId: `${routeItem.id}:${String(k)}`,
+        sourceId: routeItem.id,
         position: toLngLat(arcVec(arc, t)),
         // deck.gl rotates the icon counter-clockwise; a north-up plane faces a
         // clockwise bearing when rotated by its negative.

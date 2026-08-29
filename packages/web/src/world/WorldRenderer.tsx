@@ -1,5 +1,5 @@
-import { MapView, _GlobeView as GlobeView, type MapViewState } from '@deck.gl/core';
-import { IconLayer } from '@deck.gl/layers';
+import { MapView, _GlobeView as GlobeView, type Layer, type MapViewState } from '@deck.gl/core';
+import { IconLayer, PathLayer } from '@deck.gl/layers';
 import DeckGL, { type DeckGLRef } from '@deck.gl/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
@@ -9,7 +9,7 @@ import { useTheme } from '../theme/ThemeProvider';
 
 import { fetchWorldAirports } from './airports-api';
 import { clampViewState, focusViewState } from './camera';
-import { planesForRoutes, type WorldPlane } from './flight';
+import { flightPath, planesForRoutes, routeSeed, type WorldPlane } from './flight';
 import { COARSE_WORLD, LAND_DETAIL_ZOOM, loadDetailedWorld, type WorldGeometry } from './land';
 import {
   airportLevelForZoom,
@@ -20,7 +20,12 @@ import {
   type WorldLayerVisibility,
   type WorldRoute,
 } from './layers';
-import { fetchWorldMap, type WorldMapData, type WorldMapRoute } from './map-api';
+import {
+  fetchWorldMap,
+  type WorldMapData,
+  type WorldMapRoute,
+  type WorldMapTrafficRoute,
+} from './map-api';
 import { readWorldPalette } from './palette';
 import { SustainedFrameRateMonitor, type FrameRateSample } from './performance';
 import { persistProjection, readInitialProjection, type WorldProjection } from './projection';
@@ -108,10 +113,11 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   const [palette, setPalette] = useState<WorldPalette>(() => readWorldPalette());
   const [geometry, setGeometry] = useState<WorldGeometry>(COARSE_WORLD);
   const [airports, setAirports] = useState<readonly WorldAirport[]>([]);
-  const [map, setMap] = useState<WorldMapData>({ hubs: [], routes: [] });
+  const [map, setMap] = useState<WorldMapData>({ hubs: [], routes: [], traffic: [] });
   const [maxRangeNm, setMaxRangeNm] = useState(0);
   const [phase, setPhase] = useState(0);
   const [selectedAirport, setSelectedAirport] = useState<WorldAirport | null>(null);
+  const [selectedRoute, setSelectedRoute] = useState<WorldMapTrafficRoute | null>(null);
   const navigate = useNavigate();
   const transitionTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const frameRateMonitor = useRef(new SustainedFrameRateMonitor());
@@ -169,7 +175,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   // routes to fly. requestAnimationFrame pauses itself when the tab is hidden, and
   // the plane layer is the only thing that depends on `phase`, so the land, sea and
   // day/night bitmaps are not rebuilt as it ticks.
-  const hasRoutes = map.routes.length > 0;
+  const hasRoutes = map.traffic.length > 0;
   useEffect(() => {
     if (!hasRoutes) return;
     let raf = 0;
@@ -312,6 +318,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   // plan a route, show why it can't, or list the routes already there.
   const onAirportClick = useCallback((airport: WorldAirport) => {
     setSelectedAirport(airport);
+    setSelectedRoute(null);
   }, []);
 
   // The map is for discovery; opening a route happens in the route planner. Hand it
@@ -354,11 +361,28 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     ],
   );
 
+  // The world's live traffic — every active route flown by any carrier, the player's
+  // own and the NPCs' — is what the planes ride. A lookup by route id turns a clicked
+  // plane back into the carrier behind it, and the own-route set colours a player's
+  // own flights apart from the competition's.
+  const trafficById = useMemo(() => new Map(map.traffic.map((r) => [r.id, r])), [map.traffic]);
+  const ownRouteIds = useMemo(
+    () => new Set(map.traffic.filter((r) => r.own).map((r) => r.id)),
+    [map.traffic],
+  );
+
+  // A plane is selected out of the animated layer, so its route is redrawn even when
+  // that carrier's line is not otherwise on the map (NPC routes have no line of their
+  // own until one is clicked). Cleared if its route leaves the world's traffic.
+  useEffect(() => {
+    if (selectedRoute !== null && !trafficById.has(selectedRoute.id)) setSelectedRoute(null);
+  }, [selectedRoute, trafficById]);
+
   // The animated plane layer is kept out of `layers` on purpose: it changes every
   // frame with `phase`, and folding it into the memo above would rebuild the land,
   // sea and day/night bitmaps sixty times a second.
   const planeLayer = useMemo(() => {
-    const planes = planesForRoutes(map.routes, phase, 1);
+    const planes = planesForRoutes(map.traffic, phase, 1);
     return new IconLayer<WorldPlane>({
       id: 'world-planes',
       data: planes,
@@ -367,15 +391,58 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       getSize: 16,
       sizeUnits: 'pixels',
       getAngle: (p) => p.angle,
-      getColor: palette.route,
+      // The player's own flights in the route blue; the competition's in the amber
+      // FlightRadar reads on — both theme tokens, so no colour literal here.
+      getColor: (p) => (ownRouteIds.has(p.sourceId) ? palette.route : palette.airport),
+      updateTriggers: { getColor: [ownRouteIds, palette.route, palette.airport] },
+      // Clickable so a plane can name its carrier and draw its route; a fatter pick
+      // radius (set on DeckGL) makes the small icons easy to hit.
+      pickable: true,
+      onClick: (info) => {
+        const plane = info.object as WorldPlane | undefined;
+        if (!plane) return false;
+        const carrierRoute = trafficById.get(plane.sourceId);
+        if (carrierRoute) {
+          setSelectedRoute(carrierRoute);
+          setSelectedAirport(null);
+        }
+        return true;
+      },
       billboard: true,
       // Lift the plane off the surface like the routes and airports, so it is not
       // depth-rejected by the terrain at the whole-globe zoom.
       getPolygonOffset: () => [0, -60000],
       parameters: { cullMode: 'none' },
     });
-  }, [map.routes, phase, palette.route]);
-  const allLayers = useMemo(() => [...layers, planeLayer], [layers, planeLayer]);
+  }, [map.traffic, phase, palette.route, palette.airport, ownRouteIds, trafficById]);
+
+  // The clicked plane's route, drawn on demand: an NPC's line does not otherwise
+  // appear, and this is what "show their route" puts on the map. Coloured like its
+  // planes — own blue, competition amber — and lifted off the surface like the rest
+  // of the overlay so it clears the terrain at the far-out zoom.
+  const selectedRouteLayer = useMemo(() => {
+    if (selectedRoute === null) return false;
+    const line = selectedRoute.own ? palette.route : palette.airport;
+    return new PathLayer<WorldMapTrafficRoute>({
+      id: 'world-selected-route',
+      data: [selectedRoute],
+      getPath: (r) => flightPath(r.source, r.target, routeSeed(r.id), quality === 'full' ? 64 : 32),
+      getColor: [line[0], line[1], line[2], 255],
+      getWidth: 4,
+      widthUnits: 'pixels',
+      widthMinPixels: 3,
+      widthMaxPixels: 8,
+      capRounded: true,
+      jointRounded: true,
+      parameters: { cullMode: 'none' },
+      getPolygonOffset: () => [0, -60000],
+    });
+  }, [selectedRoute, palette.route, palette.airport, quality]);
+
+  const allLayers = useMemo<(Layer | false)[]>(
+    () => [...layers, selectedRouteLayer, planeLayer],
+    [layers, selectedRouteLayer, planeLayer],
+  );
   const view = useMemo(
     () =>
       projection === 'globe'
@@ -603,6 +670,39 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
             </div>
           );
         })()}
+
+      {selectedRoute !== null && (
+        <div
+          className="world-renderer__route-panel"
+          role="dialog"
+          aria-label={`Flight ${selectedRoute.originIcao} to ${selectedRoute.destinationIcao}`}
+        >
+          <div className="world-renderer__route-head">
+            <div>
+              <p className="world-renderer__route-eyebrow">
+                {selectedRoute.own ? 'Your flight' : selectedRoute.airlineName}
+              </p>
+              <p className="world-renderer__route-title">
+                {selectedRoute.originName} → {selectedRoute.destinationName}
+              </p>
+              <p className="world-renderer__route-code">
+                {selectedRoute.originIcao} → {selectedRoute.destinationIcao}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="world-renderer__route-close"
+              aria-label="Close"
+              onClick={() => setSelectedRoute(null)}
+            >
+              ×
+            </button>
+          </div>
+          <p className="world-renderer__route-muted">
+            {selectedRoute.own ? 'One of your routes.' : `Flown by ${selectedRoute.airlineName}.`}
+          </p>
+        </div>
+      )}
 
       <WorldClockDisplay inGameTime={inGameTime} speedMultiplier={speedMultiplier} />
 

@@ -25,12 +25,24 @@ export interface WorldMapRoute {
   destinationName: string;
 }
 
+/**
+ * One live route flown by some carrier in the world — the data behind a plane icon.
+ * The player's own routes carry `own: true`; NPC (and any other player's) routes
+ * carry `own: false`, so the map can colour and label them apart.
+ */
+export interface WorldMapTrafficRoute extends WorldMapRoute {
+  airlineId: string;
+  airlineName: string;
+  own: boolean;
+}
+
 export interface WorldMapData {
   hubs: WorldHub[];
   routes: WorldMapRoute[];
+  traffic: WorldMapTrafficRoute[];
 }
 
-const EMPTY: WorldMapData = { hubs: [], routes: [] };
+const EMPTY: WorldMapData = { hubs: [], routes: [], traffic: [] };
 
 export async function fetchWorldMap(): Promise<WorldMapData> {
   let response: Response;
@@ -48,5 +60,6 @@ export async function fetchWorldMap(): Promise<WorldMapData> {
   return {
     hubs: Array.isArray(data?.hubs) ? data.hubs : [],
     routes: Array.isArray(data?.routes) ? data.routes : [],
+    traffic: Array.isArray(data?.traffic) ? data.traffic : [],
   };
 }

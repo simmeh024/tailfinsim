@@ -129,6 +129,14 @@ describe('planesForRoutes', () => {
     }
   });
 
+  it('tags each plane with the route it flies, so a click finds the carrier', () => {
+    const planes = planesForRoutes(routes, 0.25, 1);
+    expect(planes.map((p) => p.sourceId)).toEqual(['r1', 'r2']);
+    // A staggered pair still both belong to their one route.
+    const pair = planesForRoutes([routes[0]!], 0, 2);
+    expect(pair.map((p) => p.sourceId)).toEqual(['r1', 'r1']);
+  });
+
   it('moves the plane as the phase advances', () => {
     const a = planesForRoutes(routes, 0.1, 1)[0]!.position;
     const b = planesForRoutes(routes, 0.6, 1)[0]!.position;
