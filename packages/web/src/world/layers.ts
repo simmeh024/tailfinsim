@@ -1,6 +1,6 @@
 import { BitmapLayer, GeoJsonLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 
-import { altitudeProfile, greatCirclePath } from './flight';
+import { altitudeProfile, flightPath, routeSeed } from './flight';
 import { WEB_MERCATOR_MAX_LATITUDE } from './terminator';
 import { terrainImage } from './terrain';
 
@@ -652,11 +652,13 @@ export function createWorldLayers({
       new PathLayer<WorldRoute>({
         id: 'world-routes',
         data: routes,
-        // A flat great-circle line on the surface, not an `ArcLayer` rainbow lifted
-        // into 3D: this is the FlightRadar look — a route that bends north or south
-        // the way a real track does while staying on the ground. The plane rides the
-        // same curve, since both come from `greatCirclePath`/`interpolateGreatCircle`.
-        getPath: ({ source, target }) => greatCirclePath(source, target, routeSegments),
+        // A flat track on the surface, not an `ArcLayer` rainbow lifted into 3D:
+        // this is the FlightRadar look — a route that bends the way a real track
+        // does while staying on the ground, with its own seeded wander so no two
+        // legs are identical. The plane rides the same track, since both come from
+        // `flightPath`/`arcVec` seeded on the route id.
+        getPath: ({ id, source, target }) =>
+          flightPath(source, target, routeSeed(id), routeSegments),
         // Per-vertex colour: the altitude wash, one colour per point of the path.
         // The array matches the path's `routeSegments + 1` points and is the same
         // for every route, so PathLayer gradients each line without a per-route cost.

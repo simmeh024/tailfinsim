@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest';
 import {
   altitudeProfile,
   bearing,
+  flightPath,
   headingAt,
   interpolateGreatCircle,
   planesForRoutes,
+  routeSeed,
 } from './flight';
 
 import type { LngLat } from './terminator';
@@ -66,6 +68,48 @@ describe('altitudeProfile', () => {
   it('climbs and descends monotonically at the ends', () => {
     expect(altitudeProfile(0.06)).toBeGreaterThan(altitudeProfile(0.02));
     expect(altitudeProfile(0.94)).toBeGreaterThan(altitudeProfile(0.98));
+  });
+});
+
+describe('routeSeed', () => {
+  it('is stable for an id and differs between ids', () => {
+    expect(routeSeed('r1')).toBe(routeSeed('r1'));
+    expect(routeSeed('r1')).not.toBe(routeSeed('r2'));
+  });
+});
+
+describe('flightPath', () => {
+  const ams: LngLat = [4.76, 52.31];
+  const nce: LngLat = [7.22, 43.66];
+
+  it('anchors the endpoints exactly and samples segments+1 points', () => {
+    const path = flightPath(ams, nce, routeSeed('r1'), 32);
+    expect(path).toHaveLength(33);
+    expect(path[0]![0]).toBeCloseTo(ams[0], 6);
+    expect(path[0]![1]).toBeCloseTo(ams[1], 6);
+    expect(path[32]![0]).toBeCloseTo(nce[0], 6);
+    expect(path[32]![1]).toBeCloseTo(nce[1], 6);
+  });
+
+  it('is deterministic for a seed and varies between seeds', () => {
+    const a = flightPath(ams, nce, routeSeed('r1'), 32);
+    const b = flightPath(ams, nce, routeSeed('r1'), 32);
+    expect(b).toEqual(a);
+    const c = flightPath(ams, nce, routeSeed('r2'), 32);
+    // Different seed → a different track (the interior differs even if the ends match).
+    const mid = 16;
+    expect(c[mid]).not.toEqual(a[mid]);
+  });
+
+  it('wanders off the great circle in the middle but not at the ends', () => {
+    const seed = routeSeed('wandering');
+    const path = flightPath(ams, nce, seed, 64);
+    const gcMid = interpolateGreatCircle(ams, nce, 0.5);
+    const mid = path[32]!;
+    const drift = Math.hypot(mid[0] - gcMid[0], mid[1] - gcMid[1]);
+    // A real, non-zero lateral offset at mid-leg, but small — degrees, not a detour.
+    expect(drift).toBeGreaterThan(0.001);
+    expect(drift).toBeLessThan(2);
   });
 });
 

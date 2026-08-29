@@ -195,14 +195,17 @@ scanline _before_ the supersampled grid could smooth anything — so the shape b
 already a staircase and no amount of supersampling recovered it. Longitude never had the problem,
 which is why the artefact read as horizontal steps rather than as general roughness.
 
-Routes are a `PathLayer` whose path is a flat great circle on the surface — `greatCirclePath`
-in `flight.ts` samples `interpolateGreatCircle` and **unwraps** longitudes so a leg crossing
-the antimeridian climbs past ±180 rather than snapping back and drawing a stray line across
-the map. This is the FlightRadar look: a route that bends north or south while staying on the
-ground, rather than the `ArcLayer` rainbow it replaced (which lifted the route into 3D). The
-one implementation serves both projections, and the simulated plane rides the same curve
-because it comes from the same interpolation. Reduced detail samples the line with fewer
-points (64→32 segments).
+Routes are a `PathLayer` whose path is a flat track on the surface — `flightPath` in
+`flight.ts` takes the great circle (`greatCirclePath`/`interpolateGreatCircle`, which
+**unwrap** longitudes so an antimeridian crossing climbs past ±180 rather than snapping back)
+and adds a **seeded lateral wander**: a sum of a few sine waves whose amplitude, frequency and
+phase come from `routeSeed(route.id)`, enveloped to zero at both ends so the track still starts
+and ends exactly at the two airports. Every route gets its own shape, and it is the same shape
+each render, so the simulated plane (`planesForRoutes` → `arcVec`) rides the identical track
+rather than cutting a clean great circle through the bends. This is the FlightRadar look — a
+route that bends the way a real track does while staying on the ground — replacing the
+`ArcLayer` rainbow that lifted the route into 3D. The one implementation serves both
+projections. Reduced detail samples the line with fewer points (64→32 segments).
 
 M7's world map draws the player's own hubs and operational routes from `GET /api/world/map`,
 with a small plane animated along each route. The renderer still accepts an explicit typed
