@@ -217,6 +217,8 @@ const COVERED_WRITE_ENDPOINTS = [
   'DELETE /api/ground/contracts/:id',
   'POST /api/routes',
   'POST /api/routes/:routeId/fares/preview',
+  'DELETE /api/routes/:routeId',
+  'PUT /api/routes/:routeId/active',
   'PUT /api/crew/policies',
   'PUT /api/crew/reserves',
   'PUT /api/routes/:routeId/fares',
