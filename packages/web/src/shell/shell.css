@@ -133,6 +133,103 @@ body {
   gap: var(--space-2);
 }
 
+/* The route mini-panel, opened by clicking an airport the player flies to (M7). */
+.world-renderer__route-panel {
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  z-index: 5;
+  width: min(20rem, calc(100% - 2 * var(--space-3)));
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px var(--bg-scrim);
+}
+
+.world-renderer__route-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.world-renderer__route-eyebrow {
+  margin: 0;
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.world-renderer__route-title {
+  margin: 2px 0 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.world-renderer__route-close {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-lg);
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 var(--space-1);
+}
+
+.world-renderer__route-list {
+  list-style: none;
+  margin: var(--space-3) 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
+.world-renderer__route-item {
+  display: grid;
+  grid-template-columns: 1rem 1fr auto;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.world-renderer__route-dir {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.world-renderer__route-name {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.world-renderer__route-code {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs);
+}
+
+.world-renderer__route-link {
+  display: inline-block;
+  color: var(--accent);
+  font-size: var(--text-sm);
+  text-decoration: none;
+}
+
+.world-renderer__route-link:hover {
+  text-decoration: underline;
+}
+
 /*
  * The world clock, opposite the controls.
  *

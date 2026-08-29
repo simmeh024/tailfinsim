@@ -22,6 +22,8 @@ export interface WorldAirportRecord {
   /** `[longitude, latitude]`, ready for deck.gl. */
   position: [number, number];
   name: string;
+  /** ICAO ident — the key routes reference, so a click can match a route endpoint. */
+  icao: string;
   iata: string | null;
   /** App. B.3 tier — flagship, large, medium, small, regional. Never null here. */
   tier: string;
@@ -35,6 +37,7 @@ export async function readWorldAirports(db: Database): Promise<WorldAirportRecor
       longitude: airport.longitude,
       latitude: airport.latitude,
       name: airport.name,
+      icao: airport.ident,
       iata: airport.iataCode,
       tier: airport.tier,
     })
@@ -44,6 +47,7 @@ export async function readWorldAirports(db: Database): Promise<WorldAirportRecor
       rows.map((row) => ({
         position: [row.longitude, row.latitude] as [number, number],
         name: row.name,
+        icao: row.icao,
         iata: row.iata,
         tier: row.tier ?? 'regional',
       })),

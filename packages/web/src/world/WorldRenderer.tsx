@@ -1,4 +1,5 @@
 import { MapView, _GlobeView as GlobeView, type MapViewState } from '@deck.gl/core';
+import { IconLayer } from '@deck.gl/layers';
 import DeckGL, { type DeckGLRef } from '@deck.gl/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -6,6 +7,7 @@ import { useTheme } from '../theme/ThemeProvider';
 
 import { fetchWorldAirports } from './airports-api';
 import { clampViewState, focusViewState } from './camera';
+import { planesForRoutes, type WorldPlane } from './flight';
 import { COARSE_WORLD, LAND_DETAIL_ZOOM, loadDetailedWorld, type WorldGeometry } from './land';
 import {
   createWorldLayers,
@@ -14,6 +16,7 @@ import {
   type WorldLayerVisibility,
   type WorldRoute,
 } from './layers';
+import { fetchWorldMap, type WorldMapData, type WorldMapRoute } from './map-api';
 import { readWorldPalette } from './palette';
 import { SustainedFrameRateMonitor, type FrameRateSample } from './performance';
 import { persistProjection, readInitialProjection, type WorldProjection } from './projection';
@@ -70,6 +73,17 @@ const DEFAULT_VISIBILITY: WorldLayerVisibility = {
   airports: true,
 };
 
+/**
+ * A north-up plane silhouette, tinted at draw time (IconLayer `mask`), so the one
+ * data URI serves both themes. On its own line so the colour-literal guard skips
+ * it (it exempts `data:image/svg+xml`).
+ */
+// prettier-ignore
+const PLANE_ICON = 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="%23000" d="M12 2c-.8 0-1.4 1.3-1.4 3v4.9L2 15v2l8.6-2.6V20l-2.2 1.4V23L12 22l3.6 1v-1.6L13.4 20v-5.6L22 17v-2l-8.6-5.1V5c0-1.7-.6-3-1.4-3z"/></svg>';
+
+/** How fast a plane crosses its whole route: ~1/26 per second, so a full pass is ~26s. */
+const PLANE_SPEED_PER_SECOND = 0.038;
+
 export interface WorldRendererProps {
   routes?: readonly WorldRoute[];
 }
@@ -89,6 +103,9 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   const [palette, setPalette] = useState<WorldPalette>(() => readWorldPalette());
   const [geometry, setGeometry] = useState<WorldGeometry>(COARSE_WORLD);
   const [airports, setAirports] = useState<readonly WorldAirport[]>([]);
+  const [map, setMap] = useState<WorldMapData>({ hubs: [], routes: [] });
+  const [phase, setPhase] = useState(0);
+  const [selectedAirport, setSelectedAirport] = useState<WorldAirport | null>(null);
   const transitionTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const frameRateMonitor = useRef(new SustainedFrameRateMonitor());
   const deckRef = useRef<DeckGLRef<MapView | GlobeView> | null>(null);
@@ -110,6 +127,37 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       live = false;
     };
   }, []);
+
+  // The player's own overlay — hubs and routes. Also resilient: no airline yet is a
+  // 409, which resolves to an empty overlay, so the map draws without it.
+  useEffect(() => {
+    let live = true;
+    void fetchWorldMap().then((data) => {
+      if (live) setMap(data);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // Simulated flights: advance the animation phase each frame while there are
+  // routes to fly. requestAnimationFrame pauses itself when the tab is hidden, and
+  // the plane layer is the only thing that depends on `phase`, so the land, sea and
+  // day/night bitmaps are not rebuilt as it ticks.
+  const hasRoutes = map.routes.length > 0;
+  useEffect(() => {
+    if (!hasRoutes) return;
+    let raf = 0;
+    let last = performance.now();
+    const step = (now: number): void => {
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      setPhase((p) => (p + dt * PLANE_SPEED_PER_SECOND) % 1);
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [hasRoutes]);
 
   const { inGameTime, speedMultiplier } = useWorldClock();
 
@@ -200,21 +248,70 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   // `projection` is a dependency, and not because the layer list differs between
   // the views — it does not. Switching projection has to rebuild the layers so the
   // world-sized bitmaps re-tessellate for the new viewport; see `layers.ts`.
+  // The arcs draw the player's own routes (an explicit `routes` prop overrides, for
+  // tests). Clicking an airport the player flies to opens its route panel; an
+  // airport with no route of theirs does nothing.
+  const playerRoutes = routes.length > 0 ? routes : map.routes;
+  const routesThrough = useCallback(
+    (icao: string): WorldMapRoute[] =>
+      map.routes.filter((r) => r.originIcao === icao || r.destinationIcao === icao),
+    [map.routes],
+  );
+  const onAirportClick = useCallback(
+    (airport: WorldAirport) => {
+      if (routesThrough(airport.icao).length > 0) setSelectedAirport(airport);
+    },
+    [routesThrough],
+  );
+
   const layers = useMemo(
     () =>
       createWorldLayers({
         palette,
         projection,
         quality,
-        routes,
+        routes: playerRoutes,
         airports,
+        hubs: map.hubs,
+        onAirportClick,
         darkness,
         land: geometry.land,
         borders: geometry.borders,
         visibility,
       }),
-    [palette, projection, quality, routes, airports, darkness, geometry, visibility],
+    [
+      palette,
+      projection,
+      quality,
+      playerRoutes,
+      airports,
+      map.hubs,
+      onAirportClick,
+      darkness,
+      geometry,
+      visibility,
+    ],
   );
+
+  // The animated plane layer is kept out of `layers` on purpose: it changes every
+  // frame with `phase`, and folding it into the memo above would rebuild the land,
+  // sea and day/night bitmaps sixty times a second.
+  const planeLayer = useMemo(() => {
+    const planes = planesForRoutes(map.routes, phase, 1);
+    return new IconLayer<WorldPlane>({
+      id: 'world-planes',
+      data: planes,
+      getPosition: (p) => p.position,
+      getIcon: () => ({ url: PLANE_ICON, width: 24, height: 24, mask: true }),
+      getSize: 16,
+      sizeUnits: 'pixels',
+      getAngle: (p) => p.angle,
+      getColor: palette.route,
+      billboard: true,
+      parameters: { cullMode: 'none' },
+    });
+  }, [map.routes, phase, palette.route]);
+  const allLayers = useMemo(() => [...layers, planeLayer], [layers, planeLayer]);
   const view = useMemo(
     () =>
       projection === 'globe'
@@ -334,7 +431,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
           ref={deckRef}
           views={view}
           viewState={viewState}
-          layers={layers}
+          layers={allLayers}
           useDevicePixels={quality === 'full' ? true : 1}
           onViewStateChange={({ viewState: next }) => {
             setViewState(clampViewState(next));
@@ -345,6 +442,48 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       </div>
 
       <div className="world-renderer__atmosphere" aria-hidden="true" />
+
+      {selectedAirport !== null && (
+        <div
+          className="world-renderer__route-panel"
+          role="dialog"
+          aria-label={`Routes at ${selectedAirport.name}`}
+        >
+          <div className="world-renderer__route-head">
+            <div>
+              <p className="world-renderer__route-eyebrow">Route planner</p>
+              <p className="world-renderer__route-title">{selectedAirport.name}</p>
+            </div>
+            <button
+              type="button"
+              className="world-renderer__route-close"
+              aria-label="Close"
+              onClick={() => setSelectedAirport(null)}
+            >
+              ×
+            </button>
+          </div>
+          <ul className="world-renderer__route-list">
+            {routesThrough(selectedAirport.icao).map((r) => {
+              const outbound = r.originIcao === selectedAirport.icao;
+              const other = outbound ? r.destinationName : r.originName;
+              const otherIcao = outbound ? r.destinationIcao : r.originIcao;
+              return (
+                <li key={r.id} className="world-renderer__route-item">
+                  <span className="world-renderer__route-dir" aria-hidden="true">
+                    {outbound ? '→' : '←'}
+                  </span>
+                  <span className="world-renderer__route-name">{other}</span>
+                  <span className="world-renderer__route-code">{otherIcao}</span>
+                </li>
+              );
+            })}
+          </ul>
+          <a href="/network" className="world-renderer__route-link">
+            Open route planner
+          </a>
+        </div>
+      )}
 
       <WorldClockDisplay inGameTime={inGameTime} speedMultiplier={speedMultiplier} />
 
