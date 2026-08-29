@@ -8,8 +8,8 @@ const DEFAULT_SPEC = fileURLToPath(
   new URL('../../../assets/aircraft/generation/a320neo-t2-v1.json', import.meta.url),
 );
 
-/** Read bounded regular files only, without exposing OS error messages or paths. */
-export async function readBoundedMeshyInput(path: string, maxBytes: number): Promise<string> {
+/** Read bounded regular files through one handle, without exposing OS error messages or paths. */
+export async function readBoundedMeshyBytes(path: string, maxBytes: number): Promise<Buffer> {
   const file = await open(path, 'r');
   const bytes = Buffer.alloc(maxBytes + 1);
   try {
@@ -22,11 +22,16 @@ export async function readBoundedMeshyInput(path: string, maxBytes: number): Pro
       length += read.bytesRead;
     }
     if (length > maxBytes) throw new Error('Input exceeds the file limit.');
-    return bytes.toString('utf8', 0, length);
+    return Buffer.from(bytes.subarray(0, length));
   } finally {
     bytes.fill(0);
     await file.close();
   }
+}
+
+/** Read bounded UTF-8 inputs without a separate metadata check. */
+export async function readBoundedMeshyInput(path: string, maxBytes: number): Promise<string> {
+  return (await readBoundedMeshyBytes(path, maxBytes)).toString('utf8');
 }
 
 export const MESHY_PREFLIGHT_USAGE =

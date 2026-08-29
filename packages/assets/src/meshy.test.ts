@@ -15,7 +15,7 @@ import {
   recordMeshyCharge,
   reserveMeshyOperation,
 } from './meshy';
-import { readBoundedMeshyInput, runMeshyPreflight } from './meshy-preflight';
+import { readBoundedMeshyBytes, readBoundedMeshyInput, runMeshyPreflight } from './meshy-preflight';
 
 const spec = MeshyGenerationSpec.parse(
   JSON.parse(
@@ -234,6 +234,7 @@ describe('offline CLI and credential boundary', () => {
     try {
       await writeFile(path, sentinel);
       expect(await readBoundedMeshyInput(path, sentinel.length)).toBe(sentinel);
+      expect(await readBoundedMeshyBytes(path, sentinel.length)).toEqual(Buffer.from(sentinel));
       await expect(readBoundedMeshyInput(path, sentinel.length - 1)).rejects.toThrow();
       await expect(readBoundedMeshyInput(directory, 4096)).rejects.toThrow();
       await expect(readBoundedMeshyInput(join(directory, 'missing.txt'), 4096)).rejects.toThrow();

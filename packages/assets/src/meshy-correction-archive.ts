@@ -1,4 +1,3 @@
-import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { validateBytes, version } from 'gltf-validator';
@@ -8,7 +7,7 @@ import { canonicalJson, sha256 } from './canonical';
 import { writeImmutableMeshyArtifact } from './meshy-archive';
 import { correctA320neoProportions } from './meshy-correction';
 import { readArchivedMeshyGeometry } from './meshy-geometry-report';
-import { readBoundedMeshyInput } from './meshy-preflight';
+import { readBoundedMeshyBytes, readBoundedMeshyInput } from './meshy-preflight';
 import { type MeshyRunStore } from './meshy-store';
 
 const Point = z.tuple([z.number(), z.number(), z.number()]);
@@ -34,9 +33,7 @@ export async function archiveMeshyCorrection(
   const frame = FrameReport.parse(JSON.parse(frameBytes.toString('utf8')) as unknown);
   if (frame.sourceSha256 !== sha256(source)) throw new Error('Frame source identity changed.');
   const reviewPath = join(archiveRoot, `review-${frame.prerequisiteDerivativeSha256}.glb`);
-  if ((await stat(reviewPath)).size > 64 * 1024 * 1024)
-    throw new Error('Review derivative exceeds its bounded profile.');
-  const review = await readFile(reviewPath);
+  const review = await readBoundedMeshyBytes(reviewPath, 64 * 1024 * 1024);
   if (sha256(review) !== frame.prerequisiteDerivativeSha256)
     throw new Error('Review derivative identity changed.');
   const { glb, report: prepared } = correctA320neoProportions(
