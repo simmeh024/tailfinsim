@@ -9,7 +9,7 @@ import { useTheme } from '../theme/ThemeProvider';
 
 import { fetchWorldAirports } from './airports-api';
 import { clampViewState, focusViewState } from './camera';
-import { flightPath, planesForRoutes, routeSeed, type WorldPlane } from './flight';
+import { flightPath, greatCirclePath, planesForRoutes, routeSeed, type WorldPlane } from './flight';
 import { COARSE_WORLD, LAND_DETAIL_ZOOM, loadDetailedWorld, type WorldGeometry } from './land';
 import {
   airportLevelForZoom,
@@ -29,8 +29,9 @@ import {
 import { parseHexColor, readWorldPalette, type RgbaColor, type WorldPalette } from './palette';
 import { SustainedFrameRateMonitor, type FrameRateSample } from './performance';
 import { persistProjection, readInitialProjection, type WorldProjection } from './projection';
+import { bundleCorridors, corridorGridForZoom, type Corridor } from './route-corridors';
 import { bestHub, fleetMaxRangeNm, reachableAirportIcaos } from './route-create';
-import { createDarknessField } from './terminator';
+import { createDarknessField, type LngLat } from './terminator';
 import { useWorldClock } from './useWorldClock';
 import { WorldClockDisplay } from './WorldClockDisplay';
 
@@ -125,6 +126,11 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   const [phase, setPhase] = useState(0);
   const [selectedAirport, setSelectedAirport] = useState<WorldAirport | null>(null);
   const [selectedRoute, setSelectedRoute] = useState<WorldMapTrafficRoute | null>(null);
+  const [showRivals, setShowRivals] = useState(false);
+  const [showLegend, setShowLegend] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(
+    () => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
+  );
   const navigate = useNavigate();
   const transitionTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const frameRateMonitor = useRef(new SustainedFrameRateMonitor());
@@ -178,13 +184,23 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     };
   }, []);
 
-  // Simulated flights: advance the animation phase each frame while there are
-  // routes to fly. requestAnimationFrame pauses itself when the tab is hidden, and
-  // the plane layer is the only thing that depends on `phase`, so the land, sea and
-  // day/night bitmaps are not rebuilt as it ticks.
+  // Watch the reduced-motion preference live, so a change stills or restarts the
+  // animation without a reload (M7-03's accessibility criterion).
+  useEffect(() => {
+    const query = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');
+    if (!query) return;
+    const onChange = (): void => setReducedMotion(query.matches);
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, []);
+
+  // Simulated flights: advance the animation phase each frame while there are routes
+  // to fly and the reader has not asked for reduced motion. requestAnimationFrame
+  // pauses itself when the tab is hidden, and only the plane and shimmer layers depend
+  // on `phase`, so the land, sea and day/night bitmaps are not rebuilt as it ticks.
   const hasRoutes = map.traffic.length > 0;
   useEffect(() => {
-    if (!hasRoutes) return;
+    if (!hasRoutes || reducedMotion) return;
     let raf = 0;
     let last = performance.now();
     const step = (now: number): void => {
@@ -195,7 +211,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [hasRoutes]);
+  }, [hasRoutes, reducedMotion]);
 
   const { inGameTime, speedMultiplier } = useWorldClock();
 
@@ -486,9 +502,114 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     });
   }, [selectedRoute, palette.route, quality]);
 
+  // The competition's routes as their own togglable layer — grey, so ownership reads
+  // as colour (M7-03). Below the un-bundle zoom they collapse into corridors so the
+  // whole-world "all traffic" view is legible rather than a hairball; above it, every
+  // leg draws on its own. The player's own routes always stay individual.
+  const rivals = useMemo(() => map.traffic.filter((r) => !r.own), [map.traffic]);
+  const corridorGrid = corridorGridForZoom(viewState.zoom);
+  const grey: RgbaColor = palette.border;
+
+  const rivalLinesLayer = useMemo(() => {
+    if (!showRivals || corridorGrid > 0 || rivals.length === 0) return false;
+    return new PathLayer<WorldMapTrafficRoute>({
+      id: 'world-rival-routes',
+      data: rivals,
+      getPath: (r) => flightPath(r.source, r.target, routeSeed(r.id), quality === 'full' ? 64 : 32),
+      getColor: [grey[0], grey[1], grey[2], 175],
+      getWidth: 1.5,
+      widthUnits: 'pixels',
+      widthMinPixels: 1,
+      widthMaxPixels: 3,
+      capRounded: true,
+      jointRounded: true,
+      pickable: true,
+      onClick: onPlaneClick,
+      parameters: { cullMode: 'none' },
+      getPolygonOffset: () => [0, -60000],
+    });
+  }, [showRivals, corridorGrid, rivals, grey, quality, onPlaneClick]);
+
+  const corridorLayer = useMemo(() => {
+    if (!showRivals || corridorGrid === 0 || rivals.length === 0) return false;
+    const corridors = bundleCorridors(rivals, corridorGrid);
+    const busiest = corridors.reduce((max, c) => Math.max(max, c.count), 1);
+    return new PathLayer<Corridor>({
+      id: 'world-corridors',
+      data: corridors,
+      getPath: (c) => greatCirclePath(c.source, c.target, 24),
+      // Weight says how many routes run the corridor; a lone leg reads as thin as it
+      // would un-bundled, a trunk corridor as a fat band.
+      getColor: [grey[0], grey[1], grey[2], 205],
+      getWidth: (c) => 1 + 5 * (c.count / busiest),
+      widthUnits: 'pixels',
+      widthMinPixels: 1,
+      widthMaxPixels: 9,
+      capRounded: true,
+      jointRounded: true,
+      updateTriggers: { getWidth: [busiest] },
+      parameters: { cullMode: 'none' },
+      getPolygonOffset: () => [0, -60000],
+    });
+  }, [showRivals, corridorGrid, rivals, grey]);
+
+  // A slow directional shimmer travelling along the player's own routes — a short
+  // brightened window sliding from origin to destination. Purely `phase`-driven, and
+  // the phase is frozen under prefers-reduced-motion, so this layer simply is not
+  // built then (M7-03's accessibility criterion).
+  const shimmerLayer = useMemo(() => {
+    if (reducedMotion || playerRoutes.length === 0) return false;
+    const segments = quality === 'full' ? 64 : 32;
+    const windowLen = Math.max(2, Math.round(segments * 0.1));
+    const trails = playerRoutes.map((route) => {
+      const full = flightPath(route.source, route.target, routeSeed(route.id), segments);
+      const start = Math.min(full.length - windowLen, Math.floor(phase * (full.length - 1)));
+      return {
+        id: route.id,
+        path: full.slice(Math.max(0, start), Math.max(windowLen, start + windowLen)),
+      };
+    });
+    const bright: RgbaColor = [
+      Math.round((palette.route[0] + 255) / 2),
+      Math.round((palette.route[1] + 255) / 2),
+      Math.round((palette.route[2] + 255) / 2),
+      235,
+    ];
+    return new PathLayer<{ id: string; path: LngLat[] }>({
+      id: 'world-shimmer',
+      data: trails,
+      getPath: (t) => t.path,
+      getColor: bright,
+      getWidth: 2,
+      widthUnits: 'pixels',
+      widthMinPixels: 1.5,
+      widthMaxPixels: 5,
+      capRounded: true,
+      jointRounded: true,
+      parameters: { cullMode: 'none' },
+      getPolygonOffset: () => [0, -70000],
+    });
+  }, [reducedMotion, playerRoutes, quality, phase, palette.route]);
+
   const allLayers = useMemo<(Layer | false)[]>(
-    () => [...layers, selectedRouteLayer, planeMarkLayer, planeLayer],
-    [layers, selectedRouteLayer, planeMarkLayer, planeLayer],
+    () => [
+      ...layers,
+      rivalLinesLayer,
+      corridorLayer,
+      selectedRouteLayer,
+      shimmerLayer,
+      planeMarkLayer,
+      planeLayer,
+    ],
+    [
+      layers,
+      rivalLinesLayer,
+      corridorLayer,
+      selectedRouteLayer,
+      shimmerLayer,
+      planeMarkLayer,
+      planeLayer,
+    ],
   );
   const view = useMemo(
     () =>
@@ -784,7 +905,10 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
             aria-pressed={visibility.routes}
             onClick={() => toggleLayer('routes')}
           >
-            Routes
+            My routes
+          </button>
+          <button type="button" aria-pressed={showRivals} onClick={() => setShowRivals((v) => !v)}>
+            Rivals
           </button>
           <button
             type="button"
@@ -814,8 +938,48 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
           >
             Grid
           </button>
+          <button type="button" aria-pressed={showLegend} onClick={() => setShowLegend((v) => !v)}>
+            Legend
+          </button>
         </div>
       </div>
+
+      {showLegend && (
+        <div className="world-renderer__legend" role="dialog" aria-label="Map legend">
+          <div className="world-renderer__legend-head">
+            <p className="world-renderer__route-eyebrow">Legend</p>
+            <button
+              type="button"
+              className="world-renderer__route-close"
+              aria-label="Close"
+              onClick={() => setShowLegend(false)}
+            >
+              ×
+            </button>
+          </div>
+          <ul className="world-renderer__legend-list">
+            <li>
+              <span className="world-renderer__legend-line world-renderer__legend-line--own" />
+              Your routes — your brand colour
+            </li>
+            <li>
+              <span className="world-renderer__legend-line world-renderer__legend-line--rival" />
+              Rivals — grey (toggle “Rivals”)
+            </li>
+            <li>
+              <span className="world-renderer__legend-line world-renderer__legend-line--corridor" />
+              Bundled corridor — thicker carries more routes; zoom in to split it
+            </li>
+            <li>
+              <span className="world-renderer__legend-dot" />
+              Aircraft — the carrier’s colour; a mark far out, a plane up close
+            </li>
+          </ul>
+          <p className="world-renderer__legend-note">
+            Motion (planes, the route shimmer) respects your reduced-motion setting.
+          </p>
+        </div>
+      )}
 
       {performanceOffer && (
         <div className="world-renderer__performance" role="status">
