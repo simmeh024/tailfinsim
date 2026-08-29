@@ -7,6 +7,7 @@ import { createDarknessField, WEB_MERCATOR_MAX_LATITUDE } from './terminator';
 import { terrainImage } from './terrain';
 
 import type { WorldAirport, WorldRoute } from './layers';
+import type { WorldHub } from './map-api';
 import type { WorldPalette } from './palette';
 import type { Layer } from '@deck.gl/core';
 
@@ -38,6 +39,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [antimeridianRoute],
       airports: [],
+      hubs: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -67,6 +69,7 @@ describe('projection-independent world layers', () => {
       quality: 'reduced',
       routes: [],
       airports: [],
+      hubs: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -99,6 +102,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       airports: [],
+      hubs: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -142,6 +146,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       airports: [],
+      hubs: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -183,6 +188,7 @@ describe('projection-independent world layers', () => {
         quality: 'full',
         routes: [],
         airports: [],
+        hubs: [],
         darkness: DARKNESS,
         land: COARSE_WORLD.land,
         borders: COARSE_WORLD.borders,
@@ -217,6 +223,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       airports: [],
+      hubs: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -247,6 +254,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [antimeridianRoute],
       airports: [],
+      hubs: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -265,6 +273,7 @@ describe('projection-independent world layers', () => {
       quality: 'reduced',
       routes: [antimeridianRoute],
       airports: [],
+      hubs: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -292,8 +301,8 @@ describe('projection-independent world layers', () => {
 
   it('draws the airports layer only when the airports toggle is on', () => {
     const airports: WorldAirport[] = [
-      { position: [4.76, 52.31], name: 'Amsterdam', tier: 'flagship' },
-      { position: [-73.78, 40.64], name: 'New York', tier: 'large' },
+      { position: [4.76, 52.31], name: 'Amsterdam', icao: 'EHAM', tier: 'flagship' },
+      { position: [-73.78, 40.64], name: 'New York', icao: 'KJFK', tier: 'large' },
     ];
     const build = (show: boolean): (Layer | false)[] =>
       createWorldLayers({
@@ -301,6 +310,7 @@ describe('projection-independent world layers', () => {
         quality: 'full',
         routes: [],
         airports,
+        hubs: [],
         darkness: DARKNESS,
         land: COARSE_WORLD.land,
         borders: COARSE_WORLD.borders,
@@ -326,6 +336,46 @@ describe('projection-independent world layers', () => {
     expect(hidden).toBe(false);
   });
 
+  it('draws the player’s hubs, larger and ringed, and makes airports clickable', () => {
+    const airports: WorldAirport[] = [
+      { position: [4.76, 52.31], name: 'Amsterdam', icao: 'EHAM', tier: 'flagship' },
+    ];
+    const hubs = [{ position: [4.76, 52.31] as [number, number], icao: 'EHAM', name: 'Amsterdam' }];
+    let clicked: WorldAirport | null = null;
+    const built = createWorldLayers({
+      palette,
+      quality: 'full',
+      routes: [],
+      airports,
+      hubs,
+      onAirportClick: (a) => {
+        clicked = a;
+      },
+      darkness: DARKNESS,
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
+      projection: 'flat',
+      visibility: {
+        graticule: false,
+        routes: false,
+        terminator: false,
+        borders: false,
+        terrain: false,
+        airports: true,
+      },
+    }).filter((layer): layer is Layer => layer !== false);
+
+    const hub = built.find((l) => l.id === 'world-hubs') as ScatterplotLayer<WorldHub> | undefined;
+    expect(hub?.props.data).toHaveLength(1);
+    expect(hub?.props.stroked).toBe(true);
+
+    const airportLayer = built.find((l) => l.id === 'world-airports');
+    expect(airportLayer?.props.pickable).toBe(true);
+    // The layer's onClick forwards the picked airport to the page callback.
+    airportLayer?.props.onClick?.({ object: airports[0] } as never, {} as never);
+    expect(clicked).toEqual(airports[0]);
+  });
+
   /**
    * The bug this guards is invisible in the layer list and fatal on screen.
    *
@@ -342,6 +392,7 @@ describe('projection-independent world layers', () => {
       quality: 'full' as const,
       routes: [],
       airports: [],
+      hubs: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -387,6 +438,7 @@ describe('projection-independent world layers', () => {
         quality,
         routes: [],
         airports: [],
+        hubs: [],
         darkness: DARKNESS,
         land: COARSE_WORLD.land,
         borders: COARSE_WORLD.borders,
@@ -426,6 +478,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [antimeridianRoute],
       airports: [],
+      hubs: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -471,6 +524,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       airports: [],
+      hubs: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -527,6 +581,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       airports: [],
+      hubs: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -574,6 +629,7 @@ describe('projection-independent world layers', () => {
         quality: 'full',
         routes: [],
         airports: [],
+        hubs: [],
         darkness: DARKNESS,
         land: COARSE_WORLD.land,
         borders: COARSE_WORLD.borders,
@@ -598,6 +654,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       airports: [],
+      hubs: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -635,6 +692,7 @@ describe('projection-independent world layers', () => {
         quality: 'full',
         routes: [],
         airports: [],
+        hubs: [],
         darkness: DARKNESS,
         land: COARSE_WORLD.land,
         borders: COARSE_WORLD.borders,
@@ -670,6 +728,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       airports: [],
+      hubs: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -721,6 +780,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       airports: [],
+      hubs: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -769,6 +829,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       airports: [],
+      hubs: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -799,6 +860,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       airports: [],
+      hubs: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -831,6 +893,7 @@ describe('projection-independent world layers', () => {
       quality: 'full',
       routes: [],
       airports: [],
+      hubs: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -885,6 +948,7 @@ describe('projection-independent world layers', () => {
         quality: 'full',
         routes: [],
         airports: [],
+        hubs: [],
         darkness: DARKNESS,
         land: COARSE_WORLD.land,
         borders: COARSE_WORLD.borders,

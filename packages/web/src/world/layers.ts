@@ -4,6 +4,7 @@ import { WEB_MERCATOR_MAX_LATITUDE } from './terminator';
 import { terrainImage } from './terrain';
 
 import type { BorderGeometry, LandGeometry } from './land';
+import type { WorldHub } from './map-api';
 import type { WorldPalette } from './palette';
 import type { WorldProjection } from './projection';
 import type { DarknessField, LngLat } from './terminator';
@@ -33,6 +34,8 @@ export interface WorldAirport {
   /** `[longitude, latitude]`. */
   position: LngLat;
   name: string;
+  /** ICAO ident — the key a click uses to find a route through this airport. */
+  icao: string;
   /** App. B.3 tier — flagship, large, medium, small, regional — sets the dot's size. */
   tier: string;
 }
@@ -58,6 +61,9 @@ export interface CreateWorldLayersOptions {
   quality: RendererQuality;
   routes: readonly WorldRoute[];
   airports: readonly WorldAirport[];
+  hubs: readonly WorldHub[];
+  /** Called when a served airport is clicked, so the page can open its route panel. */
+  onAirportClick?: (airport: WorldAirport) => void;
   darkness: DarknessField;
   /**
    * The coastline outline to draw.
@@ -360,6 +366,8 @@ export function createWorldLayers({
   projection,
   routes,
   airports,
+  hubs,
+  onAirportClick,
   visibility,
 }: CreateWorldLayersOptions): (Layer | false)[] {
   const bounds = worldBounds(projection, quality);
@@ -563,7 +571,34 @@ export function createWorldLayers({
         radiusMaxPixels: 5,
         getFillColor: palette.airport,
         stroked: false,
-        // Drawn last, so on top; the sphere must not back-face cull the dots.
+        // Clickable so the page can open a route panel; a fatter pick radius makes
+        // the small dots easy to hit without changing how they look.
+        pickable: onAirportClick !== undefined,
+        radiusScale: 1,
+        onClick: onAirportClick
+          ? (info) => {
+              if (info.object) onAirportClick(info.object as WorldAirport);
+              return true;
+            }
+          : undefined,
+        parameters: { cullMode: 'none' },
+      }),
+    // The player's hubs, on top of the airport field: larger, and ringed so a base
+    // reads differently from a city it merely serves.
+    hubs.length > 0 &&
+      new ScatterplotLayer<WorldHub>({
+        id: 'world-hubs',
+        data: hubs,
+        getPosition: ({ position }) => position,
+        getRadius: 5,
+        radiusUnits: 'pixels',
+        radiusMinPixels: 4,
+        radiusMaxPixels: 8,
+        getFillColor: palette.airport,
+        stroked: true,
+        getLineColor: palette.route,
+        lineWidthUnits: 'pixels',
+        getLineWidth: 1.5,
         parameters: { cullMode: 'none' },
       }),
   ];

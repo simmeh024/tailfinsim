@@ -17,6 +17,7 @@ import { resolvedAirlineOf } from '../airline/context';
 
 import { readWorldAirports } from './airports';
 import { readWorldClock } from './clock';
+import { readWorldMap } from './map';
 
 import type { DatabaseHandle } from '../db/client';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -31,6 +32,21 @@ export function registerWorldRoutes(app: FastifyInstance, { db }: { db: Database
     const airports = await readWorldAirports(db.db);
     return reply.code(200).send({ airports });
   });
+
+  /*
+   * The player's own overlay — their hubs and routes, positioned. World-scoped, so
+   * it takes the airline resolved from the session; a player with no airline gets a
+   * 409 through the airline guard, which the map treats as "nothing to draw yet".
+   */
+  app.get(
+    '/api/world/map',
+    { onRequest: app.requireAirline },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const own = resolvedAirlineOf(request);
+      const map = await readWorldMap(db.db, own.id);
+      return reply.code(200).send(map);
+    },
+  );
 
   app.get(
     '/api/world/clock',
