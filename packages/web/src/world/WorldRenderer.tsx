@@ -1,5 +1,5 @@
 import { MapView, _GlobeView as GlobeView, type Layer, type MapViewState } from '@deck.gl/core';
-import { IconLayer, PathLayer } from '@deck.gl/layers';
+import { IconLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 import DeckGL, { type DeckGLRef } from '@deck.gl/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
@@ -26,7 +26,7 @@ import {
   type WorldMapRoute,
   type WorldMapTrafficRoute,
 } from './map-api';
-import { readWorldPalette } from './palette';
+import { parseHexColor, readWorldPalette, type RgbaColor, type WorldPalette } from './palette';
 import { SustainedFrameRateMonitor, type FrameRateSample } from './performance';
 import { persistProjection, readInitialProjection, type WorldProjection } from './projection';
 import { bestHub, fleetMaxRangeNm, reachableAirportIcaos } from './route-create';
@@ -34,7 +34,6 @@ import { createDarknessField } from './terminator';
 import { useWorldClock } from './useWorldClock';
 import { WorldClockDisplay } from './WorldClockDisplay';
 
-import type { WorldPalette } from './palette';
 import type { ReactNode } from 'react';
 
 const INITIAL_VIEW_STATE: MapViewState = {
@@ -93,6 +92,14 @@ const PLANE_ICON = 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.o
 
 /** How fast a plane crosses its whole route: ~1/26 per second, so a full pass is ~26s. */
 const PLANE_SPEED_PER_SECOND = 0.038;
+
+/**
+ * The zoom at which a plane grows from a coloured mark into a full sprite (M7-02's
+ * LOD). Below it — the whole-world and continental views — a carrier is a dot in its
+ * brand colour, which is all that reads at that scale and all that a busy world can
+ * draw cheaply; above it the top-down silhouette resolves, nose to travel.
+ */
+const SPRITE_ZOOM = 3;
 
 export interface WorldRendererProps {
   routes?: readonly WorldRoute[];
@@ -363,12 +370,16 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
 
   // The world's live traffic — every active route flown by any carrier, the player's
   // own and the NPCs' — is what the planes ride. A lookup by route id turns a clicked
-  // plane back into the carrier behind it, and the own-route set colours a player's
-  // own flights apart from the competition's.
+  // plane back into the carrier behind it; a colour lookup carries each carrier's
+  // brand hue (M7-02) onto its plane, mark and route line.
   const trafficById = useMemo(() => new Map(map.traffic.map((r) => [r.id, r])), [map.traffic]);
-  const ownRouteIds = useMemo(
-    () => new Set(map.traffic.filter((r) => r.own).map((r) => r.id)),
-    [map.traffic],
+  const colourById = useMemo(
+    () => new Map(map.traffic.map((r) => [r.id, parseHexColor(r.colour, palette.route)])),
+    [map.traffic, palette.route],
+  );
+  const colourFor = useCallback(
+    (plane: WorldPlane): RgbaColor => colourById.get(plane.sourceId) ?? palette.route,
+    [colourById, palette.route],
   );
 
   // A plane is selected out of the animated layer, so its route is redrawn even when
@@ -378,51 +389,87 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     if (selectedRoute !== null && !trafficById.has(selectedRoute.id)) setSelectedRoute(null);
   }, [selectedRoute, trafficById]);
 
-  // The animated plane layer is kept out of `layers` on purpose: it changes every
-  // frame with `phase`, and folding it into the memo above would rebuild the land,
-  // sea and day/night bitmaps sixty times a second.
+  const onPlaneClick = useCallback(
+    (info: { object?: unknown }): boolean => {
+      const plane = info.object as WorldPlane | undefined;
+      if (!plane) return false;
+      const carrierRoute = trafficById.get(plane.sourceId);
+      if (carrierRoute) {
+        setSelectedRoute(carrierRoute);
+        setSelectedAirport(null);
+      }
+      return true;
+    },
+    [trafficById],
+  );
+
+  // The animated aircraft, shared by both level-of-detail layers below. Kept out of
+  // `layers` on purpose: it changes every frame with `phase`, and folding it into the
+  // land/sea/day-night memo would rebuild those world-sized bitmaps sixty times a
+  // second. One plane per live route, at the current animation phase.
+  const planes = useMemo(() => planesForRoutes(map.traffic, phase, 1), [map.traffic, phase]);
+  const detailed = viewState.zoom >= SPRITE_ZOOM;
+
+  // High zoom: the full top-down silhouette, tinted the carrier's colour and pointed
+  // the way it is going.
   const planeLayer = useMemo(() => {
-    const planes = planesForRoutes(map.traffic, phase, 1);
+    if (!detailed) return false;
     return new IconLayer<WorldPlane>({
       id: 'world-planes',
       data: planes,
       getPosition: (p) => p.position,
       getIcon: () => ({ url: PLANE_ICON, width: 24, height: 24, mask: true }),
-      getSize: 16,
+      getSize: 18,
       sizeUnits: 'pixels',
       getAngle: (p) => p.angle,
-      // The player's own flights in the route blue; the competition's in the amber
-      // FlightRadar reads on — both theme tokens, so no colour literal here.
-      getColor: (p) => (ownRouteIds.has(p.sourceId) ? palette.route : palette.airport),
-      updateTriggers: { getColor: [ownRouteIds, palette.route, palette.airport] },
+      getColor: colourFor,
+      updateTriggers: { getColor: [colourById] },
       // Clickable so a plane can name its carrier and draw its route; a fatter pick
       // radius (set on DeckGL) makes the small icons easy to hit.
       pickable: true,
-      onClick: (info) => {
-        const plane = info.object as WorldPlane | undefined;
-        if (!plane) return false;
-        const carrierRoute = trafficById.get(plane.sourceId);
-        if (carrierRoute) {
-          setSelectedRoute(carrierRoute);
-          setSelectedAirport(null);
-        }
-        return true;
-      },
+      onClick: onPlaneClick,
       billboard: true,
       // Lift the plane off the surface like the routes and airports, so it is not
       // depth-rejected by the terrain at the whole-globe zoom.
       getPolygonOffset: () => [0, -60000],
       parameters: { cullMode: 'none' },
     });
-  }, [map.traffic, phase, palette.route, palette.airport, ownRouteIds, trafficById]);
+  }, [detailed, planes, colourFor, colourById, onPlaneClick]);
+
+  // Low zoom: the same aircraft simplified to a coloured mark in the carrier's hue —
+  // all that reads at the whole-world scale, and all a busy world can afford to draw.
+  const planeMarkLayer = useMemo(() => {
+    if (detailed) return false;
+    return new ScatterplotLayer<WorldPlane>({
+      id: 'world-plane-marks',
+      data: planes,
+      getPosition: (p) => p.position,
+      getRadius: 4,
+      radiusUnits: 'pixels',
+      radiusMinPixels: 3,
+      radiusMaxPixels: 7,
+      getFillColor: colourFor,
+      updateTriggers: { getFillColor: [colourById] },
+      stroked: true,
+      getLineColor: palette.night,
+      lineWidthUnits: 'pixels',
+      getLineWidth: 1,
+      lineWidthMinPixels: 0.5,
+      pickable: true,
+      onClick: onPlaneClick,
+      billboard: true,
+      getPolygonOffset: () => [0, -60000],
+      parameters: { cullMode: 'none' },
+    });
+  }, [detailed, planes, colourFor, colourById, palette.night, onPlaneClick]);
 
   // The clicked plane's route, drawn on demand: an NPC's line does not otherwise
-  // appear, and this is what "show their route" puts on the map. Coloured like its
-  // planes — own blue, competition amber — and lifted off the surface like the rest
-  // of the overlay so it clears the terrain at the far-out zoom.
+  // appear, and this is what "show their route" puts on the map. Coloured its
+  // carrier's hue and lifted off the surface like the rest of the overlay so it
+  // clears the terrain at the far-out zoom.
   const selectedRouteLayer = useMemo(() => {
     if (selectedRoute === null) return false;
-    const line = selectedRoute.own ? palette.route : palette.airport;
+    const line = parseHexColor(selectedRoute.colour, palette.route);
     return new PathLayer<WorldMapTrafficRoute>({
       id: 'world-selected-route',
       data: [selectedRoute],
@@ -437,11 +484,11 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       parameters: { cullMode: 'none' },
       getPolygonOffset: () => [0, -60000],
     });
-  }, [selectedRoute, palette.route, palette.airport, quality]);
+  }, [selectedRoute, palette.route, quality]);
 
   const allLayers = useMemo<(Layer | false)[]>(
-    () => [...layers, selectedRouteLayer, planeLayer],
-    [layers, selectedRouteLayer, planeLayer],
+    () => [...layers, selectedRouteLayer, planeMarkLayer, planeLayer],
+    [layers, selectedRouteLayer, planeMarkLayer, planeLayer],
   );
   const view = useMemo(
     () =>

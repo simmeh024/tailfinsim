@@ -34,6 +34,8 @@ export interface WorldMapTrafficRoute extends WorldMapRoute {
   airlineId: string;
   airlineName: string;
   own: boolean;
+  /** The carrier's brand colour (`#RRGGBB`), for its plane/mark and route line. */
+  colour: string;
 }
 
 export interface WorldMapData {

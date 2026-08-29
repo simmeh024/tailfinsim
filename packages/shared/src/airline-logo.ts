@@ -351,6 +351,56 @@ export function isComposedLogo(logo: AirlineLogo): logo is ComposedAirlineLogo {
   return (logo as Partial<ComposedAirlineLogo>).v === 2;
 }
 
+/** A stable brand hue from a seed, for a carrier that has set no logo yet. */
+function hueFromSeed(seed: string): string {
+  let hash = 2166136261 >>> 0;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  const hue = (hash >>> 0) % 360;
+  // Fixed saturation/lightness so every derived colour is legible on the map,
+  // whatever hue the seed lands on.
+  const saturation = 0.62;
+  const lightness = 0.55;
+  const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation;
+  const huePrime = hue / 60;
+  const second = chroma * (1 - Math.abs((huePrime % 2) - 1));
+  const [r1, g1, b1] =
+    huePrime < 1
+      ? [chroma, second, 0]
+      : huePrime < 2
+        ? [second, chroma, 0]
+        : huePrime < 3
+          ? [0, chroma, second]
+          : huePrime < 4
+            ? [0, second, chroma]
+            : huePrime < 5
+              ? [second, 0, chroma]
+              : [chroma, 0, second];
+  const match = lightness - chroma / 2;
+  const channel = (value: number): string =>
+    Math.round((value + match) * 255)
+      .toString(16)
+      .padStart(2, '0');
+  return `#${channel(r1)}${channel(g1)}${channel(b1)}`;
+}
+
+/**
+ * A single brand colour for an airline on the world map — the dominant hue its
+ * planes and its route line carry (M7-02's "coloured mark carrying the livery's
+ * dominant colour"). Prefers the emblem's main colour; falls back to a stable hue
+ * derived from `seed` (the airline's code or id) when there is no logo yet, so
+ * even an unbranded NPC reads as its own carrier rather than a generic dot.
+ */
+export function airlineMapColour(logo: AirlineLogo | null | undefined, seed: string): string {
+  if (logo) {
+    const hex = isComposedLogo(logo) ? logo.palette.mark : logo.foreground;
+    if (/^#[0-9a-fA-F]{6}$/.test(hex)) return hex.toLowerCase();
+  }
+  return hueFromSeed(seed);
+}
+
 /* ------------------------------------------------------------------ Builders */
 
 let layerIdCounter = 0;

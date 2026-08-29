@@ -5,6 +5,7 @@ import {
   AirlineLogo,
   AirlineLogoCustomDesign,
   airlineLogoEquals,
+  airlineMapColour,
   ComposedAirlineLogo,
   CUSTOM_GRID_SIZE,
   defaultAirlineLogo,
@@ -233,5 +234,24 @@ describe('the legacy custom symbol design (unchanged)', () => {
       expect(AirlineLogoCustomDesign.safeParse(defaultCustomDesign(design)).success).toBe(true);
       expect(defaultCustomDesign(design).design).toBe(design);
     }
+  });
+});
+
+describe('airlineMapColour (M7-02 world-map hue)', () => {
+  it('takes the mark colour from a composed logo', () => {
+    const logo = defaultAirlineLogo('TF');
+    expect(airlineMapColour(logo, 'TFA')).toBe(logo.palette.mark.toLowerCase());
+  });
+
+  it('takes the foreground from a legacy logo', () => {
+    expect(airlineMapColour(LEGACY, 'TFA')).toBe('#ffffff');
+  });
+
+  it('falls back to a stable #RRGGBB hue from the seed when there is no logo', () => {
+    const a = airlineMapColour(null, 'AAL');
+    expect(a).toMatch(/^#[0-9a-f]{6}$/);
+    // Deterministic for a seed, and different seeds generally differ.
+    expect(airlineMapColour(null, 'AAL')).toBe(a);
+    expect(airlineMapColour(undefined, 'BAW')).not.toBe(a);
   });
 });
