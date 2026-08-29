@@ -94,7 +94,8 @@ export type OpenRouteFailure =
   | { kind: 'active-world-required' }
   | { kind: 'same-airport' }
   | { kind: 'duplicate' }
-  | { kind: 'unreachable'; reachability: { reason: string; detail: string } };
+  | { kind: 'unreachable'; reachability: { reason: string; detail: string } }
+  | { kind: 'authority-required'; detail: string };
 
 export type OpenRouteOutcome =
   { ok: true; routeId: string; greatCircleNm: number } | ({ ok: false } & OpenRouteFailure);
@@ -122,7 +123,21 @@ export async function openRoute(
     if (code === 'airline_required') return { ok: false, kind: 'no-airline' };
     if (code === 'active_world_required') return { ok: false, kind: 'active-world-required' };
   }
-  if (status === 422) return body as OpenRouteOutcome;
+  if (status === 422) {
+    // A route refused for needing an office unlock (M5-04) is a *different* 422
+    // shape from the reachability refusals — it carries a code and a message rather
+    // than `{ ok, kind }`. Translate it, or the panel would render an empty alert.
+    const code = (body as { code?: unknown }).code;
+    if (code === 'office_authority_required') {
+      const message = (body as { message?: unknown }).message;
+      return {
+        ok: false,
+        kind: 'authority-required',
+        detail: typeof message === 'string' ? message : 'This route needs an office unlock first.',
+      };
+    }
+    return body as OpenRouteOutcome;
+  }
   throw new Error(`Opening a route failed with ${String(status)}`);
 }
 

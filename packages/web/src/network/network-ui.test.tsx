@@ -395,6 +395,24 @@ describe('opening a route from the rail', () => {
     expect(alert).toHaveTextContent(/1,850 nm required/);
   });
 
+  it('explains when an international route needs an office hire, not a blank alert', async () => {
+    // EHAM → EDDM crosses a border, so the server refuses with a 422 whose shape is
+    // a code+message, not `{ ok, kind }`. The panel must still show the reason.
+    stub(undefined, {
+      ok: false,
+      code: 'office_authority_required',
+      message: 'An international route needs a Safety & Compliance hire in your office.',
+    });
+    render(<NetworkPage />);
+    await screen.findByText('EHAM → LEBL');
+
+    fireEvent.change(screen.getByLabelText('Origin ICAO'), { target: { value: 'EHAM' } });
+    fireEvent.change(screen.getByLabelText('Destination ICAO'), { target: { value: 'EDDM' } });
+    fireEvent.click(screen.getByRole('button', { name: /^open$/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Safety & Compliance/i);
+  });
+
   it('refuses a pair already flown, differently from a rule refusal', async () => {
     stub(undefined, { ok: false, kind: 'duplicate' });
     render(<NetworkPage />);

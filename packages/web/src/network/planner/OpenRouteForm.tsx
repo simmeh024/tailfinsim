@@ -105,6 +105,7 @@ export function OpenRouteForm({
               — {outcome.reachability.detail}
             </>
           )}
+          {outcome.kind === 'authority-required' && <>{outcome.detail}</>}
           {outcome.kind === 'unknown-airport' && <>No airport with the code {outcome.icao}.</>}
           {outcome.kind === 'same-airport' && <>A route needs two different airports.</>}
           {outcome.kind === 'no-airline' && (
