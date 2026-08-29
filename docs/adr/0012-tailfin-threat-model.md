@@ -108,6 +108,37 @@ ownership or admin rights. DreamObjects receives a copy of the whole database an
 the data-protection scope. GitHub cannot deploy to production: the operator's SSH session
 and manual deploy command are the approval boundary.
 
+### Local aircraft tooling (M6-25)
+
+The offline aircraft preflight may read a Meshy credential from the invoking operator process or an
+explicit bounded local file. It returns only a presence/shape status, never the key, credential path
+or raw parser/OS errors. It has no network transport, writes, application endpoint or deployed
+Web/Worker credential. This reduces accidental disclosure, not workstation-compromise risk.
+
+The separate read-only balance command requires an immutable local approval and exact ceiling.
+It GETs one fixed HTTPS endpoint with redirect, retry, timeout and decoded-size bounds; only a
+numeric balance projection escapes. ADR-0024 adds a Git-common SQLite ledger with serialized
+durable reservations and quarantine-only provenance descriptors. The key is never persisted.
+
+Candidate recovery now accepts untrusted GLB downloads into a private quarantine: fixed HTTPS asset
+host, no forwarded API credential, no redirects, bounded decoded bytes/deadlines, container-envelope
+validation, immutable hashed objects and a sanitized completion manifest written last. It never
+executes embedded/external glTF resources or emits provider errors/signed URLs. Only already recorded
+task IDs can be recovered; recovery exposes no arbitrary adoption or paid POST. Corrupt or redirected
+local archives fail closed. These controls do not replace conformance, resource, licence or visual QA.
+
+The separate candidate submit command introduces external spending under ADR-0024. It verifies
+immutable reference/consent/rights/terms/private-plan bytes, bounded nonanimated PNG decoding,
+paid-period and recent operator pricing attestations plus fresh account readiness. Only the PNG
+is uploaded; receipt/consent/terms remain private. Request proofs bind all identities and COMMIT
+before one fixed-host, bounded POST. Unknown outcomes retain reservations and block further
+spending; there are no POST retries or automatic adoption. Sequential terminal charge checks and
+archive-before-next-spend prevent speculative concurrency; the transaction arbitrates races.
+Operator pricing is not a provider-enforced quote, and subscription/balance is not spending
+authority. A workstation owner can still replace code or all history; hashes are not signatures.
+Quarantine provenance is not licensing/distribution approval (#793), and Pro/private is not a
+training opt-out. No retexture/fallback transport, application endpoint or runtime promotion exists.
+
 ### Boundaries that do not exist yet
 
 OPS-08's web/worker split is now deployed on dev and is described above; OPS-11 must still

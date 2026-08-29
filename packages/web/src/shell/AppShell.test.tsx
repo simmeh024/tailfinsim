@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -90,7 +90,17 @@ beforeEach(() => {
                     immutableFields: ['iataCode', 'icaoCode', 'cash', 'reputation'],
                   },
                 }
-              : {};
+              : url === '/api/office/executive'
+                ? {
+                    unlocked: false,
+                    officesUnlocked: 0,
+                    unlockCostMinor: 10_000_000_000,
+                    revenueGateMinor: 5_000_000_000,
+                    monthlyRevenueMinor: 0,
+                    nextOffice: null,
+                    hires: [],
+                  }
+                : {};
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
     }),
   );
@@ -98,6 +108,7 @@ beforeEach(() => {
 
 afterEach(() => {
   localStorage.clear();
+  vi.restoreAllMocks();
 });
 
 describe('layout', () => {
@@ -111,15 +122,28 @@ describe('layout', () => {
     expect(screen.getByLabelText('Status')).toBeInTheDocument();
   });
 
-  it('shows the Head Office floor-plan only on the Headquarters page', async () => {
+  it('shows the Head Office floor-plan on the office screens, not elsewhere', async () => {
+    // Freeze the clock so the C-Suite page's once-a-second countdown is a no-op
+    // (setNow to the same value bails the re-render) rather than an unwrapped
+    // state update after the assertions.
+    vi.spyOn(Date, 'now').mockReturnValue(Date.UTC(2026, 7, 28, 9, 0, 0));
     const world = await renderAt('/world');
     // Elsewhere the panel is the plain selection surface, not the office.
     expect(world.container.querySelector('.hq-layout__floor')).toBeNull();
     expect(screen.getByText(/Selection detail appears here/i)).toBeInTheDocument();
     world.unmount();
 
+    // The Headquarters page opens on the ground floor plan.
     const hq = await renderAt('/headquarters');
     expect(hq.container.querySelector('.hq-layout__floor')).not.toBeNull();
+    hq.unmount();
+
+    // The C-Suite page shares the same panel but opens on the executive floor.
+    const csuite = await renderAt('/c-suite');
+    expect(screen.getByRole('complementary', { name: 'Context' })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(csuite.container.querySelector('.hq-layout__floor--exec')).not.toBeNull(),
+    );
   });
 
   it('renders the world on the World page and nowhere else', async () => {

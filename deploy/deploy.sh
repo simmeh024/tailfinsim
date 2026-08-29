@@ -39,6 +39,11 @@ REPO_DIR="${REPO_DIR:-/srv/tailfin}"
 SERVICE="${SERVICE:-tailfin}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3000/healthz}"
 MIGRATION_DATABASE="${MIGRATION_DATABASE:-tailfin}"
+# The generic deploy is production. The dev wrapper overrides these so the
+# browser smoke follows the same public origin a reviewer actually reaches.
+POST_DEPLOY_BASE_URL="${POST_DEPLOY_BASE_URL:-https://tailfinsim.com}"
+POST_DEPLOY_EXPECTED_ENVIRONMENT="${POST_DEPLOY_EXPECTED_ENVIRONMENT:-production}"
+ROLLBACK_COMMAND="${ROLLBACK_COMMAND:-./deploy/deploy.sh}"
 
 # ---------------------------------------------------------------------------
 # Does this node own migrations for its database? (OPS-09)
@@ -388,13 +393,33 @@ log "Waiting for health"
 for i in $(seq 1 20); do
   if curl -fsS --max-time 3 "${HEALTH_URL}" >/dev/null 2>&1; then
     echo "healthy after ${i}s"
-    log "Deployed ${NEXT}"
-    exit 0
+    break
   fi
   sleep 1
 done
 
-printf '\n\033[31mUnhealthy after 20s.\033[0m\n' >&2
-echo "  journalctl -u ${SERVICE} -n 50 --no-pager" >&2
-echo "  ./deploy/deploy.sh ${PREVIOUS}   # roll back" >&2
-exit 1
+if ! curl -fsS --max-time 3 "${HEALTH_URL}" >/dev/null 2>&1; then
+  printf '\n\033[31mUnhealthy after 20s.\033[0m\n' >&2
+  echo "  journalctl -u ${SERVICE} -n 50 --no-pager" >&2
+  echo "  ${ROLLBACK_COMMAND} ${PREVIOUS}   # roll back" >&2
+  exit 1
+fi
+
+# This suite talks only to the public URL. It has neither a database URL nor a
+# test-auth setup, and its request firewall aborts methods other than GET/HEAD.
+# A failed smoke is evidence for an operator to assess, not permission for a
+# script to roll a release back underneath them.
+log "Running post-deploy browser smoke"
+if ! env -u DATABASE_URL -u E2E_DATABASE_URL \
+  POST_DEPLOY_BASE_URL="${POST_DEPLOY_BASE_URL}" \
+  POST_DEPLOY_EXPECTED_COMMIT="${NEXT}" \
+  POST_DEPLOY_EXPECTED_ENVIRONMENT="${POST_DEPLOY_EXPECTED_ENVIRONMENT}" \
+  pnpm test:post-deploy; then
+  printf '\n\033[31mPost-deploy browser smoke failed.\033[0m\n' >&2
+  echo "  ${SERVICE} is still serving ${NEXT}; this script does not roll back automatically." >&2
+  echo "  Inspect the browser failure above, then decide whether to run:" >&2
+  echo "  ${ROLLBACK_COMMAND} ${PREVIOUS}   # roll back" >&2
+  exit 1
+fi
+
+log "Deployed ${NEXT}"

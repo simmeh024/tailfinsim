@@ -1,4 +1,4 @@
-import { ArcLayer } from '@deck.gl/layers';
+import { ArcLayer, ScatterplotLayer } from '@deck.gl/layers';
 import { describe, expect, it } from 'vitest';
 
 import { COARSE_WORLD } from './land';
@@ -6,7 +6,7 @@ import { createWorldLayers } from './layers';
 import { createDarknessField, WEB_MERCATOR_MAX_LATITUDE } from './terminator';
 import { terrainImage } from './terrain';
 
-import type { WorldRoute } from './layers';
+import type { WorldAirport, WorldRoute } from './layers';
 import type { WorldPalette } from './palette';
 import type { Layer } from '@deck.gl/core';
 
@@ -18,6 +18,7 @@ const palette: WorldPalette = {
   grid: [10, 11, 12, 80],
   night: [13, 14, 15, 215],
   route: [16, 17, 18, 230],
+  airport: [22, 23, 24, 255],
   terrain: [200, 210, 220, 204],
 };
 
@@ -36,6 +37,7 @@ describe('projection-independent world layers', () => {
       palette,
       quality: 'full',
       routes: [antimeridianRoute],
+      airports: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -46,6 +48,7 @@ describe('projection-independent world layers', () => {
         terminator: true,
         borders: false,
         terrain: false,
+        airports: false,
       },
     });
     const routes = layers.find(
@@ -63,6 +66,7 @@ describe('projection-independent world layers', () => {
       palette,
       quality: 'reduced',
       routes: [],
+      airports: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -73,6 +77,7 @@ describe('projection-independent world layers', () => {
         terminator: false,
         borders: false,
         terrain: false,
+        airports: false,
       },
     });
     expect(layers.filter((layer) => layer !== false).map((layer) => layer.id)).toEqual([
@@ -93,6 +98,7 @@ describe('projection-independent world layers', () => {
       palette,
       quality: 'full',
       routes: [],
+      airports: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -103,6 +109,7 @@ describe('projection-independent world layers', () => {
         terminator: false,
         borders: true,
         terrain: true,
+        airports: false,
       },
     })
       .filter((layer): layer is Layer => layer !== false)
@@ -134,6 +141,7 @@ describe('projection-independent world layers', () => {
       palette,
       quality: 'full',
       routes: [],
+      airports: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -144,6 +152,7 @@ describe('projection-independent world layers', () => {
         terminator: false,
         borders: false,
         terrain: false,
+        airports: false,
       },
     })
       .filter((layer): layer is Layer => layer !== false)
@@ -173,6 +182,7 @@ describe('projection-independent world layers', () => {
         palette,
         quality: 'full',
         routes: [],
+        airports: [],
         darkness: DARKNESS,
         land: COARSE_WORLD.land,
         borders: COARSE_WORLD.borders,
@@ -183,6 +193,7 @@ describe('projection-independent world layers', () => {
           terminator: false,
           borders: false,
           terrain,
+          airports: false,
         },
       })
         .filter((layer): layer is Layer => layer !== false)
@@ -205,6 +216,7 @@ describe('projection-independent world layers', () => {
       palette,
       quality: 'full',
       routes: [],
+      airports: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -215,6 +227,7 @@ describe('projection-independent world layers', () => {
         terminator: false,
         borders: false,
         terrain: true,
+        airports: false,
       },
     })
       .filter((layer): layer is Layer => layer !== false)
@@ -233,6 +246,7 @@ describe('projection-independent world layers', () => {
       palette,
       quality: 'full',
       routes: [antimeridianRoute],
+      airports: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -243,12 +257,14 @@ describe('projection-independent world layers', () => {
         terminator: false,
         borders: false,
         terrain: false,
+        airports: false,
       },
     });
     const reduced = createWorldLayers({
       palette,
       quality: 'reduced',
       routes: [antimeridianRoute],
+      airports: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -259,6 +275,7 @@ describe('projection-independent world layers', () => {
         terminator: false,
         borders: false,
         terrain: false,
+        airports: false,
       },
     });
     const fullRoutes = full.find(
@@ -271,6 +288,42 @@ describe('projection-independent world layers', () => {
     );
     expect(fullRoutes?.props.numSegments).toBe(100);
     expect(reducedRoutes?.props.numSegments).toBe(50);
+  });
+
+  it('draws the airports layer only when the airports toggle is on', () => {
+    const airports: WorldAirport[] = [
+      { position: [4.76, 52.31], name: 'Amsterdam', tier: 'flagship' },
+      { position: [-73.78, 40.64], name: 'New York', tier: 'large' },
+    ];
+    const build = (show: boolean): (Layer | false)[] =>
+      createWorldLayers({
+        palette,
+        quality: 'full',
+        routes: [],
+        airports,
+        darkness: DARKNESS,
+        land: COARSE_WORLD.land,
+        borders: COARSE_WORLD.borders,
+        projection: 'flat',
+        visibility: {
+          graticule: false,
+          routes: false,
+          terminator: false,
+          borders: false,
+          terrain: false,
+          airports: show,
+        },
+      });
+
+    const shown = build(true).find(
+      (layer): layer is ScatterplotLayer<WorldAirport> =>
+        layer instanceof ScatterplotLayer && layer.id === 'world-airports',
+    );
+    expect(shown?.props.data).toHaveLength(2);
+    expect(shown?.props.getFillColor).toEqual(palette.airport);
+
+    const hidden = build(false).some((layer) => layer !== false && layer.id === 'world-airports');
+    expect(hidden).toBe(false);
   });
 
   /**
@@ -288,6 +341,7 @@ describe('projection-independent world layers', () => {
       palette,
       quality: 'full' as const,
       routes: [],
+      airports: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -297,6 +351,7 @@ describe('projection-independent world layers', () => {
         terminator: true,
         borders: false,
         terrain: false,
+        airports: false,
       },
     };
     const boundsFor = (projection: 'flat' | 'globe') =>
@@ -331,6 +386,7 @@ describe('projection-independent world layers', () => {
         palette,
         quality,
         routes: [],
+        airports: [],
         darkness: DARKNESS,
         land: COARSE_WORLD.land,
         borders: COARSE_WORLD.borders,
@@ -341,6 +397,7 @@ describe('projection-independent world layers', () => {
           terminator: true,
           borders: false,
           terrain: false,
+          airports: false,
         },
       })
         .filter((layer): layer is Layer => layer !== false)
@@ -368,6 +425,7 @@ describe('projection-independent world layers', () => {
       palette,
       quality: 'full',
       routes: [antimeridianRoute],
+      airports: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -378,6 +436,7 @@ describe('projection-independent world layers', () => {
         terminator: true,
         borders: false,
         terrain: true,
+        airports: false,
       },
     }).filter((layer): layer is Layer => layer !== false);
 
@@ -411,6 +470,7 @@ describe('projection-independent world layers', () => {
       palette,
       quality: 'full',
       routes: [],
+      airports: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -421,6 +481,7 @@ describe('projection-independent world layers', () => {
         terminator: true,
         borders: false,
         terrain: false,
+        airports: false,
       },
     }).filter((layer): layer is Layer => layer !== false);
 
@@ -465,6 +526,7 @@ describe('projection-independent world layers', () => {
       palette,
       quality: 'full',
       routes: [],
+      airports: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -475,6 +537,7 @@ describe('projection-independent world layers', () => {
         terminator: true,
         borders: false,
         terrain: false,
+        airports: false,
       },
     }).filter((layer): layer is Layer => layer !== false);
 
@@ -510,11 +573,19 @@ describe('projection-independent world layers', () => {
         palette,
         quality: 'full',
         routes: [],
+        airports: [],
         darkness: DARKNESS,
         land: COARSE_WORLD.land,
         borders: COARSE_WORLD.borders,
         projection: 'globe',
-        visibility: { graticule: false, routes: false, terminator: false, borders, terrain: false },
+        visibility: {
+          graticule: false,
+          routes: false,
+          terminator: false,
+          borders,
+          terrain: false,
+          airports: false,
+        },
       })
         .filter((layer): layer is Layer => layer !== false)
         .map((layer) => layer.id);
@@ -526,6 +597,7 @@ describe('projection-independent world layers', () => {
       palette,
       quality: 'full',
       routes: [],
+      airports: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -536,6 +608,7 @@ describe('projection-independent world layers', () => {
         terminator: false,
         borders: true,
         terrain: false,
+        airports: false,
       },
     })
       .filter((l): l is Layer => l !== false)
@@ -561,6 +634,7 @@ describe('projection-independent world layers', () => {
         palette,
         quality: 'full',
         routes: [],
+        airports: [],
         darkness: DARKNESS,
         land: COARSE_WORLD.land,
         borders: COARSE_WORLD.borders,
@@ -571,6 +645,7 @@ describe('projection-independent world layers', () => {
           terminator: true,
           borders: false,
           terrain: false,
+          airports: false,
         },
       }).filter((layer): layer is Layer => layer !== false);
       const terminator = layers.find((layer) => layer.id === 'world-terminator');
@@ -594,6 +669,7 @@ describe('projection-independent world layers', () => {
       palette,
       quality: 'full',
       routes: [],
+      airports: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -604,6 +680,7 @@ describe('projection-independent world layers', () => {
         terminator: true,
         borders: false,
         terrain: false,
+        airports: false,
       },
     }).filter((layer): layer is Layer => layer !== false);
 
@@ -643,6 +720,7 @@ describe('projection-independent world layers', () => {
       palette,
       quality: 'full',
       routes: [],
+      airports: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -653,6 +731,7 @@ describe('projection-independent world layers', () => {
         terminator: true,
         borders: false,
         terrain: false,
+        airports: false,
       },
     }).filter((layer): layer is Layer => layer !== false);
 
@@ -689,6 +768,7 @@ describe('projection-independent world layers', () => {
       palette,
       quality: 'full',
       routes: [],
+      airports: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -699,6 +779,7 @@ describe('projection-independent world layers', () => {
         terminator: true,
         borders: false,
         terrain: false,
+        airports: false,
       },
     }).filter((layer): layer is Layer => layer !== false);
 
@@ -717,6 +798,7 @@ describe('projection-independent world layers', () => {
       palette,
       quality: 'full',
       routes: [],
+      airports: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -727,6 +809,7 @@ describe('projection-independent world layers', () => {
         terminator: false,
         borders: false,
         terrain: false,
+        airports: false,
       },
     }).filter((layer): layer is Layer => layer !== false);
 
@@ -747,6 +830,7 @@ describe('projection-independent world layers', () => {
       palette,
       quality: 'full',
       routes: [],
+      airports: [],
       darkness: DARKNESS,
       land: COARSE_WORLD.land,
       borders: COARSE_WORLD.borders,
@@ -757,6 +841,7 @@ describe('projection-independent world layers', () => {
         terminator: true,
         borders: false,
         terrain: false,
+        airports: false,
       },
     }).filter((layer): layer is Layer => layer !== false);
 
@@ -799,6 +884,7 @@ describe('projection-independent world layers', () => {
         palette,
         quality: 'full',
         routes: [],
+        airports: [],
         darkness: DARKNESS,
         land: COARSE_WORLD.land,
         borders: COARSE_WORLD.borders,
@@ -809,6 +895,7 @@ describe('projection-independent world layers', () => {
           terminator: false,
           borders: false,
           terrain: false,
+          airports: false,
         },
       }).find((layer) => layer !== false && layer.id === 'world-land') as Layer
     ).props.data as { features?: { geometry: { type: string; coordinates: unknown } }[] };

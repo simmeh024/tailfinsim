@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "files": ["playwright.config.ts", "vitest.config.ts"],
+  "files": ["playwright.config.ts", "playwright.post-deploy.config.ts", "vitest.config.ts"],
   "compilerOptions": {
     // This root project owns only tool configuration. The referenced packages
     // retain their declaration output; config files should be checked, never

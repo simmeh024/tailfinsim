@@ -35,6 +35,29 @@ Each file is the finished portrait for the candidate named:
 | `safety-compliance-2.webp` | Safety & Compliance (Hiroshi Tanaka)  | Older man with glasses, arms folded, "SAFETY & COMPLIANCE" board            |
 | `safety-compliance-3.webp` | Safety & Compliance (Emma Larsson)    | Blonde woman with a tablet, "SAFETY & COMPLIANCE" board in a hangar         |
 
+## C-Suite portraits (§9.1 follow-up)
+
+The executive floor's roster has its own twenty-four portraits, `csuite-01.webp`
+… `csuite-24.webp`, one per candidate in `EXECUTIVE_CANDIDATES` (shared) and
+imported by id in `csuite-roster.ts`. Ids 01–08 are the Directors, 09–16 the Vice
+Presidents, 17–24 the Presidents; the id is the only link between a face, a name,
+a role and a standing hire, so the filename must match the candidate id exactly.
+Same shape and treatment as the head-office portraits — `600 x 800` webp, 3:4,
+greyed until hired by the same CSS `filter`. To replace one, keep its `csuite-NN`
+filename; nothing else changes. `csuite-placeholder.svg` is the fallback for any
+id whose file is missing.
+
+## More candidates per seat (§9.1 follow-up)
+
+Each of the six seats now fields more than three candidates, so the market can show
+a **rotating four per seat** that reshuffles daily. The extra faces continue the
+seat's numbering — `route-planner-4.webp` … `-7.webp`, `revenue-manager-4/-5`,
+`ops-controller-4…7`, `chief-pilot-4…7`, `ground-ops-4…7`, `safety-compliance-4…6`.
+`hq-roster.ts` maps each file to a candidate id (surname-based, e.g.
+`route-planner-rahman`), and the identity/tier/salary/boost for that id live in the
+shared `OFFICE_CANDIDATES` catalogue. A new arrival is one raw entry there plus its
+portrait here; a missing portrait is a build error.
+
 ## Format
 
 - Portrait, roughly **3:4** — the card box is `aspect-ratio: 3/4` with `object-fit: cover`,

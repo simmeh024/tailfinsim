@@ -97,6 +97,7 @@ describe('the fallback palette', () => {
     expect(fallback.grid).toEqual(tokens.grid);
     expect(fallback.night).toEqual(tokens.night);
     expect(fallback.route).toEqual(tokens.route);
+    expect(fallback.airport).toEqual(tokens.airport);
     expect(fallback.terrain).toEqual(tokens.terrain);
   });
 });

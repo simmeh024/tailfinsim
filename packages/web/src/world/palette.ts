@@ -20,6 +20,8 @@ export interface WorldPalette {
   grid: RgbaColor;
   night: RgbaColor;
   route: RgbaColor;
+  /** The dot colour for a served airport/city on the map. */
+  airport: RgbaColor;
   /**
    * How hard the terrain basemap asserts itself, per theme.
    *
@@ -52,6 +54,7 @@ const FALLBACK_PALETTE: WorldPalette = {
   grid: [220, 236, 247, 80],
   night: [2, 5, 9, 120],
   route: [127, 212, 255, 230],
+  airport: [255, 210, 127, 255],
   terrain: [240, 246, 250, 255],
 };
 /**
@@ -85,6 +88,7 @@ export function readWorldPalette(): WorldPalette {
     grid: read('--world-grid', FALLBACK_PALETTE.grid),
     night: read('--world-night', FALLBACK_PALETTE.night),
     route: read('--world-route', FALLBACK_PALETTE.route),
+    airport: read('--world-airport', FALLBACK_PALETTE.airport),
     terrain: read('--world-terrain', FALLBACK_PALETTE.terrain),
   };
 }

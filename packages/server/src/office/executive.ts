@@ -86,6 +86,7 @@ export async function readExecutiveHires(
       candidateId: executiveHire.candidateId,
       candidateName: executiveHire.candidateName,
       monthlySalaryMinor: executiveHire.monthlySalaryMinor,
+      officeIndex: executiveHire.officeIndex,
       hiredAt: executiveHire.hiredAt,
     })
     .from(executiveHire)
@@ -95,6 +96,7 @@ export async function readExecutiveHires(
     candidateId: row.candidateId,
     candidateName: row.candidateName,
     monthlySalaryMinor: row.monthlySalaryMinor,
+    officeIndex: row.officeIndex,
     hiredAt: row.hiredAt.toISOString(),
   }));
 }
@@ -229,7 +231,8 @@ export async function unlockExecutiveOffice(
   return { ok: true, state: await readExecutiveFloor(db, own) };
 }
 
-type HireExecFailCode = 'floor_locked' | 'unknown_candidate' | 'already_hired' | 'no_free_office';
+type HireExecFailCode =
+  'floor_locked' | 'unknown_candidate' | 'already_hired' | 'no_free_office' | 'office_occupied';
 
 export type HireExecutiveResult =
   { ok: true; state: ExecutiveFloorState } | { ok: false; code: HireExecFailCode };
@@ -249,6 +252,7 @@ export async function hireExecutive(
   db: Database,
   own: ResolvedPlayerAirline,
   candidateId: string,
+  officeIndex?: number,
 ): Promise<HireExecutiveResult> {
   const candidate = executiveCandidate(candidateId);
   if (candidate === undefined) return { ok: false, code: 'unknown_candidate' };
@@ -262,18 +266,29 @@ export async function hireExecutive(
       .for('update');
     if (!floor) return 'floor_locked';
 
-    const [existing] = await tx
-      .select({ id: executiveHire.id })
-      .from(executiveHire)
-      .where(and(eq(executiveHire.airlineId, own.id), eq(executiveHire.candidateId, candidateId)))
-      .limit(1);
-    if (existing) return 'already_hired';
-
-    const [countRow] = await tx
-      .select({ count: sql<number>`count(*)::int` })
+    const held = await tx
+      .select({ candidateId: executiveHire.candidateId, officeIndex: executiveHire.officeIndex })
       .from(executiveHire)
       .where(eq(executiveHire.airlineId, own.id));
-    if ((countRow?.count ?? 0) >= floor.officesUnlocked) return 'no_free_office';
+    if (held.some((row) => row.candidateId === candidateId)) return 'already_hired';
+    if (held.length >= floor.officesUnlocked) return 'no_free_office';
+
+    // Place them in the office the player picked, or the lowest free one. Offices
+    // are generic, so this is only which room they appear in; occupancy is the
+    // constraint, not identity.
+    const occupied = new Set(
+      held.map((row) => row.officeIndex).filter((i): i is number => i !== null),
+    );
+    let target: number;
+    if (officeIndex !== undefined) {
+      if (officeIndex >= floor.officesUnlocked) return 'no_free_office';
+      if (occupied.has(officeIndex)) return 'office_occupied';
+      target = officeIndex;
+    } else {
+      let free = 0;
+      while (occupied.has(free)) free += 1;
+      target = free;
+    }
 
     await tx.insert(executiveHire).values({
       worldId: own.worldId,
@@ -281,6 +296,7 @@ export async function hireExecutive(
       candidateId,
       candidateName: candidate.name,
       monthlySalaryMinor: candidate.monthlySalaryMinor,
+      officeIndex: target,
     });
     return null;
   });

@@ -1,13 +1,39 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { officeCandidate, type OfficeSeatId, type OfficeStateResponse } from '@tailfin/shared';
+import {
+  executiveCandidate,
+  officeCandidate,
+  type ExecutiveFloorState,
+  type OfficeSeatId,
+  type OfficeStateResponse,
+} from '@tailfin/shared';
 
+import { fetchExecutiveFloor, unlockExecutiveFloor, unlockExecutiveOffice } from './api';
+import { CSUITE_CANDIDATES } from './csuite-roster';
+import { rosterDayIndex, rotatingExecutiveRoster, rotatingRoster } from './csuite-rotation';
 import { HeadquartersPage } from './HeadquartersPage';
-import { candidatesForRole, HQ_CANDIDATES, HQ_ROLES, SPECIALIST_CANDIDATES } from './hq-roster';
+import {
+  candidatesForRole,
+  HQ_CANDIDATES,
+  HQ_ROLES,
+  SPECIALIST_CANDIDATES,
+  type HqRoleId,
+} from './hq-roster';
 import { HqLayoutPanel, type ExpandResult } from './HqLayoutPanel';
+
+// A fixed instant so each seat's rotating shortlist — and the countdown — are
+// deterministic. The market shows four of a seat's candidates; the tests reach
+// for that day's shortlist rather than assuming any particular person is on it.
+const FIXED_NOW = Date.UTC(2026, 7, 28, 9, 0, 0);
+const SEAT_MARKET_SIZE = 4;
+function shortlistFor(role: HqRoleId): { name: string; id: string }[] {
+  return rotatingRoster(candidatesForRole(role), rosterDayIndex(FIXED_NOW), SEAT_MARKET_SIZE);
+}
+const routePlannerShortlist = shortlistFor('route-planner');
+const execShortlist = rotatingExecutiveRoster(CSUITE_CANDIDATES, rosterDayIndex(FIXED_NOW));
 
 import type { OwnAirlineShellContext } from '../shell/AppShell';
 import type { ReactNode } from 'react';
@@ -25,6 +51,29 @@ import type { ReactNode } from 'react';
 function ShellHarness({ onExpand }: { onExpand?: () => Promise<ExpandResult> }): ReactNode {
   const [office, setOffice] = useState<OfficeStateResponse | null>(null);
   const [selectedOffice, setSelectedOffice] = useState<OfficeSeatId | null>(null);
+  // The shell owns the executive floor; the harness mirrors that so the panel's
+  // pager and unlocks behave exactly as they do in the app.
+  const [execFloor, setExecFloor] = useState<ExecutiveFloorState | null>(null);
+  const [selectedExecOffice, setSelectedExecOffice] = useState<number | null>(null);
+  useEffect(() => {
+    void fetchExecutiveFloor().then(setExecFloor);
+  }, []);
+  const onUnlockExecFloor = async (): Promise<ExpandResult> => {
+    const outcome = await unlockExecutiveFloor();
+    if (outcome.ok) {
+      setExecFloor(outcome.state);
+      return { ok: true };
+    }
+    return { ok: false, message: outcome.failure.message };
+  };
+  const onOpenExecOffice = async (): Promise<ExpandResult> => {
+    const outcome = await unlockExecutiveOffice();
+    if (outcome.ok) {
+      setExecFloor(outcome.state);
+      return { ok: true };
+    }
+    return { ok: false, message: outcome.failure.message };
+  };
   const ctx: OwnAirlineShellContext = {
     ownAirline: null,
     ownAirlineLoading: false,
@@ -36,6 +85,11 @@ function ShellHarness({ onExpand }: { onExpand?: () => Promise<ExpandResult> }):
     reloadOffice: () => Promise.resolve(),
     selectedOffice,
     selectOffice: setSelectedOffice,
+    execFloor,
+    replaceExecFloor: setExecFloor,
+    reloadExecFloor: () => Promise.resolve(),
+    selectedExecOffice,
+    selectExecOffice: setSelectedExecOffice,
   };
   return (
     <>
@@ -44,6 +98,11 @@ function ShellHarness({ onExpand }: { onExpand?: () => Promise<ExpandResult> }):
         onExpand={onExpand}
         onSelectSeat={setSelectedOffice}
         selectedSeat={selectedOffice}
+        execFloor={execFloor}
+        onUnlockExecFloor={onUnlockExecFloor}
+        onOpenExecOffice={onOpenExecOffice}
+        selectedExecOffice={selectedExecOffice}
+        onSelectExecOffice={setSelectedExecOffice}
       />
       <Outlet context={ctx} />
     </>
@@ -52,8 +111,8 @@ function ShellHarness({ onExpand }: { onExpand?: () => Promise<ExpandResult> }):
 
 function renderHq(
   onExpand: () => Promise<ExpandResult> = vi.fn().mockResolvedValue({ ok: true }),
-): void {
-  render(
+): ReturnType<typeof render> {
+  return render(
     <MemoryRouter initialEntries={['/headquarters']}>
       <Routes>
         <Route element={<ShellHarness onExpand={onExpand} />}>
@@ -99,37 +158,20 @@ describe('the office roster', () => {
     ]);
   });
 
-  it('carries a market of candidates, three each for all six seats', () => {
-    expect(candidatesForRole('route-planner').map((c) => c.name)).toEqual([
-      'Mara Ellison',
-      'Tom Bakker',
-      'Victor Lindqvist',
-    ]);
-    expect(candidatesForRole('revenue-manager').map((c) => c.name)).toEqual([
-      'Kenji Tan',
-      'Sofía Reyes',
-      'Anders Holm',
-    ]);
-    expect(candidatesForRole('ops-controller').map((c) => c.name)).toEqual([
-      'Diego Alvarez',
-      'Marta Silva',
-      'Jun Park',
-    ]);
-    expect(candidatesForRole('chief-pilot').map((c) => c.name)).toEqual([
-      'Sten Halvorsen',
-      'Fiona Brennan',
-      'Grant Wexford',
-    ]);
-    expect(candidatesForRole('ground-ops').map((c) => c.name)).toEqual([
-      'Nadia Kovač',
-      'Omar Haddad',
-      'Luca Moretti',
-    ]);
-    expect(candidatesForRole('safety-compliance').map((c) => c.name)).toEqual([
-      'Claire Fontaine',
-      'Hiroshi Tanaka',
-      'Emma Larsson',
-    ]);
+  it('carries a market of at least four candidates per seat, keeping the originals', () => {
+    const originals: Record<string, string[]> = {
+      'route-planner': ['Mara Ellison', 'Tom Bakker', 'Victor Lindqvist'],
+      'revenue-manager': ['Kenji Tan', 'Sofía Reyes', 'Anders Holm'],
+      'ops-controller': ['Diego Alvarez', 'Marta Silva', 'Jun Park'],
+      'chief-pilot': ['Sten Halvorsen', 'Fiona Brennan', 'Grant Wexford'],
+      'ground-ops': ['Nadia Kovač', 'Omar Haddad', 'Luca Moretti'],
+      'safety-compliance': ['Claire Fontaine', 'Hiroshi Tanaka', 'Emma Larsson'],
+    };
+    for (const [role, names] of Object.entries(originals)) {
+      const shown = candidatesForRole(role as HqRoleId).map((c) => c.name);
+      expect(shown.length, role).toBeGreaterThanOrEqual(4);
+      for (const name of names) expect(shown, role).toContain(name);
+    }
     // Every candidate names a real seat and carries a portrait.
     const roleIds = new Set<string>(HQ_ROLES.map((role) => role.id));
     for (const candidate of HQ_CANDIDATES) {
@@ -176,6 +218,13 @@ describe('the Headquarters page', () => {
   let automation: { settings: unknown[]; tasks: unknown[] } = { settings: [], tasks: [] };
   // The panel fetches the executive floor on mount; a closed floor with no
   // revenue is the default so the pager appears and the gate reads locked.
+  interface ExecHire {
+    candidateId: string;
+    candidateName: string;
+    monthlySalaryMinor: number;
+    officeIndex: number | null;
+    hiredAt: string;
+  }
   let execFloor = {
     unlocked: false,
     officesUnlocked: 0,
@@ -183,6 +232,7 @@ describe('the Headquarters page', () => {
     revenueGateMinor: 5_000_000_000,
     monthlyRevenueMinor: 0,
     nextOffice: null as { index: number; costMinor: number } | null,
+    hires: [] as ExecHire[],
   };
 
   function officeState() {
@@ -200,6 +250,7 @@ describe('the Headquarters page', () => {
   }
 
   beforeEach(() => {
+    vi.spyOn(Date, 'now').mockReturnValue(FIXED_NOW);
     hires = [];
     neutralSeats = 0;
     execFloor = {
@@ -209,6 +260,7 @@ describe('the Headquarters page', () => {
       revenueGateMinor: 5_000_000_000,
       monthlyRevenueMinor: 0,
       nextOffice: null,
+      hires: [],
     };
     offeredSpecialist = 'social-media-reputation';
     automation = { settings: [], tasks: [] };
@@ -244,6 +296,35 @@ describe('the Headquarters page', () => {
           execFloor = { ...execFloor, officesUnlocked, nextOffice: null };
           return Promise.resolve(new Response(JSON.stringify(execFloor), { status: 200 }));
         }
+        if (url === '/api/office/executive/hires' && method === 'POST') {
+          const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+            candidateId: string;
+            officeIndex?: number;
+          };
+          const c = executiveCandidate(body.candidateId)!;
+          execFloor = {
+            ...execFloor,
+            hires: [
+              ...execFloor.hires,
+              {
+                candidateId: c.id,
+                candidateName: c.name,
+                monthlySalaryMinor: c.monthlySalaryMinor,
+                officeIndex: body.officeIndex ?? execFloor.hires.length,
+                hiredAt: '2024-10-20T00:00:00.000Z',
+              },
+            ],
+          };
+          return Promise.resolve(new Response(JSON.stringify(execFloor), { status: 200 }));
+        }
+        if (url.startsWith('/api/office/executive/hires/') && method === 'DELETE') {
+          const id = decodeURIComponent(url.slice('/api/office/executive/hires/'.length));
+          execFloor = {
+            ...execFloor,
+            hires: execFloor.hires.filter((h) => h.candidateId !== id),
+          };
+          return Promise.resolve(new Response(JSON.stringify(execFloor), { status: 200 }));
+        }
         if (url === '/api/office' && method === 'GET') return ok();
         if (url === '/api/office/hires' && method === 'POST') {
           const raw = typeof init?.body === 'string' ? init.body : '{}';
@@ -268,17 +349,21 @@ describe('the Headquarters page', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
-  it('shows every seat and every candidate', async () => {
+  it('shows every seat and today’s four candidates for each', async () => {
     renderPage();
     expect(screen.getByRole('heading', { level: 1, name: 'Headquarters' })).toBeInTheDocument();
     for (const role of HQ_ROLES) {
-      expect(screen.getByRole('heading', { level: 2, name: role.role })).toBeInTheDocument();
+      const region = screen.getByRole('region', { name: role.role });
+      expect(within(region).getAllByRole('listitem')).toHaveLength(SEAT_MARKET_SIZE);
+      for (const candidate of shortlistFor(role.id)) {
+        expect(within(region).getByText(candidate.name)).toBeInTheDocument();
+      }
     }
-    for (const candidate of HQ_CANDIDATES) {
-      expect(screen.getByText(candidate.name)).toBeInTheDocument();
-    }
+    // A 24-hour refresh countdown sits at the top of the page.
+    expect(screen.getByRole('timer').textContent).toMatch(/\d{2}:\d{2}:\d{2}/);
     // The office loads empty from the server.
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent(`0 of ${String(HQ_ROLES.length)} seats`),
@@ -288,48 +373,59 @@ describe('the Headquarters page', () => {
   it('shows each candidate their own salary, not a flat role rate', () => {
     renderPage();
     const seat = screen.getByRole('region', { name: 'Route Planner' });
-    const tom = within(seat).getByText('Tom Bakker').closest('.hq-card');
-    const victor = within(seat).getByText('Victor Lindqvist').closest('.hq-card');
-    if (!tom || !victor) throw new Error('missing candidate cards');
-    // The Analyst and the Director cost different amounts — the whole point.
-    expect(within(tom as HTMLElement).getByText('12,000/mo')).toBeInTheDocument();
-    expect(within(victor as HTMLElement).getByText('26,000/mo')).toBeInTheDocument();
+    const shown = candidatesForRole('route-planner').filter((c) =>
+      routePlannerShortlist.some((s) => s.id === c.id),
+    );
+    const prices = new Set<string>();
+    for (const c of shown) {
+      const card = within(seat).getByText(c.name).closest('.hq-card');
+      const price = `${(c.salaryPerMonthMinor / 100).toLocaleString('en-GB', { maximumFractionDigits: 0 })}/mo`;
+      expect(within(card as HTMLElement).getByText(price)).toBeInTheDocument();
+      prices.add(price);
+    }
+    // Tier sets the pay, so the four shown candidates are not all one price.
+    expect(prices.size).toBeGreaterThan(1);
   });
 
   it('starts every candidate greyed, and colours the one hired', async () => {
     renderPage();
-    const mara = HQ_CANDIDATES.find((c) => c.id === 'route-planner-mara')!;
-    const card = screen.getByText(mara.name).closest<HTMLElement>('.hq-card');
-    if (!card) throw new Error('no card for Mara');
+    const first = routePlannerShortlist[0]!;
+    const given = first.name.split(' ')[0]!;
+    const card = screen.getByText(first.name).closest<HTMLElement>('.hq-card');
+    if (!card) throw new Error('no card for the first shortlisted candidate');
     const portrait = card.querySelector<HTMLElement>('.hq-card__portrait');
     if (!portrait) throw new Error('no portrait');
 
     expect(portrait.dataset.hired).toBe('false');
-    const hireMara = within(card).getByRole('button', { name: /Hire Mara/i });
-    await waitFor(() => expect(hireMara).toBeEnabled());
-    fireEvent.click(hireMara);
+    const hire = within(card).getByRole('button', { name: new RegExp(`^Hire ${given}$`) });
+    await waitFor(() => expect(hire).toBeEnabled());
+    fireEvent.click(hire);
     await waitFor(() => expect(portrait.dataset.hired).toBe('true'));
     expect(screen.getByRole('status')).toHaveTextContent('1 of');
     const seat = screen.getByRole('region', { name: 'Route Planner' });
-    expect(within(seat).getByText(/Seat filled by Mara Ellison/i)).toBeInTheDocument();
+    expect(within(seat).getByText(`Seat filled by ${first.name}`)).toBeInTheDocument();
   });
 
   it('holds one person per seat — hiring a rival swaps, it does not stack', async () => {
     renderPage();
     const seat = screen.getByRole('region', { name: 'Route Planner' });
+    const a = routePlannerShortlist[0]!;
+    const b = routePlannerShortlist[1]!;
+    const givenA = a.name.split(' ')[0]!;
+    const givenB = b.name.split(' ')[0]!;
 
-    const hireMara = within(seat).getByRole('button', { name: /Hire Mara/i });
-    await waitFor(() => expect(hireMara).toBeEnabled());
-    fireEvent.click(hireMara);
-    await within(seat).findByText(/Seat filled by Mara Ellison/i);
-    fireEvent.click(within(seat).getByRole('button', { name: /Hire Tom/i }));
-    await within(seat).findByText(/Seat filled by Tom Bakker/i);
+    const hireA = within(seat).getByRole('button', { name: new RegExp(`^Hire ${givenA}$`) });
+    await waitFor(() => expect(hireA).toBeEnabled());
+    fireEvent.click(hireA);
+    await within(seat).findByText(`Seat filled by ${a.name}`);
+    fireEvent.click(within(seat).getByRole('button', { name: new RegExp(`^Hire ${givenB}$`) }));
+    await within(seat).findByText(`Seat filled by ${b.name}`);
 
     expect(screen.getByRole('status')).toHaveTextContent('1 of');
-    const maraCard = within(seat).getByText('Mara Ellison').closest<HTMLElement>('.hq-card');
-    const tomCard = within(seat).getByText('Tom Bakker').closest<HTMLElement>('.hq-card');
-    expect(maraCard?.dataset.hired).toBe('false');
-    expect(tomCard?.dataset.hired).toBe('true');
+    const aCard = within(seat).getByText(a.name).closest<HTMLElement>('.hq-card');
+    const bCard = within(seat).getByText(b.name).closest<HTMLElement>('.hq-card');
+    expect(aCard?.dataset.hired).toBe('false');
+    expect(bCard?.dataset.hired).toBe('true');
   });
 
   it('opens a drawer for the exact office a vacant room names', async () => {
@@ -363,20 +459,22 @@ describe('the Headquarters page', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Office 01, Route Planner/i }));
     const dialog = await screen.findByRole('dialog', { name: /Staff Route Planner/i });
 
-    const tomRow = within(dialog).getByText('Tom Bakker').closest('li');
-    if (!tomRow) throw new Error('no candidate row for Tom');
-    fireEvent.click(within(tomRow).getByRole('button', { name: /Hire & Assign/i }));
+    // Hire whoever tops today's route-planner shortlist.
+    const first = routePlannerShortlist[0]!;
+    const row = within(dialog).getByText(first.name).closest('li');
+    if (!row) throw new Error('no candidate row in the drawer');
+    fireEvent.click(within(row).getByRole('button', { name: /Hire & Assign/i }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(hires.find((h) => h.candidateId === 'route-planner-tom')?.seat).toBe('route-planner');
+    expect(hires.find((h) => h.candidateId === first.id)?.seat).toBe('route-planner');
   });
 
   it('offers only a role’s own candidates in that seat’s drawer', async () => {
     renderHq();
     fireEvent.click(await screen.findByRole('button', { name: /Office 01, Route Planner/i }));
     const dialog = await screen.findByRole('dialog', { name: /Staff Route Planner/i });
-    // The route-planner candidates are on offer; a revenue-manager candidate is not.
-    expect(within(dialog).getByText('Mara Ellison')).toBeInTheDocument();
+    // A route-planner from today's shortlist is on offer; a revenue-manager never is.
+    expect(within(dialog).getByText(routePlannerShortlist[0]!.name)).toBeInTheDocument();
     expect(within(dialog).queryByText('Kenji Tan')).toBeNull();
   });
 
@@ -452,6 +550,48 @@ describe('the Headquarters page', () => {
     fireEvent.click(unlock);
     // The open floor offers its first office.
     expect(await screen.findByRole('button', { name: /Open office 1 of 10/i })).toBeInTheDocument();
+  });
+
+  it('hires an executive straight from the plan, on the Headquarters page', async () => {
+    execFloor = {
+      unlocked: true,
+      officesUnlocked: 1,
+      unlockCostMinor: 10_000_000_000,
+      revenueGateMinor: 5_000_000_000,
+      monthlyRevenueMinor: 6_000_000_000,
+      nextOffice: null,
+      hires: [],
+    };
+    renderHq();
+    // Page up to the executive floor and hire into its one open office from the plan.
+    fireEvent.click(await screen.findByRole('tab', { name: /Executive/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Executive Office 01, Vacant/i }));
+    const dialog = await screen.findByRole('dialog', { name: /Staff Executive Office 01/i });
+    const first = execShortlist[0]!;
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: new RegExp(`Hire ${first.name.split(' ')[0]!}`) }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: /Executive Office 01/i })).toBeNull(),
+    );
+    expect(execFloor.hires.find((h) => h.candidateId === first.id)).toBeDefined();
+  });
+
+  it('shows not-yet-built executive offices as locked', async () => {
+    execFloor = {
+      unlocked: true,
+      officesUnlocked: 1,
+      unlockCostMinor: 10_000_000_000,
+      revenueGateMinor: 5_000_000_000,
+      monthlyRevenueMinor: 6_000_000_000,
+      nextOffice: { index: 1, costMinor: 10_000_000_000 },
+      hires: [],
+    };
+    const { container } = renderHq();
+    fireEvent.click(await screen.findByRole('tab', { name: /Executive/i }));
+    // Office 01 is open (hireable); the other nine are locked padlock cells.
+    await screen.findByRole('button', { name: /Executive Office 01, Vacant/i });
+    expect(container.querySelectorAll('.hq-cell--locked')).toHaveLength(9);
   });
 
   it('renders the seats the server already reports as filled, on load', async () => {

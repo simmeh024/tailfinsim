@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { EXECUTIVE_BOOST_LEVERS } from './executive';
 import {
   OFFICE_CANDIDATES,
   OFFICE_ROLES,
@@ -29,12 +30,38 @@ describe('the office candidate market', () => {
     }
   });
 
-  it('fields three candidates for each of the six seats', () => {
+  it('fields at least four candidates for each of the six seats, so the market can show four', () => {
     for (const role of Object.keys(OFFICE_ROLES) as OfficeRole[]) {
       if (role === 'social-media') continue;
       const forRole = OFFICE_CANDIDATES.filter((candidate) => candidate.role === role);
-      expect(forRole.length, role).toBe(3);
+      expect(forRole.length, role).toBeGreaterThanOrEqual(4);
     }
+  });
+
+  it('gives every candidate a tiny, salary-scaled boost on a known lever', () => {
+    for (const candidate of OFFICE_CANDIDATES) {
+      const { lever, magnitude, label, description } = candidate.boost;
+      expect(Object.keys(EXECUTIVE_BOOST_LEVERS), candidate.id).toContain(lever);
+      expect(label.length, candidate.id).toBeGreaterThan(0);
+      expect(description.length, candidate.id).toBeGreaterThan(0);
+      // Tiny: never more than ~1.5% of edge either way.
+      expect(Math.abs(magnitude), candidate.id).toBeGreaterThan(0);
+      expect(Math.abs(magnitude), candidate.id).toBeLessThanOrEqual(0.015);
+      // A cost/duration lever helps by going down; everything else by going up.
+      const meta = EXECUTIVE_BOOST_LEVERS[lever];
+      expect(meta.lowerIsBetter ? magnitude < 0 : magnitude > 0, candidate.id).toBe(true);
+    }
+  });
+
+  it('scales the boost with the salary — a dearer hire brings a bigger edge', () => {
+    const planners = OFFICE_CANDIDATES.filter((c) => c.role === 'route-planner');
+    const cheapest = planners.reduce((a, b) =>
+      a.monthlySalaryMinor < b.monthlySalaryMinor ? a : b,
+    );
+    const dearest = planners.reduce((a, b) =>
+      a.monthlySalaryMinor > b.monthlySalaryMinor ? a : b,
+    );
+    expect(Math.abs(dearest.boost.magnitude)).toBeGreaterThan(Math.abs(cheapest.boost.magnitude));
   });
 
   it('carries exactly the two social media specialists, by their shared ids', () => {

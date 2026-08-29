@@ -44,7 +44,7 @@ you:  ssh tailfin@<ip>
              ├─ verified local dump  ── only for a non-empty migration batch
              ├─ atomic migrate       ── reports rollback / commit / unknown
              ├─ systemctl restart tailfin
-             └─ poll /healthz, print the rollback command if it never comes up
+             └─ poll /healthz, then smoke the public page and deployed commit
 ```
 
 **Running the command is the approval step.** There is no CI involvement in deploys, no
@@ -55,6 +55,38 @@ back _code_, not _schema_. Every new migration is therefore required to keep the
 deployed release compatible rather than relying on checkout to reverse SQL. The complete
 decision and measured lock cost are in
 [ADR-0016](../docs/adr/0016-migration-failure-strategy.md).
+
+### Post-deploy browser smoke
+
+After `/healthz` is green, each web deploy runs `pnpm test:post-deploy` against the public
+origin — `https://dev.tailfinsim.com` from `deploy-dev.sh`, or
+`https://tailfinsim.com` from `deploy.sh`. It checks that `/api/version` reports the exact
+commit the deploy checked out, that the served holding page or anonymous app front door is
+visibly rendered and styled, and that the browser reports no load errors. The first run
+downloads Chromium into the `tailfin` user's Playwright cache; later deploys reuse it.
+
+Chromium's shared libraries are a one-time root-level host dependency. After the checkout has
+installed dependencies, provision them with:
+
+```bash
+sudo bash -lc 'cd /srv/tailfin && pnpm exec playwright install-deps chromium'
+```
+
+`deploy.sh` cannot and must not install OS packages: the deploy account is intentionally
+limited to service restarts and migration backups. The script also copies itself before it
+checks out a target, so the first deploy that introduces this hook is followed by one
+`--force` deploy to exercise the newly checked-out hook.
+
+These specs live in [`post-deploy/`](../post-deploy/), deliberately outside `e2e/`. They
+have no fixture database, test authentication or server startup command, reject database
+connection variables, and abort every browser request other than `GET` or `HEAD`. They
+therefore exercise the deployed surface without creating data. The unauthenticated smoke is
+useful now; an authenticated production journey needs its own dedicated, non-admin identity
+and remains later work.
+
+A smoke failure stops the command with the browser failure and a manual rollback command,
+but leaves the new process serving. It never rolls a release back automatically: use the
+failure to decide whether rollback is warranted.
 
 ## Migration safety and recovery (OPS-05)
 

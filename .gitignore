@@ -13,12 +13,18 @@ coverage/
 .e2e-types/
 playwright-report/
 test-results/
+post-deploy-results/
 e2e/.auth/
 
 # Environment — never commit secrets (M0-05: connection config from env)
 .env
 .env.*
 !.env.example
+
+# Local aircraft-generation credentials, private evidence and candidate experiments.
+# Accepted assets still enter through assets:intake; never force-add quarantine data.
+meshy.txt
+.aircraft-factory/
 
 # Keys and credentials. A private key was once committed here from an
 # OpenStack keypair download landing in the repo root, so this is not

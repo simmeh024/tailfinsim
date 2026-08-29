@@ -6,6 +6,8 @@
   "scripts": {
     "typecheck": "tsc -b",
     "build": "node build.mjs",
+    "meshy": "pnpm build && node dist/meshy-cli.js",
+    "meshy-run": "pnpm build && node dist/meshy-run-cli.js",
     "intake": "pnpm build && node dist/cli.js intake",
     "salvage:a320neo": "pnpm build && node dist/cli.js salvage-a320neo",
     "validate": "pnpm build && node dist/cli.js validate --root ../../assets/aircraft",

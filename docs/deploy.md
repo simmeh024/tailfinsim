@@ -138,6 +138,16 @@ fails. Propagation on a fresh domain with no prior records is usually minutes.
 
 ## 4. Environment variables
 
+**Local aircraft tooling is not a deployed service.** `assets:meshy --dry-run` may inspect the
+presence/shape of `MESHY_API_KEY` from its invoking process or an explicit local key file. It makes
+no network request and never logs the key. Do not install that credential on Web/Worker nodes,
+put it in `VITE_*`, or add it to CI. The future paid client requires a separate approval and durable
+credit gate; see [aircraft factory](aircraft-factory.md) and ADR-0012. `assets:meshy-run` keeps its
+approval/credit history in the operator repository's Git common directory; its optional account
+check and known-candidate `sync` are GET-only. Quarantined GLB exports remain beside the operator's
+ledger, never in Web/Worker runtime assets. Do not copy an active ledger to another host or rewind it. ADR-0024 owns this
+local persistence boundary. The runtime topology is unchanged.
+
 Read by the server at boot from the repository-root `.env` (resolved from the bundle's
 location, not from the shell's current directory).
 

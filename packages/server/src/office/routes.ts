@@ -219,7 +219,12 @@ export function registerOfficeRoutes(app: FastifyInstance, { db }: { db: Databas
         return reply.code(400).send({ code: 'invalid_input', message: 'Expected a candidate' });
       }
       const own = resolvedAirlineOf(request);
-      const result = await hireExecutive(db.db, own, parsed.data.candidateId);
+      const result = await hireExecutive(
+        db.db,
+        own,
+        parsed.data.candidateId,
+        parsed.data.officeIndex,
+      );
       if (!result.ok) {
         if (result.code === 'unknown_candidate') {
           return reply
@@ -231,7 +236,9 @@ export function registerOfficeRoutes(app: FastifyInstance, { db }: { db: Databas
             ? 'Open the executive floor before staffing it'
             : result.code === 'already_hired'
               ? 'This person already holds one of your offices'
-              : 'Open another executive office before hiring';
+              : result.code === 'office_occupied'
+                ? 'That office is already taken'
+                : 'Open another executive office before hiring';
         return reply.code(422).send({ code: result.code, message });
       }
       return reply.code(200).send(result.state);
