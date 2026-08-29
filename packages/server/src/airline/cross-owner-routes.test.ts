@@ -175,6 +175,14 @@ describeDb('cross-player ownership on the route endpoints (SEC-05)', () => {
         payload: { fares: { economy: 99_999 } },
       }),
     },
+    {
+      name: 'PUT active (pause/reopen write)',
+      request: (routeId) => ({
+        method: 'PUT',
+        url: `/api/routes/${routeId}/active`,
+        payload: { active: false },
+      }),
+    },
   ];
 
   it.each(surfaces)('$name lets playerA reach playerA’s own route', async ({ request }) => {

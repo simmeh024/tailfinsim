@@ -140,6 +140,26 @@ export async function closeRoute(routeId: string): Promise<{ ok: boolean }> {
   throw new Error(`Closing a route failed with ${String(status)}`);
 }
 
+/**
+ * Pause or reopen a route — flip its `active` flag without losing it.
+ *
+ * The reversible alternative to {@link closeRoute}: a paused route stops selling
+ * but keeps its schedule and fares. A 404/409 comes back as `ok: false` rather than
+ * throwing; a broken request throws.
+ */
+export async function setRouteActive(
+  routeId: string,
+  active: boolean,
+): Promise<{ ok: boolean; active?: boolean }> {
+  const { status, body } = await json(`/api/routes/${routeId}/active`, {
+    method: 'PUT',
+    body: JSON.stringify({ active }),
+  });
+  if (status === 200) return { ok: true, active: (body as { active?: boolean }).active };
+  if (status === 404 || status === 409) return { ok: false };
+  throw new Error(`Setting a route active failed with ${String(status)}`);
+}
+
 /** Who else sells this pair, and in which cabins. */
 export interface RouteRival {
   id: string;

@@ -125,6 +125,7 @@ export const RESOURCE_ID_SURFACES = [
     'GET /api/routes/:routeId/waterfall',
     'POST /api/routes/:routeId/fares/preview',
     'DELETE /api/routes/:routeId',
+    'PUT /api/routes/:routeId/active',
   ].map((endpoint): ResourceIdSurface => ({
     endpoint,
     position: 'path',

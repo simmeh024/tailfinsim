@@ -173,6 +173,13 @@ function stub(
         });
       }
 
+      if (url.endsWith('/active') && init?.method === 'PUT') {
+        return Promise.resolve({
+          status: 200,
+          json: () => Promise.resolve({ ok: true, active: false }),
+        });
+      }
+
       if (url === '/api/routes' && init?.method === 'POST') {
         if (opened.kind === 'no-airline') {
           return Promise.resolve({
@@ -432,6 +439,21 @@ describe('opening a route from the rail', () => {
 
     fireEvent.change(screen.getByLabelText('Origin ICAO'), { target: { value: 'EH' } });
     expect(screen.getByRole('button', { name: /^open$/i })).toBeDisabled();
+  });
+
+  it('pauses a route from the header, flipping the chip and the action', async () => {
+    const calls = stub();
+    render(<NetworkPage />);
+    await screen.findByText('EHAM → LEBL');
+    expect(screen.getByText('Active')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+
+    await waitFor(() => {
+      expect(calls).toContain('PUT /api/routes/route-1/active');
+    });
+    expect(await screen.findByText('Paused')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reopen' })).toBeInTheDocument();
   });
 
   it('closes a route from the header after a confirm, and the workspace empties', async () => {

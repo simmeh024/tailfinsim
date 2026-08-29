@@ -5,7 +5,7 @@ import type { FleetAirframeView } from '@tailfin/shared';
 import { fetchFleetAirframes } from '../fleet/api';
 import { useContextSelection } from '../shell/context-selection';
 
-import { closeRoute, fetchRoutes, type RouteSummary } from './api';
+import { closeRoute, fetchRoutes, setRouteActive, type RouteSummary } from './api';
 import { liveEconomics } from './planner/analysis';
 import { CompetitionTab } from './planner/CompetitionTab';
 import { describeSelection } from './planner/ContextBodies';
@@ -40,6 +40,14 @@ import './network.css';
 
 type Tab = 'overview' | 'schedule' | 'pricing' | 'competition' | 'performance';
 type View = 'route' | 'fleet';
+type RouteSort = 'name' | 'profit' | 'load' | 'distance';
+
+const SORTS: readonly { value: RouteSort; label: string }[] = [
+  { value: 'name', label: 'A–Z' },
+  { value: 'profit', label: 'Profit' },
+  { value: 'load', label: 'Load' },
+  { value: 'distance', label: 'Distance' },
+];
 
 const TABS: readonly { value: Tab; label: string }[] = [
   { value: 'overview', label: 'Overview' },
@@ -59,6 +67,8 @@ export function NetworkPage(): ReactNode {
   const [selection, setSelection] = useState<NetworkSelection | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<RouteSort>('name');
 
   const { select, clear } = useContextSelection();
 
@@ -197,6 +207,39 @@ export function NetworkPage(): ReactNode {
     }
   }, [selectedRouteId, routes]);
 
+  const onToggleActive = useCallback(async () => {
+    if (selectedRouteId === null) return;
+    const row = (routes ?? []).find((r) => r.id === selectedRouteId);
+    if (!row) return;
+    const next = !row.active;
+    const outcome = await setRouteActive(selectedRouteId, next);
+    if (outcome.ok) {
+      setRoutes((current) =>
+        (current ?? []).map((r) => (r.id === selectedRouteId ? { ...r, active: next } : r)),
+      );
+    }
+  }, [selectedRouteId, routes]);
+
+  // The rail's route list: filtered by an ICAO search and sorted by the chosen key.
+  const railPlans = useMemo(() => {
+    const needle = search.trim().toUpperCase();
+    const filtered = needle
+      ? livePlans.filter(
+          (p) => p.route.originIcao.includes(needle) || p.route.destinationIcao.includes(needle),
+        )
+      : livePlans;
+    const profit = (p: (typeof livePlans)[number]) =>
+      p.economics.weeklyRevenueMinor - p.economics.weeklyCostMinor;
+    return [...filtered].sort((a, b) => {
+      if (sort === 'profit') return profit(b) - profit(a);
+      if (sort === 'load') return b.economics.loadFactor - a.economics.loadFactor;
+      if (sort === 'distance') return b.route.greatCircleNm - a.route.greatCircleNm;
+      return `${a.route.originIcao}${a.route.destinationIcao}`.localeCompare(
+        `${b.route.originIcao}${b.route.destinationIcao}`,
+      );
+    });
+  }, [livePlans, search, sort]);
+
   return (
     <section className="page net-page">
       <header className="net-page__head">
@@ -249,14 +292,45 @@ export function NetworkPage(): ReactNode {
           </button>
 
           <div className="net-rail__list-head">Routes</div>
+          {livePlans.length > 1 && (
+            <div className="net-rail__filter">
+              <input
+                type="search"
+                className="net-rail__search"
+                placeholder="Search ICAO…"
+                value={search}
+                aria-label="Search routes by ICAO"
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                }}
+              />
+              <label className="net-rail__sort">
+                <span className="visually-hidden">Sort routes</span>
+                <select
+                  value={sort}
+                  onChange={(event) => {
+                    setSort(event.target.value as RouteSort);
+                  }}
+                >
+                  {SORTS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
           <ul className="net-rail__list">
-            {livePlans.map((plan) => {
+            {railPlans.map((plan) => {
               const isActive = view === 'route' && plan.route.id === selectedRouteId;
               return (
                 <li key={plan.route.id}>
                   <button
                     type="button"
-                    className={`net-rail__route${isActive ? ' net-rail__route--active' : ''}`}
+                    className={`net-rail__route${isActive ? ' net-rail__route--active' : ''}${
+                      plan.route.active ? '' : ' net-rail__route--paused'
+                    }`}
                     onClick={() => {
                       selectRoute(plan.route.id);
                     }}
@@ -277,6 +351,9 @@ export function NetworkPage(): ReactNode {
             })}
             {routes !== null && routes.length === 0 && (
               <li className="net-rail__empty">No routes yet.</li>
+            )}
+            {routes !== null && routes.length > 0 && railPlans.length === 0 && (
+              <li className="net-rail__empty">No route matches “{search}”.</li>
             )}
           </ul>
         </aside>
@@ -302,6 +379,15 @@ export function NetworkPage(): ReactNode {
                   {currentPlan.route.active ? 'Active' : 'Paused'}
                 </Chip>
                 <div className="net-route__actions">
+                  {!confirmClose && (
+                    <button
+                      type="button"
+                      className="net-route__close"
+                      onClick={() => void onToggleActive()}
+                    >
+                      {currentPlan.route.active ? 'Pause' : 'Reopen'}
+                    </button>
+                  )}
                   {confirmClose ? (
                     <>
                       <span className="net-route__confirm">Close this route?</span>

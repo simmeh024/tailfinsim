@@ -89,6 +89,23 @@ async function notFound(reply: FastifyReply): Promise<void> {
   await reply.code(404).send({ code: 'not_found', message: 'No such route' });
 }
 
+/**
+ * Pause or reopen a route — the only client-writable field is the `active` flag.
+ *
+ * A hand-written strict parser rather than a zod schema: `@tailfin/server` does not
+ * depend on zod directly, and this shape is a single boolean. Extra keys are
+ * rejected (SEC-06's mass-assignment guard) so a body cannot smuggle another field.
+ */
+function parseActiveBody(input: unknown): { success: true; active: boolean } | { success: false } {
+  if (typeof input !== 'object' || input === null) return { success: false };
+  const keys = Object.keys(input);
+  const active = (input as { active?: unknown }).active;
+  if (keys.length === 1 && keys[0] === 'active' && typeof active === 'boolean') {
+    return { success: true, active };
+  }
+  return { success: false };
+}
+
 export function registerNetworkRoutes(
   app: FastifyInstance,
   { db, economicsFor }: NetworkRoutesOptions,
@@ -305,6 +322,39 @@ export function registerNetworkRoutes(
       await db.db.delete(route).where(and(eq(route.id, row.id), eq(route.airlineId, own.id)));
 
       return reply.code(200).send({ ok: true, routeId: row.id });
+    },
+  );
+
+  /**
+   * Pause or reopen a route — flip its `active` flag without losing the route.
+   *
+   * The reversible middle ground between flying and closing: a paused route keeps
+   * its schedule and fares but stops selling, so a seasonal route can be mothballed
+   * and brought back rather than rebuilt. Owner-scoped like the rest; a stranger's
+   * route is the same 404. Only `active` is writable — the body is `.strict()`.
+   */
+  app.put<{ Params: { routeId: string }; Body: unknown }>(
+    '/api/routes/:routeId/active',
+    { onRequest: app.requireOperatingAirline },
+    async (request, reply) => {
+      const own = resolvedAirlineOf(request);
+
+      const parsed = parseRequestBody(request, parseActiveBody);
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send({ code: 'invalid_active', message: 'active must be a boolean' });
+      }
+
+      const row = await ownedRoute(db.db, own.id, request.params.routeId);
+      if (!row) return notFound(reply);
+
+      await db.db
+        .update(route)
+        .set({ active: parsed.active, updatedAt: new Date() })
+        .where(and(eq(route.id, row.id), eq(route.airlineId, own.id)));
+
+      return reply.code(200).send({ ok: true, active: parsed.active });
     },
   );
 }
