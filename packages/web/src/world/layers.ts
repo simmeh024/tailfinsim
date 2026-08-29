@@ -45,15 +45,15 @@ export interface WorldAirport {
 function airportRadius(tier: string): number {
   switch (tier) {
     case 'flagship':
-      return 4.5;
+      return 8;
     case 'large':
-      return 3.6;
+      return 6.5;
     case 'medium':
-      return 2.9;
+      return 5.5;
     case 'small':
-      return 2.4;
+      return 4.5;
     default:
-      return 2;
+      return 4;
   }
 }
 
@@ -383,7 +383,7 @@ export function createWorldLayers({
   // An out-of-range airport keeps its colour but fades back, so the field the fleet
   // can actually reach reads as the foreground. Full strength when no reach set is
   // given (before an airline exists, and in the layer tests).
-  const dimmed = palette.airport.map((c, i) => (i === 3 ? Math.round(c * 0.32) : c)) as [
+  const dimmed = palette.airport.map((c, i) => (i === 3 ? Math.round(c * 0.55) : c)) as [
     number,
     number,
     number,
@@ -591,21 +591,21 @@ export function createWorldLayers({
         getPosition: ({ position }) => position,
         getRadius: ({ tier }) => airportRadius(tier),
         radiusUnits: 'pixels',
-        radiusMinPixels: 2,
-        radiusMaxPixels: 9,
+        radiusMinPixels: 4,
+        radiusMaxPixels: 18,
         // A plain array while nothing is highlighted (the pre-fleet map and the
         // tests); a per-airport accessor once a reachable set fades the rest back.
         getFillColor: reachableIcaos === undefined ? palette.airport : airportFill,
         // Re-evaluate the fill when the reachable set changes (a new plane, a new hub).
         updateTriggers: { getFillColor: reachableIcaos },
-        // A thin dark ring so a bright dot still reads where it sits on pale terrain,
-        // not just against the ocean. One draw call for the whole field.
+        // A dark ring so a bright dot still reads where it sits on pale terrain, not
+        // just against the ocean. One draw call for the whole field.
         stroked: true,
         getLineColor: palette.night,
         lineWidthUnits: 'pixels',
-        getLineWidth: 0.75,
-        lineWidthMinPixels: 0.5,
-        lineWidthMaxPixels: 1.5,
+        getLineWidth: 1.25,
+        lineWidthMinPixels: 1,
+        lineWidthMaxPixels: 2.5,
         // Clickable so the page can open a route panel; a fatter pick radius makes
         // the small dots easy to hit without changing how they look.
         pickable: onAirportClick !== undefined,
@@ -625,15 +625,16 @@ export function createWorldLayers({
         id: 'world-hubs',
         data: hubs,
         getPosition: ({ position }) => position,
-        getRadius: 5,
+        getRadius: 11,
         radiusUnits: 'pixels',
-        radiusMinPixels: 4,
-        radiusMaxPixels: 8,
+        radiusMinPixels: 8,
+        radiusMaxPixels: 22,
         getFillColor: palette.airport,
         stroked: true,
         getLineColor: palette.route,
         lineWidthUnits: 'pixels',
-        getLineWidth: 1.5,
+        getLineWidth: 2.5,
+        lineWidthMinPixels: 2,
         parameters: { cullMode: 'none' },
       }),
   ];
