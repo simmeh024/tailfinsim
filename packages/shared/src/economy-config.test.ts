@@ -116,6 +116,16 @@ describe('a payload written before a section existed', () => {
     expect(parsed.socialMedia).toEqual(ECONOMY_CONFIG_V1.socialMedia);
   });
 
+  it('takes the shipped hub curve when a pre-M7-04 payload is read back', () => {
+    // The same rule again (M7-04). A `v1` row written before the hub purchase curve
+    // existed has no `hubs` section; the default fills it so the world still prices
+    // a hub rather than throwing on the first read.
+    const { hubs: _hubs, ...beforeHubsExisted } = ECONOMY_CONFIG_V1;
+
+    const parsed = EconomyConfig.parse(beforeHubsExisted);
+    expect(parsed.hubs).toEqual(ECONOMY_CONFIG_V1.hubs);
+  });
+
   it('keeps a section the payload does carry, rather than defaulting over it', () => {
     // A default fills an absence. It must never overwrite a live retune —
     // which is the property the whole seed-but-never-update design rests on.
