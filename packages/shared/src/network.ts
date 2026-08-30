@@ -439,3 +439,58 @@ export const FareWaterfallResponse = z.object({
   bySegment: z.array(WaterfallSegment),
 });
 export type FareWaterfallResponse = z.infer<typeof FareWaterfallResponse>;
+
+/* -------------------------------------------- route performance (M2-06) ---- */
+
+/**
+ * One bucket of a route's load-factor trend, oldest first.
+ *
+ * `loadFactor` is null for a week the route flew nothing — a gap, which reads
+ * differently from a week that flew empty (0). The sparkline should show the
+ * difference.
+ */
+export const RoutePerformanceWeek = z.object({
+  /** Game-time start of the week bucket. */
+  weekStart: Timestamp,
+  flights: z.number().int().nonnegative(),
+  loadFactor: z.number().min(0).max(1).nullable(),
+});
+export type RoutePerformanceWeek = z.infer<typeof RoutePerformanceWeek>;
+
+/**
+ * `GET /api/routes/:routeId/performance` — what a route actually did, rolled up
+ * from its settled flights (§14.4).
+ *
+ * Only the worker produces `flight_result` rows, so on a world with no worker
+ * every figure here is zero and the trend is empty — a route that reads as idle
+ * rather than as a broken report, the same boundary the fleet page has. The
+ * figures cover the trailing `windowDays` of the world's own clock and count
+ * **completed scheduled flights only** — a cancelled flight never settles, and a
+ * ferry earns nothing and is excluded.
+ */
+export const RoutePerformanceResponse = z.object({
+  routeId: Uuid,
+  /** The trailing window rolled up, in game days. */
+  windowDays: z.number().int().positive(),
+  flights: z.number().int().nonnegative(),
+  seats: z.number().int().nonnegative(),
+  passengers: z.number().int().nonnegative(),
+  spilledPassengers: z.number().int().nonnegative(),
+  /** Passengers ÷ seats over the window; null when nothing flew. */
+  loadFactor: z.number().min(0).max(1).nullable(),
+  revenueMinor: MinorUnits,
+  costMinor: MinorUnits,
+  /** Contribution — revenue minus the flight's own costs; period costs are not here. */
+  netMinor: MinorUnits,
+  /** Revenue and cost per available seat-kilometre, minor units; null when nothing flew. */
+  raskMinor: z.number().nonnegative().nullable(),
+  caskMinor: z.number().nonnegative().nullable(),
+  /** Share of arrivals within 15 minutes of plan, 0–1; null when nothing flew. */
+  onTimePct: z.number().min(0).max(1).nullable(),
+  avgArrivalDelayMinutes: z.number().nullable(),
+  /** Total block hours flown in the window — the numerator of aircraft utilisation. */
+  blockHours: z.number().nonnegative(),
+  /** A weekly load-factor trend for the sparkline, oldest first. */
+  trend: z.array(RoutePerformanceWeek),
+});
+export type RoutePerformanceResponse = z.infer<typeof RoutePerformanceResponse>;

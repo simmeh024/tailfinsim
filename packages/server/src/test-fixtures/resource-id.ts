@@ -123,6 +123,7 @@ export const RESOURCE_ID_SURFACES = [
   ...[
     'PUT /api/routes/:routeId/fares',
     'GET /api/routes/:routeId/waterfall',
+    'GET /api/routes/:routeId/performance',
     'POST /api/routes/:routeId/fares/preview',
     'DELETE /api/routes/:routeId',
     'PUT /api/routes/:routeId/active',
