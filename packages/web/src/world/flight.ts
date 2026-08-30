@@ -270,6 +270,46 @@ export interface WorldPlane {
 }
 
 /**
+ * A route's flight arc and phase offset, built once and reused every frame.
+ *
+ * `makeFlightArc` runs trig and a seeded harmonic mix, and the animation calls
+ * `planesForRoutes` sixty times a second — rebuilding every arc each frame is what
+ * pushed the globe below its frame budget. A route id maps to fixed endpoints, so
+ * the arc is cached by id; the stored endpoints guard against the rare id whose
+ * coordinates change, rebuilding it then.
+ */
+interface CachedArc {
+  source: LngLat;
+  target: LngLat;
+  arc: FlightArc;
+  offset: number;
+}
+const arcCache = new Map<string, CachedArc>();
+
+function routeArc(id: string, source: LngLat, target: LngLat): CachedArc {
+  const cached = arcCache.get(id);
+  if (cached !== undefined) {
+    const same =
+      cached.source[0] === source[0] &&
+      cached.source[1] === source[1] &&
+      cached.target[0] === target[0] &&
+      cached.target[1] === target[1];
+    if (same) return cached;
+  }
+  const seed = routeSeed(id);
+  // A stable 0–1 offset from the route's own seed, so two routes are almost never
+  // at the same fraction of their legs at the same moment.
+  const entry: CachedArc = {
+    source,
+    target,
+    arc: makeFlightArc(source, target, seed),
+    offset: (seed % 9973) / 9973,
+  };
+  arcCache.set(id, entry);
+  return entry;
+}
+
+/**
  * A plane for every route at the given animation phase (0→1, looping). More than
  * one plane per route staggers them along the line so a busy route looks busy.
  *
@@ -289,12 +329,9 @@ export function planesForRoutes(
   const planes: WorldPlane[] = [];
   for (const routeItem of routes) {
     // The plane rides the same seeded track the line draws, so it follows the bends
-    // rather than cutting a clean great circle through them.
-    const seed = routeSeed(routeItem.id);
-    const arc = makeFlightArc(routeItem.source, routeItem.target, seed);
-    // A stable 0–1 offset from the route's own seed, so two routes are almost never
-    // at the same fraction of their legs at the same moment.
-    const offset = (seed % 9973) / 9973;
+    // rather than cutting a clean great circle through them. The arc is cached by
+    // route id so the per-frame animation does not rebuild it.
+    const { arc, offset } = routeArc(routeItem.id, routeItem.source, routeItem.target);
     for (let k = 0; k < planesPerRoute; k += 1) {
       const t = (phase + offset + k / planesPerRoute) % 1;
       planes.push({
