@@ -1,16 +1,24 @@
 import { and, eq } from 'drizzle-orm';
 
-import type { AuthoredLeg } from '@tailfin/shared';
+import type {
+  AuthoredLeg,
+  CreateScheduleRequest,
+  ScheduleView,
+  SchedulingProblem,
+} from '@tailfin/shared';
 import {
   computeBlockTime,
   DEFAULT_FLIGHT_PROFILE,
   DEFAULT_TURNAROUND_MINUTES,
   MINUTES_PER_DAY,
+  type RepeatPattern,
 } from '@tailfin/sim';
 
-import { route } from '../db/schema';
+import { airframe, route } from '../db/schema';
 
-import type { LegInput } from './store';
+import { readSchedule } from './read';
+import { createSchedule, type LegInput } from './store';
+
 import type { ResolvedPlayerAirline } from '../airline/context';
 import type { Database } from '../db/client';
 
@@ -53,7 +61,7 @@ interface ResolvedLeg {
  * whole rotation is refused rather than silently dropping the leg, because a
  * rotation missing a leg is a different rotation.
  */
-export async function resolveAuthoredLegs(
+async function resolveAuthoredLegs(
   db: Database,
   own: ResolvedPlayerAirline,
   legs: readonly AuthoredLeg[],
@@ -121,4 +129,79 @@ export function placeLegs(legs: readonly ResolvedLeg[]): LegInput[] {
     earliest = departureMinute + blockMinutes + turnaroundMinutes;
   }
   return placed;
+}
+
+/** Whether an airframe is the airline's, in this world. */
+async function ownsAirframe(
+  db: Database,
+  own: ResolvedPlayerAirline,
+  airframeId: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: airframe.id })
+    .from(airframe)
+    .where(
+      and(
+        eq(airframe.id, airframeId),
+        eq(airframe.airlineId, own.id),
+        eq(airframe.worldId, own.worldId),
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
+}
+
+/** The wire's unbranded 1–7 weekday narrowed to the sim's literal union. */
+function toSimRepeat(repeat: CreateScheduleRequest['repeat']): RepeatPattern {
+  return repeat.kind === 'weekdays'
+    ? { kind: 'weekdays', days: repeat.days.map((d) => d as 1 | 2 | 3 | 4 | 5 | 6 | 7) }
+    : { kind: 'daily' };
+}
+
+/** The outcome of authoring a schedule, in the vocabulary the route handler maps to HTTP. */
+export type AuthorScheduleResult =
+  | { status: 'created'; schedule: ScheduleView; warning: string | null }
+  /** The airframe or a route is not this airline's — a 404, not an oracle. */
+  | { status: 'unknown_airframe' }
+  | { status: 'unknown_route' }
+  /** The rotation cannot run, and here is exactly why (M2-03). */
+  | { status: 'refused'; problem: SchedulingProblem; detail: string };
+
+/**
+ * Author a schedule for an airline, end to end.
+ *
+ * The whole database side of `POST /api/schedules`, kept out of the route handler
+ * so the handler is a thin mapping to status codes — the pattern every other
+ * endpoint in the codebase follows. Ownership of the airframe and every route is
+ * resolved here, the legs are placed, and `createSchedule` validates and writes.
+ */
+export async function authorSchedule(
+  db: Database,
+  own: ResolvedPlayerAirline,
+  request: CreateScheduleRequest,
+): Promise<AuthorScheduleResult> {
+  if (!(await ownsAirframe(db, own, request.airframeId))) {
+    return { status: 'unknown_airframe' };
+  }
+
+  const resolved = await resolveAuthoredLegs(db, own, request.legs);
+  if (resolved === null) return { status: 'unknown_route' };
+
+  const result = await createSchedule(db, {
+    worldId: own.worldId,
+    airlineId: own.id,
+    airframeId: request.airframeId,
+    legs: placeLegs(resolved),
+    repeat: toSimRepeat(request.repeat),
+  });
+  if (!result.ok) {
+    return { status: 'refused', problem: result.problem, detail: result.detail };
+  }
+
+  const schedule = await readSchedule(db, own, result.scheduleId);
+  if (schedule === null) {
+    // Written inside this same call; its absence is a bug, not a player-facing 404.
+    throw new Error(`Schedule ${result.scheduleId} vanished immediately after creation`);
+  }
+  return { status: 'created', schedule, warning: result.warning?.detail ?? null };
 }
