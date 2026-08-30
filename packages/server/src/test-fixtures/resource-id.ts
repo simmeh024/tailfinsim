@@ -134,6 +134,14 @@ export const RESOURCE_ID_SURFACES = [
     field: 'routeId',
     semantics: 'owner-scoped-resource',
   })),
+  ...['PUT /api/schedules/:id', 'PUT /api/schedules/:id/active', 'DELETE /api/schedules/:id'].map(
+    (endpoint): ResourceIdSurface => ({
+      endpoint,
+      position: 'path',
+      field: 'id',
+      semantics: 'owner-scoped-resource',
+    }),
+  ),
   ...['POST /api/airlines/code-availability', 'POST /api/airlines'].map(
     (endpoint): ResourceIdSurface => ({
       endpoint,

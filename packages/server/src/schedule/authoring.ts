@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import type {
   AuthoredLeg,
   CreateScheduleRequest,
+  EditScheduleRequest,
   ScheduleView,
   SchedulingProblem,
 } from '@tailfin/shared';
@@ -10,14 +11,23 @@ import {
   computeBlockTime,
   DEFAULT_FLIGHT_PROFILE,
   DEFAULT_TURNAROUND_MINUTES,
+  gameTime,
+  horizonFrom,
   MINUTES_PER_DAY,
   type RepeatPattern,
+  type WorldClock,
 } from '@tailfin/sim';
 
-import { airframe, route } from '../db/schema';
+import { airframe, route, schedule, world } from '../db/schema';
 
 import { readSchedule } from './read';
-import { createSchedule, type LegInput } from './store';
+import {
+  createSchedule,
+  deleteSchedule,
+  replaceScheduleLegs,
+  setScheduleActive,
+  type LegInput,
+} from './store';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
 import type { Database } from '../db/client';
@@ -107,11 +117,12 @@ export function placeLegs(legs: readonly ResolvedLeg[]): LegInput[] {
   const placed: LegInput[] = [];
   let earliest = 0;
   for (const [index, leg] of legs.entries()) {
-    const blockMinutes = computeBlockTime(
-      leg.greatCircleNm,
-      REFERENCE_CRUISE_KT,
-      DEFAULT_FLIGHT_PROFILE,
-    ).blockMinutes;
+    // Whole minutes: `schedule_leg.block_minutes` is an integer column, and a leg
+    // is a plan rather than a settlement — the precise block time is recomputed at
+    // arrival. `computeBlockTime` returns a fractional figure, so round it here.
+    const blockMinutes = Math.round(
+      computeBlockTime(leg.greatCircleNm, REFERENCE_CRUISE_KT, DEFAULT_FLIGHT_PROFILE).blockMinutes,
+    );
     const turnaroundMinutes = DEFAULT_TURNAROUND_MINUTES;
 
     let departureMinute = leg.departureMinuteLocal;
@@ -198,10 +209,113 @@ export async function authorSchedule(
     return { status: 'refused', problem: result.problem, detail: result.detail };
   }
 
-  const schedule = await readSchedule(db, own, result.scheduleId);
-  if (schedule === null) {
+  const view = await readSchedule(db, own, result.scheduleId);
+  if (view === null) {
     // Written inside this same call; its absence is a bug, not a player-facing 404.
     throw new Error(`Schedule ${result.scheduleId} vanished immediately after creation`);
   }
-  return { status: 'created', schedule, warning: result.warning?.detail ?? null };
+  return { status: 'created', schedule: view, warning: result.warning?.detail ?? null };
+}
+
+/** The world's clock parameters, or null for an unknown world. */
+async function worldClockOf(db: Database, worldId: string): Promise<WorldClock | null> {
+  const [row] = await db
+    .select({
+      epoch: world.epoch,
+      launchDate: world.launchDate,
+      speedMultiplier: world.speedMultiplier,
+    })
+    .from(world)
+    .where(eq(world.id, worldId))
+    .limit(1);
+  if (!row) return null;
+  return {
+    epoch: row.epoch,
+    launchDate: row.launchDate,
+    speedMultiplier: Number(row.speedMultiplier),
+  };
+}
+
+/** The outcome of editing a schedule's legs, mapped to HTTP by the route handler. */
+export type EditScheduleResult =
+  | { status: 'updated'; schedule: ScheduleView }
+  /** No such schedule for this airline — a 404, not an oracle. */
+  | { status: 'not_found' }
+  /** A leg names a route the airline does not hold. */
+  | { status: 'unknown_route' }
+  /** The new rotation cannot run, and here is exactly why. */
+  | { status: 'refused'; problem: SchedulingProblem; detail: string };
+
+/**
+ * Replace a schedule's legs and repeat, owner-scoped (M2-03 lifecycle).
+ *
+ * Ownership is resolved first — the schedule must be this airline's — then the new
+ * legs are resolved and placed exactly as authoring does, and `replaceScheduleLegs`
+ * reconciles the flights already on the horizon: only future, unflown ones move.
+ * The edit is effective from the world's current game instant.
+ */
+export async function editSchedule(
+  db: Database,
+  own: ResolvedPlayerAirline,
+  scheduleId: string,
+  request: EditScheduleRequest,
+  now: Date = new Date(),
+): Promise<EditScheduleResult> {
+  const [owned] = await db
+    .select({ id: schedule.id })
+    .from(schedule)
+    .where(and(eq(schedule.id, scheduleId), eq(schedule.airlineId, own.id)))
+    .limit(1);
+  if (!owned) return { status: 'not_found' };
+
+  const resolved = await resolveAuthoredLegs(db, own, request.legs);
+  if (resolved === null) return { status: 'unknown_route' };
+
+  const clock = await worldClockOf(db, own.worldId);
+  if (clock === null) return { status: 'not_found' };
+  const gameNow = gameTime(clock, now);
+
+  const outcome = await replaceScheduleLegs(
+    db,
+    scheduleId,
+    placeLegs(resolved),
+    toSimRepeat(request.repeat),
+    gameNow,
+    horizonFrom(gameNow),
+  );
+  if (!outcome.ok) return { status: 'refused', problem: outcome.problem, detail: outcome.detail };
+
+  const view = await readSchedule(db, own, scheduleId);
+  if (view === null) throw new Error(`Schedule ${scheduleId} vanished immediately after an edit`);
+  return { status: 'updated', schedule: view };
+}
+
+/**
+ * Pause or resume a schedule, owner-scoped. Returns the updated view, or null
+ * when it is not this airline's.
+ */
+export async function pauseSchedule(
+  db: Database,
+  own: ResolvedPlayerAirline,
+  scheduleId: string,
+  active: boolean,
+): Promise<ScheduleView | null> {
+  const changed = await setScheduleActive(db, scheduleId, own.id, active);
+  if (!changed) return null;
+  return readSchedule(db, own, scheduleId);
+}
+
+/**
+ * Delete a schedule and cancel its future flights, owner-scoped. Returns false
+ * when it is not this airline's.
+ */
+export async function removeSchedule(
+  db: Database,
+  own: ResolvedPlayerAirline,
+  scheduleId: string,
+  now: Date = new Date(),
+): Promise<boolean> {
+  const clock = await worldClockOf(db, own.worldId);
+  if (clock === null) return false;
+  return deleteSchedule(db, scheduleId, own.id, gameTime(clock, now));
 }

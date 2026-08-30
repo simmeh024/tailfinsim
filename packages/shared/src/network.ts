@@ -289,6 +289,25 @@ export const ScheduleRefusal = z.object({
 });
 export type ScheduleRefusal = z.infer<typeof ScheduleRefusal>;
 
+/**
+ * `PUT /api/schedules/:id` — replace a rotation's legs and repeat.
+ *
+ * The airframe is not editable here — a schedule *is* one airframe's rotation, so
+ * moving it to another aircraft is a different schedule. Only future, unflown
+ * flights are disturbed; one already off-blocks is history.
+ */
+export const EditScheduleRequest = z
+  .object({
+    legs: z.array(AuthoredLeg).min(1),
+    repeat: RepeatPattern,
+  })
+  .strict();
+export type EditScheduleRequest = z.infer<typeof EditScheduleRequest>;
+
+/** `PUT /api/schedules/:id/active` — pause a rotation, or resume it. */
+export const SetScheduleActiveRequest = z.object({ active: z.boolean() }).strict();
+export type SetScheduleActiveRequest = z.infer<typeof SetScheduleActiveRequest>;
+
 /* ------------------------------------------------------- fares (M3-09) ---- */
 
 /**
