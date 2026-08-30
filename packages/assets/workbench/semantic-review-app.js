@@ -4,6 +4,11 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 import {
+  parseSemanticWorkbenchDraft,
+  semanticWorkbenchDraftKey,
+  semanticWorkbenchDraftMaxBytes,
+} from '../src/semantic-workbench-draft';
+import {
   compressSemanticAssignments,
   expandSemanticDispositions,
 } from '../src/semantic-workbench-review';
@@ -21,6 +26,7 @@ const elements = Object.fromEntries(
     'components',
     'whole',
     'clear-component',
+    'reset-draft',
     'export',
     'import',
   ].map((id) => [id, document.getElementById(id)]),
@@ -62,6 +68,14 @@ try {
       { status: 'unreviewed', rationale: '' },
     ]),
   );
+  const draftIdentity = {
+    operationId: inventory.operationId,
+    derivativeSha256: inventory.derivativeSha256,
+    inventoryReportSha256: inventory.reportSha256,
+  };
+  const draftKey = semanticWorkbenchDraftKey(draftIdentity);
+  let reviewedAt = new Date().toISOString();
+  let draftEnabled = false;
   for (const target of targetMetadata) {
     const option = document.createElement('option');
     option.value = target.id;
@@ -182,6 +196,7 @@ try {
       controls.update();
     }
     updateStats();
+    if (draftEnabled) saveDraft();
   }
 
   for (const component of inventory.components) {
@@ -271,6 +286,7 @@ try {
         ? `Cleared ${String(faces.length)} faces from ${mesh.name}.`
         : `Assigned ${String(faces.length)} faces in ${mesh.name} to ${target}.`,
     );
+    saveDraft();
   }
 
   let pointerDown = null;
@@ -321,7 +337,10 @@ try {
         null,
       );
   };
-  elements.angle.oninput = () => (elements['angle-value'].textContent = `${elements.angle.value}°`);
+  elements.angle.oninput = () => {
+    elements['angle-value'].textContent = `${elements.angle.value}°`;
+    saveDraft();
+  };
 
   function syncFindingUi() {
     const finding = findings.get(elements.target.value);
@@ -331,7 +350,10 @@ try {
     elements.rationale.value = finding?.rationale ?? '';
     updateStats();
   }
-  elements.target.onchange = syncFindingUi;
+  elements.target.onchange = () => {
+    syncFindingUi();
+    saveDraft();
+  };
   elements.finding.onchange = () => {
     const metadata = targetMetadata.find((target) => target.id === elements.target.value);
     const finding = findings.get(elements.target.value);
@@ -345,11 +367,123 @@ try {
       finding.rationale = '';
       elements.rationale.value = '';
     }
+    saveDraft();
   };
   elements.rationale.oninput = () => {
     const finding = findings.get(elements.target.value);
     if (finding) finding.rationale = elements.rationale.value.trim();
+    saveDraft();
   };
+  elements.reviewer.oninput = saveDraft;
+
+  function draftState() {
+    return {
+      format: 'tailfin-meshy-semantic-workbench-draft',
+      formatVersion: 1,
+      ...draftIdentity,
+      reviewedAt,
+      reviewedBy: elements.reviewer.value,
+      activeTargetId: elements.target.value,
+      activeComponentId: activeComponent,
+      floodAngle: Number(elements.angle.value),
+      targetFindings: inventory.requiredSemanticTargets.map((target) => {
+        const finding = findings.get(target.id);
+        return {
+          targetId: target.id,
+          status: finding.status,
+          ...(finding.rationale ? { rationale: finding.rationale } : {}),
+        };
+      }),
+      dispositions: compressSemanticAssignments(
+        inventory.components,
+        targetMetadata.map((target) => target.id),
+        assignments,
+      ),
+    };
+  }
+
+  function saveDraft() {
+    if (!draftEnabled) return;
+    try {
+      const serialized = JSON.stringify(draftState());
+      if (new TextEncoder().encode(serialized).length > semanticWorkbenchDraftMaxBytes)
+        throw new Error('Draft exceeds its bound.');
+      localStorage.setItem(draftKey, serialized);
+    } catch {
+      setStatus('Local draft autosave failed. Download review JSON before leaving.', true);
+    }
+  }
+
+  function stageReviewState(review, allowIncompleteRationale = false) {
+    if (
+      review.operationId !== inventory.operationId ||
+      review.derivativeSha256 !== inventory.derivativeSha256 ||
+      review.inventoryReportSha256 !== inventory.reportSha256 ||
+      !Number.isFinite(Date.parse(review.reviewedAt)) ||
+      !/^[a-zA-Z0-9][a-zA-Z0-9 ._-]{1,79}$/.test(review.reviewedBy)
+    )
+      throw new Error('Review identity or reviewer does not match this workbench.');
+    const stagedFindings = new Map();
+    const allowedStatuses = new Set([
+      'unreviewed',
+      'present',
+      'missing_requires_modeling',
+      'not_applicable',
+    ]);
+    for (const finding of review.targetFindings ?? []) {
+      const metadata = inventory.requiredSemanticTargets.find(
+        (target) => target.id === finding.targetId,
+      );
+      const needsRationale = ['missing_requires_modeling', 'not_applicable'].includes(
+        finding.status,
+      );
+      const rationale = finding.rationale ?? '';
+      if (
+        !metadata ||
+        stagedFindings.has(finding.targetId) ||
+        !allowedStatuses.has(finding.status) ||
+        (metadata.required && finding.status === 'not_applicable') ||
+        typeof rationale !== 'string' ||
+        rationale.length > 500 ||
+        (!allowIncompleteRationale && needsRationale !== rationale.length >= 12) ||
+        (!needsRationale && rationale.length > 0)
+      )
+        throw new Error('Review target finding is invalid.');
+      stagedFindings.set(finding.targetId, { status: finding.status, rationale });
+    }
+    if (stagedFindings.size !== inventory.requiredSemanticTargets.length)
+      throw new Error('Review must contain every target finding exactly once.');
+    const imported = expandSemanticDispositions(
+      inventory.components,
+      new Set(targetMetadata.map((target) => target.id)),
+      review.dispositions ?? [],
+    );
+    const counts = new Map(targetMetadata.map((target) => [target.id, 0]));
+    for (const values of imported.values())
+      for (const targetId of values)
+        if (targetId !== null) counts.set(targetId, counts.get(targetId) + 1);
+    for (const [targetId, finding] of stagedFindings)
+      if ((finding.status === 'present') !== counts.get(targetId) > 0)
+        throw new Error('Review findings and selected faces disagree.');
+    return { stagedFindings, imported };
+  }
+
+  function applyReviewState(review, draft = false) {
+    const { stagedFindings, imported } = stageReviewState(review, draft);
+    findings.clear();
+    for (const [targetId, finding] of stagedFindings) findings.set(targetId, finding);
+    for (const [componentId, values] of imported) assignments.set(componentId, values);
+    reviewedAt = review.reviewedAt;
+    elements.reviewer.value = review.reviewedBy;
+    if (draft) {
+      elements.target.value = review.activeTargetId;
+      elements.angle.value = String(review.floodAngle);
+      elements['angle-value'].textContent = `${String(review.floodAngle)}°`;
+      activeComponent = review.activeComponentId;
+    }
+    for (const mesh of meshes) renderColors(mesh);
+    syncFindingUi();
+  }
 
   function buildReview() {
     const dispositions = compressSemanticAssignments(
@@ -381,7 +515,7 @@ try {
       operationId: inventory.operationId,
       derivativeSha256: inventory.derivativeSha256,
       inventoryReportSha256: inventory.reportSha256,
-      reviewedAt: new Date().toISOString(),
+      reviewedAt,
       reviewedBy: elements.reviewer.value.trim(),
       targetFindings,
       dispositions,
@@ -411,57 +545,42 @@ try {
       const review = JSON.parse(await file.text());
       if (
         review.format !== 'tailfin-meshy-semantic-review' ||
+        review.formatVersion !== 1 ||
         review.operationId !== inventory.operationId ||
         review.derivativeSha256 !== inventory.derivativeSha256 ||
         review.inventoryReportSha256 !== inventory.reportSha256
       )
         throw new Error('Review identity does not match this workbench.');
-      const stagedFindings = new Map();
-      const allowedStatuses = new Set([
-        'unreviewed',
-        'present',
-        'missing_requires_modeling',
-        'not_applicable',
-      ]);
-      for (const finding of review.targetFindings ?? []) {
-        const metadata = inventory.requiredSemanticTargets.find(
-          (target) => target.id === finding.targetId,
-        );
-        if (
-          !metadata ||
-          stagedFindings.has(finding.targetId) ||
-          !allowedStatuses.has(finding.status) ||
-          (metadata.required && finding.status === 'not_applicable') ||
-          ['missing_requires_modeling', 'not_applicable'].includes(finding.status) !==
-            (typeof finding.rationale === 'string' &&
-              finding.rationale.length >= 12 &&
-              finding.rationale.length <= 500)
-        )
-          throw new Error('Review target finding is invalid.');
-        stagedFindings.set(finding.targetId, {
-          status: finding.status,
-          rationale: finding.rationale ?? '',
-        });
-      }
-      if (stagedFindings.size !== inventory.requiredSemanticTargets.length)
-        throw new Error('Review must contain every target finding exactly once.');
-      const imported = expandSemanticDispositions(
-        inventory.components,
-        new Set(targetMetadata.map((target) => target.id)),
-        review.dispositions ?? [],
-      );
-      findings.clear();
-      for (const [targetId, finding] of stagedFindings) findings.set(targetId, finding);
-      for (const [componentId, values] of imported) assignments.set(componentId, values);
-      elements.reviewer.value = review.reviewedBy ?? elements.reviewer.value;
-      for (const mesh of meshes) renderColors(mesh);
-      syncFindingUi();
-      setStatus('Matching review imported. Re-export after inspection to update its timestamp.');
+      applyReviewState(review);
+      saveDraft();
+      setStatus('Matching review imported and autosaved. Inspect it before re-exporting.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Review import refused.', true);
     } finally {
       elements.import.value = '';
     }
+  };
+
+  elements['reset-draft'].onclick = () => {
+    draftEnabled = false;
+    localStorage.removeItem(draftKey);
+    reviewedAt = new Date().toISOString();
+    elements.reviewer.value = 'local-operator';
+    elements.target.value = inventory.requiredSemanticTargets[0].id;
+    elements.angle.value = '25';
+    elements['angle-value'].textContent = '25°';
+    activeComponent = inventory.components[0].componentId;
+    for (const target of inventory.requiredSemanticTargets)
+      findings.set(target.id, { status: 'unreviewed', rationale: '' });
+    for (const [componentId, values] of assignments)
+      assignments.set(
+        componentId,
+        values.map(() => null),
+      );
+    for (const mesh of meshes) renderColors(mesh);
+    syncFindingUi();
+    draftEnabled = true;
+    setStatus('Local draft cleared. The quarantined candidate is unchanged.');
   };
 
   const setView = (direction) => {
@@ -494,10 +613,30 @@ try {
     render();
   };
   new ResizeObserver(resize).observe(canvas);
+  let restored = false;
+  const storedDraft = localStorage.getItem(draftKey);
+  if (storedDraft !== null)
+    try {
+      const draft = parseSemanticWorkbenchDraft(storedDraft, draftIdentity);
+      if (
+        !targetMetadata.some((target) => target.id === draft.activeTargetId) ||
+        !inventory.components.some((component) => component.componentId === draft.activeComponentId)
+      )
+        throw new Error('Semantic workbench draft controls are stale.');
+      applyReviewState(draft, true);
+      restored = true;
+    } catch {
+      localStorage.removeItem(draftKey);
+    }
+  draftEnabled = true;
   selectComponent(activeComponent);
   syncFindingUi();
   setView([1, 0.55, 1]);
-  setStatus('Verified candidate loaded. No semantic faces are assigned.');
+  setStatus(
+    restored
+      ? 'Verified candidate loaded. Matching local draft restored.'
+      : 'Verified candidate loaded. No semantic faces are assigned.',
+  );
 } catch (error) {
   setStatus(error instanceof Error ? error.message : 'Workbench unavailable.', true);
   canvas.hidden = true;
