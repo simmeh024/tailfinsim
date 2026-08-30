@@ -418,6 +418,13 @@ half-open ranges. The browser cannot archive or approve that file: the separate 
 must validate and preserve it before any repair stage. Front-side rendering is intentional so the
 review does not conceal winding defects with a double-sided runtime material.
 
+In-progress selections, findings, reviewer, active controls and flood angle autosave in browser
+storage under the complete operation/derivative/inventory identity. A refresh restores only a
+bounded draft for that exact immutable candidate; stale or malformed storage is discarded before
+state changes. **Reset local draft** removes that browser-only state without touching quarantine
+artifacts. Downloaded JSON remains the only input to the immutable `semantics --review-file`
+archive gate.
+
 ## Pinned strategy and vendor evidence
 
 The planning observation is dated 2026-08-28. Four untextured T2 candidates cost 5 credits each;
