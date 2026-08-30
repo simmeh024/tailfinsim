@@ -564,19 +564,31 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     });
   }, [showRivals, corridorGrid, rivals, neutral]);
 
+  // The player's own route tracks, sampled once per route/quality change rather than
+  // every animation frame. Computing each great-circle (trig per segment) sixty times
+  // a second is what the shimmer used to do and what dropped the globe below its frame
+  // budget; the phase-driven layer below just slices a window out of these.
+  const shimmerSegments = quality === 'full' ? 64 : 32;
+  const ownPaths = useMemo(
+    () =>
+      playerRoutes.map((route) => ({
+        id: route.id,
+        full: flightPath(route.source, route.target, routeSeed(route.id), shimmerSegments),
+      })),
+    [playerRoutes, shimmerSegments],
+  );
+
   // A slow directional shimmer travelling along the player's own routes — a short
   // brightened window sliding from origin to destination. Purely `phase`-driven, and
   // the phase is frozen under prefers-reduced-motion, so this layer simply is not
   // built then (M7-03's accessibility criterion).
   const shimmerLayer = useMemo(() => {
-    if (reducedMotion || playerRoutes.length === 0) return false;
-    const segments = quality === 'full' ? 64 : 32;
-    const windowLen = Math.max(2, Math.round(segments * 0.1));
-    const trails = playerRoutes.map((route) => {
-      const full = flightPath(route.source, route.target, routeSeed(route.id), segments);
+    if (reducedMotion || ownPaths.length === 0) return false;
+    const windowLen = Math.max(2, Math.round(shimmerSegments * 0.1));
+    const trails = ownPaths.map(({ id, full }) => {
       const start = Math.min(full.length - windowLen, Math.floor(phase * (full.length - 1)));
       return {
-        id: route.id,
+        id,
         path: full.slice(Math.max(0, start), Math.max(windowLen, start + windowLen)),
       };
     });
@@ -600,7 +612,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       parameters: { cullMode: 'none' },
       getPolygonOffset: () => [0, -70000],
     });
-  }, [reducedMotion, playerRoutes, quality, phase, palette.route]);
+  }, [reducedMotion, ownPaths, shimmerSegments, phase, palette.route]);
 
   const allLayers = useMemo<(Layer | false)[]>(
     () => [
