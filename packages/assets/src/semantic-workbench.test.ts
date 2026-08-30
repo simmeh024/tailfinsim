@@ -91,5 +91,9 @@ describe('local semantic review workbench boundary', () => {
       unknown
     >;
     expect(inventory.reportSha256).toBe('a'.repeat(64));
+    const page = await (await fetch(`${root}/`)).text();
+    expect(page).toContain('id="isolate" aria-pressed="false"');
+    expect(page).toContain('id="wireframe" aria-pressed="false"');
+    expect(page).toContain('button[aria-pressed="true"]');
   });
 });
