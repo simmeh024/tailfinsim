@@ -423,7 +423,18 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   // `layers` on purpose: it changes every frame with `phase`, and folding it into the
   // land/sea/day-night memo would rebuild those world-sized bitmaps sixty times a
   // second. One plane per live route, at the current animation phase.
-  const planes = useMemo(() => planesForRoutes(map.traffic, phase, 1), [map.traffic, phase]);
+  // Planes follow the same ownership toggles as the route lines: your own aircraft
+  // with "My routes", the competition's with "Rivals". Drawing every carrier's plane
+  // regardless of the toggles piled the whole world's traffic into one clump — so the
+  // default view is your own fleet, and all-traffic is opt-in via Rivals.
+  const visiblePlaneRoutes = useMemo(
+    () => map.traffic.filter((r) => (r.own ? visibility.routes : showRivals)),
+    [map.traffic, visibility.routes, showRivals],
+  );
+  const planes = useMemo(
+    () => planesForRoutes(visiblePlaneRoutes, phase, 1),
+    [visiblePlaneRoutes, phase],
+  );
   const detailed = viewState.zoom >= SPRITE_ZOOM;
 
   // High zoom: the full top-down silhouette, tinted the carrier's colour and pointed

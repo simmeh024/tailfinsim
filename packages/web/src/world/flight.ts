@@ -272,6 +272,14 @@ export interface WorldPlane {
 /**
  * A plane for every route at the given animation phase (0→1, looping). More than
  * one plane per route staggers them along the line so a busy route looks busy.
+ *
+ * Each route also carries a **per-route phase offset** seeded from its id, so the
+ * whole fleet is not frozen at the same fraction of every leg. Without it every
+ * plane sits at exactly `phase` along its own route — and on a hub-and-spoke
+ * network, where dozens of legs radiate from a few hubs, that piles every aircraft
+ * into one throbbing clump near the hubs rather than scattering them along their
+ * routes the way real traffic reads. The offset is deterministic, so a plane's
+ * position is still stable frame to frame.
  */
 export function planesForRoutes(
   routes: readonly RouteLike[],
@@ -282,9 +290,13 @@ export function planesForRoutes(
   for (const routeItem of routes) {
     // The plane rides the same seeded track the line draws, so it follows the bends
     // rather than cutting a clean great circle through them.
-    const arc = makeFlightArc(routeItem.source, routeItem.target, routeSeed(routeItem.id));
+    const seed = routeSeed(routeItem.id);
+    const arc = makeFlightArc(routeItem.source, routeItem.target, seed);
+    // A stable 0–1 offset from the route's own seed, so two routes are almost never
+    // at the same fraction of their legs at the same moment.
+    const offset = (seed % 9973) / 9973;
     for (let k = 0; k < planesPerRoute; k += 1) {
-      const t = (phase + k / planesPerRoute) % 1;
+      const t = (phase + offset + k / planesPerRoute) % 1;
       planes.push({
         routeId: `${routeItem.id}:${String(k)}`,
         sourceId: routeItem.id,
