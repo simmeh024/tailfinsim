@@ -1,10 +1,23 @@
 import { build } from 'esbuild';
 
 await build({
-  entryPoints: ['src/cli.ts', 'src/meshy-cli.ts', 'src/meshy-run-cli.ts'],
+  entryPoints: [
+    'src/cli.ts',
+    'src/meshy-cli.ts',
+    'src/meshy-run-cli.ts',
+    'src/semantic-workbench-cli.ts',
+  ],
   outdir: 'dist',
   bundle: true,
-  external: ['@gltf-transform/*', 'gltf-validator', 'meshoptimizer', 'sharp', 'watlas', 'zod'],
+  external: [
+    '@gltf-transform/*',
+    'esbuild',
+    'gltf-validator',
+    'meshoptimizer',
+    'sharp',
+    'watlas',
+    'zod',
+  ],
   platform: 'node',
   target: 'node24',
   format: 'esm',

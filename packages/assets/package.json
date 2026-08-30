@@ -8,6 +8,7 @@
     "build": "node build.mjs",
     "meshy": "pnpm build && node dist/meshy-cli.js",
     "meshy-run": "pnpm build && node dist/meshy-run-cli.js",
+    "semantic-workbench": "pnpm build && node dist/semantic-workbench-cli.js",
     "intake": "pnpm build && node dist/cli.js intake",
     "salvage:a320neo": "pnpm build && node dist/cli.js salvage-a320neo",
     "validate": "pnpm build && node dist/cli.js validate --root ../../assets/aircraft",
@@ -21,6 +22,7 @@
     "gltf-validator": "2.0.0-dev.3.10",
     "meshoptimizer": "^1.2.0",
     "sharp": "^0.35.3",
+    "three": "^0.185.1",
     "watlas": "1.0.1",
     "zod": "^4.4.3"
   },
