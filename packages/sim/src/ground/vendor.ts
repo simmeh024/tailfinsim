@@ -72,6 +72,21 @@ export interface GroundHandlingConfig {
    * a flagship for exactly that reason.
    */
   stationCapacity: Record<AirportTier, Record<HandlerGrade, number>>;
+  /**
+   * How long a signed contract runs, in **game days** (§9.3: *"Contracts run for a
+   * fixed term"*). A span in the world's own calendar, like a maintenance
+   * downtime or a crew conversion — a world at 4× renews its handlers twice as
+   * often in real time as one at 2× — which is why it is balance here rather than
+   * a real-week deadline like a factory delivery.
+   */
+  termDays: number;
+  /**
+   * How many game days before a term ends a contract is flagged **expiring**, so
+   * §9.3's *"players compete for the good handlers"* stays true across a renewal:
+   * the alert lands with enough runway to re-sign, or contend for, the slot before
+   * it lapses back to walk-up handling.
+   */
+  expiryWarningDays: number;
 }
 
 /**
@@ -94,7 +109,15 @@ export const DEFAULT_GROUND_HANDLING: GroundHandlingConfig = {
     small: { premium: 0, standard: 2, budget: 4 },
     regional: { premium: 0, standard: 0, budget: 2 },
   },
+  // A season-length term with a fortnight's warning: long enough that signing is a
+  // commitment rather than a per-flight choice, short enough that a scarce vendor
+  // changes hands and the market stays contested.
+  termDays: 90,
+  expiryWarningDays: 14,
 };
+
+/** Game milliseconds in a day, for the term arithmetic. */
+const MS_PER_DAY = 86_400_000;
 
 /** Version tag, mirroring the turnaround and disruption configs (invariant 4). */
 export const GROUND_HANDLING_CONFIG_VERSION = 'v1' as const;
@@ -117,4 +140,35 @@ export function handlerProfile(
  */
 export function groundVendorRisk(profile: HandlerGradeProfile): number {
   return Math.min(1, Math.max(0, 1 - profile.reliability));
+}
+
+/**
+ * When a contract signed at `signedAt` (game time) reaches the end of its term.
+ *
+ * Pure and game-time in, game-time out (CONTRIBUTING invariant 2): the caller
+ * hands in the world clock's reading at the moment of signing, so the term is a
+ * span in the world's calendar rather than in real weeks.
+ */
+export function contractTermEnd(
+  signedAt: Date,
+  config: GroundHandlingConfig = DEFAULT_GROUND_HANDLING,
+): Date {
+  return new Date(signedAt.getTime() + config.termDays * MS_PER_DAY);
+}
+
+/**
+ * Whether a contract ending at `termEnd` is close enough to lapsing to warn about.
+ *
+ * True inside the warning window and also once the term has already passed but the
+ * contract has not yet been swept out — an overdue handler is at least as worth
+ * flagging as one about to expire. A `null` term (a legacy row signed before terms
+ * existed) never expires, so it is never expiring.
+ */
+export function contractExpiring(
+  termEnd: Date | null,
+  gameNow: Date,
+  config: GroundHandlingConfig = DEFAULT_GROUND_HANDLING,
+): boolean {
+  if (termEnd === null) return false;
+  return termEnd.getTime() - gameNow.getTime() <= config.expiryWarningDays * MS_PER_DAY;
 }

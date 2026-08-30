@@ -11,6 +11,7 @@ import { runCrewPayroll } from '../crew/payroll';
 import { completeDueConversions } from '../crew/store';
 import { type Database } from '../db/client';
 import { world, type WorldRow } from '../db/schema';
+import { expireGroundContracts } from '../ground/contracts';
 import { reviewNpcCarriers } from '../npc/operate';
 import { runOfficePayroll } from '../office/payroll';
 import { reviewSocialMediaReputation } from '../office/reputation';
@@ -106,6 +107,8 @@ export interface TickReport {
   crewErrors: number;
   /** M5-04 follow-up. Airlines whose social media specialist dripped reputation this run. */
   reputationGrants: number;
+  /** M5-06. Ground contracts whose term ran out and were lapsed this run. */
+  groundContractsExpired: number;
 }
 
 export interface EngineLog {
@@ -167,6 +170,8 @@ export interface SimulationEngineOptions {
   returnSick?: typeof returnSickCrew;
   /** M5-04 follow-up. Drips a hired social media specialist's monthly reputation. */
   reviewReputation?: typeof reviewSocialMediaReputation;
+  /** M5-06. Lapses ground contracts whose term has ended. */
+  expireGround?: typeof expireGroundContracts;
   depth?: typeof queueDepth;
 }
 
@@ -261,6 +266,17 @@ export interface EngineSnapshot {
    */
   reputationGrants: number;
   reputationErrors: number;
+  /**
+   * M5-06. Ground contracts lapsed since start, and sweeps that threw.
+   *
+   * A counter for the reason the crew ones exist: without a worker a term never
+   * ends, so a contract signed on opening day runs for ever and its vendor slot
+   * never comes free — which reads as a stuck market rather than a missing
+   * process. `groundErrors` tells a sweep that could not run from a world where
+   * nothing has reached its term yet.
+   */
+  groundContractsExpired: number;
+  groundErrors: number;
 }
 
 export interface QueueDepthByWorld {
@@ -347,6 +363,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     reviewMorale = reviewCrewMorale,
     returnSick = returnSickCrew,
     reviewReputation = reviewSocialMediaReputation,
+    expireGround = expireGroundContracts,
   } = options;
 
   const unhandledEventTypes = ALL_EVENT_TYPES.filter((type) => handlers[type] === undefined);
@@ -379,6 +396,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let maintenanceErrors = 0;
   let reputationGrants = 0;
   let reputationErrors = 0;
+  let groundContractsExpired = 0;
+  let groundErrors = 0;
 
   async function tick(context: { tickedAt: Date; tickNumber: number }): Promise<TickReport> {
     const worlds = await listWorlds(db);
@@ -400,6 +419,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     let tickCrewErrors = 0;
     let tickAirframesGrounded = 0;
     let tickReputationGrants = 0;
+    let tickGroundExpired = 0;
 
     for (const entry of worlds) {
       // Aircraft factory lead time is explicitly **real time** (§7.2), not a
@@ -590,6 +610,29 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         log?.warn?.(`[${entry.name}] reputation sweep failed: ${String(error)}`);
       }
 
+      /*
+       * Ground contract terms (M5-06, §9.3), on this world's game clock: a term
+       * is a span in the world's calendar, so a world at 4× renews its handlers
+       * twice as fast in real time as one at 2×. A lapsed contract frees its
+       * vendor slot and drops the airline back to walk-up handling.
+       *
+       * Isolated like the sweeps above: a term that could not lapse this tick
+       * lapses the next one. The handler keeps working a second longer, which is
+       * cosmetic rather than money lost.
+       */
+      try {
+        const expired = await expireGround(db, entry.id, gameTime(entry.clock, now()));
+        tickGroundExpired += expired.expired;
+        if (expired.expired > 0) {
+          log?.info?.(
+            `[${entry.name}] ground: ${String(expired.expired)} contract(s) lapsed at term`,
+          );
+        }
+      } catch (error) {
+        groundErrors += 1;
+        log?.warn?.(`[${entry.name}] ground contract sweep failed: ${String(error)}`);
+      }
+
       // Each world is drained against its own clock: `fire_at` is a game-time
       // instant, so what is due depends on where that world's clock has got to,
       // and two worlds at different speeds disagree about the same moment.
@@ -645,6 +688,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     crewSickened += tickSickened;
     crewErrors += tickCrewErrors;
     reputationGrants += tickReputationGrants;
+    groundContractsExpired += tickGroundExpired;
     lastTickAt = context.tickedAt;
     lastTickDurationMs = durationMs;
     lastWorldCount = worlds.length;
@@ -672,6 +716,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       crewSickened: tickSickened,
       crewErrors: tickCrewErrors,
       reputationGrants: tickReputationGrants,
+      groundContractsExpired: tickGroundExpired,
     };
   }
 
@@ -742,6 +787,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         maintenanceErrors,
         reputationGrants,
         reputationErrors,
+        groundContractsExpired,
+        groundErrors,
       };
     },
 

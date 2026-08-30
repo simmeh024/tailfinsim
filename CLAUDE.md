@@ -337,6 +337,17 @@ paying crew badly looks free. `moraleReviews`, `crewResignations` and
 reviewed** — not zero, which would mean the crew hate a base on opening day, and
 a schema default would have been a balance literal in a migration.
 
+**A ground contract's term is a fourth worker story (M5-06).** §9.3's handler contracts run
+for a fixed term, and something has to lapse them: `expireGroundContracts`, on the world's
+game clock, flips an `active` contract to `expired` at its `term_end` — which frees the
+vendor slot (capacity counts only `active` rows) and drops the airline back to walk-up
+handling. Without a worker a term never ends: a contract signed on opening day runs for
+ever, its scarce vendor slot never comes free for a competitor, and the *"before it lapses"*
+alert never has anything to fire against — which reads as a frozen market rather than a
+missing process. `groundContractsExpired` and `groundErrors` are the counters. `term_end` is
+**game time** like a `world_event`'s fire time, and **nullable means a legacy contract signed
+before terms existed** — it never expires, rather than expiring at the epoch.
+
 **`FLIGHT_DEPART` has a handler as of M5-02, and that was a decision.** `handlers.ts` had said
 for two milestones that inventing a departure would be _"the accidental decision ADR-0019's
 boundary exists to prevent"_, and that remains true of an accidental one. M5-02's _"legality is
