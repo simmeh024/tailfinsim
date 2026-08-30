@@ -3,6 +3,8 @@ import type {
   FarePreviewResponse,
   FareTable,
   FareWaterfallResponse,
+  RouteCompetitionResponse,
+  RoutePerformanceResponse,
   SetFaresResponse,
 } from '@tailfin/shared';
 
@@ -211,4 +213,27 @@ export async function fetchWaterfall(
   if (status === 200) return { ok: true, waterfall: body as FareWaterfallResponse };
   if (status === 422) return body as WaterfallOutcome;
   throw new Error(`GET /api/routes/${routeId}/waterfall failed with ${String(status)}`);
+}
+
+/**
+ * What the route actually did — its settled flights, rolled up (M2-06).
+ *
+ * A 404 (a stale or someone else's route) throws like any unexpected status; the
+ * caller's error state is the right home for "this is not your route".
+ */
+export async function fetchPerformance(routeId: string): Promise<RoutePerformanceResponse> {
+  const { status, body } = await json(`/api/routes/${routeId}/performance`);
+  if (status !== 200) {
+    throw new Error(`GET /api/routes/${routeId}/performance failed with ${String(status)}`);
+  }
+  return body as RoutePerformanceResponse;
+}
+
+/** Who else is in this market, and how much of it each takes (M3-12). */
+export async function fetchCompetition(routeId: string): Promise<RouteCompetitionResponse> {
+  const { status, body } = await json(`/api/routes/${routeId}/competition`);
+  if (status !== 200) {
+    throw new Error(`GET /api/routes/${routeId}/competition failed with ${String(status)}`);
+  }
+  return body as RouteCompetitionResponse;
 }
