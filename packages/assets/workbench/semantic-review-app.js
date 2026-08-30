@@ -24,6 +24,8 @@ const elements = Object.fromEntries(
     'angle-value',
     'stats',
     'components',
+    'isolate',
+    'wireframe',
     'whole',
     'clear-component',
     'reset-draft',
@@ -120,6 +122,8 @@ try {
   const assignments = new Map();
   const adjacency = new WeakMap();
   let activeComponent = inventory.components[0]?.componentId ?? null;
+  let isolationEnabled = false;
+  let wireframeEnabled = false;
 
   gltf.scene.traverse((object) => {
     if (!object.isMesh) return;
@@ -177,27 +181,47 @@ try {
       (component) => component.componentId === activeComponent,
     );
     const selected = [...counts.values()].reduce((sum, count) => sum + count, 0);
-    elements.stats.textContent = `Selected component: ${activeComponent ?? 'none'}\nComponent triangles: ${active?.triangles ?? 0}\nAssigned: ${selected} / ${total}\nUncovered: ${uncovered}\nActive target faces: ${counts.get(elements.target.value) ?? 0}`;
+    const centre = active?.boundsCanonicalMetres.centre.map((value) => value.toFixed(2)).join(', ');
+    const extent = active?.boundsCanonicalMetres.extent.map((value) => value.toFixed(2)).join(', ');
+    const mirror = active?.mirrorCandidates[0];
+    elements.stats.textContent = `Selected component: ${activeComponent ?? 'none'}\nComponent triangles: ${active?.triangles ?? 0}\nSide evidence: ${active?.side ?? 'none'}\nCentre XYZ m: ${centre ?? 'none'}\nExtent XYZ m: ${extent ?? 'none'}\nBest mirror evidence: ${mirror ? `${mirror.componentId} (${mirror.evidenceScore.toFixed(4)})` : 'none'}\nAssigned: ${selected} / ${total}\nUncovered: ${uncovered}\nActive target faces: ${counts.get(elements.target.value) ?? 0}`;
     for (const button of elements.components.querySelectorAll('button'))
       button.classList.toggle('active', button.dataset.component === activeComponent);
   }
 
   function selectComponent(componentId, focus = false) {
     activeComponent = componentId;
+    if (isolationEnabled) for (const mesh of meshes) mesh.visible = mesh.name === activeComponent;
     if (focus) {
       const mesh = meshById.get(componentId);
-      const box = new THREE.Box3().setFromObject(mesh).translate(group.position);
-      const centre = box.getCenter(new THREE.Vector3());
-      const size = Math.max(...box.getSize(new THREE.Vector3()).toArray(), span * 0.03);
-      controls.target.copy(centre);
-      camera.position
-        .copy(centre)
-        .add(new THREE.Vector3(1, 0.45, 1).normalize().multiplyScalar(size * 3));
-      controls.update();
+      frameBounds(componentBounds(mesh), [1, 0.45, 1], 3);
     }
     updateStats();
     if (draftEnabled) saveDraft();
   }
+
+  elements.isolate.onclick = () => {
+    isolationEnabled = !isolationEnabled;
+    elements.isolate.setAttribute('aria-pressed', String(isolationEnabled));
+    elements.isolate.textContent = isolationEnabled ? 'Show all components' : 'Isolate component';
+    for (const mesh of meshes) mesh.visible = !isolationEnabled || mesh.name === activeComponent;
+    const currentDirection = camera.position.clone().sub(controls.target).normalize().toArray();
+    frameBounds(visibleBounds(), currentDirection, isolationEnabled ? 3 : 2.15);
+    setStatus(
+      isolationEnabled
+        ? `${activeComponent} isolated for visual review.`
+        : 'All candidate components visible.',
+    );
+  };
+
+  elements.wireframe.onclick = () => {
+    wireframeEnabled = !wireframeEnabled;
+    elements.wireframe.setAttribute('aria-pressed', String(wireframeEnabled));
+    elements.wireframe.textContent = wireframeEnabled ? 'Hide topology' : 'Show topology';
+    for (const mesh of meshes) mesh.material.wireframe = wireframeEnabled;
+    render();
+    setStatus(wireframeEnabled ? 'Topology overlay enabled.' : 'Topology overlay disabled.');
+  };
 
   for (const component of inventory.components) {
     const button = document.createElement('button');
@@ -583,13 +607,28 @@ try {
     setStatus('Local draft cleared. The quarantined candidate is unchanged.');
   };
 
-  const setView = (direction) => {
-    controls.target.set(0, 0, 0);
-    camera.position.copy(new THREE.Vector3(...direction).normalize().multiplyScalar(span * 2.15));
+  function componentBounds(mesh) {
+    return new THREE.Box3().setFromObject(mesh).translate(group.position);
+  }
+  function visibleBounds() {
+    const selected = meshById.get(activeComponent);
+    return isolationEnabled && selected
+      ? componentBounds(selected)
+      : aircraftBounds.clone().translate(group.position);
+  }
+  function frameBounds(box, direction, distanceMultiplier) {
+    const centre = box.getCenter(new THREE.Vector3());
+    const size = Math.max(...box.getSize(new THREE.Vector3()).toArray(), span * 0.03);
+    controls.target.copy(centre);
+    camera.position
+      .copy(centre)
+      .add(new THREE.Vector3(...direction).normalize().multiplyScalar(size * distanceMultiplier));
     camera.up.set(0, 1, 0);
-    camera.lookAt(0, 0, 0);
+    camera.lookAt(centre);
     controls.update();
-  };
+  }
+  const setView = (direction) =>
+    frameBounds(visibleBounds(), direction, isolationEnabled ? 3 : 2.15);
   for (const [name, direction] of [
     ['Quarter', [1, 0.55, 1]],
     ['Left', [-1, 0, 0]],
