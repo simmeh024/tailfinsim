@@ -32,6 +32,7 @@ import { parseRequestBody } from '../http/request-body';
 
 import { parseFares, previewFares, type RouteEconomics, type RouteRow, setFares } from './fares';
 import { openRoute } from './open-route';
+import { routePerformance } from './performance';
 import { rivalsOn, waterfallFor } from './waterfall';
 
 import type { Database, DatabaseHandle } from '../db/client';
@@ -271,6 +272,24 @@ export function registerNetworkRoutes(
       const result = waterfallFor(row, economics, cabin.data, rivalId);
       if (!result.ok) return reply.code(422).send(result);
       return reply.code(200).send(result.waterfall);
+    },
+  );
+
+  /**
+   * What the route actually did — its settled flights, rolled up (§14.4).
+   *
+   * Owner-scoped like the rest: a route that is not the caller's is a 404, not an
+   * oracle. Every figure is zero on a world with no worker, because only the
+   * worker settles a flight — a route that reads as idle rather than broken.
+   */
+  app.get<{ Params: { routeId: string } }>(
+    '/api/routes/:routeId/performance',
+    { onRequest: app.requireAirline },
+    async (request, reply) => {
+      const own = resolvedAirlineOf(request);
+      const performance = await routePerformance(db.db, own, request.params.routeId);
+      if (performance === null) return notFound(reply);
+      return reply.code(200).send(performance);
     },
   );
 
