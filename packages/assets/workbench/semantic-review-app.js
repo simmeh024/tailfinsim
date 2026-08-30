@@ -13,6 +13,7 @@ import {
   compressSemanticAssignments,
   expandSemanticDispositions,
 } from '../src/semantic-workbench-review';
+import { semanticWorkbenchFloodCompatible } from '../src/semantic-workbench-selection';
 
 const elements = Object.fromEntries(
   [
@@ -27,6 +28,7 @@ const elements = Object.fromEntries(
     'components',
     'isolate',
     'wireframe',
+    'residual',
     'unassigned',
     'whole',
     'clear-component',
@@ -126,6 +128,7 @@ try {
   let activeComponent = inventory.components[0]?.componentId ?? null;
   let isolationEnabled = false;
   let wireframeEnabled = false;
+  let residualHighlightEnabled = false;
 
   gltf.scene.traverse((object) => {
     if (!object.isMesh) return;
@@ -154,8 +157,9 @@ try {
     const color = mesh.geometry.getAttribute('color');
     for (let face = 0; face < values.length; face += 1) {
       const selected = values[face];
-      const value =
-        selected === null
+      const value = residualHighlightEnabled
+        ? new THREE.Color(selected === null ? 0xff8a33 : 0x26313a)
+        : selected === null
           ? new THREE.Color(0xb8c0c7)
           : new THREE.Color(palette[targetIndex.get(selected)]);
       for (let corner = 0; corner < 3; corner += 1)
@@ -225,6 +229,20 @@ try {
     setStatus(wireframeEnabled ? 'Topology overlay enabled.' : 'Topology overlay disabled.');
   };
 
+  elements.residual.onclick = () => {
+    residualHighlightEnabled = !residualHighlightEnabled;
+    elements.residual.setAttribute('aria-pressed', String(residualHighlightEnabled));
+    elements.residual.textContent = residualHighlightEnabled
+      ? 'Show semantic colours'
+      : 'Highlight uncovered';
+    for (const mesh of meshes) renderColors(mesh);
+    setStatus(
+      residualHighlightEnabled
+        ? 'Uncovered faces are orange; reviewed faces are dark.'
+        : 'Semantic colours restored.',
+    );
+  };
+
   for (const component of inventory.components) {
     const button = document.createElement('button');
     button.type = 'button';
@@ -271,7 +289,10 @@ try {
     ).normalize();
   }
 
-  function affectedFaces(mesh, seed, flood) {
+  function affectedFaces(mesh, seed, flood, clearing) {
+    const values = assignments.get(mesh.name);
+    const seedAssignment = values[seed];
+    if (!semanticWorkbenchFloodCompatible(seedAssignment, seedAssignment, clearing)) return [];
     if (!flood) return [seed];
     const neighbours = buildAdjacency(mesh);
     const threshold = Math.cos(THREE.MathUtils.degToRad(Number(elements.angle.value)));
@@ -281,7 +302,11 @@ try {
     while (queue.length) {
       const face = queue.shift();
       for (const next of neighbours[face])
-        if (!seen.has(next) && seedNormal.dot(faceNormal(mesh, next)) >= threshold) {
+        if (
+          !seen.has(next) &&
+          semanticWorkbenchFloodCompatible(seedAssignment, values[next], clearing) &&
+          seedNormal.dot(faceNormal(mesh, next)) >= threshold
+        ) {
           seen.add(next);
           queue.push(next);
         }
@@ -340,7 +365,7 @@ try {
     selectComponent(hit.object.name);
     assign(
       hit.object,
-      affectedFaces(hit.object, hit.faceIndex, event.shiftKey),
+      affectedFaces(hit.object, hit.faceIndex, event.shiftKey, event.altKey),
       event.altKey ? null : elements.target.value,
     );
   });
