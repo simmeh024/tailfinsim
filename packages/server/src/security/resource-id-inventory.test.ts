@@ -5,6 +5,7 @@ import {
   AirlineCodeAvailabilityInput,
   BookCheckInput,
   CreateAirlineInput,
+  CreateScheduleRequest,
   HireCrewInput,
   SetCrewPoliciesInput,
   SetCrewReserveInput,
@@ -81,6 +82,16 @@ const BODY_UUID_CONTRACTS = [
     schema: HireCrewInput,
     payload: { crewBaseId: UUID_A, family: 'A320neo', rank: 'captain', heads: 1 },
     field: 'crewBaseId',
+  },
+  {
+    endpoint: 'POST /api/schedules airframeId',
+    schema: CreateScheduleRequest,
+    payload: {
+      airframeId: UUID_A,
+      legs: [{ routeId: UUID_A, departureMinuteLocal: 480 }],
+      repeat: { kind: 'daily' },
+    },
+    field: 'airframeId',
   },
   {
     endpoint: 'POST /api/crew/conversions crewBaseId',

@@ -365,6 +365,18 @@ process — the same trap as "ticks: 0, errors: 0", and the first thing to rule 
 believing the fleet API is wrong. `docs/fleet-management.md` has the boundary, including the
 two things M4-07 deliberately did not build.
 
+**Schedules only become flights on the worker (M2-03).** `POST /api/schedules` writes a
+rotation, and `@tailfin/sim` has always known how to walk one into dated flights, but nothing
+called `materialiseWorld` until now — so a saved schedule produced nothing at all. The worker
+now rolls each world's active schedules onto a **14-game-day horizon** every tick, writing a
+`flight` and its `FLIGHT_DEPART` for each leg, idempotent by `flight`'s unique
+`(world_id, materialisation_key)`. **Production has no worker**, so there a schedule would sit
+for ever producing no flights — a network that reads as empty rather than as a missing
+process, the same trap as everything above it. `flightsMaterialised` and `scheduleErrors` are
+the counters. The player _authoring_ API exists on every node; only the materialisation is the
+worker's. The network page's schedule surface was mock until this landed; the editor's Publish
+and the remaining lifecycle (edit, pause, delete) are still being wired.
+
 **And one thing not to "fix".** `airframe.maintenance_state` is nullable, and a null means
 _every tier was last completed at the hours this airframe has now_ — not _at hour zero_. It
 looks like a missing default and it is load-bearing: the other reading would make every

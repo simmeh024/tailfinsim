@@ -185,6 +185,44 @@ describe('what the engine reports', () => {
     expect(deliverAircraft.mock.calls.map((call) => call[1])).toEqual(['world-0', 'world-1']);
   });
 
+  it('materialises schedules for every tickable world', async () => {
+    const materialise = vi.fn((_db: Database, worldId: string) =>
+      Promise.resolve({ created: worldId === 'world-0' ? 4 : 1, alreadyPresent: 0 }),
+    );
+    const engine = createSimulationEngine({
+      db,
+      handlers: {},
+      listWorlds: () => Promise.resolve(worldsFixture('Flagship', 'Second')),
+      drain: () => Promise.resolve(drainResult(0)),
+      materialise,
+    });
+
+    const report = await engine.runOnce();
+
+    expect(report.flightsMaterialised).toBe(5);
+    expect(engine.snapshot().flightsMaterialised).toBe(5);
+    expect(engine.snapshot().scheduleErrors).toBe(0);
+    expect(materialise.mock.calls.map((call) => call[1])).toEqual(['world-0', 'world-1']);
+  });
+
+  it('counts a materialisation that throws without stopping the tick', async () => {
+    const materialise = vi.fn(() => Promise.reject(new Error('no route')));
+    const engine = createSimulationEngine({
+      db,
+      handlers: {},
+      listWorlds: () => Promise.resolve(worldsFixture('Flagship')),
+      drain: () => Promise.resolve(drainResult(2)),
+      materialise,
+    });
+
+    const report = await engine.runOnce();
+
+    // The drain still ran; the failed roll is counted, not fatal.
+    expect(report.processed).toBe(2);
+    expect(engine.snapshot().scheduleErrors).toBe(1);
+    expect(engine.snapshot().flightsMaterialised).toBe(0);
+  });
+
   it('names the event types it has no handler for', () => {
     const engine = createSimulationEngine({ db, handlers: {} });
 

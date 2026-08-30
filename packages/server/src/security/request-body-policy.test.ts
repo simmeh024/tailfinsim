@@ -15,6 +15,7 @@ import {
   AirlineCodeAvailabilityInput,
   BookCheckInput,
   CreateAirlineInput,
+  CreateScheduleRequest,
   FLAGSHIP_CONFIG,
   ForceRenameAirlineInput,
   HireCrewInput,
@@ -144,6 +145,15 @@ const STRICT_WRITE_CONTRACTS = [
     payload: { originIcao: 'EHAM', destinationIcao: 'EGLL' },
   },
   {
+    endpoint: 'POST /api/schedules',
+    schema: CreateScheduleRequest,
+    payload: {
+      airframeId: UUID_A,
+      legs: [{ routeId: UUID_A, departureMinuteLocal: 480 }],
+      repeat: { kind: 'daily' },
+    },
+  },
+  {
     endpoint: 'PUT/POST /api/routes/:routeId/fares[/preview]',
     schema: SetFaresRequest,
     payload: { fares: { economy: 12_000 } },
@@ -216,6 +226,7 @@ const COVERED_WRITE_ENDPOINTS = [
   'POST /api/ground/:icao/contracts',
   'DELETE /api/ground/contracts/:id',
   'POST /api/routes',
+  'POST /api/schedules',
   'POST /api/routes/:routeId/fares/preview',
   'DELETE /api/routes/:routeId',
   'PUT /api/routes/:routeId/active',
