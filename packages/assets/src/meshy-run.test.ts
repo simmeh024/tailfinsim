@@ -579,6 +579,13 @@ describe('operator command authority boundary', () => {
         ['correct', '--operation', 'candidate-1'],
         ['inventory', '--operation', 'candidate-1'],
         ['semantics', '--operation', 'candidate-1', '--review-file', 'missing.json'],
+        [
+          'repair-requirements',
+          '--operation',
+          'candidate-1',
+          '--assessment-sha256',
+          'a'.repeat(64),
+        ],
       ]) {
         const result = run(args);
         expect(result.status).toBe(1);
@@ -746,6 +753,39 @@ describe('operator command authority boundary', () => {
         run(['semantics', '--operation', 'candidate-1', '--review-file', semanticReviewFile])
           .stdout,
       ).toBe(semanticReview.stdout);
+      const semanticOutput = JSON.parse(semanticReview.stdout) as Record<string, unknown>;
+      const repairRequirements = run([
+        'repair-requirements',
+        '--operation',
+        'candidate-1',
+        '--assessment-sha256',
+        String(semanticOutput.assessmentSha256),
+      ]);
+      expect(
+        repairRequirements.status,
+        repairRequirements.stderr.replaceAll(sentinel, '[redacted]'),
+      ).toBe(0);
+      expect(JSON.parse(repairRequirements.stdout)).toMatchObject({
+        operationId: 'candidate-1',
+        assessmentSha256: semanticOutput.assessmentSha256,
+        residualTriangles: 4,
+        repairAuthoringMayBegin: true,
+        repairComplete: false,
+        state: 'quarantine',
+        runtimeAdmission: 'not-reviewed',
+        liveryReady: false,
+        creditsSpentByThisCommand: 0,
+      });
+      expect(repairRequirements.stdout + repairRequirements.stderr).not.toContain(sentinel);
+      expect(
+        run([
+          'repair-requirements',
+          '--operation',
+          'candidate-1',
+          '--assessment-sha256',
+          String(semanticOutput.assessmentSha256),
+        ]).stdout,
+      ).toBe(repairRequirements.stdout);
       const mismatchedReviewFile = join(directory, 'semantic-review-mismatched.json');
       await writeFile(
         mismatchedReviewFile,

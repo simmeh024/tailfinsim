@@ -425,6 +425,26 @@ state changes. **Reset local draft** removes that browser-only state without tou
 artifacts. Downloaded JSON remains the only input to the immutable `semantics --review-file`
 archive gate.
 
+### Deterministic semantic repair requirements
+
+```bash
+pnpm assets:meshy-run -- repair-requirements \
+  --operation candidate-1 \
+  --assessment-sha256 <semantic-assessment-sha256>
+```
+
+This zero-credit command reads only the named, hash-addressed assessment from the private archive.
+It refuses incomplete target review and seals a deterministic requirements document without editing
+the corrected derivative. Missing targets become explicit authoring obligations: cockpit glazing
+must be closed opaque protected geometry; cabin windows and lights require dedicated protected
+geometry; doors may be dedicated decal geometry or canonical masks, never fuselage holes. Every
+residual component records its exact uncovered triangle count and requires component-local ranges
+to be assigned, discarded or repaired into a new derivative.
+
+The requirements document authorizes repair work to begin; it never claims repair completion,
+runtime admission or livery readiness. The untouched export and corrected derivative remain
+immutable, and independent topology, visual, licensing and performance gates still apply.
+
 ## Pinned strategy and vendor evidence
 
 The planning observation is dated 2026-08-28. Four untextured T2 candidates cost 5 credits each;
