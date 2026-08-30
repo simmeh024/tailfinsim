@@ -4,9 +4,10 @@ import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import type { AirportTier, HandlerGrade } from '@tailfin/shared';
+import { realTimeAtGameTime, type WorldClock } from '@tailfin/sim';
 
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { airport } from '../db/schema';
+import { airport, world } from '../db/schema';
 import { rollGroundDisruption } from '../flight/disruption';
 import {
   createFoundedAirlineFixtureHarness,
@@ -14,9 +15,17 @@ import {
   type FoundedAirlineFixtureHarness,
 } from '../test-fixtures/founded-airline';
 
-import { contractedGrade, readStation, signContract } from './contracts';
+import {
+  contractedGrade,
+  expireGroundContracts,
+  listAirlineContracts,
+  readStation,
+  signContract,
+} from './contracts';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
+
+const DAY = 86_400_000;
 
 /**
  * Ground handling contracts (M5-06, §9.3).
@@ -198,5 +207,115 @@ describeDb('ground contracts', () => {
     }
     // And on this batch the budget handler is strictly worse, as it should be.
     expect(budget.size).toBeGreaterThan(premium.size);
+  });
+
+  async function clockOf(worldId: string): Promise<WorldClock> {
+    const [row] = await db.db
+      .select({
+        epoch: world.epoch,
+        launchDate: world.launchDate,
+        speedMultiplier: world.speedMultiplier,
+      })
+      .from(world)
+      .where(eq(world.id, worldId))
+      .limit(1);
+    if (!row) throw new Error(`no world ${worldId}`);
+    return {
+      epoch: row.epoch,
+      launchDate: row.launchDate,
+      speedMultiplier: Number(row.speedMultiplier),
+    };
+  }
+
+  function contractedTermEnd(
+    result: Awaited<ReturnType<typeof signContract>>,
+    serviceLine: 'ramp_baggage' | 'fuelling',
+  ): Date {
+    if (!result.ok) throw new Error('expected the contract to be signed');
+    const line = result.station.lines.find((l) => l.serviceLine === serviceLine);
+    const termEnd = line?.contracted?.termEnd;
+    if (!termEnd) throw new Error('expected a term end');
+    return new Date(termEnd);
+  }
+
+  it('signs with a term the station view carries, not yet expiring', async () => {
+    const a = await fixtures.create();
+    const icao = await makeAirport('GTRM', 'flagship');
+    const result = await signContract(db.db, own(a), icao, {
+      serviceLine: 'ramp_baggage',
+      grade: 'standard',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const ramp = result.station.lines.find((l) => l.serviceLine === 'ramp_baggage');
+      expect(ramp?.contracted?.termEnd).toBeTruthy();
+      // A full term still to run — nothing to warn about yet.
+      expect(ramp?.contracted?.expiring).toBe(false);
+    }
+  });
+
+  it('lapses a contract at term end and frees the vendor slot', async () => {
+    const a = await fixtures.create();
+    const icao = await makeAirport('GEXP', 'flagship');
+    const signed = await signContract(db.db, own(a), icao, {
+      serviceLine: 'ramp_baggage',
+      grade: 'standard',
+    });
+    const termEnd = contractedTermEnd(signed, 'ramp_baggage');
+
+    // Nothing lapses while the term still has a day to run.
+    const before = await expireGroundContracts(
+      db.db,
+      a.world.id,
+      new Date(termEnd.getTime() - DAY),
+    );
+    expect(before.expired).toBe(0);
+
+    // Once past the term it lapses.
+    const after = await expireGroundContracts(db.db, a.world.id, new Date(termEnd.getTime() + DAY));
+    expect(after.expired).toBe(1);
+
+    // Back to walk-up handling, and the slot it held is free again.
+    expect(await contractedGrade(db.db, a.airline.id, icao, 'ramp_baggage')).toBeNull();
+    const station = await readStation(db.db, own(a), icao);
+    const ramp = station?.lines.find((l) => l.serviceLine === 'ramp_baggage');
+    expect(ramp?.contracted).toBeNull();
+    expect(ramp?.offers.find((o) => o.grade === 'standard')?.taken).toBe(0);
+  });
+
+  it('flags a contract as expiring inside the warning window', async () => {
+    const a = await fixtures.create();
+    const icao = await makeAirport('GWRN', 'flagship');
+    const clock = await clockOf(a.world.id);
+    const signed = await signContract(db.db, own(a), icao, {
+      serviceLine: 'ramp_baggage',
+      grade: 'standard',
+    });
+    const termEnd = contractedTermEnd(signed, 'ramp_baggage');
+
+    // The real instant at which the world clock reads three game days before the term.
+    const realNow = realTimeAtGameTime(clock, new Date(termEnd.getTime() - 3 * DAY));
+    const station = await readStation(db.db, own(a), icao, realNow);
+    const ramp = station?.lines.find((l) => l.serviceLine === 'ramp_baggage');
+    expect(ramp?.contracted?.expiring).toBe(true);
+  });
+
+  it('lists an airline’s contracts across stations, flagging the expiring ones', async () => {
+    const a = await fixtures.create();
+    const one = await makeAirport('GLA1', 'flagship');
+    const two = await makeAirport('GLA2', 'flagship');
+    const clock = await clockOf(a.world.id);
+    await signContract(db.db, own(a), one, { serviceLine: 'ramp_baggage', grade: 'standard' });
+    const signedTwo = await signContract(db.db, own(a), two, {
+      serviceLine: 'fuelling',
+      grade: 'standard',
+    });
+    const termEndTwo = contractedTermEnd(signedTwo, 'fuelling');
+
+    const realNow = realTimeAtGameTime(clock, new Date(termEndTwo.getTime() - 3 * DAY));
+    const { contracts } = await listAirlineContracts(db.db, own(a), realNow);
+    expect(contracts.map((c) => c.icao).sort()).toEqual(['GLA1', 'GLA2']);
+    // Both terms are the same length and signed together, so both are expiring now.
+    expect(contracts.every((c) => c.expiring)).toBe(true);
   });
 });

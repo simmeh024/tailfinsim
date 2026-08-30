@@ -1,5 +1,6 @@
 import {
   apiErrorJsonSchema,
+  groundContractsResponseJsonSchema,
   groundStationResponseJsonSchema,
   SignContractRequest,
   Uuid,
@@ -8,7 +9,7 @@ import {
 import { resolvedAirlineOf } from '../airline/context';
 import { parseRequestBody } from '../http/request-body';
 
-import { readStation, signContract, terminateContract } from './contracts';
+import { listAirlineContracts, readStation, signContract, terminateContract } from './contracts';
 
 import type { DatabaseHandle } from '../db/client';
 import type { FastifyInstance } from 'fastify';
@@ -23,6 +24,20 @@ import type { FastifyInstance } from 'fastify';
  * enumeration gate fails the build if it does not.
  */
 export function registerGroundRoutes(app: FastifyInstance, { db }: { db: DatabaseHandle }): void {
+  // A static segment, so Fastify routes it ahead of `/api/ground/:icao` — the
+  // whole network's contracts, for the expiry alert, rather than one station's.
+  app.get(
+    '/api/ground/contracts',
+    {
+      onRequest: app.requireAirline,
+      schema: { response: { 200: groundContractsResponseJsonSchema } },
+    },
+    async (request, reply) => {
+      const own = resolvedAirlineOf(request);
+      return reply.code(200).send(await listAirlineContracts(db.db, own));
+    },
+  );
+
   app.get<{ Params: { icao: string } }>(
     '/api/ground/:icao',
     {

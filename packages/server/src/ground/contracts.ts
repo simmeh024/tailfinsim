@@ -1,15 +1,23 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, lte, sql } from 'drizzle-orm';
 
 import {
   GROUND_SERVICE_LINES,
   type AirportTier,
+  type GroundContractsResponse,
   type GroundServiceLine,
   type GroundServiceLineView,
   type GroundStationResponse,
   type HandlerGrade,
   type SignContractRequest,
 } from '@tailfin/shared';
-import { handlerProfile, stationVendors } from '@tailfin/sim';
+import {
+  contractExpiring,
+  contractTermEnd,
+  gameTime,
+  handlerProfile,
+  stationVendors,
+  type WorldClock,
+} from '@tailfin/sim';
 
 import { airport, groundContract, world } from '../db/schema';
 
@@ -29,6 +37,7 @@ import type { Database } from '../db/client';
 interface StationContext {
   seed: string;
   tier: AirportTier;
+  clock: WorldClock;
 }
 
 async function loadStationContext(
@@ -36,6 +45,8 @@ async function loadStationContext(
   worldId: string,
   icao: string,
 ): Promise<StationContext | null> {
+  const clock = await loadWorldClock(db, worldId);
+  if (clock === null) return null;
   const [w] = await db
     .select({ seed: world.seed })
     .from(world)
@@ -49,7 +60,26 @@ async function loadStationContext(
     .limit(1);
   if (!a) return null;
   if (a.tier === null) return null;
-  return { seed: w.seed, tier: a.tier };
+  return { seed: w.seed, tier: a.tier, clock };
+}
+
+/** The world's clock parameters, or null for an unknown world. */
+async function loadWorldClock(db: Database, worldId: string): Promise<WorldClock | null> {
+  const [row] = await db
+    .select({
+      epoch: world.epoch,
+      launchDate: world.launchDate,
+      speedMultiplier: world.speedMultiplier,
+    })
+    .from(world)
+    .where(eq(world.id, worldId))
+    .limit(1);
+  if (!row) return null;
+  return {
+    epoch: row.epoch,
+    launchDate: row.launchDate,
+    speedMultiplier: Number(row.speedMultiplier),
+  };
 }
 
 interface ActiveRow {
@@ -57,6 +87,7 @@ interface ActiveRow {
   airlineId: string;
   serviceLine: string;
   grade: string;
+  termEnd: Date | null;
 }
 
 async function activeAt(db: Database, worldId: string, icao: string): Promise<ActiveRow[]> {
@@ -66,6 +97,7 @@ async function activeAt(db: Database, worldId: string, icao: string): Promise<Ac
       airlineId: groundContract.airlineId,
       serviceLine: groundContract.serviceLine,
       grade: groundContract.grade,
+      termEnd: groundContract.termEnd,
     })
     .from(groundContract)
     .where(
@@ -83,6 +115,7 @@ function buildStation(
   ctx: StationContext,
   active: readonly ActiveRow[],
   airlineId: string,
+  gameNow: Date,
 ): GroundStationResponse {
   // Contracts taken per (service line, grade), across every airline in the world.
   const taken = new Map<string, number>();
@@ -96,7 +129,15 @@ function buildStation(
     return {
       serviceLine,
       contracted:
-        mine === undefined ? null : { id: mine.id, serviceLine, grade: mine.grade as HandlerGrade },
+        mine === undefined
+          ? null
+          : {
+              id: mine.id,
+              serviceLine,
+              grade: mine.grade as HandlerGrade,
+              termEnd: mine.termEnd === null ? null : mine.termEnd.toISOString(),
+              expiring: contractExpiring(mine.termEnd, gameNow),
+            },
       offers: stationVendors(ctx.seed, icao, serviceLine, ctx.tier).map((offer) => {
         const profile = handlerProfile(offer.grade);
         return {
@@ -119,11 +160,12 @@ export async function readStation(
   db: Database,
   own: ResolvedPlayerAirline,
   icao: string,
+  now: Date = new Date(),
 ): Promise<GroundStationResponse | null> {
   const ctx = await loadStationContext(db, own.worldId, icao);
   if (ctx === null) return null;
   const active = await activeAt(db, own.worldId, icao);
-  return buildStation(icao, ctx, active, own.id);
+  return buildStation(icao, ctx, active, own.id, gameTime(ctx.clock, now));
 }
 
 export type SignOutcome =
@@ -144,6 +186,7 @@ export async function signContract(
   own: ResolvedPlayerAirline,
   icao: string,
   request: SignContractRequest,
+  now: Date = new Date(),
 ): Promise<SignOutcome> {
   const ctx = await loadStationContext(db, own.worldId, icao);
   if (ctx === null) return { ok: false, code: 'unknown_station' };
@@ -152,6 +195,11 @@ export async function signContract(
     (o) => o.grade === request.grade,
   );
   if (offer === undefined) return { ok: false, code: 'grade_not_offered' };
+
+  // The term runs from the world's clock, not the wall clock: a contract lasts a
+  // business season in the world's calendar (§9.3).
+  const gameNow = gameTime(ctx.clock, now);
+  const termEnd = contractTermEnd(gameNow);
 
   return db
     .transaction(async (tx) => {
@@ -198,10 +246,11 @@ export async function signContract(
         serviceLine: request.serviceLine,
         grade: request.grade,
         status: 'active',
+        termEnd,
       });
 
       const active = await activeAt(tx, own.worldId, icao);
-      return { ok: true as const, station: buildStation(icao, ctx, active, own.id) };
+      return { ok: true as const, station: buildStation(icao, ctx, active, own.id, gameNow) };
     })
     .catch((error: unknown): SignOutcome => {
       if (error instanceof CapacityExhausted) {
@@ -236,6 +285,89 @@ export async function terminateContract(
     )
     .returning({ icao: groundContract.airportIcao });
   return row?.icao ?? null;
+}
+
+export interface ExpiryResult {
+  /** Contracts whose term ran out and were lapsed back to walk-up handling. */
+  expired: number;
+}
+
+/**
+ * Lapse every contract in this world whose term has ended (M5-06, §9.3).
+ *
+ * The other half of *"Contracts run for a fixed term"*: signing sets `term_end`,
+ * and this is what makes the end mean something. A lapsed contract flips to
+ * `expired`, which frees its vendor slot (capacity counts only `active` rows) and
+ * drops the airline back to walk-up handling — so the ramp handler it was paying
+ * for stops smoothing its turns, exactly as if it had never signed.
+ *
+ * Runs on the **worker** against the world's game clock, like every crew and
+ * maintenance sweep. **Production has no worker**, so there a term would never
+ * lapse: a contract signed on opening day would run for ever and its vendor slot
+ * would never come free for a competitor. `groundContractsExpired` is the counter
+ * that tells that apart from a world where nothing has reached its term yet.
+ *
+ * World-scoped and idempotent: a second run finds nothing still `active` past its
+ * term, so two workers racing lapse each contract once.
+ */
+export async function expireGroundContracts(
+  db: Database,
+  worldId: string,
+  gameNow: Date,
+): Promise<ExpiryResult> {
+  const lapsed = await db
+    .update(groundContract)
+    .set({ status: 'expired' })
+    .where(
+      and(
+        eq(groundContract.worldId, worldId),
+        eq(groundContract.status, 'active'),
+        isNotNull(groundContract.termEnd),
+        lte(groundContract.termEnd, gameNow),
+      ),
+    )
+    .returning({ id: groundContract.id });
+  return { expired: lapsed.length };
+}
+
+/**
+ * Every active contract this airline holds, across all stations, with the ones
+ * about to lapse flagged.
+ *
+ * §9.3's alert *"before it lapses"* wants the whole network in one read rather
+ * than a page-by-page sweep, so a client can badge the airline the moment any
+ * term is inside its warning window.
+ */
+export async function listAirlineContracts(
+  db: Database,
+  own: ResolvedPlayerAirline,
+  now: Date = new Date(),
+): Promise<GroundContractsResponse> {
+  const clock = await loadWorldClock(db, own.worldId);
+  if (clock === null) return { contracts: [] };
+  const gameNow = gameTime(clock, now);
+
+  const rows = await db
+    .select({
+      id: groundContract.id,
+      icao: groundContract.airportIcao,
+      serviceLine: groundContract.serviceLine,
+      grade: groundContract.grade,
+      termEnd: groundContract.termEnd,
+    })
+    .from(groundContract)
+    .where(and(eq(groundContract.airlineId, own.id), eq(groundContract.status, 'active')));
+
+  return {
+    contracts: rows.map((row) => ({
+      id: row.id,
+      icao: row.icao,
+      serviceLine: row.serviceLine as GroundServiceLine,
+      grade: row.grade as HandlerGrade,
+      termEnd: row.termEnd === null ? null : row.termEnd.toISOString(),
+      expiring: contractExpiring(row.termEnd, gameNow),
+    })),
+  };
 }
 
 /**
