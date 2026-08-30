@@ -94,6 +94,7 @@ describe('local semantic review workbench boundary', () => {
     const page = await (await fetch(`${root}/`)).text();
     expect(page).toContain('id="isolate" aria-pressed="false"');
     expect(page).toContain('id="wireframe" aria-pressed="false"');
+    expect(page).toContain('id="unassigned">Assign unassigned faces');
     expect(page).toContain('button[aria-pressed="true"]');
   });
 });
