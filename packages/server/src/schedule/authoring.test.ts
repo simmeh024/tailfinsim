@@ -34,8 +34,12 @@ describe('placeLegs', () => {
 
   it('computes block from the distance and turnaround from the reference type', () => {
     const [leg] = placeLegs([resolved('r1', 'EGLL', 'LEBL', 620, 480)]);
-    const expectedBlock = computeBlockTime(620, 447, DEFAULT_FLIGHT_PROFILE).blockMinutes;
-    expect(leg?.blockMinutes).toBeCloseTo(expectedBlock, 6);
+    // Whole minutes — the leg's block is an integer column (see placeLegs).
+    const expectedBlock = Math.round(
+      computeBlockTime(620, 447, DEFAULT_FLIGHT_PROFILE).blockMinutes,
+    );
+    expect(leg?.blockMinutes).toBe(expectedBlock);
+    expect(Number.isInteger(leg?.blockMinutes)).toBe(true);
     expect(leg?.turnaroundMinutes).toBe(DEFAULT_TURNAROUND_MINUTES);
   });
 

@@ -117,11 +117,12 @@ export function placeLegs(legs: readonly ResolvedLeg[]): LegInput[] {
   const placed: LegInput[] = [];
   let earliest = 0;
   for (const [index, leg] of legs.entries()) {
-    const blockMinutes = computeBlockTime(
-      leg.greatCircleNm,
-      REFERENCE_CRUISE_KT,
-      DEFAULT_FLIGHT_PROFILE,
-    ).blockMinutes;
+    // Whole minutes: `schedule_leg.block_minutes` is an integer column, and a leg
+    // is a plan rather than a settlement — the precise block time is recomputed at
+    // arrival. `computeBlockTime` returns a fractional figure, so round it here.
+    const blockMinutes = Math.round(
+      computeBlockTime(leg.greatCircleNm, REFERENCE_CRUISE_KT, DEFAULT_FLIGHT_PROFILE).blockMinutes,
+    );
     const turnaroundMinutes = DEFAULT_TURNAROUND_MINUTES;
 
     let departureMinute = leg.departureMinuteLocal;
