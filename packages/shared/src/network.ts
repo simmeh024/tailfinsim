@@ -494,3 +494,43 @@ export const RoutePerformanceResponse = z.object({
   trend: z.array(RoutePerformanceWeek),
 });
 export type RoutePerformanceResponse = z.infer<typeof RoutePerformanceResponse>;
+
+/* ------------------------------------------- route competition (M3-12) ---- */
+
+/** One operator on a route's market — a rival, or you. */
+export const RouteCompetitor = z.object({
+  airlineId: Uuid,
+  name: z.string(),
+  /** `npc` carriers and rival players compete by the same mechanism (A.3). */
+  kind: z.enum(['player', 'npc']),
+  /** True for the airline that asked — its own line in the market. */
+  isYou: z.boolean(),
+  weeklyFrequency: z.number().int().nonnegative(),
+  /** Headline economy fare, minor units; null when it sells no economy cabin. */
+  economyFareMinor: MinorUnits.nullable(),
+  /** Projected share of the market's daily demand, 0–1 (A.4). */
+  share: z.number().min(0).max(1),
+  /** A.3's 0–1 product composite, for a coarse quality tier. */
+  productScore: z.number().min(0).max(1),
+});
+export type RouteCompetitor = z.infer<typeof RouteCompetitor>;
+
+/**
+ * `GET /api/routes/:routeId/competition` — who else is in this market, and how
+ * much of it each takes (§8.3, A.3–A.4).
+ *
+ * The live answer to *"why did a competitor appear in my market?"* for one route:
+ * every active airline selling the pair — NPC or player, in either direction —
+ * resolved through the *same* share model the fares preview and the waterfall use,
+ * so the shares here and the projection there cannot disagree. `you` are in the
+ * list, so the market reads as a whole rather than as "them" against an implied
+ * self.
+ */
+export const RouteCompetitionResponse = z.object({
+  routeId: Uuid,
+  /** Total daily passengers the market holds across segments. */
+  marketDailyPassengers: z.number().nonnegative(),
+  /** Every operator, you included, most share first. */
+  operators: z.array(RouteCompetitor),
+});
+export type RouteCompetitionResponse = z.infer<typeof RouteCompetitionResponse>;

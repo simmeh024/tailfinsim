@@ -30,6 +30,7 @@ import { resolvedAirlineOf } from '../airline/context';
 import { route } from '../db/schema';
 import { parseRequestBody } from '../http/request-body';
 
+import { routeCompetition } from './competition';
 import { parseFares, previewFares, type RouteEconomics, type RouteRow, setFares } from './fares';
 import { openRoute } from './open-route';
 import { routePerformance } from './performance';
@@ -290,6 +291,24 @@ export function registerNetworkRoutes(
       const performance = await routePerformance(db.db, own, request.params.routeId);
       if (performance === null) return notFound(reply);
       return reply.code(200).send(performance);
+    },
+  );
+
+  /**
+   * Who else is in this market, and how much of it each takes (§8.3, A.3–A.4).
+   *
+   * The same share model the fares preview draws, so the competition here and the
+   * projection there agree. A monopoly is a real answer — you at share 1 — not an
+   * empty one, so this needs no worker and works on a fresh world.
+   */
+  app.get<{ Params: { routeId: string } }>(
+    '/api/routes/:routeId/competition',
+    { onRequest: app.requireAirline },
+    async (request, reply) => {
+      const own = resolvedAirlineOf(request);
+      const row = await ownedRoute(db.db, own.id, request.params.routeId);
+      if (!row) return notFound(reply);
+      return reply.code(200).send(await routeCompetition(db.db, own, row, await economicsFor(row)));
     },
   );
 

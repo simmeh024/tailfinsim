@@ -256,7 +256,8 @@ export function selfAsOperator(
   };
 }
 
-function passengersFor(allocation: ReturnType<typeof allocateByClass>, id: string): number {
+/** An operator's demand won across every cabin, from one allocation. */
+export function passengersFor(allocation: ReturnType<typeof allocateByClass>, id: string): number {
   return (allocation.byOperator[id] ?? []).reduce((sum, row) => sum + row.passengers, 0);
 }
 
