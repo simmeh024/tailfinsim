@@ -220,7 +220,11 @@ describeDb('ground contracts', () => {
       .where(eq(world.id, worldId))
       .limit(1);
     if (!row) throw new Error(`no world ${worldId}`);
-    return { epoch: row.epoch, launchDate: row.launchDate, speedMultiplier: Number(row.speedMultiplier) };
+    return {
+      epoch: row.epoch,
+      launchDate: row.launchDate,
+      speedMultiplier: Number(row.speedMultiplier),
+    };
   }
 
   function contractedTermEnd(
@@ -260,7 +264,11 @@ describeDb('ground contracts', () => {
     const termEnd = contractedTermEnd(signed, 'ramp_baggage');
 
     // Nothing lapses while the term still has a day to run.
-    const before = await expireGroundContracts(db.db, a.world.id, new Date(termEnd.getTime() - DAY));
+    const before = await expireGroundContracts(
+      db.db,
+      a.world.id,
+      new Date(termEnd.getTime() - DAY),
+    );
     expect(before.expired).toBe(0);
 
     // Once past the term it lapses.
