@@ -280,7 +280,7 @@ describeDb('the airline support record', () => {
   it('answers 404 for a missing airline and a malformed id', async () => {
     const adminId = await makePlayer('Airline admin');
     await grantAdmin(db.db, adminId, BOOTSTRAP_ACTOR);
-    const app = buildApp({ env, db });
+    const app = await buildApp({ env, db });
     try {
       const cookie = await cookieFor(adminId);
       for (const id of ['11111111-2222-4333-8444-555555555555', 'not-a-uuid']) {

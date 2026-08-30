@@ -1,6 +1,6 @@
 import { asc, ne } from 'drizzle-orm';
 
-import { gameTime, type WorldClock } from '@tailfin/sim';
+import { gameTime, horizonFrom, type WorldClock } from '@tailfin/sim';
 
 import { deliverDueAircraftOrders } from '../aircraft/acquisition';
 import { sweepMaintenance } from '../aircraft/maintenance';
@@ -15,6 +15,7 @@ import { expireGroundContracts } from '../ground/contracts';
 import { reviewNpcCarriers } from '../npc/operate';
 import { runOfficePayroll } from '../office/payroll';
 import { reviewSocialMediaReputation } from '../office/reputation';
+import { materialiseWorld } from '../schedule/store';
 import {
   drainDueEvents,
   queueDepth,
@@ -109,6 +110,8 @@ export interface TickReport {
   reputationGrants: number;
   /** M5-06. Ground contracts whose term ran out and were lapsed this run. */
   groundContractsExpired: number;
+  /** M2-03. Flights materialised from schedules onto the horizon this run. */
+  flightsMaterialised: number;
 }
 
 export interface EngineLog {
@@ -172,6 +175,8 @@ export interface SimulationEngineOptions {
   reviewReputation?: typeof reviewSocialMediaReputation;
   /** M5-06. Lapses ground contracts whose term has ended. */
   expireGround?: typeof expireGroundContracts;
+  /** M2-03. Rolls each world's active schedules onto the flight horizon. */
+  materialise?: typeof materialiseWorld;
   depth?: typeof queueDepth;
 }
 
@@ -277,6 +282,18 @@ export interface EngineSnapshot {
    */
   groundContractsExpired: number;
   groundErrors: number;
+  /**
+   * M2-03. Flights materialised from schedules since start, and rolls that threw.
+   *
+   * A counter for the reason the crew and maintenance ones exist: materialisation
+   * is what turns a saved rotation into flights that fly, and it runs only on the
+   * worker. **Production has no worker**, so there a schedule would sit for ever
+   * producing nothing — a network that reads as empty rather than as a missing
+   * process. `scheduleErrors` tells a roll that threw from a world with no active
+   * schedules yet.
+   */
+  flightsMaterialised: number;
+  scheduleErrors: number;
 }
 
 export interface QueueDepthByWorld {
@@ -364,6 +381,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     returnSick = returnSickCrew,
     reviewReputation = reviewSocialMediaReputation,
     expireGround = expireGroundContracts,
+    materialise = materialiseWorld,
   } = options;
 
   const unhandledEventTypes = ALL_EVENT_TYPES.filter((type) => handlers[type] === undefined);
@@ -398,6 +416,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let reputationErrors = 0;
   let groundContractsExpired = 0;
   let groundErrors = 0;
+  let flightsMaterialised = 0;
+  let scheduleErrors = 0;
 
   async function tick(context: { tickedAt: Date; tickNumber: number }): Promise<TickReport> {
     const worlds = await listWorlds(db);
@@ -420,6 +440,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     let tickAirframesGrounded = 0;
     let tickReputationGrants = 0;
     let tickGroundExpired = 0;
+    let tickFlightsMaterialised = 0;
 
     for (const entry of worlds) {
       // Aircraft factory lead time is explicitly **real time** (§7.2), not a
@@ -633,6 +654,36 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         log?.warn?.(`[${entry.name}] ground contract sweep failed: ${String(error)}`);
       }
 
+      /*
+       * Materialise schedules onto the flight horizon (M2-03, §8.2). This is what
+       * turns a saved rotation into dated flights and their `FLIGHT_DEPART`
+       * events; nothing else creates them. Run *before* the drain, so a flight
+       * that materialises already due can be dispatched on the same tick rather
+       * than waiting for the next one.
+       *
+       * Idempotent by `flight`'s unique `(world_id, materialisation_key)`, so
+       * rolling the same horizon every tick writes each flight once — the guard
+       * is the database's, not this loop's. Isolated like the sweeps above: a roll
+       * that could not run this tick runs the next, and the horizon it would have
+       * written is still ahead of the clock.
+       */
+      try {
+        const materialised = await materialise(
+          db,
+          entry.id,
+          horizonFrom(gameTime(entry.clock, now())),
+        );
+        tickFlightsMaterialised += materialised.created;
+        if (materialised.created > 0) {
+          log?.info?.(
+            `[${entry.name}] schedules: ${String(materialised.created)} flight(s) materialised`,
+          );
+        }
+      } catch (error) {
+        scheduleErrors += 1;
+        log?.warn?.(`[${entry.name}] schedule materialisation failed: ${String(error)}`);
+      }
+
       // Each world is drained against its own clock: `fire_at` is a game-time
       // instant, so what is due depends on where that world's clock has got to,
       // and two worlds at different speeds disagree about the same moment.
@@ -689,6 +740,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     crewErrors += tickCrewErrors;
     reputationGrants += tickReputationGrants;
     groundContractsExpired += tickGroundExpired;
+    flightsMaterialised += tickFlightsMaterialised;
     lastTickAt = context.tickedAt;
     lastTickDurationMs = durationMs;
     lastWorldCount = worlds.length;
@@ -717,6 +769,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       crewErrors: tickCrewErrors,
       reputationGrants: tickReputationGrants,
       groundContractsExpired: tickGroundExpired,
+      flightsMaterialised: tickFlightsMaterialised,
     };
   }
 
@@ -789,6 +842,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         reputationErrors,
         groundContractsExpired,
         groundErrors,
+        flightsMaterialised,
+        scheduleErrors,
       };
     },
 

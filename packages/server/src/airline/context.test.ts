@@ -55,7 +55,7 @@ describe('active world header', () => {
 
 describeDb('player airline context over HTTP', () => {
   let db: DatabaseHandle;
-  let app: ReturnType<typeof buildApp>;
+  let app: Awaited<ReturnType<typeof buildApp>>;
   const madeWorlds: string[] = [];
   const madePlayers: string[] = [];
   const madeAirports: string[] = [];
@@ -65,7 +65,7 @@ describeDb('player airline context over HTTP', () => {
   beforeAll(async () => {
     db = createDatabase();
     fixtures = createFoundedAirlineFixtureHarness(db.db);
-    app = buildApp({ env, db });
+    app = await buildApp({ env, db });
     await app.ready();
   });
 

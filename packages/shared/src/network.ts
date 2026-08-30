@@ -195,6 +195,100 @@ export const ScheduleValidation = z.discriminatedUnion('valid', [
 ]);
 export type ScheduleValidation = z.infer<typeof ScheduleValidation>;
 
+/* --------------------------------------------- the schedule API (M2-03) ---- */
+
+/**
+ * Every way a save can be refused — the pure `ScheduleProblem` list plus the
+ * refusals only the database can raise.
+ *
+ * `airframe_unavailable` is not a rotation rule: it means the aeroplane is in a
+ * check or grounded (M4-06), which `validateRotation` cannot see because it is a
+ * row rather than arithmetic. To the player it is the same kind of answer — the
+ * schedule cannot run, and here is exactly why — so it rides the same channel.
+ */
+export const SchedulingProblem = z.enum([...ScheduleProblem.options, 'airframe_unavailable']);
+export type SchedulingProblem = z.infer<typeof SchedulingProblem>;
+
+/**
+ * One leg as the player authors it: a route they hold and a local departure time.
+ *
+ * `departureMinuteLocal` is minute-of-day (§8.2). The server places the legs into
+ * a rotation — assigning each its absolute minute from the cycle anchor, rolling a
+ * leg to the next day when it cannot follow the previous one the same day — and
+ * computes each leg's block and turnaround, because those are physics and the
+ * catalogue, not a number the client should assert.
+ */
+export const AuthoredLeg = ScheduleLeg;
+export type AuthoredLeg = z.infer<typeof AuthoredLeg>;
+
+/** `POST /api/schedules` — assign an airframe to a rotation of routes you hold. */
+export const CreateScheduleRequest = z
+  .object({
+    airframeId: Uuid,
+    legs: z.array(AuthoredLeg).min(1),
+    repeat: RepeatPattern,
+  })
+  .strict();
+export type CreateScheduleRequest = z.infer<typeof CreateScheduleRequest>;
+
+/** One leg of a saved rotation, with the times the server resolved for it. */
+export const ScheduleLegView = z.object({
+  /**
+   * The route this leg flies, mapped back from its endpoints (a `schedule_leg`
+   * stores the pair, not a `route_id` — the join is deliberately deferred). Null
+   * when the route it was authored against has since been closed.
+   */
+  routeId: Uuid.nullable(),
+  originIcao: AirportIcaoCode,
+  destinationIcao: AirportIcaoCode,
+  /** Absolute minute from the cycle anchor (00:00 UTC); may exceed a day for a late leg. */
+  departureMinute: z.number().int().nonnegative(),
+  blockMinutes: z.number().nonnegative(),
+  turnaroundMinutes: z.number().nonnegative(),
+});
+export type ScheduleLegView = z.infer<typeof ScheduleLegView>;
+
+/** A saved rotation, as the network page lists it. */
+export const ScheduleView = z.object({
+  id: Uuid,
+  airframeId: Uuid,
+  legs: z.array(ScheduleLegView).min(1),
+  repeat: RepeatPattern,
+  active: z.boolean(),
+  /** Flights on the books this schedule has not yet flown — the horizon the worker rolled. */
+  upcomingFlights: z.number().int().nonnegative(),
+  createdAt: Timestamp,
+});
+export type ScheduleView = z.infer<typeof ScheduleView>;
+
+/** `GET /api/schedules` — every rotation this airline runs. */
+export const SchedulesResponse = z.object({
+  schedules: z.array(ScheduleView),
+});
+export type SchedulesResponse = z.infer<typeof SchedulesResponse>;
+
+/**
+ * A saved schedule, and any warning it earned (M5-02).
+ *
+ * `warning` is not a refusal — §9.2's texture is that airlines roster to the
+ * line, so a rotation that is legal but hard on the crew is saved and *told
+ * about*, not declined. The hard rule is at departure. Null when there is
+ * nothing to say.
+ */
+export const CreateScheduleResponse = z.object({
+  schedule: ScheduleView,
+  warning: z.string().nullable(),
+});
+export type CreateScheduleResponse = z.infer<typeof CreateScheduleResponse>;
+
+/** Why a schedule was refused, with the specific reason (M2-03). */
+export const ScheduleRefusal = z.object({
+  problem: SchedulingProblem,
+  /** Human-readable and specific: "leg 2 leaves EGLL, but leg 1 left the aircraft at LFPG". */
+  detail: z.string(),
+});
+export type ScheduleRefusal = z.infer<typeof ScheduleRefusal>;
+
 /* ------------------------------------------------------- fares (M3-09) ---- */
 
 /**

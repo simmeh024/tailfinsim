@@ -311,7 +311,7 @@ describeDb('creating worlds', () => {
     it('creates a world and answers 201 with it', async () => {
       const actor = await makeAdmin();
       const c = config();
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const reply = await app.inject({
           method: 'POST',
@@ -335,7 +335,7 @@ describeDb('creating worlds', () => {
       // unknown fields are stripped. The stored row — not the 201 — is proof
       // that none of them crossed the parsed-body boundary.
       const actor = await makeAdmin();
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const before = new Date();
         const c = config();
@@ -374,7 +374,7 @@ describeDb('creating worlds', () => {
       const c = config();
       await create(c, actor);
 
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const reply = await app.inject({
           method: 'POST',
@@ -397,7 +397,7 @@ describeDb('creating worlds', () => {
 
     it('refuses a bad config with the reason against each field', async () => {
       const actor = await makeAdmin();
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const reply = await app.inject({
           method: 'POST',
@@ -416,7 +416,7 @@ describeDb('creating worlds', () => {
 
     it('lists worlds to an admin and refuses everyone else', async () => {
       const actor = await makeAdmin();
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const anon = await app.inject({ method: 'GET', url: '/api/admin/worlds' });
         expect(anon.statusCode).toBe(401);

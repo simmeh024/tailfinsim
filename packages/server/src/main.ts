@@ -20,7 +20,9 @@ const port = Number.parseInt(process.env.PORT ?? '3000', 10);
 const host = process.env.HOST ?? '127.0.0.1';
 
 const db = createDatabase();
-const app = buildApp({ env, db });
+// Top-level await: the server bundles as ESM, and `buildApp` is async because the
+// rate-limit guard must load before the routes it protects (see app.ts).
+const app = await buildApp({ env, db });
 
 /**
  * This node, describing itself for the console (OPS-15).

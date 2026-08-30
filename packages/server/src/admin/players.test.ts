@@ -489,7 +489,7 @@ describeDb('browsing players', () => {
 
     it('lists players to an admin', async () => {
       const actor = await makeAdmin();
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const reply = await app.inject({
           method: 'GET',
@@ -508,7 +508,7 @@ describeDb('browsing players', () => {
 
     it('answers 404 for a player that is not there, and for an id that is not a uuid', async () => {
       const actor = await makeAdmin();
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const cookie = await cookieFor(actor);
         for (const id of ['11111111-2222-3333-4444-555555555555', 'not-a-uuid']) {
@@ -535,7 +535,7 @@ describeDb('browsing players', () => {
       });
       const { token } = await createSession(db.db, subject, 24);
 
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const reply = await app.inject({
           method: 'GET',
@@ -559,7 +559,7 @@ describeDb('browsing players', () => {
       const subject = await makePlayer(`Viewed ${tag}`);
       await readPlayer(db.db, subject, ACTOR);
 
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const cookie = await cookieFor(actor);
         const plain = await app.inject({

@@ -125,7 +125,7 @@ export async function collectRegisteredRoutes(): Promise<RegisteredRoute[]> {
     close: () => Promise.resolve(),
   } as unknown as DatabaseHandle;
 
-  const app = buildApp({
+  const app = await buildApp({
     env: ENUMERATION_ENV,
     db: stubDatabase,
     onRoute: ({ method, url }) => {

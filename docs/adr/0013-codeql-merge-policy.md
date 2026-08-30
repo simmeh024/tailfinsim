@@ -99,16 +99,17 @@ merge a PR.
 
 Four alerts existed on `main`. Each received an individual reason in GitHub's Security tab:
 
-| Alert                         | Finding                                     | Decision                                                                                                                                                                                                                     |
-| ----------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| #3 `actions/unpinned-tag`     | `pnpm/action-setup@v6` is mutable           | Real finding, deferred to the coordinated Actions pinning in SEC-HARD-24 (#272).                                                                                                                                             |
-| #4 `js/missing-rate-limiting` | Google OAuth callback has no rate limit     | Real finding, deferred to endpoint-class rate limiting and trusted-proxy semantics in SEC-HARD-09 (#257).                                                                                                                    |
-| #5 `js/http-to-file-access`   | GeoNames/World Bank response cached to disk | False positive for file-write control: an operator-only CLI uses fixed HTTPS sources and fixed filenames; network data cannot choose the path or become served/executed content. Body-size bounds remain SEC-HARD-30 (#278). |
-| #6 `js/http-to-file-access`   | OurAirports response cached to disk         | False positive for the same reason: fixed origin, allowlisted filenames and an operator-selected directory; cached CSV is parsed, not served or executed. Body-size bounds remain SEC-HARD-30 (#278).                        |
+| Alert                         | Finding                                     | Decision                                                                                                                                                                                                                                                                                                 |
+| ----------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #3 `actions/unpinned-tag`     | `pnpm/action-setup@v6` is mutable           | Real finding, deferred to the coordinated Actions pinning in SEC-HARD-24 (#272).                                                                                                                                                                                                                         |
+| #4 `js/missing-rate-limiting` | Google OAuth callback has no rate limit     | **Addressed (M2-03 PR).** A global per-client-IP limit (`@fastify/rate-limit`, keyed on the `trustProxy`-resolved caller) now covers every route, the OAuth callback included; loopback is exempt. This is SEC-HARD-09's (#257) first tranche — the deeper proxy-trust hardening it names is still open. |
+| #5 `js/http-to-file-access`   | GeoNames/World Bank response cached to disk | False positive for file-write control: an operator-only CLI uses fixed HTTPS sources and fixed filenames; network data cannot choose the path or become served/executed content. Body-size bounds remain SEC-HARD-30 (#278).                                                                             |
+| #6 `js/http-to-file-access`   | OurAirports response cached to disk         | False positive for the same reason: fixed origin, allowlisted filenames and an operator-selected directory; cached CSV is parsed, not served or executed. Body-size bounds remain SEC-HARD-30 (#278).                                                                                                    |
 
-The two deferred findings remain work even though they are dismissed from the CodeQL
-baseline. Dismissal prevents old findings from deadlocking every PR; it does not erase their
-tracking issues.
+The findings deferred rather than fixed remain work even though they are dismissed from the
+CodeQL baseline — #3's Actions pinning still, and #4's deeper proxy-trust hardening now that
+its rate-limit half has shipped. Dismissal prevents old findings from deadlocking every PR; it
+does not erase their tracking issues.
 
 ## Consequences
 

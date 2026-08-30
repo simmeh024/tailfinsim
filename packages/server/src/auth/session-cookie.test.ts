@@ -90,12 +90,12 @@ function cookieValue(value: string): string {
 
 describeDb('sessions over HTTP', () => {
   let db: DatabaseHandle;
-  let app: ReturnType<typeof buildApp>;
+  let app: Awaited<ReturnType<typeof buildApp>>;
   let playerId: string;
 
   beforeAll(async () => {
     db = createDatabase();
-    app = buildApp({ env: baseEnv, db });
+    app = await buildApp({ env: baseEnv, db });
     await app.ready();
 
     const created = await db.db
@@ -163,7 +163,7 @@ describeDb('sessions over HTTP', () => {
     });
 
     it('reports registration as open when the flag says so', async () => {
-      const openApp = buildApp({ env: { ...baseEnv, allowRegistration: true }, db });
+      const openApp = await buildApp({ env: { ...baseEnv, allowRegistration: true }, db });
       await openApp.ready();
       try {
         const res = await openApp.inject({ method: 'GET', url: '/api/me' });
@@ -325,7 +325,7 @@ describeDb('sessions over HTTP', () => {
     });
 
     it('marks the cookie Secure when the origin is https', async () => {
-      const secureApp = buildApp({
+      const secureApp = await buildApp({
         env: { ...baseEnv, publicOrigin: 'https://dev.tailfinsim.com' },
         db,
       });
@@ -387,7 +387,7 @@ describeDb('sessions over HTTP', () => {
       await destroyPlayerSessions(db.db, playerId);
       const old = await createSession(db.db, playerId, 24);
 
-      const callbackApp = buildApp({
+      const callbackApp = await buildApp({
         env: baseEnv,
         db,
         googleAuth: {
@@ -442,7 +442,7 @@ describeDb('sessions over HTTP', () => {
       await db.db.insert(playerIdentity).values({ playerId: adminId, provider: 'google', subject });
       await db.db.insert(adminGrant).values({ playerId: adminId });
 
-      const callbackApp = buildApp({
+      const callbackApp = await buildApp({
         env: { ...baseEnv, adminSessionTtlHours: 2 },
         db,
         googleAuth: {
@@ -486,11 +486,11 @@ describeDb('sessions over HTTP', () => {
 
 describeDb('with auth not configured', () => {
   let db: DatabaseHandle;
-  let app: ReturnType<typeof buildApp>;
+  let app: Awaited<ReturnType<typeof buildApp>>;
 
   beforeAll(async () => {
     db = createDatabase();
-    app = buildApp({ env: unconfiguredEnv, db });
+    app = await buildApp({ env: unconfiguredEnv, db });
     await app.ready();
   });
 
