@@ -26,6 +26,7 @@ const elements = Object.fromEntries(
     'components',
     'isolate',
     'wireframe',
+    'unassigned',
     'whole',
     'clear-component',
     'reset-draft',
@@ -352,6 +353,17 @@ try {
         elements.target.value,
       );
   };
+  elements.unassigned.onclick = () => {
+    const mesh = meshById.get(activeComponent);
+    if (mesh) {
+      const values = assignments.get(mesh.name);
+      assign(
+        mesh,
+        values.flatMap((value, index) => (value === null ? [index] : [])),
+        elements.target.value,
+      );
+    }
+  };
   elements['clear-component'].onclick = () => {
     const mesh = meshById.get(activeComponent);
     if (mesh)
@@ -608,7 +620,8 @@ try {
   };
 
   function componentBounds(mesh) {
-    return new THREE.Box3().setFromObject(mesh).translate(group.position);
+    mesh.updateWorldMatrix(true, false);
+    return new THREE.Box3().setFromObject(mesh);
   }
   function visibleBounds() {
     const selected = meshById.get(activeComponent);
