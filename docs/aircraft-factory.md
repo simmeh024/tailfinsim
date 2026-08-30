@@ -395,6 +395,29 @@ repair topology, generate missing geometry, create materials/UVs, admit an asset
 credit ledger. The untouched authored JSON and deterministic assessment are stored under their own
 content hashes, so a later reviewer cannot silently rewrite the evidence.
 
+### Local face-selection workbench
+
+```bash
+pnpm assets:semantic-workbench -- --operation candidate-1 --port 4183
+```
+
+The workbench binds only to `127.0.0.1`, accepts only exact-host GET requests and serves four
+no-store resources: the page, its locally bundled application, the hash-verified corrected GLB and
+the immutable inventory. It has no upload/write route, credential access, Meshy client, registry or
+fleet dependency. Its content-security policy forbids external resources and framing.
+
+The viewport retains the seven canonical camera views and supports orbit/zoom, component focusing,
+single-face assignment, Alt-click clearing and Shift-click edge-connected flood selection with an
+adjustable normal-angle threshold. Whole-component assignment is available for visually reviewed
+detached parts; the mixed centre-plane component remains a face-level task. Per-face diagnostic
+colours are review overlays, not aircraft materials.
+
+The operator can classify each target, record missing-geometry rationale, import a matching draft
+and download a review document. Export groups component-local face selections into deterministic
+half-open ranges. The browser cannot archive or approve that file: the separate `semantics` command
+must validate and preserve it before any repair stage. Front-side rendering is intentional so the
+review does not conceal winding defects with a double-sided runtime material.
+
 ## Pinned strategy and vendor evidence
 
 The planning observation is dated 2026-08-28. Four untextured T2 candidates cost 5 credits each;
