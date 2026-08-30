@@ -544,3 +544,79 @@ export async function orphanedFlights(db: Database, worldId: string): Promise<nu
     .where(and(eq(flight.worldId, worldId), isNull(flight.scheduleId)));
   return Number(row?.count ?? 0);
 }
+
+/**
+ * Pause a schedule, or resume it — owner-scoped (M2-03 lifecycle).
+ *
+ * A paused schedule stops being materialised (`materialiseWorld` reads only
+ * `active` ones), so no *new* flights appear; flights already on the horizon keep
+ * their departures, exactly like pausing a route. Returns false when the schedule
+ * is not this airline's — the caller answers 404, never an oracle.
+ */
+export async function setScheduleActive(
+  db: Database,
+  scheduleId: string,
+  airlineId: string,
+  active: boolean,
+): Promise<boolean> {
+  const rows = await db
+    .update(schedule)
+    .set({ active, updatedAt: sql`now()` })
+    .where(and(eq(schedule.id, scheduleId), eq(schedule.airlineId, airlineId)))
+    .returning({ id: schedule.id });
+  return rows.length > 0;
+}
+
+/**
+ * Delete a schedule and cancel its future, unflown flights — owner-scoped.
+ *
+ * A flight that has already gone off-blocks is history and is kept (its
+ * `schedule_id` becomes null, as the FK's `set null` intends), so the operational
+ * record §22.10 wants survives. Everything still ahead of the clock is removed
+ * with its pending departure event, in one transaction, so the queue never keeps
+ * a departure for a flight that no longer exists. Returns false for a schedule
+ * that is not this airline's.
+ */
+export async function deleteSchedule(
+  db: Database,
+  scheduleId: string,
+  airlineId: string,
+  gameNow: Date,
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [owned] = await tx
+      .select({ worldId: schedule.worldId })
+      .from(schedule)
+      .where(and(eq(schedule.id, scheduleId), eq(schedule.airlineId, airlineId)))
+      .limit(1);
+    if (!owned) return false;
+
+    const future = await tx
+      .select({ id: flight.id })
+      .from(flight)
+      .where(
+        and(
+          eq(flight.scheduleId, scheduleId),
+          gte(flight.scheduledDeparture, gameNow),
+          isNull(flight.actualDeparture),
+        ),
+      );
+    const ids = future.map((row) => row.id);
+    if (ids.length > 0) {
+      await tx.delete(worldEvent).where(
+        and(
+          eq(worldEvent.worldId, owned.worldId),
+          eq(worldEvent.status, 'pending'),
+          inArray(
+            worldEvent.idempotencyKey,
+            ids.map((id) => departureKey(id)),
+          ),
+        ),
+      );
+      await tx.delete(flight).where(inArray(flight.id, ids));
+    }
+
+    await tx.delete(schedule).where(eq(schedule.id, scheduleId));
+    return true;
+  });
+}

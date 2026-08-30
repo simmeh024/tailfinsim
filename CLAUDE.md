@@ -374,8 +374,13 @@ now rolls each world's active schedules onto a **14-game-day horizon** every tic
 for ever producing no flights — a network that reads as empty rather than as a missing
 process, the same trap as everything above it. `flightsMaterialised` and `scheduleErrors` are
 the counters. The player _authoring_ API exists on every node; only the materialisation is the
-worker's. The network page's schedule surface was mock until this landed; the editor's Publish
-and the remaining lifecycle (edit, pause, delete) are still being wired.
+worker's. The authoring lifecycle is now complete over HTTP — `POST` creates, `GET` lists,
+`PUT /api/schedules/:id` replaces the legs (only future unflown flights move), `PUT
+/api/schedules/:id/active` pauses/resumes, and `DELETE` cancels the future flights and removes
+the rotation. What is **not** yet wired is the web editor's Publish: the planner's schedule
+surface is still mock because the editor models an out-and-back on one route while the API takes
+a `routeId` per leg (so a return leg needs the reverse route open). The Performance and
+Competition tabs, by contrast, now read their real endpoints.
 
 **And one thing not to "fix".** `airframe.maintenance_state` is nullable, and a null means
 _every tier was last completed at the hours this airframe has now_ — not _at hour zero_. It
