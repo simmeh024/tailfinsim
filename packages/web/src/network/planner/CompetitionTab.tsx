@@ -1,40 +1,71 @@
+import { useEffect, useState } from 'react';
+
+import type { RouteCompetitionResponse, RouteCompetitor } from '@tailfin/shared';
+
+import { fetchCompetition } from '../api';
+
 import { Chip, major, Meter } from './ui';
 
-import type { Competitor, RoutePlan } from './types';
 import type { ReactNode } from 'react';
 
 /**
  * The Competition tab — who else flies the pair, how they price and how much of
- * the market they hold. Mock (`planner/mock.ts`) until an NPC-competition read
- * exists; the "why am I losing" decomposition against a rival lives in Pricing,
- * where the real waterfall endpoint drives it.
+ * the market they hold.
+ *
+ * Real now (M3-12): the same share model the fares preview runs, so the shares
+ * here and the projection in Pricing agree. You are one line in the market, not
+ * an implied self against "them"; the "why am I losing" decomposition against a
+ * single rival still lives in Pricing, where the waterfall endpoint drives it.
  */
 
-const PRODUCT_LABEL: Record<Competitor['product'], string> = {
-  basic: 'Basic',
-  standard: 'Standard',
-  premium: 'Premium',
-};
+/** A coarse quality tier from A.3's 0–1 product composite, for the little bar. */
+function productTier(productScore: number): { label: string; fill: number } {
+  if (productScore >= 0.8) return { label: 'Premium', fill: 1 };
+  if (productScore >= 0.5) return { label: 'Standard', fill: 0.66 };
+  return { label: 'Basic', fill: 0.33 };
+}
 
-const PRODUCT_FILL: Record<Competitor['product'], number> = {
-  basic: 0.33,
-  standard: 0.66,
-  premium: 1,
-};
+export function CompetitionTab({ routeId }: { routeId: string }): ReactNode {
+  const [data, setData] = useState<RouteCompetitionResponse | 'loading' | 'error'>('loading');
 
-export function CompetitionTab({ plan }: { plan: RoutePlan }): ReactNode {
-  const { competitors } = plan;
-  const yourShare = Math.max(0, 1 - competitors.reduce((sum, r) => sum + r.share, 0));
+  useEffect(() => {
+    let live = true;
+    setData('loading');
+    fetchCompetition(routeId)
+      .then((response) => {
+        if (live) setData(response);
+      })
+      .catch(() => {
+        if (live) setData('error');
+      });
+    return () => {
+      live = false;
+    };
+  }, [routeId]);
 
-  if (competitors.length === 0) {
+  if (data === 'loading') {
+    return <p className="admin__note">Loading the market…</p>;
+  }
+  if (data === 'error') {
+    return (
+      <p className="page__note" role="alert">
+        Could not load this route’s competition.
+      </p>
+    );
+  }
+
+  const you = data.operators.find((operator) => operator.isYou);
+  const rivals = data.operators.filter((operator) => !operator.isYou);
+
+  if (rivals.length === 0) {
     return (
       <section className="net-panel">
         <div className="net-panel__head">
           <h2 className="net-panel__title">Competition</h2>
         </div>
         <p className="admin__note">
-          Nobody else is selling {plan.route.originIcao} → {plan.route.destinationIcao}. You have
-          the route to yourself — set the fare where the demand model pays you best.
+          Nobody else is selling this market. You have the route to yourself — set the fare where
+          the demand model pays you best.
         </p>
       </section>
     );
@@ -44,19 +75,23 @@ export function CompetitionTab({ plan }: { plan: RoutePlan }): ReactNode {
     <section className="net-panel">
       <div className="net-panel__head">
         <h2 className="net-panel__title">Who you are up against</h2>
-        <span className="net-panel__hint">{competitors.length} rivals on the pair</span>
+        <span className="net-panel__hint">
+          {rivals.length} {rivals.length === 1 ? 'rival' : 'rivals'} on the pair
+        </span>
       </div>
 
       <div className="net-share">
-        <span
-          className="net-share__seg net-share__seg--you"
-          style={{ width: `${yourShare * 100}%` }}
-        >
-          You {(yourShare * 100).toFixed(0)}%
-        </span>
-        {competitors.map((rival, index) => (
+        {you && (
           <span
-            key={rival.id}
+            className="net-share__seg net-share__seg--you"
+            style={{ width: `${you.share * 100}%` }}
+          >
+            You {(you.share * 100).toFixed(0)}%
+          </span>
+        )}
+        {rivals.map((rival, index) => (
+          <span
+            key={rival.airlineId}
             className={`net-share__seg net-share__seg--r${String(index % 3)}`}
             style={{ width: `${rival.share * 100}%` }}
             title={`${rival.name} ${(rival.share * 100).toFixed(0)}%`}
@@ -75,19 +110,8 @@ export function CompetitionTab({ plan }: { plan: RoutePlan }): ReactNode {
           </tr>
         </thead>
         <tbody>
-          {competitors.map((rival) => (
-            <tr key={rival.id}>
-              <th scope="row">{rival.name}</th>
-              <td className="figure">{rival.weeklyFrequency}×</td>
-              <td className="figure">{major(rival.economyFareMinor)}</td>
-              <td>
-                <div className="net-comp-product">
-                  <Meter value={PRODUCT_FILL[rival.product]} tone="accent" />
-                  <Chip tone="neutral">{PRODUCT_LABEL[rival.product]}</Chip>
-                </div>
-              </td>
-              <td className="figure">{(rival.share * 100).toFixed(0)}%</td>
-            </tr>
+          {rivals.map((rival) => (
+            <CompetitorRow key={rival.airlineId} rival={rival} />
           ))}
         </tbody>
       </table>
@@ -96,5 +120,33 @@ export function CompetitionTab({ plan }: { plan: RoutePlan }): ReactNode {
         <strong>Pricing → Why am I losing?</strong> — that runs the real market decomposition.
       </p>
     </section>
+  );
+}
+
+function CompetitorRow({ rival }: { rival: RouteCompetitor }): ReactNode {
+  const tier = productTier(rival.productScore);
+  return (
+    <tr>
+      <th scope="row">
+        {rival.name}
+        {rival.kind === 'npc' && (
+          <>
+            {' '}
+            <Chip tone="neutral">AI</Chip>
+          </>
+        )}
+      </th>
+      <td className="figure">{rival.weeklyFrequency}×</td>
+      <td className="figure">
+        {rival.economyFareMinor === null ? '—' : major(rival.economyFareMinor)}
+      </td>
+      <td>
+        <div className="net-comp-product">
+          <Meter value={tier.fill} tone="accent" />
+          <Chip tone="neutral">{tier.label}</Chip>
+        </div>
+      </td>
+      <td className="figure">{(rival.share * 100).toFixed(0)}%</td>
+    </tr>
   );
 }

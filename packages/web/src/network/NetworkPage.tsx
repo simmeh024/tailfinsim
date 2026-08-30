@@ -457,8 +457,8 @@ export function NetworkPage(): ReactNode {
                   />
                 )}
                 {tab === 'pricing' && <PricingTab route={currentPlan.route} />}
-                {tab === 'competition' && <CompetitionTab plan={currentPlan} />}
-                {tab === 'performance' && <PerformanceTab plan={currentPlan} />}
+                {tab === 'competition' && <CompetitionTab routeId={currentPlan.route.id} />}
+                {tab === 'performance' && <PerformanceTab routeId={currentPlan.route.id} />}
               </div>
             </>
           ) : (
