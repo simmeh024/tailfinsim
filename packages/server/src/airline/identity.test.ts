@@ -261,7 +261,7 @@ describeDb('airline identity moderation', () => {
     const founded = await makeAirline();
     const adminId = await makePlayer('moderator');
     await db.db.insert(adminGrant).values({ playerId: adminId });
-    const app = buildApp({ env, db });
+    const app = await buildApp({ env, db });
     try {
       const invalid = await app.inject({
         method: 'PATCH',
@@ -301,7 +301,7 @@ describeDb('airline identity moderation', () => {
   it('keeps the admin remedy behind requireAdmin', async () => {
     const founded = await makeAirline();
     const nonAdmin = await makePlayer('not-admin');
-    const app = buildApp({ env, db });
+    const app = await buildApp({ env, db });
     const request = {
       method: 'PATCH' as const,
       url: `/api/admin/airlines/${founded.airline.id}/identity`,

@@ -146,6 +146,21 @@ export interface ServerEnv {
   logLevel: string;
 
   /**
+   * DoS guard: the most requests one client IP may make per window before the
+   * edge answers 429 (SEC-HARD-09, ADR-0012). Generous by default — a single
+   * player loading the SPA and polling stays far under it — because the purpose
+   * is to cap abuse, not to shape normal traffic. Loopback is always exempt, so
+   * the worker, local development and the test suite are never limited.
+   *
+   * Optional so the many hand-built test envs need not carry an operational knob;
+   * `loadEnv` always sets it, and `buildApp` supplies the same default when it is
+   * absent.
+   */
+  rateLimitMax?: number;
+  /** The window `rateLimitMax` is counted over, in milliseconds. */
+  rateLimitWindowMs?: number;
+
+  /**
    * Which public surface this instance serves at `/`.
    *
    * `holding` serves the coming-soon page; `app` serves the built client.
@@ -276,5 +291,7 @@ export function loadEnv(): ServerEnv {
     sessionTtlHours,
     adminSessionTtlHours,
     allowRegistration: optionalBool('ALLOW_REGISTRATION', false),
+    rateLimitMax: optionalInt('RATE_LIMIT_MAX', 1200),
+    rateLimitWindowMs: optionalInt('RATE_LIMIT_WINDOW_MS', 60_000),
   };
 }

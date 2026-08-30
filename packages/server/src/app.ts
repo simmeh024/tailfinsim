@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import fastifyCookie from '@fastify/cookie';
+import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import { sql } from 'drizzle-orm';
 import Fastify, { type FastifyError, type FastifyInstance, type RouteOptions } from 'fastify';
@@ -110,14 +111,14 @@ export interface BuildAppOptions {
   onRoute?: (route: RouteOptions) => void;
 }
 
-export function buildApp({
+export async function buildApp({
   env,
   db,
   identityModerator,
   airlineCodePolicy,
   googleAuth,
   onRoute,
-}: BuildAppOptions): FastifyInstance {
+}: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
       level: env.logLevel,
@@ -189,6 +190,34 @@ export function buildApp({
   // Before any registration, or it sees nothing: `onRoute` fires as each route is
   // added, and every route below is added before this function returns.
   if (onRoute) app.addHook('onRoute', onRoute);
+
+  /**
+   * A denial-of-service guard on every route (SEC-HARD-09, ADR-0012, §16).
+   *
+   * Registered before the routes so `global: true` reaches all of them, and
+   * keyed on the client IP — which `trustProxy` above resolves to the real caller
+   * behind Caddy, not to the proxy, so one abusive client is throttled without
+   * taking every user sharing the edge down with it. That resolves the
+   * "trusted-proxy semantics" half of the finding ADR-0013 deferred here.
+   *
+   * **Loopback is exempt.** The worker, local development and the in-process test
+   * suite all reach the app from `127.0.0.1` with no forwarded IP, so exempting
+   * loopback keeps them unthrottled while a real client hammering the public host
+   * (whose forwarded IP is never loopback) is limited. The ceiling is deliberately
+   * generous — a player loading the SPA and polling stays far under it — because
+   * the job is to cap abuse, not to shape ordinary traffic; `RATE_LIMIT_MAX` tunes
+   * it without a code change.
+   *
+   * **Awaited, and before the routes.** The plugin attaches itself by adding an
+   * `onRoute` hook, which only wraps routes registered *after* it has loaded — so
+   * loading it here, ahead of every `register*Routes` call below, is what makes
+   * the guard actually cover them. This is why `buildApp` is async.
+   */
+  await app.register(fastifyRateLimit, {
+    max: env.rateLimitMax ?? 1200,
+    timeWindow: env.rateLimitWindowMs ?? 60_000,
+    allowList: ['127.0.0.1', '::1'],
+  });
 
   app.register(fastifyCookie, env.sessionSecret ? { secret: env.sessionSecret } : {});
   registerAuthRoutes(app, { env, db, googleAuth });

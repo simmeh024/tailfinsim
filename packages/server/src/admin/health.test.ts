@@ -354,7 +354,7 @@ describeDb('world health over a database', () => {
       // statistic is a page that cannot refresh on a timer.
       const actor = await makeAdmin();
       await makeWorld();
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const reply = await app.inject({
           method: 'GET',
@@ -387,7 +387,7 @@ describeDb('world health over a database', () => {
       // than assumed, because a router that resolved this the other way would
       // fail in a way nobody would guess from the symptom.
       const actor = await makeAdmin();
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const reply = await app.inject({
           method: 'GET',

@@ -55,7 +55,7 @@ const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 describeDb('reading and changing your own airline', () => {
   let db: DatabaseHandle;
-  let app: ReturnType<typeof buildApp>;
+  let app: Awaited<ReturnType<typeof buildApp>>;
   const madeWorlds: string[] = [];
   const madePlayers: string[] = [];
   const madeAirports: string[] = [];
@@ -63,7 +63,7 @@ describeDb('reading and changing your own airline', () => {
 
   beforeAll(async () => {
     db = createDatabase();
-    app = buildApp({
+    app = await buildApp({
       env,
       db,
       identityModerator: {

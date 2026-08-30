@@ -237,7 +237,7 @@ describeDb('admin', () => {
       const { token: beforeGrant } = await createSession(db.db, id, 24);
       await grantAdmin(db.db, id, BOOTSTRAP_ACTOR);
 
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const stale = await app.inject({
           method: 'GET',
@@ -326,7 +326,7 @@ describeDb('admin', () => {
 
       await revokeAdmin(db.db, target, BOOTSTRAP_ACTOR);
 
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const reply = await app.inject({
           method: 'GET',
@@ -407,7 +407,7 @@ describeDb('admin', () => {
       const elevated = await makePlayer('me-admin');
       await grantAdmin(db.db, elevated, BOOTSTRAP_ACTOR);
 
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const anonymous = await app.inject({ method: 'GET', url: '/api/me' });
         expect(anonymous.json<{ isAdmin: boolean }>().isAdmin).toBe(false);
@@ -439,7 +439,7 @@ describeDb('admin', () => {
       const id = await makePlayer('payload');
       await grantAdmin(db.db, id, BOOTSTRAP_ACTOR);
 
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const reply = await app.inject({
           method: 'GET',
@@ -461,7 +461,7 @@ describeDb('admin', () => {
 
     it('do not leak what the console contains to someone refused', async () => {
       const id = await makePlayer('nosy');
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const reply = await app.inject({
           method: 'GET',
@@ -483,7 +483,7 @@ describeDb('admin', () => {
       const first = await createSession(db.db, target, 24);
       const second = await createSession(db.db, target, 24);
 
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const reply = await app.inject({
           method: 'POST',

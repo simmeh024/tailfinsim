@@ -452,7 +452,7 @@ describeDb('founding an airline', () => {
     const worldId = await makeWorld();
     const hubIdent = await makeHub();
     const playerId = await makePlayer();
-    const app = buildApp({ env, db });
+    const app = await buildApp({ env, db });
     try {
       const response = await app.inject({
         method: 'POST',
@@ -477,7 +477,7 @@ describeDb('founding an airline', () => {
     const mediumHub = await makeHub();
     const flagshipHub = await makeHub('flagship');
     const playerId = await makePlayer();
-    const app = buildApp({ env, db });
+    const app = await buildApp({ env, db });
     try {
       const cookie = await cookieFor(playerId);
       const optionsResponse = await app.inject({
@@ -558,7 +558,7 @@ describeDb('founding an airline', () => {
       ).ok,
     ).toBe(true);
 
-    const app = buildApp({ env, db });
+    const app = await buildApp({ env, db });
     try {
       const response = await app.inject({
         method: 'POST',
@@ -594,7 +594,7 @@ describeDb('founding an airline', () => {
       (await foundAirline(db.db, owner, input(worldId, hubIdent, { iataCode: 'Q1' }))).ok,
     ).toBe(true);
 
-    const app = buildApp({ env, db });
+    const app = await buildApp({ env, db });
     try {
       const response = await app.inject({
         method: 'POST',

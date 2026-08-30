@@ -477,7 +477,7 @@ describeDb('aircraft acquisition', () => {
     const fixture = await fixtures.create();
     const deliveryAirportIcao = await makeDeliveryAirport();
     const session = await createSession(db.db, fixture.player.id, env.sessionTtlHours);
-    const app = buildApp({ env, db });
+    const app = await buildApp({ env, db });
 
     try {
       const anonymous = await app.inject({

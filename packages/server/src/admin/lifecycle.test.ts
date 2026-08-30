@@ -570,7 +570,7 @@ describeDb('the world lifecycle', () => {
     it('opens a world and answers with both sides', async () => {
       const actor = await makeAdmin();
       const row = await makeWorld('staging');
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const reply = await app.inject({
           method: 'POST',
@@ -593,7 +593,7 @@ describeDb('the world lifecycle', () => {
       const actor = await makeAdmin();
       const row = await makeWorld('open');
       await makeAirline(row.id, 'hh');
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const reply = await app.inject({
           method: 'POST',
@@ -626,7 +626,7 @@ describeDb('the world lifecycle', () => {
     it('maps each refusal to the status it deserves', async () => {
       const actor = await makeAdmin();
       const row = await makeWorld('open');
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const cookie = await cookieFor(actor);
         async function statusOf(

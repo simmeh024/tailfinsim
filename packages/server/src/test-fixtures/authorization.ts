@@ -169,7 +169,7 @@ export async function createAuthorizationTestSuite({
       },
     };
 
-    const app = buildApp({ env, db });
+    const app = await buildApp({ env, db });
     let appClosed = false;
     let cleaned = false;
 

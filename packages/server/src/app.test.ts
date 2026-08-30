@@ -42,11 +42,11 @@ const describeDb = url ? describe : describe.skip;
 
 describeDb('HTTP surface', () => {
   let db: DatabaseHandle;
-  let app: ReturnType<typeof buildApp>;
+  let app: Awaited<ReturnType<typeof buildApp>>;
 
   beforeAll(async () => {
     db = createDatabase();
-    app = buildApp({ env: testEnv, db });
+    app = await buildApp({ env: testEnv, db });
     await app.ready();
   });
 
@@ -162,12 +162,12 @@ describe('GET /api/version', () => {
    * teardown remains awaited without swallowing errors.
    */
   const databaseAlarm = createDatabaseAccessAlarm('GET /api/version');
-  let devApp: ReturnType<typeof buildApp>;
-  let productionApp: ReturnType<typeof buildApp>;
+  let devApp: Awaited<ReturnType<typeof buildApp>>;
+  let productionApp: Awaited<ReturnType<typeof buildApp>>;
 
   beforeAll(async () => {
-    devApp = buildApp({ env: { ...testEnv, environmentLabel: 'dev' }, db: databaseAlarm });
-    productionApp = buildApp({
+    devApp = await buildApp({ env: { ...testEnv, environmentLabel: 'dev' }, db: databaseAlarm });
+    productionApp = await buildApp({
       env: { ...testEnv, environmentLabel: 'production' },
       db: databaseAlarm,
     });
@@ -259,7 +259,7 @@ describe('health degradation', () => {
     // /healthz to decide whether a release came up, so a server that cannot
     // reach its database must not report success.
     const db = createDatabaseAt('postgres://nobody:nothing@127.0.0.1:1/none');
-    const app = buildApp({ env: { ...testEnv, databaseUrl: 'postgres://unused' }, db });
+    const app = await buildApp({ env: { ...testEnv, databaseUrl: 'postgres://unused' }, db });
     await app.ready();
     try {
       const res = await app.inject({ method: 'GET', url: '/healthz' });
@@ -338,9 +338,11 @@ describe('GET /api/routes/:routeId/waterfall is on the surface (M3-10)', () => {
    * route exists, and a 404 would mean it does not. If this ever hangs, the
    * handler has started querying before checking auth.
    */
-  async function withApp(body: (app: ReturnType<typeof buildApp>) => Promise<void>): Promise<void> {
+  async function withApp(
+    body: (app: Awaited<ReturnType<typeof buildApp>>) => Promise<void>,
+  ): Promise<void> {
     const db = createDatabaseAt('postgres://nobody:nothing@127.0.0.1:1/none');
-    const app = buildApp({ env: testEnv, db });
+    const app = await buildApp({ env: testEnv, db });
     await app.ready();
     try {
       await body(app);

@@ -184,6 +184,11 @@ API calls made at machine speed; it is not limited to malformed traffic.
   and non-disclosure apply even when the application never exposes them directly.
 - Dev data is disposable; production data is not. Sharing a host is recorded as risk, not
   treated as isolation.
+- Bounded work and honest failure defend the 2-vCPU host against the abusive-traffic
+  attacker. A per-client-IP rate limit at the application edge (`@fastify/rate-limit`, keyed
+  on the `trustProxy`-resolved caller behind Caddy) caps request floods before they reach a
+  handler; loopback is exempt so the worker and local tooling are never throttled. This is the
+  first tranche of SEC-HARD-09 and does not, by itself, absorb a volumetric flood (see below).
 - Security automation must prove a property and stay readable. A noisy or silently skipped
   control creates false confidence.
 - Every SEC-HARD issue names the asset and attacker/failure mode it addresses. A proposed

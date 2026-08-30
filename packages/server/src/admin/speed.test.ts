@@ -453,7 +453,7 @@ describeDb('changing a world speed', () => {
     it('changes the speed and answers with both sides of the clock', async () => {
       const actor = await makeAdmin();
       const row = await runningWorld();
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const reply = await app.inject({
           method: 'POST',
@@ -488,7 +488,7 @@ describeDb('changing a world speed', () => {
     it('maps each refusal to the status it deserves', async () => {
       const actor = await makeAdmin();
       const row = await runningWorld();
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const cookie = await cookieFor(actor);
         async function statusOf(worldId: string, to: number, from: number): Promise<number> {
@@ -524,7 +524,7 @@ describeDb('changing a world speed', () => {
     it('says why, in words, against the field that was wrong', async () => {
       const actor = await makeAdmin();
       const row = await runningWorld();
-      const app = buildApp({ env, db });
+      const app = await buildApp({ env, db });
       try {
         const reply = await app.inject({
           method: 'POST',
