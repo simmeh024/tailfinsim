@@ -16,3 +16,4 @@ export * from './money';
 export * from './settlement';
 export * from './disruption-cost';
 export * from './fare-floor';
+export * from './hub-cost';

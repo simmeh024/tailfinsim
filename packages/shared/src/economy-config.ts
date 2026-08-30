@@ -1918,6 +1918,52 @@ export const SHIPPED_SOCIAL_MEDIA_BALANCE = {
   attractivenessUtility: 0.1,
 } as const satisfies z.input<typeof SocialMediaBalance>;
 
+/**
+ * The hub purchase curve (M7-04, App. B.5).
+ *
+ * `HubCost = tierBaseMinor[tier] × costGrowth^(hubs_owned − 1)`, and the multiplier
+ * counts **hubs owned, not hubs of that tier** — so every cheap hub bought early
+ * makes every future flagship dearer. The first hub is free at any tier; that
+ * waiver is `airlineStartingPosition.freeHubAllowance`, not a number here.
+ *
+ * Fees and facilities are deliberately absent: App. B.5 gives the purchase table
+ * exactly but only says facility fees "scale with tier" without figures, so those
+ * arrive with the annual-fee/facility milestone rather than as invented balance.
+ */
+export const HubTier = z.enum(['small', 'medium', 'large', 'flagship']);
+export type HubTier = z.infer<typeof HubTier>;
+
+export const HubBalance = z
+  .object({
+    /** Tier base price, minor units — the `TierBase` in the App. B.5 formula. */
+    tierBaseMinor: z
+      .object({
+        small: MinorUnits.positive(),
+        medium: MinorUnits.positive(),
+        large: MinorUnits.positive(),
+        flagship: MinorUnits.positive(),
+      })
+      .strict(),
+    /** The exponential base: each hub already owned multiplies the next one's cost. */
+    costGrowth: z.number().finite().gt(1),
+  })
+  .strict();
+export type HubBalance = z.infer<typeof HubBalance>;
+
+export const SHIPPED_HUB_BALANCE = {
+  // App. B.5's tier bases: $2M / $5M / $10M / $25M, in minor units at the same
+  // 100-per-unit scale as `openingCashMinor` ($500K → 50,000,000).
+  tierBaseMinor: {
+    small: 200_000_000,
+    medium: 500_000_000,
+    large: 1_000_000_000,
+    flagship: 2_500_000_000,
+  },
+  // "doubling with every hub you already own" — App. B.5. The strategic tension the
+  // issue is about lives entirely in this being 2 and counting all hubs owned.
+  costGrowth: 2,
+} as const satisfies z.input<typeof HubBalance>;
+
 export const EconomyConfig = z
   .object({
     version: EconomyConfigVersion,
@@ -1953,6 +1999,9 @@ export const EconomyConfig = z
     // Defaulted for the same reason once more (M5-04 follow-up). Every `v1` row
     // written before the social media specialist reads back the shipped values.
     socialMedia: SocialMediaBalance.default(SHIPPED_SOCIAL_MEDIA_BALANCE),
+    // Defaulted for the same reason once more (M7-04): the hub purchase curve. Every
+    // `v1` row written before it reads back the shipped App. B.5 prices.
+    hubs: HubBalance.default(SHIPPED_HUB_BALANCE),
   })
   .strict();
 export type EconomyConfig = z.infer<typeof EconomyConfig>;
@@ -2239,6 +2288,7 @@ export const ECONOMY_CONFIG_V1: EconomyConfig = EconomyConfig.parse({
   maintenance: SHIPPED_MAINTENANCE_BALANCE,
   crew: SHIPPED_CREW_BALANCE,
   socialMedia: SHIPPED_SOCIAL_MEDIA_BALANCE,
+  hubs: SHIPPED_HUB_BALANCE,
 });
 
 // ---------------------------------------------------------------------------
