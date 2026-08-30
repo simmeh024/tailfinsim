@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
+import { semanticWorkbenchCloseUpIncludes } from '../src/semantic-workbench-camera';
 import {
   parseSemanticWorkbenchDraft,
   semanticWorkbenchDraftKey,
@@ -629,6 +630,20 @@ try {
       ? componentBounds(selected)
       : aircraftBounds.clone().translate(group.position);
   }
+  function visibleSubBounds(predicate) {
+    const box = new THREE.Box3();
+    const point = new THREE.Vector3();
+    for (const mesh of meshes) {
+      if (!mesh.visible) continue;
+      mesh.updateWorldMatrix(true, false);
+      const position = mesh.geometry.getAttribute('position');
+      for (let index = 0; index < position.count; index += 1) {
+        point.fromBufferAttribute(position, index).applyMatrix4(mesh.matrixWorld);
+        if (predicate(point)) box.expandByPoint(point);
+      }
+    }
+    return box.isEmpty() ? visibleBounds() : box;
+  }
   function frameBounds(box, direction, distanceMultiplier) {
     const centre = box.getCenter(new THREE.Vector3());
     const size = Math.max(...box.getSize(new THREE.Vector3()).toArray(), span * 0.03);
@@ -642,19 +657,36 @@ try {
   }
   const setView = (direction) =>
     frameBounds(visibleBounds(), direction, isolationEnabled ? 3 : 2.15);
-  for (const [name, direction] of [
-    ['Quarter', [1, 0.55, 1]],
-    ['Left', [-1, 0, 0]],
-    ['Right', [1, 0, 0]],
-    ['Top', [0, 1, 0.001]],
-    ['Underside', [0, -1, 0.001]],
-    ['Nose', [0, 0, -1]],
-    ['Tail', [0, 0, 1]],
+  const worldBounds = aircraftBounds.clone().translate(group.position);
+  for (const [name, direction, region] of [
+    ['Quarter', [1, 0.55, 1], null],
+    ['Left', [-1, 0, 0], null],
+    ['Right', [1, 0, 0], null],
+    ['Top', [0, 1, 0.001], null],
+    ['Underside', [0, -1, 0.001], null],
+    ['Nose', [0, 0, -1], null],
+    ['Tail', [0, 0, 1], null],
+    [
+      'Winglet left',
+      [0, 0, -1],
+      (point) => semanticWorkbenchCloseUpIncludes(worldBounds, 'winglet_left', point),
+    ],
+    [
+      'Winglet right',
+      [0, 0, -1],
+      (point) => semanticWorkbenchCloseUpIncludes(worldBounds, 'winglet_right', point),
+    ],
+    [
+      'Tail close-up',
+      [1, 0.15, 0],
+      (point) => semanticWorkbenchCloseUpIncludes(worldBounds, 'tail', point),
+    ],
   ]) {
     const button = document.createElement('button');
     button.type = 'button';
     button.textContent = name;
-    button.onclick = () => setView(direction);
+    button.onclick = () =>
+      region ? frameBounds(visibleSubBounds(region), direction, 3) : setView(direction);
     views.append(button);
   }
   const resize = () => {
