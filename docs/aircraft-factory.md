@@ -445,6 +445,25 @@ The requirements document authorizes repair work to begin; it never claims repai
 runtime admission or livery readiness. The untouched export and corrected derivative remain
 immutable, and independent topology, visual, licensing and performance gates still apply.
 
+### Residual topology evidence
+
+```bash
+pnpm assets:meshy-run -- residuals \
+  --operation candidate-1 \
+  --assessment-sha256 <semantic-assessment-sha256>
+```
+
+This zero-credit command verifies the named assessment, its authored review, regenerated semantic
+inventory and corrected GLB before measuring uncovered faces. It groups residual triangles only by
+exact shared edges and seals component-local ranges, bounds, surface area, area-weighted normal,
+boundary/non-manifold edge counts and exact coincident/opposite-winding evidence for each patch.
+The compact terminal response reports counts and the largest patches; detailed face ranges remain
+in the private content-addressed archive.
+
+Connectivity and normals are diagnostic evidence, not semantic inference. Every patch still needs
+human classification, and coincident faces are never deleted automatically. The command does not
+edit geometry, spend credits, change the run ledger, admit an asset or claim livery readiness.
+
 ## Pinned strategy and vendor evidence
 
 The planning observation is dated 2026-08-28. Four untextured T2 candidates cost 5 credits each;

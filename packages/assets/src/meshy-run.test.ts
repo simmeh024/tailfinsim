@@ -586,6 +586,7 @@ describe('operator command authority boundary', () => {
           '--assessment-sha256',
           'a'.repeat(64),
         ],
+        ['residuals', '--operation', 'candidate-1', '--assessment-sha256', 'a'.repeat(64)],
       ]) {
         const result = run(args);
         expect(result.status).toBe(1);
@@ -786,6 +787,66 @@ describe('operator command authority boundary', () => {
           String(semanticOutput.assessmentSha256),
         ]).stdout,
       ).toBe(repairRequirements.stdout);
+      const residuals = run([
+        'residuals',
+        '--operation',
+        'candidate-1',
+        '--assessment-sha256',
+        String(semanticOutput.assessmentSha256),
+      ]);
+      expect(residuals.status, residuals.stderr.replaceAll(sentinel, '[redacted]')).toBe(0);
+      const residualOutput = JSON.parse(residuals.stdout) as Record<string, unknown>;
+      expect(residualOutput).toMatchObject({
+        operationId: 'candidate-1',
+        assessmentSha256: semanticOutput.assessmentSha256,
+        residualTriangles: 4,
+        residualPatches: 1,
+        largestPatchTriangleCounts: [4],
+        state: 'quarantine',
+        runtimeAdmission: 'not-reviewed',
+        liveryReady: false,
+        creditsSpentByThisCommand: 0,
+      });
+      const residualReport = JSON.parse(
+        await readFile(
+          join(
+            meshyArchiveDirectory(cliDatabase),
+            `semantic-residual-topology-${String(residualOutput.reportSha256)}.json`,
+          ),
+          'utf8',
+        ),
+      ) as Record<string, unknown>;
+      expect(residualReport).toMatchObject({
+        algorithm: 'exact-coordinate-residual-edge-components-v1',
+        assessmentSha256: semanticOutput.assessmentSha256,
+        residualTriangles: 4,
+        residualPatches: [
+          {
+            patchId: 'residual_patch_001',
+            componentId: 'review_component_001',
+            triangles: 4,
+            componentLocalTriangleRanges: [{ startInclusive: 0, endExclusive: 4 }],
+            boundaryEdges: 0,
+            nonManifoldEdgesWithinPatch: 0,
+            coincidentTriangles: 0,
+            oppositeWindingTriangles: 0,
+          },
+        ],
+        state: 'quarantine',
+        runtimeAdmission: 'not-reviewed',
+        liveryReady: false,
+        creditsSpentByThisCommand: 0,
+      });
+      expect(residuals.stdout + residuals.stderr).not.toContain(sentinel);
+      expect(
+        run([
+          'residuals',
+          '--operation',
+          'candidate-1',
+          '--assessment-sha256',
+          String(semanticOutput.assessmentSha256),
+        ]).stdout,
+      ).toBe(residuals.stdout);
       const mismatchedReviewFile = join(directory, 'semantic-review-mismatched.json');
       await writeFile(
         mismatchedReviewFile,
