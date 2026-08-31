@@ -6,6 +6,8 @@ export interface SemanticWorkbenchDraftIdentity {
   operationId: string;
   derivativeSha256: string;
   inventoryReportSha256: string;
+  residualReportSha256?: string;
+  baselineReviewSha256?: string;
 }
 
 export interface SemanticWorkbenchDraft extends SemanticWorkbenchDraftIdentity {
@@ -28,14 +30,20 @@ function validIdentity(identity: SemanticWorkbenchDraftIdentity) {
   return (
     OPERATION.test(identity.operationId) &&
     DIGEST.test(identity.derivativeSha256) &&
-    DIGEST.test(identity.inventoryReportSha256)
+    DIGEST.test(identity.inventoryReportSha256) &&
+    (identity.residualReportSha256 === undefined || DIGEST.test(identity.residualReportSha256)) &&
+    (identity.baselineReviewSha256 === undefined || DIGEST.test(identity.baselineReviewSha256)) &&
+    (identity.residualReportSha256 === undefined) === (identity.baselineReviewSha256 === undefined)
   );
 }
 
 /** Scope browser storage to one exact immutable candidate and inventory. */
 export function semanticWorkbenchDraftKey(identity: SemanticWorkbenchDraftIdentity) {
   if (!validIdentity(identity)) throw new Error('Semantic workbench draft identity is invalid.');
-  return `tailfin:semantic-draft:v1:${identity.operationId}:${identity.derivativeSha256}:${identity.inventoryReportSha256}`;
+  const evidence = identity.residualReportSha256
+    ? `:${identity.residualReportSha256}:${identity.baselineReviewSha256}`
+    : '';
+  return `tailfin:semantic-draft:v1:${identity.operationId}:${identity.derivativeSha256}:${identity.inventoryReportSha256}${evidence}`;
 }
 
 /** Parse only a bounded, exact-identity draft; detailed face validation remains atomic at restore. */
@@ -56,6 +64,8 @@ export function parseSemanticWorkbenchDraft(
     value.operationId !== identity.operationId ||
     value.derivativeSha256 !== identity.derivativeSha256 ||
     value.inventoryReportSha256 !== identity.inventoryReportSha256 ||
+    value.residualReportSha256 !== identity.residualReportSha256 ||
+    value.baselineReviewSha256 !== identity.baselineReviewSha256 ||
     typeof value.reviewedAt !== 'string' ||
     !Number.isFinite(Date.parse(value.reviewedAt)) ||
     typeof value.reviewedBy !== 'string' ||

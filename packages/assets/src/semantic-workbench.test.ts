@@ -55,12 +55,21 @@ describe('local semantic review workbench boundary', () => {
     expect(
       parseSemanticWorkbenchArguments(['--operation', 'candidate-4', '--port', '49123']),
     ).toEqual({ operationId: 'candidate-4', port: 49123 });
+    expect(
+      parseSemanticWorkbenchArguments([
+        '--operation',
+        'candidate-1',
+        '--residual-sha256',
+        'c'.repeat(64),
+      ]),
+    ).toEqual({ operationId: 'candidate-1', port: 4183, residualSha256: 'c'.repeat(64) });
     for (const args of [
       [],
       ['--operation', 'candidate-5'],
       ['--operation', 'candidate-1', '--port', '80'],
       ['--operation', 'candidate-1', '--port', '65536'],
       ['--operation', 'candidate-1', '--host', '0.0.0.0'],
+      ['--operation', 'candidate-1', '--residual-sha256', 'not-a-digest'],
       ['--operation', 'candidate-1', '--operation', 'candidate-2'],
     ]) {
       expect(() => parseSemanticWorkbenchArguments(args)).toThrow();
@@ -96,6 +105,38 @@ describe('local semantic review workbench boundary', () => {
     expect(page).toContain('id="wireframe" aria-pressed="false"');
     expect(page).toContain('id="residual" aria-pressed="false"');
     expect(page).toContain('id="unassigned">Assign unassigned faces');
+    expect(page).toContain('id="assign-patch">Assign active patch');
     expect(page).toContain('button[aria-pressed="true"]');
+  });
+
+  it('serves named residual evidence only when the payload was hash-bound', async () => {
+    const running = await startSemanticWorkbenchServer(
+      {
+        ...payload(),
+        residual: Buffer.from('{"format":"residual"}'),
+        baselineReview: Buffer.from('{"format":"review"}'),
+        residualSha256: 'c'.repeat(64),
+        baselineReviewSha256: 'd'.repeat(64),
+      },
+      0,
+    );
+    servers.push(running);
+    const root = `http://127.0.0.1:${String(running.port)}`;
+    expect((await fetch(`${root}/residual.json`)).status).toBe(200);
+    expect((await fetch(`${root}/baseline-review.json`)).status).toBe(200);
+    const inventory = (await (await fetch(`${root}/inventory.json`)).json()) as Record<
+      string,
+      unknown
+    >;
+    expect(inventory).toMatchObject({
+      residualReportSha256: 'c'.repeat(64),
+      baselineReviewSha256: 'd'.repeat(64),
+    });
+    await expect(
+      startSemanticWorkbenchServer(
+        { ...payload(), residual: Buffer.from('{}'), residualSha256: 'c'.repeat(64) },
+        0,
+      ),
+    ).rejects.toThrow('residual evidence is incomplete');
   });
 });

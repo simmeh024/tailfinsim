@@ -399,18 +399,29 @@ content hashes, so a later reviewer cannot silently rewrite the evidence.
 
 ```bash
 pnpm assets:semantic-workbench -- --operation candidate-1 --port 4183
+
+# Optional residual-patch review mode. The digest must name an archived report.
+pnpm assets:semantic-workbench -- --operation candidate-1 --port 4183 \
+  --residual-sha256 <residual-report-sha256>
 ```
 
 The workbench binds only to `127.0.0.1`, accepts only exact-host GET requests and serves four
 no-store resources: the page, its locally bundled application, the hash-verified corrected GLB and
-the immutable inventory. It has no upload/write route, credential access, Meshy client, registry or
-fleet dependency. Its content-security policy forbids external resources and framing.
+the immutable inventory. Residual mode adds only the named, hash-verified residual report and its
+exact archived baseline review. It has no upload/write route, credential access, Meshy client,
+registry or fleet dependency. Its content-security policy forbids external resources and framing.
 
 The viewport retains the seven canonical camera views and supports orbit/zoom, component focusing,
 single-face assignment, Alt-click clearing and Shift-click edge-connected flood selection with an
 adjustable normal-angle threshold. Whole-component assignment is available for visually reviewed
 detached parts; the mixed centre-plane component remains a face-level task. Per-face diagnostic
 colours are review overlays, not aircraft materials.
+
+Residual mode restores the sealed baseline review, lists every exact edge-connected residual patch
+and highlights the active patch in yellow. Previous/next controls and the patch list frame its exact
+bounds. Assigning a patch affects only still-uncovered faces in its sealed component-local ranges;
+clearing a patch affects only those same ranges. Patch navigation never infers a semantic label and
+never edits the corrected derivative or archived baseline evidence.
 
 The operator can classify each target, record missing-geometry rationale, import a matching draft
 and download a review document. Export groups component-local face selections into deterministic
@@ -419,9 +430,11 @@ must validate and preserve it before any repair stage. Front-side rendering is i
 review does not conceal winding defects with a double-sided runtime material.
 
 In-progress selections, findings, reviewer, active controls and flood angle autosave in browser
-storage under the complete operation/derivative/inventory identity. A refresh restores only a
-bounded draft for that exact immutable candidate; stale or malformed storage is discarded before
-state changes. **Reset local draft** removes that browser-only state without touching quarantine
+storage under the complete operation/derivative/inventory identity. Residual-mode drafts also bind
+to the residual-report and baseline-review hashes, so neither evidence version can silently inherit
+another version's draft. A refresh restores only a bounded draft for that exact immutable candidate;
+stale or malformed storage is discarded before state changes. **Reset local draft** removes that
+browser-only state and restores the sealed baseline in residual mode without touching quarantine
 artifacts. Downloaded JSON remains the only input to the immutable `semantics --review-file`
 archive gate.
 
