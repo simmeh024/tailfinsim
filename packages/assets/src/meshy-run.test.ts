@@ -881,6 +881,16 @@ describe('operator command authority boundary', () => {
       ['account', '--max-credits', '40', '--max-credits', '40'],
       ['account', '--max-credits', '1135'],
       ['account', '--max-credits', '40', '--root', 'elsewhere'],
+      ['residual-review', '--operation', 'candidate-1'],
+      [
+        'residual-review',
+        '--operation',
+        'candidate-1',
+        '--residual-sha256',
+        'not-a-digest',
+        '--review-file',
+        'review.json',
+      ],
     ].map((args) => ({ args })),
   )('refuses unsafe options before file/network access: $args', ({ args }) => {
     expect(() => parseMeshyRunArguments(args)).toThrow();
@@ -891,5 +901,16 @@ describe('operator command authority boundary', () => {
     );
     expect(parseMeshyRunArguments(['status']).command).toBe('status');
     expect(parseMeshyRunArguments(['account', '--max-credits', '40']).command).toBe('account');
+    expect(
+      parseMeshyRunArguments([
+        'residual-review',
+        '--operation',
+        'candidate-1',
+        '--residual-sha256',
+        'a'.repeat(64),
+        '--review-file',
+        'review.json',
+      ]).command,
+    ).toBe('residual-review');
   });
 });

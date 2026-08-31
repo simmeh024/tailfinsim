@@ -477,6 +477,29 @@ Connectivity and normals are diagnostic evidence, not semantic inference. Every 
 human classification, and coincident faces are never deleted automatically. The command does not
 edit geometry, spend credits, change the run ledger, admit an asset or claim livery readiness.
 
+### Residual patch decision contract
+
+```bash
+pnpm assets:meshy-run -- residual-review \
+  --operation candidate-1 \
+  --residual-sha256 <residual-report-sha256> \
+  --review-file path/to/residual-review.json
+```
+
+The authored `tailfin-meshy-semantic-residual-review` document binds the exact residual report,
+reviewer and timestamp. It decides every sealed patch exactly once as existing geometry to assign
+to one semantic target, an artifact to discard, or geometry that must be repaired only in a new
+hash-addressed derivative. Every decision requires a rationale and one or more standard evidence
+views. Missing, duplicate, unknown or stale patch decisions are refused; only existing-geometry
+assignments may name a semantic target.
+
+The zero-credit command regenerates the residual report through its complete assessment, review,
+inventory and corrected-GLB chain before archiving the untouched authored review and deterministic
+assessment under content hashes. It does not apply assignments, discard faces, edit geometry or
+claim repair completion. Assign/discard decisions must still pass through a new semantic review;
+repair decisions remain explicit modeling obligations. Registry admission, livery readiness and
+fleet publication remain blocked behind the independent gates.
+
 ## Pinned strategy and vendor evidence
 
 The planning observation is dated 2026-08-28. Four untextured T2 candidates cost 5 credits each;
