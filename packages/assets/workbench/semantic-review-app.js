@@ -26,6 +26,11 @@ const elements = Object.fromEntries(
     'angle-value',
     'stats',
     'patch-stats',
+    'decision-progress',
+    'decision-resolution',
+    'decision-target',
+    'decision-rationale',
+    'decision-views',
     'patches',
     'components',
     'isolate',
@@ -40,6 +45,7 @@ const elements = Object.fromEntries(
     'clear-component',
     'reset-draft',
     'export',
+    'export-residual',
     'import',
   ].map((id) => [id, document.getElementById(id)]),
 );
@@ -49,6 +55,18 @@ const palette = [
   0x4ea6e8, 0x243b63, 0x3e84c4, 0x3e84c4, 0xffb45d, 0xffb45d, 0x76b56a, 0x76b56a, 0x56d39b,
   0x56d39b, 0x9a6fd0, 0x7db7c9, 0x7db7c9, 0xe98a55, 0xe98a55, 0x3a4652, 0x3a4652, 0xffed76,
   0x8e99a4, 0xe74747,
+];
+const evidenceViews = [
+  ['quarter', 'Quarter'],
+  ['left', 'Left'],
+  ['right', 'Right'],
+  ['top', 'Top'],
+  ['underside', 'Underside'],
+  ['nose', 'Nose'],
+  ['tail', 'Tail'],
+  ['winglet_left', 'Winglet left'],
+  ['winglet_right', 'Winglet right'],
+  ['tail_close_up', 'Tail close-up'],
 ];
 
 const setStatus = (message, error = false) => {
@@ -119,12 +137,23 @@ try {
   };
   const draftKey = semanticWorkbenchDraftKey(draftIdentity);
   let reviewedAt = new Date().toISOString();
+  let residualReviewedAt = new Date().toISOString();
   let draftEnabled = false;
   for (const target of targetMetadata) {
     const option = document.createElement('option');
     option.value = target.id;
     option.textContent = `${target.id.replaceAll('_', ' ')} · ${target.role}`;
     elements.target.append(option);
+    if (target.id !== 'discarded_artifact')
+      elements['decision-target'].append(option.cloneNode(true));
+  }
+  for (const [value, label] of evidenceViews) {
+    const wrapper = document.createElement('label');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = value;
+    wrapper.append(checkbox, label);
+    elements['decision-views'].append(wrapper);
   }
 
   const renderer = new THREE.WebGLRenderer({
@@ -169,6 +198,12 @@ try {
   let residualHighlightEnabled = false;
   let activePatchIndex = residualReport ? 0 : -1;
   let activePatchFaces = new Set();
+  const patchDecisions = new Map(
+    (residualReport?.residualPatches ?? []).map((patch) => [
+      patch.patchId,
+      { resolution: 'unreviewed', semanticTargetId: '', rationale: '', evidenceViews: [] },
+    ]),
+  );
 
   gltf.scene.traverse((object) => {
     if (!object.isMesh) return;
@@ -272,6 +307,40 @@ try {
     return box;
   }
 
+  function activePatchDecision() {
+    const patch = residualReport?.residualPatches[activePatchIndex];
+    return patch ? patchDecisions.get(patch.patchId) : null;
+  }
+
+  function syncPatchDecisionUi() {
+    const decision = activePatchDecision();
+    const disabled = !decision;
+    elements['decision-resolution'].disabled = disabled;
+    elements['decision-rationale'].disabled = disabled;
+    elements['decision-target'].disabled =
+      disabled || decision?.resolution !== 'assign_existing_geometry';
+    elements['decision-resolution'].value = decision?.resolution ?? 'unreviewed';
+    elements['decision-target'].value =
+      decision?.semanticTargetId || inventory.requiredSemanticTargets[0].id;
+    elements['decision-rationale'].value = decision?.rationale ?? '';
+    for (const checkbox of elements['decision-views'].querySelectorAll('input')) {
+      checkbox.disabled = disabled;
+      checkbox.checked = decision?.evidenceViews.includes(checkbox.value) ?? false;
+    }
+    elements['export-residual'].disabled = !residualReport;
+    const decisions = [...patchDecisions.values()];
+    const decided = decisions.filter((entry) => entry.resolution !== 'unreviewed').length;
+    const evidenced = decisions.filter(
+      (entry) =>
+        entry.resolution !== 'unreviewed' &&
+        entry.rationale.trim().length >= 12 &&
+        entry.evidenceViews.length > 0,
+    ).length;
+    elements['decision-progress'].textContent = residualReport
+      ? `Decided patches: ${String(decided)} / ${String(decisions.length)}\nWith rationale and evidence: ${String(evidenced)} / ${String(decisions.length)}`
+      : 'No residual decision review loaded.';
+  }
+
   function updatePatchUi() {
     const patch = residualReport?.residualPatches[activePatchIndex];
     for (const button of elements.patches.querySelectorAll('button'))
@@ -280,12 +349,14 @@ try {
       elements[id].disabled = !patch;
     if (!patch) {
       elements['patch-stats'].textContent = 'No residual report loaded.';
+      syncPatchDecisionUi();
       return;
     }
     const centre = patch.boundsCanonicalMetres.centre.map((value) => value.toFixed(2)).join(', ');
     const extent = patch.boundsCanonicalMetres.extent.map((value) => value.toFixed(2)).join(', ');
     elements['patch-stats'].textContent =
       `Patch: ${patch.patchId} (${String(activePatchIndex + 1)} / ${String(residualReport.residualPatches.length)})\nComponent: ${patch.componentId}\nTriangles: ${String(patch.triangles)}\nArea m²: ${String(patch.surfaceAreaSquareMetres)}\nCentre XYZ m: ${centre}\nExtent XYZ m: ${extent}\nBoundary edges: ${String(patch.boundaryEdges)}\nInternal non-manifold edges: ${String(patch.nonManifoldEdgesWithinPatch)}`;
+    syncPatchDecisionUi();
   }
 
   function selectResidualPatch(index, focus = true) {
@@ -360,6 +431,42 @@ try {
     const mesh = patch && meshById.get(patch.componentId);
     if (mesh) assign(mesh, [...activePatchFaces], null);
   };
+  elements['decision-resolution'].onchange = () => {
+    const decision = activePatchDecision();
+    if (!decision) return;
+    decision.resolution = elements['decision-resolution'].value;
+    decision.semanticTargetId =
+      decision.resolution === 'assign_existing_geometry' ? elements['decision-target'].value : '';
+    residualReviewedAt = new Date().toISOString();
+    syncPatchDecisionUi();
+    saveDraft();
+  };
+  elements['decision-target'].onchange = () => {
+    const decision = activePatchDecision();
+    if (!decision || decision.resolution !== 'assign_existing_geometry') return;
+    decision.semanticTargetId = elements['decision-target'].value;
+    residualReviewedAt = new Date().toISOString();
+    saveDraft();
+  };
+  elements['decision-rationale'].oninput = () => {
+    const decision = activePatchDecision();
+    if (!decision) return;
+    decision.rationale = elements['decision-rationale'].value;
+    residualReviewedAt = new Date().toISOString();
+    syncPatchDecisionUi();
+    saveDraft();
+  };
+  for (const checkbox of elements['decision-views'].querySelectorAll('input'))
+    checkbox.onchange = () => {
+      const decision = activePatchDecision();
+      if (!decision) return;
+      decision.evidenceViews = [
+        ...elements['decision-views'].querySelectorAll('input:checked'),
+      ].map((input) => input.value);
+      residualReviewedAt = new Date().toISOString();
+      syncPatchDecisionUi();
+      saveDraft();
+    };
 
   for (const component of inventory.components) {
     const button = document.createElement('button');
@@ -562,7 +669,10 @@ try {
     if (finding) finding.rationale = elements.rationale.value.trim();
     saveDraft();
   };
-  elements.reviewer.oninput = saveDraft;
+  elements.reviewer.oninput = () => {
+    if (residualReport) residualReviewedAt = new Date().toISOString();
+    saveDraft();
+  };
 
   function draftState() {
     return {
@@ -587,6 +697,16 @@ try {
         targetMetadata.map((target) => target.id),
         assignments,
       ),
+      ...(residualReport
+        ? {
+            activePatchIndex,
+            residualReviewedAt,
+            patchDecisions: residualReport.residualPatches.map((patch) => ({
+              patchId: patch.patchId,
+              ...patchDecisions.get(patch.patchId),
+            })),
+          }
+        : {}),
     };
   }
 
@@ -656,8 +776,54 @@ try {
     return { stagedFindings, imported };
   }
 
+  function stagePatchDecisionDraft(review) {
+    if (!residualReport || review.patchDecisions === undefined) return null;
+    if (
+      !Number.isInteger(review.activePatchIndex) ||
+      review.activePatchIndex < 0 ||
+      review.activePatchIndex >= residualReport.residualPatches.length ||
+      !Number.isFinite(Date.parse(review.residualReviewedAt)) ||
+      review.patchDecisions.length !== residualReport.residualPatches.length
+    )
+      throw new Error('Residual patch draft controls are stale.');
+    const allowedPatchIds = new Set(residualReport.residualPatches.map((patch) => patch.patchId));
+    const allowedTargets = new Set(inventory.requiredSemanticTargets.map((target) => target.id));
+    const allowedViews = new Set(evidenceViews.map(([value]) => value));
+    const staged = new Map();
+    for (const decision of review.patchDecisions) {
+      const hasTarget = (decision.semanticTargetId ?? '') !== '';
+      if (
+        !allowedPatchIds.has(decision.patchId) ||
+        staged.has(decision.patchId) ||
+        ![
+          'unreviewed',
+          'assign_existing_geometry',
+          'discard_artifact',
+          'repair_into_new_derivative',
+        ].includes(decision.resolution) ||
+        (decision.resolution === 'assign_existing_geometry') !== hasTarget ||
+        (hasTarget && !allowedTargets.has(decision.semanticTargetId)) ||
+        typeof decision.rationale !== 'string' ||
+        decision.rationale.length > 500 ||
+        !Array.isArray(decision.evidenceViews) ||
+        decision.evidenceViews.length > evidenceViews.length ||
+        new Set(decision.evidenceViews).size !== decision.evidenceViews.length ||
+        decision.evidenceViews.some((view) => !allowedViews.has(view))
+      )
+        throw new Error('Residual patch draft decision is invalid.');
+      staged.set(decision.patchId, {
+        resolution: decision.resolution,
+        semanticTargetId: decision.semanticTargetId ?? '',
+        rationale: decision.rationale,
+        evidenceViews: [...decision.evidenceViews],
+      });
+    }
+    return staged;
+  }
+
   function applyReviewState(review, draft = false) {
     const { stagedFindings, imported } = stageReviewState(review, draft);
+    const stagedPatchDecisions = draft ? stagePatchDecisionDraft(review) : null;
     findings.clear();
     for (const [targetId, finding] of stagedFindings) findings.set(targetId, finding);
     for (const [componentId, values] of imported) assignments.set(componentId, values);
@@ -668,6 +834,13 @@ try {
       elements.angle.value = String(review.floodAngle);
       elements['angle-value'].textContent = `${String(review.floodAngle)}°`;
       activeComponent = review.activeComponentId;
+      if (stagedPatchDecisions) {
+        patchDecisions.clear();
+        for (const [patchId, decision] of stagedPatchDecisions)
+          patchDecisions.set(patchId, decision);
+        activePatchIndex = review.activePatchIndex;
+        residualReviewedAt = review.residualReviewedAt;
+      }
     }
     for (const mesh of meshes) renderColors(mesh);
     syncFindingUi();
@@ -711,6 +884,47 @@ try {
     };
   }
 
+  function buildResidualReview() {
+    if (!residualReport) throw new Error('No sealed residual report is loaded.');
+    const reviewer = elements.reviewer.value.trim();
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9 ._-]{1,79}$/.test(reviewer))
+      throw new Error('Enter a valid reviewer name.');
+    const decisions = residualReport.residualPatches.map((patch) => {
+      const decision = patchDecisions.get(patch.patchId);
+      if (!decision || decision.resolution === 'unreviewed')
+        throw new Error('Decide every residual patch before downloading the decision review.');
+      const rationale = decision.rationale.trim();
+      if (rationale.length < 12)
+        throw new Error(`${patch.patchId} requires a rationale of at least 12 characters.`);
+      if (!decision.evidenceViews.length)
+        throw new Error(`${patch.patchId} requires at least one evidence view.`);
+      if (
+        decision.resolution === 'assign_existing_geometry' &&
+        !inventory.requiredSemanticTargets.some((target) => target.id === decision.semanticTargetId)
+      )
+        throw new Error(`${patch.patchId} requires one valid semantic assignment target.`);
+      return {
+        patchId: patch.patchId,
+        resolution: decision.resolution,
+        ...(decision.resolution === 'assign_existing_geometry'
+          ? { semanticTargetId: decision.semanticTargetId }
+          : {}),
+        rationale,
+        evidenceViews: [...decision.evidenceViews],
+      };
+    });
+    return {
+      format: 'tailfin-meshy-semantic-residual-review',
+      formatVersion: 1,
+      operationId: inventory.operationId,
+      residualReportSha256: inventory.residualReportSha256,
+      reviewedAt: residualReviewedAt,
+      reviewedBy: reviewer,
+      decisions,
+      notes: ['Authored in the Tailfin local residual-patch review workbench.'],
+    };
+  }
+
   elements.export.onclick = () => {
     try {
       const review = buildReview();
@@ -723,6 +937,23 @@ try {
       setStatus('Review JSON downloaded. Validate it with the semantics CLI before any repair.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Review export refused.', true);
+    }
+  };
+
+  elements['export-residual'].onclick = () => {
+    try {
+      const review = buildResidualReview();
+      const blob = new Blob([`${JSON.stringify(review, null, 2)}\n`], {
+        type: 'application/json',
+      });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${inventory.operationId}-residual-review.json`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 0);
+      setStatus('Patch decisions downloaded. Seal them with the residual-review CLI.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Patch decision export refused.', true);
     }
   };
 
@@ -758,6 +989,14 @@ try {
     elements.angle.value = '25';
     elements['angle-value'].textContent = '25°';
     activeComponent = inventory.components[0].componentId;
+    residualReviewedAt = new Date().toISOString();
+    activePatchIndex = residualReport ? 0 : -1;
+    for (const decision of patchDecisions.values()) {
+      decision.resolution = 'unreviewed';
+      decision.semanticTargetId = '';
+      decision.rationale = '';
+      decision.evidenceViews = [];
+    }
     if (baselineReview) applyReviewState(baselineReview);
     else {
       for (const target of inventory.requiredSemanticTargets)
@@ -771,6 +1010,8 @@ try {
       syncFindingUi();
     }
     draftEnabled = true;
+    if (residualReport) selectResidualPatch(activePatchIndex, false);
+    else syncPatchDecisionUi();
     setStatus(
       baselineReview
         ? 'Local draft cleared. The sealed baseline review was restored.'
@@ -874,7 +1115,7 @@ try {
   draftEnabled = true;
   selectComponent(activeComponent);
   syncFindingUi();
-  if (residualReport) selectResidualPatch(0);
+  if (residualReport) selectResidualPatch(restored ? activePatchIndex : 0);
   else setView([1, 0.55, 1]);
   updatePatchUi();
   setStatus(

@@ -423,6 +423,13 @@ bounds. Assigning a patch affects only still-uncovered faces in its sealed compo
 clearing a patch affects only those same ranges. Patch navigation never infers a semantic label and
 never edits the corrected derivative or archived baseline evidence.
 
+For each patch, the operator can separately record an assign-existing, discard-artifact or
+repair-in-new-derivative decision, a bounded rationale and the standard camera views actually used
+as evidence. Decision progress autosaves with the hash-scoped browser draft. **Download patch
+decisions** remains blocked until all patches are decided with a rationale and evidence; it emits
+the authored residual-review document for the separate immutable CLI gate and does not apply the
+decisions to geometry.
+
 The operator can classify each target, record missing-geometry rationale, import a matching draft
 and download a review document. Export groups component-local face selections into deterministic
 half-open ranges. The browser cannot archive or approve that file: the separate `semantics` command

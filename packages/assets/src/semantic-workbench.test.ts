@@ -106,6 +106,9 @@ describe('local semantic review workbench boundary', () => {
     expect(page).toContain('id="residual" aria-pressed="false"');
     expect(page).toContain('id="unassigned">Assign unassigned faces');
     expect(page).toContain('id="assign-patch">Assign active patch');
+    expect(page).toContain('id="export-residual" class="primary">Download patch decisions');
+    expect(page).toContain('id="decision-resolution"');
+    expect(page).toContain('id="decision-views" class="checks"');
     expect(page).toContain('button[aria-pressed="true"]');
   });
 
