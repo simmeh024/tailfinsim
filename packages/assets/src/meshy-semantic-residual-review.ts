@@ -61,7 +61,7 @@ export const MeshySemanticResidualReview = z
   .strict();
 export type MeshySemanticResidualReview = z.infer<typeof MeshySemanticResidualReview>;
 
-const ResidualReport = z
+export const MeshySemanticResidualReportSchema = z
   .object({
     format: z.literal('tailfin-meshy-semantic-residual-topology'),
     formatVersion: z.literal(1),
@@ -97,7 +97,7 @@ const ResidualReport = z
       .max(100_000),
   })
   .passthrough();
-export type MeshySemanticResidualReport = z.infer<typeof ResidualReport>;
+export type MeshySemanticResidualReport = z.infer<typeof MeshySemanticResidualReportSchema>;
 
 /** Validate a complete human decision for every sealed patch without changing geometry. */
 export function assessMeshySemanticResidualReview(
@@ -106,7 +106,7 @@ export function assessMeshySemanticResidualReview(
   residualReportSha256: string,
 ) {
   const parsed = MeshySemanticResidualReview.parse(input);
-  const residual = ResidualReport.parse(residualInput);
+  const residual = MeshySemanticResidualReportSchema.parse(residualInput);
   const digest = Digest.parse(residualReportSha256);
   if (parsed.operationId !== residual.operationId || parsed.residualReportSha256 !== digest)
     throw new Error('Residual review identity does not match the sealed report.');
