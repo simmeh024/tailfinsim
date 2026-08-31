@@ -14,6 +14,7 @@ import { archiveMeshyReview } from './meshy-review-archive';
 import { assertMeshyRunCap, meshyRunApprovalIdentity } from './meshy-run';
 import { archiveMeshySemanticInventory } from './meshy-semantic-inventory-archive';
 import { archiveMeshySemanticRepairRequirements } from './meshy-semantic-repair-requirements-archive';
+import { archiveMeshySemanticResiduals } from './meshy-semantic-residuals-archive';
 import { archiveMeshySemanticReview } from './meshy-semantic-review-archive';
 import { MeshyRunStore, meshyRunDatabasePath } from './meshy-store';
 import { submitMeshyCandidate } from './meshy-submit';
@@ -28,6 +29,7 @@ export const MESHY_RUN_USAGE =
   '       assets:meshy-run inventory --operation candidate-1..4\n' +
   '       assets:meshy-run semantics --operation candidate-1..4 --review-file PATH\n' +
   '       assets:meshy-run repair-requirements --operation candidate-1..4 --assessment-sha256 SHA256\n' +
+  '       assets:meshy-run residuals --operation candidate-1..4 --assessment-sha256 SHA256\n' +
   '       assets:meshy-run account --max-credits 1..40 [--key-file PATH]\n' +
   '       assets:meshy-run prepare --evidence-file PATH --max-credits 1..40\n' +
   '       assets:meshy-run provenance --operation candidate-1..4 --max-credits 1..40\n' +
@@ -56,6 +58,7 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
       'inventory',
       'semantics',
       'repair-requirements',
+      'residuals',
     ].includes(command ?? '')
   )
     throw new Error('Unknown Meshy run command.');
@@ -76,7 +79,7 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
                   ? ['--operation', '--axis-review-file']
                   : command === 'semantics'
                     ? ['--operation', '--review-file']
-                    : command === 'repair-requirements'
+                    : ['repair-requirements', 'residuals'].includes(command ?? '')
                       ? ['--operation', '--assessment-sha256']
                       : ['audit', 'review', 'correct', 'inventory'].includes(command ?? '')
                         ? ['--operation']
@@ -110,6 +113,7 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
       'inventory',
       'semantics',
       'repair-requirements',
+      'residuals',
     ].includes(command!) &&
     !/^candidate-[1-4]$/.test(options.get('--operation') ?? '')
   )
@@ -123,7 +127,7 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
   if (command === 'semantics' && !options.has('--review-file'))
     throw new Error('Semantic review required.');
   if (
-    command === 'repair-requirements' &&
+    ['repair-requirements', 'residuals'].includes(command!) &&
     !/^[a-f0-9]{64}$/.test(options.get('--assessment-sha256') ?? '')
   )
     throw new Error('Semantic assessment SHA-256 required.');
@@ -315,6 +319,30 @@ export async function runMeshyRunCommand(
       state: requirements.state,
       runtimeAdmission: requirements.runtimeAdmission,
       liveryReady: requirements.liveryReady,
+      creditsSpentByThisCommand: 0,
+    });
+  }
+  if (command === 'residuals') {
+    const { operationId, reportSha256, report } = await archiveMeshySemanticResiduals(
+      meshyArchiveDirectory(database),
+      options.get('--operation')!,
+      options.get('--assessment-sha256')!,
+    );
+    return canonicalJson({
+      operationId,
+      reportSha256,
+      assessmentSha256: report.assessmentSha256,
+      residualTriangles: report.residualTriangles,
+      residualPatches: report.residualPatches.length,
+      largestPatchTriangleCounts: report.residualPatches
+        .map((patch) => patch.triangles)
+        .sort((a, b) => b - a)
+        .slice(0, 12),
+      patchesWithCoincidentTriangles: report.patchesWithCoincidentTriangles,
+      patchesWithOppositeWindingTriangles: report.patchesWithOppositeWindingTriangles,
+      state: report.state,
+      runtimeAdmission: report.runtimeAdmission,
+      liveryReady: report.liveryReady,
       creditsSpentByThisCommand: 0,
     });
   }
