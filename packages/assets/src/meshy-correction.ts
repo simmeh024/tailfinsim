@@ -19,7 +19,10 @@ function bounds(points: readonly Point[]) {
 
 const dot = (a: Point, b: Point) => a.reduce((sum, n, axis) => sum + n * b[axis]!, 0);
 
-function buildFlatParts(parts: { id: string; positions: Point[] }[]) {
+export function buildFlatMeshyParts(
+  parts: { id: string; positions: Point[] }[],
+  generator = 'Tailfin quarantine proportion correction v1',
+) {
   const chunks: Buffer[] = [];
   const bufferViews: { buffer: 0; byteOffset: number; byteLength: number; target: 34962 }[] = [];
   const accessors: {
@@ -75,7 +78,7 @@ function buildFlatParts(parts: { id: string; positions: Point[] }[]) {
   const binary = Buffer.concat(chunks);
   const json = Buffer.from(
     canonicalJson({
-      asset: { version: '2.0', generator: 'Tailfin quarantine proportion correction v1' },
+      asset: { version: '2.0', generator },
       scene: 0,
       scenes: [{ nodes: parts.map((_, index) => index) }],
       nodes: parts.map((part, mesh) => ({ mesh, name: part.id })),
@@ -193,7 +196,7 @@ export function correctA320neoProportions(reviewGlb: Uint8Array, axisMatrix: rea
     });
     return { id, positions };
   });
-  const glb = buildFlatParts(parts);
+  const glb = buildFlatMeshyParts(parts);
   const after = auditMeshyGeometry(glb).metrics;
   if (
     Math.abs(after.boundsSourceUnits.extent[0]! - WINGSPAN_METRES) > 1e-4 ||

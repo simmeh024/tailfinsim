@@ -507,6 +507,34 @@ claim repair completion. Assign/discard decisions must still pass through a new 
 repair decisions remain explicit modeling obligations. Registry admission, livery readiness and
 fleet publication remain blocked behind the independent gates.
 
+### Semantic repair authoring scaffold
+
+```bash
+pnpm assets:meshy-run -- repair-scaffold \
+  --operation candidate-1 \
+  --repair-plan-sha256 <repair-plan-sha256>
+```
+
+This zero-credit command regenerates a DCC-ready GLB from the corrected derivative, the sealed
+baseline semantic review and the exact residual repair plan. It does not move vertices or invent
+missing geometry. Reviewed source faces are regrouped under canonical semantic node names; all
+patches requiring modeling are kept in explicit `repair__review_component_NNN` nodes. The report
+retains the patch IDs and triangle counts behind each repair node, while the immutable plan remains
+the authoritative component-local source mapping.
+
+The command refuses stale hashes, unknown components, overlapping selections, incomplete source
+coverage and out-of-range faces. Discarded artifacts, when explicitly reviewed, are omitted; every
+other source triangle must appear exactly once. The scaffold remains quarantined with
+`authoringComplete: false`, `repairComplete: false` and `liveryReady: false`. A DCC-authored export
+must receive a new derivative hash and separately prove the six currently missing modeled targets,
+topology, protected materials and visual quality before admission.
+
+Candidate 1's deterministic scaffold preserves all 15,423 source triangles, creates one unresolved
+repair node for the 76 repair patches, and records cockpit glass, left/right cabin windows,
+left/right doors and lights as still missing. Its private scaffold derivative SHA is
+`1d72a25551b4127cef21ab55aacb1127601877465a0834b32baa27a766a38107`; report SHA is
+`3d6f122eec1ef22095b04ae67a792f017605c04beff2391a7c219c49a36ead1d`.
+
 ## Pinned strategy and vendor evidence
 
 The planning observation is dated 2026-08-28. Four untextured T2 candidates cost 5 credits each;
