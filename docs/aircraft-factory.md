@@ -557,6 +557,39 @@ untouched authored GLB and manifest under content hashes. Passing this gate does
 model: topology, visual and licensing reviews remain false, so `repairComplete`, runtime admission
 and livery readiness remain blocked.
 
+### Blender semantic repair authoring v1
+
+The checked-in `packages/assets/blender/a320neo_semantic_repair_v1.py` is the reproducible Blender
+5.2 LTS source for the first clean replacement derivative. Run it against a factory startup so no
+user add-on, startup scene or mutable preference affects the output:
+
+```powershell
+& 'C:\Program Files\Blender Foundation\Blender 5.2\blender.exe' `
+  --background --factory-startup `
+  --python packages\assets\blender\a320neo_semantic_repair_v1.py -- `
+  --output-glb path\to\a320neo-semantic-repair-v1.glb `
+  --output-blend path\to\a320neo-semantic-repair-v1.blend
+```
+
+The script authors all 18 required gear-up semantic objects directly in Tailfin's metre-scale
+`+X right, +Y up, -Z forward` frame and writes a narrow corner-expanded GLB without textures,
+materials or transforms. The `.blend` file is the editable DCC source; neither generated file is
+committed. Cabin windows are individual opaque geometry, doors are dedicated overlay geometry,
+and cockpit glazing, engine interiors and lights have protected semantic identities.
+
+Blender 5.2.1 LTS produced a 1,057,284-byte, 14,556-triangle v1 derivative with zero degenerate or
+duplicate triangles, zero non-manifold or inconsistent-winding edges, 35.7999992 m span,
+37.5699997 m length and 0.99825 bilateral voxel-reflection IoU. Two clean factory-startup runs
+produced the same GLB SHA-256:
+`a2106ccfa8ab59232e834f5baf2b98984cb019526f453895873f1e192104d3f1`.
+
+Structural intake assessment
+`8d21963dff40e675fa5564b66e448427a2cf34289ed7d7fd0b8f0ad670917ef9` confirms every scaffold
+repair node is resolved and every required semantic target is evidenced. It deliberately retains
+`repairComplete: false`: visual review found that wing airfoils, pylons, cockpit-glazing placement,
+nacelle ends and tail shaping still need refinement. Topology, licensing, visual and performance
+approval remain independent gates.
+
 ## Pinned strategy and vendor evidence
 
 The planning observation is dated 2026-08-28. Four untextured T2 candidates cost 5 credits each;
