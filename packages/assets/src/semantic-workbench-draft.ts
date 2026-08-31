@@ -24,6 +24,16 @@ export interface SemanticWorkbenchDraft extends SemanticWorkbenchDraftIdentity {
     componentId: string;
     ranges: { startInclusive: number; endExclusive: number }[];
   }[];
+  activePatchIndex?: number;
+  residualReviewedAt?: string;
+  patchDecisions?: {
+    patchId: string;
+    resolution:
+      'unreviewed' | 'assign_existing_geometry' | 'discard_artifact' | 'repair_into_new_derivative';
+    semanticTargetId?: string;
+    rationale: string;
+    evidenceViews: string[];
+  }[];
 }
 
 function validIdentity(identity: SemanticWorkbenchDraftIdentity) {
@@ -77,7 +87,37 @@ export function parseSemanticWorkbenchDraft(
     !Array.isArray(value.targetFindings) ||
     value.targetFindings.length > 64 ||
     !Array.isArray(value.dispositions) ||
-    value.dispositions.length > 4096
+    value.dispositions.length > 4096 ||
+    (value.activePatchIndex !== undefined &&
+      (!Number.isInteger(value.activePatchIndex) ||
+        value.activePatchIndex < 0 ||
+        value.activePatchIndex >= 100_000)) ||
+    (value.residualReviewedAt !== undefined &&
+      (typeof value.residualReviewedAt !== 'string' ||
+        !Number.isFinite(Date.parse(value.residualReviewedAt)))) ||
+    (value.patchDecisions !== undefined &&
+      (!identity.residualReportSha256 ||
+        !Array.isArray(value.patchDecisions) ||
+        value.patchDecisions.length > 100_000 ||
+        value.patchDecisions.some(
+          (decision) =>
+            !decision ||
+            typeof decision !== 'object' ||
+            !/^residual_patch_\d{3,6}$/.test(decision.patchId) ||
+            ![
+              'unreviewed',
+              'assign_existing_geometry',
+              'discard_artifact',
+              'repair_into_new_derivative',
+            ].includes(decision.resolution) ||
+            (decision.semanticTargetId !== undefined &&
+              typeof decision.semanticTargetId !== 'string') ||
+            typeof decision.rationale !== 'string' ||
+            decision.rationale.length > 500 ||
+            !Array.isArray(decision.evidenceViews) ||
+            decision.evidenceViews.length > 10 ||
+            decision.evidenceViews.some((view) => typeof view !== 'string'),
+        )))
   ) {
     throw new Error('Semantic workbench draft is invalid or stale.');
   }

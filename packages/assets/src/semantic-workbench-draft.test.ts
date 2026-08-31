@@ -41,10 +41,23 @@ describe('semantic workbench local drafts', () => {
     );
     expect(
       parseSemanticWorkbenchDraft(
-        JSON.stringify({ ...draft, ...residualIdentity }),
+        JSON.stringify({
+          ...draft,
+          ...residualIdentity,
+          activePatchIndex: 0,
+          residualReviewedAt: '2026-08-31T04:00:00.000Z',
+          patchDecisions: [
+            {
+              patchId: 'residual_patch_001',
+              resolution: 'repair_into_new_derivative',
+              rationale: 'This patch crosses multiple semantic surfaces.',
+              evidenceViews: ['tail', 'top'],
+            },
+          ],
+        }),
         residualIdentity,
       ),
-    ).toMatchObject(residualIdentity);
+    ).toMatchObject({ ...residualIdentity, activePatchIndex: 0 });
   });
 
   it('accepts a matching bounded draft without rewriting it', () => {
@@ -80,5 +93,21 @@ describe('semantic workbench local drafts', () => {
     expect(() =>
       semanticWorkbenchDraftKey({ ...identity, residualReportSha256: 'c'.repeat(64) }),
     ).toThrow('identity is invalid');
+    expect(() =>
+      parseSemanticWorkbenchDraft(
+        JSON.stringify({
+          ...draft,
+          patchDecisions: [
+            {
+              patchId: '../patch',
+              resolution: 'unreviewed',
+              rationale: '',
+              evidenceViews: [],
+            },
+          ],
+        }),
+        identity,
+      ),
+    ).toThrow('invalid or stale');
   });
 });
