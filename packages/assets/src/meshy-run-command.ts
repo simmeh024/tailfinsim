@@ -13,6 +13,7 @@ import { sealMeshyCandidateProvenance } from './meshy-provenance';
 import { archiveMeshyReview } from './meshy-review-archive';
 import { assertMeshyRunCap, meshyRunApprovalIdentity } from './meshy-run';
 import { archiveMeshySemanticInventory } from './meshy-semantic-inventory-archive';
+import { archiveMeshySemanticRepairPlan } from './meshy-semantic-repair-plan-archive';
 import { archiveMeshySemanticRepairRequirements } from './meshy-semantic-repair-requirements-archive';
 import { archiveMeshySemanticResidualReview } from './meshy-semantic-residual-review-archive';
 import { archiveMeshySemanticResiduals } from './meshy-semantic-residuals-archive';
@@ -32,6 +33,7 @@ export const MESHY_RUN_USAGE =
   '       assets:meshy-run repair-requirements --operation candidate-1..4 --assessment-sha256 SHA256\n' +
   '       assets:meshy-run residuals --operation candidate-1..4 --assessment-sha256 SHA256\n' +
   '       assets:meshy-run residual-review --operation candidate-1..4 --residual-sha256 SHA256 --review-file PATH\n' +
+  '       assets:meshy-run repair-plan --operation candidate-1..4 --residual-review-sha256 SHA256\n' +
   '       assets:meshy-run account --max-credits 1..40 [--key-file PATH]\n' +
   '       assets:meshy-run prepare --evidence-file PATH --max-credits 1..40\n' +
   '       assets:meshy-run provenance --operation candidate-1..4 --max-credits 1..40\n' +
@@ -62,6 +64,7 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
       'repair-requirements',
       'residuals',
       'residual-review',
+      'repair-plan',
     ].includes(command ?? '')
   )
     throw new Error('Unknown Meshy run command.');
@@ -84,11 +87,13 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
                     ? ['--operation', '--review-file']
                     : command === 'residual-review'
                       ? ['--operation', '--residual-sha256', '--review-file']
-                      : ['repair-requirements', 'residuals'].includes(command ?? '')
-                        ? ['--operation', '--assessment-sha256']
-                        : ['audit', 'review', 'correct', 'inventory'].includes(command ?? '')
-                          ? ['--operation']
-                          : [];
+                      : command === 'repair-plan'
+                        ? ['--operation', '--residual-review-sha256']
+                        : ['repair-requirements', 'residuals'].includes(command ?? '')
+                          ? ['--operation', '--assessment-sha256']
+                          : ['audit', 'review', 'correct', 'inventory'].includes(command ?? '')
+                            ? ['--operation']
+                            : [];
   const options = new Map<string, string>();
   for (let index = 1; index < args.length; index += 2) {
     const key = args[index];
@@ -120,6 +125,7 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
       'repair-requirements',
       'residuals',
       'residual-review',
+      'repair-plan',
     ].includes(command!) &&
     !/^candidate-[1-4]$/.test(options.get('--operation') ?? '')
   )
@@ -143,6 +149,11 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
     !/^[a-f0-9]{64}$/.test(options.get('--assessment-sha256') ?? '')
   )
     throw new Error('Semantic assessment SHA-256 required.');
+  if (
+    command === 'repair-plan' &&
+    !/^[a-f0-9]{64}$/.test(options.get('--residual-review-sha256') ?? '')
+  )
+    throw new Error('Residual review assessment SHA-256 required.');
   return { command, options };
 }
 
@@ -377,6 +388,27 @@ export async function runMeshyRunCommand(
       state: assessment.state,
       runtimeAdmission: assessment.runtimeAdmission,
       liveryReady: assessment.liveryReady,
+      creditsSpentByThisCommand: 0,
+    });
+  }
+  if (command === 'repair-plan') {
+    const { operationId, planSha256, plan } = await archiveMeshySemanticRepairPlan(
+      meshyArchiveDirectory(database),
+      options.get('--operation')!,
+      options.get('--residual-review-sha256')!,
+    );
+    return canonicalJson({
+      operationId,
+      planSha256,
+      sourceDerivativeSha256: plan.sourceDerivativeSha256,
+      components: plan.componentPlans.length,
+      patchCounts: plan.patchCounts,
+      triangleCounts: plan.triangleCounts,
+      repairDerivativeRequired: plan.repairDerivativeRequired,
+      repairComplete: plan.repairComplete,
+      state: plan.state,
+      runtimeAdmission: plan.runtimeAdmission,
+      liveryReady: plan.liveryReady,
       creditsSpentByThisCommand: 0,
     });
   }

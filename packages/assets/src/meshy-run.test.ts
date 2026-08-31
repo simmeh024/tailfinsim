@@ -882,6 +882,8 @@ describe('operator command authority boundary', () => {
       ['account', '--max-credits', '1135'],
       ['account', '--max-credits', '40', '--root', 'elsewhere'],
       ['residual-review', '--operation', 'candidate-1'],
+      ['repair-plan', '--operation', 'candidate-1'],
+      ['repair-plan', '--operation', 'candidate-1', '--residual-review-sha256', 'not-a-digest'],
       [
         'residual-review',
         '--operation',
@@ -912,5 +914,14 @@ describe('operator command authority boundary', () => {
         'review.json',
       ]).command,
     ).toBe('residual-review');
+    expect(
+      parseMeshyRunArguments([
+        'repair-plan',
+        '--operation',
+        'candidate-1',
+        '--residual-review-sha256',
+        'b'.repeat(64),
+      ]).command,
+    ).toBe('repair-plan');
   });
 });
