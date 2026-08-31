@@ -49,7 +49,8 @@ def mesh_object(name, vertices, faces, smooth=False):
 
 
 def fuselage():
-    segments, rings = 76, 64
+    # Leave enough of the 15k-triangle LOD0 budget for shaped lifting surfaces and pylons.
+    segments, rings = 72, 62
     vertices = [(0.0, FUSELAGE_CY, -LENGTH / 2)]
     for ring in range(1, rings):
         t = ring / rings
@@ -99,22 +100,117 @@ def prism(name, polygon_xz, bottom_y, top_y):
     return mesh_object(name, vertices, faces)
 
 
+def append_prism(vertices, faces, polygon_xz, bottom_y, top_y):
+    """Append a closed prism to an existing semantic mesh."""
+    offset = len(vertices)
+    count = len(polygon_xz)
+    vertices.extend((x, bottom_y, z) for x, z in polygon_xz)
+    vertices.extend((x, top_y, z) for x, z in polygon_xz)
+    for index in range(1, count - 1):
+        faces.append((offset, offset + index + 1, offset + index))
+        faces.append((offset + count, offset + count + index, offset + count + index + 1))
+    for index in range(count):
+        nxt = (index + 1) % count
+        faces.extend((
+            (offset + index, offset + nxt, offset + count + nxt),
+            (offset + index, offset + count + nxt, offset + count + index),
+        ))
+
+
+def append_x_prism(vertices, faces, polygon_yz, left_x, right_x):
+    """Append a closed side-profile prism to an existing semantic mesh."""
+    offset = len(vertices)
+    count = len(polygon_yz)
+    vertices.extend((left_x, y, z) for y, z in polygon_yz)
+    vertices.extend((right_x, y, z) for y, z in polygon_yz)
+    for index in range(1, count - 1):
+        faces.append((offset, offset + index, offset + index + 1))
+        faces.append((offset + count, offset + count + index + 1, offset + count + index))
+    for index in range(count):
+        nxt = (index + 1) % count
+        faces.extend((
+            (offset + index, offset + count + nxt, offset + nxt),
+            (offset + index, offset + count + index, offset + count + nxt),
+        ))
+
+
+def airfoil(name, stations, chord_samples=10):
+    """Create a closed, tapered symmetric airfoil from (x, leading_z, trailing_z, y, thickness)."""
+    vertices = []
+    for x, leading_z, trailing_z, centre_y, thickness in stations:
+        chord = trailing_z - leading_z
+        for upper in (True, False):
+            for sample in range(chord_samples):
+                u = sample / (chord_samples - 1)
+                z = leading_z + chord * u
+                # A small finite edge thickness avoids coincident vertices/degenerate triangles.
+                half_thickness = thickness * (0.035 + 0.965 * math.sin(math.pi * u) ** 0.72) / 2
+                camber = thickness * 0.055 * math.sin(math.pi * u)
+                y = centre_y + camber + (half_thickness if upper else -half_thickness)
+                vertices.append((x, y, z))
+
+    faces = []
+    stride = chord_samples * 2
+    for station in range(len(stations) - 1):
+        current, nxt = station * stride, (station + 1) * stride
+        for sample in range(chord_samples - 1):
+            # Upper and lower skins.
+            a, b = current + sample, current + sample + 1
+            c, d = nxt + sample, nxt + sample + 1
+            faces.extend(((a, d, b), (a, c, d)))
+            a, b = current + chord_samples + sample, current + chord_samples + sample + 1
+            c, d = nxt + chord_samples + sample, nxt + chord_samples + sample + 1
+            faces.extend(((a, b, d), (a, d, c)))
+        # Close leading and trailing edges between stations.
+        upper_a, lower_a = current, current + chord_samples
+        upper_b, lower_b = nxt, nxt + chord_samples
+        faces.extend(((upper_a, lower_a, lower_b), (upper_a, lower_b, upper_b)))
+        sample = chord_samples - 1
+        upper_a, lower_a = current + sample, current + chord_samples + sample
+        upper_b, lower_b = nxt + sample, nxt + chord_samples + sample
+        faces.extend(((upper_a, lower_b, lower_a), (upper_a, upper_b, lower_b)))
+
+    # Close root and tip sections.
+    for station in (0, len(stations) - 1):
+        start = station * stride
+        reverse = station == len(stations) - 1
+        for sample in range(chord_samples - 1):
+            quad = (
+                start + sample,
+                start + sample + 1,
+                start + chord_samples + sample + 1,
+                start + chord_samples + sample,
+            )
+            faces.extend(((quad[0], quad[2], quad[1]), (quad[0], quad[3], quad[2])) if reverse else
+                         ((quad[0], quad[1], quad[2]), (quad[0], quad[2], quad[3])))
+    return mesh_object(name, vertices, faces, True)
+
+
 def lifting_surfaces():
-    prism("wing_right", [(1.65, -3.25), (1.65, 3.05), (17.9, 3.25), (17.9, 1.68)], 2.05, 2.43)
-    prism("wing_left", [(-1.65, 3.05), (-1.65, -3.25), (-17.9, 1.68), (-17.9, 3.25)], 2.05, 2.43)
+    right_wing = [
+        (1.65, -3.25, 3.05, 2.22, 0.48),
+        (9.7, -0.55, 3.15, 2.29, 0.31),
+        (17.9, 1.68, 3.25, 2.37, 0.16),
+    ]
+    airfoil("wing_right", right_wing, 11)
+    airfoil("wing_left", [(-x, leading, trailing, y, thickness) for x, leading, trailing, y, thickness in right_wing], 11)
     prism("winglet_right", [(17.28, 1.72), (17.9, 1.68), (17.9, 3.25), (17.28, 3.12)], 2.25, 4.35)
     prism("winglet_left", [(-17.9, 1.68), (-17.28, 1.72), (-17.28, 3.12), (-17.9, 3.25)], 2.25, 4.35)
-    prism("horizontal_stabiliser_right", [(0.75, 12.7), (0.75, 16.4), (6.35, 16.75), (6.35, 15.55)], 4.05, 4.30)
-    prism("horizontal_stabiliser_left", [(-0.75, 16.4), (-0.75, 12.7), (-6.35, 15.55), (-6.35, 16.75)], 4.05, 4.30)
+    right_stabiliser = [(0.75, 12.7, 16.4, 4.18, 0.28), (6.35, 15.55, 16.75, 4.25, 0.12)]
+    airfoil("horizontal_stabiliser_right", right_stabiliser, 9)
+    airfoil("horizontal_stabiliser_left", [(-x, leading, trailing, y, thickness) for x, leading, trailing, y, thickness in right_stabiliser], 9)
     # Fin is a thin X prism whose plan polygon uses X as thickness and Y/Z as authored below.
     vertices = []
-    yz = [(3.95, 12.15), (4.0, 17.25), (9.45, 16.7), (8.55, 14.15)]
+    yz = [(3.95, 12.15), (4.0, 17.25), (5.05, 17.35), (9.45, 16.7), (8.82, 15.15), (7.2, 13.55)]
     for x in (-0.16, 0.16):
         vertices.extend((x, y, z) for y, z in yz)
-    faces = [(0, 2, 1), (0, 3, 2), (4, 5, 6), (4, 6, 7)]
-    for i in range(4):
-        j = (i + 1) % 4
-        faces.extend(((i, j, 4 + j), (i, 4 + j, 4 + i)))
+    count = len(yz)
+    faces = []
+    for index in range(1, count - 1):
+        faces.extend(((0, index + 1, index), (count, count + index, count + index + 1)))
+    for i in range(count):
+        j = (i + 1) % count
+        faces.extend(((i, j, count + j), (i, count + j, count + i)))
     mesh_object("tail_fin", vertices, faces)
 
 
@@ -136,6 +232,25 @@ def nacelle(name, centre_x):
             a, b = start + segment, start + (segment + 1) % segments
             c, d = nxt + segment, nxt + (segment + 1) % segments
             faces.extend(((a, b, d), (a, d, c)))
+    # Close the exhaust end. The intake remains open with its protected fan just behind the lip.
+    exhaust_centre = len(vertices)
+    vertices.append((centre_x, centre_y, centre_z + nacelle_length / 2))
+    start = (rings - 1) * segments
+    for segment in range(segments):
+        faces.append((exhaust_centre, start + segment, start + (segment + 1) % segments))
+    # Pylons share nacelle semantics so paint can cover them without inventing a new runtime part.
+    append_x_prism(
+        vertices,
+        faces,
+        [
+            (2.03, -1.25),
+            (2.12, 0.58),
+            (2.62, 0.78),
+            (2.78, -0.82),
+        ],
+        centre_x - 0.34,
+        centre_x + 0.34,
+    )
     return mesh_object(name, vertices, faces, True)
 
 
@@ -169,18 +284,23 @@ def glazing_and_markings():
     centres = [(2.85, z) for z in window_z if not (-0.9 < z < 0.6)]
     oval_faces("cabin_windows_right", centres, 1, 0.19, 0.14)
     oval_faces("cabin_windows_left", centres, -1, 0.19, 0.14)
-    # Four opaque cockpit panes per side, located on the forward tapered shell.
+    # Three opaque cockpit panes per side, wrapped around the forward tapered shell.
     cockpit = []
     for side in (-1, 1):
-        x0, x1 = side * 0.12, side * 1.18
-        if side < 0:
-            x0, x1 = x1, x0
-        cockpit.extend([
-            (x0, 3.36, -16.18), (x1, 3.28, -15.84), (x1, 3.82, -15.62), (x0, 3.92, -15.94),
-            (side * 1.16, 3.28, -15.83), (side * 1.62, 3.05, -15.35),
-            (side * 1.58, 3.55, -15.18), (side * 1.15, 3.82, -15.61),
-        ])
-    faces = [(0, 1, 2), (0, 2, 3), (4, 5, 6), (4, 6, 7), (8, 9, 10), (8, 10, 11), (12, 13, 14), (12, 14, 15)]
+        panels = [
+            [(0.10, 3.47, -16.22), (0.78, 3.40, -16.02), (0.77, 3.88, -15.78), (0.10, 3.97, -15.96)],
+            [(0.79, 3.39, -16.01), (1.34, 3.20, -15.68), (1.31, 3.68, -15.45), (0.78, 3.87, -15.77)],
+            [(1.35, 3.19, -15.67), (1.62, 3.00, -15.30), (1.57, 3.45, -15.10), (1.32, 3.67, -15.44)],
+        ]
+        for panel in panels:
+            cockpit.extend((side * x, y, z) for x, y, z in panel)
+    faces = []
+    for panel in range(6):
+        start = panel * 4
+        if panel < 3:
+            faces.extend(((start, start + 2, start + 1), (start, start + 3, start + 2)))
+        else:
+            faces.extend(((start, start + 1, start + 2), (start, start + 2, start + 3)))
     mesh_object("cockpit_glass", cockpit, faces)
     for side, name in ((-1, "doors_left"), (1, "doors_right")):
         vertices, faces = [], []
@@ -241,7 +361,7 @@ def write_glb(path):
     binary = b"".join(chunks)
     document = {
         "accessors": accessors,
-        "asset": {"generator": "Tailfin Blender semantic repair v1", "version": "2.0"},
+        "asset": {"generator": "Tailfin Blender semantic repair v2", "version": "2.0"},
         "bufferViews": buffer_views,
         "buffers": [{"byteLength": len(binary)}],
         "meshes": meshes,

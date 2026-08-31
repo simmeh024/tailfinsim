@@ -577,18 +577,21 @@ materials or transforms. The `.blend` file is the editable DCC source; neither g
 committed. Cabin windows are individual opaque geometry, doors are dedicated overlay geometry,
 and cockpit glazing, engine interiors and lights have protected semantic identities.
 
-Blender 5.2.1 LTS produced a 1,057,284-byte, 14,556-triangle v1 derivative with zero degenerate or
-duplicate triangles, zero non-manifold or inconsistent-winding edges, 35.7999992 m span,
-37.5699997 m length and 0.99825 bilateral voxel-reflection IoU. Two clean factory-startup runs
-produced the same GLB SHA-256:
-`a2106ccfa8ab59232e834f5baf2b98984cb019526f453895873f1e192104d3f1`.
+The current v2 derivative replaces the original flat wing/stabiliser prisms with tapered, cambered
+airfoils; adds swept pylons within the nacelle semantics; closes nacelle exhausts; and refines the
+cockpit panes and tail profile. Blender 5.2.1 LTS produced a 1,036,860-byte, 14,272-triangle GLB
+with zero degenerate or duplicate triangles, zero non-manifold or inconsistent-winding edges,
+35.7999992 m span, 37.5699997 m length and 1.0 bilateral voxel-reflection IoU. Two clean
+factory-startup runs produced the same GLB SHA-256:
+`8c1b86c93b2ad2ed49a7ee5a558706f55c5400d84e34f884be11f8b16966f197`.
 
 Structural intake assessment
-`8d21963dff40e675fa5564b66e448427a2cf34289ed7d7fd0b8f0ad670917ef9` confirms every scaffold
-repair node is resolved and every required semantic target is evidenced. It deliberately retains
-`repairComplete: false`: visual review found that wing airfoils, pylons, cockpit-glazing placement,
-nacelle ends and tail shaping still need refinement. Topology, licensing, visual and performance
-approval remain independent gates.
+`5f631943181dd630c6c77ab62782dbb2fae68e28d1b72aba6aed2fd094d9b078` confirms every scaffold
+repair node is resolved and every required semantic target is evidenced. Standard top, side and
+perspective Blender views confirm the refined silhouette and engine placement. It deliberately
+retains `repairComplete: false`: formal outward-normal/self-intersection review, licensing evidence,
+official glTF conformance, protected-material behavior and visual/runtime-performance approval
+remain independent gates.
 
 ## Pinned strategy and vendor evidence
 
