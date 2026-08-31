@@ -31,6 +31,20 @@ describe('semantic workbench local drafts', () => {
     expect(semanticWorkbenchDraftKey(identity)).toBe(
       `tailfin:semantic-draft:v1:candidate-1:${'a'.repeat(64)}:${'b'.repeat(64)}`,
     );
+    const residualIdentity = {
+      ...identity,
+      residualReportSha256: 'c'.repeat(64),
+      baselineReviewSha256: 'd'.repeat(64),
+    };
+    expect(semanticWorkbenchDraftKey(residualIdentity)).toBe(
+      `tailfin:semantic-draft:v1:candidate-1:${'a'.repeat(64)}:${'b'.repeat(64)}:${'c'.repeat(64)}:${'d'.repeat(64)}`,
+    );
+    expect(
+      parseSemanticWorkbenchDraft(
+        JSON.stringify({ ...draft, ...residualIdentity }),
+        residualIdentity,
+      ),
+    ).toMatchObject(residualIdentity);
   });
 
   it('accepts a matching bounded draft without rewriting it', () => {
@@ -63,5 +77,8 @@ describe('semantic workbench local drafts', () => {
     expect(() => semanticWorkbenchDraftKey({ ...identity, operationId: '../candidate-1' })).toThrow(
       'identity is invalid',
     );
+    expect(() =>
+      semanticWorkbenchDraftKey({ ...identity, residualReportSha256: 'c'.repeat(64) }),
+    ).toThrow('identity is invalid');
   });
 });

@@ -13,7 +13,9 @@ import {
 try {
   const repository = fileURLToPath(new URL('../../../', import.meta.url));
   const source = fileURLToPath(new URL('../workbench/semantic-review-app.js', import.meta.url));
-  const { operationId, port } = parseSemanticWorkbenchArguments(process.argv.slice(2));
+  const { operationId, port, residualSha256 } = parseSemanticWorkbenchArguments(
+    process.argv.slice(2),
+  );
   const appSource = await readBoundedMeshyInput(source, 256 * 1024);
   const built = await build({
     stdin: {
@@ -33,7 +35,12 @@ try {
   });
   const app = built.outputFiles[0]?.contents;
   if (!app) throw new Error('Workbench build refused.');
-  const payload = await loadSemanticWorkbenchPayload(repository, operationId, Buffer.from(app));
+  const payload = await loadSemanticWorkbenchPayload(
+    repository,
+    operationId,
+    Buffer.from(app),
+    residualSha256,
+  );
   const running = await startSemanticWorkbenchServer(payload, port);
   process.stdout.write(`Semantic review workbench: http://127.0.0.1:${String(running.port)}/\n`);
 } catch {

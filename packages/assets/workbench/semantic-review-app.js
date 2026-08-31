@@ -25,10 +25,16 @@ const elements = Object.fromEntries(
     'angle',
     'angle-value',
     'stats',
+    'patch-stats',
+    'patches',
     'components',
     'isolate',
     'wireframe',
     'residual',
+    'previous-patch',
+    'next-patch',
+    'assign-patch',
+    'clear-patch',
     'unassigned',
     'whole',
     'clear-component',
@@ -51,12 +57,38 @@ const setStatus = (message, error = false) => {
 };
 
 try {
-  const [inventoryResponse, modelResponse] = await Promise.all([
-    fetch('/inventory.json', { cache: 'no-store' }),
-    fetch('/model.glb', { cache: 'no-store' }),
-  ]);
-  if (!inventoryResponse.ok || !modelResponse.ok) throw new Error('Verified evidence unavailable.');
+  const inventoryResponse = await fetch('/inventory.json', { cache: 'no-store' });
+  if (!inventoryResponse.ok) throw new Error('Verified evidence unavailable.');
   const inventory = await inventoryResponse.json();
+  const evidenceResponses = await Promise.all([
+    fetch('/model.glb', { cache: 'no-store' }),
+    ...(inventory.residualReportSha256
+      ? [
+          fetch('/residual.json', { cache: 'no-store' }),
+          fetch('/baseline-review.json', { cache: 'no-store' }),
+        ]
+      : []),
+  ]);
+  if (evidenceResponses.some((response) => !response.ok))
+    throw new Error('Verified evidence unavailable.');
+  const [modelResponse, residualResponse, baselineResponse] = evidenceResponses;
+  const residualReport = residualResponse ? await residualResponse.json() : null;
+  const baselineReview = baselineResponse ? await baselineResponse.json() : null;
+  if (
+    (residualReport === null) !== (baselineReview === null) ||
+    (residualReport &&
+      (residualReport.format !== 'tailfin-meshy-semantic-residual-topology' ||
+        residualReport.operationId !== inventory.operationId ||
+        residualReport.derivativeSha256 !== inventory.derivativeSha256 ||
+        residualReport.inventoryReportSha256 !== inventory.reportSha256 ||
+        residualReport.reviewSourceSha256 !== inventory.baselineReviewSha256)) ||
+    (baselineReview &&
+      (baselineReview.format !== 'tailfin-meshy-semantic-review' ||
+        baselineReview.operationId !== inventory.operationId ||
+        baselineReview.derivativeSha256 !== inventory.derivativeSha256 ||
+        baselineReview.inventoryReportSha256 !== inventory.reportSha256))
+  )
+    throw new Error('Residual evidence identity does not match this workbench.');
   const gltf = await new GLTFLoader().parseAsync(await modelResponse.arrayBuffer(), '');
   const targetMetadata = [
     ...inventory.requiredSemanticTargets,
@@ -78,6 +110,12 @@ try {
     operationId: inventory.operationId,
     derivativeSha256: inventory.derivativeSha256,
     inventoryReportSha256: inventory.reportSha256,
+    ...(residualReport
+      ? {
+          residualReportSha256: inventory.residualReportSha256,
+          baselineReviewSha256: inventory.baselineReviewSha256,
+        }
+      : {}),
   };
   const draftKey = semanticWorkbenchDraftKey(draftIdentity);
   let reviewedAt = new Date().toISOString();
@@ -129,6 +167,8 @@ try {
   let isolationEnabled = false;
   let wireframeEnabled = false;
   let residualHighlightEnabled = false;
+  let activePatchIndex = residualReport ? 0 : -1;
+  let activePatchFaces = new Set();
 
   gltf.scene.traverse((object) => {
     if (!object.isMesh) return;
@@ -157,11 +197,15 @@ try {
     const color = mesh.geometry.getAttribute('color');
     for (let face = 0; face < values.length; face += 1) {
       const selected = values[face];
-      const value = residualHighlightEnabled
-        ? new THREE.Color(selected === null ? 0xff8a33 : 0x26313a)
-        : selected === null
-          ? new THREE.Color(0xb8c0c7)
-          : new THREE.Color(palette[targetIndex.get(selected)]);
+      const patch = residualReport?.residualPatches[activePatchIndex];
+      const isActivePatch = patch?.componentId === mesh.name && activePatchFaces.has(face);
+      const value = isActivePatch
+        ? new THREE.Color(0xffe04f)
+        : residualHighlightEnabled
+          ? new THREE.Color(selected === null ? 0xff8a33 : 0x26313a)
+          : selected === null
+            ? new THREE.Color(0xb8c0c7)
+            : new THREE.Color(palette[targetIndex.get(selected)]);
       for (let corner = 0; corner < 3; corner += 1)
         color.setXYZ(face * 3 + corner, value.r, value.g, value.b);
     }
@@ -206,6 +250,62 @@ try {
     if (draftEnabled) saveDraft();
   }
 
+  function facesOfPatch(patch) {
+    return patch.componentLocalTriangleRanges.flatMap((range) =>
+      Array.from(
+        { length: range.endExclusive - range.startInclusive },
+        (_, index) => range.startInclusive + index,
+      ),
+    );
+  }
+
+  function patchBounds(mesh, faces) {
+    const box = new THREE.Box3();
+    const point = new THREE.Vector3();
+    mesh.updateWorldMatrix(true, false);
+    const position = mesh.geometry.getAttribute('position');
+    for (const face of faces)
+      for (let corner = 0; corner < 3; corner += 1) {
+        point.fromBufferAttribute(position, face * 3 + corner).applyMatrix4(mesh.matrixWorld);
+        box.expandByPoint(point);
+      }
+    return box;
+  }
+
+  function updatePatchUi() {
+    const patch = residualReport?.residualPatches[activePatchIndex];
+    for (const button of elements.patches.querySelectorAll('button'))
+      button.classList.toggle('active', Number(button.dataset.patchIndex) === activePatchIndex);
+    for (const id of ['previous-patch', 'next-patch', 'assign-patch', 'clear-patch'])
+      elements[id].disabled = !patch;
+    if (!patch) {
+      elements['patch-stats'].textContent = 'No residual report loaded.';
+      return;
+    }
+    const centre = patch.boundsCanonicalMetres.centre.map((value) => value.toFixed(2)).join(', ');
+    const extent = patch.boundsCanonicalMetres.extent.map((value) => value.toFixed(2)).join(', ');
+    elements['patch-stats'].textContent =
+      `Patch: ${patch.patchId} (${String(activePatchIndex + 1)} / ${String(residualReport.residualPatches.length)})\nComponent: ${patch.componentId}\nTriangles: ${String(patch.triangles)}\nArea m²: ${String(patch.surfaceAreaSquareMetres)}\nCentre XYZ m: ${centre}\nExtent XYZ m: ${extent}\nBoundary edges: ${String(patch.boundaryEdges)}\nInternal non-manifold edges: ${String(patch.nonManifoldEdgesWithinPatch)}`;
+  }
+
+  function selectResidualPatch(index, focus = true) {
+    if (!residualReport) return;
+    const count = residualReport.residualPatches.length;
+    activePatchIndex = ((index % count) + count) % count;
+    const patch = residualReport.residualPatches[activePatchIndex];
+    activePatchFaces = new Set(facesOfPatch(patch));
+    selectComponent(patch.componentId);
+    for (const mesh of meshes) renderColors(mesh);
+    updatePatchUi();
+    if (focus) {
+      const mesh = meshById.get(patch.componentId);
+      frameBounds(patchBounds(mesh, [...activePatchFaces]), [1, 0.45, 1], 3.5);
+    }
+    setStatus(
+      `${patch.patchId}: ${String(patch.triangles)} sealed residual faces highlighted in yellow.`,
+    );
+  }
+
   elements.isolate.onclick = () => {
     isolationEnabled = !isolationEnabled;
     elements.isolate.setAttribute('aria-pressed', String(isolationEnabled));
@@ -243,6 +343,24 @@ try {
     );
   };
 
+  elements['previous-patch'].onclick = () => selectResidualPatch(activePatchIndex - 1);
+  elements['next-patch'].onclick = () => selectResidualPatch(activePatchIndex + 1);
+  elements['assign-patch'].onclick = () => {
+    const patch = residualReport?.residualPatches[activePatchIndex];
+    const mesh = patch && meshById.get(patch.componentId);
+    if (!mesh) return;
+    const values = assignments.get(mesh.name);
+    const uncovered = [...activePatchFaces].filter((face) => values[face] === null);
+    if (!uncovered.length)
+      return setStatus('The active patch has no uncovered faces to assign.', true);
+    assign(mesh, uncovered, elements.target.value);
+  };
+  elements['clear-patch'].onclick = () => {
+    const patch = residualReport?.residualPatches[activePatchIndex];
+    const mesh = patch && meshById.get(patch.componentId);
+    if (mesh) assign(mesh, [...activePatchFaces], null);
+  };
+
   for (const component of inventory.components) {
     const button = document.createElement('button');
     button.type = 'button';
@@ -253,6 +371,14 @@ try {
       : 'Whole-component assignment still requires visual review';
     button.onclick = () => selectComponent(component.componentId, true);
     elements.components.append(button);
+  }
+  for (const [index, patch] of residualReport?.residualPatches.entries() ?? []) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.patchIndex = String(index);
+    button.textContent = `${patch.patchId} · ${String(patch.triangles)} faces`;
+    button.onclick = () => selectResidualPatch(index);
+    elements.patches.append(button);
   }
 
   function buildAdjacency(mesh) {
@@ -632,17 +758,24 @@ try {
     elements.angle.value = '25';
     elements['angle-value'].textContent = '25°';
     activeComponent = inventory.components[0].componentId;
-    for (const target of inventory.requiredSemanticTargets)
-      findings.set(target.id, { status: 'unreviewed', rationale: '' });
-    for (const [componentId, values] of assignments)
-      assignments.set(
-        componentId,
-        values.map(() => null),
-      );
-    for (const mesh of meshes) renderColors(mesh);
-    syncFindingUi();
+    if (baselineReview) applyReviewState(baselineReview);
+    else {
+      for (const target of inventory.requiredSemanticTargets)
+        findings.set(target.id, { status: 'unreviewed', rationale: '' });
+      for (const [componentId, values] of assignments)
+        assignments.set(
+          componentId,
+          values.map(() => null),
+        );
+      for (const mesh of meshes) renderColors(mesh);
+      syncFindingUi();
+    }
     draftEnabled = true;
-    setStatus('Local draft cleared. The quarantined candidate is unchanged.');
+    setStatus(
+      baselineReview
+        ? 'Local draft cleared. The sealed baseline review was restored.'
+        : 'Local draft cleared. The quarantined candidate is unchanged.',
+    );
   };
 
   function componentBounds(mesh) {
@@ -723,6 +856,7 @@ try {
   };
   new ResizeObserver(resize).observe(canvas);
   let restored = false;
+  if (baselineReview) applyReviewState(baselineReview);
   const storedDraft = localStorage.getItem(draftKey);
   if (storedDraft !== null)
     try {
@@ -740,11 +874,15 @@ try {
   draftEnabled = true;
   selectComponent(activeComponent);
   syncFindingUi();
-  setView([1, 0.55, 1]);
+  if (residualReport) selectResidualPatch(0);
+  else setView([1, 0.55, 1]);
+  updatePatchUi();
   setStatus(
     restored
       ? 'Verified candidate loaded. Matching local draft restored.'
-      : 'Verified candidate loaded. No semantic faces are assigned.',
+      : baselineReview
+        ? 'Verified candidate and sealed baseline review loaded.'
+        : 'Verified candidate loaded. No semantic faces are assigned.',
   );
 } catch (error) {
   setStatus(error instanceof Error ? error.message : 'Workbench unavailable.', true);
