@@ -884,6 +884,8 @@ describe('operator command authority boundary', () => {
       ['residual-review', '--operation', 'candidate-1'],
       ['repair-plan', '--operation', 'candidate-1'],
       ['repair-plan', '--operation', 'candidate-1', '--residual-review-sha256', 'not-a-digest'],
+      ['repair-scaffold', '--operation', 'candidate-1'],
+      ['repair-scaffold', '--operation', 'candidate-1', '--repair-plan-sha256', 'not-a-digest'],
       [
         'residual-review',
         '--operation',
@@ -923,5 +925,14 @@ describe('operator command authority boundary', () => {
         'b'.repeat(64),
       ]).command,
     ).toBe('repair-plan');
+    expect(
+      parseMeshyRunArguments([
+        'repair-scaffold',
+        '--operation',
+        'candidate-1',
+        '--repair-plan-sha256',
+        'c'.repeat(64),
+      ]).command,
+    ).toBe('repair-scaffold');
   });
 });
