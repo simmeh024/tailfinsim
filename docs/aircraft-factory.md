@@ -535,6 +535,28 @@ left/right doors and lights as still missing. Its private scaffold derivative SH
 `1d72a25551b4127cef21ab55aacb1127601877465a0834b32baa27a766a38107`; report SHA is
 `3d6f122eec1ef22095b04ae67a792f017605c04beff2391a7c219c49a36ead1d`.
 
+### Authored repair derivative intake
+
+```bash
+pnpm assets:meshy-run -- repair-intake \
+  --operation candidate-1 \
+  --scaffold-report-sha256 <scaffold-report-sha256> \
+  --derivative-file path/to/authored-repair.glb \
+  --submission-file path/to/repair-submission.json
+```
+
+The submission manifest binds the authored export to the exact scaffold report, artist, timestamp,
+DCC name/version, every repaired scaffold node and every required semantic target. Geometry evidence
+must use the canonical node name. Only left/right doors may use `canonical_mask` instead of geometry;
+protected glazing, windows, engine interiors and lights cannot be replaced by mask claims.
+
+Structural intake refuses a reused source/scaffold hash, unresolved repair nodes, stale evidence,
+unknown or duplicate node names, remaining `repair__` nodes, missing required targets and changes
+beyond 0.10 m to the pinned span/length or 0.02 m to the gear-up ground reference. It preserves the
+untouched authored GLB and manifest under content hashes. Passing this gate does not approve the
+model: topology, visual and licensing reviews remain false, so `repairComplete`, runtime admission
+and livery readiness remain blocked.
+
 ## Pinned strategy and vendor evidence
 
 The planning observation is dated 2026-08-28. Four untextured T2 candidates cost 5 credits each;
