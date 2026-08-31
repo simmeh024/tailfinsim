@@ -62,10 +62,14 @@ describeDb('an event type this build cannot handle', () => {
   });
 
   async function makeWorld(): Promise<WorldRow> {
-    const created = await createWorld(db.db, {
-      ...FLAGSHIP_CONFIG,
-      name: `scale05-${randomUUID().slice(0, 8)}`,
-    });
+    const created = await createWorld(
+      db.db,
+      {
+        ...FLAGSHIP_CONFIG,
+        name: `scale05-${randomUUID().slice(0, 8)}`,
+      },
+      REAL_NOW,
+    );
     madeWorlds.push(created.world.id);
     return created.world;
   }
