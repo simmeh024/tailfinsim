@@ -886,6 +886,18 @@ describe('operator command authority boundary', () => {
       ['repair-plan', '--operation', 'candidate-1', '--residual-review-sha256', 'not-a-digest'],
       ['repair-scaffold', '--operation', 'candidate-1'],
       ['repair-scaffold', '--operation', 'candidate-1', '--repair-plan-sha256', 'not-a-digest'],
+      ['repair-intake', '--operation', 'candidate-1'],
+      [
+        'repair-intake',
+        '--operation',
+        'candidate-1',
+        '--scaffold-report-sha256',
+        'not-a-digest',
+        '--derivative-file',
+        'repair.glb',
+        '--submission-file',
+        'submission.json',
+      ],
       [
         'residual-review',
         '--operation',
@@ -934,5 +946,18 @@ describe('operator command authority boundary', () => {
         'c'.repeat(64),
       ]).command,
     ).toBe('repair-scaffold');
+    expect(
+      parseMeshyRunArguments([
+        'repair-intake',
+        '--operation',
+        'candidate-1',
+        '--scaffold-report-sha256',
+        'd'.repeat(64),
+        '--derivative-file',
+        'repair.glb',
+        '--submission-file',
+        'submission.json',
+      ]).command,
+    ).toBe('repair-intake');
   });
 });

@@ -13,6 +13,7 @@ import { sealMeshyCandidateProvenance } from './meshy-provenance';
 import { archiveMeshyReview } from './meshy-review-archive';
 import { assertMeshyRunCap, meshyRunApprovalIdentity } from './meshy-run';
 import { archiveMeshySemanticInventory } from './meshy-semantic-inventory-archive';
+import { archiveMeshySemanticRepairSubmission } from './meshy-semantic-repair-intake-archive';
 import { archiveMeshySemanticRepairPlan } from './meshy-semantic-repair-plan-archive';
 import { archiveMeshySemanticRepairRequirements } from './meshy-semantic-repair-requirements-archive';
 import { archiveMeshySemanticRepairScaffold } from './meshy-semantic-repair-scaffold-archive';
@@ -36,6 +37,7 @@ export const MESHY_RUN_USAGE =
   '       assets:meshy-run residual-review --operation candidate-1..4 --residual-sha256 SHA256 --review-file PATH\n' +
   '       assets:meshy-run repair-plan --operation candidate-1..4 --residual-review-sha256 SHA256\n' +
   '       assets:meshy-run repair-scaffold --operation candidate-1..4 --repair-plan-sha256 SHA256\n' +
+  '       assets:meshy-run repair-intake --operation candidate-1..4 --scaffold-report-sha256 SHA256 --derivative-file PATH --submission-file PATH\n' +
   '       assets:meshy-run account --max-credits 1..40 [--key-file PATH]\n' +
   '       assets:meshy-run prepare --evidence-file PATH --max-credits 1..40\n' +
   '       assets:meshy-run provenance --operation candidate-1..4 --max-credits 1..40\n' +
@@ -68,6 +70,7 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
       'residual-review',
       'repair-plan',
       'repair-scaffold',
+      'repair-intake',
     ].includes(command ?? '')
   )
     throw new Error('Unknown Meshy run command.');
@@ -94,11 +97,18 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
                         ? ['--operation', '--residual-review-sha256']
                         : command === 'repair-scaffold'
                           ? ['--operation', '--repair-plan-sha256']
-                          : ['repair-requirements', 'residuals'].includes(command ?? '')
-                            ? ['--operation', '--assessment-sha256']
-                            : ['audit', 'review', 'correct', 'inventory'].includes(command ?? '')
-                              ? ['--operation']
-                              : [];
+                          : command === 'repair-intake'
+                            ? [
+                                '--operation',
+                                '--scaffold-report-sha256',
+                                '--derivative-file',
+                                '--submission-file',
+                              ]
+                            : ['repair-requirements', 'residuals'].includes(command ?? '')
+                              ? ['--operation', '--assessment-sha256']
+                              : ['audit', 'review', 'correct', 'inventory'].includes(command ?? '')
+                                ? ['--operation']
+                                : [];
   const options = new Map<string, string>();
   for (let index = 1; index < args.length; index += 2) {
     const key = args[index];
@@ -132,6 +142,7 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
       'residual-review',
       'repair-plan',
       'repair-scaffold',
+      'repair-intake',
     ].includes(command!) &&
     !/^candidate-[1-4]$/.test(options.get('--operation') ?? '')
   )
@@ -165,6 +176,13 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
     !/^[a-f0-9]{64}$/.test(options.get('--repair-plan-sha256') ?? '')
   )
     throw new Error('Semantic repair plan SHA-256 required.');
+  if (
+    command === 'repair-intake' &&
+    (!/^[a-f0-9]{64}$/.test(options.get('--scaffold-report-sha256') ?? '') ||
+      !options.has('--derivative-file') ||
+      !options.has('--submission-file'))
+  )
+    throw new Error('Scaffold report, authored derivative and submission manifest required.');
   return { command, options };
 }
 
@@ -442,6 +460,32 @@ export async function runMeshyRunCommand(
       state: report.state,
       runtimeAdmission: report.runtimeAdmission,
       liveryReady: report.liveryReady,
+      creditsSpentByThisCommand: 0,
+    });
+  }
+  if (command === 'repair-intake') {
+    const { operationId, assessmentSha256, assessment } =
+      await archiveMeshySemanticRepairSubmission(
+        meshyArchiveDirectory(database),
+        options.get('--operation')!,
+        options.get('--scaffold-report-sha256')!,
+        options.get('--derivative-file')!,
+        options.get('--submission-file')!,
+      );
+    return canonicalJson({
+      operationId,
+      assessmentSha256,
+      authoredDerivativeSha256: assessment.authoredDerivativeSha256,
+      allRepairNodesResolved: assessment.allRepairNodesResolved,
+      allRequiredTargetsEvidenced: assessment.allRequiredTargetsEvidenced,
+      structuralIntakePassed: assessment.structuralIntakePassed,
+      technicalReviewPassed: assessment.technicalReviewPassed,
+      visualReviewPassed: assessment.visualReviewPassed,
+      licensingReviewPassed: assessment.licensingReviewPassed,
+      repairComplete: assessment.repairComplete,
+      state: assessment.state,
+      runtimeAdmission: assessment.runtimeAdmission,
+      liveryReady: assessment.liveryReady,
       creditsSpentByThisCommand: 0,
     });
   }
