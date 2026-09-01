@@ -117,9 +117,9 @@ than safety. Reverse the edit you made, or commit before you break something on 
 helper, not "just to check it is set". Generate secrets on the box, write them to
 root-only files, and tell the user the command to read them.
 
-**`main` is protected.** Pull request required, `typecheck · lint · test`, dependency review
-and CodeQL at ADR-0013's thresholds must pass, force pushes and deletions are blocked, and
-it applies to admins. So: branch, push the branch, open a PR. A direct push to `main` will
+**`main` is protected.** Pull request required, `Typecheck`, `Lint`, `Prettier`, `Tests`,
+dependency review and CodeQL at ADR-0013's thresholds must pass, force pushes and deletions
+are blocked, and it applies to admins. So: branch, push the branch, open a PR. A direct push to `main` will
 be rejected, and that is working as intended. Required approvals are set to **zero** — the
 PR is the gate, not a second person — so you can merge your own once the checks are green.
 
@@ -462,16 +462,20 @@ Three workflows, all merge gates for the failures they own. CodeQL is enforced t
 code-scanning ruleset rather than by treating every finding as equal; ADR-0013 records the
 measured tuning period, baseline decisions and thresholds.
 
-| Workflow                | Job / check name          | Asks                                                 | Blocks?                         |
-| ----------------------- | ------------------------- | ---------------------------------------------------- | ------------------------------- |
-| `ci.yml`                | `typecheck · lint · test` | Do builds, tests and the running Caddy policy pass?  | **Yes**                         |
-| `dependency-review.yml` | `dependency review`       | Did this PR add a known-vulnerable dependency?       | **High/critical advisories**    |
-| `codeql.yml`            | `analyze (…)`             | Does Tailfin's own code contain a dangerous pattern? | **Error or high/critical only** |
+| Workflow                | Job / check name                  | Asks                                                   | Blocks?                         |
+| ----------------------- | --------------------------------- | ------------------------------------------------------ | ------------------------------- |
+| `ci.yml`                | `Typecheck` / `Lint` / `Prettier` | Does the tree type-check, lint and format cleanly?     | **Yes** (each independently)    |
+| `ci.yml`                | `Tests`                           | Do the build, migrations, tests and Caddy policy pass? | **Yes**                         |
+| `dependency-review.yml` | `dependency review`               | Did this PR add a known-vulnerable dependency?         | **High/critical advisories**    |
+| `codeql.yml`            | `analyze (…)`                     | Does Tailfin's own code contain a dangerous pattern?   | **Error or high/critical only** |
 
-They are separate workflows on purpose. CI needs a Postgres service and takes about two
-minutes; CodeQL's two analyses finish in 1.05–1.77 minutes; Dependency Review needs no
-services, checkout or install and finishes in seconds. Running them in parallel keeps each
-failure independent and the merge path equal to the slowest gate rather than their sum.
+`ci.yml` runs those four as **independent parallel jobs**, each its own required status
+check, so a type error, a lint error and a formatting error report separately and none hides
+behind another. Only `Tests` needs a Postgres service; `Typecheck`, `Lint` and `Prettier`
+are light and start immediately, and each job reuses the same pnpm store cache. CodeQL's two
+analyses finish in 1.05–1.77 minutes; Dependency Review needs no services, checkout or install
+and finishes in seconds. Running everything in parallel keeps each failure independent and the
+merge path equal to the slowest gate rather than their sum.
 
 ### Dependency Review (SEC-HARD-03)
 
