@@ -78,6 +78,7 @@ export const MeshyArchiveRecoveryState = z
       .object({
         requestBodySha256: MeshySha256,
         sourceSha256: MeshySha256,
+        proofSha256: MeshySha256,
         reservedCredits: z.literal(MESHY_ARCHIVE_RETEXTURE_CREDITS),
         reservedAt: Timestamp,
       })
@@ -273,6 +274,7 @@ export class MeshyArchiveRecoveryStore {
   reserve(
     requestBodySha256: string,
     sourceSha256: string,
+    proofSha256: string,
     reservedAt: string,
   ): MeshyArchiveRecoveryState {
     return this.update((state) => {
@@ -283,6 +285,7 @@ export class MeshyArchiveRecoveryStore {
         reservation: {
           requestBodySha256: MeshySha256.parse(requestBodySha256),
           sourceSha256: MeshySha256.parse(sourceSha256),
+          proofSha256: MeshySha256.parse(proofSha256),
           reservedCredits: MESHY_ARCHIVE_RETEXTURE_CREDITS,
           reservedAt: Timestamp.parse(reservedAt),
         },

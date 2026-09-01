@@ -3,10 +3,12 @@ import { join } from 'node:path';
 import { z } from 'zod';
 
 import { canonicalJson, sha256 } from './canonical';
-import { MeshyGenerationSpec } from './meshy';
+import { MeshyGenerationSpec, meshyCreditExposure } from './meshy';
 import { readMeshyArtifact, savedMeshyArchive } from './meshy-archive';
 import { MESHY_GLB_DOWNLOAD_LIMIT, assertMeshyGlbEnvelope } from './meshy-recovery';
-import { type MeshyRunState } from './meshy-run';
+import { meshyRunApprovalIdentity, type MeshyRunState } from './meshy-run';
+
+import type { MeshyArchiveRecoveryApproval } from './meshy-archive-recovery-store';
 
 /** The user-approved ceiling covers retained first-run exposure plus this recovery. */
 export const MESHY_ARCHIVE_RECOVERY_TOTAL_CREDIT_LIMIT = 50;
@@ -35,6 +37,25 @@ export interface ArchiveRetextureSource {
   taskId: string;
   bytes: Buffer;
   sha256: string;
+}
+
+/**
+ * The recovery approval is scoped to one exact archived export and the original
+ * ledger's retained exposure. Recheck it after every asynchronous preflight.
+ */
+export function assertArchiveRecoveryApprovalBinding(
+  approval: MeshyArchiveRecoveryApproval,
+  original: MeshyRunState,
+  source: ArchiveRetextureSource,
+): void {
+  if (
+    approval.originalRunApprovalSha256 !== meshyRunApprovalIdentity(original.approval) ||
+    approval.originalRetainedExposure !== meshyCreditExposure(original.budget) ||
+    approval.source.taskId !== source.taskId ||
+    approval.source.exportSha256 !== source.sha256 ||
+    approval.source.exportBytes !== source.bytes.length
+  )
+    throw new Error('Archive recovery approval no longer matches the immutable original run.');
 }
 
 /**
