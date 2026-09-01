@@ -26,11 +26,94 @@ env:
   DATABASE_URL: postgres://tailfin:tailfin_ci@127.0.0.1:5432/tailfin_test
 
 jobs:
-  # `pnpm verify` composes the locally applicable package scripts in this order
-  # and points back here. Keep its list aligned, but keep these CI steps explicit:
-  # this job also owns PostgreSQL, Caddy, and deploy-artefact assertions.
-  verify:
-    name: typecheck · lint · test
+  # Typecheck, Lint and Prettier were three steps of the old combined
+  # `typecheck · lint · test` job. They are now three independent jobs, each an
+  # individually configurable required status check, so a lint failure and a
+  # type failure report separately and neither hides behind the other. They run
+  # in parallel with each other and with `Tests`; a failure in one does not stop
+  # the others. Each reuses the same pnpm store cache (keyed by the lockfile via
+  # actions/setup-node), so the extra installs are cache-warm rather than a cost.
+  # The commands are unchanged from the combined job — same coverage, same rules.
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        # pnpm/action-setup v6.0.10
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        # pnpm/action-setup v6.0.10
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+  prettier:
+    name: Prettier
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        # pnpm/action-setup v6.0.10
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Check formatting
+        run: pnpm format:check
+
+  # `pnpm verify` composes the locally applicable package scripts and points back
+  # here. Typecheck, Lint and Prettier now have their own jobs above (and stay in
+  # `pnpm verify` for the local pre-PR pass); this job owns everything else the
+  # old combined check did — the production build, asset validation, the Caddy
+  # policy, deploy-artefact assertions, migrations, coverage and the performance
+  # budget — plus PostgreSQL. Its steps are otherwise unchanged.
+  tests:
+    name: Tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -67,15 +150,6 @@ jobs:
 
       - name: Install
         run: pnpm install --frozen-lockfile
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Check formatting
-        run: pnpm format:check
 
       - name: Build the production bundles
         # The step that proves a pull request can actually ship.
