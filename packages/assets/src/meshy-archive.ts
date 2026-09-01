@@ -27,6 +27,7 @@ import {
   recoverMeshyCandidate,
   type MeshyRecoveryDeps,
 } from './meshy-recovery';
+import { MeshyRetextureArchive } from './meshy-retexture';
 import {
   MeshyArtifactDigest,
   MeshySha256,
@@ -153,6 +154,47 @@ export function writeImmutableMeshyArtifact(path: string, bytes: Buffer): void {
       closeSync(parentFd);
     }
   }
+}
+
+type RetextureArchive = z.infer<typeof MeshyRetextureArchive>;
+interface RetextureBytes {
+  glb: Buffer;
+  baseColor: Buffer;
+  normal: Buffer;
+  metallic: Buffer;
+  roughness: Buffer;
+}
+
+/**
+ * Publishes every immutable source artifact before the completion manifest. The
+ * caller supplies already-downloaded bytes; no provider URL or credential can
+ * reach the durable archive.
+ */
+export function writeMeshyRetextureArchive(
+  root: string,
+  archiveInput: unknown,
+  bytes: RetextureBytes,
+): RetextureArchive {
+  const archive = MeshyRetextureArchive.parse(archiveInput);
+  const expected: [keyof RetextureBytes, z.infer<typeof MeshyArtifactDigest>, string][] = [
+    ['glb', archive.retexturedGlb, '.glb'],
+    ['baseColor', archive.pbrTextures.baseColor, '.texture'],
+    ['normal', archive.pbrTextures.normal, '.texture'],
+    ['metallic', archive.pbrTextures.metallic, '.texture'],
+    ['roughness', archive.pbrTextures.roughness, '.texture'],
+  ];
+  for (const [name, digest, suffix] of expected) {
+    const artifact = bytes[name];
+    if (artifact.length !== digest.bytes || sha256(artifact) !== digest.sha256)
+      throw new Error(REFUSED);
+    writeImmutableMeshyArtifact(join(root, `retexture-${digest.sha256}${suffix}`), artifact);
+  }
+  // Completion is last: orphaned immutable files are safe, a manifest never points at unverified bytes.
+  writeImmutableMeshyArtifact(
+    join(root, 'retexture-selected.json'),
+    Buffer.from(canonicalJson(archive)),
+  );
+  return archive;
 }
 
 function assertBinding(archive: Archive, state: MeshyRunState, operationId: string): void {
