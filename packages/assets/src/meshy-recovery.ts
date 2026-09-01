@@ -15,6 +15,7 @@ const TaskResponse = z.object({
   expires_at: z.number().int().nonnegative().max(8_640_000_000_000_000).optional(),
   model_urls: z.object({ glb: z.string().max(8_192).optional() }).optional(),
 });
+const MeshyTaskId = z.uuid();
 const terminal = (status: MeshyTaskReceipt['status']) =>
   ['SUCCEEDED', 'FAILED', 'CANCELED'].includes(status);
 
@@ -227,6 +228,79 @@ export async function recoverMeshyRetexture(
     };
     store.observeProgress(receipt);
     return { receipt, task: task.status === 'SUCCEEDED' ? task : null };
+  } catch {
+    throw new MeshyRecoveryError('invalid-response');
+  } finally {
+    bytes.fill(0);
+  }
+}
+
+/**
+ * Attaches an operator-supplied provider task to the one retained uncertain
+ * retexture reservation. It performs only a bounded GET and never discovers,
+ * creates, replaces, or retries a task. The task must have been created no
+ * earlier than the durable submission proof and may not be future-dated.
+ */
+export async function reconcileUncertainMeshyRetexture(
+  store: MeshyRunStore,
+  spec: MeshyGenerationSpec,
+  maxCredits: number,
+  taskId: string,
+  submittedAt: string,
+  credential: string,
+  deps: MeshyRecoveryDeps = meshyRecoveryDefaults,
+) {
+  const state = store.read();
+  let providerTaskId: string;
+  let submittedAtMilliseconds: number;
+  try {
+    providerTaskId = MeshyTaskId.parse(taskId);
+    submittedAtMilliseconds = Date.parse(submittedAt);
+    assertMeshyRunCap(state, maxCredits);
+    if (
+      !Number.isFinite(submittedAtMilliseconds) ||
+      state.approval.specSha256 !== meshySpecIdentity(spec) ||
+      meshyCredentialStatus(credential) !== 'present'
+    )
+      throw new Error('Invalid authority.');
+  } catch {
+    throw new MeshyRecoveryError('not-authorized');
+  }
+  if (
+    !state.selection ||
+    !state.requests.some((request) => request.operationId === 'retexture-selected') ||
+    state.tasks.some((task) => task.operationId === 'retexture-selected')
+  )
+    throw new MeshyRecoveryError('unknown-candidate');
+  const bytes = await boundedGet(
+    `https://api.meshy.ai/openapi/v1/retexture/${providerTaskId}`,
+    { Authorization: `Bearer ${credential.trim()}`, Accept: 'application/json' },
+    ['application/json'],
+    65_536,
+    10_000,
+    deps,
+  );
+  try {
+    const task = MeshyRetextureTaskOutput.parse(JSON.parse(bytes.toString('utf8')) as unknown);
+    const now = deps.now().getTime();
+    if (
+      task.id !== providerTaskId ||
+      task.created_at < submittedAtMilliseconds ||
+      task.created_at > now + 5 * 60_000
+    )
+      throw new Error('Task identity or timing differs.');
+    const receipt: MeshyTaskReceipt = {
+      operationId: 'retexture-selected',
+      taskId: providerTaskId,
+      status: task.status,
+      consumedCredits: terminal(task.status) ? (task.consumed_credits ?? null) : null,
+      observedAt: deps.now().toISOString(),
+    };
+    const persisted = store.observe(receipt);
+    return {
+      receipt: persisted.tasks.find((entry) => entry.operationId === 'retexture-selected')!,
+      task: task.status === 'SUCCEEDED' ? task : null,
+    };
   } catch {
     throw new MeshyRecoveryError('invalid-response');
   } finally {

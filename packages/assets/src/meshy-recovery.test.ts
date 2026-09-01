@@ -12,6 +12,7 @@ import {
   assertMeshyGlbEnvelope,
   downloadMeshyGlb,
   recoverMeshyCandidate,
+  reconcileUncertainMeshyRetexture,
   type MeshyRecoveryDeps,
 } from './meshy-recovery';
 import { MeshyRunApproval, type MeshyTaskReceipt } from './meshy-run';
@@ -28,6 +29,7 @@ const spec = MeshyGenerationSpec.parse(
 );
 const time = '2026-08-28T17:00:00.000Z';
 const taskId = '00000000-0000-4000-8000-000000000001';
+const retextureTaskId = '00000000-0000-4000-8000-000000000099';
 const credential = 'msy_testNotARealCredential';
 const signedUrl = `https://assets.meshy.ai/tasks/${taskId}/output/model.glb?Expires=123&Signature=private`;
 const approval = MeshyRunApproval.parse({
@@ -228,6 +230,71 @@ describe('bounded known-candidate recovery (no paid transport)', () => {
     const result = await recoverMeshyCandidate(store, spec, 40, 'candidate-1', credential, deps);
     expect(result.observedCredits).toBe(6);
     expect(store.read().tasks[0]?.consumedCredits).toBeNull();
+  });
+});
+
+describe('operator retexture reconciliation (no paid transport)', () => {
+  const submittedAt = '2026-08-28T17:01:00.000Z';
+  const retextureTask = (overrides: Record<string, unknown> = {}) => ({
+    id: retextureTaskId,
+    type: 'retexture',
+    status: 'PENDING',
+    created_at: Date.parse(submittedAt) + 1_000,
+    ...overrides,
+  });
+
+  function reserveUncertainRetexture() {
+    store.observe({ ...initial, status: 'SUCCEEDED', consumedCredits: 5 });
+    for (const operationId of ['candidate-2', 'candidate-3', 'candidate-4'] as const) {
+      const index = Number(operationId.slice(-1));
+      store.reserve(spec, 40, operationId, String(index).repeat(64));
+      store.observe({
+        operationId,
+        taskId: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+        status: 'SUCCEEDED',
+        consumedCredits: 5,
+        observedAt: time,
+      });
+    }
+    store.select(taskId, 'f'.repeat(64));
+    store.reserve(spec, 40, 'retexture-selected', 'e'.repeat(64));
+  }
+
+  it('adopts only the named, post-submission provider task with a read-only GET', async () => {
+    reserveUncertainRetexture();
+    fetch.mockResolvedValueOnce(json(retextureTask()));
+    const result = await reconcileUncertainMeshyRetexture(
+      store,
+      spec,
+      40,
+      retextureTaskId,
+      submittedAt,
+      credential,
+      deps,
+    );
+    expect(result.receipt).toMatchObject({
+      operationId: 'retexture-selected',
+      taskId: retextureTaskId,
+      status: 'PENDING',
+      consumedCredits: null,
+    });
+    expect(fetch).toHaveBeenCalledExactlyOnceWith(
+      `https://api.meshy.ai/openapi/v1/retexture/${retextureTaskId}`,
+      expect.objectContaining({ method: 'GET', redirect: 'error' }),
+    );
+  });
+
+  it.each([
+    ['00000000-0000-4000-8000-000000000098', {}],
+    [retextureTaskId, { created_at: Date.parse(submittedAt) - 1 }],
+  ])('refuses a mismatched operator task without mutating the reservation', async (id, change) => {
+    reserveUncertainRetexture();
+    fetch.mockResolvedValueOnce(json(retextureTask(change)));
+    await expect(
+      reconcileUncertainMeshyRetexture(store, spec, 40, id, submittedAt, credential, deps),
+    ).rejects.toThrow('invalid-response');
+    expect(store.read().tasks).toHaveLength(4);
+    expect(store.read().requests).toHaveLength(5);
   });
 });
 

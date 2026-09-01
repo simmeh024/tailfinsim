@@ -1,5 +1,7 @@
 import { fileURLToPath } from 'node:url';
 
+import { z } from 'zod';
+
 import { canonicalJson } from './canonical';
 import { MeshyGenerationSpec, meshyCreditExposure, meshySpecIdentity } from './meshy';
 import { checkMeshyAccount } from './meshy-account';
@@ -12,6 +14,8 @@ import {
 import { archiveMeshyCorrection } from './meshy-correction-archive';
 import {
   MeshyCandidateOperation,
+  MeshySubmissionProof,
+  loadMeshyEvidenceJson,
   meshyEvidenceDirectory,
   prepareMeshyEvidence,
   storeMeshyEvidenceBytes,
@@ -20,6 +24,7 @@ import { archiveMeshyFrameAssessment } from './meshy-frame-archive';
 import { reportMeshyGeometry } from './meshy-geometry-report';
 import { readBoundedMeshyInput } from './meshy-preflight';
 import { sealMeshyCandidateProvenance, sealMeshyRetextureProvenance } from './meshy-provenance';
+import { reconcileUncertainMeshyRetexture } from './meshy-recovery';
 import { archiveMeshyReview } from './meshy-review-archive';
 import { assertMeshyRunCap, meshyRunApprovalIdentity } from './meshy-run';
 import { archiveMeshySemanticInventory } from './meshy-semantic-inventory-archive';
@@ -56,6 +61,7 @@ export const MESHY_RUN_USAGE =
   '       assets:meshy-run submit --operation candidate-1..4 --pricing-file PATH --max-credits 1..40 [--key-file PATH]\n' +
   '       assets:meshy-run sync --operation candidate-1..4 --max-credits 1..40 [--key-file PATH]\n' +
   '       assets:meshy-run retexture-submit --pricing-file PATH --max-credits 1..40 [--key-file PATH]\n' +
+  '       assets:meshy-run retexture-reconcile --task-id UUID --max-credits 1..40 [--key-file PATH]\n' +
   '       assets:meshy-run retexture-sync --max-credits 1..40 [--key-file PATH]\n' +
   'One immutable first-run approval per repository. Submit spends credits; never retry an uncertain submission.\n';
 
@@ -76,6 +82,7 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
       'provenance',
       'retexture-provenance',
       'retexture-submit',
+      'retexture-reconcile',
       'retexture-sync',
       'audit',
       'review',
@@ -107,36 +114,38 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
                 ? ['--operation', '--pricing-file', '--max-credits', '--key-file']
                 : command === 'retexture-submit'
                   ? ['--pricing-file', '--max-credits', '--key-file']
-                  : command === 'sync'
-                    ? ['--operation', '--max-credits', '--key-file']
-                    : command === 'retexture-sync'
-                      ? ['--max-credits', '--key-file']
-                      : command === 'account'
+                  : command === 'retexture-reconcile'
+                    ? ['--task-id', '--max-credits', '--key-file']
+                    : command === 'sync'
+                      ? ['--operation', '--max-credits', '--key-file']
+                      : command === 'retexture-sync'
                         ? ['--max-credits', '--key-file']
-                        : command === 'frame'
-                          ? ['--operation', '--axis-review-file']
-                          : command === 'semantics'
-                            ? ['--operation', '--review-file']
-                            : command === 'residual-review'
-                              ? ['--operation', '--residual-sha256', '--review-file']
-                              : command === 'repair-plan'
-                                ? ['--operation', '--residual-review-sha256']
-                                : command === 'repair-scaffold'
-                                  ? ['--operation', '--repair-plan-sha256']
-                                  : command === 'repair-intake'
-                                    ? [
-                                        '--operation',
-                                        '--scaffold-report-sha256',
-                                        '--derivative-file',
-                                        '--submission-file',
-                                      ]
-                                    : ['repair-requirements', 'residuals'].includes(command ?? '')
-                                      ? ['--operation', '--assessment-sha256']
-                                      : ['audit', 'review', 'correct', 'inventory'].includes(
-                                            command ?? '',
-                                          )
-                                        ? ['--operation']
-                                        : [];
+                        : command === 'account'
+                          ? ['--max-credits', '--key-file']
+                          : command === 'frame'
+                            ? ['--operation', '--axis-review-file']
+                            : command === 'semantics'
+                              ? ['--operation', '--review-file']
+                              : command === 'residual-review'
+                                ? ['--operation', '--residual-sha256', '--review-file']
+                                : command === 'repair-plan'
+                                  ? ['--operation', '--residual-review-sha256']
+                                  : command === 'repair-scaffold'
+                                    ? ['--operation', '--repair-plan-sha256']
+                                    : command === 'repair-intake'
+                                      ? [
+                                          '--operation',
+                                          '--scaffold-report-sha256',
+                                          '--derivative-file',
+                                          '--submission-file',
+                                        ]
+                                      : ['repair-requirements', 'residuals'].includes(command ?? '')
+                                        ? ['--operation', '--assessment-sha256']
+                                        : ['audit', 'review', 'correct', 'inventory'].includes(
+                                              command ?? '',
+                                            )
+                                          ? ['--operation']
+                                          : [];
   const options = new Map<string, string>();
   for (let index = 1; index < args.length; index += 2) {
     const key = args[index];
@@ -158,6 +167,7 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
       'provenance',
       'retexture-provenance',
       'retexture-submit',
+      'retexture-reconcile',
       'retexture-sync',
     ].includes(command!) &&
     !/^(?:[1-9]|[1-3][0-9]|40)$/.test(options.get('--max-credits') ?? '')
@@ -192,6 +202,8 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
     throw new Error('Fresh pricing review required.');
   if (command === 'retexture-submit' && !options.has('--pricing-file'))
     throw new Error('Fresh pricing review required.');
+  if (command === 'retexture-reconcile' && !z.uuid().safeParse(options.get('--task-id')).success)
+    throw new Error('A provider retexture task UUID is required.');
   if (command === 'frame' && !options.has('--axis-review-file'))
     throw new Error('Axis review required.');
   if (command === 'semantics' && !options.has('--review-file'))
@@ -626,6 +638,29 @@ export async function runMeshyRunCommand(
         credential,
       ),
     );
+  if (command === 'retexture-reconcile') {
+    const requestSha256 = state.requests.find(
+      (request) => request.operationId === 'retexture-selected',
+    )?.requestSha256;
+    if (!requestSha256) throw new Error('Retexture reservation is required.');
+    const proof = MeshySubmissionProof.parse(
+      loadMeshyEvidenceJson(meshyEvidenceDirectory(database), requestSha256),
+    );
+    if (proof.operationId !== 'retexture-selected') throw new Error('Retexture proof differs.');
+    const result = await reconcileUncertainMeshyRetexture(
+      store,
+      spec,
+      maxCredits,
+      options.get('--task-id')!,
+      proof.authorizedAt,
+      credential,
+    );
+    return canonicalJson({
+      ...result.receipt,
+      creditsSpentByThisCommand: 0,
+      productionPublicationApproved: false,
+    });
+  }
   if (command === 'sync')
     return canonicalJson({
       ...(await syncMeshyCandidate(
