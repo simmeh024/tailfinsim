@@ -51,6 +51,7 @@ export * from './maintenance';
 export * from './crew';
 export * from './fleet';
 export * from './livery';
+export * from './livery-resources';
 export * from './network';
 export * from './automation';
 export * from './ground';
