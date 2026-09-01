@@ -45,12 +45,13 @@ afterEach(async () => {
 describe('archive retexture recovery ledger', () => {
   it('records a write-ahead reservation and cannot reuse or rewrite it', () => {
     expect(store.initialize(approval).reservation).toBeNull();
-    const reserved = store.reserve('d'.repeat(64), source.exportSha256, time);
+    const reserved = store.reserve('d'.repeat(64), source.exportSha256, 'e'.repeat(64), time);
     expect(reserved.reservation).toMatchObject({
       reservedCredits: 10,
       sourceSha256: source.exportSha256,
+      proofSha256: 'e'.repeat(64),
     });
-    expect(() => store.reserve('e'.repeat(64), source.exportSha256, time)).toThrow(
+    expect(() => store.reserve('f'.repeat(64), source.exportSha256, 'e'.repeat(64), time)).toThrow(
       'ledger refused',
     );
 
