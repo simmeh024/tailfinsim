@@ -33,6 +33,10 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-glb", required=True)
     parser.add_argument("--output-blend", required=True)
+    parser.add_argument(
+        "--output-livery-glb",
+        help="Optional quarantine-only authoring export with source and canonical livery UV sets.",
+    )
     return parser.parse_args(raw)
 
 
@@ -328,6 +332,118 @@ def lights():
     mesh_object("lights", vertices, faces)
 
 
+def material(name, colour, metallic=0.0, roughness=0.55):
+    result = bpy.data.materials.new(name)
+    result.use_nodes = True
+    shader = result.node_tree.nodes.get("Principled BSDF")
+    shader.inputs["Base Color"].default_value = (*colour, 1.0)
+    shader.inputs["Metallic"].default_value = metallic
+    shader.inputs["Roughness"].default_value = roughness
+    return result
+
+
+def assign_material(obj, value):
+    obj.data.materials.clear()
+    obj.data.materials.append(value)
+
+
+def smart_project(obj):
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.025, correct_aspect=True)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    source = obj.data.uv_layers.active
+    source.name = "source_pbr_uv"
+    return source
+
+
+def assign_livery_uv(obj, region):
+    source = smart_project(obj)
+    livery = obj.data.uv_layers.new(name="livery_uv")
+    offset_u, offset_v, width, height = region
+    for index, source_loop in enumerate(source.data):
+        u, v = source_loop.uv
+        livery.data[index].uv = (offset_u + width * u, offset_v + height * v)
+
+
+def livery_authoring_export(path):
+    """Create a material-separated authoring export; never use it as runtime admission input."""
+    paint_materials = {
+        "mat-fuselage": material("mat-fuselage", (0.84, 0.86, 0.88), metallic=0.05, roughness=0.42),
+        "mat-fin": material("mat-fin", (0.84, 0.86, 0.88), metallic=0.05, roughness=0.42),
+        "mat-horizontal-stabilisers": material("mat-horizontal-stabilisers", (0.84, 0.86, 0.88), metallic=0.05, roughness=0.42),
+        "mat-wings": material("mat-wings", (0.78, 0.80, 0.82), metallic=0.18, roughness=0.48),
+        "mat-winglets": material("mat-winglets", (0.78, 0.80, 0.82), metallic=0.18, roughness=0.48),
+        "mat-nacelle-exteriors": material("mat-nacelle-exteriors", (0.82, 0.84, 0.86), metallic=0.12, roughness=0.40),
+    }
+    protected_materials = {
+        "mat-cockpit-glass": material("mat-cockpit-glass", (0.02, 0.04, 0.07), metallic=0.0, roughness=0.18),
+        "mat-cabin-windows": material("mat-cabin-windows", (0.03, 0.05, 0.08), metallic=0.0, roughness=0.20),
+        "mat-engine-interiors": material("mat-engine-interiors", (0.05, 0.05, 0.06), metallic=0.55, roughness=0.32),
+        "mat-lights": material("mat-lights", (0.96, 0.82, 0.40), metallic=0.1, roughness=0.26),
+    }
+    assignments = {
+        "fuselage": "mat-fuselage",
+        "doors_left": "mat-fuselage",
+        "doors_right": "mat-fuselage",
+        "tail_fin": "mat-fin",
+        "horizontal_stabiliser_left": "mat-horizontal-stabilisers",
+        "horizontal_stabiliser_right": "mat-horizontal-stabilisers",
+        "wing_left": "mat-wings",
+        "wing_right": "mat-wings",
+        "winglet_left": "mat-winglets",
+        "winglet_right": "mat-winglets",
+        "nacelle_left": "mat-nacelle-exteriors",
+        "nacelle_right": "mat-nacelle-exteriors",
+        "cockpit_glass": "mat-cockpit-glass",
+        "cabin_windows_left": "mat-cabin-windows",
+        "cabin_windows_right": "mat-cabin-windows",
+        "engine_interiors_left": "mat-engine-interiors",
+        "engine_interiors_right": "mat-engine-interiors",
+        "lights": "mat-lights",
+    }
+    for object_name, material_name in assignments.items():
+        assign_material(
+            bpy.data.objects[object_name],
+            paint_materials.get(material_name, protected_materials.get(material_name)),
+        )
+
+    # Each paintable material owns an independent logical atlas. Shared materials reserve
+    # distinct regions per semantic mesh, preventing accidental port/starboard mirroring.
+    regions = {
+        "fuselage": (0.015, 0.015, 0.755, 0.970),
+        "doors_left": (0.785, 0.015, 0.090, 0.970),
+        "doors_right": (0.895, 0.015, 0.090, 0.970),
+        "tail_fin": (0.015, 0.015, 0.970, 0.970),
+        "horizontal_stabiliser_left": (0.015, 0.015, 0.465, 0.970),
+        "horizontal_stabiliser_right": (0.520, 0.015, 0.465, 0.970),
+        "wing_left": (0.015, 0.015, 0.465, 0.970),
+        "wing_right": (0.520, 0.015, 0.465, 0.970),
+        "winglet_left": (0.015, 0.015, 0.465, 0.970),
+        "winglet_right": (0.520, 0.015, 0.465, 0.970),
+        "nacelle_left": (0.015, 0.015, 0.465, 0.970),
+        "nacelle_right": (0.520, 0.015, 0.465, 0.970),
+    }
+    for object_name, region in regions.items():
+        assign_livery_uv(bpy.data.objects[object_name], region)
+
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    bpy.ops.object.select_all(action="SELECT")
+    bpy.ops.export_scene.gltf(
+        filepath=str(Path(path).resolve()),
+        export_format="GLB",
+        export_materials="EXPORT",
+        export_normals=True,
+        export_texcoords=True,
+        export_yup=True,
+        export_apply=False,
+        export_keep_originals=True,
+    )
+
+
 def write_glb(path):
     chunks, buffer_views, accessors, meshes = [], [], [], []
     byte_offset = 0
@@ -395,6 +511,8 @@ def main():
     Path(args.output_glb).parent.mkdir(parents=True, exist_ok=True)
     Path(args.output_blend).parent.mkdir(parents=True, exist_ok=True)
     write_glb(args.output_glb)
+    if args.output_livery_glb:
+        livery_authoring_export(args.output_livery_glb)
     bpy.ops.wm.save_as_mainfile(filepath=str(Path(args.output_blend).resolve()), check_existing=False)
     print(json.dumps({"outputGlb": str(Path(args.output_glb).resolve()), "outputBlend": str(Path(args.output_blend).resolve()), "semanticObjects": len(SEMANTIC_ORDER)}, sort_keys=True))
 
