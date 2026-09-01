@@ -123,8 +123,7 @@ export const AircraftLiveryUvResource = z
       for (let rightIndex = leftIndex + 1; rightIndex < resource.islands.length; rightIndex += 1) {
         const right = resource.islands[rightIndex];
         if (
-          right &&
-          left.materialName === right.materialName &&
+          right?.materialName === left.materialName &&
           rectanglesOverlap(left.bounds, right.bounds)
         ) {
           context.addIssue({
