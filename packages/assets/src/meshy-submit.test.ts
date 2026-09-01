@@ -803,8 +803,16 @@ describe('one-shot paid boundary with a real durable ledger and fake provider', 
     expect(parseMeshyRunArguments(['retexture-provenance', '--max-credits', '40']).command).toBe(
       'retexture-provenance',
     );
+    expect(
+      parseMeshyRunArguments(['archive-retexture-init', '--approval-file', 'private.json']).command,
+    ).toBe('archive-retexture-init');
+    expect(
+      parseMeshyRunArguments(['archive-retexture-dry-run', '--max-total-credits', '50']).command,
+    ).toBe('archive-retexture-dry-run');
     for (const args of [
       ['prepare'],
+      ['archive-retexture-init'],
+      ['archive-retexture-dry-run', '--max-total-credits', '49'],
       ['submit', '--operation', 'candidate-1', '--max-credits', '40'],
       [
         'submit',
