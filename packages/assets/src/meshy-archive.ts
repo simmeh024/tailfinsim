@@ -20,7 +20,6 @@ import { z } from 'zod';
 
 import { canonicalJson, sha256 } from './canonical';
 import { meshySpecIdentity, type MeshyGenerationSpec } from './meshy';
-import { MeshyRetextureArchive } from './meshy-retexture';
 import {
   MESHY_GLB_DOWNLOAD_LIMIT,
   assertMeshyGlbEnvelope,
@@ -28,6 +27,7 @@ import {
   recoverMeshyCandidate,
   type MeshyRecoveryDeps,
 } from './meshy-recovery';
+import { MeshyRetextureArchive } from './meshy-retexture';
 import {
   MeshyArtifactDigest,
   MeshySha256,
@@ -157,13 +157,13 @@ export function writeImmutableMeshyArtifact(path: string, bytes: Buffer): void {
 }
 
 type RetextureArchive = z.infer<typeof MeshyRetextureArchive>;
-type RetextureBytes = {
+interface RetextureBytes {
   glb: Buffer;
   baseColor: Buffer;
   normal: Buffer;
   metallic: Buffer;
   roughness: Buffer;
-};
+}
 
 /**
  * Publishes every immutable source artifact before the completion manifest. The
@@ -176,7 +176,7 @@ export function writeMeshyRetextureArchive(
   bytes: RetextureBytes,
 ): RetextureArchive {
   const archive = MeshyRetextureArchive.parse(archiveInput);
-  const expected: Array<[keyof RetextureBytes, z.infer<typeof MeshyArtifactDigest>, string]> = [
+  const expected: [keyof RetextureBytes, z.infer<typeof MeshyArtifactDigest>, string][] = [
     ['glb', archive.retexturedGlb, '.glb'],
     ['baseColor', archive.pbrTextures.baseColor, '.texture'],
     ['normal', archive.pbrTextures.normal, '.texture'],
