@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 import { MeshyGenerationSpec } from './meshy';
+import { downloadMeshyTexture } from './meshy-recovery';
 import { assertMeshyRetextureArchiveReady, createMeshyRetextureRequest } from './meshy-retexture';
 
 const spec = MeshyGenerationSpec.parse(
@@ -52,5 +53,28 @@ describe('Meshy selected retexture contract', () => {
     } as { texture_urls: { roughness?: string } };
     delete incomplete.texture_urls.roughness;
     expect(() => assertMeshyRetextureArchiveReady(incomplete)).toThrow('missing required');
+  });
+
+  it('downloads only validated PBR image bytes from Meshy assets without credentials', async () => {
+    const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+    const fetch = (_url: string, init?: RequestInit) => {
+      expect(init?.headers).toEqual({ Accept: 'image/png, image/jpeg' });
+      expect(init?.redirect).toBe('error');
+      return Promise.resolve(new Response(png, { headers: { 'content-type': 'image/png' } }));
+    };
+    await expect(
+      downloadMeshyTexture('https://assets.meshy.ai/texture.png', {
+        fetch: fetch as typeof globalThis.fetch,
+        pause: () => Promise.resolve(),
+        now: () => new Date(0),
+      }),
+    ).resolves.toEqual(png);
+    await expect(
+      downloadMeshyTexture('https://example.invalid/texture.png', {
+        fetch: fetch as typeof globalThis.fetch,
+        pause: () => Promise.resolve(),
+        now: () => new Date(0),
+      }),
+    ).rejects.toThrow('download-refused');
   });
 });

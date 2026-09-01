@@ -182,6 +182,7 @@ export async function recoverMeshyCandidate(
 }
 
 export const MESHY_GLB_DOWNLOAD_LIMIT = 64 * 1024 * 1024;
+export const MESHY_TEXTURE_DOWNLOAD_LIMIT = 64 * 1024 * 1024;
 
 /** Envelope check only, not glTF conformance, topology, self-containment or licence admission. */
 export function assertMeshyGlbEnvelope(bytes: Buffer): void {
@@ -230,6 +231,42 @@ export async function downloadMeshyGlb(
       deps,
     );
     assertMeshyGlbEnvelope(bytes);
+    return bytes;
+  } catch {
+    throw new MeshyRecoveryError('download-refused');
+  }
+}
+
+/** Same fixed asset-host rule as GLBs, with no credentials forwarded to texture URLs. */
+export async function downloadMeshyTexture(
+  signedUrl: string,
+  deps: MeshyRecoveryDeps = meshyRecoveryDefaults,
+): Promise<Buffer> {
+  try {
+    const url = new URL(signedUrl);
+    if (
+      signedUrl.length > 8_192 ||
+      url.protocol !== 'https:' ||
+      url.hostname !== 'assets.meshy.ai' ||
+      url.port ||
+      url.username ||
+      url.password ||
+      url.hash
+    )
+      throw new Error('Refused asset URL.');
+    const bytes = await boundedGet(
+      url.href,
+      { Accept: 'image/png, image/jpeg' },
+      ['image/png', 'image/jpeg'],
+      MESHY_TEXTURE_DOWNLOAD_LIMIT,
+      30_000,
+      deps,
+    );
+    const png =
+      bytes.length >= 8 &&
+      bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    const jpeg = bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+    if (!png && !jpeg) throw new Error('Invalid texture bytes.');
     return bytes;
   } catch {
     throw new MeshyRecoveryError('download-refused');
