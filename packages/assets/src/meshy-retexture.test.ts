@@ -57,22 +57,22 @@ describe('Meshy selected retexture contract', () => {
 
   it('downloads only validated PBR image bytes from Meshy assets without credentials', async () => {
     const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-    const fetch = async (_url: string, init?: RequestInit) => {
+    const fetch = (_url: string, init?: RequestInit) => {
       expect(init?.headers).toEqual({ Accept: 'image/png, image/jpeg' });
       expect(init?.redirect).toBe('error');
-      return new Response(png, { headers: { 'content-type': 'image/png' } });
+      return Promise.resolve(new Response(png, { headers: { 'content-type': 'image/png' } }));
     };
     await expect(
       downloadMeshyTexture('https://assets.meshy.ai/texture.png', {
         fetch: fetch as typeof globalThis.fetch,
-        pause: async () => undefined,
+        pause: () => Promise.resolve(),
         now: () => new Date(0),
       }),
     ).resolves.toEqual(png);
     await expect(
       downloadMeshyTexture('https://example.invalid/texture.png', {
         fetch: fetch as typeof globalThis.fetch,
-        pause: async () => undefined,
+        pause: () => Promise.resolve(),
         now: () => new Date(0),
       }),
     ).rejects.toThrow('download-refused');
