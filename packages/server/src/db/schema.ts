@@ -159,10 +159,44 @@ export const player = pgTable('player', {
   displayName: text('display_name').notNull(),
   /** From the provider's `picture` claim. Nullable — not everyone has one. */
   avatarUrl: text('avatar_url'),
+  /**
+   * The player's chosen display currency (M8-02, an ISO-4217 code). **Nullable,
+   * and null means the default `USD`** — so a migration bakes in no default and a
+   * world reset that clears it restores the default. Purely a display preference:
+   * all money stays USD minor units. The code is validated against
+   * `SUPPORTED_CURRENCIES` at the write boundary, not by a database constraint.
+   */
+  displayCurrency: text('display_currency'),
   /** Set when personal identity is removed while the world-history anchor remains (§22.10). */
   anonymizedAt: timestamp('anonymized_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Live FX rates for display currencies (M8-02).
+ *
+ * One row per supported ISO-4217 code, carrying its rate against USD. **This
+ * table is mutable by design** — it is unlike `economy_config` and
+ * `aircraft_type`, which are immutable, seed-if-absent and never updated. This
+ * one is seed-if-absent *and* refreshed nightly by the worker, because a display
+ * rate is meant to track the real world. Do not "fix" it to match the immutable
+ * tables.
+ *
+ * Money never lives here: `rate_e6` is a **ratio** (rate × 1,000,000 vs USD, so
+ * USD is exactly 1,000,000), stored as an integer for determinism rather than
+ * because it is money. Conversion happens only at the client's render boundary.
+ */
+export const currencyRate = pgTable('currency_rate', {
+  /** ISO-4217 code, e.g. `EUR`. Primary key — one rate per currency. */
+  code: text('code').primaryKey(),
+  /** Rate × 1,000,000 vs USD. The USD row is exactly 1,000,000. */
+  rateE6: bigint('rate_e6', { mode: 'number' }).notNull(),
+  /** Where this rate came from: the seed baseline, or the FX provider host. */
+  source: text('source').notNull(),
+  /** When the worker (or the seed) last wrote this rate. */
+  refreshedAt: timestamp('refreshed_at', { withTimezone: true }).notNull().defaultNow(),
+});
+export type CurrencyRateRow = typeof currencyRate.$inferSelect;
 
 /**
  * Login sessions (M0-11).

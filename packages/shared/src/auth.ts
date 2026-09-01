@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { DisplayCurrency } from './currency';
 import { Timestamp, Uuid } from './primitives';
 
 /**
@@ -21,6 +22,13 @@ export const AuthenticatedPlayer = z.object({
   displayName: z.string().min(1),
   avatarUrl: z.url().nullable(),
   createdAt: Timestamp,
+  /**
+   * The currency this player displays money in (M8-02). Always concrete on the
+   * wire — the server resolves a null `player.display_currency` to the default
+   * `USD` — so the client never has to know the default. Purely a display
+   * choice: every money value elsewhere is still USD minor units.
+   */
+  displayCurrency: DisplayCurrency,
 });
 export type AuthenticatedPlayer = z.infer<typeof AuthenticatedPlayer>;
 

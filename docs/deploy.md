@@ -306,6 +306,12 @@ the login/deploy command, and the
 [Worker runbook](../deploy/README.md#the-dev-worker-node-ops-09) owns the SSH, systemd,
 `pg_hba.conf` and failure-recovery detail.
 
+The dev Worker makes **one outbound third-party call** (M8-02): a daily, keyless HTTPS read of
+display-currency rates from `open.er-api.com`, recorded in
+[ADR-0012](adr/0012-tailfin-threat-model.md). It needs egress to that host; a firewall that
+blocks it degrades gracefully — rates stay at the seeded baseline and `fxRefreshErrors` climbs,
+nothing else. Production runs no Worker and so makes no such call.
+
 **Running the command is the approval step.** Nothing automated can push to production,
 and no credential exists that lets GitHub reach the instance.
 

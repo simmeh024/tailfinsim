@@ -1,5 +1,6 @@
 import { writeSync } from 'node:fs';
 
+import { httpFxSource } from './currency/fx-source';
 import { createDatabase, type DatabaseHandle } from './db/client';
 import {
   collectHandlerPreflight,
@@ -175,6 +176,10 @@ const engine = createSimulationEngine({
   db: db.db,
   handlers,
   intervalMs,
+  // The live display-currency source (M8-02). Only the worker supplies it, so
+  // only the worker refreshes rates — the web process seeds a baseline and never
+  // reaches out. Real HTTP; the refresh throttles itself and never blocks a tick.
+  fxSource: httpFxSource,
   log: {
     tick: (report) => {
       // Only ticks that did something. At 1 Hz against an empty queue the log

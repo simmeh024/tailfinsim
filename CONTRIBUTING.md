@@ -563,9 +563,25 @@ Every incident will suggest a new section, and adding one is a decision rather t
 
 ## Units and currency
 
-The design doc mixes `$` and `€`, and nm/ft/m/t/kg (§24 lists this as open design debt,
-resolved by M8-02). Until M8-02 lands, **do not invent a convention** — flag it on the
-issue and use whatever the surrounding code already does.
+§24 listed the design doc's mixed `$`/`€` and nm/ft/m/t/kg as open debt; M8-02 settles it.
+
+**Money is always integer minor units of one accounting currency, USD.** Never a float:
+binary floating-point currency arithmetic loses fractions of a cent in ways that are silent
+and cumulative. The convention is the column/field-name suffix `_minor` (`cash_minor`,
+`monthly_salary_minor`), stored as `bigint` and carried on the wire as an integer `number`.
+`packages/server/src/db/money-float-guard.test.ts` fails if a `_minor` column is ever declared
+`doublePrecision`/`real`/`numeric` — so add money as `bigint`, and if you need a fractional
+_ratio_ (an FX rate, a load factor), it is not money and does not use the `_minor` suffix.
+
+**Currency is display-only.** A player may choose a display currency (`SUPPORTED_CURRENCIES`
+in `@tailfin/shared`; the default is USD), and the client converts USD minor units to it at
+the render boundary using a rate from `currency_rate`. No stored or computed value is ever in
+anything but USD, so `flight_result` immutability and the ledger are untouched. Do not convert
+money anywhere but the display edge, and keep the admin console in USD — it audits the economy.
+
+**Units:** nautical miles for distance, feet for altitude, kilograms for weight — consistent
+across sim, API and UI. Non-money continuous quantities (latitude, `great_circle_nm`, block
+hours) are `doublePrecision`; that is fine because they are not money.
 
 ---
 

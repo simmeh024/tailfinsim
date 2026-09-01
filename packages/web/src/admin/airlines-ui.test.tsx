@@ -11,6 +11,7 @@ const ADMIN: MeResponse = {
     id: '11111111-2222-4333-8444-555555555555',
     displayName: 'Admin User',
     avatarUrl: null,
+    displayCurrency: 'USD',
     createdAt: '2026-08-17T09:00:00.000Z',
   },
   registrationOpen: false,

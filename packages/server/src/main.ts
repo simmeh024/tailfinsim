@@ -1,5 +1,6 @@
 import { seedAircraftCatalogue } from './aircraft/catalogue';
 import { buildApp } from './app';
+import { seedCurrencyRates } from './currency/rates';
 import { createDatabase } from './db/client';
 import { seedEconomyConfig } from './economy/seed';
 import { loadEnv } from './env';
@@ -68,6 +69,18 @@ async function seedCatalogue(): Promise<void> {
   );
 }
 
+async function seedCurrencies(): Promise<void> {
+  // Baseline display-currency rates (M8-02). Insert-if-absent, like the economy
+  // and catalogue seeds, so a fresh database and any node without a worker still
+  // show sensible numbers; the worker refreshes them live afterwards. Not fatal
+  // if it does nothing — a currency without a rate falls back to its baseline.
+  const result = await seedCurrencyRates(db.db);
+  app.log.info(
+    { inserted: result.inserted, existing: result.existing },
+    result.inserted > 0 ? 'currency rates seeded' : 'currency rates already present',
+  );
+}
+
 async function seedEconomy(): Promise<void> {
   const result = await seedEconomyConfig(db.db);
   if (result.inserted) {
@@ -94,6 +107,7 @@ async function seedEconomy(): Promise<void> {
 try {
   await seedEconomy();
   await seedCatalogue();
+  await seedCurrencies();
   // Bound to loopback by default: Caddy is the only thing that should reach
   // this, and binding 0.0.0.0 would expose it directly if ufw ever lapsed.
   await app.listen({ port, host });

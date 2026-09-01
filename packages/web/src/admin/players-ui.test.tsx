@@ -30,6 +30,7 @@ const ADMIN: MeResponse = {
     displayName: 'Amelia Hart',
     avatarUrl: null,
     createdAt: '2026-08-17T09:00:00.000Z',
+    displayCurrency: 'USD',
   },
   registrationOpen: false,
   isAdmin: true,
