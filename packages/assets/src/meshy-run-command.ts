@@ -3,13 +3,13 @@ import { fileURLToPath } from 'node:url';
 import { canonicalJson } from './canonical';
 import { MeshyGenerationSpec, meshyCreditExposure, meshySpecIdentity } from './meshy';
 import { checkMeshyAccount } from './meshy-account';
-import { meshyArchiveDirectory, syncMeshyCandidate } from './meshy-archive';
+import { meshyArchiveDirectory, syncMeshyCandidate, syncMeshyRetexture } from './meshy-archive';
 import { archiveMeshyCorrection } from './meshy-correction-archive';
 import { meshyEvidenceDirectory, prepareMeshyEvidence } from './meshy-evidence';
 import { archiveMeshyFrameAssessment } from './meshy-frame-archive';
 import { reportMeshyGeometry } from './meshy-geometry-report';
 import { readBoundedMeshyInput } from './meshy-preflight';
-import { sealMeshyCandidateProvenance } from './meshy-provenance';
+import { sealMeshyCandidateProvenance, sealMeshyRetextureProvenance } from './meshy-provenance';
 import { archiveMeshyReview } from './meshy-review-archive';
 import { assertMeshyRunCap, meshyRunApprovalIdentity } from './meshy-run';
 import { archiveMeshySemanticInventory } from './meshy-semantic-inventory-archive';
@@ -21,7 +21,7 @@ import { archiveMeshySemanticResidualReview } from './meshy-semantic-residual-re
 import { archiveMeshySemanticResiduals } from './meshy-semantic-residuals-archive';
 import { archiveMeshySemanticReview } from './meshy-semantic-review-archive';
 import { MeshyRunStore, meshyRunDatabasePath } from './meshy-store';
-import { submitMeshyCandidate } from './meshy-submit';
+import { submitMeshyCandidate, submitMeshyRetexture } from './meshy-submit';
 
 export const MESHY_RUN_USAGE =
   'Usage: assets:meshy-run init --approval-file PATH\n' +
@@ -41,9 +41,12 @@ export const MESHY_RUN_USAGE =
   '       assets:meshy-run account --max-credits 1..40 [--key-file PATH]\n' +
   '       assets:meshy-run prepare --evidence-file PATH --max-credits 1..40\n' +
   '       assets:meshy-run provenance --operation candidate-1..4 --max-credits 1..40\n' +
+  '       assets:meshy-run retexture-provenance --max-credits 1..40\n' +
   '       assets:meshy-run submit --operation candidate-1..4 --pricing-file PATH --max-credits 1..40 [--key-file PATH]\n' +
   '       assets:meshy-run sync --operation candidate-1..4 --max-credits 1..40 [--key-file PATH]\n' +
-  'One immutable first-run approval per repository. Submit spends credits; never retry an uncertain submission. No retexture command.\n';
+  '       assets:meshy-run retexture-submit --pricing-file PATH --max-credits 1..40 [--key-file PATH]\n' +
+  '       assets:meshy-run retexture-sync --max-credits 1..40 [--key-file PATH]\n' +
+  'One immutable first-run approval per repository. Submit spends credits; never retry an uncertain submission.\n';
 
 export function parseMeshyRunArguments(argv: readonly string[]) {
   const args = argv[0] === '--' ? argv.slice(1) : argv;
@@ -59,6 +62,9 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
       'submit',
       'sync',
       'provenance',
+      'retexture-provenance',
+      'retexture-submit',
+      'retexture-sync',
       'audit',
       'review',
       'frame',
@@ -81,34 +87,42 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
         ? ['--evidence-file', '--max-credits']
         : command === 'provenance'
           ? ['--operation', '--max-credits']
-          : command === 'submit'
-            ? ['--operation', '--pricing-file', '--max-credits', '--key-file']
-            : command === 'sync'
-              ? ['--operation', '--max-credits', '--key-file']
-              : command === 'account'
-                ? ['--max-credits', '--key-file']
-                : command === 'frame'
-                  ? ['--operation', '--axis-review-file']
-                  : command === 'semantics'
-                    ? ['--operation', '--review-file']
-                    : command === 'residual-review'
-                      ? ['--operation', '--residual-sha256', '--review-file']
-                      : command === 'repair-plan'
-                        ? ['--operation', '--residual-review-sha256']
-                        : command === 'repair-scaffold'
-                          ? ['--operation', '--repair-plan-sha256']
-                          : command === 'repair-intake'
-                            ? [
-                                '--operation',
-                                '--scaffold-report-sha256',
-                                '--derivative-file',
-                                '--submission-file',
-                              ]
-                            : ['repair-requirements', 'residuals'].includes(command ?? '')
-                              ? ['--operation', '--assessment-sha256']
-                              : ['audit', 'review', 'correct', 'inventory'].includes(command ?? '')
-                                ? ['--operation']
-                                : [];
+          : command === 'retexture-provenance'
+            ? ['--max-credits']
+            : command === 'submit'
+              ? ['--operation', '--pricing-file', '--max-credits', '--key-file']
+              : command === 'retexture-submit'
+                ? ['--pricing-file', '--max-credits', '--key-file']
+                : command === 'sync'
+                  ? ['--operation', '--max-credits', '--key-file']
+                  : command === 'retexture-sync'
+                    ? ['--max-credits', '--key-file']
+                    : command === 'account'
+                      ? ['--max-credits', '--key-file']
+                      : command === 'frame'
+                        ? ['--operation', '--axis-review-file']
+                        : command === 'semantics'
+                          ? ['--operation', '--review-file']
+                          : command === 'residual-review'
+                            ? ['--operation', '--residual-sha256', '--review-file']
+                            : command === 'repair-plan'
+                              ? ['--operation', '--residual-review-sha256']
+                              : command === 'repair-scaffold'
+                                ? ['--operation', '--repair-plan-sha256']
+                                : command === 'repair-intake'
+                                  ? [
+                                      '--operation',
+                                      '--scaffold-report-sha256',
+                                      '--derivative-file',
+                                      '--submission-file',
+                                    ]
+                                  : ['repair-requirements', 'residuals'].includes(command ?? '')
+                                    ? ['--operation', '--assessment-sha256']
+                                    : ['audit', 'review', 'correct', 'inventory'].includes(
+                                          command ?? '',
+                                        )
+                                      ? ['--operation']
+                                      : [];
   const options = new Map<string, string>();
   for (let index = 1; index < args.length; index += 2) {
     const key = args[index];
@@ -121,7 +135,16 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
   if (command === 'init' && !options.has('--approval-file'))
     throw new Error('Approval file is required.');
   if (
-    ['account', 'sync', 'prepare', 'submit', 'provenance'].includes(command!) &&
+    [
+      'account',
+      'sync',
+      'prepare',
+      'submit',
+      'provenance',
+      'retexture-provenance',
+      'retexture-submit',
+      'retexture-sync',
+    ].includes(command!) &&
     !/^(?:[1-9]|[1-3][0-9]|40)$/.test(options.get('--max-credits') ?? '')
   ) {
     throw new Error('The approved whole-number ceiling is required.');
@@ -150,6 +173,8 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
   if (command === 'prepare' && !options.has('--evidence-file'))
     throw new Error('Evidence import required.');
   if (command === 'submit' && !options.has('--pricing-file'))
+    throw new Error('Fresh pricing review required.');
+  if (command === 'retexture-submit' && !options.has('--pricing-file'))
     throw new Error('Fresh pricing review required.');
   if (command === 'frame' && !options.has('--axis-review-file'))
     throw new Error('Axis review required.');
@@ -502,6 +527,16 @@ export async function runMeshyRunCommand(
         options.get('--operation')!,
       ),
     );
+  if (command === 'retexture-provenance')
+    return canonicalJson(
+      await sealMeshyRetextureProvenance(
+        store,
+        meshyEvidenceDirectory(database),
+        meshyArchiveDirectory(database),
+        spec,
+        maxCredits,
+      ),
+    );
   if (command === 'prepare')
     return canonicalJson(
       await prepareMeshyEvidence(
@@ -529,6 +564,18 @@ export async function runMeshyRunCommand(
         credential,
       ),
     );
+  if (command === 'retexture-submit')
+    return canonicalJson(
+      await submitMeshyRetexture(
+        store,
+        meshyEvidenceDirectory(database),
+        meshyArchiveDirectory(database),
+        spec,
+        maxCredits,
+        JSON.parse(await readBoundedMeshyInput(options.get('--pricing-file')!, 8_192)) as unknown,
+        credential,
+      ),
+    );
   if (command === 'sync')
     return canonicalJson({
       ...(await syncMeshyCandidate(
@@ -537,6 +584,18 @@ export async function runMeshyRunCommand(
         spec,
         maxCredits,
         options.get('--operation')!,
+        credential,
+      )),
+      creditsSpentByThisCommand: 0,
+      generationAvailable: false,
+    });
+  if (command === 'retexture-sync')
+    return canonicalJson({
+      ...(await syncMeshyRetexture(
+        store,
+        meshyArchiveDirectory(database),
+        spec,
+        maxCredits,
         credential,
       )),
       creditsSpentByThisCommand: 0,
