@@ -88,7 +88,7 @@ const BODY_UUID_CONTRACTS = [
     schema: CreateScheduleRequest,
     payload: {
       airframeId: UUID_A,
-      legs: [{ routeId: UUID_A, departureMinuteLocal: 480 }],
+      legs: [{ originIcao: 'EHAM', destinationIcao: 'BIKF', departureMinuteLocal: 480 }],
       repeat: { kind: 'daily' },
     },
     field: 'airframeId',

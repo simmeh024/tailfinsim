@@ -210,22 +210,39 @@ export const SchedulingProblem = z.enum([...ScheduleProblem.options, 'airframe_u
 export type SchedulingProblem = z.infer<typeof SchedulingProblem>;
 
 /**
- * One leg as the player authors it: a route they hold and a local departure time.
+ * One leg as the player authors it: a pair of airports and a local departure time.
  *
- * `departureMinuteLocal` is minute-of-day (§8.2). The server places the legs into
- * a rotation — assigning each its absolute minute from the cycle anchor, rolling a
- * leg to the next day when it cannot follow the previous one the same day — and
- * computes each leg's block and turnaround, because those are physics and the
- * catalogue, not a number the client should assert.
+ * A rotation is a **sequence of stops** — AMS→KEF→JFK is two authored legs — so a
+ * leg names its endpoints rather than a pre-opened route. The server finds the
+ * route for each pair or **opens it** (reachability, range, runway, wingspan and
+ * operating authority all checked against the actual airframe), then places the
+ * legs: `departureMinuteLocal` is minute-of-day (§8.2), and the server assigns
+ * each leg its absolute minute from the cycle anchor and computes its block and
+ * turnaround, because those are physics and the catalogue, not a client's to
+ * assert.
  */
-export const AuthoredLeg = ScheduleLeg;
+export const AuthoredLeg = z
+  .object({
+    originIcao: AirportIcaoCode,
+    destinationIcao: AirportIcaoCode,
+    departureMinuteLocal: MinuteOfDay,
+  })
+  .strict();
 export type AuthoredLeg = z.infer<typeof AuthoredLeg>;
 
-/** `POST /api/schedules` — assign an airframe to a rotation of routes you hold. */
+/**
+ * `POST /api/schedules` — assign an airframe to a rotation of stops.
+ *
+ * `autoReturn` appends a **nonstop** leg from the last stop back to the first, so a
+ * multi-stop outbound (AMS→KEF→JFK) can always come straight home (JFK→AMS) —
+ * placed as soon as the aircraft has landed and turned. Its route is opened like
+ * any other leg.
+ */
 export const CreateScheduleRequest = z
   .object({
     airframeId: Uuid,
     legs: z.array(AuthoredLeg).min(1),
+    autoReturn: z.boolean().default(false),
     repeat: RepeatPattern,
   })
   .strict();
@@ -275,16 +292,62 @@ export type SchedulesResponse = z.infer<typeof SchedulesResponse>;
  * about*, not declined. The hard rule is at departure. Null when there is
  * nothing to say.
  */
+/** One leg's operating cost and distance — decision support, never a gate (§14). */
+export const ScheduleLegCost = z.object({
+  originIcao: AirportIcaoCode,
+  destinationIcao: AirportIcaoCode,
+  distanceNm: NauticalMiles,
+  /** Whether this leg's route was opened by this save rather than already held. */
+  opened: z.boolean(),
+  /** Estimated variable cost to fly the leg once, minor units, at the reference cabin. */
+  variableCostMinor: MinorUnits,
+});
+export type ScheduleLegCost = z.infer<typeof ScheduleLegCost>;
+
+/**
+ * What a rotation costs to fly and how far it goes (§14).
+ *
+ * Surfaced, not enforced — the game lets an airline fly a loss-making route on
+ * purpose, so this is the "check on costs" as decision support: a multi-stop
+ * routing that adds a leg adds its cost here, in the open, before the player
+ * commits.
+ */
+export const ScheduleCostEstimate = z.object({
+  legs: z.array(ScheduleLegCost),
+  totalDistanceNm: NauticalMiles,
+  totalVariableCostMinor: MinorUnits,
+  /** Routes this save opened that the airline did not already hold. */
+  routesOpened: z.number().int().nonnegative(),
+});
+export type ScheduleCostEstimate = z.infer<typeof ScheduleCostEstimate>;
+
 export const CreateScheduleResponse = z.object({
   schedule: ScheduleView,
   warning: z.string().nullable(),
+  cost: ScheduleCostEstimate,
 });
 export type CreateScheduleResponse = z.infer<typeof CreateScheduleResponse>;
 
+/**
+ * Every way authoring a schedule can be refused (M2-03).
+ *
+ * The rotation problems, plus the ones a leg raises when its route has to be
+ * opened: an airport that does not exist, a leg the airframe cannot fly
+ * (`unreachable` — range, runway, wingspan, curfew…), and a leg that needs
+ * operating authority the airline has not hired.
+ */
+export const ScheduleAuthoringProblem = z.enum([
+  ...SchedulingProblem.options,
+  'unknown_airport',
+  'unreachable',
+  'authority_required',
+]);
+export type ScheduleAuthoringProblem = z.infer<typeof ScheduleAuthoringProblem>;
+
 /** Why a schedule was refused, with the specific reason (M2-03). */
 export const ScheduleRefusal = z.object({
-  problem: SchedulingProblem,
-  /** Human-readable and specific: "leg 2 leaves EGLL, but leg 1 left the aircraft at LFPG". */
+  problem: ScheduleAuthoringProblem,
+  /** Human-readable and specific: "leg 2 (KEF→JFK) is out of range: needs 3,200 nm, the aircraft does 3,000 nm". */
   detail: z.string(),
 });
 export type ScheduleRefusal = z.infer<typeof ScheduleRefusal>;
@@ -294,11 +357,13 @@ export type ScheduleRefusal = z.infer<typeof ScheduleRefusal>;
  *
  * The airframe is not editable here — a schedule *is* one airframe's rotation, so
  * moving it to another aircraft is a different schedule. Only future, unflown
- * flights are disturbed; one already off-blocks is history.
+ * flights are disturbed; one already off-blocks is history. `autoReturn` behaves
+ * as it does on create.
  */
 export const EditScheduleRequest = z
   .object({
     legs: z.array(AuthoredLeg).min(1),
+    autoReturn: z.boolean().default(false),
     repeat: RepeatPattern,
   })
   .strict();

@@ -8,11 +8,22 @@ import {
 import { resolvedAirlineOf } from '../airline/context';
 import { parseRequestBody } from '../http/request-body';
 
-import { authorSchedule, editSchedule, pauseSchedule, removeSchedule } from './authoring';
+import {
+  authorSchedule,
+  editSchedule,
+  pauseSchedule,
+  removeSchedule,
+  type RouteEconomicsProvider,
+} from './authoring';
 import { listSchedules } from './read';
 
 import type { DatabaseHandle } from '../db/client';
 import type { FastifyInstance } from 'fastify';
+
+/** A leg refusal that names an airport that does not exist is a 404; the rest are 422. */
+function refusalStatus(problem: string): 404 | 422 {
+  return problem === 'unknown_airport' ? 404 : 422;
+}
 
 /**
  * The schedule API (M2-03, §8.2).
@@ -28,7 +39,10 @@ import type { FastifyInstance } from 'fastify';
  * to author one, because a schedule commits an aeroplane; `requireAirline` to
  * read them back.
  */
-export function registerScheduleRoutes(app: FastifyInstance, { db }: { db: DatabaseHandle }): void {
+export function registerScheduleRoutes(
+  app: FastifyInstance,
+  { db, economicsFor }: { db: DatabaseHandle; economicsFor: RouteEconomicsProvider },
+): void {
   app.get('/api/schedules', { onRequest: app.requireAirline }, async (request, reply) => {
     const own = resolvedAirlineOf(request);
     return reply.code(200).send({ schedules: await listSchedules(db.db, own) });
@@ -42,22 +56,26 @@ export function registerScheduleRoutes(app: FastifyInstance, { db }: { db: Datab
       if (!parsed.success) {
         return reply.code(400).send({
           code: 'invalid_input',
-          message: 'Expected an airframe, at least one leg naming a route, and a repeat pattern',
+          message: 'Expected an airframe, at least one leg of airport pairs, and a repeat pattern',
         });
       }
       const own = resolvedAirlineOf(request);
-      const result = await authorSchedule(db.db, own, parsed.data);
+      const result = await authorSchedule(db.db, own, parsed.data, economicsFor);
 
       switch (result.status) {
         case 'unknown_airframe':
           return reply.code(404).send({ code: 'not_found', message: 'No such aircraft' });
-        case 'unknown_route':
-          return reply.code(404).send({ code: 'not_found', message: 'No such route' });
         case 'refused':
-          // 422: the rotation cannot run, and the body names exactly why (M2-03).
-          return reply.code(422).send({ problem: result.problem, detail: result.detail });
+          // The rotation cannot run: an airport that does not exist is a 404, a leg
+          // the aircraft cannot fly (or that does not close) is a 422 — the body
+          // names exactly why (M2-03, App. B.4).
+          return reply
+            .code(refusalStatus(result.problem))
+            .send({ problem: result.problem, detail: result.detail });
         case 'created':
-          return reply.code(201).send({ schedule: result.schedule, warning: result.warning });
+          return reply
+            .code(201)
+            .send({ schedule: result.schedule, warning: result.warning, cost: result.cost });
       }
     },
   );
@@ -77,20 +95,23 @@ export function registerScheduleRoutes(app: FastifyInstance, { db }: { db: Datab
       if (!parsed.success) {
         return reply.code(400).send({
           code: 'invalid_input',
-          message: 'Expected at least one leg naming a route, and a repeat pattern',
+          message: 'Expected at least one leg of airport pairs, and a repeat pattern',
         });
       }
       const own = resolvedAirlineOf(request);
-      const result = await editSchedule(db.db, own, request.params.id, parsed.data);
+      const result = await editSchedule(db.db, own, request.params.id, parsed.data, economicsFor);
 
       switch (result.status) {
         case 'not_found':
-        case 'unknown_route':
-          return reply.code(404).send({ code: 'not_found', message: 'No such schedule or route' });
+          return reply.code(404).send({ code: 'not_found', message: 'No such schedule' });
         case 'refused':
-          return reply.code(422).send({ problem: result.problem, detail: result.detail });
+          return reply
+            .code(refusalStatus(result.problem))
+            .send({ problem: result.problem, detail: result.detail });
         case 'updated':
-          return reply.code(200).send({ schedule: result.schedule, warning: null });
+          return reply
+            .code(200)
+            .send({ schedule: result.schedule, warning: null, cost: result.cost });
       }
     },
   );
