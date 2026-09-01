@@ -4,7 +4,7 @@ import sharp from 'sharp';
 import { z } from 'zod';
 
 import { canonicalJson, sha256 } from './canonical';
-import { type MeshyGenerationSpec, meshySpecIdentity } from './meshy';
+import { MeshyOperationId, type MeshyGenerationSpec, meshySpecIdentity } from './meshy';
 import { readMeshyArtifact, writeImmutableMeshyArtifact } from './meshy-archive';
 import {
   MeshyArtifactDigest,
@@ -96,7 +96,7 @@ export const MeshySubmissionProof = z
   .object({
     format: z.literal('tailfin-meshy-submission-proof'),
     formatVersion: z.literal(1),
-    operationId: MeshyCandidateOperation,
+    operationId: MeshyOperationId,
     approvalSha256: MeshySha256,
     specSha256: MeshySha256,
     preparedSha256: MeshySha256,

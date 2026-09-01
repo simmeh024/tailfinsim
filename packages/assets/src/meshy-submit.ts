@@ -1,7 +1,12 @@
 import { z } from 'zod';
 
 import { canonicalJson, sha256 } from './canonical';
-import { meshyCredentialStatus, meshySpecIdentity, type MeshyGenerationSpec } from './meshy';
+import {
+  meshyCredentialStatus,
+  meshySpecIdentity,
+  type MeshyGenerationSpec,
+  type MeshyOperationId,
+} from './meshy';
 import { checkMeshyAccount, type MeshyAccountDeps } from './meshy-account';
 import { savedMeshyArchive } from './meshy-archive';
 import {
@@ -14,6 +19,7 @@ import {
   loadPreparedMeshyEvidence,
   storeMeshyEvidenceBytes,
 } from './meshy-evidence';
+import { createMeshyRetextureRequest } from './meshy-retexture';
 import { assertMeshyRunCap, meshyRunApprovalIdentity, type MeshyRunState } from './meshy-run';
 import { assertMeshyCandidateSequence, type MeshyRunStore } from './meshy-store';
 
@@ -79,6 +85,7 @@ function assertPriorEvidence(
   evidenceRoot: string,
   archiveRoot: string,
   preparedSha256: string,
+  submittingOperation: MeshyOperationId,
   requestBodySha256: string,
 ): void {
   for (const request of state.requests) {
@@ -90,11 +97,12 @@ function assertPriorEvidence(
     if (
       proof.operationId !== request.operationId ||
       proof.preparedSha256 !== preparedSha256 ||
-      proof.requestBodySha256 !== requestBodySha256 ||
       proof.approvalSha256 !== meshyRunApprovalIdentity(state.approval) ||
       proof.specSha256 !== state.approval.specSha256
     )
       throw new Error('Prior candidate evidence differs.');
+    if (proof.operationId === submittingOperation && proof.requestBodySha256 !== requestBodySha256)
+      throw new Error('Prior operation request body differs.');
     if (
       state.tasks.find((task) => task.operationId === request.operationId)?.status ===
         'SUCCEEDED' &&
@@ -141,6 +149,7 @@ export async function submitMeshyCandidate(
       evidenceRoot,
       archiveRoot,
       evidence.preparedSha256,
+      operationId,
       requestBodySha256,
     );
     const pricing = importMeshyPricingReview(evidenceRoot, pricingInput, deps.now());
@@ -157,6 +166,7 @@ export async function submitMeshyCandidate(
       evidenceRoot,
       archiveRoot,
       evidence.preparedSha256,
+      operationId,
       requestBodySha256,
     );
     const proof = MeshySubmissionProof.parse({
@@ -212,6 +222,118 @@ export async function submitMeshyCandidate(
     };
   } catch {
     // This also covers a crash-equivalent failure while saving the returned task ID.
+    throw new MeshySubmissionError('submission-uncertain');
+  }
+}
+
+/**
+ * The selected-candidate paid boundary. This is intentionally a separate entry
+ * point from Image-to-3D so a retexture can never be sent to the geometry API.
+ * It uses the same durable reservation and one-POST/no-retry rule as candidates.
+ */
+export async function submitMeshyRetexture(
+  store: MeshyRunStore,
+  evidenceRoot: string,
+  archiveRoot: string,
+  spec: MeshyGenerationSpec,
+  maxCredits: number,
+  pricingInput: unknown,
+  credential: string,
+  deps: MeshyAccountDeps = {
+    fetch: globalThis.fetch,
+    pause: (ms) => new Promise((resolvePause) => setTimeout(resolvePause, ms)),
+    now: () => new Date(),
+  },
+) {
+  const operationId = 'retexture-selected' as const;
+  let body: string;
+  let proofSha256: string;
+  try {
+    const state = store.read();
+    assertMeshyRunCap(state, maxCredits);
+    if (!state.selection || meshyCredentialStatus(credential) !== 'present')
+      throw new Error('Retexture requires a selected candidate and credential.');
+    const selected = state.tasks.find((task) => task.taskId === state.selection?.taskId);
+    if (!selected || selected.operationId === operationId || selected.status !== 'SUCCEEDED')
+      throw new Error('Selected candidate is not a successful geometry task.');
+    const request = createMeshyRetextureRequest(spec, selected.taskId);
+    body = request.body;
+    const evidence = await loadPreparedMeshyEvidence(evidenceRoot, state, spec, deps.now());
+    assertPriorEvidence(
+      state,
+      evidenceRoot,
+      archiveRoot,
+      evidence.preparedSha256,
+      operationId,
+      request.requestBodySha256,
+    );
+    const pricing = importMeshyPricingReview(evidenceRoot, pricingInput, deps.now());
+    const account = await checkMeshyAccount(state, spec, maxCredits, credential, deps);
+    if (!account.coversApprovedCeiling) throw new Error('Insufficient balance.');
+    assertMeshyPricingFresh(pricing.review, deps.now());
+    const current = store.read();
+    if (current.selection?.taskId !== selected.taskId) throw new Error('Selection changed.');
+    const verified = await loadPreparedMeshyEvidence(evidenceRoot, current, spec, deps.now());
+    if (verified.preparedSha256 !== evidence.preparedSha256) throw new Error('Evidence changed.');
+    assertPriorEvidence(
+      current,
+      evidenceRoot,
+      archiveRoot,
+      evidence.preparedSha256,
+      operationId,
+      request.requestBodySha256,
+    );
+    const proof = MeshySubmissionProof.parse({
+      format: 'tailfin-meshy-submission-proof',
+      formatVersion: 1,
+      operationId,
+      approvalSha256: meshyRunApprovalIdentity(current.approval),
+      specSha256: meshySpecIdentity(spec),
+      preparedSha256: evidence.preparedSha256,
+      requestBodySha256: request.requestBodySha256,
+      pricingReviewSha256: pricing.pricingReviewSha256,
+      authorizedAt: deps.now().toISOString(),
+      accountReadinessSha256: storeMeshyEvidenceBytes(
+        evidenceRoot,
+        Buffer.from(canonicalJson(account)),
+      ),
+    });
+    proofSha256 = storeMeshyEvidenceBytes(evidenceRoot, Buffer.from(canonicalJson(proof)));
+    assertMeshyPricingFresh(pricing.review, deps.now());
+    store.reserve(spec, maxCredits, operationId, proofSha256);
+  } catch {
+    throw new MeshySubmissionError('preflight-refused');
+  }
+
+  try {
+    const response = await deps.fetch('https://api.meshy.ai/openapi/v1/retexture', {
+      method: 'POST',
+      redirect: 'error',
+      signal: AbortSignal.timeout(30_000),
+      headers: {
+        Authorization: `Bearer ${credential.trim()}`,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body,
+    });
+    const taskId = await readSubmissionId(response);
+    store.observe({
+      operationId,
+      taskId,
+      status: 'PENDING',
+      consumedCredits: null,
+      observedAt: deps.now().toISOString(),
+    });
+    return {
+      operationId,
+      taskId,
+      status: 'PENDING' as const,
+      reservedCredits: spec.pricing.selectedRetextureCredits,
+      proofSha256,
+      productionPublicationApproved: false,
+    };
+  } catch {
     throw new MeshySubmissionError('submission-uncertain');
   }
 }

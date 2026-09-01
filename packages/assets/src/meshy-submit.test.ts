@@ -21,7 +21,12 @@ import { sealMeshyCandidateProvenance } from './meshy-provenance';
 import { MeshyRunApproval } from './meshy-run';
 import { parseMeshyRunArguments } from './meshy-run-command';
 import { MeshyRunStore } from './meshy-store';
-import { meshRunDiagnostic, MeshySubmissionError, submitMeshyCandidate } from './meshy-submit';
+import {
+  meshRunDiagnostic,
+  MeshySubmissionError,
+  submitMeshyCandidate,
+  submitMeshyRetexture,
+} from './meshy-submit';
 
 const spec = MeshyGenerationSpec.parse(
   JSON.parse(
@@ -187,6 +192,8 @@ afterEach(async () => {
 const prepare = () => prepareMeshyEvidence(evidence, input, store.read(), spec, new Date(time));
 const submit = (operation = 'candidate-1', cap = 40, credential = key) =>
   submitMeshyCandidate(store, evidence, archive, spec, cap, operation, pricing, credential, deps);
+const submitRetexture = (cap = 40, credential = key) =>
+  submitMeshyRetexture(store, evidence, archive, spec, cap, pricing, credential, deps);
 const posts = () => fetch.mock.calls.filter(([, init]) => init?.method === 'POST');
 const terminal = (index = 1, status: 'SUCCEEDED' | 'FAILED' | 'CANCELED' = 'FAILED', charge = 0) =>
   store.observe({
@@ -196,6 +203,43 @@ const terminal = (index = 1, status: 'SUCCEEDED' | 'FAILED' | 'CANCELED' = 'FAIL
     consumedCredits: charge,
     observedAt: time,
   });
+
+async function establishSelectedCandidate(): Promise<void> {
+  await submit('candidate-1');
+  terminal(1, 'SUCCEEDED', 5);
+  const glb = Buffer.alloc(48, 0x20);
+  glb.writeUInt32LE(0x46546c67, 0);
+  glb.writeUInt32LE(2, 4);
+  glb.writeUInt32LE(48, 8);
+  glb.writeUInt32LE(28, 12);
+  glb.writeUInt32LE(0x4e4f534a, 16);
+  glb.write('{"asset":{"version":"2.0"}}', 20);
+  const recoveryFetch = vi
+    .fn<typeof globalThis.fetch>()
+    .mockResolvedValueOnce(
+      json({
+        id: taskId(),
+        type: 'image-to-3d',
+        status: 'SUCCEEDED',
+        consumed_credits: 5,
+        created_at: Date.parse(time),
+        finished_at: Date.parse(time),
+        model_urls: { glb: 'https://assets.meshy.ai/model.glb' },
+      }),
+    )
+    .mockResolvedValueOnce(
+      new Response(new Uint8Array(glb), { headers: { 'content-type': 'model/gltf-binary' } }),
+    );
+  await syncMeshyCandidate(store, archive, spec, 40, 'candidate-1', key, {
+    ...deps,
+    fetch: recoveryFetch,
+  });
+  for (let index = 2; index <= 4; index += 1) {
+    await submit(`candidate-${index}`);
+    terminal(index);
+  }
+  store.select(taskId(), 'f'.repeat(64));
+}
 
 describe('verified private input bundle', () => {
   it('preserves original image and full authoring chain, is immutable and returns no billing contents', async () => {
@@ -291,7 +335,7 @@ describe('one-shot paid boundary with a real durable ledger and fake provider', 
     await prepare();
     fetch.mockImplementation(async (url, init) => {
       await Promise.resolve();
-      if (init?.method === 'GET') return json({ balance: 1135 });
+      if (init?.method === 'GET') return Promise.resolve(json({ balance: 1135 }));
       expect(url).toBe('https://api.meshy.ai/openapi/v1/image-to-3d');
       expect(init?.redirect).toBe('error');
       expect(init?.signal).toBeInstanceOf(AbortSignal);
@@ -517,6 +561,46 @@ describe('one-shot paid boundary with a real durable ledger and fake provider', 
     await expect(submit('candidate-2')).rejects.toThrow('preflight');
     expect(posts()).toHaveLength(1);
     expect(meshyCreditExposure(store.read().budget)).toBe(6);
+  });
+  it('reserves ten credits and posts the selected task only to the retexture endpoint', async () => {
+    await prepare();
+    await establishSelectedCandidate();
+    fetch.mockImplementation((url, init) => {
+      if (init?.method === 'GET') return Promise.resolve(json({ balance: 1135 }));
+      expect(url).toBe('https://api.meshy.ai/openapi/v1/retexture');
+      expect(new MeshyRunStore(database).read().budget.entries.at(-1)).toMatchObject({
+        operationId: 'retexture-selected',
+        reservedCredits: 10,
+      });
+      if (typeof init?.body !== 'string') throw new Error('Expected JSON request body.');
+      expect(JSON.parse(init.body)).toEqual({
+        input_task_id: taskId(),
+        ...spec.retexture,
+        target_formats: ['glb'],
+      });
+      return Promise.resolve(json({ result: taskId(10) }));
+    });
+    const result = await submitRetexture();
+    expect(result).toMatchObject({
+      operationId: 'retexture-selected',
+      taskId: taskId(10),
+      reservedCredits: 10,
+    });
+    expect(meshyCreditExposure(store.read().budget)).toBe(30);
+  });
+  it('retains the ten-credit reservation when the selected retexture response is ambiguous', async () => {
+    await prepare();
+    await establishSelectedCandidate();
+    fetch.mockImplementation((_url, init) => {
+      if (init?.method === 'GET') return Promise.resolve(json({ balance: 1135 }));
+      return Promise.resolve(new Response('{}', { status: 500 }));
+    });
+    const before = posts().length;
+    await expect(submitRetexture()).rejects.toThrow('Submission may have succeeded');
+    expect(posts()).toHaveLength(before + 1);
+    expect(meshyCreditExposure(store.read().budget)).toBe(30);
+    await expect(submitRetexture()).rejects.toThrow('preflight');
+    expect(posts()).toHaveLength(before + 1);
   });
   it('rejects changed prior proof bytes and cannot change the reference bundle', async () => {
     await prepare();
