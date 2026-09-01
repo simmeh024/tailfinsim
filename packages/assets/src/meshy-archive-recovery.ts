@@ -1,8 +1,12 @@
+import { join } from 'node:path';
+
 import { z } from 'zod';
 
 import { canonicalJson, sha256 } from './canonical';
 import { MeshyGenerationSpec } from './meshy';
+import { readMeshyArtifact, savedMeshyArchive } from './meshy-archive';
 import { MESHY_GLB_DOWNLOAD_LIMIT, assertMeshyGlbEnvelope } from './meshy-recovery';
+import { type MeshyRunState } from './meshy-run';
 
 /** The user-approved ceiling covers retained first-run exposure plus this recovery. */
 export const MESHY_ARCHIVE_RECOVERY_TOTAL_CREDIT_LIMIT = 50;
@@ -25,6 +29,39 @@ export interface ArchiveRetextureRequest {
   recoveryReservation: number;
   aggregateExposure: number;
   totalCreditCeiling: number;
+}
+
+export interface ArchiveRetextureSource {
+  taskId: string;
+  bytes: Buffer;
+  sha256: string;
+}
+
+/**
+ * Reads only the selected candidate's content-addressed, immutable local GLB.
+ * It never follows an expiring Meshy download URL or accepts an arbitrary path.
+ */
+export function loadArchiveRetextureSource(
+  archiveRoot: string,
+  original: MeshyRunState,
+): ArchiveRetextureSource {
+  if (!original.selection) throw new Error('Original run has no selected candidate.');
+  const selected = original.tasks.find((task) => task.taskId === original.selection?.taskId);
+  if (!selected || selected.operationId === 'retexture-selected' || selected.status !== 'SUCCEEDED')
+    throw new Error('Original selected candidate is not a successful geometry task.');
+  const archive = savedMeshyArchive(archiveRoot, selected.operationId, original);
+  if (!archive) throw new Error('Original selected candidate has no immutable source archive.');
+  const bytes = readMeshyArtifact(
+    join(archiveRoot, `${archive.untouchedExport.sha256}.glb`),
+    MESHY_GLB_DOWNLOAD_LIMIT,
+  );
+  if (
+    bytes.length !== archive.untouchedExport.bytes ||
+    sha256(bytes) !== archive.untouchedExport.sha256
+  )
+    throw new Error('Archived source digest changed.');
+  assertMeshyGlbEnvelope(bytes);
+  return { taskId: selected.taskId, bytes, sha256: archive.untouchedExport.sha256 };
 }
 
 /**
