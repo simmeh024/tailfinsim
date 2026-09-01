@@ -17,7 +17,7 @@ import {
   prepareMeshyEvidence,
   MeshySubmissionProof,
 } from './meshy-evidence';
-import { sealMeshyCandidateProvenance } from './meshy-provenance';
+import { sealMeshyCandidateProvenance, sealMeshyRetextureProvenance } from './meshy-provenance';
 import { MeshyRunApproval } from './meshy-run';
 import { parseMeshyRunArguments } from './meshy-run-command';
 import { MeshyRunStore } from './meshy-store';
@@ -616,6 +616,15 @@ describe('one-shot paid boundary with a real durable ledger and fake provider', 
   it('archives the verified selected retexture GLB and PBR maps, then resumes without credentials', async () => {
     await prepare();
     await establishSelectedCandidate();
+    await sealMeshyCandidateProvenance(
+      store,
+      evidence,
+      archive,
+      spec,
+      40,
+      'candidate-1',
+      new Date('2026-08-29T00:00:00.000Z'),
+    );
     const submitted = await submitRetexture();
     const texture = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
     const retextured = Buffer.from(glbFixture());
@@ -659,6 +668,18 @@ describe('one-shot paid boundary with a real durable ledger and fake provider', 
     expect(store.read().budget.entries.at(-1)).toMatchObject({ chargedCredits: 10 });
     const manifest = await readFile(join(archive, 'retexture-selected.json'), 'utf8');
     expect(manifest).not.toMatch(/https:|Signature|msy_/);
+    const provenance = await sealMeshyRetextureProvenance(
+      store,
+      evidence,
+      archive,
+      spec,
+      40,
+      new Date('2026-08-29T00:00:00.000Z'),
+    );
+    expect(provenance).toMatchObject({ operationId: 'retexture-selected', state: 'quarantine' });
+    expect(await readFile(join(archive, 'retexture-selected-provenance.json'), 'utf8')).not.toMatch(
+      /https:|Signature|msy_/,
+    );
     fetch.mockClear();
     expect(await syncMeshyRetexture(store, archive, spec, 40, '', deps)).toEqual(archived);
     expect(fetch).not.toHaveBeenCalled();
