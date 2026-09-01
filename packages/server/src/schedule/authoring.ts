@@ -1,15 +1,16 @@
 import { and, eq } from 'drizzle-orm';
 
-import type {
-  AuthoredLeg,
-  CreateScheduleRequest,
-  EditScheduleRequest,
-  ScheduleAuthoringProblem,
-  ScheduleCostEstimate,
-  ScheduleLegCost,
-  ScheduleView,
+import {
+  type AuthoredLeg,
+  type CreateScheduleRequest,
+  type EditScheduleRequest,
+  type ScheduleAuthoringProblem,
+  type ScheduleCostEstimate,
+  type ScheduleLegCost,
+  type ScheduleView,
+  AircraftSpec as AircraftSpecSchema,
+  type AircraftSpec,
 } from '@tailfin/shared';
-import { AircraftSpec as AircraftSpecSchema, type AircraftSpec } from '@tailfin/shared';
 import {
   type AircraftCapability,
   computeBlockTime,
@@ -82,7 +83,10 @@ interface ResolvedLeg {
   opened: boolean;
 }
 
-type Refusal = { problem: ScheduleAuthoringProblem; detail: string };
+interface Refusal {
+  problem: ScheduleAuthoringProblem;
+  detail: string;
+}
 type LegResolution = { ok: true; leg: ResolvedLeg } | ({ ok: false } & Refusal);
 
 /** The owned airframe's spec, or null when the aircraft is not this airline's. */

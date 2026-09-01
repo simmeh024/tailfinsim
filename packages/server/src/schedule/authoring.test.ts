@@ -9,11 +9,12 @@ import {
   DEFAULT_FUEL_MARKET,
 } from '@tailfin/sim';
 
-import { airframeCapability, estimateCost, placeLegs } from './authoring';
 import { REFERENCE_AIRFRAME, REFERENCE_FEES, REFERENCE_STATION } from '../network/economics';
 
-import type { RouteEconomics } from '../network/fares';
+import { airframeCapability, estimateCost, placeLegs } from './authoring';
+
 import type { ResolvedPlayerAirline } from '../airline/context';
+import type { RouteEconomics } from '../network/fares';
 
 /**
  * Placing resolved legs into a rotation (M2-03, §8.2).
