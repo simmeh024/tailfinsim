@@ -235,6 +235,7 @@ async function establishSelectedCandidate(): Promise<void> {
         consumed_credits: 5,
         created_at: Date.parse(time),
         finished_at: Date.parse(time),
+        expires_at: Date.parse(time) + 3 * 86_400_000,
         model_urls: { glb: 'https://assets.meshy.ai/model.glb' },
       }),
     )
@@ -612,6 +613,17 @@ describe('one-shot paid boundary with a real durable ledger and fake provider', 
     expect(meshyCreditExposure(store.read().budget)).toBe(30);
     await expect(submitRetexture()).rejects.toThrow('preflight');
     expect(posts()).toHaveLength(before + 1);
+  });
+  it('refuses an expired selected provider task before an account check or paid POST', async () => {
+    await prepare();
+    await establishSelectedCandidate();
+    fetch.mockClear();
+    deps = { ...deps, now: () => new Date(Date.parse(time) + 4 * 86_400_000) };
+
+    await expect(submitRetexture()).rejects.toThrow('preflight');
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(meshyCreditExposure(store.read().budget)).toBe(20);
   });
   it('archives the verified selected retexture GLB and PBR maps, then resumes without credentials', async () => {
     await prepare();
