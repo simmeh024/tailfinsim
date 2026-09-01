@@ -619,6 +619,13 @@ Khronos glTF Validator 2.0.0-dev.3.10 reported zero errors and warnings. Its inf
 unreferenced-UV notices are expected until a later PBR/livery compositor binds textures; they are
 not a substitute for canonical masks, anchors, 4K PBR textures, LOD generation or asset admission.
 
+`@tailfin/shared` defines the corresponding immutable `livery_uv`, `material_binding` and
+`anchor_set` resource schemas. Their bundle validator requires one exact aircraft asset version,
+non-overlapping livery islands and an explicit paintable/protected material policy; protected
+materials cannot appear in livery UV islands. The schema is only a safe authoring boundary: no
+concrete A320neo resource file is committed or admitted until its private source, masks, anchors,
+PBR inputs and review evidence have passed the remaining #794 gates.
+
 ## Pinned strategy and vendor evidence
 
 The planning observation is dated 2026-08-28. Four untextured T2 candidates cost 5 credits each;
