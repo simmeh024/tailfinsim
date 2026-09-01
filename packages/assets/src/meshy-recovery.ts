@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { meshyCredentialStatus, meshySpecIdentity, type MeshyGenerationSpec } from './meshy';
+import { MeshyRetextureTaskOutput } from './meshy-retexture';
 import { assertMeshyRunCap, type MeshyTaskReceipt } from './meshy-run';
 import { type MeshyRunStore } from './meshy-store';
 
@@ -174,6 +175,58 @@ export async function recoverMeshyCandidate(
       // A mid-flight price increase is reported, never treated as a refund/reservation release.
       observedCredits: task.consumed_credits ?? null,
     };
+  } catch {
+    throw new MeshyRecoveryError('invalid-response');
+  } finally {
+    bytes.fill(0);
+  }
+}
+
+/** One bounded read-only poll for the already-recorded selected retexture task. */
+export async function recoverMeshyRetexture(
+  store: MeshyRunStore,
+  spec: MeshyGenerationSpec,
+  maxCredits: number,
+  credential: string,
+  deps: MeshyRecoveryDeps = meshyRecoveryDefaults,
+) {
+  const state = store.read();
+  try {
+    assertMeshyRunCap(state, maxCredits);
+    if (
+      state.approval.specSha256 !== meshySpecIdentity(spec) ||
+      meshyCredentialStatus(credential) !== 'present'
+    )
+      throw new Error('Invalid authority.');
+  } catch {
+    throw new MeshyRecoveryError('not-authorized');
+  }
+  const before = state.tasks.find((task) => task.operationId === 'retexture-selected');
+  if (!before || !state.selection) throw new MeshyRecoveryError('unknown-candidate');
+  const bytes = await boundedGet(
+    `https://api.meshy.ai/openapi/v1/retexture/${before.taskId}`,
+    { Authorization: `Bearer ${credential.trim()}`, Accept: 'application/json' },
+    ['application/json'],
+    65_536,
+    10_000,
+    deps,
+  );
+  try {
+    const task = MeshyRetextureTaskOutput.parse(JSON.parse(bytes.toString('utf8')) as unknown);
+    if (task.id !== before.taskId) throw new Error('Task identity changed.');
+    const consumedCredits = terminal(task.status) ? (task.consumed_credits ?? null) : null;
+    const receipt: MeshyTaskReceipt = {
+      operationId: 'retexture-selected',
+      taskId: before.taskId,
+      status: task.status,
+      consumedCredits,
+      observedAt:
+        before.status === task.status && before.consumedCredits === consumedCredits
+          ? before.observedAt
+          : deps.now().toISOString(),
+    };
+    store.observeProgress(receipt);
+    return { receipt, task: task.status === 'SUCCEEDED' ? task : null };
   } catch {
     throw new MeshyRecoveryError('invalid-response');
   } finally {

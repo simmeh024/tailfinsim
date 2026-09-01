@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { canonicalJson, sha256 } from './canonical';
 import { MeshyGenerationSpec, type MeshyGenerationSpec as MeshyGenerationSpecValue } from './meshy';
+import { MeshyArtifactDigest, MeshySha256, MeshyTaskReceipt } from './meshy-run';
 
 const TaskId = z.uuid();
 
@@ -41,6 +42,63 @@ export const MeshyRetextureTaskOutput = z
   })
   .strict();
 export type MeshyRetextureTaskOutput = z.infer<typeof MeshyRetextureTaskOutput>;
+
+/** Private immutable sidecar for PBR source bytes; never an asset-registry admission record. */
+export const MeshyRetextureArchive = z
+  .object({
+    format: z.literal('tailfin-meshy-retexture-export'),
+    formatVersion: z.literal(1),
+    state: z.literal('quarantine'),
+    approvalSha256: MeshySha256,
+    specSha256: MeshySha256,
+    requestSha256: MeshySha256,
+    inputTaskId: TaskId,
+    task: MeshyTaskReceipt,
+    createdAt: z.iso.datetime(),
+    finishedAt: z.iso.datetime(),
+    expiresAt: z.iso.datetime().nullable(),
+    retexturedGlb: MeshyArtifactDigest,
+    pbrTextures: z
+      .object({
+        baseColor: MeshyArtifactDigest,
+        normal: MeshyArtifactDigest,
+        metallic: MeshyArtifactDigest,
+        roughness: MeshyArtifactDigest,
+      })
+      .strict(),
+    evidenceComplete: z.literal(false),
+    runtimeAdmission: z.literal('not-reviewed'),
+  })
+  .strict()
+  .superRefine((archive, context) => {
+    if (archive.task.operationId !== 'retexture-selected' || archive.task.status !== 'SUCCEEDED')
+      context.addIssue({
+        code: 'custom',
+        path: ['task'],
+        message: 'archive requires a successful selected retexture task',
+      });
+    if (archive.task.consumedCredits === null)
+      context.addIssue({
+        code: 'custom',
+        path: ['task', 'consumedCredits'],
+        message: 'archive requires a confirmed charge',
+      });
+    if (archive.retexturedGlb.mediaType !== 'model/gltf-binary')
+      context.addIssue({
+        code: 'custom',
+        path: ['retexturedGlb'],
+        message: 'retextured output must be a GLB',
+      });
+    for (const [name, texture] of Object.entries(archive.pbrTextures)) {
+      if (!['image/png', 'image/jpeg'].includes(texture.mediaType))
+        context.addIssue({
+          code: 'custom',
+          path: ['pbrTextures', name],
+          message: 'PBR output must be an image',
+        });
+    }
+  });
+export type MeshyRetextureArchive = z.infer<typeof MeshyRetextureArchive>;
 
 /** Builds a deterministic, credential-free request body bound to the chosen Meshy task only. */
 export function createMeshyRetextureRequest(

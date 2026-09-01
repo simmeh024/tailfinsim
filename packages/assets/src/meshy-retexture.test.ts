@@ -4,7 +4,11 @@ import { describe, expect, it } from 'vitest';
 
 import { MeshyGenerationSpec } from './meshy';
 import { downloadMeshyTexture } from './meshy-recovery';
-import { assertMeshyRetextureArchiveReady, createMeshyRetextureRequest } from './meshy-retexture';
+import {
+  assertMeshyRetextureArchiveReady,
+  createMeshyRetextureRequest,
+  MeshyRetextureArchive,
+} from './meshy-retexture';
 
 const spec = MeshyGenerationSpec.parse(
   JSON.parse(
@@ -76,5 +80,34 @@ describe('Meshy selected retexture contract', () => {
         now: () => new Date(0),
       }),
     ).rejects.toThrow('download-refused');
+  });
+
+  it('keeps all downloaded PBR artifacts in one quarantined archive identity', () => {
+    const digest = { sha256: 'a'.repeat(64), bytes: 8, mediaType: 'image/png' as const };
+    expect(
+      MeshyRetextureArchive.parse({
+        format: 'tailfin-meshy-retexture-export',
+        formatVersion: 1,
+        state: 'quarantine',
+        approvalSha256: 'b'.repeat(64),
+        specSha256: 'c'.repeat(64),
+        requestSha256: 'd'.repeat(64),
+        inputTaskId: taskId,
+        task: {
+          operationId: 'retexture-selected',
+          taskId: '01a0499b-9743-7e7a-bcc3-021485b8b0e4',
+          status: 'SUCCEEDED',
+          consumedCredits: 10,
+          observedAt: '2026-09-01T00:00:00.000Z',
+        },
+        createdAt: '2026-09-01T00:00:00.000Z',
+        finishedAt: '2026-09-01T00:01:00.000Z',
+        expiresAt: null,
+        retexturedGlb: { ...digest, mediaType: 'model/gltf-binary' },
+        pbrTextures: { baseColor: digest, normal: digest, metallic: digest, roughness: digest },
+        evidenceComplete: false,
+        runtimeAdmission: 'not-reviewed',
+      }),
+    ).toMatchObject({ state: 'quarantine', task: { operationId: 'retexture-selected' } });
   });
 });
