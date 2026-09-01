@@ -147,6 +147,7 @@ describeDb('sessions over HTTP', () => {
       expect(Object.keys(body.player).sort()).toEqual([
         'avatarUrl',
         'createdAt',
+        'displayCurrency',
         'displayName',
         'id',
       ]);

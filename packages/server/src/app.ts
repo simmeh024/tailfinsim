@@ -21,6 +21,7 @@ import { type GoogleAuthOperations, registerAuthRoutes } from './auth/routes';
 import { registerAutomationRoutes } from './automation/routes';
 import { readBuildInfo } from './build-info';
 import { registerCrewRoutes } from './crew/routes';
+import { registerCurrencyRoutes } from './currency/routes';
 import { type DatabaseHandle } from './db/client';
 import { readDeployInfo } from './deploy-info';
 import { type ServerEnv } from './env';
@@ -248,6 +249,7 @@ export async function buildApp({
   registerAutomationRoutes(app, { db });
   registerGroundRoutes(app, { db });
   registerFinanceRoutes(app, { db });
+  registerCurrencyRoutes(app, { db });
 
   const startedAt = Date.now();
 

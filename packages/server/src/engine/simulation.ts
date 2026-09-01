@@ -9,6 +9,7 @@ import { returnRestedCrew, standDownIdleCrew } from '../crew/duty-store';
 import { returnSickCrew, reviewCrewMorale } from '../crew/morale';
 import { runCrewPayroll } from '../crew/payroll';
 import { completeDueConversions } from '../crew/store';
+import { type FxRateSource } from '../currency/fx-source';
 import { type Database } from '../db/client';
 import { world, type WorldRow } from '../db/schema';
 import { expireGroundContracts } from '../ground/contracts';
@@ -23,6 +24,8 @@ import {
   type WorldEventType,
 } from '../sim/event-queue';
 import { createTickLoop, type TickLoop } from '../sim/tick';
+
+import { FX_ATTEMPT_INTERVAL_MS, refreshFxRates } from './currency-refresh';
 
 /**
  * The simulation engine — what the worker process is *for* (OPS-08, §21).
@@ -178,6 +181,15 @@ export interface SimulationEngineOptions {
   /** M2-03. Rolls each world's active schedules onto the flight horizon. */
   materialise?: typeof materialiseWorld;
   depth?: typeof queueDepth;
+  /**
+   * The FX source for the nightly display-currency refresh (M8-02). Global and
+   * on the real clock, so it lives outside the per-world loop. Omitted, the
+   * engine runs no refresh at all — which is how the web process and most engine
+   * tests want it; `worker.ts` supplies the HTTP source.
+   */
+  fxSource?: FxRateSource;
+  /** Injected in tests so the refresh can be driven without a real source. */
+  refreshFx?: typeof refreshFxRates;
 }
 
 /**
@@ -294,6 +306,16 @@ export interface EngineSnapshot {
    */
   flightsMaterialised: number;
   scheduleErrors: number;
+  /**
+   * M8-02. Successful nightly display-currency refreshes, and attempts that
+   * threw. Global and on the real clock, so — unlike every counter above — not
+   * per world. **Production has no worker**, so there the rates never refresh and
+   * the seeded baseline stands: currency that reads as slightly stale rather than
+   * as a broken conversion. `fxRefreshErrors` counts a source or database failure;
+   * the last good rates stay in force through it.
+   */
+  fxRefreshes: number;
+  fxRefreshErrors: number;
 }
 
 export interface QueueDepthByWorld {
@@ -382,6 +404,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     reviewReputation = reviewSocialMediaReputation,
     expireGround = expireGroundContracts,
     materialise = materialiseWorld,
+    fxSource,
+    refreshFx = refreshFxRates,
   } = options;
 
   const unhandledEventTypes = ALL_EVENT_TYPES.filter((type) => handlers[type] === undefined);
@@ -418,6 +442,11 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let groundErrors = 0;
   let flightsMaterialised = 0;
   let scheduleErrors = 0;
+  let fxRefreshes = 0;
+  let fxRefreshErrors = 0;
+  // In-memory attempt throttle for the FX refresh (M8-02). Global and real-time,
+  // so it lives with the engine's counters rather than in any world's state.
+  let lastFxAttemptAt: Date | null = null;
 
   async function tick(context: { tickedAt: Date; tickNumber: number }): Promise<TickReport> {
     const worlds = await listWorlds(db);
@@ -441,6 +470,33 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     let tickReputationGrants = 0;
     let tickGroundExpired = 0;
     let tickFlightsMaterialised = 0;
+
+    // The display-currency refresh (M8-02), **global and on the real clock** —
+    // an FX rate is a real-world quantity, not a per-world game-time one, so it
+    // runs once per tick outside the world loop, not per world. The in-memory
+    // throttle keeps it from calling the external source more than hourly even
+    // when the source is failing; `refreshFx` itself is the daily gate. Isolated
+    // like every sweep below: a rate that could not refresh this tick refreshes a
+    // later one, and the last good rates stay in force meanwhile.
+    if (fxSource !== undefined) {
+      const at = now();
+      if (
+        lastFxAttemptAt === null ||
+        at.getTime() - lastFxAttemptAt.getTime() >= FX_ATTEMPT_INTERVAL_MS
+      ) {
+        lastFxAttemptAt = at;
+        try {
+          const result = await refreshFx(db, fxSource, at);
+          if (result.refreshed) {
+            fxRefreshes += 1;
+            log?.info?.(`currency refresh: ${String(result.updated)} rate(s) updated`);
+          }
+        } catch (error) {
+          fxRefreshErrors += 1;
+          log?.warn?.(`currency refresh failed: ${String(error)}`);
+        }
+      }
+    }
 
     for (const entry of worlds) {
       // Aircraft factory lead time is explicitly **real time** (§7.2), not a
@@ -844,6 +900,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         groundErrors,
         flightsMaterialised,
         scheduleErrors,
+        fxRefreshes,
+        fxRefreshErrors,
       };
     },
 

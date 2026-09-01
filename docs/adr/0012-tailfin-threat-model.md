@@ -71,6 +71,7 @@ Browser <--------------------> Google OAuth
 Tailfin server --------------> Google token/user-info endpoints
 operator/deploy checkout ----> GitHub
 local backup job ------------> DreamObjects (a full database copy)
+dev worker ------------------> open.er-api.com (display FX rates, no key) [M8-02]
 ```
 
 **The dev worker is a second host, and it is deliberately the quieter side of every link.**
@@ -94,6 +95,16 @@ What this does not buy: the forward is a convenience over a shared segment, not 
 network. Root on the worker node can use the tunnel, so the worker node is inside the dev
 trust boundary — it is simply outside production's. WireGuard (OPS-13) is the version that
 would make it a network boundary rather than an access-control one.
+
+**The worker's one new outbound is a display-FX read (M8-02).** It fetches USD-based exchange
+rates from `open.er-api.com` once a real day, over TLS, with **no credential** — the endpoint is
+public, so nothing is at risk of leaking to it. The asset it touches is _display_ only: rates
+convert money for the player's eyes and never a stored value, so a forged, stale or unavailable
+response cannot move money, only mis-render it, and the code caps the blast radius — a 10-second
+timeout, shape validation that discards non-numeric rates, an at-most-hourly attempt throttle so an
+outage cannot be turned into a request flood, and a fall-back to the last good (or seeded) rates on
+any failure. Production has no worker and so makes no such call at all. It is the worker's only
+third-party dependency beyond the database; the web process does not make it.
 
 Caddy, both application processes, both databases, the build checkout and the backup job
 share one host. Process, database and environment-file separation reduces accidents; it is

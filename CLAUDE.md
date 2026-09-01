@@ -387,6 +387,20 @@ editor's Publish: the planner's schedule surface is still mock — but the API n
 editor's own model, so wiring it is a web change, not an API one. The Performance and Competition
 tabs, by contrast, now read their real endpoints.
 
+**Display currency is a worker story too, and a different-shaped one (M8-02).** A player picks a
+display currency; **all money stays USD integer minor units** everywhere — the conversion happens
+only at the client's render boundary, so nothing about the economy, the ledger or `flight_result`
+changes. `currency_rate` holds the live rates, and the worker refreshes them **globally and on the
+real clock** — an FX rate is a real-world quantity, so unlike almost every other sweep this one is
+not per-world game time, and it runs once per tick outside the world loop, at most once a real day.
+**Production has no worker**, so there the rates never refresh: they sit at the shipped seed
+baseline, currency that reads as slightly stale rather than as a broken conversion — the same trap
+as everything above, and the reason the web node seeds a baseline at startup. `fxRefreshes` and
+`fxRefreshErrors` are the counters; a source outage leaves the last good rates in force and is
+counted, never fatal. `currency_rate` is **mutable by design** (seeded, then refreshed), unlike the
+immutable economy/catalogue tables — do not "fix" it to match them. The one outbound dependency is
+`open.er-api.com` (no key); it is in ADR-0012.
+
 **And one thing not to "fix".** `airframe.maintenance_state` is nullable, and a null means
 _every tier was last completed at the hours this airframe has now_ — not _at hour zero_. It
 looks like a missing default and it is load-bearing: the other reading would make every

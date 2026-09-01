@@ -2,6 +2,8 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
 import { and, eq, gt } from 'drizzle-orm';
 
+import { DEFAULT_CURRENCY, type DisplayCurrency } from '@tailfin/shared';
+
 import { type Database } from '../db/client';
 import { player, session } from '../db/schema';
 
@@ -29,6 +31,8 @@ export interface SessionPlayer {
   displayName: string;
   avatarUrl: string | null;
   createdAt: Date;
+  /** The player's display currency (M8-02), null column resolved to the default. */
+  displayCurrency: DisplayCurrency;
 }
 
 /** Issues a session and returns the opaque token to put in the cookie. */
@@ -87,6 +91,7 @@ export async function findSessionPlayer(
       displayName: player.displayName,
       avatarUrl: player.avatarUrl,
       createdAt: player.createdAt,
+      displayCurrency: player.displayCurrency,
     })
     .from(session)
     .innerJoin(player, eq(player.id, session.playerId))
@@ -109,6 +114,7 @@ export async function findSessionPlayer(
     displayName: row.displayName,
     avatarUrl: row.avatarUrl,
     createdAt: row.createdAt,
+    displayCurrency: row.displayCurrency ?? DEFAULT_CURRENCY,
   };
 }
 

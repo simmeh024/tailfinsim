@@ -29,6 +29,7 @@ const SIGNED_IN: MeResponse = {
     id: '11111111-2222-3333-4444-555555555555',
     displayName: 'Shell Tester',
     avatarUrl: null,
+    displayCurrency: 'USD',
     createdAt: '2026-08-17T09:00:00.000Z',
   },
   registrationOpen: false,

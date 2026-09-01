@@ -168,6 +168,7 @@ export function registerAuthRoutes(
               displayName: request.player.displayName,
               avatarUrl: request.player.avatarUrl,
               createdAt: request.player.createdAt.toISOString(),
+              displayCurrency: request.player.displayCurrency,
             }
           : null,
         registrationOpen: env.allowRegistration,

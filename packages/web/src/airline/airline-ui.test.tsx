@@ -15,6 +15,7 @@ const SIGNED_IN: MeResponse = {
     id: PLAYER_ID,
     displayName: 'Airline Owner',
     avatarUrl: null,
+    displayCurrency: 'USD',
     createdAt: '2026-08-20T09:00:00.000Z',
   },
   registrationOpen: false,

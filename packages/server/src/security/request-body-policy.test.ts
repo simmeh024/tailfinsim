@@ -25,6 +25,7 @@ import {
   OpenRouteInput,
   SetCrewPoliciesInput,
   SetCrewReserveInput,
+  SetCurrencyRequest,
   SetFaresRequest,
   SetScheduleActiveRequest,
   SignContractRequest,
@@ -171,6 +172,11 @@ const STRICT_WRITE_CONTRACTS = [
     payload: { active: false },
   },
   {
+    endpoint: 'PUT /api/me/currency',
+    schema: SetCurrencyRequest,
+    payload: { currency: 'EUR' },
+  },
+  {
     endpoint: 'PUT/POST /api/routes/:routeId/fares[/preview]',
     schema: SetFaresRequest,
     payload: { fares: { economy: 12_000 } },
@@ -232,6 +238,7 @@ const COVERED_WRITE_ENDPOINTS = [
   'POST /api/fleet/acquisition-quotes',
   'POST /api/fleet/acquisitions',
   'POST /api/fleet/maintenance/checks',
+  'PUT /api/me/currency',
   'POST /api/office/hires',
   'DELETE /api/office/hires/:seat',
   'POST /api/office/expansion',

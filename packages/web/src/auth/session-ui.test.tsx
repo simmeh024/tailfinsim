@@ -26,6 +26,7 @@ const PLAYER: MeResponse = {
     displayName: 'Amelia Hart',
     avatarUrl: 'https://example.test/avatar.png',
     createdAt: '2026-08-17T09:00:00.000Z',
+    displayCurrency: 'USD',
   },
   registrationOpen: false,
   isAdmin: false,
