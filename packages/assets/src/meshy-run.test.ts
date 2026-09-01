@@ -918,6 +918,10 @@ describe('operator command authority boundary', () => {
     expect(parseMeshyRunArguments(['status']).command).toBe('status');
     expect(parseMeshyRunArguments(['account', '--max-credits', '40']).command).toBe('account');
     expect(
+      parseMeshyRunArguments(['select', '--operation', 'candidate-1', '--max-credits', '40'])
+        .command,
+    ).toBe('select');
+    expect(
       parseMeshyRunArguments([
         'residual-review',
         '--operation',

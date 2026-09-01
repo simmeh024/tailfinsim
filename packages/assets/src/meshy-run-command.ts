@@ -3,9 +3,19 @@ import { fileURLToPath } from 'node:url';
 import { canonicalJson } from './canonical';
 import { MeshyGenerationSpec, meshyCreditExposure, meshySpecIdentity } from './meshy';
 import { checkMeshyAccount } from './meshy-account';
-import { meshyArchiveDirectory, syncMeshyCandidate, syncMeshyRetexture } from './meshy-archive';
+import {
+  meshyArchiveDirectory,
+  savedMeshyArchive,
+  syncMeshyCandidate,
+  syncMeshyRetexture,
+} from './meshy-archive';
 import { archiveMeshyCorrection } from './meshy-correction-archive';
-import { meshyEvidenceDirectory, prepareMeshyEvidence } from './meshy-evidence';
+import {
+  MeshyCandidateOperation,
+  meshyEvidenceDirectory,
+  prepareMeshyEvidence,
+  storeMeshyEvidenceBytes,
+} from './meshy-evidence';
 import { archiveMeshyFrameAssessment } from './meshy-frame-archive';
 import { reportMeshyGeometry } from './meshy-geometry-report';
 import { readBoundedMeshyInput } from './meshy-preflight';
@@ -40,6 +50,7 @@ export const MESHY_RUN_USAGE =
   '       assets:meshy-run repair-intake --operation candidate-1..4 --scaffold-report-sha256 SHA256 --derivative-file PATH --submission-file PATH\n' +
   '       assets:meshy-run account --max-credits 1..40 [--key-file PATH]\n' +
   '       assets:meshy-run prepare --evidence-file PATH --max-credits 1..40\n' +
+  '       assets:meshy-run select --operation candidate-1..4 --max-credits 1..40\n' +
   '       assets:meshy-run provenance --operation candidate-1..4 --max-credits 1..40\n' +
   '       assets:meshy-run retexture-provenance --max-credits 1..40\n' +
   '       assets:meshy-run submit --operation candidate-1..4 --pricing-file PATH --max-credits 1..40 [--key-file PATH]\n' +
@@ -59,6 +70,7 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
       'status',
       'account',
       'prepare',
+      'select',
       'submit',
       'sync',
       'provenance',
@@ -85,44 +97,46 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
       ? ['--approval-file']
       : command === 'prepare'
         ? ['--evidence-file', '--max-credits']
-        : command === 'provenance'
+        : command === 'select'
           ? ['--operation', '--max-credits']
-          : command === 'retexture-provenance'
-            ? ['--max-credits']
-            : command === 'submit'
-              ? ['--operation', '--pricing-file', '--max-credits', '--key-file']
-              : command === 'retexture-submit'
-                ? ['--pricing-file', '--max-credits', '--key-file']
-                : command === 'sync'
-                  ? ['--operation', '--max-credits', '--key-file']
-                  : command === 'retexture-sync'
-                    ? ['--max-credits', '--key-file']
-                    : command === 'account'
+          : command === 'provenance'
+            ? ['--operation', '--max-credits']
+            : command === 'retexture-provenance'
+              ? ['--max-credits']
+              : command === 'submit'
+                ? ['--operation', '--pricing-file', '--max-credits', '--key-file']
+                : command === 'retexture-submit'
+                  ? ['--pricing-file', '--max-credits', '--key-file']
+                  : command === 'sync'
+                    ? ['--operation', '--max-credits', '--key-file']
+                    : command === 'retexture-sync'
                       ? ['--max-credits', '--key-file']
-                      : command === 'frame'
-                        ? ['--operation', '--axis-review-file']
-                        : command === 'semantics'
-                          ? ['--operation', '--review-file']
-                          : command === 'residual-review'
-                            ? ['--operation', '--residual-sha256', '--review-file']
-                            : command === 'repair-plan'
-                              ? ['--operation', '--residual-review-sha256']
-                              : command === 'repair-scaffold'
-                                ? ['--operation', '--repair-plan-sha256']
-                                : command === 'repair-intake'
-                                  ? [
-                                      '--operation',
-                                      '--scaffold-report-sha256',
-                                      '--derivative-file',
-                                      '--submission-file',
-                                    ]
-                                  : ['repair-requirements', 'residuals'].includes(command ?? '')
-                                    ? ['--operation', '--assessment-sha256']
-                                    : ['audit', 'review', 'correct', 'inventory'].includes(
-                                          command ?? '',
-                                        )
-                                      ? ['--operation']
-                                      : [];
+                      : command === 'account'
+                        ? ['--max-credits', '--key-file']
+                        : command === 'frame'
+                          ? ['--operation', '--axis-review-file']
+                          : command === 'semantics'
+                            ? ['--operation', '--review-file']
+                            : command === 'residual-review'
+                              ? ['--operation', '--residual-sha256', '--review-file']
+                              : command === 'repair-plan'
+                                ? ['--operation', '--residual-review-sha256']
+                                : command === 'repair-scaffold'
+                                  ? ['--operation', '--repair-plan-sha256']
+                                  : command === 'repair-intake'
+                                    ? [
+                                        '--operation',
+                                        '--scaffold-report-sha256',
+                                        '--derivative-file',
+                                        '--submission-file',
+                                      ]
+                                    : ['repair-requirements', 'residuals'].includes(command ?? '')
+                                      ? ['--operation', '--assessment-sha256']
+                                      : ['audit', 'review', 'correct', 'inventory'].includes(
+                                            command ?? '',
+                                          )
+                                        ? ['--operation']
+                                        : [];
   const options = new Map<string, string>();
   for (let index = 1; index < args.length; index += 2) {
     const key = args[index];
@@ -139,6 +153,7 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
       'account',
       'sync',
       'prepare',
+      'select',
       'submit',
       'provenance',
       'retexture-provenance',
@@ -154,6 +169,7 @@ export function parseMeshyRunArguments(argv: readonly string[]) {
       'sync',
       'submit',
       'provenance',
+      'select',
       'audit',
       'review',
       'frame',
@@ -546,6 +562,40 @@ export async function runMeshyRunCommand(
         spec,
       ),
     );
+  if (command === 'select') {
+    const operationId = MeshyCandidateOperation.parse(options.get('--operation')!);
+    assertMeshyRunCap(state, maxCredits);
+    if (state.selection?.taskId) throw new Error('Candidate selection is already immutable.');
+    const task = state.tasks.find((entry) => entry.operationId === operationId);
+    const archive = savedMeshyArchive(meshyArchiveDirectory(database), operationId, state);
+    if (!archive || task?.status !== 'SUCCEEDED' || task?.consumedCredits === null)
+      throw new Error('Only an archived successful candidate may be selected.');
+    const selectedAt = new Date().toISOString();
+    const evidence = Buffer.from(
+      canonicalJson({
+        format: 'tailfin-meshy-candidate-selection',
+        formatVersion: 1,
+        approvalSha256: meshyRunApprovalIdentity(state.approval),
+        specSha256: state.approval.specSha256,
+        operationId,
+        taskId: task.taskId,
+        selectedAt,
+        authority: 'explicit-user-confirmation',
+        candidateExportSha256: archive.untouchedExport.sha256,
+      }),
+    );
+    const evidenceSha256 = storeMeshyEvidenceBytes(meshyEvidenceDirectory(database), evidence);
+    store.select(task.taskId, evidenceSha256);
+    return canonicalJson({
+      operationId,
+      taskId: task.taskId,
+      selectionEvidenceSha256: evidenceSha256,
+      selectedAt,
+      state: 'quarantine',
+      creditsSpentByThisCommand: 0,
+      productionPublicationApproved: false,
+    });
+  }
   const keyFile = options.get('--key-file');
   const credential =
     keyFile === undefined
