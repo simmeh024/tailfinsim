@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { canonicalJson, sha256 } from './canonical';
 import { MeshyGenerationSpec, meshyCreditExposure, meshySpecIdentity } from './meshy';
 import { type MeshyAccountDeps } from './meshy-account';
-import { meshyArchiveDirectory, syncMeshyCandidate } from './meshy-archive';
+import { meshyArchiveDirectory, syncMeshyCandidate, syncMeshyRetexture } from './meshy-archive';
 import {
   loadMeshyEvidenceJson,
   loadPreparedMeshyEvidence,
@@ -203,6 +203,17 @@ const terminal = (index = 1, status: 'SUCCEEDED' | 'FAILED' | 'CANCELED' = 'FAIL
     consumedCredits: charge,
     observedAt: time,
   });
+
+function glbFixture(): Buffer {
+  const glb = Buffer.alloc(48, 0x20);
+  glb.writeUInt32LE(0x46546c67, 0);
+  glb.writeUInt32LE(2, 4);
+  glb.writeUInt32LE(48, 8);
+  glb.writeUInt32LE(28, 12);
+  glb.writeUInt32LE(0x4e4f534a, 16);
+  glb.write('{"asset":{"version":"2.0"}}', 20);
+  return glb;
+}
 
 async function establishSelectedCandidate(): Promise<void> {
   await submit('candidate-1');
@@ -601,6 +612,86 @@ describe('one-shot paid boundary with a real durable ledger and fake provider', 
     expect(meshyCreditExposure(store.read().budget)).toBe(30);
     await expect(submitRetexture()).rejects.toThrow('preflight');
     expect(posts()).toHaveLength(before + 1);
+  });
+  it('archives the verified selected retexture GLB and PBR maps, then resumes without credentials', async () => {
+    await prepare();
+    await establishSelectedCandidate();
+    const submitted = await submitRetexture();
+    const texture = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+    const retextured = Buffer.from(glbFixture());
+    fetch.mockClear();
+    fetch.mockImplementation((url, init) => {
+      if (typeof url === 'string' && url.startsWith('https://api.meshy.ai/'))
+        return Promise.resolve(
+          json({
+            id: submitted.taskId,
+            type: 'retexture',
+            status: 'SUCCEEDED',
+            consumed_credits: 10,
+            created_at: Date.parse(time),
+            finished_at: Date.parse(time) + 1_000,
+            model_urls: { glb: 'https://assets.meshy.ai/retexture.glb?Signature=private' },
+            texture_urls: {
+              base_color: 'https://assets.meshy.ai/base.png?Signature=private',
+              normal: 'https://assets.meshy.ai/normal.png?Signature=private',
+              metallic: 'https://assets.meshy.ai/metallic.png?Signature=private',
+              roughness: 'https://assets.meshy.ai/roughness.png?Signature=private',
+            },
+          }),
+        );
+      expect(init?.headers).not.toHaveProperty('Authorization');
+      const address =
+        typeof url === 'string'
+          ? url
+          : url instanceof URL
+            ? url.href
+            : url instanceof Request
+              ? url.url
+              : '';
+      return Promise.resolve(
+        address.includes('.glb')
+          ? new Response(retextured, { headers: { 'content-type': 'model/gltf-binary' } })
+          : new Response(texture, { headers: { 'content-type': 'image/png' } }),
+      );
+    });
+    const archived = await syncMeshyRetexture(store, archive, spec, 40, key, deps);
+    expect(archived).toMatchObject({ operationId: 'retexture-selected', archived: true });
+    expect(store.read().budget.entries.at(-1)).toMatchObject({ chargedCredits: 10 });
+    const manifest = await readFile(join(archive, 'retexture-selected.json'), 'utf8');
+    expect(manifest).not.toMatch(/https:|Signature|msy_/);
+    fetch.mockClear();
+    expect(await syncMeshyRetexture(store, archive, spec, 40, '', deps)).toEqual(archived);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it('retains a completed retexture charge when required PBR output is absent', async () => {
+    await prepare();
+    await establishSelectedCandidate();
+    const submitted = await submitRetexture();
+    fetch.mockClear();
+    fetch.mockImplementation(() =>
+      Promise.resolve(
+        json({
+          id: submitted.taskId,
+          type: 'retexture',
+          status: 'SUCCEEDED',
+          consumed_credits: 10,
+          created_at: Date.parse(time),
+          finished_at: Date.parse(time) + 1_000,
+          model_urls: { glb: 'https://assets.meshy.ai/retexture.glb' },
+          texture_urls: {
+            base_color: 'https://assets.meshy.ai/base.png',
+            normal: 'https://assets.meshy.ai/normal.png',
+            metallic: 'https://assets.meshy.ai/metallic.png',
+          },
+        }),
+      ),
+    );
+    await expect(syncMeshyRetexture(store, archive, spec, 40, key, deps)).rejects.toThrow(
+      'archive refused',
+    );
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(store.read().budget.entries.at(-1)).toMatchObject({ chargedCredits: 10 });
+    await expect(readFile(join(archive, 'retexture-selected.json'))).rejects.toThrow();
   });
   it('rejects changed prior proof bytes and cannot change the reference bundle', async () => {
     await prepare();
