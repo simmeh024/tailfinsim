@@ -256,6 +256,13 @@ export async function submitMeshyRetexture(
     const selected = state.tasks.find((task) => task.taskId === state.selection?.taskId);
     if (!selected || selected.operationId === operationId || selected.status !== 'SUCCEEDED')
       throw new Error('Selected candidate is not a successful geometry task.');
+    // Meshy task URLs are short-lived. Refuse locally when the immutable source
+    // archive records that the provider task has expired: a retexture POST using
+    // input_task_id could otherwise reserve credits without a usable source.
+    const sourceArchive = savedMeshyArchive(archiveRoot, selected.operationId, state);
+    const sourceExpiry = sourceArchive?.expiresAt ? Date.parse(sourceArchive.expiresAt) : NaN;
+    if (!Number.isFinite(sourceExpiry) || sourceExpiry <= deps.now().getTime())
+      throw new Error('Selected provider task is expired or has no verified expiry.');
     const request = createMeshyRetextureRequest(spec, selected.taskId);
     body = request.body;
     const evidence = await loadPreparedMeshyEvidence(evidenceRoot, state, spec, deps.now());
