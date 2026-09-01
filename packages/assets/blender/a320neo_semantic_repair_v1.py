@@ -37,6 +37,10 @@ def parse_args():
         "--output-livery-glb",
         help="Optional quarantine-only authoring export with source and canonical livery UV sets.",
     )
+    parser.add_argument(
+        "--output-livery-resources",
+        help="Optional JSON bundle describing the quarantine livery UV, material and anchor resources.",
+    )
     return parser.parse_args(raw)
 
 
@@ -430,6 +434,20 @@ def livery_authoring_export(path):
     for object_name, region in regions.items():
         assign_livery_uv(bpy.data.objects[object_name], region)
 
+    # These are authoring-only anchors. They make registrations and tail artwork resolvable by
+    # name without baking coordinates into a livery document or changing the repair GLB.
+    anchor_positions = {
+        "anchor_registration_port": (-1.99, 2.45, -4.80),
+        "anchor_registration_starboard": (1.99, 2.45, -4.80),
+        "anchor_tail_logo_port": (-1.05, 7.10, 14.45),
+        "anchor_tail_logo_starboard": (1.05, 7.10, 14.45),
+    }
+    for name, position in anchor_positions.items():
+        anchor = bpy.data.objects.new(name, None)
+        anchor.empty_display_type = "PLAIN_AXES"
+        anchor.location = position
+        bpy.context.collection.objects.link(anchor)
+
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.export_scene.gltf(
@@ -442,6 +460,84 @@ def livery_authoring_export(path):
         export_apply=False,
         export_keep_originals=True,
     )
+
+
+def write_livery_resources(path):
+    """Write a parsed-by-@tailfin/shared resource bundle, never a registry entry."""
+    asset = {"id": "aircraft/a320neo-candidate-1", "version": "quarantine-v1"}
+    resource_version = "quarantine-v1"
+    regions = [
+        ("fuselage", "mat-fuselage", "fuselage", "both", "fuselage", (0.015, 0.015, 0.755, 0.970)),
+        ("doors-port", "mat-fuselage", "fuselage", "port", "door_surrounds", (0.785, 0.015, 0.090, 0.970)),
+        ("doors-starboard", "mat-fuselage", "fuselage", "starboard", "door_surrounds", (0.895, 0.015, 0.090, 0.970)),
+        ("tail-fin", "mat-fin", "fin", "both", "tail_fin", (0.015, 0.015, 0.970, 0.970)),
+        ("stabiliser-port", "mat-horizontal-stabilisers", "horizontal_stabilisers", "port", "wings", (0.015, 0.015, 0.465, 0.970)),
+        ("stabiliser-starboard", "mat-horizontal-stabilisers", "horizontal_stabilisers", "starboard", "wings", (0.520, 0.015, 0.465, 0.970)),
+        ("wing-port", "mat-wings", "wings", "port", "wings", (0.015, 0.015, 0.465, 0.970)),
+        ("wing-starboard", "mat-wings", "wings", "starboard", "wings", (0.520, 0.015, 0.465, 0.970)),
+        ("winglet-port", "mat-winglets", "winglets", "port", "winglets", (0.015, 0.015, 0.465, 0.970)),
+        ("winglet-starboard", "mat-winglets", "winglets", "starboard", "winglets", (0.520, 0.015, 0.465, 0.970)),
+        ("nacelle-port", "mat-nacelle-exteriors", "nacelle_exteriors", "port", "engine_nacelles", (0.015, 0.015, 0.465, 0.970)),
+        ("nacelle-starboard", "mat-nacelle-exteriors", "nacelle_exteriors", "starboard", "engine_nacelles", (0.520, 0.015, 0.465, 0.970)),
+    ]
+    islands = [
+        {
+            "id": island_id,
+            "materialName": material_name,
+            "surface": surface,
+            "side": side,
+            "zone": zone,
+            "bounds": {"x": bounds[0], "y": bounds[1], "width": bounds[2], "height": bounds[3]},
+        }
+        for island_id, material_name, surface, side, zone, bounds in regions
+    ]
+    paintable = [
+        ("mat-fuselage", "fuselage", 0.15, 0.85, 0.20),
+        ("mat-fin", "fin", 0.15, 0.85, 0.20),
+        ("mat-horizontal-stabilisers", "horizontal_stabilisers", 0.15, 0.85, 0.20),
+        ("mat-wings", "wings", 0.22, 0.85, 0.35),
+        ("mat-winglets", "winglets", 0.22, 0.85, 0.35),
+        ("mat-nacelle-exteriors", "nacelle_exteriors", 0.15, 0.85, 0.30),
+    ]
+    protected = [
+        ("mat-cockpit-glass", "cockpit_glass"),
+        ("mat-cabin-windows", "cabin_windows"),
+        ("mat-engine-interiors", "engine_interiors"),
+        ("mat-lights", "lights"),
+    ]
+    document = {
+        "liveryUv": {
+            "format": "tailfin-aircraft-livery-resource", "formatVersion": 1, "kind": "livery_uv",
+            "resource": {"id": "livery-uv/a320neo-candidate-1", "version": resource_version},
+            "aircraftAsset": asset, "sourcePbrTexCoord": "TEXCOORD_0", "liveryTexCoord": "TEXCOORD_1",
+            "atlasResolution": 4096, "gutterPx": 16, "islands": islands,
+        },
+        "materialBinding": {
+            "format": "tailfin-aircraft-livery-resource", "formatVersion": 1, "kind": "material_binding",
+            "resource": {"id": "materials/a320neo-candidate-1", "version": resource_version}, "aircraftAsset": asset,
+            "materials": [
+                {"materialName": name, "kind": "paintable", "surface": surface, "receivesLivery": True,
+                 "finish": {"roughnessMin": roughness_min, "roughnessMax": roughness_max, "metallicMax": metallic_max}}
+                for name, surface, roughness_min, roughness_max, metallic_max in paintable
+            ] + [
+                {"materialName": name, "kind": "protected", "surface": surface, "receivesLivery": False}
+                for name, surface in protected
+            ],
+        },
+        "anchorSet": {
+            "format": "tailfin-aircraft-livery-resource", "formatVersion": 1, "kind": "anchor_set",
+            "resource": {"id": "anchors/a320neo-candidate-1", "version": resource_version}, "aircraftAsset": asset,
+            "anchors": [
+                {"id": "registration-port", "nodeName": "anchor_registration_port", "zone": "registration_area", "side": "port", "safeArea": {"x": 0.20, "y": 0.25, "width": 0.24, "height": 0.10}},
+                {"id": "registration-starboard", "nodeName": "anchor_registration_starboard", "zone": "registration_area", "side": "starboard", "safeArea": {"x": 0.56, "y": 0.25, "width": 0.24, "height": 0.10}},
+                {"id": "tail-logo-port", "nodeName": "anchor_tail_logo_port", "zone": "tail_fin", "side": "port", "safeArea": {"x": 0.15, "y": 0.12, "width": 0.70, "height": 0.70}},
+                {"id": "tail-logo-starboard", "nodeName": "anchor_tail_logo_starboard", "zone": "tail_fin", "side": "starboard", "safeArea": {"x": 0.15, "y": 0.12, "width": 0.70, "height": 0.70}},
+            ],
+        },
+    }
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def write_glb(path):
@@ -513,6 +609,10 @@ def main():
     write_glb(args.output_glb)
     if args.output_livery_glb:
         livery_authoring_export(args.output_livery_glb)
+    if args.output_livery_resources:
+        if not args.output_livery_glb:
+            raise RuntimeError("--output-livery-resources requires --output-livery-glb")
+        write_livery_resources(args.output_livery_resources)
     bpy.ops.wm.save_as_mainfile(filepath=str(Path(args.output_blend).resolve()), check_existing=False)
     print(json.dumps({"outputGlb": str(Path(args.output_glb).resolve()), "outputBlend": str(Path(args.output_blend).resolve()), "semanticObjects": len(SEMANTIC_ORDER)}, sort_keys=True))
 
