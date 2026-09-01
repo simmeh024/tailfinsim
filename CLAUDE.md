@@ -377,10 +377,15 @@ the counters. The player _authoring_ API exists on every node; only the material
 worker's. The authoring lifecycle is now complete over HTTP — `POST` creates, `GET` lists,
 `PUT /api/schedules/:id` replaces the legs (only future unflown flights move), `PUT
 /api/schedules/:id/active` pauses/resumes, and `DELETE` cancels the future flights and removes
-the rotation. What is **not** yet wired is the web editor's Publish: the planner's schedule
-surface is still mock because the editor models an out-and-back on one route while the API takes
-a `routeId` per leg (so a return leg needs the reverse route open). The Performance and
-Competition tabs, by contrast, now read their real endpoints.
+the rotation. A leg is now an **airport pair**, not a pre-opened `routeId`: a rotation is a
+sequence of stops, so the server finds or **opens** each leg's route — reachability, range,
+runway, wingspan and operating authority all checked against the _actual airframe_ — and an
+`autoReturn` flag appends the nonstop leg home, so the editor's out-and-back is one authored leg
+plus `autoReturn` rather than two routes the player must open by hand. The response carries a
+per-leg cost estimate (§14 decision support, never a gate). What is **not** yet wired is the web
+editor's Publish: the planner's schedule surface is still mock — but the API now matches the
+editor's own model, so wiring it is a web change, not an API one. The Performance and Competition
+tabs, by contrast, now read their real endpoints.
 
 **And one thing not to "fix".** `airframe.maintenance_state` is nullable, and a null means
 _every tier was last completed at the hours this airframe has now_ — not _at hour zero_. It

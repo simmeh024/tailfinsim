@@ -6,24 +6,25 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { gameTime, horizonFrom, type WorldClock } from '@tailfin/sim';
 
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { airport, flight, route } from '../db/schema';
+import { airport, flight } from '../db/schema';
 import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixture,
   type FoundedAirlineFixtureHarness,
 } from '../test-fixtures/founded-airline';
 
-import { editSchedule, pauseSchedule, removeSchedule } from './authoring';
+import { pauseSchedule, removeSchedule } from './authoring';
 import { listSchedules } from './read';
 import { createSchedule, materialiseSchedule } from './store';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
 
 /**
- * The schedule lifecycle: pause, edit, delete (M2-03 lifecycle).
+ * The schedule lifecycle: pause and delete (M2-03 lifecycle).
  *
- * The prerequisite for an idempotent Publish. Owner-scoped throughout — another
- * airline's schedule is never touched. Requires `DATABASE_URL`; CI provides it.
+ * Owner-scoped throughout — another airline's schedule is never touched. The
+ * leg-resolution and edit logic is proved in `prepare-legs.test.ts` (it turns on
+ * a capability, not a whole airframe). Requires `DATABASE_URL`; CI provides it.
  */
 const url = process.env.DATABASE_URL;
 if (!url) console.warn('\n  [schedule/lifecycle.test] DATABASE_URL not set — skipping.\n');
@@ -74,21 +75,6 @@ describeDb('schedule lifecycle', () => {
     });
     madeAirports.push(icao);
     return icao;
-  }
-
-  async function makeRoute(a: FoundedAirlineFixture, from: string, to: string): Promise<string> {
-    const [row] = await db.db
-      .insert(route)
-      .values({
-        worldId: a.world.id,
-        airlineId: a.airline.id,
-        originIcao: from,
-        destinationIcao: to,
-        greatCircleNm: 500,
-      })
-      .returning({ id: route.id });
-    if (!row) throw new Error('no route');
-    return row.id;
   }
 
   async function roundTrip(a: FoundedAirlineFixture, hub: string, out: string): Promise<string> {
@@ -166,42 +152,5 @@ describeDb('schedule lifecycle', () => {
       .from(flight)
       .where(eq(flight.scheduleId, id));
     expect(after).toHaveLength(0);
-  });
-
-  it('edits a schedule’s legs, and refuses an unknown route or a foreign schedule', async () => {
-    const a = await fixtures.create({ baseCountry: 'GB' });
-    const b = await fixtures.create({ worldId: a.world.id, baseCountry: 'GB' });
-    const hub = await makeAirport();
-    const out = await makeAirport();
-    const outbound = await makeRoute(a, hub, out);
-    const inbound = await makeRoute(a, out, hub);
-    const id = await roundTrip(a, hub, out);
-
-    // A valid edit: same closing rotation, authored via route ids.
-    const edited = await editSchedule(db.db, own(a), id, {
-      legs: [
-        { routeId: outbound, departureMinuteLocal: 480 },
-        { routeId: inbound, departureMinuteLocal: 700 },
-      ],
-      repeat: { kind: 'daily' },
-    });
-    expect(edited.status).toBe('updated');
-    if (edited.status === 'updated') {
-      expect(edited.schedule.legs[0]?.departureMinute).toBe(480);
-    }
-
-    // A leg naming a route the airline does not hold.
-    const bad = await editSchedule(db.db, own(a), id, {
-      legs: [{ routeId: crypto.randomUUID(), departureMinuteLocal: 480 }],
-      repeat: { kind: 'daily' },
-    });
-    expect(bad.status).toBe('unknown_route');
-
-    // Another airline's schedule is not found.
-    const foreign = await editSchedule(db.db, own(b), id, {
-      legs: [{ routeId: outbound, departureMinuteLocal: 480 }],
-      repeat: { kind: 'daily' },
-    });
-    expect(foreign.status).toBe('not_found');
   });
 });

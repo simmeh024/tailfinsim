@@ -151,7 +151,8 @@ const STRICT_WRITE_CONTRACTS = [
     schema: CreateScheduleRequest,
     payload: {
       airframeId: UUID_A,
-      legs: [{ routeId: UUID_A, departureMinuteLocal: 480 }],
+      legs: [{ originIcao: 'EHAM', destinationIcao: 'BIKF', departureMinuteLocal: 480 }],
+      autoReturn: true,
       repeat: { kind: 'daily' },
     },
   },
@@ -159,7 +160,8 @@ const STRICT_WRITE_CONTRACTS = [
     endpoint: 'PUT /api/schedules/:id',
     schema: EditScheduleRequest,
     payload: {
-      legs: [{ routeId: UUID_A, departureMinuteLocal: 480 }],
+      legs: [{ originIcao: 'EHAM', destinationIcao: 'BIKF', departureMinuteLocal: 480 }],
+      autoReturn: false,
       repeat: { kind: 'daily' },
     },
   },

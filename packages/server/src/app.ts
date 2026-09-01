@@ -237,7 +237,7 @@ export async function buildApp({
   // because the fleet does not exist yet — see `network/economics.ts` for which
   // half of it is real.
   registerNetworkRoutes(app, { db, economicsFor: createEconomicsProvider(db.db) });
-  registerScheduleRoutes(app, { db });
+  registerScheduleRoutes(app, { db, economicsFor: createEconomicsProvider(db.db) });
   registerAircraftRoutes(app, { db });
   // The world's own clock. Behind the same airline boundary, because which world
   // a player is in is what decides whose clock they get.

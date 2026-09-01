@@ -159,6 +159,13 @@ export async function openRoute(
   db: Database,
   own: ResolvedPlayerAirline,
   input: { originIcao: string; destinationIcao: string },
+  /**
+   * The aircraft the route is checked against. Defaults to the reference
+   * narrowbody for the "open a route" form, which has no aircraft in hand; the
+   * schedule authoring passes the **actual airframe's** capability, so a leg is
+   * range/runway/wingspan-checked against the aeroplane that will fly it.
+   */
+  capability: AircraftCapability = REFERENCE_CAPABILITY,
 ): Promise<OpenRouteResult> {
   const originIcao = input.originIcao.trim().toUpperCase();
   const destinationIcao = input.destinationIcao.trim().toUpperCase();
@@ -175,25 +182,20 @@ export async function openRoute(
 
   const greatCircleNm = haversineNm(from.latitude, from.longitude, to.latitude, to.longitude);
 
-  const reachability = checkReachability(
-    REFERENCE_CAPABILITY,
-    capabilityOf(from),
-    capabilityOf(to),
-    {
-      distanceNm: greatCircleNm,
-      // A mid-morning departure and a plausible arrival. Real schedule times are
-      // M2-03's and are checked there; this is the "can this pair be served at
-      // all" question, not "does this particular rotation fit".
-      departureMinute: 9 * 60,
-      arrivalMinute: 12 * 60,
-      // Overwater routing is M2-07's to compute from the path and the diversion
-      // airports along it. Until then a sector is assumed never far from one,
-      // which is true for the short-haul network this reference aircraft can fly.
-      diversionMinutes: 0,
-      hasTrafficRights: true,
-      hasSlot: true,
-    },
-  );
+  const reachability = checkReachability(capability, capabilityOf(from), capabilityOf(to), {
+    distanceNm: greatCircleNm,
+    // A mid-morning departure and a plausible arrival. Real schedule times are
+    // M2-03's and are checked there; this is the "can this pair be served at
+    // all" question, not "does this particular rotation fit".
+    departureMinute: 9 * 60,
+    arrivalMinute: 12 * 60,
+    // Overwater routing is M2-07's to compute from the path and the diversion
+    // airports along it. Until then a sector is assumed never far from one,
+    // which is true for the short-haul network this reference aircraft can fly.
+    diversionMinutes: 0,
+    hasTrafficRights: true,
+    hasSlot: true,
+  });
 
   if (!reachability.ok) {
     return { ok: false, kind: 'unreachable', reachability };
