@@ -22,12 +22,19 @@ import { canonicalJson, sha256 } from './canonical';
 import { meshySpecIdentity, type MeshyGenerationSpec } from './meshy';
 import {
   MESHY_GLB_DOWNLOAD_LIMIT,
+  MESHY_TEXTURE_DOWNLOAD_LIMIT,
   assertMeshyGlbEnvelope,
   downloadMeshyGlb,
+  downloadMeshyTexture,
   recoverMeshyCandidate,
+  recoverMeshyRetexture,
   type MeshyRecoveryDeps,
 } from './meshy-recovery';
-import { MeshyRetextureArchive } from './meshy-retexture';
+import {
+  MeshyRetextureArchive,
+  assertMeshyRetextureArchiveReady,
+  type MeshyRetextureArchive as MeshyRetextureArchiveValue,
+} from './meshy-retexture';
 import {
   MeshyArtifactDigest,
   MeshySha256,
@@ -197,6 +204,48 @@ export function writeMeshyRetextureArchive(
   return archive;
 }
 
+function assertRetextureBinding(archive: RetextureArchive, state: MeshyRunState): void {
+  const task = state.tasks.find((entry) => entry.operationId === 'retexture-selected');
+  const request = state.requests.find((entry) => entry.operationId === 'retexture-selected');
+  if (
+    !state.selection ||
+    archive.approvalSha256 !== meshyRunApprovalIdentity(state.approval) ||
+    archive.specSha256 !== state.approval.specSha256 ||
+    archive.requestSha256 !== request?.requestSha256 ||
+    archive.inputTaskId !== state.selection.taskId ||
+    canonicalJson(archive.task) !== canonicalJson(task)
+  )
+    throw new Error(REFUSED);
+}
+
+function verifiedRetextureArtifact(
+  root: string,
+  digest: z.infer<typeof MeshyArtifactDigest>,
+  suffix: string,
+  limit: number,
+): void {
+  const bytes = readMeshyArtifact(join(root, `retexture-${digest.sha256}${suffix}`), limit);
+  if (bytes.length !== digest.bytes || sha256(bytes) !== digest.sha256) throw new Error(REFUSED);
+  if (digest.mediaType === 'model/gltf-binary') assertMeshyGlbEnvelope(bytes);
+}
+
+/** A completed manifest is trusted only after every content-addressed source byte revalidates. */
+export function savedMeshyRetextureArchive(
+  root: string,
+  state: MeshyRunState,
+): MeshyRetextureArchiveValue | null {
+  const path = join(root, 'retexture-selected.json');
+  if (!existsSync(path)) return null;
+  const archive = MeshyRetextureArchive.parse(
+    JSON.parse(readMeshyArtifact(path, 16_384).toString('utf8')) as unknown,
+  );
+  assertRetextureBinding(archive, state);
+  verifiedRetextureArtifact(root, archive.retexturedGlb, '.glb', MESHY_GLB_DOWNLOAD_LIMIT);
+  for (const texture of Object.values(archive.pbrTextures))
+    verifiedRetextureArtifact(root, texture, '.texture', MESHY_TEXTURE_DOWNLOAD_LIMIT);
+  return archive;
+}
+
 function assertBinding(archive: Archive, state: MeshyRunState, operationId: string): void {
   const task = state.tasks.find((entry) => entry.operationId === operationId);
   const request = state.requests.find((entry) => entry.operationId === operationId);
@@ -300,5 +349,129 @@ export async function syncMeshyCandidate(
     return { operationId, status: 'SUCCEEDED', archived: true, export: archive.untouchedExport };
   } catch {
     throw new Error(REFUSED);
+  }
+}
+
+const MESHY_RETEXTURE_DOWNLOAD_TOTAL_LIMIT = 192 * 1024 * 1024;
+
+function textureDigest(bytes: Buffer) {
+  const mediaType =
+    bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+      ? 'image/png'
+      : 'image/jpeg';
+  return { sha256: sha256(bytes), bytes: bytes.length, mediaType } as const;
+}
+
+/**
+ * Read-only task recovery plus immutable PBR source archival. The selected source
+ * candidate must already be archived; this path never generates or accepts a URL
+ * from a caller.
+ */
+export async function syncMeshyRetexture(
+  store: MeshyRunStore,
+  root: string,
+  spec: MeshyGenerationSpec,
+  maxCredits: number,
+  credential: string,
+  deps?: MeshyRecoveryDeps,
+) {
+  const downloaded: Buffer[] = [];
+  try {
+    const state = store.read();
+    assertMeshyRunCap(state, maxCredits);
+    if (state.approval.specSha256 !== meshySpecIdentity(spec)) throw new Error(REFUSED);
+    const existing = savedMeshyRetextureArchive(root, state);
+    if (existing)
+      return {
+        operationId: 'retexture-selected' as const,
+        status: 'SUCCEEDED' as const,
+        archived: true,
+        export: existing.retexturedGlb,
+        pbrTextures: existing.pbrTextures,
+      };
+    if (!state.selection) throw new Error(REFUSED);
+    const selected = state.tasks.find((task) => task.taskId === state.selection?.taskId);
+    if (!selected || selected.operationId === 'retexture-selected') throw new Error(REFUSED);
+    if (!savedMeshyArchive(root, selected.operationId, state)) throw new Error(REFUSED);
+    const result = await recoverMeshyRetexture(store, spec, maxCredits, credential, deps);
+    if (result.receipt.status !== 'SUCCEEDED')
+      return {
+        operationId: 'retexture-selected' as const,
+        status: result.receipt.status,
+        archived: false,
+      };
+    const task = assertMeshyRetextureArchiveReady(result.task);
+    const glb = await downloadMeshyGlb(task.model_urls!.glb!, deps);
+    downloaded.push(glb);
+    const textureUrls = [
+      task.texture_urls!.base_color!,
+      task.texture_urls!.normal!,
+      task.texture_urls!.metallic!,
+      task.texture_urls!.roughness!,
+    ];
+    const textures: Buffer[] = [];
+    for (const url of textureUrls) {
+      const texture = await downloadMeshyTexture(url, deps);
+      downloaded.push(texture);
+      textures.push(texture);
+      if (
+        downloaded.reduce((total, bytes) => total + bytes.length, 0) >
+        MESHY_RETEXTURE_DOWNLOAD_TOTAL_LIMIT
+      )
+        throw new Error(REFUSED);
+    }
+    const current = store.read();
+    const receipt = current.tasks.find((entry) => entry.operationId === 'retexture-selected');
+    const requestSha256 = current.requests.find(
+      (request) => request.operationId === 'retexture-selected',
+    )?.requestSha256;
+    const archive = writeMeshyRetextureArchive(
+      root,
+      {
+        format: 'tailfin-meshy-retexture-export',
+        formatVersion: 1,
+        state: 'quarantine',
+        approvalSha256: meshyRunApprovalIdentity(current.approval),
+        specSha256: current.approval.specSha256,
+        requestSha256,
+        inputTaskId: current.selection?.taskId,
+        task: receipt,
+        createdAt: new Date(task.created_at).toISOString(),
+        finishedAt: new Date(task.finished_at!).toISOString(),
+        expiresAt: task.expires_at ? new Date(task.expires_at).toISOString() : null,
+        retexturedGlb: {
+          sha256: sha256(glb),
+          bytes: glb.length,
+          mediaType: 'model/gltf-binary',
+        },
+        pbrTextures: {
+          baseColor: textureDigest(textures[0]!),
+          normal: textureDigest(textures[1]!),
+          metallic: textureDigest(textures[2]!),
+          roughness: textureDigest(textures[3]!),
+        },
+        evidenceComplete: false,
+        runtimeAdmission: 'not-reviewed',
+      },
+      {
+        glb,
+        baseColor: textures[0]!,
+        normal: textures[1]!,
+        metallic: textures[2]!,
+        roughness: textures[3]!,
+      },
+    );
+    assertRetextureBinding(archive, current);
+    return {
+      operationId: 'retexture-selected' as const,
+      status: 'SUCCEEDED' as const,
+      archived: true,
+      export: archive.retexturedGlb,
+      pbrTextures: archive.pbrTextures,
+    };
+  } catch {
+    throw new Error(REFUSED);
+  } finally {
+    for (const bytes of downloaded) bytes.fill(0);
   }
 }
