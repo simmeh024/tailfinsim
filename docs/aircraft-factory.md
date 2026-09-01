@@ -610,6 +610,7 @@ atlas, with a minimum 8-pixel-at-4K internal margin and no implicit mirroring.
   --python packages\assets\blender\a320neo_semantic_repair_v1.py -- `
   --output-glb path\to\a320neo-semantic-repair-v2.glb `
   --output-livery-glb path\to\a320neo-semantic-repair-livery-v1.glb `
+  --output-livery-resources path\to\a320neo-livery-resources-v1.json `
   --output-blend path\to\a320neo-semantic-repair-livery-v1.blend
 ```
 
@@ -625,6 +626,12 @@ non-overlapping livery islands and an explicit paintable/protected material poli
 materials cannot appear in livery UV islands. The schema is only a safe authoring boundary: no
 concrete A320neo resource file is committed or admitted until its private source, masks, anchors,
 PBR inputs and review evidence have passed the remaining #794 gates.
+
+The optional resource export emits those three schemas together for the private candidate identity
+`aircraft/a320neo-candidate-1@quarantine-v1`: twelve paintable islands, ten explicit material
+policies and named port/starboard registration and tail-logo safe-area anchors. It requires the
+livery GLB export in the same run, adds the matching named anchor nodes to that authoring GLB, and
+does not write `assets/aircraft/`, a manifest, a registry entry or a fleet binding.
 
 ## Pinned strategy and vendor evidence
 
