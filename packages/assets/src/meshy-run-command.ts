@@ -349,7 +349,7 @@ export async function runMeshyRunCommand(
         createArchiveRetextureRequest(
           spec,
           meshyCreditExposure(state.budget),
-          source,
+          { bytes: source.bytes, sha256: source.sha256 },
           recovery.approval.totalCreditCeiling,
         ),
       ),
