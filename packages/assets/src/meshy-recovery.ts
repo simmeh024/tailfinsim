@@ -117,6 +117,41 @@ async function boundedGet(
 }
 
 /**
+ * Reads one exact retexture task. It never lists tasks, adopts a provider ID, or
+ * persists transient provider URLs; callers must bind the ID to their own ledger.
+ */
+export async function fetchMeshyRetextureTask(
+  taskIdInput: string,
+  credential: string,
+  deps: MeshyRecoveryDeps = meshyRecoveryDefaults,
+) {
+  let taskId: string;
+  try {
+    taskId = MeshyTaskId.parse(taskIdInput);
+    if (meshyCredentialStatus(credential) !== 'present') throw new Error('Credential required.');
+  } catch {
+    throw new MeshyRecoveryError('not-authorized');
+  }
+  const bytes = await boundedGet(
+    `https://api.meshy.ai/openapi/v1/retexture/${taskId}`,
+    { Authorization: `Bearer ${credential.trim()}`, Accept: 'application/json' },
+    ['application/json'],
+    65_536,
+    10_000,
+    deps,
+  );
+  try {
+    const task = MeshyRetextureTaskOutput.parse(JSON.parse(bytes.toString('utf8')) as unknown);
+    if (task.id !== taskId) throw new Error('Task identity changed.');
+    return task;
+  } catch {
+    throw new MeshyRecoveryError('invalid-response');
+  } finally {
+    bytes.fill(0);
+  }
+}
+
+/**
  * One bounded polling pass, only for an already recorded candidate. Does not adopt
  * arbitrary task IDs or resolve uncertain POSTs. Charge observations survive download failure.
  * Output URLs are ephemeral transport values; callers must never persist/log this object.
