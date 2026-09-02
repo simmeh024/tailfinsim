@@ -71,7 +71,8 @@ Browser <--------------------> Google OAuth
 Tailfin server --------------> Google token/user-info endpoints
 operator/deploy checkout ----> GitHub
 local backup job ------------> DreamObjects (a full database copy)
-dev worker ------------------> open.er-api.com (display FX rates, no key) [M8-02]
+dev worker ------------------> Cloudflare FX provider (display rates) [M8-02]
+                                 open.er-api.com, or v6.exchangerate-api.com w/ FX_API_KEY
 ```
 
 **The dev worker is a second host, and it is deliberately the quieter side of every link.**
@@ -97,14 +98,23 @@ trust boundary — it is simply outside production's. WireGuard (OPS-13) is the 
 would make it a network boundary rather than an access-control one.
 
 **The worker's one new outbound is a display-FX read (M8-02).** It fetches USD-based exchange
-rates from `open.er-api.com` once a real day, over TLS, with **no credential** — the endpoint is
-public, so nothing is at risk of leaking to it. The asset it touches is _display_ only: rates
-convert money for the player's eyes and never a stored value, so a forged, stale or unavailable
-response cannot move money, only mis-render it, and the code caps the blast radius — a 10-second
-timeout, shape validation that discards non-numeric rates, an at-most-hourly attempt throttle so an
-outage cannot be turned into a request flood, and a fall-back to the last good (or seeded) rates on
-any failure. Production has no worker and so makes no such call at all. It is the worker's only
-third-party dependency beyond the database; the web process does not make it.
+rates once a real day, over TLS, from one of two Cloudflare-fronted providers: the keyless
+`open.er-api.com` by default, or `v6.exchangerate-api.com` when `FX_API_KEY` is set. The key is a
+read-only rate-fetch credential; it lives in the worker's env file (root/owner-readable), **never
+in source, logs or the request logs** — the code deliberately omits the URL (which carries the key)
+from every error. The asset it touches is _display_ only: rates convert money for the player's eyes
+and never a stored value, so a forged, stale or unavailable response cannot move money, only
+mis-render it, and the code caps the blast radius — a 10-second timeout, shape validation that
+discards non-numeric rates, an at-most-hourly attempt throttle so an outage cannot be turned into a
+request flood, and a fall-back to the last good (or seeded) rates on any failure. Production has no
+worker and so makes no such call at all. It is the worker's only third-party dependency beyond the
+database; the web process does not make it.
+
+This is the one outbound the worker's `IPAddressDeny=any` deliberately blocked, so
+`tailfin-dev-worker.service` now `IPAddressAllow`s **only Cloudflare's published ranges** on top of
+the default deny — both providers resolve there, DNS stays on the localhost resolver, and nothing
+else is reachable. Widening it beyond Cloudflare, or to a non-Cloudflare provider, is a change to
+this model.
 
 Caddy, both application processes, both databases, the build checkout and the backup job
 share one host. Process, database and environment-file separation reduces accidents; it is

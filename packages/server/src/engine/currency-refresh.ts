@@ -2,7 +2,7 @@ import { ne, sql } from 'drizzle-orm';
 
 import { RATE_SCALE, SUPPORTED_CURRENCIES } from '@tailfin/shared';
 
-import { FX_SOURCE_HOST, type FxRateSource } from '../currency/fx-source';
+import { activeFxHost, type FxRateSource } from '../currency/fx-source';
 import { currencyRate } from '../db/schema';
 
 import type { Database } from '../db/client';
@@ -63,6 +63,7 @@ export async function refreshFxRates(
   // Only currencies we support, and USD pinned exactly regardless of what the
   // source says about it. A source that omits a currency leaves its last rate
   // untouched rather than dropping it.
+  const host = activeFxHost();
   let updated = 0;
   for (const meta of SUPPORTED_CURRENCIES) {
     const perUsd = meta.code === 'USD' ? 1 : rates[meta.code];
@@ -70,7 +71,7 @@ export async function refreshFxRates(
     const rateE6 = meta.code === 'USD' ? RATE_SCALE : Math.round(perUsd * RATE_SCALE);
     await db
       .update(currencyRate)
-      .set({ rateE6, source: FX_SOURCE_HOST, refreshedAt: now })
+      .set({ rateE6, source: host, refreshedAt: now })
       .where(sql`${currencyRate.code} = ${meta.code}`);
     updated += 1;
   }
