@@ -379,7 +379,7 @@ describe('the Headquarters page', () => {
     const prices = new Set<string>();
     for (const c of shown) {
       const card = within(seat).getByText(c.name).closest('.hq-card');
-      const price = `${(c.salaryPerMonthMinor / 100).toLocaleString('en-GB', { maximumFractionDigits: 0 })}/mo`;
+      const price = `$${(c.salaryPerMonthMinor / 100).toLocaleString('en-US', { maximumFractionDigits: 0 })}/mo`;
       expect(within(card as HTMLElement).getByText(price)).toBeInTheDocument();
       prices.add(price);
     }

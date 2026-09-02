@@ -1,3 +1,5 @@
+import { compactUsdMinor, formatUsdMinor } from '../../currency/display';
+
 import { WEEKDAYS, WEEKDAY_LABEL, type Weekday } from './types';
 
 import type { ReactNode } from 'react';
@@ -11,18 +13,14 @@ import type { ReactNode } from 'react';
 
 export type Tone = 'neutral' | 'positive' | 'negative' | 'warn' | 'accent';
 
-/** `12345` minor → `123.45`. Display only; the wire stays integer. */
+/** USD minor → the player's display currency, with symbol (M8-02). Wire stays integer. */
 export function major(minor: number): string {
-  return (minor / 100).toFixed(2);
+  return formatUsdMinor(minor);
 }
 
-/** A compact money figure: `1.2k`, `3.4M`, in major units. */
+/** A compact money figure in the player's display currency: `$1.2k`, `€3.4M` (M8-02). */
 export function compactMoney(minor: number): string {
-  const value = minor / 100;
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
-  return value.toFixed(0);
+  return compactUsdMinor(minor);
 }
 
 /** A small ⓘ that explains a term on hover/focus — the cheapest onboarding ramp. */

@@ -20,6 +20,8 @@
 
 import { OFFICE_CANDIDATES, type ExecutiveBoost, type OfficeRole } from '@tailfin/shared';
 
+import { formatUsdMinor } from '../currency/display';
+
 import chiefPilot2 from './assets/portraits/chief-pilot-2.webp';
 import chiefPilot3 from './assets/portraits/chief-pilot-3.webp';
 import chiefPilot4 from './assets/portraits/chief-pilot-4.webp';
@@ -325,9 +327,12 @@ export function candidateById(id: string): HqCandidate | null {
   return ALL_CANDIDATES.find((candidate) => candidate.id === id) ?? null;
 }
 
-/** Salary as the game shows money elsewhere: major units, grouped, no fraction. */
+/**
+ * Salary as the game shows money elsewhere: grouped, no fraction, and in the
+ * player's display currency with its symbol (M8-02).
+ */
 export function formatSalary(minor: number): string {
-  return (minor / 100).toLocaleString('en-GB', { maximumFractionDigits: 0 });
+  return formatUsdMinor(minor, { fractionDigits: 0 });
 }
 
 /**

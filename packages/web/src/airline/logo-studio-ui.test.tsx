@@ -139,7 +139,7 @@ describe('the logo studio', () => {
     renderStudio();
     await screen.findByRole('heading', { level: 1, name: /brand logo editor/i });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Rebrand for 25,000.00' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rebrand for $25,000.00' }));
     await waitFor(() => expect(updates).toHaveLength(1));
 
     const body = updates[0] as {

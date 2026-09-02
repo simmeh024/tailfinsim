@@ -1,5 +1,7 @@
 import type { CrewResponse } from '@tailfin/shared';
 
+import { formatUsdMinor } from '../currency/display';
+
 import { CREW_RANK_LABEL } from './CrewRoleBanner';
 
 import type { ReactNode } from 'react';
@@ -145,5 +147,5 @@ function formatDate(iso: string): string {
 }
 
 function formatCash(minor: number): string {
-  return (minor / 100).toLocaleString('en-GB', { maximumFractionDigits: 0 });
+  return formatUsdMinor(minor, { fractionDigits: 0 });
 }

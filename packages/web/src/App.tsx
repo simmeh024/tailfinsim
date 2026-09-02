@@ -14,6 +14,7 @@ import { LogoStudioPage } from './airline/LogoStudioPage';
 import { RequireSession } from './auth/RequireSession';
 import { SessionProvider } from './auth/SessionProvider';
 import { CrewPage } from './crew/CrewPage';
+import { CurrencyProvider } from './currency/CurrencyProvider';
 import { FleetPage } from './fleet/FleetPage';
 import { fetchFoundingOptions } from './founding/api';
 import { FoundingPage } from './founding/FoundingPage';
@@ -22,6 +23,7 @@ import { HeadquartersPage } from './hq/HeadquartersPage';
 import { LiveryBuilderPage } from './livery/LiveryBuilder';
 import { NetworkPage } from './network/NetworkPage';
 import { BoardPage, FinancePage } from './routes/Placeholder';
+import { SettingsPage } from './settings/SettingsPage';
 import { AppShell } from './shell/AppShell';
 import { ThemeProvider } from './theme/ThemeProvider';
 import { WorldPage } from './world/WorldPage';
@@ -94,66 +96,75 @@ export function App(): ReactNode {
           and the first forgotten one is the bug nobody notices.
         */}
         <RequireSession>
-          <Routes>
-            {/* AIR-07's cold open has no game menu behind it. It is a complete
+          {/*
+            Display currency (M8-02) is available everywhere behind the login
+            wall — it loads the rates once and points the money formatters at the
+            player's choice. Inside RequireSession because /api/currencies needs a
+            session; above the routes so every page renders in the chosen currency.
+          */}
+          <CurrencyProvider>
+            <Routes>
+              {/* AIR-07's cold open has no game menu behind it. It is a complete
                 player surface, not a modal laid over destinations that do not
                 make sense until an airline exists. */}
-            <Route index element={<IndexRedirect />} />
-            <Route path="/found" element={<FoundingPage />} />
-            {/*
+              <Route index element={<IndexRedirect />} />
+              <Route path="/found" element={<FoundingPage />} />
+              {/*
               The logo studio is a full-screen takeover, like the founding desk —
               it fetches its own airline and saves the logo as its own rebrand, so
               it sits outside the AppShell chrome rather than inside the `/airline`
               page it is reached from.
             */}
-            <Route path="/airline/logo" element={<LogoStudioPage />} />
-            <Route element={<AppShell />}>
-              <Route path="world" element={<WorldPage />} />
-              <Route path="airline" element={<AirlinePage />} />
-              <Route path="fleet" element={<FleetPage />} />
-              <Route path="network" element={<NetworkPage />} />
-              <Route path="finance" element={<FinancePage />} />
-              <Route path="crew" element={<CrewPage />} />
-              <Route path="headquarters" element={<HeadquartersPage />} />
-              <Route path="c-suite" element={<ExecutiveSuitePage />} />
-              <Route path="design" element={<LiveryBuilderPage />} />
-              <Route path="board" element={<BoardPage />} />
-              {/*
+              <Route path="/airline/logo" element={<LogoStudioPage />} />
+              <Route element={<AppShell />}>
+                <Route path="world" element={<WorldPage />} />
+                <Route path="settings" element={<SettingsPage />} />
+                <Route path="airline" element={<AirlinePage />} />
+                <Route path="fleet" element={<FleetPage />} />
+                <Route path="network" element={<NetworkPage />} />
+                <Route path="finance" element={<FinancePage />} />
+                <Route path="crew" element={<CrewPage />} />
+                <Route path="headquarters" element={<HeadquartersPage />} />
+                <Route path="c-suite" element={<ExecutiveSuitePage />} />
+                <Route path="design" element={<LiveryBuilderPage />} />
+                <Route path="board" element={<BoardPage />} />
+                {/*
                 The console is a layout with its own navigation, not a single
                 page. The admin gate lives in that layout rather than on each
                 route — gating route by route means every route added later is a
                 chance to forget one, and it is still a convenience rather than a
                 boundary: `requireAdmin` on the server is what protects the data.
               */}
-              <Route path="admin" element={<AdminLayout />}>
-                <Route index element={<OverviewPage />} />
-                <Route path="worlds" element={<WorldsPage />} />
-                {/*
+                <Route path="admin" element={<AdminLayout />}>
+                  <Route index element={<OverviewPage />} />
+                  <Route path="worlds" element={<WorldsPage />} />
+                  {/*
                   One page, two shapes. A player's detail has its own URL so a
                   support conversation can link to it, and the list is the same
                   route without an id rather than a separate component that has
                   to be kept in step.
                 */}
-                <Route path="players" element={<PlayersPage />} />
-                <Route path="players/:playerId" element={<PlayersPage />} />
-                <Route path="airlines/:airlineId" element={<AdminAirlinePage />} />
-                <Route path="audit" element={<AuditPage />} />
-                {/* The competition, and why it did what it did (M3-12). */}
-                <Route path="carriers" element={<CarriersPage />} />
-                {/* The machines, rather than the worlds (OPS-15). */}
-                <Route path="system" element={<SystemHealthPage />} />
+                  <Route path="players" element={<PlayersPage />} />
+                  <Route path="players/:playerId" element={<PlayersPage />} />
+                  <Route path="airlines/:airlineId" element={<AdminAirlinePage />} />
+                  <Route path="audit" element={<AuditPage />} />
+                  {/* The competition, and why it did what it did (M3-12). */}
+                  <Route path="carriers" element={<CarriersPage />} />
+                  {/* The machines, rather than the worlds (OPS-15). */}
+                  <Route path="system" element={<SystemHealthPage />} />
+                </Route>
+                <Route
+                  path="*"
+                  element={
+                    <section className="page">
+                      <h1 className="page__title">Not found</h1>
+                      <p className="page__note">No such view.</p>
+                    </section>
+                  }
+                />
               </Route>
-              <Route
-                path="*"
-                element={
-                  <section className="page">
-                    <h1 className="page__title">Not found</h1>
-                    <p className="page__note">No such view.</p>
-                  </section>
-                }
-              />
-            </Route>
-          </Routes>
+            </Routes>
+          </CurrencyProvider>
         </RequireSession>
       </SessionProvider>
     </ThemeProvider>
