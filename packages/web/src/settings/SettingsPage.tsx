@@ -1,8 +1,12 @@
+import { useState } from 'react';
+
 import type { CurrencyRateView, DisplayCurrency } from '@tailfin/shared';
 
 import { useSession } from '../auth/SessionProvider';
 import { useCurrency } from '../currency/CurrencyProvider';
-import { formatUsdMinor } from '../currency/display';
+import { formatInCurrency } from '../currency/display';
+
+import { reloadPage } from './reload';
 
 import './settings.css';
 
@@ -55,12 +59,22 @@ export function SettingsPage(): ReactNode {
   const { player } = useSession();
   const { currencies, current, loading, saving, setCurrency } = useCurrency();
 
+  // The pending pick, kept until the player presses Save. Null means "no change
+  // from the saved currency" — so `selected` below is what the UI reflects.
+  const [pending, setPending] = useState<DisplayCurrency | null>(null);
+  const selected: DisplayCurrency = pending ?? current;
+
   const pinned = currencies.filter((c) => c.top);
   const rest = currencies.filter((c) => !c.top);
+  const selectedView = currencies.find((c) => c.code === selected);
+  const dirty = selected !== current;
 
-  const pick = (code: DisplayCurrency): void => {
-    if (code === current || saving) return;
-    void setCurrency(code);
+  const onSave = async (): Promise<void> => {
+    if (!dirty || saving) return;
+    await setCurrency(selected);
+    // A full refresh is the simplest way to re-render every already-mounted view
+    // (the status strip, any open page) in the new currency at once.
+    reloadPage();
   };
 
   return (
@@ -73,9 +87,9 @@ export function SettingsPage(): ReactNode {
       <section className="settings__section" aria-labelledby="currency-heading">
         <h2 id="currency-heading">Display currency</h2>
         <p className="settings__hint">
-          Choose the currency the game shows your money in. Amounts are converted at live exchange
-          rates; the underlying accounting is always in US dollars, so this changes only what you
-          see. The default is the US Dollar.
+          Choose the currency the game shows your money in, then Save. Amounts are converted at live
+          exchange rates; the underlying accounting is always in US dollars, so this changes only
+          what you see. The default is the US Dollar.
         </p>
 
         {loading ? (
@@ -88,9 +102,9 @@ export function SettingsPage(): ReactNode {
                 <CurrencyOption
                   key={c.code}
                   currency={c}
-                  active={c.code === current}
+                  active={c.code === selected}
                   disabled={saving}
-                  onPick={pick}
+                  onPick={setPending}
                 />
               ))}
             </div>
@@ -101,17 +115,34 @@ export function SettingsPage(): ReactNode {
                 <CurrencyOption
                   key={c.code}
                   currency={c}
-                  active={c.code === current}
+                  active={c.code === selected}
                   disabled={saving}
-                  onPick={pick}
+                  onPick={setPending}
                 />
               ))}
             </div>
 
-            <p className="settings__preview">
-              Preview: $10,000.00 shows as <strong>{formatUsdMinor(PREVIEW_USD_MINOR)}</strong>
-              {current !== 'USD' && ' at today’s rate'}.
-            </p>
+            {selectedView && (
+              <p className="settings__preview">
+                Preview: $10,000.00 shows as{' '}
+                <strong>{formatInCurrency(PREVIEW_USD_MINOR, selectedView)}</strong>
+                {selected !== 'USD' && ' at today’s rate'}.
+              </p>
+            )}
+
+            <div className="settings__actions">
+              <button
+                type="button"
+                className="settings__save"
+                disabled={!dirty || saving}
+                onClick={() => void onSave()}
+              >
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+              {dirty && !saving && (
+                <span className="settings__actions-note">Save to apply {selected}.</span>
+              )}
+            </div>
           </>
         )}
       </section>
