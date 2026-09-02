@@ -5,6 +5,14 @@ import { MeshyGenerationSpec, type MeshyGenerationSpec as MeshyGenerationSpecVal
 import { MeshyArtifactDigest, MeshySha256, MeshyTaskReceipt } from './meshy-run';
 
 const TaskId = z.uuid();
+const RetextureTextures = z
+  .object({
+    base_color: z.string().max(8192).optional(),
+    normal: z.string().max(8192).optional(),
+    metallic: z.string().max(8192).optional(),
+    roughness: z.string().max(8192).optional(),
+  })
+  .strip();
 
 /** The only request body permitted for the selected-candidate PBR operation. */
 export const MeshyRetextureRequest = z
@@ -32,13 +40,16 @@ export const MeshyRetextureTaskOutput = z.object({
   finished_at: z.number().int().nonnegative().nullable().optional(),
   expires_at: z.number().int().nonnegative().nullable().optional(),
   model_urls: z.object({ glb: z.string().max(8192).optional() }).optional(),
+  // Meshy may return the PBR channel object directly or as one texture-set.
+  // Normalize only an exact single-item array; multiple sets are ambiguous.
   texture_urls: z
-    .object({
-      base_color: z.string().max(8192).optional(),
-      normal: z.string().max(8192).optional(),
-      metallic: z.string().max(8192).optional(),
-      roughness: z.string().max(8192).optional(),
-    })
+    .union([
+      RetextureTextures,
+      z
+        .array(RetextureTextures)
+        .length(1)
+        .transform(([value]) => value),
+    ])
     .optional(),
 });
 export type MeshyRetextureTaskOutput = z.infer<typeof MeshyRetextureTaskOutput>;

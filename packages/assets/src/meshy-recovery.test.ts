@@ -310,11 +310,20 @@ describe('bound archive-recovery retexture polling', () => {
         created_at: Date.parse(time),
         finished_at: null,
         expires_at: null,
+        texture_urls: [
+          {
+            base_color: 'https://assets.meshy.ai/base-color.png',
+            normal: 'https://assets.meshy.ai/normal.png',
+            metallic: 'https://assets.meshy.ai/metallic.png',
+            roughness: 'https://assets.meshy.ai/roughness.png',
+          },
+        ],
       }),
     );
     const result = await fetchMeshyRetextureTask(retextureTaskId, credential, deps);
     expect(result).toMatchObject({ id: retextureTaskId, status: 'PENDING' });
     expect(result).not.toHaveProperty('name');
+    expect(result.texture_urls?.base_color).toEqual(expect.any(String));
     expect(fetch).toHaveBeenCalledExactlyOnceWith(
       `https://api.meshy.ai/openapi/v1/retexture/${retextureTaskId}`,
       expect.objectContaining({ method: 'GET', redirect: 'error' }),
