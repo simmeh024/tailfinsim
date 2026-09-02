@@ -307,6 +307,8 @@ describe('bound archive-recovery retexture polling', () => {
         type: 'retexture',
         status: 'PENDING',
         created_at: Date.parse(time),
+        finished_at: null,
+        expires_at: null,
       }),
     );
     await expect(fetchMeshyRetextureTask(retextureTaskId, credential, deps)).resolves.toMatchObject(
