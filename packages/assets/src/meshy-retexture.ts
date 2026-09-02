@@ -21,28 +21,26 @@ export const MeshyRetextureRequest = z
 export type MeshyRetextureRequest = z.infer<typeof MeshyRetextureRequest>;
 
 /** Provider URLs are transient transport values; archive code must hash the downloaded bytes. */
-export const MeshyRetextureTaskOutput = z
-  .object({
-    id: TaskId,
-    type: z.literal('retexture'),
-    status: z.enum(['PENDING', 'IN_PROGRESS', 'SUCCEEDED', 'FAILED', 'CANCELED']),
-    consumed_credits: z.number().int().nonnegative().optional(),
-    created_at: z.number().int().nonnegative(),
-    // Meshy represents unavailable lifecycle timestamps as JSON null while a
-    // task is pending/in progress. Successful archival still requires a value.
-    finished_at: z.number().int().nonnegative().nullable().optional(),
-    expires_at: z.number().int().nonnegative().nullable().optional(),
-    model_urls: z.object({ glb: z.string().max(8192).optional() }).optional(),
-    texture_urls: z
-      .object({
-        base_color: z.string().max(8192).optional(),
-        normal: z.string().max(8192).optional(),
-        metallic: z.string().max(8192).optional(),
-        roughness: z.string().max(8192).optional(),
-      })
-      .optional(),
-  })
-  .strict();
+export const MeshyRetextureTaskOutput = z.object({
+  id: TaskId,
+  type: z.literal('retexture'),
+  status: z.enum(['PENDING', 'IN_PROGRESS', 'SUCCEEDED', 'FAILED', 'CANCELED']),
+  consumed_credits: z.number().int().nonnegative().optional(),
+  created_at: z.number().int().nonnegative(),
+  // Meshy represents unavailable lifecycle timestamps as JSON null while a
+  // task is pending/in progress. Successful archival still requires a value.
+  finished_at: z.number().int().nonnegative().nullable().optional(),
+  expires_at: z.number().int().nonnegative().nullable().optional(),
+  model_urls: z.object({ glb: z.string().max(8192).optional() }).optional(),
+  texture_urls: z
+    .object({
+      base_color: z.string().max(8192).optional(),
+      normal: z.string().max(8192).optional(),
+      metallic: z.string().max(8192).optional(),
+      roughness: z.string().max(8192).optional(),
+    })
+    .optional(),
+});
 export type MeshyRetextureTaskOutput = z.infer<typeof MeshyRetextureTaskOutput>;
 
 /** Private immutable sidecar for PBR source bytes; never an asset-registry admission record. */
