@@ -11,6 +11,7 @@ import {
   MESHY_GLB_DOWNLOAD_LIMIT,
   assertMeshyGlbEnvelope,
   downloadMeshyGlb,
+  fetchMeshyRetextureTask,
   recoverMeshyCandidate,
   reconcileUncertainMeshyRetexture,
   type MeshyRecoveryDeps,
@@ -295,6 +296,29 @@ describe('operator retexture reconciliation (no paid transport)', () => {
     ).rejects.toThrow('invalid-response');
     expect(store.read().tasks).toHaveLength(4);
     expect(store.read().requests).toHaveLength(5);
+  });
+});
+
+describe('bound archive-recovery retexture polling', () => {
+  it('reads one exact provider task without adopting or persisting transient URLs', async () => {
+    fetch.mockResolvedValueOnce(
+      json({
+        id: retextureTaskId,
+        type: 'retexture',
+        status: 'PENDING',
+        created_at: Date.parse(time),
+      }),
+    );
+    await expect(fetchMeshyRetextureTask(retextureTaskId, credential, deps)).resolves.toMatchObject(
+      {
+        id: retextureTaskId,
+        status: 'PENDING',
+      },
+    );
+    expect(fetch).toHaveBeenCalledExactlyOnceWith(
+      `https://api.meshy.ai/openapi/v1/retexture/${retextureTaskId}`,
+      expect.objectContaining({ method: 'GET', redirect: 'error' }),
+    );
   });
 });
 
