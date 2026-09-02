@@ -620,7 +620,11 @@ export async function runMeshyRunCommand(
       creditsSpentByThisCommand: 0,
     });
   }
-  const maxCredits = Number(options.get('--max-credits'));
+  // Archive recovery uses its separate immutable 50-credit aggregate approval;
+  // all ordinary commands remain pinned to the original 40-credit approval.
+  const maxCredits = ['archive-retexture-submit', 'archive-retexture-sync'].includes(command!)
+    ? state.approval.maxCredits
+    : Number(options.get('--max-credits'));
   assertMeshyRunCap(state, maxCredits);
   if (command === 'provenance')
     return canonicalJson(
