@@ -306,17 +306,15 @@ describe('bound archive-recovery retexture polling', () => {
         id: retextureTaskId,
         type: 'retexture',
         status: 'PENDING',
+        name: 'provider-only metadata is discarded',
         created_at: Date.parse(time),
         finished_at: null,
         expires_at: null,
       }),
     );
-    await expect(fetchMeshyRetextureTask(retextureTaskId, credential, deps)).resolves.toMatchObject(
-      {
-        id: retextureTaskId,
-        status: 'PENDING',
-      },
-    );
+    const result = await fetchMeshyRetextureTask(retextureTaskId, credential, deps);
+    expect(result).toMatchObject({ id: retextureTaskId, status: 'PENDING' });
+    expect(result).not.toHaveProperty('name');
     expect(fetch).toHaveBeenCalledExactlyOnceWith(
       `https://api.meshy.ai/openapi/v1/retexture/${retextureTaskId}`,
       expect.objectContaining({ method: 'GET', redirect: 'error' }),
