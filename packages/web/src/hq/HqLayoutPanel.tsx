@@ -11,6 +11,8 @@ import {
   type OfficeStateResponse,
 } from '@tailfin/shared';
 
+import { formatUsdMinor } from '../currency/display';
+
 import floor10 from './assets/floorplan/hq-floor-10.webp';
 import floor6 from './assets/floorplan/hq-floor-6.webp';
 import floor8 from './assets/floorplan/hq-floor-8.webp';
@@ -110,11 +112,8 @@ export function officeLabel(seat: OfficeSeatId): string {
   return `Office ${String(index + 1).padStart(2, '0')}`;
 }
 
-const MONEY = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  maximumFractionDigits: 0,
-});
+/** Money in the player's display currency, no fraction (M8-02). Takes USD minor units. */
+const MONEY = { format: (minor: number): string => formatUsdMinor(minor, { fractionDigits: 0 }) };
 
 function seatTitle(seat: OfficeSeatId): string {
   return isNeutralSeat(seat) ? 'Neutral office' : OFFICE_ROLES[seat].title;
@@ -300,7 +299,7 @@ export function HqLayoutPanel({
       </p>
 
       <p className="hq-layout__payroll">
-        Staff payroll <strong>{MONEY.format(payrollMinor / 100)}</strong>/mo
+        Staff payroll <strong>{MONEY.format(payrollMinor)}</strong>/mo
       </p>
 
       {floor === 'ground' && (
@@ -412,9 +411,7 @@ export function HqLayoutPanel({
                 <p className="hq-exec-gate__need">
                   You do not meet the requirements yet — need{' '}
                   <strong>
-                    {MONEY.format(
-                      (execState.revenueGateMinor - execState.monthlyRevenueMinor) / 100,
-                    )}
+                    {MONEY.format(execState.revenueGateMinor - execState.monthlyRevenueMinor)}
                   </strong>{' '}
                   more income a month.
                 </p>
@@ -427,7 +424,7 @@ export function HqLayoutPanel({
               >
                 {execBusy
                   ? 'Opening…'
-                  : `Unlock the Executive Floor · ${MONEY.format(execState.unlockCostMinor / 100)}`}
+                  : `Unlock the Executive Floor · ${MONEY.format(execState.unlockCostMinor)}`}
               </button>
               {execError !== null && (
                 <p className="hq-exec-gate__error" role="alert">
@@ -533,7 +530,7 @@ export function HqLayoutPanel({
                   >
                     {execBusy
                       ? 'Opening…'
-                      : `Open office ${String(execState.officesUnlocked + 1)} of ${String(EXECUTIVE_OFFICE_COUNT)} · ${MONEY.format(execState.nextOffice.costMinor / 100)}`}
+                      : `Open office ${String(execState.officesUnlocked + 1)} of ${String(EXECUTIVE_OFFICE_COUNT)} · ${MONEY.format(execState.nextOffice.costMinor)}`}
                   </button>
                   {execError !== null && (
                     <p className="hq-exec-gate__error" role="alert">
@@ -557,7 +554,7 @@ export function HqLayoutPanel({
           >
             {expanding
               ? 'Expanding…'
-              : `Expand · +${office.nextExpansion.addsSeats} offices for ${MONEY.format(office.nextExpansion.costMinor / 100)}`}
+              : `Expand · +${office.nextExpansion.addsSeats} offices for ${MONEY.format(office.nextExpansion.costMinor)}`}
           </button>
           {expandError !== null && (
             <p className="hq-layout__expand-error" role="alert">

@@ -131,7 +131,7 @@ describe('your airline page', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Tailfin Air' }),
     ).toBeInTheDocument();
-    expect(screen.getAllByText('500,000.00')).toHaveLength(2);
+    expect(screen.getAllByText('$500,000.00')).toHaveLength(2);
     expect(screen.getByText('0.35 / 1.00')).toBeInTheDocument();
     expect(screen.getByLabelText('Airline designators')).toHaveTextContent('TF');
     expect(screen.getByLabelText('Airline designators')).toHaveTextContent('TFN');
@@ -140,7 +140,7 @@ describe('your airline page', () => {
     expect(manage).toHaveTextContent('Tailfin Air');
 
     const strip = screen.getByLabelText('Status');
-    expect(within(strip).getByText('500,000.00')).toBeInTheDocument();
+    expect(within(strip).getByText('$500,000.00')).toBeInTheDocument();
   });
 
   it('exposes only AIR-02 identity fields as controls and states why codes stay fixed', async () => {
@@ -153,7 +153,7 @@ describe('your airline page', () => {
     expect(screen.queryByLabelText(/IATA/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/ICAO/i)).not.toBeInTheDocument();
     expect(await screen.findByText(/released only if the airline ceases/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Rebrand for 25,000.00' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Rebrand for $25,000.00' })).toBeDisabled();
   });
 
   it('shows the logo viewer and a link to the dedicated logo studio', async () => {
@@ -169,7 +169,7 @@ describe('your airline page', () => {
     expect(edit).toHaveAttribute('href', '/airline/logo');
 
     // The identity rebrand button is unrelated to the logo, and stays disabled clean.
-    expect(screen.getByRole('button', { name: 'Rebrand for 25,000.00' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Rebrand for $25,000.00' })).toBeDisabled();
   });
 
   it('sends only mutable fields, applies the server result, and updates shell cash', async () => {
@@ -183,7 +183,7 @@ describe('your airline page', () => {
       target: { value: 'horizon 8' },
     });
     fireEvent.change(screen.getByLabelText('Home country'), { target: { value: 'ci' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Rebrand for 25,000.00' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rebrand for $25,000.00' }));
 
     expect(await screen.findByRole('status')).toHaveTextContent(/recorded in your cash history/i);
     expect(
@@ -192,7 +192,7 @@ describe('your airline page', () => {
     expect(screen.getByRole('link', { name: /Manage airline/i })).toHaveTextContent(
       'Air Côte d’Ivoire',
     );
-    expect(within(screen.getByLabelText('Status')).getByText('475,000.00')).toBeInTheDocument();
+    expect(within(screen.getByLabelText('Status')).getByText('$475,000.00')).toBeInTheDocument();
     expect(updates).toEqual([
       {
         name: 'Air Côte d’Ivoire',
@@ -216,7 +216,7 @@ describe('your airline page', () => {
     await renderPage();
 
     fireEvent.change(await screen.findByLabelText('Airline name'), { target: { value: '---' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Rebrand for 25,000.00' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rebrand for $25,000.00' }));
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(/not applied/i);

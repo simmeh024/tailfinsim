@@ -606,6 +606,16 @@ body {
   white-space: nowrap;
 }
 
+/* The name doubles as the link to Settings (M8-02). */
+.account__name--link {
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.account__name--link:hover {
+  text-decoration: underline;
+}
+
 .account__airline {
   display: grid;
   gap: var(--space-1);

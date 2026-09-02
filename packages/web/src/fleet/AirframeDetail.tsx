@@ -7,6 +7,8 @@ import type {
   SpecMovement,
 } from '@tailfin/shared';
 
+import { compactUsdMinor } from '../currency/display';
+
 import type { ReactNode } from 'react';
 
 /**
@@ -119,10 +121,8 @@ function capabilityValue(axis: CapabilityMovement['axis'], value: number | null)
 }
 
 function money(minor: number): string {
-  const major = Math.round(minor / 100);
-  if (major === 0) return '$0';
-  if (major >= 1_000_000) return `$${(major / 1_000_000).toFixed(1)}M`;
-  return `$${String(major)}`;
+  // Compact figure in the player's display currency (M8-02). Wire stays USD minor.
+  return compactUsdMinor(minor);
 }
 
 function minutesAsClock(minute: number): string {

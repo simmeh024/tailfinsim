@@ -177,7 +177,7 @@ describe('layout', () => {
     for (const label of ['Cash', 'Runway', 'Airborne', 'Alerts']) {
       expect(within(strip).getByText(label)).toBeInTheDocument();
     }
-    expect(await within(strip).findByText('500,000.00')).toBeInTheDocument();
+    expect(await within(strip).findByText('$500,000.00')).toBeInTheDocument();
   });
 
   it('marks up figures for tabular numerals so digits do not jitter', async () => {

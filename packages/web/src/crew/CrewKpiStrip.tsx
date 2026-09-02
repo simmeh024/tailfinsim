@@ -1,5 +1,7 @@
 import type { CrewResponse } from '@tailfin/shared';
 
+import { formatUsdMinor } from '../currency/display';
+
 import { coverageSummary, headcountSummary } from './crew-presentation';
 
 import type { ReactNode } from 'react';
@@ -167,5 +169,5 @@ export function CrewKpiStrip({ crew }: { crew: CrewResponse }): ReactNode {
  * cash bare. A `$` here would be inventing the answer to an open question.
  */
 function formatCash(minor: number): string {
-  return (minor / 100).toLocaleString('en-GB', { maximumFractionDigits: 0 });
+  return formatUsdMinor(minor, { fractionDigits: 0 });
 }

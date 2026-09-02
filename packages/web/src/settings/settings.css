@@ -1,0 +1,121 @@
+.settings {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.settings__head h1 {
+  margin: 0 0 var(--space-1);
+  font-family: var(--font-ui);
+  font-size: var(--text-lg);
+  color: var(--text-primary);
+}
+
+.settings__head p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.settings__section {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.settings__section h2 {
+  margin: 0 0 var(--space-1);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  color: var(--text-primary);
+}
+
+.settings__hint {
+  margin: 0 0 var(--space-4);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.settings__group-label {
+  margin: var(--space-4) 0 var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.settings__group-label:first-of-type {
+  margin-top: 0;
+}
+
+.currency-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-2);
+}
+
+.currency-option {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.currency-option:hover {
+  border-color: var(--border-strong);
+}
+
+.currency-option:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.currency-option--active {
+  border-color: var(--accent);
+  background: var(--accent-quiet);
+}
+
+.currency-option__symbol {
+  font-family: var(--font-figures);
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  min-width: 1.5em;
+}
+
+.currency-option__code {
+  font-family: var(--font-figures);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.currency-option__name {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.currency-option__check {
+  margin-left: auto;
+  color: var(--accent);
+}
+
+.settings__preview {
+  margin-top: var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.settings__preview strong {
+  font-family: var(--font-figures);
+  color: var(--text-primary);
+}

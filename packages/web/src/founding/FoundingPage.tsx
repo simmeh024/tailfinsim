@@ -8,6 +8,7 @@ import type {
   CreateAirlineInput,
 } from '@tailfin/shared';
 
+import { formatUsdMinor } from '../currency/display';
 import { BuildBadge } from '../version/BuildBadge';
 
 import {
@@ -45,12 +46,9 @@ const TIER_LABEL: Record<AirlineFoundingAirport['tier'], string> = {
   regional: 'Regional',
 };
 
-/** Display only. Money remains integer minor units on the wire. */
+/** Display only, in the player's display currency (M8-02). Wire stays USD minor. */
 function majorUnits(minor: number): string {
-  return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(minor / 100);
+  return formatUsdMinor(minor);
 }
 
 function fieldDescription(hint: string, field: string, errors: Record<string, string[]>): string {

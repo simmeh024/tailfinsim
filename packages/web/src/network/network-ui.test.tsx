@@ -266,7 +266,7 @@ describe('the pricing tab', () => {
     await waitFor(() => {
       expect(screen.getByText('107%')).toBeInTheDocument();
     });
-    expect(screen.getByText('280.00')).toBeInTheDocument();
+    expect(screen.getByText('$280.00')).toBeInTheDocument();
     expect(screen.getByText('61.0%')).toBeInTheDocument();
   });
 

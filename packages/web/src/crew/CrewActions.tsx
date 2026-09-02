@@ -2,6 +2,8 @@ import { useState } from 'react';
 
 import type { CrewRank, CrewResponse } from '@tailfin/shared';
 
+import { formatUsdMinor } from '../currency/display';
+
 import { RANK_ORDER } from './crew-presentation';
 import { CREW_RANK_LABEL } from './CrewRoleBanner';
 
@@ -443,5 +445,5 @@ function RankField({
 }
 
 function formatCash(minor: number): string {
-  return (minor / 100).toLocaleString('en-GB', { maximumFractionDigits: 0 });
+  return formatUsdMinor(minor, { fractionDigits: 0 });
 }

@@ -426,8 +426,8 @@ describe('the aircraft marketplace', () => {
     fireEvent.click(await screen.findByRole('button', { name: /^Lease$/i }));
     expect(await screen.findByText('Deposit due')).toBeInTheDocument();
     expect(screen.getByText('Monthly obligation')).toBeInTheDocument();
-    expect(screen.getByText('1,760,000.00')).toBeInTheDocument();
-    expect(screen.getByText('880,000.00')).toBeInTheDocument();
+    expect(screen.getByText('$1,760,000.00')).toBeInTheDocument();
+    expect(screen.getByText('$880,000.00')).toBeInTheDocument();
 
     fireEvent.change(await screen.findByLabelText(/Delivery airport ICAO/i), {
       target: { value: 'eham' },

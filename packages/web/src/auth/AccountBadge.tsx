@@ -35,7 +35,17 @@ export function AccountBadge({ airlineName }: { airlineName: string | null }): R
             referrerPolicy="no-referrer"
           />
         )}
-        <span className="account__name">{player.displayName}</span>
+        <NavLink
+          className="account__name account__name--link"
+          to="/settings"
+          title="Settings"
+          // A distinct accessible name (still leading with the visible name, so
+          // it satisfies label-in-name) — the link goes to Settings, and this
+          // keeps it from colliding with any other element that shows the name.
+          aria-label={`${player.displayName} — Settings`}
+        >
+          {player.displayName}
+        </NavLink>
       </div>
 
       {airlineName && (

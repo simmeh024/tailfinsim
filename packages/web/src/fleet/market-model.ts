@@ -1,5 +1,7 @@
 import type { AircraftAvailabilityState, AircraftClass, CatalogueEntry } from '@tailfin/shared';
 
+import { formatUsdMinor } from '../currency/display';
+
 export const AVAILABILITY_LABEL: Record<AircraftAvailabilityState, string> = {
   unannounced: 'Not yet flying',
   prototype: 'In testing',
@@ -101,8 +103,6 @@ export function browseCatalogue(
 
 export function formatMoney(minor: number | null): string {
   if (minor === null) return 'Unavailable';
-  return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(minor / 100);
+  // Converts USD minor units to the player's display currency (M8-02).
+  return formatUsdMinor(minor);
 }

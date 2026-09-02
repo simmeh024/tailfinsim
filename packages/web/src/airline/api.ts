@@ -5,6 +5,8 @@ import type {
   UpdateOwnAirlineResponse,
 } from '@tailfin/shared';
 
+import { formatUsdMinor } from '../currency/display';
+
 export interface OwnAirlineFailure extends ApiError {
   status: number;
 }
@@ -66,10 +68,13 @@ export async function patchOwnAirline(
   throw new Error(`PATCH /api/airlines/me failed with ${String(response.status)}`);
 }
 
-/** Display only; the wire and every calculation remain integer minor units. */
+/**
+ * Display only; the wire and every calculation remain integer USD minor units.
+ *
+ * Converts to the player's display currency (M8-02) and shows its symbol. USD is
+ * the default and identity, so this reads as `$1,234.56` until a currency is
+ * chosen.
+ */
 export function formatMinorUnits(minor: number): string {
-  return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(minor / 100);
+  return formatUsdMinor(minor);
 }

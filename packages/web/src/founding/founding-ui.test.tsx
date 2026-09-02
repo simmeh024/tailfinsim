@@ -203,7 +203,7 @@ describe('the founding desk', () => {
       await screen.findByRole('heading', { level: 1, name: 'What’s your airline called?' }),
     ).toBeInTheDocument();
     expect(screen.queryByRole('navigation', { name: 'Main' })).not.toBeInTheDocument();
-    expect((await screen.findAllByText('500,000.00')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('$500,000.00')).length).toBeGreaterThan(0);
   });
 
   it('labels every critical control and uses native keyboard controls', async () => {
