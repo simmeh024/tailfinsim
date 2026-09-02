@@ -969,6 +969,7 @@ export function LiveryBuilder({
             developmentPreview && snapshot.family === 'A320neo' ? (
               <DevelopmentAircraftPreview
                 layers={snapshot.document.layers}
+                source="quarantine-recovery"
                 fallback={
                   <FleetAircraftPreview
                     family={snapshot.family}
@@ -991,7 +992,7 @@ export function LiveryBuilder({
           <p className="livery-canvas__caption">
             {previewMode === 'fleet'
               ? developmentPreview && snapshot.family === 'A320neo'
-                ? 'Interactive candidate model · whole-surface coats preview live · paint map remains canonical'
+                ? 'Recovered source PBR · quarantine review only · no fleet binding or livery paint application'
                 : 'Fleet render · illustrative material preview · paint map remains canonical'
               : 'Exact zone clipping · canonical side-profile authoring'}
           </p>

@@ -111,6 +111,16 @@ describe('loadEnv', () => {
     expect(loadEnv().nodeEnv).toBe('production');
   });
 
+  it('permits a quarantine recovery export only on the explicitly labelled dev environment', () => {
+    vi.stubEnv('DATABASE_URL', VALID_URL);
+    vi.stubEnv('ENVIRONMENT_LABEL', 'dev');
+    vi.stubEnv('DEV_QUARANTINE_A320NEO_RECOVERY_GLB', '/private/a320neo-recovery.glb');
+    expect(loadEnv().devQuarantineA320neoRecoveryGlb).toBe('/private/a320neo-recovery.glb');
+
+    vi.stubEnv('ENVIRONMENT_LABEL', 'production');
+    expect(() => loadEnv()).toThrow(/may only be configured when ENVIRONMENT_LABEL=dev/);
+  });
+
   it('rejects an unrecognised environment label', () => {
     vi.stubEnv('DATABASE_URL', VALID_URL);
     vi.stubEnv('ENVIRONMENT_LABEL', 'staging');
