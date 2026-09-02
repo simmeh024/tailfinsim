@@ -79,6 +79,17 @@ function readDevA320neoCandidates(
   return devA320neoCandidateCache;
 }
 
+function readDevQuarantineA320neoRecovery(
+  environment: ServerEnv['environmentLabel'],
+  filePath: string | undefined,
+): Buffer | null {
+  if (environment !== 'dev' || filePath === undefined) return null;
+  if (!existsSync(filePath)) {
+    throw new Error('The configured dev quarantine A320neo recovery export does not exist.');
+  }
+  return readFileSync(filePath);
+}
+
 export interface BuildAppOptions {
   env: ServerEnv;
   db: DatabaseHandle;
@@ -305,6 +316,10 @@ export async function buildApp({
   const deployInfo = readDeployInfo();
   const startedAtIso = new Date().toISOString();
   const devA320neoCandidates = readDevA320neoCandidates(env.environmentLabel);
+  const devQuarantineA320neoRecovery = readDevQuarantineA320neoRecovery(
+    env.environmentLabel,
+    env.devQuarantineA320neoRecoveryGlb,
+  );
 
   app.get(
     '/api/version',
@@ -346,6 +361,23 @@ export async function buildApp({
             .header('content-length', String(candidate.byteLength))
             .header('x-content-type-options', 'nosniff')
             .send(candidate),
+      );
+    }
+    if (devQuarantineA320neoRecovery !== null) {
+      app.get(
+        '/api/dev/assets/aircraft/quarantine-a320neo-recovery.glb',
+        { logLevel: 'warn' },
+        async (_request, reply) =>
+          reply
+            .code(200)
+            .type('model/gltf-binary')
+            .header('cache-control', 'private, no-store')
+            .header('content-length', String(devQuarantineA320neoRecovery.byteLength))
+            .header('x-content-type-options', 'nosniff')
+            // There is no registry binding, fleet path or generic file route.
+            // This single immutable path exists only for operator-approved dev
+            // visual review while its provenance and licensing gates remain open.
+            .send(devQuarantineA320neoRecovery),
       );
     }
   }

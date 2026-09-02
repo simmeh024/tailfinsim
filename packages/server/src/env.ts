@@ -183,6 +183,14 @@ export interface ServerEnv {
    */
   environmentLabel: EnvironmentLabel;
 
+  /**
+   * An operator-provisioned, immutable recovery export for a dev-only visual
+   * review. It is deliberately an absolute path outside the checkout: the
+   * quarantine artifact must never be versioned with application code or enter
+   * the runtime aircraft registry. Undefined keeps the endpoint unavailable.
+   */
+  devQuarantineA320neoRecoveryGlb?: string;
+
   /** Absolute origin this instance is reached on. The OAuth redirect URI is derived from it. */
   publicOrigin: string;
 
@@ -243,6 +251,13 @@ export function loadEnv(): ServerEnv {
     );
   }
 
+  const devQuarantineA320neoRecoveryGlb = optionalUndefined('DEV_QUARANTINE_A320NEO_RECOVERY_GLB');
+  if (devQuarantineA320neoRecoveryGlb !== undefined && environmentLabel !== 'dev') {
+    throw new Error(
+      'DEV_QUARANTINE_A320NEO_RECOVERY_GLB may only be configured when ENVIRONMENT_LABEL=dev.',
+    );
+  }
+
   const googleClientId = optionalUndefined('GOOGLE_CLIENT_ID');
   const googleClientSecret = optionalUndefined('GOOGLE_CLIENT_SECRET');
   const sessionSecret = optionalUndefined('SESSION_SECRET');
@@ -283,6 +298,7 @@ export function loadEnv(): ServerEnv {
     logLevel: optional('LOG_LEVEL', nodeEnv === 'production' ? 'info' : 'debug'),
     webSurface: webSurface as WebSurface,
     environmentLabel: environmentLabel as EnvironmentLabel,
+    devQuarantineA320neoRecoveryGlb,
     publicOrigin,
     googleClientId,
     googleClientSecret,

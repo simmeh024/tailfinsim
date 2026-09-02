@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { HealthResponse, VersionResponse } from '@tailfin/shared';
@@ -227,6 +231,46 @@ describe('GET /api/version', () => {
     }
     expect(stagedLengths[0]).toBeLessThan(stagedLengths[1]!);
     expect(stagedLengths[1]).toBeLessThan(stagedLengths[2]!);
+  });
+
+  it('serves an explicitly provisioned recovery export only to the dev review route', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tailfin-quarantine-review-'));
+    const recoveryPath = join(directory, 'a320neo-recovery.glb');
+    const recovery = Buffer.from('glTF-test-recovery');
+    writeFileSync(recoveryPath, recovery);
+    const reviewApp = await buildApp({
+      env: {
+        ...testEnv,
+        environmentLabel: 'dev',
+        devQuarantineA320neoRecoveryGlb: recoveryPath,
+      },
+      db: databaseAlarm,
+    });
+    await reviewApp.ready();
+    try {
+      const response = await reviewApp.inject({
+        method: 'GET',
+        url: '/api/dev/assets/aircraft/quarantine-a320neo-recovery.glb',
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toBe(recovery.toString());
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(response.headers['x-content-type-options']).toBe('nosniff');
+
+      const unavailable = await devApp.inject({
+        method: 'GET',
+        url: '/api/dev/assets/aircraft/quarantine-a320neo-recovery.glb',
+      });
+      expect(unavailable.statusCode).toBe(404);
+      const production = await productionApp.inject({
+        method: 'GET',
+        url: '/api/dev/assets/aircraft/quarantine-a320neo-recovery.glb',
+      });
+      expect(production.statusCode).toBe(404);
+    } finally {
+      await reviewApp.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('reports the same start time across requests', async () => {

@@ -21,7 +21,13 @@ export const A320NEO_DEV_MODEL_STAGES = [
   { level: 0, url: '/api/dev/assets/aircraft/aircraft-lod0.glb' },
 ] as const;
 
-type DevelopmentLod = (typeof A320NEO_DEV_MODEL_STAGES)[number]['level'];
+export const A320NEO_QUARANTINE_RECOVERY_STAGES = [
+  { level: 0, url: '/api/dev/assets/aircraft/quarantine-a320neo-recovery.glb' },
+] as const;
+
+type DevelopmentModelStage =
+  (typeof A320NEO_DEV_MODEL_STAGES)[number] | (typeof A320NEO_QUARANTINE_RECOVERY_STAGES)[number];
+type DevelopmentLod = DevelopmentModelStage['level'];
 
 const MATERIAL_ZONE = Object.freeze({
   'mat-fuselage': 'fuselage',
@@ -200,14 +206,24 @@ function disposeModel(model: Object3D): void {
 export function DevelopmentAircraftPreview({
   layers,
   fallback,
+  source = 'salvaged-candidate',
 }: {
   layers: readonly LiveryLayer[];
   fallback: ReactNode;
+  /** A recovered export is shown untouched for quarantine visual review only. */
+  source?: 'salvaged-candidate' | 'quarantine-recovery';
 }): ReactNode {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const runtimeRef = useRef<PreviewRuntime | null>(null);
-  const colors = useMemo(() => a320neoDevelopmentMaterialColors(layers), [layers]);
+  const isQuarantineRecovery = source === 'quarantine-recovery';
+  const stages = isQuarantineRecovery
+    ? A320NEO_QUARANTINE_RECOVERY_STAGES
+    : A320NEO_DEV_MODEL_STAGES;
+  const colors = useMemo(
+    () => (isQuarantineRecovery ? {} : a320neoDevelopmentMaterialColors(layers)),
+    [isQuarantineRecovery, layers],
+  );
   const colorsRef = useRef(colors);
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [lodLevel, setLodLevel] = useState<DevelopmentLod | null>(null);
@@ -276,14 +292,14 @@ export function DevelopmentAircraftPreview({
         const loader = new GLTFLoader();
         loader.setMeshoptDecoder(MeshoptDecoder);
         const loadStage = async (
-          stage: (typeof A320NEO_DEV_MODEL_STAGES)[number],
+          stage: DevelopmentModelStage,
         ): Promise<Awaited<ReturnType<typeof loader.loadAsync>>> =>
           new Promise((resolve, reject) => {
             loader.load(
               stage.url,
               resolve,
               (event) => {
-                if (stage.level === 2 && event.total > 0 && !cancelled) {
+                if (stage === stages[0] && event.total > 0 && !cancelled) {
                   setProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
                 }
               },
@@ -298,15 +314,17 @@ export function DevelopmentAircraftPreview({
             if (!originalMaterialColors.has(material)) {
               originalMaterialColors.set(material, material.color.getHex());
             }
-            const color = colorsRef.current[material.name];
-            if (color !== undefined) material.color.set(color);
             material.envMapIntensity = 0.65;
-            configureA320neoDevelopmentExteriorMaterial(material, THREE.DoubleSide);
+            if (!isQuarantineRecovery) {
+              const color = colorsRef.current[material.name];
+              if (color !== undefined) material.color.set(color);
+              configureA320neoDevelopmentExteriorMaterial(material, THREE.DoubleSide);
+            }
           });
           return originalMaterialColors;
         };
 
-        const gltf = await loadStage(A320NEO_DEV_MODEL_STAGES[0]);
+        const gltf = await loadStage(stages[0]);
         if (cancelled) {
           disposeModel(gltf.scene);
           renderer.dispose();
@@ -363,9 +381,9 @@ export function DevelopmentAircraftPreview({
         pendingControls = null;
         pendingRenderer = null;
         setState('ready');
-        setLodLevel(2);
+        setLodLevel(stages[0].level);
 
-        for (const stage of A320NEO_DEV_MODEL_STAGES.slice(1)) {
+        for (const stage of stages.slice(1)) {
           if (cancelled) break;
           try {
             const nextGltf = await loadStage(stage);
@@ -416,7 +434,7 @@ export function DevelopmentAircraftPreview({
       disposeModel(runtime.model);
       runtime.renderer.dispose();
     };
-  }, []);
+  }, [isQuarantineRecovery, stages]);
 
   if (state === 'failed') {
     return (
@@ -432,7 +450,11 @@ export function DevelopmentAircraftPreview({
       ref={containerRef}
       className="livery-true-preview"
       role="img"
-      aria-label="A320neo interactive true 3D livery preview"
+      aria-label={
+        isQuarantineRecovery
+          ? 'A320neo quarantined source PBR review model'
+          : 'A320neo interactive true 3D livery preview'
+      }
       data-state={state}
       data-lod={lodLevel ?? 'fallback'}
     >
@@ -444,12 +466,17 @@ export function DevelopmentAircraftPreview({
       <canvas ref={canvasRef} aria-hidden="true" data-visible={state === 'ready'} />
       {state === 'loading' && (
         <p className="livery-true-preview__loading" role="status">
-          Loading true 3D A320neo{progress === null ? '…' : ` · ${String(progress)}%`}
+          Loading {isQuarantineRecovery ? 'quarantine source PBR' : 'true 3D A320neo'}
+          {progress === null ? '…' : ` · ${String(progress)}%`}
         </p>
       )}
       <div className="livery-true-preview__badges" aria-hidden="true">
-        <span>True 3D</span>
-        <span>Dev review · licence pending</span>
+        <span>{isQuarantineRecovery ? 'Source PBR review' : 'True 3D'}</span>
+        <span>
+          {isQuarantineRecovery
+            ? 'Quarantine · not fleet eligible'
+            : 'Dev review · licence pending'}
+        </span>
       </div>
       <button
         type="button"
@@ -459,7 +486,11 @@ export function DevelopmentAircraftPreview({
       >
         Reset view
       </button>
-      <p className="livery-true-preview__hint">Drag to orbit · scroll to zoom</p>
+      <p className="livery-true-preview__hint">
+        {isQuarantineRecovery
+          ? 'Untouched recovered PBR · quarantine only · drag to orbit · scroll to zoom'
+          : 'Drag to orbit · scroll to zoom'}
+      </p>
     </div>
   );
 }
