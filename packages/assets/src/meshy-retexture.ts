@@ -28,8 +28,10 @@ export const MeshyRetextureTaskOutput = z
     status: z.enum(['PENDING', 'IN_PROGRESS', 'SUCCEEDED', 'FAILED', 'CANCELED']),
     consumed_credits: z.number().int().nonnegative().optional(),
     created_at: z.number().int().nonnegative(),
-    finished_at: z.number().int().nonnegative().optional(),
-    expires_at: z.number().int().nonnegative().optional(),
+    // Meshy represents unavailable lifecycle timestamps as JSON null while a
+    // task is pending/in progress. Successful archival still requires a value.
+    finished_at: z.number().int().nonnegative().nullable().optional(),
+    expires_at: z.number().int().nonnegative().nullable().optional(),
     model_urls: z.object({ glb: z.string().max(8192).optional() }).optional(),
     texture_urls: z
       .object({
