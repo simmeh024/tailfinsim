@@ -7,6 +7,7 @@ import type { CurrenciesResponse, MeResponse } from '@tailfin/shared';
 import { SessionProvider } from '../auth/SessionProvider';
 import { CurrencyProvider } from '../currency/CurrencyProvider';
 
+import * as reloadModule from './reload';
 import { SettingsPage } from './SettingsPage';
 
 /**
@@ -75,6 +76,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 function renderSettings() {
@@ -104,15 +106,30 @@ describe('SettingsPage currency selector', () => {
     expect(screen.getByText('Canadian Dollar')).toBeInTheDocument();
   });
 
-  it('marks the current currency active and persists a new choice', async () => {
+  it('selects a currency, then persists and refreshes only on Save', async () => {
+    const reload = vi.spyOn(reloadModule, 'reloadPage').mockImplementation(() => undefined);
+
     renderSettings();
     const usd = await screen.findByRole('button', { name: /US Dollar/ });
     expect(usd).toHaveAttribute('aria-pressed', 'true');
 
-    fireEvent.click(screen.getByRole('button', { name: /Euro/ }));
+    // Save is disabled until a different currency is picked.
+    const save = screen.getByRole('button', { name: 'Save' });
+    expect(save).toBeDisabled();
 
+    // Picking Euro selects it but does not save yet.
+    fireEvent.click(screen.getByRole('button', { name: /Euro/ }));
+    expect(screen.getByRole('button', { name: /Euro/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(save).toBeEnabled();
+    expect(putCalls).toEqual([]);
+
+    // Save persists the choice and refreshes.
+    fireEvent.click(save);
     await waitFor(() => {
       expect(putCalls).toEqual([{ currency: 'EUR' }]);
+    });
+    await waitFor(() => {
+      expect(reload).toHaveBeenCalledTimes(1);
     });
   });
 });

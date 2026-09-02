@@ -56,10 +56,37 @@ export function activeCurrency(): string {
  */
 export function formatUsdMinor(usdMinor: number, options?: { fractionDigits?: number }): string {
   const { code, rateByCode } = state;
-  const rateE6 = rateByCode.get(code) ?? RATE_SCALE;
-  const targetHundredths = convertUsdMinor(usdMinor, rateE6);
-  const major = targetHundredths / 100;
-  const decimals = options?.fractionDigits ?? currencyMeta(code)?.decimals ?? 2;
+  return formatConverted(
+    usdMinor,
+    code,
+    rateByCode.get(code) ?? RATE_SCALE,
+    currencyMeta(code)?.decimals ?? 2,
+    options,
+  );
+}
+
+/**
+ * Format a USD minor amount in a **specific** currency and rate, independent of
+ * the active choice — for the Settings preview, which shows what a currency the
+ * player is about to pick would look like before they save it.
+ */
+export function formatInCurrency(
+  usdMinor: number,
+  currency: { code: string; rateE6: number; decimals: number },
+  options?: { fractionDigits?: number },
+): string {
+  return formatConverted(usdMinor, currency.code, currency.rateE6, currency.decimals, options);
+}
+
+function formatConverted(
+  usdMinor: number,
+  code: string,
+  rateE6: number,
+  decimals: number,
+  options?: { fractionDigits?: number },
+): string {
+  const major = convertUsdMinor(usdMinor, rateE6) / 100;
+  const digits = options?.fractionDigits ?? decimals;
 
   try {
     // Locale pinned to en-US, as the previous formatters were, so grouping and
@@ -69,8 +96,8 @@ export function formatUsdMinor(usdMinor: number, options?: { fractionDigits?: nu
       style: 'currency',
       currency: code,
       currencyDisplay: 'narrowSymbol',
-      minimumFractionDigits: decimals,
-      maximumFractionDigits: decimals,
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
     }).format(major);
   } catch {
     // A runtime without `narrowSymbol` support, or an unexpected code: fall back
@@ -78,8 +105,8 @@ export function formatUsdMinor(usdMinor: number, options?: { fractionDigits?: nu
     // render path.
     const symbol = currencyMeta(code)?.symbol ?? '$';
     return `${symbol}${major.toLocaleString('en-US', {
-      minimumFractionDigits: decimals,
-      maximumFractionDigits: decimals,
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
     })}`;
   }
 }

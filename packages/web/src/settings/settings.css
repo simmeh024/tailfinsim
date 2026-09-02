@@ -119,3 +119,36 @@
   font-family: var(--font-figures);
   color: var(--text-primary);
 }
+
+.settings__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.settings__save {
+  padding: var(--space-2) var(--space-4);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings__save:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.settings__save:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.settings__actions-note {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
