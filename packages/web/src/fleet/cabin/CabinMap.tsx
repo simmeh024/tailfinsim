@@ -58,29 +58,56 @@ function tanDeg(deg: number): number {
   return Math.tan((deg * Math.PI) / 180);
 }
 
-/** One seat, facing the nose (left): a cushion with a taller backrest aft. */
+/**
+ * One seat, facing the nose (left): a shaded cushion, a taller backrest with a
+ * lit headrest, armrests down each side, and a soft shadow beneath — so a row
+ * reads as seats rather than blocks.
+ */
 function Seat({ x, cy, w }: { x: number; cy: number; w: number }): ReactNode {
-  const cushionW = w * 0.6;
-  const backW = w * 0.42;
-  const cushionH = SEAT * 0.7;
-  const backH = SEAT * 0.9;
+  const h = SEAT * 0.92;
+  const top = cy - h / 2;
+  const cushionW = w * 0.58;
+  const backW = w * 0.34;
+  const armH = 1.5;
   return (
     <g className="cc-seat">
+      {/* Soft shadow for depth. */}
+      <rect className="cc-seat__shadow" x={x + 0.9} y={top + 1.4} width={w} height={h} rx={2.2} />
+      {/* Armrests down each side. */}
+      <rect className="cc-seat__arm" x={x} y={top} width={w * 0.9} height={armH} rx={0.7} />
+      <rect
+        className="cc-seat__arm"
+        x={x}
+        y={top + h - armH}
+        width={w * 0.9}
+        height={armH}
+        rx={0.7}
+      />
+      {/* Seat pan. */}
       <rect
         className="cc-seat__cushion"
-        x={x}
-        y={cy - cushionH / 2}
+        x={x + 1}
+        y={top + armH}
         width={cushionW}
-        height={cushionH}
+        height={h - 2 * armH}
         rx={1.6}
       />
+      {/* Backrest, with a lit headrest patch. */}
       <rect
         className="cc-seat__back"
         x={x + w - backW}
-        y={cy - backH / 2}
+        y={top - 0.6}
         width={backW}
-        height={backH}
-        rx={1.8}
+        height={h + 1.2}
+        rx={2}
+      />
+      <rect
+        className="cc-seat__headrest"
+        x={x + w - backW + backW * 0.24}
+        y={cy - h * 0.2}
+        width={backW * 0.58}
+        height={h * 0.4}
+        rx={1.2}
       />
     </g>
   );
@@ -197,7 +224,7 @@ function PlaneBackdrop({
           />,
         );
         if (plan.engine === 'underwing') {
-          // Dark intake at the front of the cowl, for a 3D read.
+          // Dark intake at the front of the cowl, plus a cowl highlight.
           engines.push(
             <ellipse
               key={`i${String(sign)}-${String(i)}`}
@@ -206,6 +233,14 @@ function PlaneBackdrop({
               cy={ey}
               rx={nacW * 0.28}
               ry={nacW * 0.42}
+            />,
+            <ellipse
+              key={`h${String(sign)}-${String(i)}`}
+              className="cc-plane__engine-hi"
+              cx={lex - nacLen * 0.18}
+              cy={ey - nacW * 0.22}
+              rx={nacLen * 0.26}
+              ry={nacW * 0.12}
             />,
           );
         }
@@ -235,10 +270,24 @@ function PlaneBackdrop({
     return `${String(hRootLEx)},${String(rootY)} ${String(hRootLEx + hChord)},${String(rootY)} ${String(hRootLEx + hSweep + hChord * 0.5)},${String(tipY)} ${String(hRootLEx + hSweep)},${String(tipY)}`;
   };
 
+  // A control-surface line near each wing's trailing edge.
+  const flap = (sign: 1 | -1): { x1: number; y1: number; x2: number; y2: number } => ({
+    x1: rootLEx + rootChord * 0.72,
+    y1: cy + sign * (halfBody - 3),
+    x2: tipLEx + tipChord * 0.72,
+    y2: cy + sign * (halfBody + halfSpan),
+  });
+
   return (
     <g className="cc-plane" aria-hidden="true">
       <polygon className="cc-plane__wing" points={wing(-1)} />
       <polygon className="cc-plane__wing" points={wing(1)} />
+      {([-1, 1] as const).map((sign) => {
+        const f = flap(sign);
+        return (
+          <line key={sign} className="cc-plane__flap" x1={f.x1} y1={f.y1} x2={f.x2} y2={f.y2} />
+        );
+      })}
       {plan.engine === 'underwing' && (
         <>
           <polygon className="cc-plane__winglet" points={winglet(-1)} />
@@ -359,11 +408,23 @@ export function CabinMap({
         rx={4}
       />
 
-      {/* Cockpit hint at the nose. */}
+      {/* Cockpit at the nose: a windscreen arc and a few dark panes. */}
       <g className="cc-cockpit" aria-hidden="true">
         <path
+          className="cc-cockpit__arc"
           d={`M ${String(bodyLeft - 2)} ${String(midY - bodyHeight * 0.28)} Q ${String(noseTipX + 10)} ${String(midY)} ${String(bodyLeft - 2)} ${String(midY + bodyHeight * 0.28)}`}
         />
+        {[-1, 0, 1].map((k) => (
+          <rect
+            key={k}
+            className="cc-cockpit__win"
+            x={bodyLeft - NOSE_M * SCALE * 0.42}
+            y={midY + k * (bodyHeight * 0.12) - 1.6}
+            width={5}
+            height={3.2}
+            rx={1}
+          />
+        ))}
       </g>
 
       {/* Doors on the skin. */}
