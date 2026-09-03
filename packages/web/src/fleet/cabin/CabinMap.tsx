@@ -6,10 +6,12 @@
  * a row's pitch, a monument's footprint — scaled from metres, so the drawing is
  * the geometry the analysis measures, not a separate picture that could drift
  * from it. Selecting a row is a click on its slot; the selected slot gets the
- * bracket the mockup draws around row 12.
+ * bracket and the numbered tab the mockup draws around row 12.
  *
- * Colours are all token references (`theme/tokens.css`); the per-class accent
- * arrives as a CSS variable on the group, never as a literal.
+ * The fidelity — a shaded fuselage over a lighter cabin floor, a cockpit at the
+ * nose, seats drawn with a backrest and headrest, red door/EXIT markers on the
+ * skin, and icon'd galley/lavatory monuments — is all vector, so it stays crisp,
+ * themes, and works for every type. Colours are token references only.
  */
 
 import { elementLengthM } from './analysis';
@@ -17,15 +19,15 @@ import { CABIN_CLASS_ACCENT, seatsInLayout } from './catalogue';
 import { numberElements } from './layout';
 import { resolvePlanform } from './planform';
 
-import type { CabinConfig, CabinFrame } from './types';
+import type { CabinConfig, CabinFrame, MonumentKind } from './types';
 import type { CSSProperties, ReactNode } from 'react';
 
 const SCALE = 10; // SVG user units per metre
 const SEAT = 13; // seat cell height, units
 const AISLE = 11; // aisle gap, units
 const SEAT_DEPTH_M = 0.46; // along-fuselage seat depth
-const NOSE_M = 4;
-const TAIL_M = 5;
+const NOSE_M = 5;
+const TAIL_M = 6;
 
 function aisleCount(maxAbreast: number): number {
   return maxAbreast >= 7 ? 2 : 1;
@@ -52,38 +54,105 @@ function seatOffsets(layout: string, bodyHeight: number): number[] {
   return offsets;
 }
 
-const MONUMENT_GLYPH: Record<string, string> = {
-  galley: 'G',
-  lavatory: 'WC',
-  closet: 'C',
-  divider: '',
-  lounge: '☕',
-};
-
 function tanDeg(deg: number): number {
   return Math.tan((deg * Math.PI) / 180);
+}
+
+/** One seat, facing the nose (left): a cushion with a taller backrest aft. */
+function Seat({ x, cy, w }: { x: number; cy: number; w: number }): ReactNode {
+  const cushionW = w * 0.6;
+  const backW = w * 0.42;
+  const cushionH = SEAT * 0.7;
+  const backH = SEAT * 0.9;
+  return (
+    <g className="cc-seat">
+      <rect
+        className="cc-seat__cushion"
+        x={x}
+        y={cy - cushionH / 2}
+        width={cushionW}
+        height={cushionH}
+        rx={1.6}
+      />
+      <rect
+        className="cc-seat__back"
+        x={x + w - backW}
+        y={cy - backH / 2}
+        width={backW}
+        height={backH}
+        rx={1.8}
+      />
+    </g>
+  );
+}
+
+/** A little icon inside a monument box, so a galley reads as a galley. */
+function MonumentIcon({
+  kind,
+  cx,
+  cy,
+  w,
+  h,
+}: {
+  kind: MonumentKind;
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+}): ReactNode {
+  const usable = Math.min(w - 3, 10);
+  if (usable < 4) return null;
+  if (kind === 'galley' || kind === 'lounge') {
+    // Galley carts: a few horizontal slots.
+    const rows = [-0.28, 0, 0.28];
+    return (
+      <g className="cc-mon__icon">
+        {rows.map((f) => (
+          <line
+            key={f}
+            x1={cx - usable / 2}
+            x2={cx + usable / 2}
+            y1={cy + f * h * 0.5}
+            y2={cy + f * h * 0.5}
+          />
+        ))}
+      </g>
+    );
+  }
+  if (kind === 'lavatory') {
+    return (
+      <g className="cc-mon__icon">
+        <circle cx={cx} cy={cy - h * 0.08} r={usable * 0.32} />
+        <line x1={cx} x2={cx} y1={cy + h * 0.1} y2={cy + h * 0.32} />
+      </g>
+    );
+  }
+  if (kind === 'closet') {
+    return (
+      <g className="cc-mon__icon">
+        <line x1={cx - usable / 2} x2={cx + usable / 2} y1={cy - h * 0.28} y2={cy - h * 0.28} />
+        <line x1={cx} x2={cx} y1={cy - h * 0.28} y2={cy + h * 0.28} />
+      </g>
+    );
+  }
+  return null; // divider — the thin box is the icon
 }
 
 /**
  * The faded aeroplane behind the cabin (M6-08).
  *
- * Wings and stabilisers are drawn to a span proportionate to the cabin width and
- * cropped at the tips, so a narrowbody's swept underwing engines, a turboprop's
- * straight high wing with props, and a widebody's big sweep each read at a glance
- * without any per-type artwork. Purely decorative, so hidden from assistive tech.
+ * Wings, engines, winglets and stabilisers are drawn to a span proportionate to
+ * the cabin width and cropped at the tips, so a narrowbody's swept underwing
+ * engines, a turboprop's straight high wing with props, and a widebody's big
+ * sweep each read at a glance without any per-type artwork. Decorative, so hidden
+ * from assistive tech.
  */
 function PlaneBackdrop({
   frame,
   geom,
 }: {
   frame: CabinFrame;
-  geom: {
-    cy: number;
-    bodyHeight: number;
-    bodyLeft: number;
-    cabinM: number;
-    scale: number;
-  };
+  geom: { cy: number; bodyHeight: number; bodyLeft: number; cabinM: number; scale: number };
 }): ReactNode {
   const plan = resolvePlanform(frame);
   const { cy, bodyHeight, bodyLeft, cabinM, scale } = geom;
@@ -101,17 +170,21 @@ function PlaneBackdrop({
     const tipY = cy + sign * (halfBody + halfSpan);
     return `${String(rootLEx)},${String(rootY)} ${String(rootLEx + rootChord)},${String(rootY)} ${String(tipLEx + tipChord)},${String(tipY)} ${String(tipLEx)},${String(tipY)}`;
   };
+  // A winglet: a short chord perpendicular-ish flick at the tip.
+  const winglet = (sign: 1 | -1): string => {
+    const tipY = cy + sign * (halfBody + halfSpan);
+    return `${String(tipLEx)},${String(tipY)} ${String(tipLEx + tipChord)},${String(tipY)} ${String(tipLEx + tipChord + 6)},${String(tipY + sign * 7)} ${String(tipLEx + tipChord - 2)},${String(tipY + sign * 7)}`;
+  };
 
-  // Engine stations along the span (fraction of half-span), per wing.
-  const stations = plan.engineCount >= 4 ? [0.3, 0.58] : [0.44];
+  const stations = plan.engineCount >= 4 ? [0.3, 0.58] : [0.42];
   const engines: ReactNode[] = [];
   if (plan.engine !== 'none' && plan.engine !== 'rear') {
     for (const sign of [-1, 1] as const) {
       for (const [i, f] of stations.entries()) {
         const lex = rootLEx + sweepShift * f;
         const ey = cy + sign * (halfBody + halfSpan * f);
-        const nacLen = (plan.engine === 'turboprop' ? 1.9 : 2.4) * scale;
-        const nacW = (plan.engine === 'turboprop' ? 0.8 : 1.1) * scale;
+        const nacLen = (plan.engine === 'turboprop' ? 2 : 2.8) * scale;
+        const nacW = (plan.engine === 'turboprop' ? 0.9 : 1.3) * scale;
         engines.push(
           <rect
             key={`e${String(sign)}-${String(i)}`}
@@ -123,6 +196,19 @@ function PlaneBackdrop({
             rx={nacW / 2}
           />,
         );
+        if (plan.engine === 'underwing') {
+          // Dark intake at the front of the cowl, for a 3D read.
+          engines.push(
+            <ellipse
+              key={`i${String(sign)}-${String(i)}`}
+              className="cc-plane__intake"
+              cx={lex - nacLen * 0.72}
+              cy={ey}
+              rx={nacW * 0.28}
+              ry={nacW * 0.42}
+            />,
+          );
+        }
         if (plan.engine === 'turboprop') {
           engines.push(
             <ellipse
@@ -130,8 +216,8 @@ function PlaneBackdrop({
               className="cc-plane__prop"
               cx={lex - nacLen * 0.72}
               cy={ey}
-              rx={1}
-              ry={1.7 * scale}
+              rx={1.2}
+              ry={1.9 * scale}
             />,
           );
         }
@@ -139,7 +225,6 @@ function PlaneBackdrop({
     }
   }
 
-  // Horizontal stabiliser near the tail — a smaller swept wing.
   const hRootLEx = bodyLeft + plan.hStabXFraction * cabinM * scale;
   const hHalf = bodyHeight * plan.hStabSpanFactor;
   const hSweep = hHalf * tanDeg(28);
@@ -154,6 +239,12 @@ function PlaneBackdrop({
     <g className="cc-plane" aria-hidden="true">
       <polygon className="cc-plane__wing" points={wing(-1)} />
       <polygon className="cc-plane__wing" points={wing(1)} />
+      {plan.engine === 'underwing' && (
+        <>
+          <polygon className="cc-plane__winglet" points={winglet(-1)} />
+          <polygon className="cc-plane__winglet" points={winglet(1)} />
+        </>
+      )}
       <polygon className="cc-plane__stab" points={hStab(-1)} />
       <polygon className="cc-plane__stab" points={hStab(1)} />
       {engines}
@@ -179,15 +270,14 @@ export function CabinMap({
   const cabinM = Math.max(contentM, frame.cabinLengthM);
   const totalM = NOSE_M + cabinM + TAIL_M;
 
-  // Room above and below the fuselage for the wings and stabilisers, which are
-  // drawn to a proportionate span and deliberately cropped at the tips.
-  const WING_ROOM = 72;
+  const WING_ROOM = 74;
   const width = totalM * SCALE;
   const bodyTop = WING_ROOM;
   const bodyBottom = bodyTop + bodyHeight;
-  const height = bodyBottom + WING_ROOM + 22;
+  const height = bodyBottom + WING_ROOM + 24;
   const bodyLeft = NOSE_M * SCALE;
   const bodyRight = bodyLeft + cabinM * SCALE;
+  const midY = bodyTop + bodyHeight / 2;
 
   // Lay each element left-to-right by its own length.
   let cursorM = NOSE_M;
@@ -200,21 +290,27 @@ export function CabinMap({
     return { entry, x, w, element };
   });
 
-  // Fuselage silhouette: a rounded body with a tapered nose and tail.
-  const midY = bodyTop + bodyHeight / 2;
+  // Fuselage skin: tapered nose and tail around the straight cabin section.
+  const noseTipX = 0;
+  const tailTipX = width;
   const fuselage = [
     `M ${String(bodyLeft)} ${String(bodyTop)}`,
     `L ${String(bodyRight)} ${String(bodyTop)}`,
-    `Q ${String(bodyRight + TAIL_M * SCALE * 0.7)} ${String(bodyTop)} ${String(width)} ${String(midY)}`,
-    `Q ${String(bodyRight + TAIL_M * SCALE * 0.7)} ${String(bodyBottom)} ${String(bodyRight)} ${String(bodyBottom)}`,
+    `Q ${String(bodyRight + TAIL_M * SCALE * 0.6)} ${String(bodyTop)} ${String(tailTipX)} ${String(midY)}`,
+    `Q ${String(bodyRight + TAIL_M * SCALE * 0.6)} ${String(bodyBottom)} ${String(bodyRight)} ${String(bodyBottom)}`,
     `L ${String(bodyLeft)} ${String(bodyBottom)}`,
-    `Q ${String(bodyLeft - NOSE_M * SCALE * 0.8)} ${String(bodyBottom)} 0 ${String(midY)}`,
-    `Q ${String(bodyLeft - NOSE_M * SCALE * 0.8)} ${String(bodyTop)} ${String(bodyLeft)} ${String(bodyTop)}`,
+    `Q ${String(bodyLeft - NOSE_M * SCALE * 0.7)} ${String(bodyBottom)} ${String(noseTipX)} ${String(midY)}`,
+    `Q ${String(bodyLeft - NOSE_M * SCALE * 0.7)} ${String(bodyTop)} ${String(bodyLeft)} ${String(bodyTop)}`,
     'Z',
   ].join(' ');
 
-  // A metre ruler under the plan, every 10 units of the frame's length unit.
-  const rulerStep = frame.lengthUnit === 'ft' ? 10 : 10;
+  // Doors on the skin: forward and aft pairs, plus one at each exit row.
+  const doors: { x: number }[] = [{ x: bodyLeft + 5 }, { x: bodyRight - 5 }];
+  for (const p of placed) {
+    if (p.entry.kind === 'seats' && p.entry.row.isExitRow) doors.push({ x: p.x + p.w / 2 });
+  }
+
+  const rulerStep = 10;
   const ticks: number[] = [];
   for (let m = 0; m <= cabinM; m += rulerStep) ticks.push(m);
 
@@ -226,18 +322,70 @@ export function CabinMap({
       aria-label={`${frame.label} cabin plan`}
       preserveAspectRatio="xMidYMid meet"
     >
-      {/* The faded aeroplane behind the cabin — wings, engines, stabilisers. */}
+      <defs>
+        {/* A cylinder highlight down the fuselage: shadowed skin, lit crown. */}
+        <linearGradient id="cc-fuselage-grad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" className="cc-grad-lo" />
+          <stop offset="0.4" className="cc-grad-hi" />
+          <stop offset="0.62" className="cc-grad-mid" />
+          <stop offset="1" className="cc-grad-lo" />
+        </linearGradient>
+        {/* Wings lit at the leading edge, shadowed at the trailing edge. */}
+        <linearGradient id="cc-wing-grad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" className="cc-grad-hi" />
+          <stop offset="1" className="cc-grad-lo" />
+        </linearGradient>
+        <linearGradient id="cc-engine-grad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" className="cc-grad-lo" />
+          <stop offset="0.45" className="cc-grad-hi" />
+          <stop offset="1" className="cc-grad-lo" />
+        </linearGradient>
+      </defs>
+
+      {/* The faded aeroplane behind the cabin. */}
       <PlaneBackdrop
         frame={frame}
         geom={{ cy: midY, bodyHeight, bodyLeft, cabinM, scale: SCALE }}
       />
 
+      {/* Fuselage skin, then the lighter cabin floor the seats sit on. */}
       <path className="cc-map__fuselage" d={fuselage} />
+      <rect
+        className="cc-map__floor"
+        x={bodyLeft}
+        y={bodyTop + 3}
+        width={bodyRight - bodyLeft}
+        height={bodyHeight - 6}
+        rx={4}
+      />
+
+      {/* Cockpit hint at the nose. */}
+      <g className="cc-cockpit" aria-hidden="true">
+        <path
+          d={`M ${String(bodyLeft - 2)} ${String(midY - bodyHeight * 0.28)} Q ${String(noseTipX + 10)} ${String(midY)} ${String(bodyLeft - 2)} ${String(midY + bodyHeight * 0.28)}`}
+        />
+      </g>
+
+      {/* Doors on the skin. */}
+      <g className="cc-doors" aria-hidden="true">
+        {doors.map((d, i) => (
+          <g key={i}>
+            <rect className="cc-door" x={d.x - 3} y={bodyTop - 1.5} width={6} height={3} rx={1} />
+            <rect
+              className="cc-door"
+              x={d.x - 3}
+              y={bodyBottom - 1.5}
+              width={6}
+              height={3}
+              rx={1}
+            />
+          </g>
+        ))}
+      </g>
 
       {placed.map(({ entry, x, w, element }) => {
         const selected = element.id === selectedId;
         if (entry.kind === 'monument') {
-          const glyph = MONUMENT_GLYPH[element.kind] ?? '';
           return (
             <g
               key={element.id}
@@ -258,23 +406,25 @@ export function CabinMap({
               <rect
                 className="cc-mon__box"
                 x={x + 1}
-                y={bodyTop + 3}
+                y={bodyTop + 4}
                 width={Math.max(w - 2, 3)}
-                height={bodyHeight - 6}
+                height={bodyHeight - 8}
                 rx={2}
               />
-              {glyph !== '' && w > 8 && (
-                <text className="cc-mon__glyph" x={x + w / 2} y={midY} dominantBaseline="middle">
-                  {glyph}
-                </text>
-              )}
+              <MonumentIcon
+                kind={entry.monument.kind}
+                cx={x + w / 2}
+                cy={midY}
+                w={w}
+                h={bodyHeight - 8}
+              />
               {selected && (
                 <rect
                   className="cc-el__bracket"
-                  x={x}
-                  y={bodyTop - 4}
-                  width={w}
-                  height={bodyHeight + 8}
+                  x={x - 1}
+                  y={bodyTop - 5}
+                  width={w + 2}
+                  height={bodyHeight + 10}
                   rx={3}
                 />
               )}
@@ -284,7 +434,7 @@ export function CabinMap({
 
         const row = entry.row;
         const offsets = seatOffsets(row.seatLayout, bodyHeight);
-        const seatW = Math.min(w * 0.62, SEAT_DEPTH_M * SCALE * 1.6);
+        const seatW = Math.min(w * 0.66, SEAT_DEPTH_M * SCALE * 1.7);
         const seatX = x + (w - seatW) / 2;
         const style = { '--sec': CABIN_CLASS_ACCENT[row.cabinClass] } as CSSProperties;
         return (
@@ -306,45 +456,45 @@ export function CabinMap({
             }}
           >
             {offsets.map((oy, i) => (
-              <rect
-                key={i}
-                className="cc-seat"
-                x={seatX}
-                y={bodyTop + oy - SEAT * 0.42}
-                width={seatW}
-                height={SEAT * 0.84}
-                rx={2}
-              />
+              <Seat key={i} x={seatX} cy={bodyTop + oy} w={seatW} />
             ))}
             {row.isExitRow && (
               <>
                 <path
                   className="cc-exit"
-                  d={`M ${String(x + w / 2 - 4)} ${String(bodyTop - 2)} L ${String(x + w / 2 + 4)} ${String(bodyTop - 2)} L ${String(x + w / 2)} ${String(bodyTop + 4)} Z`}
+                  d={`M ${String(x + w / 2 - 4)} ${String(bodyTop - 4)} L ${String(x + w / 2 + 4)} ${String(bodyTop - 4)} L ${String(x + w / 2)} ${String(bodyTop + 2)} Z`}
                   aria-hidden="true"
                 />
                 <path
                   className="cc-exit"
-                  d={`M ${String(x + w / 2 - 4)} ${String(bodyBottom + 2)} L ${String(x + w / 2 + 4)} ${String(bodyBottom + 2)} L ${String(x + w / 2)} ${String(bodyBottom - 4)} Z`}
+                  d={`M ${String(x + w / 2 - 4)} ${String(bodyBottom + 4)} L ${String(x + w / 2 + 4)} ${String(bodyBottom + 4)} L ${String(x + w / 2)} ${String(bodyBottom - 2)} Z`}
                   aria-hidden="true"
                 />
               </>
             )}
             {selected && (
-              <rect
-                className="cc-el__bracket"
-                x={x}
-                y={bodyTop - 4}
-                width={w}
-                height={bodyHeight + 8}
-                rx={3}
-              />
+              <>
+                <rect
+                  className="cc-el__bracket"
+                  x={x - 1}
+                  y={bodyTop - 5}
+                  width={w + 2}
+                  height={bodyHeight + 10}
+                  rx={3}
+                />
+                <g className="cc-rowtab">
+                  <rect x={x + w / 2 - 9} y={bodyBottom + 6} width={18} height={13} rx={3} />
+                  <text x={x + w / 2} y={bodyBottom + 12.6} textAnchor="middle">
+                    {entry.rowNumber}
+                  </text>
+                </g>
+              </>
             )}
           </g>
         );
       })}
 
-      {/* Ruler */}
+      {/* Ruler under the plan. */}
       <g className="cc-ruler" aria-hidden="true">
         <line x1={bodyLeft} y1={height - 10} x2={bodyRight} y2={height - 10} />
         {ticks.map((m) => (
