@@ -117,4 +117,21 @@ export interface CabinFrame {
   /** The top-down silhouette drawn behind the cabin. Defaulted from cabin width
    *  when absent, so every type has a plane without per-type data. */
   planform?: Planform;
+  /**
+   * A photographic top-down render to use instead of the vector silhouette.
+   * When present, the vector plane, floor, doors and cockpit are suppressed and
+   * the seats are laid onto the image's cabin floor (`floor`, as fractions of
+   * the image). Types without one fall back to the vector plane.
+   */
+  backdrop?: CabinBackdrop;
+}
+
+export interface CabinBackdrop {
+  /** Imported asset URL (Vite resolves the import to a string). */
+  src: string;
+  /** The image's natural pixel dimensions, for the SVG viewBox. */
+  w: number;
+  h: number;
+  /** The seating-floor rectangle within the image, as 0–1 fractions. */
+  floor: { l: number; r: number; t: number; b: number };
 }
