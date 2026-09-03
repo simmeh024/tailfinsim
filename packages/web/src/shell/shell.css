@@ -4250,6 +4250,33 @@ body {
   color: var(--text-muted);
 }
 
+.fleet__page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.fleet__cabin-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent);
+  background: var(--accent-quiet);
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.fleet__cabin-link:hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
 .fleet-orders {
   display: grid;
   gap: var(--space-3);

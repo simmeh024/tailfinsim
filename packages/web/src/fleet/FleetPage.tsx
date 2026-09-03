@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
 
 import type {
   AirframeDetailResponse,
@@ -120,7 +121,17 @@ export function FleetPage(): ReactNode {
 
   return (
     <section className="admin__section">
-      <h1 className="page__title">Fleet</h1>
+      <div className="fleet__page-head">
+        <h1 className="page__title">Fleet</h1>
+        {/*
+          The cabin configurator (M6-08, §6) is a full-screen builder reached
+          from here. It is type-scoped for now — nothing writes
+          `airframe.cabin_config_id` yet — so the link opens a type's cabin.
+        */}
+        <Link className="fleet__cabin-link" to="/fleet/cabin">
+          Open cabin configurator
+        </Link>
+      </div>
 
       <h2 className="fleet__section-heading">Your aircraft</h2>
       {fleetFailed ? (

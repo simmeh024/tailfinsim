@@ -15,6 +15,7 @@ import { RequireSession } from './auth/RequireSession';
 import { SessionProvider } from './auth/SessionProvider';
 import { CrewPage } from './crew/CrewPage';
 import { CurrencyProvider } from './currency/CurrencyProvider';
+import { CabinConfiguratorPage } from './fleet/cabin/CabinConfiguratorPage';
 import { FleetPage } from './fleet/FleetPage';
 import { fetchFoundingOptions } from './founding/api';
 import { FoundingPage } from './founding/FoundingPage';
@@ -116,6 +117,13 @@ export function App(): ReactNode {
               page it is reached from.
             */}
               <Route path="/airline/logo" element={<LogoStudioPage />} />
+              {/*
+                The cabin configurator (M6-08, §6) is a full-screen builder like
+                the logo studio: it owns its own model and chrome, so it sits
+                outside the AppShell rather than inside the `/fleet` page it is
+                reached from. `?type=` selects which airframe's cabin is open.
+              */}
+              <Route path="/fleet/cabin" element={<CabinConfiguratorPage />} />
               <Route element={<AppShell />}>
                 <Route path="world" element={<WorldPage />} />
                 <Route path="settings" element={<SettingsPage />} />

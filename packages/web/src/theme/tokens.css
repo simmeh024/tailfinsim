@@ -162,6 +162,33 @@
   --env-production: #ff5f56;
   --env-dev: #ffd43b;
   --env-local: #8b9ab1;
+
+  /*
+   * Cabin configurator (M6-08, §6.1).
+   *
+   * One accent per cabin class, so a section band, its seats and its summary
+   * chip read as one thing at a glance. These are identity, not status — a class
+   * is a place, like an environment — so they are their own set rather than
+   * borrowed from the interaction accent or the on-time/delayed palette. Chosen
+   * to sit apart from each other and from --accent: first magenta, business
+   * violet, premium teal, economy the console blue, comfort green.
+   */
+  --cabin-first: #f08cd0;
+  --cabin-business: #b98cff;
+  --cabin-premium: #4fd6c0;
+  --cabin-economy: #5eb8ff;
+  --cabin-comfort: #6fd39a;
+
+  /* The airframe drawing itself — fuselage, cabin floor, plain seats. */
+  --cabin-fuselage: #131c28;
+  --cabin-fuselage-edge: rgb(148 163 184 / 22%);
+  --cabin-deck: #0e1621;
+  --cabin-seat: #33465c;
+  --cabin-seat-edge: rgb(148 163 184 / 34%);
+  /* Exit markers and galley/lavatory monuments. */
+  --cabin-exit: #f87171;
+  --cabin-galley: #f0a35e;
+  --cabin-lavatory: #9dabc0;
 }
 
 [data-theme='light'] {
@@ -253,6 +280,22 @@
   --env-production: #b3261e;
   --env-dev: #8a5a00;
   --env-local: #5a6b82;
+
+  /* Cabin configurator — darkened for AA contrast on the off-white ground. */
+  --cabin-first: #a8228a;
+  --cabin-business: #6a44b0;
+  --cabin-premium: #12897a;
+  --cabin-economy: #0a63b0;
+  --cabin-comfort: #1f8a5a;
+
+  --cabin-fuselage: #e2e7ee;
+  --cabin-fuselage-edge: rgb(30 41 59 / 20%);
+  --cabin-deck: #eef1f5;
+  --cabin-seat: #c2ccd8;
+  --cabin-seat-edge: rgb(30 41 59 / 26%);
+  --cabin-exit: #b3261e;
+  --cabin-galley: #b5651d;
+  --cabin-lavatory: #6b7a90;
 }
 
 /*
