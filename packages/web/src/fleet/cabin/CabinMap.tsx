@@ -15,6 +15,7 @@
 import { elementLengthM } from './analysis';
 import { CABIN_CLASS_ACCENT, seatsInLayout } from './catalogue';
 import { numberElements } from './layout';
+import { resolvePlanform } from './planform';
 
 import type { CabinConfig, CabinFrame } from './types';
 import type { CSSProperties, ReactNode } from 'react';
@@ -59,6 +60,107 @@ const MONUMENT_GLYPH: Record<string, string> = {
   lounge: '☕',
 };
 
+function tanDeg(deg: number): number {
+  return Math.tan((deg * Math.PI) / 180);
+}
+
+/**
+ * The faded aeroplane behind the cabin (M6-08).
+ *
+ * Wings and stabilisers are drawn to a span proportionate to the cabin width and
+ * cropped at the tips, so a narrowbody's swept underwing engines, a turboprop's
+ * straight high wing with props, and a widebody's big sweep each read at a glance
+ * without any per-type artwork. Purely decorative, so hidden from assistive tech.
+ */
+function PlaneBackdrop({
+  frame,
+  geom,
+}: {
+  frame: CabinFrame;
+  geom: {
+    cy: number;
+    bodyHeight: number;
+    bodyLeft: number;
+    cabinM: number;
+    scale: number;
+  };
+}): ReactNode {
+  const plan = resolvePlanform(frame);
+  const { cy, bodyHeight, bodyLeft, cabinM, scale } = geom;
+  const halfBody = bodyHeight / 2;
+
+  const rootLEx = bodyLeft + plan.wingXFraction * cabinM * scale;
+  const halfSpan = bodyHeight * plan.wingSpanFactor;
+  const sweepShift = halfSpan * tanDeg(plan.wingSweepDeg);
+  const rootChord = plan.wingRootChordM * scale;
+  const tipChord = plan.wingTipChordM * scale;
+  const tipLEx = rootLEx + sweepShift;
+
+  const wing = (sign: 1 | -1): string => {
+    const rootY = cy + sign * (halfBody - 3);
+    const tipY = cy + sign * (halfBody + halfSpan);
+    return `${String(rootLEx)},${String(rootY)} ${String(rootLEx + rootChord)},${String(rootY)} ${String(tipLEx + tipChord)},${String(tipY)} ${String(tipLEx)},${String(tipY)}`;
+  };
+
+  // Engine stations along the span (fraction of half-span), per wing.
+  const stations = plan.engineCount >= 4 ? [0.3, 0.58] : [0.44];
+  const engines: ReactNode[] = [];
+  if (plan.engine !== 'none' && plan.engine !== 'rear') {
+    for (const sign of [-1, 1] as const) {
+      for (const [i, f] of stations.entries()) {
+        const lex = rootLEx + sweepShift * f;
+        const ey = cy + sign * (halfBody + halfSpan * f);
+        const nacLen = (plan.engine === 'turboprop' ? 1.9 : 2.4) * scale;
+        const nacW = (plan.engine === 'turboprop' ? 0.8 : 1.1) * scale;
+        engines.push(
+          <rect
+            key={`e${String(sign)}-${String(i)}`}
+            className="cc-plane__engine"
+            x={lex - nacLen * 0.72}
+            y={ey - nacW / 2}
+            width={nacLen}
+            height={nacW}
+            rx={nacW / 2}
+          />,
+        );
+        if (plan.engine === 'turboprop') {
+          engines.push(
+            <ellipse
+              key={`p${String(sign)}-${String(i)}`}
+              className="cc-plane__prop"
+              cx={lex - nacLen * 0.72}
+              cy={ey}
+              rx={1}
+              ry={1.7 * scale}
+            />,
+          );
+        }
+      }
+    }
+  }
+
+  // Horizontal stabiliser near the tail — a smaller swept wing.
+  const hRootLEx = bodyLeft + plan.hStabXFraction * cabinM * scale;
+  const hHalf = bodyHeight * plan.hStabSpanFactor;
+  const hSweep = hHalf * tanDeg(28);
+  const hChord = plan.hStabChordM * scale;
+  const hStab = (sign: 1 | -1): string => {
+    const rootY = cy + sign * (halfBody - 3);
+    const tipY = cy + sign * (halfBody + hHalf);
+    return `${String(hRootLEx)},${String(rootY)} ${String(hRootLEx + hChord)},${String(rootY)} ${String(hRootLEx + hSweep + hChord * 0.5)},${String(tipY)} ${String(hRootLEx + hSweep)},${String(tipY)}`;
+  };
+
+  return (
+    <g className="cc-plane" aria-hidden="true">
+      <polygon className="cc-plane__wing" points={wing(-1)} />
+      <polygon className="cc-plane__wing" points={wing(1)} />
+      <polygon className="cc-plane__stab" points={hStab(-1)} />
+      <polygon className="cc-plane__stab" points={hStab(1)} />
+      {engines}
+    </g>
+  );
+}
+
 export function CabinMap({
   config,
   frame,
@@ -77,10 +179,13 @@ export function CabinMap({
   const cabinM = Math.max(contentM, frame.cabinLengthM);
   const totalM = NOSE_M + cabinM + TAIL_M;
 
+  // Room above and below the fuselage for the wings and stabilisers, which are
+  // drawn to a proportionate span and deliberately cropped at the tips.
+  const WING_ROOM = 72;
   const width = totalM * SCALE;
-  const height = bodyHeight + 44;
-  const bodyTop = 22;
+  const bodyTop = WING_ROOM;
   const bodyBottom = bodyTop + bodyHeight;
+  const height = bodyBottom + WING_ROOM + 22;
   const bodyLeft = NOSE_M * SCALE;
   const bodyRight = bodyLeft + cabinM * SCALE;
 
@@ -121,15 +226,11 @@ export function CabinMap({
       aria-label={`${frame.label} cabin plan`}
       preserveAspectRatio="xMidYMid meet"
     >
-      {/* Wing hint — decorative, so it is hidden from assistive tech. */}
-      <g aria-hidden="true" className="cc-map__wing">
-        <polygon
-          points={`${String(bodyLeft + cabinM * SCALE * 0.42)},${String(bodyTop)} ${String(bodyLeft + cabinM * SCALE * 0.62)},${String(bodyTop - 30)} ${String(bodyLeft + cabinM * SCALE * 0.66)},${String(bodyTop)}`}
-        />
-        <polygon
-          points={`${String(bodyLeft + cabinM * SCALE * 0.42)},${String(bodyBottom)} ${String(bodyLeft + cabinM * SCALE * 0.62)},${String(bodyBottom + 30)} ${String(bodyLeft + cabinM * SCALE * 0.66)},${String(bodyBottom)}`}
-        />
-      </g>
+      {/* The faded aeroplane behind the cabin — wings, engines, stabilisers. */}
+      <PlaneBackdrop
+        frame={frame}
+        geom={{ cy: midY, bodyHeight, bodyLeft, cabinM, scale: SCALE }}
+      />
 
       <path className="cc-map__fuselage" d={fuselage} />
 

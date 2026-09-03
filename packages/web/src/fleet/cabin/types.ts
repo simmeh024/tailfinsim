@@ -17,6 +17,8 @@
  * monuments do not take one.
  */
 
+import type { Planform } from './planform';
+
 /** The five cabin classes, cheapest-last-forward per §6.2. */
 export type CabinClass = 'first' | 'business' | 'premium' | 'comfort' | 'economy';
 
@@ -112,4 +114,7 @@ export interface CabinFrame {
   };
   /** Centre-of-gravity envelope, in %MAC. */
   cg: { minMac: number; maxMac: number; emptyMac: number };
+  /** The top-down silhouette drawn behind the cabin. Defaulted from cabin width
+   *  when absent, so every type has a plane without per-type data. */
+  planform?: Planform;
 }
