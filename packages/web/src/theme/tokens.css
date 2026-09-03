@@ -189,6 +189,11 @@
   --cabin-exit: #f87171;
   --cabin-galley: #f0a35e;
   --cabin-lavatory: #9dabc0;
+  /* Metallic shading for the rendered aircraft — highlight, base, shadow, so a
+     gradient can give the fuselage and wings a cylindrical, lit look. */
+  --cabin-metal-hi: #33445a;
+  --cabin-metal-mid: #1c2734;
+  --cabin-metal-lo: #0a121b;
 }
 
 [data-theme='light'] {
@@ -296,6 +301,9 @@
   --cabin-exit: #b3261e;
   --cabin-galley: #b5651d;
   --cabin-lavatory: #6b7a90;
+  --cabin-metal-hi: #fbfcfe;
+  --cabin-metal-mid: #d5dce4;
+  --cabin-metal-lo: #aeb9c6;
 }
 
 /*

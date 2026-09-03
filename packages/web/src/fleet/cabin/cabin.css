@@ -320,11 +320,25 @@
 }
 
 .cc-sectionband {
+  position: relative;
   flex-basis: 0;
   min-width: 6rem;
-  padding: 0.3rem 0.5rem 0.4rem;
+  padding: 0.55rem 0.5rem 0.4rem 0.9rem;
   border-top: 2px solid var(--sec, var(--accent));
   background: linear-gradient(var(--bg-raised), transparent);
+}
+
+/* A handle dot on the zone-boundary line, like the mockup's draggable handles. */
+.cc-sectionband::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--sec, var(--accent));
+  border: 2px solid var(--bg-raised);
 }
 
 .cc-sectionband__name {
@@ -358,37 +372,69 @@
 }
 
 .cc-map__fuselage {
-  fill: var(--cabin-fuselage);
+  fill: url(#cc-fuselage-grad);
   stroke: var(--cabin-fuselage-edge);
   stroke-width: 1.5;
+  filter: drop-shadow(0 3px 6px var(--bg-scrim));
 }
 
-/* The faded aeroplane behind the cabin. */
-.cc-plane {
-  opacity: 0.5;
+/* Metallic gradient stops — shadow, lit crown, base. */
+.cc-grad-lo {
+  stop-color: var(--cabin-metal-lo);
 }
 
-.cc-plane__wing {
-  fill: var(--cabin-fuselage);
+.cc-grad-hi {
+  stop-color: var(--cabin-metal-hi);
+}
+
+.cc-grad-mid {
+  stop-color: var(--cabin-metal-mid);
+}
+
+/* The lighter cabin floor the seats sit on. */
+.cc-map__floor {
+  fill: var(--cabin-deck);
+  stroke: var(--cabin-fuselage-edge);
+  stroke-width: 0.75;
+}
+
+.cc-cockpit path {
+  fill: none;
   stroke: var(--cabin-fuselage-edge);
   stroke-width: 1;
 }
 
-.cc-plane__stab {
-  fill: var(--cabin-fuselage);
+.cc-door {
+  fill: var(--cabin-exit);
+}
+
+/* The rendered aeroplane behind the cabin — shaded, with a soft shadow. */
+.cc-plane {
+  opacity: 0.66;
+  filter: drop-shadow(0 4px 7px var(--bg-scrim));
+}
+
+.cc-plane__wing,
+.cc-plane__stab,
+.cc-plane__winglet {
+  fill: url(#cc-wing-grad);
   stroke: var(--cabin-fuselage-edge);
   stroke-width: 1;
 }
 
 .cc-plane__engine {
-  fill: var(--cabin-deck);
+  fill: url(#cc-engine-grad);
   stroke: var(--cabin-fuselage-edge);
   stroke-width: 1;
 }
 
+.cc-plane__intake {
+  fill: var(--cabin-metal-lo);
+}
+
 .cc-plane__prop {
   fill: none;
-  stroke: var(--cabin-fuselage-edge);
+  stroke: var(--cabin-metal-hi);
   stroke-width: 1.5;
 }
 
@@ -397,17 +443,22 @@
   outline: none;
 }
 
-.cc-seat {
+.cc-seat__cushion {
   fill: var(--sec, var(--cabin-seat));
-  opacity: 0.55;
+  opacity: 0.7;
+  transition: opacity var(--motion-fast) var(--ease);
+}
+
+.cc-seat__back {
+  fill: var(--sec, var(--cabin-seat));
+  opacity: 0.95;
   stroke: var(--cabin-seat-edge);
   stroke-width: 0.5;
   transition: opacity var(--motion-fast) var(--ease);
 }
 
-.cc-row:hover .cc-seat,
-.cc-row.is-selected .cc-seat {
-  opacity: 0.95;
+.cc-row:hover .cc-seat__cushion {
+  opacity: 0.9;
 }
 
 .cc-el__bracket {
@@ -419,9 +470,20 @@
 
 .cc-el:focus-visible .cc-el__bracket,
 .cc-el:focus-visible .cc-mon__box,
-.cc-el:focus-visible .cc-seat {
+.cc-el:focus-visible .cc-seat__back {
   stroke: var(--focus-ring);
   stroke-width: 1.5;
+}
+
+.cc-rowtab rect {
+  fill: var(--accent);
+}
+
+.cc-rowtab text {
+  fill: var(--text-on-accent);
+  font-size: 9px;
+  font-weight: 700;
+  font-family: var(--font-figures);
 }
 
 .cc-exit {
@@ -434,9 +496,21 @@
   stroke-width: 0.75;
 }
 
+.cc-mon__icon line,
+.cc-mon__icon circle {
+  stroke: var(--text-secondary);
+  stroke-width: 1;
+  fill: none;
+}
+
 .cc-mon--galley .cc-mon__box,
 .cc-mon--lounge .cc-mon__box {
   fill: color-mix(in srgb, var(--cabin-galley) 22%, var(--bg-inset));
+  stroke: var(--cabin-galley);
+}
+
+.cc-mon--galley .cc-mon__icon line,
+.cc-mon--lounge .cc-mon__icon line {
   stroke: var(--cabin-galley);
 }
 
@@ -447,11 +521,10 @@
   stroke: var(--cabin-lavatory);
 }
 
-.cc-mon__glyph {
-  fill: var(--text-secondary);
-  font-size: 9px;
-  text-anchor: middle;
-  font-family: var(--font-figures);
+.cc-mon--lavatory .cc-mon__icon line,
+.cc-mon--lavatory .cc-mon__icon circle,
+.cc-mon--closet .cc-mon__icon line {
+  stroke: var(--cabin-lavatory);
 }
 
 .cc-ruler line {
