@@ -69,6 +69,63 @@ describe('deploying the dev worker', () => {
     // backup would describe a schema the first had already started changing.
     expect(readFileSync(workerScript, 'utf8')).toContain('RUNS_MIGRATIONS=0');
   });
+
+  it('serves no public surface, so it runs no browser smoke', () => {
+    expect(readFileSync(workerScript, 'utf8')).toContain('SERVES_PUBLIC_SURFACE=0');
+  });
+
+  it('names no post-deploy origin, because aiming the smoke is the bug', () => {
+    // This is the regression. The wrapper never set these, so the smoke fell
+    // through to deploy.sh's production defaults and a dev worker deploy asserted
+    // that the front door served the worker's ref — reaching out to the public
+    // site during a dev deploy, and false by construction.
+    //
+    // The obvious repair is to copy dev web's two lines across, which is why this
+    // test asserts their *absence* rather than the fix. The two dev nodes deploy
+    // separately and sit at different commits routinely, and the expected commit
+    // is always this node's, so a dev-web origin fails whenever web has not been
+    // deployed to the same ref yet.
+    const source = readFileSync(workerScript, 'utf8');
+    expect(source).not.toContain('POST_DEPLOY_BASE_URL=');
+    expect(source).not.toContain('POST_DEPLOY_EXPECTED_ENVIRONMENT=');
+  });
+});
+
+describe('the post-deploy browser smoke', () => {
+  const source = readFileSync(deployScript, 'utf8');
+
+  it('runs by default, so every web deploy is the deploy it was', () => {
+    expect(source).toContain('SERVES_PUBLIC_SURFACE="${SERVES_PUBLIC_SURFACE:-1}"');
+  });
+
+  it('is skipped rather than aimed elsewhere on a node without one', () => {
+    // Structural, not a string match on the guard alone: the smoke invocation has
+    // to fall *inside* the conditional. A guard added above an unconditional call
+    // would satisfy a `toContain` and change nothing on the box.
+    const guard = source.indexOf('if [ "${SERVES_PUBLIC_SURFACE}" = \'1\' ]; then');
+    const smoke = source.indexOf('pnpm test:post-deploy');
+    const close = source.indexOf('skipping the post-deploy browser smoke');
+    expect(guard).toBeGreaterThan(0);
+    expect(smoke).toBeGreaterThan(guard);
+    expect(close).toBeGreaterThan(smoke);
+  });
+
+  it('still proves the health endpoint answered when it skips', () => {
+    // A step that disappears silently reads as a step somebody forgot. The skip
+    // says which endpoint was actually proved instead.
+    expect(source).toContain('${HEALTH_URL} answered for ${NEXT}');
+  });
+
+  it('keeps production as the default origin it was', () => {
+    // The defaults are correct *for deploy.sh*, which is the production deploy.
+    // The bug was a wrapper inheriting them, not the defaults themselves.
+    expect(source).toContain(
+      'POST_DEPLOY_BASE_URL="${POST_DEPLOY_BASE_URL:-https://tailfinsim.com}"',
+    );
+    expect(source).toContain(
+      'POST_DEPLOY_EXPECTED_ENVIRONMENT="${POST_DEPLOY_EXPECTED_ENVIRONMENT:-production}"',
+    );
+  });
 });
 
 describe('migration ownership', () => {

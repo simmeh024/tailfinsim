@@ -24,12 +24,18 @@
 # host anyway. #193 wants the nodes independently deployable; the cost is that
 # moving a version means deploying both, in that order.
 #
-# ## Its health check is the engine's
+# ## Its health check is the engine's, and it is the only check it gets
 #
 # Port 3100 on loopback, and `worker.js` answers 503 there while its process is
 # alive if the engine is not ticking. That is deliberate: it makes this script's
 # health poll fail for a worker that started and did not run, which is exactly
 # the failure `systemctl is-active` cannot see.
+#
+# That poll is also the *whole* of this node's post-deploy evidence, because
+# `SERVES_PUBLIC_SURFACE=0` turns the browser smoke off. This node has no public
+# HTTP surface at all — loopback port, no Caddy vhost, permanently — so there is
+# no origin for the smoke to ask "are you serving the commit I just deployed?"
+# about. See deploy.sh for why aiming it at another node is worse than skipping.
 #
 # ## It is gated on handler coverage
 #
@@ -48,6 +54,21 @@ export HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3100/healthz}"
 export MIGRATION_DATABASE="${MIGRATION_DATABASE:-tailfin_dev}"
 export RUNS_MIGRATIONS=0
 export CHECKS_EVENT_HANDLERS=1
+export SERVES_PUBLIC_SURFACE=0
+
+# POST_DEPLOY_BASE_URL and POST_DEPLOY_EXPECTED_ENVIRONMENT are deliberately not
+# set here, and copying dev web's two lines across is not the fix it looks like.
+#
+# Until this comment existed they were simply missing, so the smoke fell through
+# to deploy.sh's defaults and a *dev worker* deploy asserted that the production
+# front door was serving the worker's ref — pointed at the public site, and false
+# by construction. Setting them to the dev origin instead only moves the bug: the
+# two dev nodes deploy separately and are routinely at different commits, and
+# POST_DEPLOY_EXPECTED_COMMIT is always this node's, so the smoke would fail
+# whenever dev web had not been deployed to the same ref yet.
+#
+# The step does not run here, so neither variable is read. A worker that one day
+# does serve something would need both, plus SERVES_PUBLIC_SURFACE=1.
 
 # ALLOW_HANDLER_GAP is deliberately **not** set here, and must never be.
 #
