@@ -618,3 +618,89 @@ export const RouteCompetitionResponse = z.object({
   operators: z.array(RouteCompetitor),
 });
 export type RouteCompetitionResponse = z.infer<typeof RouteCompetitionResponse>;
+
+/* ------------------------------------------- hub connection banks (§7.4) ---- */
+
+/**
+ * One flight touching the hub with nothing to link to — the actionable end of
+ * the connection analysis.
+ *
+ * A dead-end arrival lands passengers the schedule then strands; an unfed
+ * departure leaves before anything the schedule flew in can reach it. Either is
+ * a leg a player might retime, which is why the flight is named rather than only
+ * counted.
+ */
+export const HubTerminalFlight = z.object({
+  flightId: Uuid,
+  /** The spoke — where a dead-end arrival came from, or where an unfed departure goes. */
+  spokeIcao: z.string().min(1),
+  /** The flight's own moment at the hub: an arrival's touchdown, a departure's off-blocks. Game time. */
+  atUtc: Timestamp,
+});
+export type HubTerminalFlight = z.infer<typeof HubTerminalFlight>;
+
+/**
+ * A wave of hub activity — arrivals and the departures they can feed, clustered
+ * in time.
+ *
+ * A bank is what a hub-and-spoke network is built out of: a batch of inbounds
+ * lands, passengers cross the terminal, a batch of outbounds leaves. Flights are
+ * grouped into one bank when no gap between successive events exceeds the connect
+ * window, so a bank is exactly the span over which its arrivals and departures
+ * can plausibly interchange.
+ */
+export const HubConnectionBank = z.object({
+  /** First event in the bank (an arrival or a departure). Game time. */
+  startUtc: Timestamp,
+  /** Last event in the bank. Game time. */
+  endUtc: Timestamp,
+  arrivals: z.number().int().nonnegative(),
+  departures: z.number().int().nonnegative(),
+  /** Feasible inbound→outbound pairs whose arrival falls in this bank. */
+  connections: z.number().int().nonnegative(),
+});
+export type HubConnectionBank = z.infer<typeof HubConnectionBank>;
+
+/**
+ * `GET /api/network/connections` — how well your hub banks for connections.
+ *
+ * A pure timing read over the flights the worker has already materialised at
+ * your founder hub: which arrivals can feed which departures inside a connect
+ * window, where the banks fall, and which flights connect to nothing. Because a
+ * connection is only *"does this outbound leave the right amount of time after
+ * that inbound"*, every figure is computed in one clock and is therefore
+ * timezone-independent — the arithmetic never needs the spokes' local times.
+ *
+ * Like the performance read, only the worker fills it: on a world with no worker
+ * there are no materialised flights, so the analysis is empty — a hub that reads
+ * as unscheduled rather than as broken. The detail lists are capped; the counts
+ * beside them are always complete.
+ */
+export const HubConnectionsResponse = z.object({
+  hubIcao: z.string().min(1),
+  /** The shortest legal connection the analysis allowed, in minutes. */
+  minConnectMinutes: z.number().int().nonnegative(),
+  /** The longest gap still counted as a connection, in minutes. */
+  maxConnectMinutes: z.number().int().positive(),
+  /** How far ahead the analysed flights reach — the span the worker has materialised. */
+  horizonDays: z.number().int().nonnegative(),
+  inboundFlights: z.number().int().nonnegative(),
+  outboundFlights: z.number().int().nonnegative(),
+  /** Feasible inbound→outbound pairs across the whole horizon (a turn-back to the arrival city never counts). */
+  feasibleConnections: z.number().int().nonnegative(),
+  /** Inbound flights that feed at least one onward departure. */
+  connectingInbound: z.number().int().nonnegative(),
+  /** Outbound flights fed by at least one arrival. */
+  connectingOutbound: z.number().int().nonnegative(),
+  /** Arrivals whose passengers can reach nothing onward. */
+  deadEndArrivalCount: z.number().int().nonnegative(),
+  /** Departures no arrival can feed. */
+  unfedDepartureCount: z.number().int().nonnegative(),
+  /** A sample of the dead-end arrivals, soonest first (capped). */
+  deadEndArrivals: z.array(HubTerminalFlight),
+  /** A sample of the unfed departures, soonest first (capped). */
+  unfedDepartures: z.array(HubTerminalFlight),
+  /** The banks, in time order. */
+  banks: z.array(HubConnectionBank),
+});
+export type HubConnectionsResponse = z.infer<typeof HubConnectionsResponse>;

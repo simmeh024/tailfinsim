@@ -227,6 +227,7 @@ must compare with Fastify's route table. One method/path pair appears in each ro
 | `PUT /api/schedules/:id`                            | `requireActiveAirline`; schedule and routes scoped by owner; 404 cross-owner | 401   | 409 without an owned airline         | Allow when active                        | Same as player/owner        |
 | `PUT /api/schedules/:id/active`                     | `requireActiveAirline`; schedule scoped by owner; 404 cross-owner            | 401   | 409 without an owned airline         | Allow when active                        | Same as player/owner        |
 | `DELETE /api/schedules/:id`                         | `requireActiveAirline`; schedule scoped by owner; 404 cross-owner            | 401   | 409 without an owned airline         | Allow when active                        | Same as player/owner        |
+| `GET /api/network/connections`                      | `requireAirline`; hub and flights scoped by resolved owner                   | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
 
 <!-- AUTHORIZATION_MATRIX_END -->
 

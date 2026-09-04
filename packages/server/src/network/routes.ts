@@ -31,6 +31,7 @@ import { route } from '../db/schema';
 import { parseRequestBody } from '../http/request-body';
 
 import { routeCompetition } from './competition';
+import { hubConnections } from './connections';
 import { parseFares, previewFares, type RouteEconomics, type RouteRow, setFares } from './fares';
 import { openRoute } from './open-route';
 import { routePerformance } from './performance';
@@ -311,6 +312,22 @@ export function registerNetworkRoutes(
       return reply.code(200).send(await routeCompetition(db.db, own, row, await economicsFor(row)));
     },
   );
+
+  /**
+   * How well your hub banks for connections (§7.4).
+   *
+   * A pure timing read over the flights the worker has materialised at your
+   * founder hub — no route id, because the resource is your whole network at one
+   * airport, resolved from the session like `GET /api/schedules`. Empty on a
+   * world with no worker, because only the worker makes a flight: a hub that
+   * reads as unscheduled rather than broken.
+   */
+  app.get('/api/network/connections', { onRequest: app.requireAirline }, async (request, reply) => {
+    const own = resolvedAirlineOf(request);
+    const connections = await hubConnections(db.db, own);
+    if (connections === null) return notFound(reply);
+    return reply.code(200).send(connections);
+  });
 
   /**
    * What would happen if you saved these fares.
