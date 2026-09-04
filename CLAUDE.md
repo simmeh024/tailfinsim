@@ -428,6 +428,18 @@ counted, never fatal. `currency_rate` is **mutable by design** (seeded, then ref
 immutable economy/catalogue tables — do not "fix" it to match them. The one outbound dependency is
 `open.er-api.com` (no key); it is in ADR-0012.
 
+**Fuel pricing is the one M5 mechanic that is _not_ a worker story (M5-07), and that is
+worth knowing before you go looking for its counter.** Every airport prices its own fuel — a
+regional commodity factor, an into-plane fee scaled by tier, and a per-station spread drawn
+from the world seed — and §11's world curve is a **closed form over game time**, evaluated on
+read. So there is no sweep, no queue and no heartbeat counter: a production world's fuel price
+moves exactly as dev's does. A random walk would have needed one, and would also have made a
+`flight_result` impossible to re-derive, which is why it is not one. Settlement reads the curve
+at the flight's **departure** (`actual_departure ?? scheduled_departure`), because the fuel was
+bought at the origin before the aeroplane left — not at the arrival that is settling it.
+`docs/fuel-pricing.md` has the model, and the reason the country is consulted before the
+continent.
+
 **And one thing not to "fix".** `airframe.maintenance_state` is nullable, and a null means
 _every tier was last completed at the hours this airframe has now_ — not _at hour zero_. It
 looks like a missing default and it is load-bearing: the other reading would make every
