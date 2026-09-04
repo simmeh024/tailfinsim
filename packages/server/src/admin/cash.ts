@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 
 import { moveAirlineCash } from '../airline/cash';
 import { airline } from '../db/schema';
+import { worldGameNow } from '../world/game-now';
 
 import { writeAudit } from './audit';
 
@@ -62,20 +63,45 @@ export async function adjustAirlineCash(
   try {
     return await db.transaction(async (tx) => {
       const rows = await tx
-        .select({ id: airline.id, name: airline.name, cashMinor: airline.cashMinor })
+        .select({
+          id: airline.id,
+          name: airline.name,
+          cashMinor: airline.cashMinor,
+          worldId: airline.worldId,
+        })
         .from(airline)
         .where(eq(airline.id, input.airlineId))
         .limit(1);
       const found = rows[0];
       if (!found) return { ok: false, code: 'airline_not_found' as const };
 
+      /*
+       * ## Why an operator's correction is dated in the world (TIME-02)
+       *
+       * This is the one movement in the ledger that is not an in-world event: an
+       * operator did it, from a shell, at a wall-clock moment. The argument for
+       * a real `occurred_at` is therefore genuine, and it loses anyway.
+       *
+       * The ledger is one sorted account of an airline's money, and every other
+       * row in it -- founding, flights, leases, salaries, aircraft -- is on the
+       * world's calendar. A real instant here does not add information; it puts
+       * the correction at an arbitrary point among rows measured differently, so
+       * on a world whose calendar trails reality the adjustment sorts *after*
+       * movements that came later, and a date-ranged ledger query returns a set
+       * that depends on which kind of row it caught.
+       *
+       * The real instant is not lost: `writeAudit` below records the operator,
+       * the reason and the wall-clock time, which is where the question "when did
+       * someone do this?" belongs. The ledger answers "when, in the world, did
+       * this money move?".
+       */
       const reference = randomUUID();
       const movement = await moveAirlineCash(tx, {
         airlineId: found.id,
         amountMinor: input.amountMinor,
         cause: 'admin_adjustment',
         reference,
-        occurredAt: new Date(),
+        occurredAt: await worldGameNow(tx, found.worldId),
       });
 
       /*

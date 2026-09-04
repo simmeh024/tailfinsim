@@ -78,6 +78,24 @@ index and the trigger admitting only `pending -> delivered`, and a queued event 
 second place the same promise lives. The complete boundary and its current exclusions are in
 [`docs/aircraft-acquisition.md`](docs/aircraft-acquisition.md).
 
+**The AIR-06 ledger is one calendar, and `occurred_at` is game time for every cause.** TIME-02
+finished what TIME-01 started: founding, the executive floor and its offices, headquarters
+expansion, operator adjustments and 0019's opening-balance backfill all dated their movement on
+the wall clock, while flights, maintenance, crew and aircraft used the world's. A ledger is a
+**sorted** account and three indexes read that column, so two calendars meant an office
+expansion and the flight that funded it could appear in either order, and a date-ranged P&L
+returned a set that depended on which _kind_ of row it caught. `worldGameNow` in
+`src/world/game-now.ts` is the one place a route reads a world clock — deliberately not
+`world/lifecycle.ts`'s `currentGameDate`, which would drag `createWorld` and `resetWorld` into
+an HTTP module graph. Migration 0051 converted the existing rows, dropping and restoring both
+immutability triggers; the `DEFERRABLE` reconciliation triggers were left in place on purpose,
+because they sum `amount_minor` and are therefore the proof the migration moved no money.
+`recorded_at`, `created_at` and `updated_at` stay real everywhere — a different question.
+**An operator's `admin_adjustment` is dated in the world too**, and that was a decision: the
+wall-clock instant lives on the `admin_audit` row, which is where "when did someone do this?"
+belongs. `office_hire.hired_at` and `executive_hire.hired_at` are game instants for the same
+reason their salaries are per game month.
+
 **Aircraft runtime assets are generated identities, never hand-written paths.** An M6-11 source
 GLB is immutable and enters only through `pnpm assets:intake`; the M6-12 pipeline binds its source,
 manifest, optimisation decision and pinned tool versions into one content identity, then revalidates

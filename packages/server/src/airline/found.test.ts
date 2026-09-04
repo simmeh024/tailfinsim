@@ -14,6 +14,7 @@ import {
   type WorldConfig,
   type WorldStatus,
 } from '@tailfin/shared';
+import { gameTime } from '@tailfin/sim';
 
 import { buildApp } from '../app';
 import { createSession, SESSION_COOKIE } from '../auth/session';
@@ -227,6 +228,67 @@ describeDb('founding an airline', () => {
       movementTotalMinor: ECONOMY_CONFIG_V1.airlineStartingPosition.openingCashMinor,
       reconciles: true,
     });
+  });
+
+  /*
+   * TIME-02 / ADR-0026. The opening AIR-06 movement is the *first* row in an
+   * airline's ledger, and every row that follows it -- flights, leases, salaries,
+   * aircraft -- is dated on the world's calendar. It used to carry the airline
+   * row's wall-clock `createdAt`, which on a world whose epoch is in the past put
+   * the opening balance years away from the money it funded.
+   *
+   * Deterministic rather than approximate: the founding instant is injected, so
+   * the expected game instant is arithmetic. `createdAt` is asserted too, because
+   * the point is that the two are different questions and both are still answered.
+   */
+  it('dates the opening movement in the world, not on the wall clock', async () => {
+    const worldId = await makeWorld();
+    const hubIdent = await makeHub();
+    const playerId = await makePlayer();
+
+    const [row] = await db.db
+      .select({
+        epoch: world.epoch,
+        launchDate: world.launchDate,
+        speedMultiplier: world.speedMultiplier,
+      })
+      .from(world)
+      .where(eq(world.id, worldId));
+    if (!row) throw new Error('world vanished');
+
+    // A real hour into the world, so game and real time have measurably diverged.
+    const foundedAt = new Date(row.launchDate.getTime() + 60 * 60 * 1_000);
+    const expected = gameTime(
+      {
+        epoch: row.epoch,
+        launchDate: row.launchDate,
+        speedMultiplier: Number(row.speedMultiplier),
+      },
+      foundedAt,
+    );
+
+    const result = await foundAirline(db.db, playerId, input(worldId, hubIdent), {
+      now: () => foundedAt,
+    });
+    if (!result.ok) throw new Error(`founding refused: ${result.kind}`);
+
+    const [movement] = await db.db
+      .select()
+      .from(cashMovement)
+      .where(eq(cashMovement.airlineId, result.airline.id));
+    expect(movement?.cause).toBe('airline_founding');
+    expect(movement?.occurredAt.toISOString()).toBe(expected.toISOString());
+
+    // Two years of divergence on the flagship epoch, so this could not pass by
+    // accident if the wall clock crept back in.
+    expect(movement?.occurredAt.getTime()).toBeLessThan(foundedAt.getTime());
+
+    // The row's own audit stamp is untouched and is still real.
+    const [stored] = await db.db
+      .select({ createdAt: airline.createdAt })
+      .from(airline)
+      .where(eq(airline.id, result.airline.id));
+    expect(stored?.createdAt.toISOString()).not.toBe(expected.toISOString());
   });
 
   it('rolls the airline back when granting its hub fails', async () => {

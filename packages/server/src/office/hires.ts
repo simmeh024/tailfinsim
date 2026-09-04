@@ -15,6 +15,7 @@ import {
 } from '@tailfin/shared';
 
 import { officeExpansion, officeHire } from '../db/schema';
+import { worldGameNow } from '../world/game-now';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
 import type { Database } from '../db/client';
@@ -172,6 +173,12 @@ export async function hireOffice(
     return { ok: false, code: 'already_seated' };
   }
 
+  // The hire date is the world's, not the wall clock's (TIME-02): the salary it
+  // snapshots is per *game* month, and the Office page shows the two together.
+  // Passed explicitly on the insert as well as the upsert, so the column's
+  // `defaultNow()` -- a wall-clock fallback -- is never the value that lands.
+  const gameNow = await worldGameNow(db, own.worldId);
+
   const [row] = await db
     .insert(officeHire)
     .values({
@@ -181,6 +188,7 @@ export async function hireOffice(
       candidateId: request.candidateId,
       candidateName: candidate.name,
       monthlySalaryMinor: candidate.monthlySalaryMinor,
+      hiredAt: gameNow,
     })
     .onConflictDoUpdate({
       target: [officeHire.airlineId, officeHire.role],
@@ -188,7 +196,7 @@ export async function hireOffice(
         candidateId: request.candidateId,
         candidateName: candidate.name,
         monthlySalaryMinor: candidate.monthlySalaryMinor,
-        hiredAt: new Date(),
+        hiredAt: gameNow,
       },
     })
     .returning({

@@ -8,10 +8,10 @@ import {
   type ExecutiveFloorState,
   type ExecutiveHire,
 } from '@tailfin/shared';
-import { gameTime, type WorldClock } from '@tailfin/sim';
 
 import { moveAirlineCash } from '../airline/cash';
-import { airline, executiveFloor, executiveHire, flightResult, world } from '../db/schema';
+import { airline, executiveFloor, executiveHire, flightResult } from '../db/schema';
+import { worldGameNow } from '../world/game-now';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
 import type { Database } from '../db/client';
@@ -34,26 +34,6 @@ import type { Database } from '../db/client';
 
 /** The trailing window for the revenue gate — a game month, in game time. */
 const REVENUE_WINDOW_MS = 30 * 86_400_000;
-
-/** This world's current game time, for the trailing-revenue window. */
-async function worldGameNow(db: Database, worldId: string): Promise<Date> {
-  const [row] = await db
-    .select({
-      epoch: world.epoch,
-      launchDate: world.launchDate,
-      speedMultiplier: world.speedMultiplier,
-    })
-    .from(world)
-    .where(eq(world.id, worldId))
-    .limit(1);
-  if (!row) throw new Error(`world ${worldId} vanished while reading the executive floor`);
-  const clock: WorldClock = {
-    epoch: row.epoch,
-    launchDate: row.launchDate,
-    speedMultiplier: Number(row.speedMultiplier),
-  };
-  return gameTime(clock, new Date());
-}
 
 /**
  * An airline's gross flight revenue over the last game month.
@@ -171,7 +151,7 @@ export async function unlockExecutiveFloor(
       amountMinor: -EXECUTIVE_FLOOR_UNLOCK_COST_MINOR,
       cause: 'executive_floor',
       reference: `executive_floor:${own.id}`,
-      occurredAt: new Date(),
+      occurredAt: gameNow,
     });
     await tx
       .insert(executiveFloor)
@@ -193,6 +173,10 @@ export async function unlockExecutiveOffice(
   db: Database,
   own: ResolvedPlayerAirline,
 ): Promise<UnlockOfficeResult> {
+  // Read before the transaction, like the floor above: one clock read outside a
+  // lock is cheaper than holding the airline row while another query runs.
+  const gameNow = await worldGameNow(db, own.worldId);
+
   const outcome = await db.transaction(async (tx): Promise<OfficeFailCode | null> => {
     const [locked] = await tx
       .select({ cashMinor: airline.cashMinor })
@@ -218,7 +202,7 @@ export async function unlockExecutiveOffice(
       amountMinor: -next.costMinor,
       cause: 'executive_office',
       reference: `executive_office:${own.id}:${String(next.index)}`,
-      occurredAt: new Date(),
+      occurredAt: gameNow,
     });
     await tx
       .update(executiveFloor)
@@ -228,7 +212,7 @@ export async function unlockExecutiveOffice(
   });
 
   if (outcome !== null) return { ok: false, code: outcome };
-  return { ok: true, state: await readExecutiveFloor(db, own) };
+  return { ok: true, state: await readExecutiveFloor(db, own, gameNow) };
 }
 
 type HireExecFailCode =
@@ -256,6 +240,8 @@ export async function hireExecutive(
 ): Promise<HireExecutiveResult> {
   const candidate = executiveCandidate(candidateId);
   if (candidate === undefined) return { ok: false, code: 'unknown_candidate' };
+
+  const gameNow = await worldGameNow(db, own.worldId);
 
   const outcome = await db.transaction(async (tx): Promise<HireExecFailCode | null> => {
     const [floor] = await tx
@@ -290,6 +276,9 @@ export async function hireExecutive(
       target = free;
     }
 
+    // Game time, like the office hires beside it: the salary snapshotted here is
+    // per game month, and the column's `defaultNow()` is a wall-clock fallback
+    // that should never be the value that lands (TIME-02).
     await tx.insert(executiveHire).values({
       worldId: own.worldId,
       airlineId: own.id,
@@ -297,12 +286,13 @@ export async function hireExecutive(
       candidateName: candidate.name,
       monthlySalaryMinor: candidate.monthlySalaryMinor,
       officeIndex: target,
+      hiredAt: gameNow,
     });
     return null;
   });
 
   if (outcome !== null) return { ok: false, code: outcome };
-  return { ok: true, state: await readExecutiveFloor(db, own) };
+  return { ok: true, state: await readExecutiveFloor(db, own, gameNow) };
 }
 
 /** Let a C-Suite member go. Idempotent: dismissing someone not employed is a no-op. */

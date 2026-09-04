@@ -35,13 +35,23 @@ Every movement stores:
 | `cause`               | Stable cause family, initially founding, settlement or migration opening |
 | `reference`           | Stable identity of that cause, such as the flight UUID                   |
 | `balance_after_minor` | The resulting materialised balance                                       |
-| `occurred_at`         | Game time for simulation causes; founding time for the opening grant     |
+| `occurred_at`         | Game time on the owning airline's world clock, for every cause           |
 | `recorded_at`         | Real database time, so delayed processing remains diagnosable            |
 
 `amount_minor`, `balance_after_minor` and `airline.cash_minor` are constrained to
 JavaScript's safe-integer range. Drizzle reads all three in number mode, so admitting a
 larger PostgreSQL `bigint` would make an apparently exact reconciliation lossy at the server
 boundary.
+
+> **Amended by [ADR-0026](0026-in-world-spans-are-game-time.md) (TIME-02, 2026-09-04).**
+> `occurred_at` originally read _"game time for simulation causes; founding time for the opening
+> grant"_, and that split widened as causes were added: founding, the executive floor and its
+> offices, headquarters expansion, operator adjustments and 0019's opening-balance backfill all
+> used the wall clock. A ledger is a **sorted** account, so two calendars in one column meant an
+> office expansion and the flight that paid for it could appear in either order, and a
+> date-ranged query returned a set that depended on which kind of row it caught. Migration 0051
+> converted them. It is game time for every cause now, and `recorded_at` is the only real
+> instant on the table.
 
 Rows are append-only. An attempted update is refused by the database; a correction is a new
 compensating movement with its own cause and reference. Deleting an airline deliberately
