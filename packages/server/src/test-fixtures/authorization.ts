@@ -73,6 +73,54 @@ function responseExcerpt(body: string): string {
   return compact.length <= 300 ? compact : `${compact.slice(0, 297)}...`;
 }
 
+/** Whether a status means the request was carried out. */
+function allowed(status: number): boolean {
+  return status >= 200 && status < 400;
+}
+
+/**
+ * What a mismatch *means*, in the only two directions that matter (SEC-12).
+ *
+ * `expected 403, received 200` is a puzzle. Saying which way the boundary moved
+ * is an incident report — and the two directions are not equally urgent: one is
+ * a feature that stopped working, the other is a door that stopped being locked.
+ */
+export function classifyAuthorizationMismatch(
+  expected: number,
+  received: number,
+): { severity: 'breach' | 'regression' | 'mismatch'; meaning: string } {
+  if (!allowed(expected) && allowed(received)) {
+    return { severity: 'breach', meaning: 'access GRANTED where it must be refused' };
+  }
+  if (allowed(expected) && !allowed(received)) {
+    return { severity: 'regression', meaning: 'access refused where it must be allowed' };
+  }
+  return { severity: 'mismatch', meaning: 'unexpected status' };
+}
+
+/**
+ * One failure line, written to be actionable without opening the test file.
+ *
+ * `playerA · PATCH /api/airlines/… · expected 403 · received 200 · access
+ * GRANTED where it must be refused`.
+ */
+export function authorizationFailureLine(
+  actor: string,
+  label: string,
+  expected: number,
+  received: number,
+  body: string,
+): string {
+  const { severity, meaning } = classifyAuthorizationMismatch(expected, received);
+  const prefix = severity === 'breach' ? 'AUTHORIZATION BREACH' : `authorization ${severity}`;
+  const excerpt = responseExcerpt(body);
+  return (
+    `${prefix} · ${actor} · ${label} · expected ${String(expected)} · ` +
+    `received ${String(received)} · ${meaning}` +
+    (excerpt === '' ? '' : `\n    response: ${excerpt}`)
+  );
+}
+
 function requestFor(identity: AuthorizationIdentity, request: InjectOptions): InjectOptions {
   const cookieFreeRequest = { ...request };
   delete cookieFreeRequest.cookies;
@@ -180,18 +228,35 @@ export async function createAuthorizationTestSuite({
         const { request } = testCase;
         const failures: string[] = [];
 
+        let breaches = 0;
         for (const actor of AUTHORIZATION_ACTORS) {
           const response = await app.inject(requestFor(identities[actor], request));
           const wanted = testCase[actor];
           if (response.statusCode !== wanted) {
-            const body = responseExcerpt(response.body);
+            if (classifyAuthorizationMismatch(wanted, response.statusCode).severity === 'breach') {
+              breaches += 1;
+            }
             failures.push(
-              `Authorization mismatch for ${actor}: ${requestLabel(request)} expected ${wanted}, got ${response.statusCode}${body === '' ? '' : `. Response: ${body}`}`,
+              authorizationFailureLine(
+                actor,
+                requestLabel(request),
+                wanted,
+                response.statusCode,
+                response.body,
+              ),
             );
           }
         }
 
-        if (failures.length > 0) throw new Error(failures.join('\n'));
+        if (failures.length > 0) {
+          // A breach is led with, not buried: in a run of hundreds of tests this
+          // line is what has to be unmistakable (SEC-12).
+          const headline =
+            breaches > 0
+              ? `${String(breaches)} AUTHORIZATION BREACH${breaches === 1 ? '' : 'ES'} on ${requestLabel(request)}`
+              : `authorization mismatch on ${requestLabel(request)}`;
+          throw new Error([headline, ...failures].join('\n  '));
+        }
       },
       async cleanup() {
         if (cleaned) return;

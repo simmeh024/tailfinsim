@@ -99,6 +99,28 @@ precise.
 
 ## The authorization matrix
 
+### Definition of done (SEC-13)
+
+Three rules. A reviewer can point at them, and the third is the one that gets skipped.
+
+1. **Every protected endpoint declares its expected authorization and has a test asserting it.**
+   The declaration is its row in the matrix; the test is what fails when the row stops being
+   true.
+2. **Every player-owned resource has both an own-resource test and a cross-owner denial test.**
+   One of those alone proves the feature works, not that it is closed.
+3. **Every admin endpoint has a guest test and a signed-in non-admin test** — and, where a
+   capability narrower than "an administrator" guards it, a test that a role lacking that
+   capability is refused.
+
+Why the rule exists at all: authorization coverage decays differently from everything else. A
+missing unit test surfaces as a bug in a feature somebody uses. A missing authorization test
+surfaces as nothing — the endpoint works perfectly, including for the people who should not
+have it — until it surfaces as an incident. Removing an `onRequest` hook makes the tests
+_pass_; only an assertion on the negative case notices, and only if it ran.
+
+The rest of this section is how to satisfy those three cheaply: the matrix, the ownership and
+resource-id fixtures, and the capability gate. None of it is optional for a new route.
+
 [`docs/authorization-matrix.md`](docs/authorization-matrix.md) is the intended boundary for
 every web/API and worker HTTP route: public, session-protected, owner-scoped, admin-only or
 loopback-only. Update its method/path row in the same pull request as a route. Derive the row
