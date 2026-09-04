@@ -35,6 +35,7 @@ import { economyChecksum, ECONOMY_CONFIG_V1 } from '../economy/config';
 import { economyConfigVersionExists } from '../economy/loader';
 import { ensureEconomyConfigSeeded } from '../economy/seed';
 import {
+  compareEconomyConfigVersions,
   createEconomyConfigVersion,
   type CreateEconomyRefusalCode,
   listEconomyConfigVersions,
@@ -778,6 +779,37 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
    * written, diffed and reviewed while every world carries on running what it
    * was already running.
    */
+  /**
+   * Two versions, compared directly (§22.3).
+   *
+   * The detail route diffs a version against its parent; this answers the
+   * question a promotion actually asks — what differs between the version a
+   * world is running and the one about to be pinned, which are usually not
+   * parent and child.
+   */
+  app.get<{ Params: { version: string }; Querystring: { against?: string } }>(
+    '/api/admin/economy-config/:version/diff',
+    { onRequest: app.requireCapability('economy.read') },
+    async (request, reply) => {
+      const against = request.query.against;
+      if (against === undefined || against.trim() === '') {
+        return reply
+          .code(400)
+          .send({ code: 'against_required', message: 'Name the version to compare against.' });
+      }
+      const changes = await compareEconomyConfigVersions(db.db, against, request.params.version);
+      if (changes === null) {
+        return reply
+          .code(404)
+          .send({
+            code: 'economy_config_not_found',
+            message: 'No economy config with that version.',
+          });
+      }
+      return reply.code(200).send({ from: against, to: request.params.version, changes });
+    },
+  );
+
   app.post(
     '/api/admin/economy-config',
     {

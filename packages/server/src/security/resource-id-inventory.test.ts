@@ -28,6 +28,7 @@ const NON_UUID_PATH_IDENTIFIERS = [
   'DELETE /api/office/hires/:seat',
   'DELETE /api/office/executive/hires/:candidateId',
   'GET /api/admin/economy-config/:version',
+  'GET /api/admin/economy-config/:version/diff',
   'PUT /api/automation/:system',
   'GET /api/ground/:icao',
   'POST /api/ground/:icao/contracts',

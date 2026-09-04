@@ -25,6 +25,7 @@ import {
 } from './loader';
 import { ensureEconomyConfigSeeded, resetEconomySeedMemo, seedEconomyConfig } from './seed';
 import {
+  compareEconomyConfigVersions,
   createEconomyConfigVersion,
   listEconomyConfigVersions,
   pinWorldEconomyConfig,
@@ -286,6 +287,74 @@ describeDb('the economy in the database', () => {
       const outcome = await createEconomyConfigVersion(db.db, validated, BOOTSTRAP_ACTOR);
       if (outcome.ok) throw new Error('expected a refusal');
       expect(outcome.code).toBe('unknown_parent');
+    });
+  });
+
+  // ------------------------------------------- comparing two arbitrary versions
+
+  describe('comparing two versions', () => {
+    /** A version derived from the shipped one, with one coefficient moved. */
+    async function retune(label: string, apply: (draft: EconomyConfig) => void) {
+      const version = versionName(label);
+      const validated = validateCreateRequest({
+        version,
+        parentVersion: ECONOMY_CONFIG_V1_VERSION,
+        notes: `Comparison fixture ${label}.`,
+        payloadJson: retunedPayload(apply),
+      });
+      if (!validated.ok) throw new Error(`expected valid: ${JSON.stringify(validated.fields)}`);
+      const outcome = await createEconomyConfigVersion(db.db, validated, BOOTSTRAP_ACTOR);
+      if (!outcome.ok) throw new Error(`expected success: ${outcome.message}`);
+      return version;
+    }
+
+    it('compares two siblings, which no parent diff can do', async () => {
+      // Both derive from v1, so neither is the other's parent — this is exactly
+      // the promotion question: what differs between what is running and what is
+      // about to be pinned.
+      const a = await retune('cmp-a', (draft) => {
+        draft.demand.logit.beta.leisure.price = 2.6;
+      });
+      const b = await retune('cmp-b', (draft) => {
+        draft.demand.logit.beta.leisure.price = 2.2;
+      });
+
+      const changes = await compareEconomyConfigVersions(db.db, a, b);
+      expect(changes).toEqual([
+        { path: 'version', before: a, after: b },
+        { path: 'demand.logit.beta.leisure.price', before: 2.6, after: 2.2 },
+      ]);
+    });
+
+    it('is directional: reversing the pair reverses every change', async () => {
+      const a = await retune('cmp-dir-a', (draft) => {
+        draft.demand.logit.beta.leisure.price = 2.6;
+      });
+      const forward = await compareEconomyConfigVersions(db.db, ECONOMY_CONFIG_V1_VERSION, a);
+      const backward = await compareEconomyConfigVersions(db.db, a, ECONOMY_CONFIG_V1_VERSION);
+      const priceForward = forward?.find((c) => c.path.endsWith('leisure.price'));
+      const priceBackward = backward?.find((c) => c.path.endsWith('leisure.price'));
+      expect(priceForward?.before).toBe(priceBackward?.after);
+      expect(priceForward?.after).toBe(priceBackward?.before);
+    });
+
+    it('reports no changes when a version is compared with itself', async () => {
+      expect(
+        await compareEconomyConfigVersions(
+          db.db,
+          ECONOMY_CONFIG_V1_VERSION,
+          ECONOMY_CONFIG_V1_VERSION,
+        ),
+      ).toEqual([]);
+    });
+
+    it('is a miss, not a throw, when either version is unknown', async () => {
+      expect(
+        await compareEconomyConfigVersions(db.db, ECONOMY_CONFIG_V1_VERSION, 'no-such-version'),
+      ).toBeNull();
+      expect(
+        await compareEconomyConfigVersions(db.db, 'no-such-version', ECONOMY_CONFIG_V1_VERSION),
+      ).toBeNull();
     });
   });
 
