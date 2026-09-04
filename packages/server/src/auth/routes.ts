@@ -6,7 +6,8 @@ import {
   revokeSessionsResponseJsonSchema,
 } from '@tailfin/shared';
 
-import { isAdmin } from '../admin/grants';
+import { type AdminCapability, type AdminRole, roleHasCapability } from '../admin/capabilities';
+import { adminRoleOf, isAdmin } from '../admin/grants';
 import { type DatabaseHandle } from '../db/client';
 import { player, playerIdentity } from '../db/schema';
 import { type ServerEnv } from '../env';
@@ -56,6 +57,13 @@ declare module 'fastify' {
      * the one `requireAdmin` asks.
      */
     isAdmin?: boolean;
+    /**
+     * Which role that grant carries, or null for a signed-in non-admin (M11-01).
+     *
+     * Resolved in the same read as `isAdmin`, so "is an administrator" and "which
+     * administrator" can never disagree.
+     */
+    adminRole?: AdminRole | null;
   }
   interface FastifyInstance {
     /** Rejects with 401 unless a valid session is present. */
@@ -68,6 +76,19 @@ declare module 'fastify' {
      * them sends a signed-in non-admin round the login loop for ever.
      */
     requireAdmin: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    /**
+     * The same boundary as `requireAdmin`, narrowed to one capability (M11-01).
+     *
+     * A factory rather than a hook, because the capability is a property of the
+     * route: `{ onRequest: app.requireCapability('world.reset') }` reads as what
+     * the route needs, and a route that needs nothing in particular cannot
+     * silently inherit everything. The refusal is byte-identical to
+     * `requireAdmin`'s, so a Support administrator probing the console learns
+     * only that they may not do it — not which role could.
+     */
+    requireCapability: (
+      capability: AdminCapability,
+    ) => (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
 }
 
@@ -130,8 +151,11 @@ export function registerAuthRoutes(
       request.player = found;
       // Resolved here, once, rather than in each admin route. A grant checked in
       // one place cannot drift from the grant checked in another, and there is
-      // no route that can forget to look.
-      request.isAdmin = await isAdmin(db.db, found.id);
+      // no route that can forget to look. The role comes from the same read, so
+      // `isAdmin` is exactly "holds a role this build understands" (M11-01).
+      const role = await adminRoleOf(db.db, found.id);
+      request.adminRole = role;
+      request.isAdmin = role !== null;
     });
   });
 
@@ -153,6 +177,26 @@ export function registerAuthRoutes(
       request.log.warn({ playerId: request.player.id, url: request.url }, 'admin route refused');
       await reply.code(403).send({ code: 'forbidden', message: 'Administrator access required' });
     }
+  });
+
+  app.decorate('requireCapability', (capability: AdminCapability) => {
+    return async (request: FastifyRequest, reply: FastifyReply) => {
+      if (!request.player) {
+        await reply.code(401).send({ code: 'unauthorized', message: 'Sign in required' });
+        return;
+      }
+      const role = request.adminRole;
+      if (role === null || role === undefined || !roleHasCapability(role, capability)) {
+        // The capability is logged but never sent. The operator who was refused
+        // can be told what they lack by someone who can see the log; the response
+        // stays the same one a non-admin gets, so probing the console cannot map it.
+        request.log.warn(
+          { playerId: request.player.id, url: request.url, capability, role },
+          'admin capability refused',
+        );
+        await reply.code(403).send({ code: 'forbidden', message: 'Administrator access required' });
+      }
+    };
   });
 
   // ------------------------------------------------------------------ /api/me

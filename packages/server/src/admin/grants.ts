@@ -5,6 +5,7 @@ import { type Database } from '../db/client';
 import { adminGrant, player } from '../db/schema';
 
 import { writeAudit } from './audit';
+import { type AdminRole, isAdminRole } from './capabilities';
 
 /**
  * Who is an admin, and how they came to be (M1A-01).
@@ -34,12 +35,26 @@ export const BOOTSTRAP_ACTOR: Actor = {
 };
 
 export async function isAdmin(db: Database, playerId: string): Promise<boolean> {
+  return (await adminRoleOf(db, playerId)) !== null;
+}
+
+/**
+ * The role this player administers under, or null if they hold no grant (M11-01).
+ *
+ * One query answers both "is this an administrator" and "which one", so the two
+ * cannot disagree — `isAdmin` is defined in terms of this rather than beside it.
+ * A role the database holds but this build does not know reads as **null**: a
+ * value from the future is treated as no access rather than as unrestricted
+ * access, which is the only safe direction to fail in.
+ */
+export async function adminRoleOf(db: Database, playerId: string): Promise<AdminRole | null> {
   const rows = await db
-    .select({ playerId: adminGrant.playerId })
+    .select({ role: adminGrant.role })
     .from(adminGrant)
     .where(eq(adminGrant.playerId, playerId))
     .limit(1);
-  return rows.length > 0;
+  const role = rows[0]?.role;
+  return isAdminRole(role) ? role : null;
 }
 
 export interface GrantResult {
@@ -58,6 +73,16 @@ export async function grantAdmin(
   db: Database,
   playerId: string,
   actor: Actor,
+  /**
+   * The authority to grant (M11-01).
+   *
+   * Defaults to `super_admin`, the same default the column carries, so adding
+   * roles changed no existing behaviour: every grant made before roles existed
+   * was unrestricted, and every caller that has not been taught to choose still
+   * gets what it used to get. Narrowing is a deliberate argument, never a silent
+   * consequence of an upgrade.
+   */
+  role: AdminRole = 'super_admin',
 ): Promise<GrantResult> {
   return db.transaction(async (tx) => {
     const exists = await tx
@@ -75,7 +100,7 @@ export async function grantAdmin(
     const name = target[0]?.displayName;
     if (name === undefined) throw new Error(`No player ${playerId}`);
 
-    await tx.insert(adminGrant).values({ playerId, grantedByPlayerId: actor.playerId });
+    await tx.insert(adminGrant).values({ playerId, grantedByPlayerId: actor.playerId, role });
     // A token minted before elevation must never become an admin token. The
     // delete shares this transaction with the grant and audit row.
     const sessionsRevoked = await destroyPlayerSessions(tx, playerId);
@@ -87,7 +112,7 @@ export async function grantAdmin(
       subjectType: 'player',
       subjectId: playerId,
       before: { admin: false },
-      after: { admin: true, displayName: name, sessionsRevoked },
+      after: { admin: true, role, displayName: name, sessionsRevoked },
       requestId: actor.requestId,
     });
 
@@ -146,6 +171,8 @@ export async function revokeAdmin(
 export interface AdminSummary {
   playerId: string;
   displayName: string;
+  /** The authority this grant carries (M11-01). */
+  role: AdminRole;
   grantedAt: Date;
   grantedByPlayerId: string | null;
   grantedByLabel: string | null;
@@ -160,6 +187,7 @@ export async function listAdmins(db: Database): Promise<AdminSummary[]> {
     .select({
       playerId: adminGrant.playerId,
       displayName: player.displayName,
+      role: adminGrant.role,
       grantedAt: adminGrant.grantedAt,
       grantedByPlayerId: adminGrant.grantedByPlayerId,
       grantedByLabel: granter,

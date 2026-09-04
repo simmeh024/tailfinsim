@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { ADMIN_CAPABILITIES } from './admin/capabilities';
 import {
   collectRegisteredRoutes,
   isAdminRoute,
@@ -90,10 +91,23 @@ describe('the authorization matrix and the router agree', () => {
     const matrix = readAuthorizationMatrix().filter((row) => isAdminRoute(row.url));
     expect(matrix.length).toBeGreaterThanOrEqual(20);
 
+    /*
+     * The mechanism is either the blanket admin gate or a named capability
+     * (M11-01). A capability is accepted only if it is one the model actually
+     * defines, so a typo in the document — `requireCapability('wrold.reset')` —
+     * fails here rather than reading as a guarded route that no role can reach.
+     */
+    const capabilityRow = /^`requireCapability\('([^']+)'\)`$/;
+    const guards = (mechanism: string): boolean => {
+      if (mechanism === '`requireAdmin`') return true;
+      const named = capabilityRow.exec(mechanism)?.[1];
+      return named !== undefined && (ADMIN_CAPABILITIES as readonly string[]).includes(named);
+    };
+
     const wrong = matrix
       .filter(
         (row) =>
-          row.mechanism !== '`requireAdmin`' ||
+          !guards(row.mechanism) ||
           row.guest !== '401' ||
           row.player !== '403' ||
           row.owner !== '403' ||
@@ -106,7 +120,8 @@ describe('the authorization matrix and the router agree', () => {
 
     expect(
       wrong,
-      `Every /api/admin/* row must read: requireAdmin, guest 401, player 403, owner 403, admin Allow.\n  ${wrong.join('\n  ')}`,
+      `Every /api/admin/* row must read: requireAdmin or requireCapability('<known capability>'), ` +
+        `guest 401, player 403, owner 403, admin Allow.\n  ${wrong.join('\n  ')}`,
     ).toEqual([]);
   });
 
