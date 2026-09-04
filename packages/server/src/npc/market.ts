@@ -1,12 +1,19 @@
 import { and, desc, eq, or, sql } from 'drizzle-orm';
 
 import { type DemandSegment } from '@tailfin/shared';
-import { fareFloor, type MarketView, routeVariableCostPerSeatMinor } from '@tailfin/sim';
+import {
+  fareFloor,
+  type FuelMarket,
+  type FuelStation,
+  type MarketView,
+  routeVariableCostPerSeatMinor,
+} from '@tailfin/sim';
 
 import { type Database } from '../db/client';
 import { airline, demandPool, route } from '../db/schema';
 import { type PinnedEconomyConfig } from '../economy/config';
-import { REFERENCE_AIRFRAME, REFERENCE_FEES, REFERENCE_STATION } from '../network/economics';
+import { createStationResolver, loadWorldFuelContext, marketNow } from '../economy/fuel';
+import { REFERENCE_AIRFRAME, REFERENCE_FEES } from '../network/economics';
 
 /**
  * Turning a stored market into something an NPC can decide about (M3-12).
@@ -20,6 +27,14 @@ import { REFERENCE_AIRFRAME, REFERENCE_FEES, REFERENCE_STATION } from '../networ
  * criterion, *"NPCs never receive resources or modifiers unavailable to
  * players"*, made structural. There is no NPC cost table to drift out of step,
  * because there is no NPC cost table.
+ *
+ * M5-07 is where that principle earned its keep. Per-station fuel pricing made a
+ * player's fare floor depend on which airport the sector leaves from, and the
+ * screening model here would have gone on costing every market at one reference
+ * station — so an NPC would have been screening markets against a fuel price no
+ * player pays. It resolves the origin's own station too, which is why
+ * {@link createCostModel} now takes a station resolver and keys its cache on the
+ * origin as well as the distance.
  */
 
 /** One `demand_pool` row, plus what it costs to fly. */
@@ -36,27 +51,41 @@ function parseNumeric(value: string): number {
 /**
  * What flying one seat on this sector costs, and the floor that implies.
  *
- * Cached by rounded distance across a review, because a review looks at forty
- * candidate markets and the cost model runs a block-time and a fuel-burn
- * calculation each time. Distance is the only input that varies between two
- * markets here — the airframe, the fees and the station are all the same
- * reference values — so rounding to the nautical mile is lossless for this
- * purpose and turns forty computations into a handful.
+ * Cached by rounded distance **and origin** across a review, because a review
+ * looks at forty candidate markets and the cost model runs a block-time and a
+ * fuel-burn calculation each time. Those two are now the only inputs that vary
+ * between markets — the airframe and the fees are still the same reference
+ * values — so rounding to the nautical mile is lossless for this purpose and
+ * turns forty computations into a handful.
+ *
+ * The origin joined the key in M5-07: fuel is bought at the origin, and after
+ * per-station pricing two 400 nm sectors out of different airports do not cost
+ * the same. Keying on distance alone would have quietly given every NPC the
+ * cheapest station in the world, or the dearest.
  */
-export function createCostModel(economy: PinnedEconomyConfig) {
-  const cache = new Map<number, { variableCostPerSeatMinor: number; floorMinor: number }>();
+export interface NpcFuel {
+  market: FuelMarket;
+  resolveStation: (icao: string) => FuelStation;
+}
 
-  return (greatCircleNm: number): { variableCostPerSeatMinor: number; floorMinor: number } => {
-    const key = Math.max(1, Math.round(greatCircleNm));
+export function createCostModel(economy: PinnedEconomyConfig, fuel: NpcFuel) {
+  const cache = new Map<string, { variableCostPerSeatMinor: number; floorMinor: number }>();
+
+  return (
+    greatCircleNm: number,
+    originIcao: string,
+  ): { variableCostPerSeatMinor: number; floorMinor: number } => {
+    const nm = Math.max(1, Math.round(greatCircleNm));
+    const key = `${String(nm)}|${originIcao}`;
     const hit = cache.get(key);
     if (hit) return hit;
 
     const cost = routeVariableCostPerSeatMinor(
       {
-        distanceNm: key,
+        distanceNm: nm,
         aircraft: REFERENCE_AIRFRAME,
-        market: { basePricePerTonne: economy.fuel.basePricePerTonne },
-        originStation: { ...REFERENCE_STATION, icao: 'REF' },
+        market: fuel.market,
+        originStation: fuel.resolveStation(originIcao),
         originFees: REFERENCE_FEES,
         destinationFees: REFERENCE_FEES,
       },
@@ -70,6 +99,38 @@ export function createCostModel(economy: PinnedEconomyConfig) {
     };
     cache.set(key, value);
     return value;
+  };
+}
+
+/**
+ * The fuel a review prices against: the world curve now, and the stations named.
+ *
+ * The same two things a player's route editor resolves, through the same
+ * functions — which is the point. `now` is the wall clock the world's calendar is
+ * read from; a review is a live decision, so it screens markets at today's fuel
+ * price rather than at the world's opening level.
+ *
+ * A world whose row has gone falls back to the opening level and the default
+ * rates, exactly as the fare-floor provider does: a review that cannot read the
+ * world should make worse decisions, not throw.
+ */
+export async function loadNpcFuel(
+  db: Database,
+  worldId: string,
+  economy: PinnedEconomyConfig,
+  icaos: readonly string[],
+  now: Date = new Date(),
+): Promise<NpcFuel> {
+  const ctx = await loadWorldFuelContext(db, worldId);
+  if (ctx === null) {
+    return {
+      market: { basePricePerTonne: economy.fuel.basePricePerTonne },
+      resolveStation: (icao) => ({ icao, ...economy.fuel.defaultStation }),
+    };
+  }
+  return {
+    market: marketNow(ctx, now, economy),
+    resolveStation: await createStationResolver(db, icaos, ctx, economy),
   };
 }
 
@@ -117,7 +178,15 @@ export async function topMarkets(
     worldId,
     pools.map((p) => [p.originIcao, p.destinationIcao] as const),
   );
-  const costOf = createCostModel(economy);
+  const costOf = createCostModel(
+    economy,
+    await loadNpcFuel(
+      db,
+      worldId,
+      economy,
+      pools.map((p) => p.originIcao),
+    ),
+  );
 
   return pools.map((pool) => {
     const daily = parseNumeric(pool.dailyPassengers);
@@ -127,7 +196,7 @@ export async function topMarkets(
       vfr: daily * parseNumeric(pool.vfrShare),
     };
     const operatorIds = incumbents.get(pairKey(pool.originIcao, pool.destinationIcao)) ?? [];
-    const cost = costOf(pool.distanceNm);
+    const cost = costOf(pool.distanceNm, pool.originIcao);
 
     return {
       originIcao: pool.originIcao,

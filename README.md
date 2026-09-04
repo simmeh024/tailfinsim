@@ -23,6 +23,7 @@ wall-clock time, that never pauses.
   [`docs/used-aircraft-market.md`](docs/used-aircraft-market.md) ·
   [`docs/maintenance.md`](docs/maintenance.md) ·
   [`docs/fleet-management.md`](docs/fleet-management.md) ·
+  [`docs/fuel-pricing.md`](docs/fuel-pricing.md) ·
   [`docs/world-renderer.md`](docs/world-renderer.md)
 - **Deployment & DNS:** [`docs/deploy.md`](docs/deploy.md) ·
   [`deploy/README.md`](deploy/README.md)
@@ -208,6 +209,15 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   decomposition is arithmetically exact by construction and is tested against the airframe's
   own stored spec. See [`docs/fleet-management.md`](docs/fleet-management.md), including the
   two bulk actions that have nothing to act on yet.
+- **Fuel that costs what the station charges.** Every airport prices its own Jet A-1: a
+  commodity factor for its region, an into-plane fee that scales with how hard the field is to
+  fuel, and a per-station spread fixed for the life of the world. A sector out of a Gulf hub
+  therefore costs measurably less to fuel than the same sector out of an African one, and the
+  world price itself walks a curve over the world's own calendar rather than sitting at its
+  opening level. Every number is `EconomyConfig`, so retuning fuel is an audited re-pin and not
+  a deploy — and unlike almost everything else in M4 and M5 this needs no Worker, because the
+  curve is a pure function of a game instant. See
+  [`docs/fuel-pricing.md`](docs/fuel-pricing.md), including why tankering is not built.
 - **One founded-airline database fixture.** Server tests that need a player airline go
   through the real founding transaction, so they receive an open world, owner, founder hub,
   allocated per-world codes and configured opening cash with its AIR-06 movement. The

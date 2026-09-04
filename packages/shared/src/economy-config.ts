@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { FUEL_REGIONS, type FuelRegion } from './fuel';
 import { MinorUnits, Month } from './primitives';
 
 /**
@@ -249,6 +250,130 @@ export const DemandBalance = z
 // Fuel, costs, pricing, boosts — §22.3's remaining headings
 // ---------------------------------------------------------------------------
 
+/**
+ * §9.3's regional fuel prices, and the into-plane fee that goes with each.
+ *
+ * `regionFactor` is a multiplier on the world curve, so a shock moves all six
+ * together and their **ordering survives it** — which is the property tankering
+ * needs. The fee is flat against the curve because it buys a bowser, a driver
+ * and a hose rather than a commodity.
+ *
+ * `europe` is not a guess: 1.03 and $35/t are the two numbers §13.4's worked
+ * example was solved through to land the $1,000/t world reference, so the one
+ * region the design doc anchors keeps the anchor exactly. The other five are
+ * ordered by refinery and pipeline access — at the well, own crude, pipeline-fed,
+ * imported, imported and short of refining, trucked a long way — which is the
+ * ordering a player can reason about rather than one they must memorise.
+ *
+ * Defaulted, for the reason `SHIPPED_NPC_BALANCE` records at length.
+ */
+export const SHIPPED_FUEL_REGIONS = {
+  europe: { regionFactor: 1.03, intoPlaneFeePerTonne: 35 },
+  north_america: { regionFactor: 0.92, intoPlaneFeePerTonne: 30 },
+  middle_east: { regionFactor: 0.78, intoPlaneFeePerTonne: 20 },
+  asia_pacific: { regionFactor: 1.08, intoPlaneFeePerTonne: 32 },
+  latin_america: { regionFactor: 1.15, intoPlaneFeePerTonne: 42 },
+  africa: { regionFactor: 1.22, intoPlaneFeePerTonne: 55 },
+} as const satisfies Record<FuelRegion, { regionFactor: number; intoPlaneFeePerTonne: number }>;
+
+/**
+ * How the into-plane fee scales with the tier of the station.
+ *
+ * Centred on `medium`, which is where §13.4's ATR 72 operator actually flies — it
+ * runs eight 200 nm sectors a day out of a regional network, not out of a
+ * flagship hub — so the $35/t the world reference was solved from stays the fee
+ * at the tier the example lives at.
+ *
+ * The spread is a factor of nearly two from a hydrant stand to a trucked-in
+ * bowser, and it is deliberately the largest single station-level effect in the
+ * model: it is why a thin route out of a small field is dearer per tonne than
+ * its region's headline price, and it is a cost a player can escape by moving
+ * the uplift rather than one they simply pay.
+ */
+export const SHIPPED_FUEL_TIER_FEE_FACTOR = {
+  flagship: 0.85,
+  large: 0.95,
+  medium: 1,
+  small: 1.25,
+  regional: 1.6,
+} as const;
+
+/**
+ * The world curve's shape (§11).
+ *
+ * Two cycles, because one would be a sine wave a player could set a calendar
+ * reminder against. The long one is the commodity cycle — five years, the span
+ * crude actually turns over in — and the short one is the northern-hemisphere
+ * heating and driving season at a year. Their amplitudes add to ±24%, which puts
+ * the level between roughly $760/t and $1,240/t around the $1,000/t reference:
+ * historically unremarkable for Jet A-1, and the range §20's oil shock has to
+ * move *within* rather than *to*.
+ *
+ * The clamp is wider than the cycles reach on purpose. §20 puts an oil shock on
+ * the events table; when it lands it needs somewhere above the cycle envelope to
+ * push the level to, and $1,450/t is roughly where Jet A-1 actually peaked in
+ * 2022. Nothing writes to the clamp yet — like `quality` on a handler grade, it
+ * is defined and carried ahead of its consumer.
+ */
+export const SHIPPED_FUEL_CURVE: z.input<typeof FuelCurveBalance> = {
+  // Not `as const`: zod's `.default()` will not take a readonly array, the same
+  // trap `factorBounds` above records.
+  cycles: [
+    { amplitudeFraction: 0.18, periodDays: 1826 },
+    { amplitudeFraction: 0.06, periodDays: 365 },
+  ],
+  minFactor: 0.65,
+  maxFactor: 1.45,
+};
+
+/** What one station charges: a multiplier on the world curve, plus a flat service fee. */
+export const StationFuelRates = z
+  .object({
+    regionFactor: z.number().positive(),
+    intoPlaneFeePerTonne: z.number().nonnegative(),
+  })
+  .strict();
+export type StationFuelRates = z.infer<typeof StationFuelRates>;
+
+/**
+ * The world fuel curve (§11: *"fuel price fluctuates on a world curve"*).
+ *
+ * A **sum of sinusoids on the world's own calendar**, with the phases drawn from
+ * the world seed so two worlds founded the same day do not move in lockstep. Not
+ * a random walk, and that is the decision worth recording: a walk would mean the
+ * price at a given in-game instant depended on how many times anything had asked
+ * for it, and a `flight_result` from October could never be re-derived. A closed
+ * form is a pure function of the instant, so a replay bills the same fuel twice
+ * (CONTRIBUTING invariant 2).
+ */
+export const FuelCurveBalance = z
+  .object({
+    /**
+     * The cycles summed to make the curve. Each contributes
+     * `amplitudeFraction × sin(2π · (days/periodDays + phase))` to a multiplier
+     * around 1, so amplitudes add: two at 0.18 and 0.06 give a ±24% swing.
+     */
+    cycles: z
+      .array(
+        z
+          .object({
+            amplitudeFraction: z.number().min(0).max(1),
+            periodDays: z.number().positive(),
+          })
+          .strict(),
+      )
+      .min(1),
+    /**
+     * The floor and ceiling on the multiplier, which is where §20's oil shock
+     * gets its headroom: the cycles alone stay well inside these, so an event
+     * pushing the level has somewhere to push it to before the clamp bites.
+     */
+    minFactor: z.number().positive(),
+    maxFactor: z.number().positive(),
+  })
+  .strict();
+export type FuelCurveBalance = z.infer<typeof FuelCurveBalance>;
+
 /** §22.3's *"fuel price curve and volatility"*. */
 export const FuelBalance = z
   .object({
@@ -260,13 +385,65 @@ export const FuelBalance = z
      * §9.3's vendor rates. `regionFactor` scales with the world curve; the
      * into-plane fee is a service charge and does not, which is why an oil shock
      * moves one and leaves the other where it is.
+     *
+     * Before M5-07 this was every airport in the world. It is now the answer for
+     * an airport whose geography the dataset does not record — a real case, not a
+     * theoretical one — and keeping it is what lets `fuelRegionOf` return *no
+     * region* instead of guessing one.
      */
-    defaultStation: z
+    defaultStation: StationFuelRates,
+    /**
+     * §9.3's *"prices vary by region"*, priced.
+     *
+     * Defaulted rather than required, for the reason CLAUDE.md gives: rows in
+     * `economy_config` are immutable and parsed on the way out against today's
+     * schema, so a required new section makes every payload written before it
+     * unparseable — and a world pinned to that version could then not price a
+     * flight at all.
+     */
+    regions: z
+      .object(
+        // Built from `FUEL_REGIONS` rather than written out, so a seventh region
+        // cannot be added to the enum and left unpriced here.
+        Object.fromEntries(FUEL_REGIONS.map((region) => [region, StationFuelRates])) as Record<
+          FuelRegion,
+          typeof StationFuelRates
+        >,
+      )
+      .strict()
+      .default(SHIPPED_FUEL_REGIONS),
+    /**
+     * What the into-plane fee is multiplied by at each tier.
+     *
+     * The fee is a **service** charge — a bowser, a driver and a hose — so it
+     * scales with how hard the station is to fuel rather than with the commodity.
+     * A flagship has a hydrant system under the stand and fuels an A320 from a
+     * pipeline; a regional strip has fuel trucked in and charges accordingly. That
+     * ordering is the reason a thin route out of a small field is dearer per tonne
+     * than the headline regional price suggests.
+     */
+    tierFeeFactor: z
       .object({
-        regionFactor: z.number().positive(),
-        intoPlaneFeePerTonne: z.number().nonnegative(),
+        flagship: z.number().positive(),
+        large: z.number().positive(),
+        medium: z.number().positive(),
+        small: z.number().positive(),
+        regional: z.number().positive(),
       })
-      .strict(),
+      .strict()
+      .default(SHIPPED_FUEL_TIER_FEE_FACTOR),
+    /**
+     * How far one station's price may sit from its region's, as a fraction.
+     *
+     * Local supply luck: which terminal serves the field, who holds the
+     * concession, how far the product travelled. Drawn per station from the world
+     * seed, so it is a fixed fact about that airport in that world rather than
+     * noise on every quote — a player can learn that their second base is dear
+     * and act on it.
+     */
+    stationSpread: z.number().min(0).max(1).default(0.04),
+    /** Defaulted for the same reason as `regions` (M5-07). */
+    curve: FuelCurveBalance.default(SHIPPED_FUEL_CURVE),
   })
   .strict();
 
@@ -2220,7 +2397,17 @@ export const ECONOMY_CONFIG_V1: EconomyConfig = EconomyConfig.parse({
      * a regional premium of 3%, and the world reference is $1,000/t.
      */
     basePricePerTonne: 1_000,
+    /**
+     * The world reference itself, for an airport whose geography the dataset does
+     * not record. Identical to `europe` rather than to an average of the six: the
+     * numbers the design doc anchors are the least wrong thing to charge when the
+     * answer is genuinely unknown.
+     */
     defaultStation: { regionFactor: 1.03, intoPlaneFeePerTonne: 35 },
+    regions: SHIPPED_FUEL_REGIONS,
+    tierFeeFactor: SHIPPED_FUEL_TIER_FEE_FACTOR,
+    stationSpread: 0.04,
+    curve: SHIPPED_FUEL_CURVE,
   },
 
   costs: {

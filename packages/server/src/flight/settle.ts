@@ -22,6 +22,7 @@ import { accrueFlightHours } from '../aircraft/maintenance';
 import { moveAirlineCash } from '../airline/cash';
 import { airport, flight, flightResult, route } from '../db/schema';
 import { type PinnedEconomyConfig } from '../economy/config';
+import { loadWorldFuelContext, marketAt, stationFor } from '../economy/fuel';
 import { loadWorldEconomyConfig } from '../economy/loader';
 
 import type { Database } from '../db/client';
@@ -107,8 +108,20 @@ export interface SettlementDeps {
   resolveAirframe?: (airframeId: string) => SettlementAirframe;
   /** Per-station charges. App. B.2 specifies them; no column holds them yet. */
   resolveFees?: (icao: string) => AirportFees;
-  /** Per-station fuel pricing (§9.3). */
+  /**
+   * Per-station fuel pricing (§9.3).
+   *
+   * Left out in production, where M5-07 derives it from the origin's own row —
+   * its region, its tier and its world's per-station spread. Supplied only by
+   * tests that want to price a sector at a station of their choosing.
+   */
   resolveStation?: (icao: string) => FuelStation;
+  /**
+   * The world curve's level (§11).
+   *
+   * Left out in production, where it is sampled from the flight's own world at
+   * the instant the fuel was bought. Supplied by tests that want a fixed price.
+   */
   market?: FuelMarket;
   profile?: FlightProfile;
   config?: SettlementConfig;
@@ -178,11 +191,6 @@ export async function settleArrivedFlight(
   // already inside a transaction.
   const economy = deps.economy ?? (await loadWorldEconomyConfig(tx, row.worldId));
   const resolveFees = deps.resolveFees ?? (() => economy.costs.defaultAirportFees);
-  const resolveStation =
-    deps.resolveStation ?? ((icao: string) => ({ icao, ...economy.fuel.defaultStation }));
-  const market: FuelMarket = deps.market ?? {
-    basePricePerTonne: economy.fuel.basePricePerTonne,
-  };
   const config: SettlementConfig = deps.config ?? economy.costs.settlement;
 
   // Distance from the airports' own coordinates — the one input that is real.
@@ -190,7 +198,17 @@ export async function settleArrivedFlight(
   // aimed: that is the cost the airline actually incurred (§8.4).
   const arrivalIcao = row.diversionIcao ?? row.destinationIcao;
   const ends = await tx
-    .select({ icao: airport.icaoCode, lat: airport.latitude, lon: airport.longitude })
+    .select({
+      icao: airport.icaoCode,
+      lat: airport.latitude,
+      lon: airport.longitude,
+      // M5-07 prices the uplift at the origin's own station, so the three columns
+      // that decide a fuel region and an into-plane fee come back with the
+      // coordinates rather than in a second query.
+      continent: airport.continent,
+      isoCountry: airport.isoCountry,
+      tier: airport.tier,
+    })
     .from(airport)
     .where(sql`${airport.icaoCode} in (${row.originIcao}, ${arrivalIcao})`);
 
@@ -204,6 +222,39 @@ export async function settleArrivedFlight(
 
   const distanceNm = haversineNm(origin.lat, origin.lon, arrival.lat, arrival.lon);
   const airframe = resolveAirframe(row.airframeId);
+
+  /*
+   * Fuel is bought at the origin, before the aeroplane leaves (M5-07, §9.3) —
+   * so the station is the origin's and the world curve is read at the departure
+   * instant rather than at this arrival. Both are game time and both are stored,
+   * which is what keeps a replay billing the same fuel: nothing here consults a
+   * real clock or a counter.
+   *
+   * A world whose row has gone (a reset mid-flight) falls back to the world's
+   * default rates and opening level rather than failing the arrival — the money
+   * has already been earned, and refusing to settle it would strand the flight.
+   */
+  const fuelCtx = await loadWorldFuelContext(tx, row.worldId);
+  const uplift = row.actualDeparture ?? row.scheduledDeparture;
+  const resolveStation =
+    deps.resolveStation ??
+    ((icao: string) => {
+      if (fuelCtx === null) return { icao, ...economy.fuel.defaultStation };
+      const end = ends.find((a) => a.icao === icao);
+      return stationFor(
+        icao,
+        end === undefined
+          ? undefined
+          : { icao, continent: end.continent, isoCountry: end.isoCountry, tier: end.tier },
+        fuelCtx,
+        economy,
+      );
+    });
+  const market: FuelMarket =
+    deps.market ??
+    (fuelCtx === null
+      ? { basePricePerTonne: economy.fuel.basePricePerTonne }
+      : marketAt(fuelCtx, uplift, economy));
 
   const block = computeBlockTime(distanceNm, airframe.cruiseSpeedKt, profile);
   const burn = computeFuelBurn(block, { cruiseBurnTPerNm: airframe.cruiseBurnTPerNm });

@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 
 import { CABIN_ORDER, type CabinClass, FareTable, type NpcArchetype } from '@tailfin/shared';
 import {
@@ -16,7 +16,7 @@ import { type PinnedEconomyConfig } from '../economy/config';
 import { loadEconomyConfig } from '../economy/loader';
 
 import { type PendingDecision, recordDecisions } from './decisions';
-import { createCostModel, pairKey, topMarkets } from './market';
+import { createCostModel, loadNpcFuel, pairKey, topMarkets } from './market';
 
 /**
  * What NPC carriers do on their own (M3-12).
@@ -150,7 +150,37 @@ export async function reviewNpcCarriers(
     economy.npc.seeding.minDailyPassengers,
   );
   const marketByPair = new Map(markets.map((m) => [pairKey(m.originIcao, m.destinationIcao), m]));
-  const costOf = createCostModel(economy);
+
+  /*
+   * Every origin this review will price, in one query rather than one per
+   * carrier: the candidate markets' origins, plus the origins of the routes
+   * these carriers already fly, because an exit decision costs a route the
+   * carrier holds rather than a market it is considering.
+   *
+   * Preloaded rather than resolved lazily because the cost model is pure — a
+   * station it had not been given would fall back to the world's default rates
+   * and quietly mis-price the exit.
+   */
+  const ownRouteOrigins = await db
+    .select({ icao: route.originIcao })
+    .from(route)
+    .where(
+      and(
+        eq(route.worldId, worldId),
+        eq(route.active, true),
+        inArray(
+          route.airlineId,
+          active.map((c) => c.id),
+        ),
+      ),
+    );
+  const costOf = createCostModel(
+    economy,
+    await loadNpcFuel(db, worldId, economy, [
+      ...markets.map((m) => m.originIcao),
+      ...ownRouteOrigins.map((r) => r.icao),
+    ]),
+  );
 
   for (const carrier of active) {
     const profile = economy.npc.archetypes[carrier.archetype];
@@ -171,7 +201,7 @@ export async function reviewNpcCarriers(
     for (const own_ of own) {
       const key = pairKey(own_.originIcao, own_.destinationIcao);
       const market = marketByPair.get(key);
-      const cost = costOf(own_.greatCircleNm);
+      const cost = costOf(own_.greatCircleNm, own_.originIcao);
 
       // A route whose market has fallen out of the candidate list entirely is
       // a route whose market has collapsed. Treated as a full-strength loss

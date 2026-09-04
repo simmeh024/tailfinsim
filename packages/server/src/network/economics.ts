@@ -29,6 +29,7 @@ import type { AirportFees, DemandSegment } from '@tailfin/shared';
 import type { FareFloorAircraft, FuelMarket, FuelStation } from '@tailfin/sim';
 
 import { demandPool, route } from '../db/schema';
+import { loadWorldFuelContext, marketNow, stationFor, loadAirportFuelRows } from '../economy/fuel';
 import { loadWorldEconomyConfig } from '../economy/loader';
 import { activeSocialMediaEffects } from '../office/specialists';
 
@@ -65,10 +66,24 @@ export const REFERENCE_FEES: AirportFees = {
   gateLeaseAnnual: 12_000_000,
 };
 
+/**
+ * A station, for a caller that has no world to derive one from.
+ *
+ * **No longer the production answer.** Until M5-07 every fare floor in the game
+ * was drawn against this one station, which is what made §9.3's *"prices vary by
+ * region"* modelled but never applied; `createEconomicsProvider` now resolves the
+ * origin's own rates from its row. What is left is the fixture the pure fare-floor
+ * and waterfall tests price against, where no world exists to have a seed.
+ *
+ * The rates are the world reference — factor 1, and the fee at NW-European
+ * levels — rather than the $4,000/t placeholder that stood here before. That
+ * number was four times the price of the fuel it was a handling charge on, and it
+ * survived only because nothing compared it to a real one.
+ */
 export const REFERENCE_STATION: FuelStation = {
   icao: 'REF',
   regionFactor: 1,
-  intoPlaneFeePerTonne: 4_000,
+  intoPlaneFeePerTonne: 35,
 };
 
 /** What an airline is assumed to be, until M6 and §15 can say. */
@@ -160,11 +175,13 @@ export function createEconomicsProvider(
   market?: FuelMarket,
 ): (row: RouteRow) => Promise<RouteEconomics> {
   return async (row) => {
-    const [economy, segmentPools, effects, activeRoutes] = await Promise.all([
+    const [economy, segmentPools, effects, activeRoutes, fuelCtx, originRows] = await Promise.all([
       loadWorldEconomyConfig(db, row.worldId),
       poolsFor(db, row),
       activeSocialMediaEffects(db, row.airlineId),
       countActiveRoutes(db, row.airlineId),
+      loadWorldFuelContext(db, row.worldId),
+      loadAirportFuelRows(db, [row.originIcao]),
     ]);
 
     /*
@@ -191,8 +208,26 @@ export function createEconomicsProvider(
 
     return {
       aircraft: REFERENCE_AIRFRAME,
-      market: market ?? { basePricePerTonne: economy.fuel.basePricePerTonne },
-      originStation: { ...REFERENCE_STATION, icao: row.originIcao },
+      /*
+       * The fuel half became real in M5-07: the world curve is sampled at the
+       * world's own reading of now, and the station is the *origin's* — its
+       * region, its tier, its spread. So a floor out of a Gulf hub is genuinely
+       * lower than the same sector out of an African one, and a floor quoted
+       * today is not the floor quoted next season.
+       *
+       * `market` stays overridable for tests. A world whose row has gone falls
+       * back to the opening level and the default rates rather than refusing to
+       * quote a floor.
+       */
+      market:
+        market ??
+        (fuelCtx === null
+          ? { basePricePerTonne: economy.fuel.basePricePerTonne }
+          : marketNow(fuelCtx, new Date(), economy)),
+      originStation:
+        fuelCtx === null
+          ? { ...economy.fuel.defaultStation, icao: row.originIcao }
+          : stationFor(row.originIcao, originRows.get(row.originIcao), fuelCtx, economy),
       originFees: REFERENCE_FEES,
       destinationFees: REFERENCE_FEES,
       segmentPools,

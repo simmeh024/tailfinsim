@@ -56,6 +56,7 @@ export * from './network';
 export * from './slots';
 export * from './automation';
 export * from './ground';
+export * from './fuel';
 export * from './office';
 export * from './executive';
 export * from './flight';
