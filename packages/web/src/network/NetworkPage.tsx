@@ -11,6 +11,7 @@ import { CompetitionTab } from './planner/CompetitionTab';
 import { describeSelection } from './planner/ContextBodies';
 import { useScheduleEditor } from './planner/editor';
 import { FleetScheduleView } from './planner/FleetScheduleView';
+import { HubConnectionsView } from './planner/HubConnectionsView';
 import { buildRoutePlan, plannerAircraft } from './planner/mock';
 import { OpenRouteForm } from './planner/OpenRouteForm';
 import { OverviewTab } from './planner/OverviewTab';
@@ -40,7 +41,7 @@ import './network.css';
  */
 
 type Tab = 'overview' | 'schedule' | 'pricing' | 'competition' | 'performance';
-type View = 'route' | 'fleet';
+type View = 'route' | 'fleet' | 'connections';
 type RouteSort = 'name' | 'profit' | 'load' | 'distance';
 
 const SORTS: readonly { value: RouteSort; label: string }[] = [
@@ -274,6 +275,7 @@ export function NetworkPage(): ReactNode {
           options={[
             { value: 'route', label: 'Route planner' },
             { value: 'fleet', label: 'Fleet schedule' },
+            { value: 'connections', label: 'Connections' },
           ]}
         />
       </header>
@@ -380,7 +382,9 @@ export function NetworkPage(): ReactNode {
         </aside>
 
         <div className="net-main">
-          {view === 'fleet' ? (
+          {view === 'connections' ? (
+            <HubConnectionsView />
+          ) : view === 'fleet' ? (
             <FleetScheduleView
               plans={livePlans}
               aircraft={aircraft}
