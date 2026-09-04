@@ -20,6 +20,22 @@ export interface WorldPalette {
   grid: RgbaColor;
   night: RgbaColor;
   route: RgbaColor;
+  /**
+   * The altitude ramp a route line is washed along, low to high (M7-03).
+   *
+   * The FlightRadar reading: the colour of the line says how high the aircraft
+   * is, so a leg leaves its airport warm, cools through the climb and arrives at
+   * {@link route} across the cruise. `route` is the top of the ramp, which is why
+   * there are four stops here and not five.
+   *
+   * Each stop is chosen to clear 3:1 against its theme's **land**, because that
+   * is where an airport is and the ends of a line are what an operator looks for.
+   * The cruise blue does not clear it, and does not need to — see `tokens.css`.
+   */
+  altGround: RgbaColor;
+  altLow: RgbaColor;
+  altMid: RgbaColor;
+  altHigh: RgbaColor;
   /** The dot colour for a served airport/city on the map. */
   airport: RgbaColor;
   /**
@@ -54,6 +70,10 @@ const FALLBACK_PALETTE: WorldPalette = {
   grid: [220, 236, 247, 80],
   night: [2, 5, 9, 120],
   route: [127, 212, 255, 230],
+  altGround: [198, 47, 34, 255],
+  altLow: [179, 83, 9, 255],
+  altMid: [138, 109, 0, 255],
+  altHigh: [31, 122, 77, 255],
   airport: [255, 210, 127, 255],
   terrain: [240, 246, 250, 255],
 };
@@ -88,6 +108,10 @@ export function readWorldPalette(): WorldPalette {
     grid: read('--world-grid', FALLBACK_PALETTE.grid),
     night: read('--world-night', FALLBACK_PALETTE.night),
     route: read('--world-route', FALLBACK_PALETTE.route),
+    altGround: read('--world-alt-ground', FALLBACK_PALETTE.altGround),
+    altLow: read('--world-alt-low', FALLBACK_PALETTE.altLow),
+    altMid: read('--world-alt-mid', FALLBACK_PALETTE.altMid),
+    altHigh: read('--world-alt-high', FALLBACK_PALETTE.altHigh),
     airport: read('--world-airport', FALLBACK_PALETTE.airport),
     terrain: read('--world-terrain', FALLBACK_PALETTE.terrain),
   };

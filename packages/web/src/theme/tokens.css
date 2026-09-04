@@ -96,6 +96,22 @@
   --world-grid: #dcecf750;
   --world-night: #02050978;
   --world-route: #7fd4ffe6;
+  /*
+   * The altitude ramp a route line is washed along, low to high — the
+   * FlightRadar reading, where the colour says how high the aircraft is.
+   * `--world-route` above is the top of it, at cruise.
+   *
+   * Dark, and that is not a style choice. FlightRadar draws bright colours on a
+   * dark basemap; this theme is the other way round — pale land on a navy sea —
+   * so a bright ramp disappears over exactly the ground an airport sits on. Each
+   * stop here clears 3:1 against the land in daylight, which the cruise blue
+   * itself does not, and that is what makes the ends of a line the most legible
+   * part of it rather than the least. `palette.test.ts` measures the ground stop.
+   */
+  --world-alt-ground: #c62f22;
+  --world-alt-low: #b35309;
+  --world-alt-mid: #8a6d00;
+  --world-alt-high: #1f7a4d;
   --world-airport: #ffd27f;
   /*
    * The terrain basemap's tint and opacity (App. H.2).
@@ -244,6 +260,14 @@
      it much faster, and 0x78 there costs this one its AA contrast at night. */
   --world-night: #16283c50;
   --world-route: #0a63b0e6;
+  /* The altitude ramp, inverted for this theme exactly as the terrain tint is:
+     deep green land under a nearly white sea, so the stops have to be *light* to
+     clear 3:1 over the ground an airport sits on. Same reading, opposite
+     polarity — see the dark theme for why the ramp exists at all. */
+  --world-alt-ground: #ffada1;
+  --world-alt-low: #ffc48a;
+  --world-alt-mid: #ffe680;
+  --world-alt-high: #a8e6a3;
   --world-airport: #b5651d;
   /* Darkened, where the dark theme leaves the terrain alone. This theme's sea is
      nearly white and its land is a deep green, so an untinted basemap — pale
