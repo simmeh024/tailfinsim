@@ -9,6 +9,7 @@ import {
   type CreateAirlineInput,
   type WorldStatus,
 } from '@tailfin/shared';
+import { gameTime } from '@tailfin/sim';
 
 import { type Database } from '../db/client';
 import { airline, airlineHub, airport, world } from '../db/schema';
@@ -31,6 +32,15 @@ import { wireAirline } from './wire';
 
 export interface FoundAirlineDependencies extends AirlineIdentityModerationDependencies {
   codePolicy?: AirlineCodeAllocationPolicy;
+  /**
+   * The real instant the founding happens, converted to the world's clock for
+   * the opening AIR-06 movement (TIME-02).
+   *
+   * Injectable because CONTRIBUTING invariant 2 keeps `Date.now()` out of
+   * anything a test needs to pin, and a fixture that founds an airline wants its
+   * opening balance dated where it put the world's calendar.
+   */
+  now?: () => Date;
 }
 
 export type FoundAirlineResult =
@@ -92,6 +102,7 @@ export async function foundAirline(
   dependencies: FoundAirlineDependencies = {},
 ): Promise<FoundAirlineResult> {
   const codePolicy = dependencies.codePolicy ?? tailfinAirlineCodePolicy;
+  const now = dependencies.now?.() ?? new Date();
   const moderation = await moderateAirlineIdentity(
     {
       name: input.name,
@@ -116,6 +127,9 @@ export async function foundAirline(
           status: world.status,
           playerCap: world.playerCap,
           economyConfigVersion: world.economyConfigVersion,
+          epoch: world.epoch,
+          launchDate: world.launchDate,
+          speedMultiplier: world.speedMultiplier,
         })
         .from(world)
         .where(eq(world.id, input.worldId))
@@ -202,12 +216,32 @@ export async function foundAirline(
       const createdAirline = createdAirlines[0];
       if (!createdAirline) throw new Error('Founding inserted no airline');
 
+      /*
+       * The founding movement carries the world's date, not the airline row's
+       * wall-clock `createdAt` (TIME-02).
+       *
+       * They are not the same instant and the difference is not small: a world
+       * whose epoch is in the past dates its opening cash years away from the
+       * moment the row was written. This is the *first* row in the airline's
+       * AIR-06 ledger, and the flights that follow it are dated on the world's
+       * calendar — so the wall-clock version put the opening balance out of order
+       * with everything it funded.
+       *
+       * `createdAt` stays what it is: the row's audit stamp, and real.
+       */
       const openingMovement = await moveAirlineCash(tx, {
         airlineId: createdAirline.id,
         amountMinor: openingCashMinor,
         cause: 'airline_founding',
         reference: createdAirline.id,
-        occurredAt: createdAirline.createdAt,
+        occurredAt: gameTime(
+          {
+            epoch: selectedWorld.epoch,
+            launchDate: selectedWorld.launchDate,
+            speedMultiplier: Number(selectedWorld.speedMultiplier),
+          },
+          now,
+        ),
       });
       if (openingMovement.status !== 'applied') {
         throw new Error(`Founding cash already existed for new airline ${createdAirline.id}`);

@@ -4,6 +4,7 @@ import { nextExpansionTier } from '@tailfin/shared';
 
 import { moveAirlineCash } from '../airline/cash';
 import { airline, officeExpansion } from '../db/schema';
+import { worldGameNow } from '../world/game-now';
 
 import { readNeutralSeats } from './hires';
 
@@ -33,6 +34,10 @@ export async function purchaseExpansion(
   db: Database,
   own: ResolvedPlayerAirline,
 ): Promise<PurchaseExpansionResult> {
+  // Read the clock before taking the lock: expanding the headquarters happens
+  // inside the world, so the charge carries the world's date (TIME-02).
+  const gameNow = await worldGameNow(db, own.worldId);
+
   return db.transaction(async (tx) => {
     // Serialise concurrent purchases for this airline before reading its state.
     const [locked] = await tx
@@ -54,7 +59,7 @@ export async function purchaseExpansion(
       amountMinor: -tier.costMinor,
       cause: 'office_expansion',
       reference,
-      occurredAt: new Date(),
+      occurredAt: gameNow,
     });
 
     await tx

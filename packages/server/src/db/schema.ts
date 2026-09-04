@@ -567,7 +567,17 @@ export const cashMovement = pgTable(
     reference: text('reference').notNull(),
     balanceAfterMinor: bigint('balance_after_minor', { mode: 'number' }).notNull(),
 
-    /** Game time for simulation causes; founding time for the opening grant. */
+    /**
+     * When this movement happened **in the owning airline's world** (TIME-02).
+     *
+     * Game time for every cause. It was game time only for the simulation ones
+     * until migration 0051: founding, the executive floor and its offices,
+     * headquarters expansion, operator adjustments and 0019's opening-balance
+     * backfill all used the wall clock, so one sorted account held two calendars
+     * and a date-ranged query returned a set that depended on which kind of row
+     * it caught. `recorded_at` below is the row's wall-clock audit stamp and is
+     * the only real instant on this table.
+     */
     occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
     /** Real time the row reached the ledger, useful when delayed processing is diagnosed. */
     recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
@@ -628,7 +638,14 @@ export const ledgerEntry = pgTable(
     aircraftId: uuid('aircraft_id'),
     hubId: uuid('hub_id'),
     cabinClass: text('cabin_class'),
+    /**
+     * Copied from the movement this line belongs to, so it carries the same game
+     * instant (TIME-02). Three indexes sort on it, which is why the domain has to
+     * be one thing: a P&L window that mixed calendars would silently include and
+     * exclude rows by cause.
+     */
     occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+    /** The row's wall-clock audit stamp. Not the same question as `occurred_at`. */
     recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -3356,6 +3373,14 @@ export const officeHire = pgTable(
     candidateName: text('candidate_name').notNull(),
     /** Salary per game month, minor units, snapshotted at hire. */
     monthlySalaryMinor: bigint('monthly_salary_minor', { mode: 'number' }).notNull(),
+    /**
+     * A **game** instant on the airline's world clock (TIME-02).
+     *
+     * It has to be the same calendar as the game month the salary above is billed
+     * in. `defaultNow()` is a wall-clock fallback that no code path reaches --
+     * `hireOffice` passes the world's `gameNow` on both the insert and the upsert
+     * -- and is kept only because dropping a default is not an expand-safe change.
+     */
     hiredAt: timestamp('hired_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [uniqueIndex('office_hire_airline_role_key').on(table.airlineId, table.role)],
@@ -3457,6 +3482,7 @@ export const executiveHire = pgTable(
      * logic always sets it now, and never to an occupied office.
      */
     officeIndex: integer('office_index'),
+    /** A game instant, for the same reason `office_hire.hired_at` is (TIME-02). */
     hiredAt: timestamp('hired_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

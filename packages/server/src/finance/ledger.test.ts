@@ -63,6 +63,53 @@ describeDb('M8-01 ledger and P&L', () => {
     expect(settlementRows.reduce((sum, row) => sum + row.amountMinor, 0)).toBe(7_000);
   });
 
+  /*
+   * The guard nothing was asserting.
+   *
+   * `ledger_entry_immutable` has existed since 0042 and had no test, which only
+   * became load-bearing when TIME-02's migration 0051 had to **drop and restore
+   * it** to re-date the six wall-clock causes. A restore that silently did not
+   * happen would leave the money ledger editable, and every other test in this
+   * file would still pass.
+   *
+   * The constraint name is walked out of `error.cause` rather than matched
+   * against the outer message: Drizzle wraps driver errors as
+   * `Failed query: ...`, which any failure produces (CLAUDE.md).
+   */
+  it('keeps a recorded ledger line immutable', async () => {
+    const fixture = await fixtures.create();
+
+    // The founding movement already wrote its own line, so there is a real row
+    // to attempt an UPDATE against -- an UPDATE matching nothing fires no
+    // row-level trigger and would pass for the wrong reason.
+    const [line] = await db.db
+      .select({ id: ledgerEntry.id })
+      .from(ledgerEntry)
+      .where(eq(ledgerEntry.airlineId, fixture.airline.id))
+      .limit(1);
+    if (!line) throw new Error('the founding movement wrote no ledger line');
+
+    const error: unknown = await db.db
+      .update(ledgerEntry)
+      .set({ occurredAt: new Date('2020-01-01T00:00:00.000Z') })
+      .where(eq(ledgerEntry.id, line.id))
+      .then(
+        () => null,
+        (cause: unknown) => cause,
+      );
+
+    const reported: string[] = [];
+    let current = error;
+    while (current instanceof Error) {
+      const name = (current as { constraint?: unknown }).constraint;
+      if (typeof name === 'string') reported.push(name);
+      current = current.cause;
+    }
+    expect(reported, `Postgres reported ${reported.join(', ') || 'no constraint'}`).toContain(
+      'ledger_entry_immutable',
+    );
+  });
+
   it('returns revenue, cost and dimensional P&L totals', async () => {
     const fixture = await fixtures.create();
     const occurredAt = new Date('2024-10-20T12:00:00.000Z');

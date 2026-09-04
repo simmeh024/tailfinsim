@@ -2,8 +2,8 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-04
-- **Scope:** TIME-01 (#935). Amends design doc §7.2 and supersedes the wall-clock half of
-  [ADR-0019](0019-web-worker-boundary.md) §4.
+- **Scope:** TIME-01 (#935), extended by TIME-02 (#938). Amends design doc §7.2 and supersedes
+  the wall-clock half of [ADR-0019](0019-web-worker-boundary.md) §4.
 
 ## Context
 
@@ -94,6 +94,46 @@ outside it. The real-time instants that remain are the ones that are genuinely n
 sessions and their expiry, admin audit stamps, `airframe.created_at`, ops heartbeats and build
 metadata, the engine's own tick interval and health lateness, and M8-02's FX refresh — an exchange
 rate is a real-world quantity and stays global and real, deliberately.
+
+## Addendum, TIME-02: the ledger (2026-09-04)
+
+Sweeping every `moveAirlineCash` caller while doing the above turned up the same defect in the
+AIR-06 ledger, and there it is worse, because a ledger is a **sorted** account. Flight
+settlement, maintenance, crew payroll and duty, the rebrand and (after TIME-01) aircraft
+acquisition all dated their `occurred_at` on the world's clock. Founding, the executive floor
+and its offices, headquarters expansion, operator adjustments and 0019's opening-balance
+backfill used `now()`.
+
+So an office expansion and the flight that paid for it could appear in either order, and a
+date-ranged ledger or P&L window returned a set that depended on which _kind_ of row it caught
+— three indexes sort on that column. `office/executive.ts` even had `gameTime(clock, new Date())`
+in scope at the call site and did not use it.
+
+All six causes now carry the world's instant, on `cash_movement` and on the `ledger_entry` lines
+copied from it. Migration `0051` converts the existing rows through each world's clock, with the
+`DEFERRABLE` reconciliation triggers deliberately left in place: they sum `amount_minor`, so they
+re-verify at commit and are the proof that a migration touching the money ledger moved no money.
+
+Two sub-decisions worth naming, because both could reasonably have gone the other way.
+
+**An operator's adjustment is dated in the world, not on the wall clock.** It is the one movement
+here that genuinely is not an in-world event — a person did it, from a shell, at a real moment.
+It is dated in the world anyway, because the ledger is one account and a row measured differently
+sorts arbitrarily among its neighbours. The real instant is not lost: the `admin_audit` row
+records the operator, the reason and the wall-clock time, which is where _"when did someone do
+this?"_ belongs. The ledger answers _"when, in the world, did this money move?"_.
+
+**An NPC's opening cash is dated at the world's epoch**, not at the world's current calendar when
+`npc:seed` happened to run — matching the `decidedAt` the same function already uses for the
+routes that carrier opens. An NPC is part of the world's opening state, and its founding and its
+first routes should not disagree by however long after world creation the command was typed.
+Migration 0051 does **not** retrofit that to legacy NPC rows: it converts the instant they
+recorded, because rewriting history to match new code is the wrong way round.
+
+`recorded_at`, `created_at` and `updated_at` stay real on every table. They answer a different
+question and always did.
+
+## Consequences (continued)
 
 **It settles the question for spans not yet built.** The design doc says "real weeks" in several
 places describing systems that do not exist yet — crew promotion (§ "Crew"), academy and network-node

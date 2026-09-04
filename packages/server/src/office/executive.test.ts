@@ -1,11 +1,12 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { EXECUTIVE_CANDIDATES, EXECUTIVE_OFFICE_COSTS_MINOR } from '@tailfin/shared';
+import { gameTime, type WorldClock } from '@tailfin/sim';
 
 import { moveAirlineCash } from '../airline/cash';
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { airline, executiveFloor } from '../db/schema';
+import { airline, cashMovement, executiveFloor, ledgerEntry } from '../db/schema';
 import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixtureHarness,
@@ -130,6 +131,54 @@ describeDb('the executive floor, on the database', () => {
     const second = await unlockExecutiveOffice(db.db, own(a));
     expect(second.ok && second.state.officesUnlocked).toBe(2);
     expect(await cashOf(a.airline.id)).toBe(before2 - EXECUTIVE_OFFICE_COSTS_MINOR[1]!);
+  });
+
+  /*
+   * TIME-02 / ADR-0026. A ledger is a *sorted* account, so its rows have to be
+   * on one calendar: an office expansion and the flight that paid for it must not
+   * be able to appear in either order, and three indexes sort on `occurred_at`.
+   *
+   * The charge and the ledger line it produces are both asserted, because they
+   * are written from the same value and a fix that missed one would leave the P&L
+   * disagreeing with the cash ledger.
+   *
+   * The tolerance is a game minute against a freshly read clock -- not a range
+   * check -- and the second assertion is the one that could not pass by accident:
+   * the flagship epoch is roughly two years behind the wall clock, so a
+   * `new Date()` regression would miss by that much.
+   */
+  it('dates an office charge and its ledger line in the world, not on the wall clock', async () => {
+    const a = await fixtures.create();
+    await seedOpenFloor(a);
+    await fund(a.airline.id, 100_000_000_000);
+
+    const bought = await unlockExecutiveOffice(db.db, own(a));
+    expect(bought.ok).toBe(true);
+
+    const clock: WorldClock = {
+      epoch: a.world.epoch,
+      launchDate: a.world.launchDate,
+      speedMultiplier: Number(a.world.speedMultiplier),
+    };
+    const wallNow = new Date();
+    const gameNow = gameTime(clock, wallNow);
+
+    const [movement] = await db.db
+      .select()
+      .from(cashMovement)
+      .where(
+        and(eq(cashMovement.airlineId, a.airline.id), eq(cashMovement.cause, 'executive_office')),
+      );
+    if (!movement) throw new Error('the office charge produced no movement');
+
+    expect(Math.abs(movement.occurredAt.getTime() - gameNow.getTime())).toBeLessThan(60_000);
+    expect(movement.occurredAt.getTime()).toBeLessThan(wallNow.getTime() - 86_400_000);
+
+    const [line] = await db.db
+      .select({ occurredAt: ledgerEntry.occurredAt })
+      .from(ledgerEntry)
+      .where(eq(ledgerEntry.cashMovementId, movement.id));
+    expect(line?.occurredAt.toISOString()).toBe(movement.occurredAt.toISOString());
   });
 
   it('refuses the next office when the cash is not there', async () => {

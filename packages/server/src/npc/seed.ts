@@ -281,12 +281,20 @@ export async function seedNpcCarriers(
         // The same cause and the same amount a founded player receives. An NPC
         // with a bottomless balance would be the clearest possible breach of
         // the fourth acceptance criterion.
+        //
+        // Dated at the world's **epoch**, not the row's wall-clock `createdAt`
+        // (TIME-02). Game time, like every other movement in an AIR-06 ledger --
+        // and specifically the epoch rather than the world's current calendar,
+        // because that is what `decidedAt` below already uses for the routes this
+        // same carrier opens. An NPC is part of the world's opening state, so its
+        // founding and its first routes share one date rather than disagreeing by
+        // however long after world creation `npc:seed` happened to be run.
         const opening = await moveAirlineCash(tx, {
           airlineId: row.id,
           amountMinor: economy.airlineStartingPosition.openingCashMinor,
           cause: 'airline_founding',
           reference: row.id,
-          occurredAt: row.createdAt,
+          occurredAt: target.epoch,
         });
         if (opening.status !== 'applied') {
           throw new Error(`Opening cash already existed for NPC ${row.id}`);
