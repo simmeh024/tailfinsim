@@ -204,12 +204,14 @@ describeDb('listSchedules', () => {
   });
 
   it('reads a stored absolute departure back in the origin’s local time', async () => {
-    // The origin sits at UTC−5; a flight stored at absolute 13:00 UTC is a 08:00
-    // local departure, which is what the player must see (M3-04a).
+    // Both airports sit at UTC−5; a leg stored at absolute 13:00 UTC is a 08:00
+    // local departure, which is what the player must see (M3-04a). Two legs, so the
+    // rotation closes back at the hub and validates.
     const a = await fixtures.create({ baseCountry: 'GB' });
     const hub = await makeAirport(-300);
     const outstation = await makeAirport(-300);
     await makeRoute(a, hub, outstation);
+    await makeRoute(a, outstation, hub);
 
     await createSchedule(db.db, {
       worldId: a.world.id,
@@ -219,7 +221,14 @@ describeDb('listSchedules', () => {
         {
           originIcao: hub,
           destinationIcao: outstation,
-          departureMinute: 13 * 60, // absolute (UTC-anchor)
+          departureMinute: 13 * 60, // absolute (UTC-anchor) → 08:00 local
+          blockMinutes: 95,
+          turnaroundMinutes: 40,
+        },
+        {
+          originIcao: outstation,
+          destinationIcao: hub,
+          departureMinute: 13 * 60 + 95 + 40, // earliest it can follow → 10:15 local
           blockMinutes: 95,
           turnaroundMinutes: 40,
         },
@@ -228,6 +237,6 @@ describeDb('listSchedules', () => {
     });
 
     const [view] = await listSchedules(db.db, own(a));
-    expect(view?.legs[0]?.departureMinute).toBe(8 * 60); // 08:00 local
+    expect(view?.legs.map((l) => l.departureMinute)).toEqual([8 * 60, 8 * 60 + 95 + 40]);
   });
 });
