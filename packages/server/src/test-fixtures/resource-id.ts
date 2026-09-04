@@ -102,6 +102,7 @@ export const RESOURCE_ID_SURFACES = [
     'POST /api/admin/worlds/:worldId/reset',
     'POST /api/admin/worlds/:worldId/economy-config',
     'GET /api/admin/worlds/:worldId/npc',
+    'GET /api/admin/worlds/:worldId/config',
   ].map((endpoint): ResourceIdSurface => ({
     endpoint,
     position: 'path',

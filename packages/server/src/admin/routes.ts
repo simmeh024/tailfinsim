@@ -23,6 +23,7 @@ import {
   adminWorldListResponseJsonSchema,
   apiErrorJsonSchema,
   revokeSessionsResponseJsonSchema,
+  ERA_PRESETS,
   Uuid,
 } from '@tailfin/shared';
 
@@ -62,6 +63,7 @@ import { buildOverview } from './overview';
 import { listPlayers, readPlayer } from './players';
 import { changeWorldSpeed, type SpeedRefusalCode, validateSpeedRequest } from './speed';
 import { buildSystemHealth, NODE_OFFLINE_AFTER_MS, NODE_STALE_AFTER_MS } from './system-health';
+import { exportWorldConfig } from './world-config';
 import {
   constraintFailure,
   countWorldContents,
@@ -345,6 +347,43 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
       schema: { response: { 200: adminWorldListResponseJsonSchema } },
     },
     async (_request, reply) => reply.code(200).send({ worlds: await listWorlds(db.db) }),
+  );
+
+  /**
+   * §22.2's era presets — ready-made starting configs the console offers.
+   *
+   * Static, and deliberately not a second way to create a world: the operator
+   * picks one, edits the name or speed if they want to, and posts the result to
+   * the ordinary create endpoint below.
+   */
+  app.get(
+    '/api/admin/world-presets',
+    { onRequest: app.requireCapability('world.read') },
+    async (_request, reply) => reply.code(200).send({ presets: ERA_PRESETS }),
+  );
+
+  /**
+   * One world's configuration as JSON (§22.2).
+   *
+   * The body is exactly what `POST /api/admin/worlds` accepts, so "exported and
+   * recreated identically" is true by construction. Identity and clock — id,
+   * seed, launch date, status — are not part of it; see `world-config.ts`.
+   */
+  app.get<{ Params: { worldId: string } }>(
+    '/api/admin/worlds/:worldId/config',
+    { onRequest: app.requireCapability('world.read') },
+    async (request, reply) => {
+      // Parsed before the query: an id Postgres cannot cast would surface as a
+      // 500 rather than the miss it actually is.
+      const { worldId } = request.params;
+      const config = Uuid.safeParse(worldId).success
+        ? await exportWorldConfig(db.db, worldId)
+        : null;
+      if (config === null) {
+        return reply.code(404).send({ code: 'not_found', message: 'No such world' });
+      }
+      return reply.code(200).send(config);
+    },
   );
 
   app.post(

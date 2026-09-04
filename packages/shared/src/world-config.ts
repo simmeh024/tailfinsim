@@ -72,3 +72,96 @@ export const FLAGSHIP_CONFIG: WorldConfig = {
   economyConfigVersion: ECONOMY_CONFIG_V1_VERSION,
   playerCap: null,
 };
+
+/* ------------------------------------------------- era presets (M11-02) ---- */
+
+/**
+ * A named starting configuration (§22.2).
+ *
+ * A preset is **a `WorldConfig` with a label on it**, and deliberately nothing
+ * more. It is not a second way to create a world: the console offers one of
+ * these, the operator edits the name or the speed if they want to, and posts the
+ * result to the ordinary create endpoint. That keeps exactly one path into
+ * `world`, so a preset cannot acquire powers the create endpoint does not have.
+ */
+export const WorldPreset = z.object({
+  /** Stable identifier, safe in a URL or a radio group. */
+  id: z.string().min(1),
+  label: z.string().min(1),
+  /** What the era plays like, in one sentence, for the operator choosing. */
+  description: z.string().min(1),
+  config: WorldConfig,
+});
+export type WorldPreset = z.infer<typeof WorldPreset>;
+
+export const WorldPresetsResponse = z.object({ presets: z.array(WorldPreset) });
+export type WorldPresetsResponse = z.infer<typeof WorldPresetsResponse>;
+
+/** Every preset shares the shipped catalogue and economy; only the era differs. */
+function eraConfig(name: string, epoch: string, speedMultiplier = 2): WorldConfig {
+  return {
+    name,
+    epoch,
+    speedMultiplier,
+    aircraftCatalogueVersion: 'v1',
+    economyConfigVersion: ECONOMY_CONFIG_V1_VERSION,
+    playerCap: null,
+  };
+}
+
+/**
+ * §22.2's era presets.
+ *
+ * The epoch is what makes these different worlds rather than differently named
+ * ones: M4-02 gates the aircraft catalogue on the world's own clock, so a 1950
+ * world genuinely lists piston airliners and cannot see a jet, and a 1978 world
+ * opens with the fleet deregulation was fought with. Nothing else in the config
+ * has to change for that to be true, which is why these are so small.
+ *
+ * Sandbox is the exception and is honest about it: the flagship epoch at eight
+ * times speed, for trying something quickly rather than for playing.
+ */
+export const ERA_PRESETS: readonly WorldPreset[] = [
+  {
+    id: 'piston-prop-1950',
+    label: 'Piston & Prop (1950)',
+    description:
+      'Propliners, short sectors and frequent fuel stops. No jets exist yet, so the network is built out of range rather than speed.',
+    config: eraConfig('Piston & Prop', '1950-01-01T00:00:00.000Z'),
+  },
+  {
+    id: 'jet-age-1958',
+    label: 'Jet Age (1958)',
+    description:
+      'The first jets enter service alongside the propliners they replace. Long-haul stops being a relay.',
+    config: eraConfig('Jet Age', '1958-01-01T00:00:00.000Z'),
+  },
+  {
+    id: 'widebody-1970',
+    label: 'Widebody (1970)',
+    description:
+      'Mass long-haul: seat costs fall, capacity arrives in units too large to fill by accident.',
+    config: eraConfig('Widebody', '1970-01-01T00:00:00.000Z'),
+  },
+  {
+    id: 'deregulation-1978',
+    label: 'Deregulation (1978)',
+    description:
+      'Route authority loosens and hubs matter. The era where a network decision beats an aircraft decision.',
+    config: eraConfig('Deregulation', '1978-01-01T00:00:00.000Z'),
+  },
+  {
+    id: 'modern-2024',
+    label: 'Modern (2024)',
+    description:
+      'The flagship era: the full catalogue, current economics, and the tightest margins.',
+    config: eraConfig('Modern', FLAGSHIP_CONFIG.epoch),
+  },
+  {
+    id: 'sandbox',
+    label: 'Sandbox',
+    description:
+      'The modern era at 8× speed, for trying something and seeing the consequence the same afternoon. Not a world to play in.',
+    config: eraConfig('Sandbox', FLAGSHIP_CONFIG.epoch, 8),
+  },
+];
