@@ -1,10 +1,13 @@
 import type {
   CabinClass,
+  CreateScheduleResponse,
   FarePreviewResponse,
   FareTable,
   FareWaterfallResponse,
+  RepeatPattern,
   RouteCompetitionResponse,
   RoutePerformanceResponse,
+  ScheduleView,
   SetFaresResponse,
 } from '@tailfin/shared';
 
@@ -236,4 +239,102 @@ export async function fetchCompetition(routeId: string): Promise<RouteCompetitio
     throw new Error(`GET /api/routes/${routeId}/competition failed with ${String(status)}`);
   }
   return body as RouteCompetitionResponse;
+}
+
+/* --------------------------------------------------- schedules (M2-03) ---- */
+
+/** One leg the player authors — a pair of airports and a local departure time. */
+export interface AuthoredLeg {
+  originIcao: string;
+  destinationIcao: string;
+  departureMinuteLocal: number;
+}
+
+/** The body of a create/edit — an airframe, its stops, and how it repeats. */
+export interface ScheduleDraft {
+  airframeId: string;
+  legs: AuthoredLeg[];
+  autoReturn: boolean;
+  repeat: RepeatPattern;
+}
+
+/**
+ * The result of publishing or editing a rotation.
+ *
+ * A refusal is an answer, not an error — App. B.4 requires the player to be told
+ * *which* leg cannot be flown, or why the rotation does not close, so it comes
+ * back as data. Only a genuinely broken request throws.
+ */
+export type PublishScheduleOutcome =
+  { ok: true; response: CreateScheduleResponse } | { ok: false; problem: string; detail: string };
+
+/** Every rotation the airline runs. */
+export async function fetchSchedules(): Promise<ScheduleView[]> {
+  const { status, body } = await json('/api/schedules');
+  if (status !== 200) throw new Error(`GET /api/schedules failed with ${String(status)}`);
+  const schedules = (body as { schedules?: unknown }).schedules;
+  if (!Array.isArray(schedules)) throw new Error('GET /api/schedules did not return a list');
+  return schedules as ScheduleView[];
+}
+
+/** Turn a create/edit refusal body into the outcome the panel shows. */
+function refusalOf(body: unknown): { problem: string; detail: string } {
+  const asRefusal = body as {
+    problem?: unknown;
+    detail?: unknown;
+    code?: unknown;
+    message?: unknown;
+  };
+  if (typeof asRefusal.problem === 'string' && typeof asRefusal.detail === 'string') {
+    return { problem: asRefusal.problem, detail: asRefusal.detail };
+  }
+  // A `{ code, message }` apiError — e.g. an aircraft that is not yours.
+  return {
+    problem: typeof asRefusal.code === 'string' ? asRefusal.code : 'refused',
+    detail: typeof asRefusal.message === 'string' ? asRefusal.message : 'The rotation was refused.',
+  };
+}
+
+/** Publish a new rotation, or find out which leg the aircraft cannot fly. */
+export async function publishSchedule(draft: ScheduleDraft): Promise<PublishScheduleOutcome> {
+  const { status, body } = await json('/api/schedules', {
+    method: 'POST',
+    body: JSON.stringify(draft),
+  });
+  if (status === 201) return { ok: true, response: body as CreateScheduleResponse };
+  if (status === 404 || status === 422 || status === 400) return { ok: false, ...refusalOf(body) };
+  throw new Error(`POST /api/schedules failed with ${String(status)}`);
+}
+
+/** Replace a rotation's legs, or find out why the new one cannot run. */
+export async function updateSchedule(
+  scheduleId: string,
+  draft: Omit<ScheduleDraft, 'airframeId'>,
+): Promise<PublishScheduleOutcome> {
+  const { status, body } = await json(`/api/schedules/${scheduleId}`, {
+    method: 'PUT',
+    body: JSON.stringify(draft),
+  });
+  if (status === 200) return { ok: true, response: body as CreateScheduleResponse };
+  if (status === 404 || status === 422 || status === 400) return { ok: false, ...refusalOf(body) };
+  throw new Error(`PUT /api/schedules/${scheduleId} failed with ${String(status)}`);
+}
+
+/** Pause a rotation, or resume it. */
+export async function setScheduleActive(scheduleId: string, active: boolean): Promise<boolean> {
+  const { status } = await json(`/api/schedules/${scheduleId}/active`, {
+    method: 'PUT',
+    body: JSON.stringify({ active }),
+  });
+  if (status === 200) return true;
+  if (status === 404) return false;
+  throw new Error(`PUT /api/schedules/${scheduleId}/active failed with ${String(status)}`);
+}
+
+/** Delete a rotation, cancelling its future flights. */
+export async function deleteSchedule(scheduleId: string): Promise<boolean> {
+  const { status } = await json(`/api/schedules/${scheduleId}`, { method: 'DELETE' });
+  if (status === 200) return true;
+  if (status === 404) return false;
+  throw new Error(`DELETE /api/schedules/${scheduleId} failed with ${String(status)}`);
 }
