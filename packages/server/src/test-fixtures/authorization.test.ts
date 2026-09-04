@@ -89,16 +89,20 @@ describeDb('authorization test fixtures', () => {
     });
   });
 
-  it('names the actor, request, expected status, and actual status on failure', async () => {
-    await expect(
-      authorization.expectAuthorization({
-        request: { method: 'GET', url: '/api/admin/overview' },
-        guest: 401,
-        playerA: 403,
-        playerB: 403,
-        admin: 418,
-      }),
-    ).rejects.toThrow(/admin: GET \/api\/admin\/overview expected 418, got 200/);
+  it('reports a failure as an incident: actor, request, both statuses and the meaning', async () => {
+    // Contrived: the administrator *is* allowed here, so demanding a refusal
+    // makes the fixture report the direction that matters most (SEC-12).
+    const failing = authorization.expectAuthorization({
+      request: { method: 'GET', url: '/api/admin/overview' },
+      guest: 401,
+      playerA: 403,
+      playerB: 403,
+      admin: 418,
+    });
+    await expect(failing).rejects.toThrow(/1 AUTHORIZATION BREACH on GET \/api\/admin\/overview/);
+    await expect(failing).rejects.toThrow(
+      /AUTHORIZATION BREACH · admin · GET \/api\/admin\/overview · expected 418 · received 200 · access GRANTED where it must be refused/,
+    );
   });
 
   it('cleans only its identities and recreates their deterministic ids', async () => {
