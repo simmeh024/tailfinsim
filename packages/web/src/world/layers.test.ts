@@ -2,7 +2,12 @@ import { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 import { describe, expect, it } from 'vitest';
 
 import { COARSE_WORLD } from './land';
-import { airportLevelForZoom, createWorldLayers, visibleAirportsAtLevel } from './layers';
+import {
+  airportLevelForZoom,
+  createWorldLayers,
+  planeSpriteSize,
+  visibleAirportsAtLevel,
+} from './layers';
 import { createDarknessField, WEB_MERCATOR_MAX_LATITUDE } from './terminator';
 import { terrainImage } from './terrain';
 
@@ -83,9 +88,6 @@ describe('projection-independent world layers', () => {
     const mid = colors[Math.floor(colors.length / 2)]!;
     expect(mid.slice(0, 3)).toEqual(palette.route.slice(0, 3));
 
-    // The ends are warmed towards the ground colour but never reach it. Arriving at
-    // the amber the airport dots and the pale terrain are drawn in is what made a
-    // route dissolve into the map with no visible end.
     // Both ends sit at the bottom of the altitude ramp — on the ground, at the
     // airport — and the ramp bottom is its own token, not the airport dot colour the
     // ends used to dissolve into.
@@ -424,6 +426,32 @@ describe('projection-independent world layers', () => {
     expect(airportLevelForZoom(4.5)).toBe(2);
     expect(airportLevelForZoom(6)).toBe(3);
     expect(visibleAirportsAtLevel(airports, airportLevelForZoom(6))).toHaveLength(5);
+  });
+
+  it('scales the plane sprite with zoom rather than replacing it with a dot', () => {
+    // The whole point: an aircraft is an aircraft at every zoom. It used to become a
+    // plain circle below a threshold, which is what a player saw on the two views
+    // they plan from. So the size shrinks and never reaches nothing.
+    const wholeWorld = planeSpriteSize(0.35);
+    const continental = planeSpriteSize(2);
+    const close = planeSpriteSize(6);
+
+    expect(wholeWorld).toBeGreaterThan(0);
+    expect(continental).toBeGreaterThan(wholeWorld);
+    expect(close).toBeGreaterThan(continental);
+
+    // Bounded at both ends, so a sprite is neither a speck nor a billboard.
+    expect(planeSpriteSize(-5)).toBe(wholeWorld);
+    expect(planeSpriteSize(20)).toBe(close);
+    expect(close).toBeLessThanOrEqual(18);
+
+    // Monotonic across the range the camera actually covers.
+    let previous = 0;
+    for (let zoom = -0.5; zoom <= 12; zoom += 0.5) {
+      const size = planeSpriteSize(zoom);
+      expect(size, `zoom ${String(zoom)}`).toBeGreaterThanOrEqual(previous);
+      previous = size;
+    }
   });
 
   it('fades an out-of-range airport back when a reachable set is given', () => {
