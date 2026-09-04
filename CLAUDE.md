@@ -622,6 +622,15 @@ Specific traps met so far:
 
 - **Database tests skip without `DATABASE_URL`.** A green local run means very little for
   server work. CI is where they run.
+- **A migration passes locally because your database is not fresh.** ADR-0016 applies every
+  pending migration in one transaction, so on a virgin database — CI, and any new environment
+  — a data migration runs in the _same_ transaction as the `ALTER TYPE … ADD VALUE` that
+  introduced the enum values it names. Postgres refuses: `unsafe use of new value
+"executive_floor" of enum type cash_movement_cause`. Locally only your one new file is
+  pending, the enum values committed months ago, and it passes. Compare `cause::text` against
+  text literals instead, and **drop and recreate the `_test` database before trusting a
+  migration**. This has now bitten twice — `maintenance_check` on 2026-08-27 and
+  `executive_floor` in TIME-02.
 - **Drizzle wraps driver errors.** Asserting on the outer `Failed query: …` message passes
   for _any_ failure. Walk `error.cause` for what Postgres actually said.
 - **`sql<Date>` is an assertion, not a conversion.** Column type parsers do not apply to

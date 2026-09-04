@@ -29,6 +29,29 @@
 -- the check that this migration did not move money. Nothing below alters an
 -- amount, a balance, a cause or a reference.
 --
+-- ## `cause::text`, and why it is not tidiness
+--
+-- The two filters below compare `cause::text` against text literals rather than
+-- writing the enum values directly, and that cast is load-bearing. ADR-0016 runs
+-- every pending migration in ONE transaction, so on a database that has never
+-- been migrated -- CI, and any new environment -- the `ALTER TYPE ... ADD VALUE`
+-- statements that introduced `executive_floor`, `executive_office`,
+-- `office_expansion` and `admin_adjustment` commit in the same transaction as
+-- this file. Postgres then refuses the literal outright:
+--
+--     ERROR: unsafe use of new value "executive_floor" of enum type
+--            cash_movement_cause
+--     HINT:  New enum values must be committed before they can be used.
+--
+-- Casting the column to text never constructs the enum value, so it is safe in
+-- the same transaction. `airline_founding` and `migration_opening_balance` came
+-- from 0019's `CREATE TYPE` and would have been fine, but they are cast too --
+-- one rule is easier to keep than a list of which four are dangerous.
+--
+-- Worth knowing before writing the next data migration: this failure is
+-- **invisible on an already-migrated database**, which is every local one. It
+-- was caught by CI, on a fresh Postgres, exactly as CLAUDE.md says it would be.
+--
 -- Two things this does not do. It leaves `recorded_at` alone on both tables --
 -- that is the row's wall-clock audit stamp and is the only real instant left
 -- here. And for a legacy NPC founding row it converts the recorded instant rather
@@ -45,7 +68,7 @@ SET "occurred_at" =
 FROM "airline" AS a, "world" AS w
 WHERE a."id" = m."airline_id"
   AND w."id" = a."world_id"
-  AND m."cause" IN (
+  AND m."cause"::text IN (
     'airline_founding',
     'executive_floor',
     'executive_office',
@@ -63,7 +86,7 @@ SET "occurred_at" =
 FROM "cash_movement" AS m, "world" AS w
 WHERE m."id" = l."cash_movement_id"
   AND w."id" = l."world_id"
-  AND m."cause" IN (
+  AND m."cause"::text IN (
     'airline_founding',
     'executive_floor',
     'executive_office',
