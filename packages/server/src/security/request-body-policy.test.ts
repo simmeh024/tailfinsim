@@ -28,6 +28,7 @@ import {
   SetCurrencyRequest,
   SetFaresRequest,
   SetScheduleActiveRequest,
+  OpenSelfHandlingRequest,
   SignContractRequest,
   StartCrewConversionInput,
   UpdateOwnAirlineInput,
@@ -143,6 +144,11 @@ const STRICT_WRITE_CONTRACTS = [
     payload: { serviceLine: 'ramp_baggage', grade: 'standard' },
   },
   {
+    endpoint: 'POST /api/ground/:icao/self-handling',
+    schema: OpenSelfHandlingRequest,
+    payload: { serviceLine: 'ramp_baggage', headcount: 12 },
+  },
+  {
     endpoint: 'POST /api/routes',
     schema: OpenRouteInput,
     payload: { originIcao: 'EHAM', destinationIcao: 'EGLL' },
@@ -249,6 +255,8 @@ const COVERED_WRITE_ENDPOINTS = [
   'PUT /api/automation/:system',
   'POST /api/ground/:icao/contracts',
   'DELETE /api/ground/contracts/:id',
+  'POST /api/ground/:icao/self-handling',
+  'DELETE /api/ground/self-handling/:id',
   // Airport slots (M7-05): the band is in the path, so neither write reads a body.
   'POST /api/airports/:icao/slots/:band',
   'DELETE /api/airports/:icao/slots/:band',

@@ -367,13 +367,32 @@ a schema default would have been a balance literal in a migration.
 **A ground contract's term is a fourth worker story (M5-06).** §9.3's handler contracts run
 for a fixed term, and something has to lapse them: `expireGroundContracts`, on the world's
 game clock, flips an `active` contract to `expired` at its `term_end` — which frees the
-vendor slot (capacity counts only `active` rows) and drops the airline back to walk-up
-handling. Without a worker a term never ends: a contract signed on opening day runs for
-ever, its scarce vendor slot never comes free for a competitor, and the _"before it lapses"_
-alert never has anything to fire against — which reads as a frozen market rather than a
-missing process. `groundContractsExpired` and `groundErrors` are the counters. `term_end` is
-**game time** like a `world_event`'s fire time, and **nullable means a legacy contract signed
-before terms existed** — it never expires, rather than expiring at the epoch.
+vendor slot (capacity counts only `active` rows), drops the airline back to walk-up
+handling, and **bills whatever of its volume commitment went unflown**. Without a worker a
+term never ends: a contract signed on opening day runs for ever, its scarce vendor slot never
+comes free for a competitor, no shortfall is ever billed, and the _"before it lapses"_ alert
+never has anything to fire against — which reads as a frozen, generous market rather than a
+missing process. `groundContractsExpired`, `groundVolumeShortfalls` and `groundErrors` are
+the counters, and the middle one matters on its own: terms lapsing with no shortfalls means
+every airline flew what it promised, which is a real and different state from nothing being
+measured. `term_end` is **game time** like a `world_event`'s fire time, and **nullable means a
+legacy contract signed before terms existed** — it never expires, rather than expiring at the
+epoch. `term_start` is a separate column and **not** `signed_at`: that one defaults to `now()`
+and is wall clock, and pro-rating a penalty across a term with one end on each clock made a
+90-day term look decades long.
+
+**Self-handling payroll is the sharpest worker story of the lot (M5-06).** §9.3's alternative
+to a vendor is the airline's own people, and the whole trade is **fixed cost against per-turn
+cost** — a vendor bills a turn, your own staff bill a month, so self-handling wins at a hub
+with volume and loses at an outstation. `runGroundPayroll` is what bills them, monthly on the
+world's game clock and idempotent by `ground_self_handling_payroll:<airline>:<YYYY-MM>` like
+crew and office payroll. **Production has no worker, so there those heads are free** — and an
+unbilled ground operation is not a degraded mechanic, it is strictly better than every vendor
+at every station, which turns a trade into a dominant strategy. `groundPayrollBilled` is the
+counter. The early-termination penalty, by contrast, is charged in the request that breaks the
+contract and therefore works on every node. `docs/ground-handling.md` has the boundary,
+including why self-handling is its own table and why a line-level advisory lock replaced the
+per-grade one.
 
 **`FLIGHT_DEPART` has a handler as of M5-02, and that was a decision.** `handlers.ts` had said
 for two milestones that inventing a departure would be _"the accidental decision ADR-0019's

@@ -87,6 +87,8 @@ export interface GroundHandlingConfig {
    * it lapses back to walk-up handling.
    */
   expiryWarningDays: number;
+  /** What handling it yourself achieves, staffed and unstaffed. */
+  selfHandling: SelfHandlingBalance;
 }
 
 /**
@@ -114,6 +116,18 @@ export const DEFAULT_GROUND_HANDLING: GroundHandlingConfig = {
   // changes hands and the market stays contested.
   termDays: 90,
   expiryWarningDays: 14,
+  /*
+   * A fully staffed operation of your own lands just short of the premium
+   * contractor, and that gap is deliberate: a specialist handler runs ramps for a
+   * living and you do not, so the *reason* to self-handle is the cost curve and
+   * the control, never a better number than money can buy. An unstaffed one is
+   * well below budget, which is what makes understaffing a decision with a
+   * consequence rather than a free saving.
+   */
+  selfHandling: {
+    staffed: { reliability: 0.985, speedFactor: 0.92, quality: 0.9 },
+    unstaffed: { reliability: 0.7, speedFactor: 1.45, quality: 0.3 },
+  },
 };
 
 /** Game milliseconds in a day, for the term arithmetic. */
@@ -137,8 +151,13 @@ export function handlerProfile(
  * carries a 0.15 ground-vendor hazard into the disruption roll, a premium one at
  * 99% carries 0.01. This is the first real value that input has had — it was 0
  * until a handler existed to supply it.
+ *
+ * Takes only the field it reads, so it prices a grade, an operation of the
+ * airline's own at whatever staffing it is running, and walk-up handling, from
+ * one function — `handlingProfile` produces all three and none of them agree
+ * about what a `priceIndex` would mean.
  */
-export function groundVendorRisk(profile: HandlerGradeProfile): number {
+export function groundVendorRisk(profile: Pick<HandlerGradeProfile, 'reliability'>): number {
   return Math.min(1, Math.max(0, 1 - profile.reliability));
 }
 
@@ -171,4 +190,175 @@ export function contractExpiring(
 ): boolean {
   if (termEnd === null) return false;
   return termEnd.getTime() - gameNow.getTime() <= config.expiryWarningDays * MS_PER_DAY;
+}
+
+// ---------------------------------------------------------------------------
+// Self-handling, and the money side of a contract (M5-06, §9.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * The operational profile self-handling delivers, at the two ends of staffing.
+ *
+ * Balance, and sim-owned like the grades for the same reason: what a ground
+ * operation *is* at a given staffing level is behaviour, not money. What the
+ * heads cost is `EconomyConfig.ground.selfHandling`.
+ */
+export interface SelfHandlingBalance {
+  /** What a fully staffed operation of your own achieves. */
+  staffed: Omit<HandlerGradeProfile, 'priceIndex'>;
+  /** What one with nobody in it achieves. Worse than the budget vendor. */
+  unstaffed: Omit<HandlerGradeProfile, 'priceIndex'>;
+}
+
+/** What self-handling is achieving at a station right now. */
+export interface SelfHandlingProfile extends Omit<HandlerGradeProfile, 'priceIndex'> {
+  /**
+   * Heads employed over heads the station needs, clamped to 1.
+   *
+   * Clamped rather than uncapped, so over-hiring buys nothing: §10.4's rule that
+   * an edge must be *"a real edge that a smarter network plan can beat"* rather
+   * than a moat applies here too — a player with money should not be able to buy
+   * past a premium contractor by simply hiring twice as many people.
+   */
+  staffing: number;
+}
+
+/**
+ * What an airline's handling at a station actually is, for the models to read.
+ *
+ * Three states, and they are genuinely different rather than three grades: a
+ * **vendor** contract is a grade, **self-handling** is a staffing level, and
+ * **walk-up** is what an airline has when it has arranged nothing at all. The
+ * models that care — turnaround speed, disruption risk, the settlement's
+ * handling line — each read this rather than each rediscovering the three cases.
+ */
+export type HandlingArrangement =
+  | { kind: 'vendor'; grade: HandlerGrade }
+  | { kind: 'self'; headcount: number; requiredHeadcount: number }
+  | { kind: 'walk_up' };
+
+/**
+ * The operational profile an arrangement delivers.
+ *
+ * Walk-up reads as **budget**, which is not a shortcut: `disruption.ts` has said
+ * since M5-06's first PR that an airline with no contract *"scrambles the bags
+ * itself, at budget-grade reliability"*, and the point of this function is that
+ * there is now one place saying so.
+ */
+export function handlingProfile(
+  arrangement: HandlingArrangement,
+  config: GroundHandlingConfig = DEFAULT_GROUND_HANDLING,
+): Omit<HandlerGradeProfile, 'priceIndex'> {
+  switch (arrangement.kind) {
+    case 'vendor':
+      return config.grades[arrangement.grade];
+    case 'self':
+      return selfHandlingProfile(
+        arrangement.headcount,
+        arrangement.requiredHeadcount,
+        config.selfHandling,
+      );
+    case 'walk_up':
+      return config.grades.budget;
+  }
+}
+
+/**
+ * What self-handling achieves at a given headcount.
+ *
+ * Linear between `unstaffed` and `staffed` across the ratio of heads employed to
+ * heads the station needs. Linear rather than a curve because the interesting
+ * property is that it is **monotonic and legible**: every head hired makes the
+ * handling measurably better until the station is staffed, and a player cutting
+ * heads to save payroll can read the consequence off the same scale they read a
+ * vendor grade off.
+ *
+ * A required headcount of zero or less would make the ratio meaningless, so it is
+ * treated as fully staffed — a station that needs nobody is handled by nobody,
+ * perfectly.
+ */
+export function selfHandlingProfile(
+  headcount: number,
+  requiredHeadcount: number,
+  balance: SelfHandlingBalance = DEFAULT_GROUND_HANDLING.selfHandling,
+): SelfHandlingProfile {
+  const staffing =
+    requiredHeadcount <= 0 ? 1 : Math.min(1, Math.max(0, headcount / requiredHeadcount));
+  const between = (from: number, to: number): number => from + (to - from) * staffing;
+  return {
+    staffing,
+    reliability: between(balance.unstaffed.reliability, balance.staffed.reliability),
+    speedFactor: between(balance.unstaffed.speedFactor, balance.staffed.speedFactor),
+    quality: between(balance.unstaffed.quality, balance.staffed.quality),
+  };
+}
+
+/** The money terms an arrangement's per-turn price needs from the economy. */
+export interface HandlingPriceBalance {
+  walkUpPriceIndex: number;
+  selfHandlingTurnPriceIndex: number;
+}
+
+/**
+ * What to multiply a turn's handling cost by, given how it is being handled.
+ *
+ * The **fifth** of §9.3's five vendor numbers, and the one that was missing.
+ * Until M5-06's price landed, a grade changed the speed and the reliability of a
+ * turn and not its cost — so the budget handler was slower and clumsier for
+ * exactly the same money, and no player would ever have chosen one. The trade
+ * only exists because this multiplier does.
+ *
+ * A vendor's multiplier is its grade's `priceIndex`, which is sim balance because
+ * it is the *shape* of the trade; walk-up's and self-handling's are the economy's,
+ * because they are not a property of any grade. Both halves are retunable and
+ * neither is a literal.
+ */
+export function handlingPriceFactor(
+  arrangement: HandlingArrangement,
+  money: HandlingPriceBalance,
+  config: GroundHandlingConfig = DEFAULT_GROUND_HANDLING,
+): number {
+  switch (arrangement.kind) {
+    case 'vendor':
+      return config.grades[arrangement.grade].priceIndex;
+    case 'self':
+      return money.selfHandlingTurnPriceIndex;
+    case 'walk_up':
+      return money.walkUpPriceIndex;
+  }
+}
+
+/**
+ * How much of a term has been served at `gameNow`, 0–1.
+ *
+ * The one piece of arithmetic both money consequences share. The early-exit
+ * penalty is charged on what is **left** (`1 - elapsed`), so walking away on the
+ * last day is nearly free and walking away on the first costs the lot; the volume
+ * commitment on an early exit is pro-rated to what has been **served**, so
+ * terminating cannot be used to escape a shortfall the airline has already run
+ * up.
+ *
+ * Clamped at both ends and defensive about a degenerate term: a start at or after
+ * its end reads as fully served, which makes a broken row cost nothing to leave
+ * rather than charging a full penalty on arithmetic nobody can check.
+ */
+export function elapsedTermFraction(termStart: Date, termEnd: Date, gameNow: Date): number {
+  const span = termEnd.getTime() - termStart.getTime();
+  if (!Number.isFinite(span) || span <= 0) return 1;
+  const served = (gameNow.getTime() - termStart.getTime()) / span;
+  if (!Number.isFinite(served)) return 1;
+  return Math.min(1, Math.max(0, served));
+}
+
+/**
+ * The departures a contract commits to over its whole term.
+ *
+ * Per-day balance × the term's length, so retuning `termDays` moves the
+ * commitment with it rather than silently changing what a day of it is worth.
+ */
+export function committedDepartures(
+  perDay: number,
+  config: GroundHandlingConfig = DEFAULT_GROUND_HANDLING,
+): number {
+  return Math.max(0, Math.round(perDay * config.termDays));
 }

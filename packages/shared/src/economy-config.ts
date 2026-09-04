@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { FUEL_REGIONS, type FuelRegion } from './fuel';
+import { HANDLER_GRADES, type HandlerGrade } from './ground';
 import { MinorUnits, Month } from './primitives';
 
 /**
@@ -2141,6 +2142,178 @@ export const SHIPPED_HUB_BALANCE = {
   costGrowth: 2,
 } as const satisfies z.input<typeof HubBalance>;
 
+/**
+ * What ground handling costs (M5-06, §9.3).
+ *
+ * §9.3 lists five numbers a vendor trades on — *price · reliability · speed ·
+ * quality · capacity* — and `packages/sim` owns four of them, because what a
+ * grade *is* is balance of the same kind as the turnaround and disruption models.
+ * **Price in real money is this section**, for the reason CONTRIBUTING invariant
+ * 3 gives and `ground/vendor.ts` has said since M5-06's first PR: a grade's
+ * `priceIndex` is only the *shape* of the trade, and the absolute money belongs
+ * to the economy a world pins.
+ *
+ * Until this section existed, signing a contract moved no cash and a grade had no
+ * effect on what a turn cost — so the cheap handler was slower and less reliable
+ * for **exactly the same money**, and nothing in the game would ever have made a
+ * player choose it. §9.3's whole trade was inert.
+ */
+export const GroundBalance = z
+  .object({
+    /**
+     * What a turn costs with no contract at all, relative to the standard grade.
+     *
+     * Above 1: handling bought on the day is dearer than handling bought on a
+     * term, which is why signing anything at all is worth doing. It is also the
+     * reason a **budget** contract is a real choice — against walk-up it is a
+     * large saving, and the operational cost of it is a *decision* rather than
+     * a punishment.
+     *
+     * `disruption.ts` already treats walk-up as budget-grade reliability: the
+     * airline scrambles the bags itself, badly. This is what that costs.
+     */
+    walkUpPriceIndex: z.number().positive(),
+    contract: z
+      .object({
+        /**
+         * What breaking a full term costs, before the grade's `priceIndex` and
+         * before the pro-rata for what is left of it.
+         *
+         * §9.3: *"Breaking one early costs a penalty."* Charged on an explicit
+         * termination **and on a grade switch**, because switching *is* breaking
+         * a contract early — if it were free, nobody would ever terminate.
+         *
+         * Calibrated at roughly a tenth of what a standard contract's term is
+         * worth in handling at a modest station: it stings and it is survivable,
+         * which is what makes a mid-term change a decision rather than a wall.
+         */
+        terminationPenaltyPerTermMinor: MinorUnits.nonnegative(),
+        /**
+         * Departures a grade's vendor requires the airline to commit to, per game
+         * day of the term.
+         *
+         * §9.3: *"Contracts run for a fixed term with volume commitments."* Per
+         * **day** rather than per term, so retuning `termDays` in the sim's own
+         * balance does not silently multiply or divide every commitment in the
+         * game.
+         *
+         * A budget handler asks for nothing — it will take anyone's bags and has
+         * no reputation to protect. A premium handler at a scarce slot wants the
+         * volume that justifies holding the slot for you, which is what makes
+         * signing premium at a station you barely serve the mistake it should be.
+         */
+        committedDeparturesPerDay: z
+          .object(
+            Object.fromEntries(
+              HANDLER_GRADES.map((grade) => [grade, z.number().nonnegative()]),
+            ) as Record<HandlerGrade, z.ZodNumber>,
+          )
+          .strict(),
+        /**
+         * What each committed departure the airline did not fly costs at the end.
+         *
+         * Roughly half a standard turn, so a shortfall costs about what the
+         * handling itself would have — the vendor held the capacity and is paid
+         * for holding it, not for working.
+         */
+        shortfallFeePerDepartureMinor: MinorUnits.nonnegative(),
+      })
+      .strict(),
+    /**
+     * §9.3's *"self-handling as an alternative requiring a station and
+     * headcount"*, priced.
+     *
+     * The trade is **fixed cost against per-turn cost**, and that is the whole
+     * mechanic: payroll does not shrink when the schedule does. Self-handling is
+     * therefore cheaper than a vendor at a hub with real volume and markedly
+     * dearer at an outstation with one rotation a day — which is why §9.3
+     * requires a station for it rather than making it a menu option.
+     */
+    selfHandling: z
+      .object({
+        /** A ramp agent, monthly. Below cabin crew, which is where ramp pay sits. */
+        salaryPerHeadMinor: MinorUnits.nonnegative(),
+        /**
+         * Heads a station needs to be handled properly, by the airport's tier.
+         *
+         * The **station's** requirement rather than the airline's schedule: a
+         * ground operation at a flagship needs shifts, equipment drivers and a
+         * duty manager whatever you fly through it, and the turnaround windows,
+         * gate procedures and de-icing season are the airport's rather than
+         * yours. Scaling it to the airline's own departure count is the obvious
+         * next refinement and is deliberately not this milestone's — it would
+         * make the requirement move every time a schedule was edited, and the
+         * player would be re-staffing rather than deciding.
+         *
+         * Understaffing is allowed and is the point: it costs less and the
+         * handling gets worse, which is §9.2's cost-cutting trade on the ramp.
+         */
+        requiredHeadcountByTier: z
+          .object({
+            flagship: z.number().int().positive(),
+            large: z.number().int().positive(),
+            medium: z.number().int().positive(),
+            small: z.number().int().positive(),
+            regional: z.number().int().positive(),
+          })
+          .strict(),
+        /**
+         * What a self-handled turn still costs per turn, relative to standard.
+         *
+         * Not zero: equipment, consumables and the airport's own charges do not
+         * go away because the people are yours. Small, because the labour has
+         * already been paid on the monthly payroll and charging it twice would
+         * make self-handling unbuildable.
+         */
+        turnPriceIndex: z.number().nonnegative(),
+      })
+      .strict(),
+  })
+  .strict();
+export type GroundBalance = z.infer<typeof GroundBalance>;
+
+/**
+ * The shipped ground handling money (M5-06, §9.3).
+ *
+ * Defaulted, for the reason `SHIPPED_NPC_BALANCE` records at length: rows in
+ * `economy_config` are immutable and parsed on the way out against today's
+ * schema, so a required new section makes every payload written before it
+ * unparseable — and a world pinned to that version could then not price a turn.
+ *
+ * The three figures worth arguing about, and what they were reasoned from:
+ *
+ *   - **`walkUpPriceIndex` 1.35.** A standard turn in the shipped cost table is
+ *     $150 plus $3.25 a seat, so a 180-seat narrowbody turn is $735. Walk-up
+ *     puts that at $992 and a budget contract at $515 — a 48% spread between the
+ *     cheapest and dearest way to get the same aeroplane away, which is enough
+ *     for the choice to matter on a P&L a player is reading.
+ *   - **`terminationPenaltyPerTermMinor` $12,000.** A standard 90-day term at a
+ *     modest station handles perhaps 90 to 270 turns, so $66k–$198k of handling;
+ *     a full-term break fee is around a tenth of that, and a premium contract
+ *     costs half again more to break because `priceIndex` scales it.
+ *   - **`salaryPerHeadMinor` $1,500.** Below the $2,000 cabin crew draw, which is
+ *     where ramp pay sits. A fully staffed large station is 28 heads and
+ *     therefore $42,000 a month, against $735 a turn from a standard vendor — so
+ *     self-handling starts paying at about two departures a day and is a bad
+ *     trade below one. That crossover is the mechanic and is the number to
+ *     retune if it lands in the wrong place.
+ */
+export const SHIPPED_GROUND_BALANCE = {
+  walkUpPriceIndex: 1.35,
+  contract: {
+    terminationPenaltyPerTermMinor: 1_200_000,
+    // A budget handler asks for nothing; premium wants two departures a day,
+    // which over the shipped 90-day term is 180 of them.
+    committedDeparturesPerDay: { budget: 0, standard: 0.7, premium: 2 },
+    shortfallFeePerDepartureMinor: 40_000,
+  },
+  selfHandling: {
+    salaryPerHeadMinor: 150_000,
+    requiredHeadcountByTier: { flagship: 40, large: 28, medium: 18, small: 10, regional: 6 },
+    turnPriceIndex: 0.15,
+  },
+} as const satisfies z.input<typeof GroundBalance>;
+
 export const EconomyConfig = z
   .object({
     version: EconomyConfigVersion,
@@ -2179,6 +2352,9 @@ export const EconomyConfig = z
     // Defaulted for the same reason once more (M7-04): the hub purchase curve. Every
     // `v1` row written before it reads back the shipped App. B.5 prices.
     hubs: HubBalance.default(SHIPPED_HUB_BALANCE),
+    // Defaulted for the same reason once more (M5-06): what ground handling
+    // costs. Every `v1` row written before it reads back the shipped money.
+    ground: GroundBalance.default(SHIPPED_GROUND_BALANCE),
   })
   .strict();
 export type EconomyConfig = z.infer<typeof EconomyConfig>;
@@ -2476,6 +2652,7 @@ export const ECONOMY_CONFIG_V1: EconomyConfig = EconomyConfig.parse({
   crew: SHIPPED_CREW_BALANCE,
   socialMedia: SHIPPED_SOCIAL_MEDIA_BALANCE,
   hubs: SHIPPED_HUB_BALANCE,
+  ground: SHIPPED_GROUND_BALANCE,
 });
 
 // ---------------------------------------------------------------------------

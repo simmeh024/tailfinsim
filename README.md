@@ -24,6 +24,7 @@ wall-clock time, that never pauses.
   [`docs/maintenance.md`](docs/maintenance.md) ·
   [`docs/fleet-management.md`](docs/fleet-management.md) ·
   [`docs/fuel-pricing.md`](docs/fuel-pricing.md) ·
+  [`docs/ground-handling.md`](docs/ground-handling.md) ·
   [`docs/world-renderer.md`](docs/world-renderer.md)
 - **Deployment & DNS:** [`docs/deploy.md`](docs/deploy.md) ·
   [`deploy/README.md`](deploy/README.md)
@@ -209,6 +210,18 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   decomposition is arithmetically exact by construction and is tested against the airframe's
   own stored spec. See [`docs/fleet-management.md`](docs/fleet-management.md), including the
   two bulk actions that have nothing to act on yet.
+- **Ground handling you can be wrong about.** Every station offers three grades of handler on
+  six service lines, with finite capacity competing airlines exhaust — and since the milestone's
+  money landed, a grade changes what a turn _costs_ as well as how fast and how reliably it
+  goes. So the cheap handler is a genuine choice rather than a strictly worse one, and handling
+  bought on the day is dearer than handling bought on a term. A contract runs a fixed term with
+  a volume commitment, bills a shortfall if the airline never flew what it promised, and costs a
+  pro-rated penalty to break — including by switching grades, because that is breaking one.
+  Self-handling is the alternative: it needs a hub and heads on a monthly payroll, lands just
+  short of a premium contractor when fully staffed and well below budget when it is not, and
+  trades a per-turn fee for a fixed cost that does not shrink when the schedule does. The term
+  and the payroll are the Worker's, so both bite on dev only — see
+  [`docs/ground-handling.md`](docs/ground-handling.md), including why there is no web UI yet.
 - **Fuel that costs what the station charges.** Every airport prices its own Jet A-1: a
   commodity factor for its region, an into-plane fee that scales with how hard the field is to
   fuel, and a per-station spread fixed for the life of the world. A sector out of a Gulf hub

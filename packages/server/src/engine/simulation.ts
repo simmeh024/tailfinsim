@@ -13,6 +13,7 @@ import { type FxRateSource } from '../currency/fx-source';
 import { type Database } from '../db/client';
 import { world, type WorldRow } from '../db/schema';
 import { expireGroundContracts } from '../ground/contracts';
+import { runGroundPayroll } from '../ground/payroll';
 import { reviewNpcCarriers } from '../npc/operate';
 import { runOfficePayroll } from '../office/payroll';
 import { reviewSocialMediaReputation } from '../office/reputation';
@@ -113,6 +114,10 @@ export interface TickReport {
   reputationGrants: number;
   /** M5-06. Ground contracts whose term ran out and were lapsed this run. */
   groundContractsExpired: number;
+  /** M5-06. Of those, how many closed short of their committed departures. */
+  groundVolumeShortfalls: number;
+  /** M5-06. Airlines billed this run for a station they handle themselves. */
+  groundPayrollBilled: number;
   /** M2-03. Flights materialised from schedules onto the horizon this run. */
   flightsMaterialised: number;
 }
@@ -176,8 +181,10 @@ export interface SimulationEngineOptions {
   returnSick?: typeof returnSickCrew;
   /** M5-04 follow-up. Drips a hired social media specialist's monthly reputation. */
   reviewReputation?: typeof reviewSocialMediaReputation;
-  /** M5-06. Lapses ground contracts whose term has ended. */
+  /** M5-06. Lapses ground contracts whose term has ended, and bills any shortfall. */
   expireGround?: typeof expireGroundContracts;
+  /** M5-06. Bills the month's payroll for stations the airline handles itself. */
+  payGround?: typeof runGroundPayroll;
   /** M2-03. Rolls each world's active schedules onto the flight horizon. */
   materialise?: typeof materialiseWorld;
   depth?: typeof queueDepth;
@@ -293,6 +300,28 @@ export interface EngineSnapshot {
    * nothing has reached its term yet.
    */
   groundContractsExpired: number;
+  /**
+   * M5-06. Terms that closed short of their committed departures, and what that
+   * cost the airlines that ran them.
+   *
+   * Separate from `groundContractsExpired` because they answer different
+   * questions: the first says the sweep is running, the second says §9.3's volume
+   * commitment is *biting*. A world with terms lapsing and no shortfalls is one
+   * where every airline flew what it promised, which is a real and different
+   * state from one where nothing is being measured.
+   */
+  groundVolumeShortfalls: number;
+  groundVolumeShortfallMinor: number;
+  /**
+   * M5-06. Airlines billed for a self-handled station since start.
+   *
+   * Zero on every tick but the first of a game month, like the crew and office
+   * payroll counters — and zero for ever without a worker, which would make
+   * §9.3's self-handling a **free** upgrade rather than a trade. That is the
+   * sharper failure of the two: an unbilled ground operation is strictly better
+   * than any vendor.
+   */
+  groundPayrollBilled: number;
   groundErrors: number;
   /**
    * M2-03. Flights materialised from schedules since start, and rolls that threw.
@@ -403,6 +432,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     returnSick = returnSickCrew,
     reviewReputation = reviewSocialMediaReputation,
     expireGround = expireGroundContracts,
+    payGround = runGroundPayroll,
     materialise = materialiseWorld,
     fxSource,
     refreshFx = refreshFxRates,
@@ -439,6 +469,9 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let reputationGrants = 0;
   let reputationErrors = 0;
   let groundContractsExpired = 0;
+  let groundVolumeShortfalls = 0;
+  let groundVolumeShortfallMinor = 0;
+  let groundPayrollBilled = 0;
   let groundErrors = 0;
   let flightsMaterialised = 0;
   let scheduleErrors = 0;
@@ -469,6 +502,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     let tickAirframesGrounded = 0;
     let tickReputationGrants = 0;
     let tickGroundExpired = 0;
+    let tickGroundShortfalls = 0;
+    let tickGroundPaid = 0;
     let tickFlightsMaterialised = 0;
 
     // The display-currency refresh (M8-02), **global and on the real clock** —
@@ -698,23 +733,44 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
        * Ground contract terms (M5-06, §9.3), on this world's game clock: a term
        * is a span in the world's calendar, so a world at 4× renews its handlers
        * twice as fast in real time as one at 2×. A lapsed contract frees its
-       * vendor slot and drops the airline back to walk-up handling.
+       * vendor slot and drops the airline back to walk-up handling, and bills
+       * whatever of its volume commitment went unflown.
+       *
+       * The self-handling payroll runs alongside it, monthly and idempotent by
+       * the world's own calendar month — the same shape as crew and office
+       * payroll, and for the same reason: a station handled by your own people
+       * costs a fixed sum whether or not anything flew through it, and that fixed
+       * cost is the entire trade against a vendor.
        *
        * Isolated like the sweeps above: a term that could not lapse this tick
-       * lapses the next one. The handler keeps working a second longer, which is
-       * cosmetic rather than money lost.
+       * lapses the next one, and a payday missed at a month boundary self-heals
+       * for as long as the following month lasts.
        */
       try {
-        const expired = await expireGround(db, entry.id, gameTime(entry.clock, now()));
+        const worldGameNow = gameTime(entry.clock, now());
+        const expired = await expireGround(db, entry.id, worldGameNow);
         tickGroundExpired += expired.expired;
+        tickGroundShortfalls += expired.shortfalls;
+        groundVolumeShortfallMinor += expired.shortfallMinor;
         if (expired.expired > 0) {
           log?.info?.(
-            `[${entry.name}] ground: ${String(expired.expired)} contract(s) lapsed at term`,
+            `[${entry.name}] ground: ${String(expired.expired)} contract(s) lapsed at term, ` +
+              `${String(expired.shortfalls)} short of commitment`,
+          );
+        }
+
+        const groundPaid = await payGround(db, entry.id, worldGameNow);
+        tickGroundPaid += groundPaid.airlinesBilled;
+        if (groundPaid.airlinesBilled > 0) {
+          log?.info?.(
+            `[${entry.name}] self-handling payroll: ${String(groundPaid.airlinesBilled)} ` +
+              `airline(s), ${String(groundPaid.headcount)} head(s), ` +
+              `${String(Math.round(groundPaid.totalMinor / 100))}`,
           );
         }
       } catch (error) {
         groundErrors += 1;
-        log?.warn?.(`[${entry.name}] ground contract sweep failed: ${String(error)}`);
+        log?.warn?.(`[${entry.name}] ground sweep failed: ${String(error)}`);
       }
 
       /*
@@ -803,6 +859,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     crewErrors += tickCrewErrors;
     reputationGrants += tickReputationGrants;
     groundContractsExpired += tickGroundExpired;
+    groundVolumeShortfalls += tickGroundShortfalls;
+    groundPayrollBilled += tickGroundPaid;
     flightsMaterialised += tickFlightsMaterialised;
     lastTickAt = context.tickedAt;
     lastTickDurationMs = durationMs;
@@ -832,6 +890,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       crewErrors: tickCrewErrors,
       reputationGrants: tickReputationGrants,
       groundContractsExpired: tickGroundExpired,
+      groundVolumeShortfalls: tickGroundShortfalls,
+      groundPayrollBilled: tickGroundPaid,
       flightsMaterialised: tickFlightsMaterialised,
     };
   }
@@ -904,6 +964,9 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         reputationGrants,
         reputationErrors,
         groundContractsExpired,
+        groundVolumeShortfalls,
+        groundVolumeShortfallMinor,
+        groundPayrollBilled,
         groundErrors,
         flightsMaterialised,
         scheduleErrors,

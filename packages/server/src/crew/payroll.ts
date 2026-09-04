@@ -268,8 +268,16 @@ export function previousMonth(at: Date): string {
   return `${String(previous.year)}-${String(previous.month + 1).padStart(2, '0')}`;
 }
 
-/** `2024-11` for `2024-10`. Used only to name the instant a month closed. */
-function monthAfter(period: string): string {
+/**
+ * `2024-11` for `2024-10`. Names the instant a month closed.
+ *
+ * Exported alongside {@link previousMonth} because it is not this module's: every
+ * monthly bill in the game — crew, office salaries, the reputation drip and, since
+ * M5-06, self-handling payroll — needs the same two answers about the world's
+ * calendar, and each one having its own copy is three chances to disagree about
+ * when a December closed.
+ */
+export function monthAfter(period: string): string {
   const [year, month] = period.split('-').map(Number);
   if (year === undefined || month === undefined) return period;
   return month === 12

@@ -13,6 +13,7 @@ import {
   type FlightSettlement,
   type FuelMarket,
   type FuelStation,
+  handlingPriceFactor,
   haversineNm,
   type SettlementConfig,
   settleFlight,
@@ -24,6 +25,7 @@ import { airport, flight, flightResult, route } from '../db/schema';
 import { type PinnedEconomyConfig } from '../economy/config';
 import { loadWorldFuelContext, marketAt, stationFor } from '../economy/fuel';
 import { loadWorldEconomyConfig } from '../economy/loader';
+import { handlingArrangementFor, handlingPriceBalanceOf } from '../ground/contracts';
 
 import type { Database } from '../db/client';
 import type { EventHandler } from '../sim/event-queue';
@@ -260,6 +262,24 @@ export async function settleArrivedFlight(
   const burn = computeFuelBurn(block, { cruiseBurnTPerNm: airframe.cruiseBurnTPerNm });
   const fuelCost = computeFuelCost(burn.tonnes, market, resolveStation(row.originIcao));
 
+  /*
+   * What the departure turn's handling costs (M5-06, §9.3). The origin's ramp
+   * works this turn, so it is the origin's arrangement that prices it: a
+   * contracted grade at its `priceIndex`, the airline's own people at the
+   * self-handling turn rate, and nothing arranged at the walk-up premium.
+   *
+   * The origin's tier is passed in because it has already been read above, so a
+   * self-handled station costs one indexed lookup here rather than two.
+   */
+  const arrangement = await handlingArrangementFor(
+    tx,
+    row.airlineId,
+    row.originIcao,
+    'ramp_baggage',
+    economy,
+    origin.tier,
+  );
+
   // `flight.load` is JSON text that M3 writes. Parsed through the shared schema
   // rather than cast, because a malformed load must fail the event loudly rather
   // than settle a flight for a plausible-looking wrong number.
@@ -277,6 +297,7 @@ export async function settleArrivedFlight(
       aircraft: { maxTakeoffWeightT: airframe.maxTakeoffWeightT },
       originFees: resolveFees(row.originIcao),
       destinationFees: resolveFees(arrivalIcao),
+      handlingPriceFactor: handlingPriceFactor(arrangement, handlingPriceBalanceOf(economy)),
     },
     config,
   );
