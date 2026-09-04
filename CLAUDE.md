@@ -675,6 +675,22 @@ Specific traps met so far:
   correlated shape in a `where` clause worked. Not diagnosed. If a count looks
   impossibly low, prefer a grouped query and a lookup, which is the pattern
   `countWorldContents` and `listPlayers` use.
+- **`ON CONFLICT` cannot infer a _partial_ unique index from the target columns alone.**
+  Postgres answers `there is no unique or exclusion constraint matching the ON CONFLICT
+specification` (42P10) — which reads like a missing index rather than an incomplete
+  arbiter — and the index is right there. It needs the predicate too, or the write needs
+  to stop being an upsert. `ground_self_handling`'s one-active-per-line index is
+  `where status = 'active'`, and M5-06 took the second route: the writer already holds a
+  line-level advisory lock, so an explicit select-then-update-or-insert is both correct
+  and clearer than an upsert carrying two separate `where` clauses.
+- **`moveAirlineCash` must be called inside a transaction.** It inserts the movement and
+  _then_ updates the balance, and the constraint trigger reconciling the two is deferred
+  to commit — so outside a transaction the insert commits alone and the trigger refuses
+  a balance that has not moved yet (`cash N does not equal movement total M`). Every
+  payroll wraps it in `db.transaction`; M5-06's did not at first, and the failure names
+  the airline rather than the mistake. The same trigger is why a **test** may not
+  `update airline set cash_minor` to arrange a poor airline: spend it down through a
+  movement instead.
 - **Performance measured on a laptop is not the criterion.** M1-08's budget says "on the
   server", and the server is a 2-core Xeon E5-2620 v4 — five times slower than the
   development machine. Measure there, and take the fastest of several runs, because a
