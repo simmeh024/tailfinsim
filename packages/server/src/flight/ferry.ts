@@ -7,10 +7,13 @@ import {
   computeBlockTime,
   DEFAULT_FLIGHT_PROFILE,
   type FlightProfile,
+  handlingPriceFactor,
   haversineNm,
 } from '@tailfin/sim';
 
 import { airport, flight } from '../db/schema';
+import { loadWorldEconomyConfig } from '../economy/loader';
+import { handlingArrangementFor, handlingPriceBalanceOf } from '../ground/contracts';
 import { scheduleEvent } from '../sim/event-queue';
 
 import { arrivalKey } from './settle';
@@ -155,6 +158,20 @@ export async function createFerryFlight(
   );
   const arriveAt = new Date(departAt.getTime() + block.blockMinutes * 60_000);
 
+  /*
+   * A ferry never passes through the dispatch gate — it is created already on
+   * its way — so it snapshots its handling here instead (M5-06, §9.3). A
+   * positioning leg is still a turn somebody works, and it is billed for one.
+   */
+  const ferryEconomy = await loadWorldEconomyConfig(db, worldId);
+  const ferryArrangement = await handlingArrangementFor(
+    db,
+    airlineId,
+    fromIcao,
+    'ramp_baggage',
+    ferryEconomy,
+  );
+
   const [created] = await db
     .insert(flight)
     .values({
@@ -166,6 +183,10 @@ export async function createFerryFlight(
       destinationIcao: toIcao,
       scheduledDeparture: departAt,
       estimatedArrival: arriveAt,
+      handlingPriceFactor: handlingPriceFactor(
+        ferryArrangement,
+        handlingPriceBalanceOf(ferryEconomy),
+      ),
       // An empty cabin, stated rather than left to a default: a ferry carries
       // nobody, and `settleFlight` refuses one that claims otherwise.
       load: '{}',

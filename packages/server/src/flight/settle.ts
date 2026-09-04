@@ -263,22 +263,34 @@ export async function settleArrivedFlight(
   const fuelCost = computeFuelCost(burn.tonnes, market, resolveStation(row.originIcao));
 
   /*
-   * What the departure turn's handling costs (M5-06, §9.3). The origin's ramp
-   * works this turn, so it is the origin's arrangement that prices it: a
-   * contracted grade at its `priceIndex`, the airline's own people at the
-   * self-handling turn rate, and nothing arranged at the walk-up premium.
+   * What the departure turn's handling cost (M5-06, §9.3), read from the
+   * snapshot the aeroplane took when it actually left.
    *
-   * The origin's tier is passed in because it has already been read above, so a
-   * self-handled station costs one indexed lookup here rather than two.
+   * Stored rather than resolved here, because the arrangement is mutable and the
+   * flight is not: reading it live billed a flight for whoever handles the
+   * station by the time the arrival drained — a player switching handlers
+   * mid-flight moved the bill — and made a replay of an old arrival produce a
+   * different figure, which the note at the top of this function promises will
+   * not happen.
+   *
+   * **Null means the flight departed before the snapshot existed**, not that it
+   * was handled at the standard rate. Those settle the way every flight used to,
+   * by resolving the arrangement now; the origin's tier is passed in because it
+   * has already been read above.
    */
-  const arrangement = await handlingArrangementFor(
-    tx,
-    row.airlineId,
-    row.originIcao,
-    'ramp_baggage',
-    economy,
-    origin.tier,
-  );
+  const handlingFactor =
+    row.handlingPriceFactor ??
+    handlingPriceFactor(
+      await handlingArrangementFor(
+        tx,
+        row.airlineId,
+        row.originIcao,
+        'ramp_baggage',
+        economy,
+        origin.tier,
+      ),
+      handlingPriceBalanceOf(economy),
+    );
 
   // `flight.load` is JSON text that M3 writes. Parsed through the shared schema
   // rather than cast, because a malformed load must fail the event loudly rather
@@ -297,7 +309,7 @@ export async function settleArrivedFlight(
       aircraft: { maxTakeoffWeightT: airframe.maxTakeoffWeightT },
       originFees: resolveFees(row.originIcao),
       destinationFees: resolveFees(arrivalIcao),
-      handlingPriceFactor: handlingPriceFactor(arrangement, handlingPriceBalanceOf(economy)),
+      handlingPriceFactor: handlingFactor,
     },
     config,
   );

@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 
+import { handlingPriceFactor } from '@tailfin/sim';
 import type { DisruptionRoll } from '@tailfin/sim';
 
 import { resolveDisruptionResponse } from '../automation/response';
@@ -7,6 +8,8 @@ import { readSetting } from '../automation/store';
 import { raiseOperationsTask } from '../automation/tasks';
 import { dispatchCrew, type DispatchDecision } from '../crew/dispatch';
 import { flight } from '../db/schema';
+import { loadWorldEconomyConfig } from '../economy/loader';
+import { handlingArrangementFor, handlingPriceBalanceOf } from '../ground/contracts';
 import { holdsRoleSeat } from '../office/authority';
 import { scheduleEvent, type EventHandler } from '../sim/event-queue';
 
@@ -161,6 +164,7 @@ interface FlightRow {
   id: string;
   worldId: string;
   airlineId: string;
+  originIcao: string;
   scheduledDeparture: Date;
 }
 
@@ -174,6 +178,24 @@ async function applyDecision(
   const delayMinutes = (at.getTime() - row.scheduledDeparture.getTime()) / 60_000;
 
   if (decision.status === 'go') {
+    /*
+     * Snapshot what the turn's handling costs, at the moment the turn happens
+     * (M5-06, §9.3). The arrangement is mutable and the flight is not: resolving
+     * it again at arrival billed the flight for whoever handles the station by
+     * then, and made a replay of an old arrival produce a different figure.
+     *
+     * The same shape as the fuel curve, which the settlement already reads at
+     * the stored departure instant rather than at the arrival.
+     */
+    const economy = await loadWorldEconomyConfig(db, row.worldId);
+    const arrangement = await handlingArrangementFor(
+      db,
+      row.airlineId,
+      row.originIcao,
+      'ramp_baggage',
+      economy,
+    );
+
     await db
       .update(flight)
       .set({
@@ -182,6 +204,7 @@ async function applyDecision(
         actualDeparture: at,
         estimatedArrival: arriveAt,
         crewDutyPeriodId: decision.dutyPeriodId,
+        handlingPriceFactor: handlingPriceFactor(arrangement, handlingPriceBalanceOf(economy)),
         // A flight that left late is a delayed flight even though it left: the
         // cause was set by whatever held it, and is not overwritten here.
         ...(delayMinutes > 0 ? { disruption: 'delayed' as const } : {}),

@@ -1852,6 +1852,27 @@ export const flight = pgTable(
     estimatedArrival: timestamp('estimated_arrival', { withTimezone: true }).notNull(),
     actualArrival: timestamp('actual_arrival', { withTimezone: true }),
 
+    /**
+     * What the departure turn's handling cost, relative to the standard grade
+     * (M5-06, §9.3) — snapshotted when the aeroplane actually left.
+     *
+     * **Null means the flight departed before handling was snapshotted**, not
+     * that it was handled at the standard rate. The settlement resolves such a
+     * flight's arrangement live, which is what it did for every flight until
+     * this column existed.
+     *
+     * Stored rather than resolved at arrival because the arrangement is mutable
+     * and the flight is not: a player who switches handlers mid-flight was
+     * otherwise billed for the handler they have *now* rather than the one that
+     * worked the turn, and a replay of an old arrival re-derived a different
+     * cost — which `settleArrivedFlight` promises it will not do.
+     *
+     * `double precision` rather than `numeric` for the reason `latitude` gives:
+     * it is a measurement rather than a quantity that must balance, and a
+     * `numeric` would come back from the driver as a string.
+     */
+    handlingPriceFactor: doublePrecision('handling_price_factor'),
+
     /** JSON text, like `world_event.payload`. M2-06 fills it; nothing queries inside it. */
     load: text('load').notNull().default('{}'),
     /** Belly cargo in kilograms (§12.1). */
