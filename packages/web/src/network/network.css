@@ -1424,3 +1424,22 @@
   color: var(--text-muted);
   font-size: var(--text-sm);
 }
+
+/* Airport slots (M7-05) — the band grid's picker and claim/release button. */
+.net-slots__pick {
+  margin-left: auto;
+}
+.net-slots__btn {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+.net-slots__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

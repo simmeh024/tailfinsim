@@ -6,6 +6,7 @@ import { fetchFleetAirframes } from '../fleet/api';
 import { useContextSelection } from '../shell/context-selection';
 
 import { closeRoute, fetchRoutes, setRouteActive, type RouteSummary } from './api';
+import { AirportSlotsView } from './planner/AirportSlotsView';
 import { liveEconomics } from './planner/analysis';
 import { CompetitionTab } from './planner/CompetitionTab';
 import { describeSelection } from './planner/ContextBodies';
@@ -41,7 +42,7 @@ import './network.css';
  */
 
 type Tab = 'overview' | 'schedule' | 'pricing' | 'competition' | 'performance';
-type View = 'route' | 'fleet' | 'connections';
+type View = 'route' | 'fleet' | 'connections' | 'slots';
 type RouteSort = 'name' | 'profit' | 'load' | 'distance';
 
 const SORTS: readonly { value: RouteSort; label: string }[] = [
@@ -139,6 +140,17 @@ export function NetworkPage(): ReactNode {
   );
   const allFlights = useMemo(() => livePlans.flatMap((plan) => plan.flights), [livePlans]);
   const currentPlan = selectedRouteId !== null ? (planById.get(selectedRouteId) ?? null) : null;
+
+  // The airports the airline flies from and to — the ones whose slots are worth
+  // managing. Slots are held at an airport, so this is the Slots view's context.
+  const operatedAirports = useMemo(() => {
+    const codes = new Set<string>();
+    for (const route of routes ?? []) {
+      codes.add(route.originIcao);
+      codes.add(route.destinationIcao);
+    }
+    return [...codes];
+  }, [routes]);
 
   // Land on the first route once they load.
   useEffect(() => {
@@ -276,6 +288,7 @@ export function NetworkPage(): ReactNode {
             { value: 'route', label: 'Route planner' },
             { value: 'fleet', label: 'Fleet schedule' },
             { value: 'connections', label: 'Connections' },
+            { value: 'slots', label: 'Slots' },
           ]}
         />
       </header>
@@ -382,7 +395,9 @@ export function NetworkPage(): ReactNode {
         </aside>
 
         <div className="net-main">
-          {view === 'connections' ? (
+          {view === 'slots' ? (
+            <AirportSlotsView airports={operatedAirports} />
+          ) : view === 'connections' ? (
             <HubConnectionsView />
           ) : view === 'fleet' ? (
             <FleetScheduleView

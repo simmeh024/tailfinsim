@@ -1,4 +1,5 @@
 import type {
+  AirportSlotsResponse,
   CabinClass,
   CreateScheduleResponse,
   FarePreviewResponse,
@@ -347,4 +348,46 @@ export async function deleteSchedule(scheduleId: string): Promise<boolean> {
   if (status === 200) return true;
   if (status === 404) return false;
   throw new Error(`DELETE /api/schedules/${scheduleId} failed with ${String(status)}`);
+}
+
+/* ------------------------------------------------- airport slots (M7-05) ---- */
+
+/** One coordinated airport's bands: capacity, how full, and which you hold. */
+export async function fetchAirportSlots(icao: string): Promise<AirportSlotsResponse> {
+  const { status, body } = await json(`/api/airports/${icao}/slots`);
+  if (status !== 200) {
+    throw new Error(`GET /api/airports/${icao}/slots failed with ${String(status)}`);
+  }
+  return body as AirportSlotsResponse;
+}
+
+/** The outcome of claiming or releasing a band: the fresh picture, or why not. */
+export type SlotChange = { ok: true; slots: AirportSlotsResponse } | { ok: false; reason: string };
+
+async function mutateSlot(
+  icao: string,
+  band: number,
+  method: 'POST' | 'DELETE',
+): Promise<SlotChange> {
+  const { status, body } = await json(`/api/airports/${icao}/slots/${String(band)}`, { method });
+  if (status === 200) return { ok: true, slots: body as AirportSlotsResponse };
+  // A refusal (409 full, 422 uncoordinated, 400 bad band) is the server's
+  // considered answer and belongs on screen, not thrown.
+  const message = (body as { message?: string }).message;
+  if (status === 409 || status === 422 || status === 400) {
+    return { ok: false, reason: message ?? 'That slot could not be changed.' };
+  }
+  throw new Error(
+    `${method} /api/airports/${icao}/slots/${String(band)} failed with ${String(status)}`,
+  );
+}
+
+/** Claim a departure band at a coordinated airport. */
+export function claimSlot(icao: string, band: number): Promise<SlotChange> {
+  return mutateSlot(icao, band, 'POST');
+}
+
+/** Release a departure band you hold. */
+export function releaseSlot(icao: string, band: number): Promise<SlotChange> {
+  return mutateSlot(icao, band, 'DELETE');
 }
