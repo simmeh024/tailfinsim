@@ -1594,6 +1594,67 @@ export const scheduleLeg = pgTable(
   ],
 );
 
+/**
+ * A held airport slot (M7-05, §7.4 / design §"Slots").
+ *
+ * One row is one airline's standing right to operate **departures** at a
+ * coordinated (IATA Level 3) airport in one **hourly band** (0–23). It is the
+ * game's model of the scarce resource the design doc calls "held, traded, and
+ * lost through underuse": scheduling a departure whose local off-blocks fall in a
+ * band the airline does not hold is refused by reachability's slot check.
+ *
+ * A slot is a **per-band operating right**, not a per-movement token — one row
+ * lets the airline fly any number of departures in that band. Per-movement
+ * counting, trading (→ MARKET), incumbency priority, use-it-or-lose-it and
+ * seasonality (→ SEASON) are all deliberately out of this first cut; see
+ * ADR-0025. The scarcity that exists here is the per-band **capacity**: only so
+ * many airlines may hold a given band, enforced at claim time.
+ *
+ * There is no fee row: the per-movement airport charge already flows through
+ * settlement's `airport_slot` ledger category, and a recurring holding fee would
+ * need a worker to bill it, which §"Costs" puts later. Holding is standing state
+ * and needs no worker at all — which is why, unlike most of the fleet and
+ * network engine, this works on a world with no worker.
+ */
+export const slotHolding = pgTable(
+  'slot_holding',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+
+    /** The coordinated airport, by ICAO — the same reference shape a route leg uses. */
+    airportIcao: text('airport_icao')
+      .notNull()
+      .references(() => airport.icaoCode),
+
+    /** The hour of the local day the slot covers, 0–23. `floor(departureMinute / 60)`. */
+    band: integer('band').notNull(),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One holding per airline per band per airport: claiming is idempotent, and
+    // capacity counts distinct holders, so a second claim must not make a second row.
+    unique('slot_holding_world_airline_airport_band_key').on(
+      t.worldId,
+      t.airlineId,
+      t.airportIcao,
+      t.band,
+    ),
+    // Counting how full a band is (capacity check) reads by world + airport + band.
+    index('slot_holding_world_airport_band_idx').on(t.worldId, t.airportIcao, t.band),
+    // Resolving an airline's holdings when it authors a schedule reads by owner.
+    index('slot_holding_world_airline_idx').on(t.worldId, t.airlineId),
+    check('slot_holding_band_range', sql`${t.band} >= 0 AND ${t.band} <= 23`),
+  ],
+);
+
 export const flightPhase = pgEnum('flight_phase', [
   'scheduled',
   'boarding',

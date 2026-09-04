@@ -249,6 +249,9 @@ const COVERED_WRITE_ENDPOINTS = [
   'PUT /api/automation/:system',
   'POST /api/ground/:icao/contracts',
   'DELETE /api/ground/contracts/:id',
+  // Airport slots (M7-05): the band is in the path, so neither write reads a body.
+  'POST /api/airports/:icao/slots/:band',
+  'DELETE /api/airports/:icao/slots/:band',
   'POST /api/routes',
   'POST /api/schedules',
   'PUT /api/schedules/:id',
