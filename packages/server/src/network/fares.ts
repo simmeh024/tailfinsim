@@ -74,6 +74,16 @@ export interface RouteEconomics {
   aircraft: FareFloorAircraft;
   market: FuelMarket;
   originStation: FuelStation;
+  /**
+   * What the origin's handling costs this airline, relative to standard
+   * (M5-06, §9.3).
+   *
+   * The route's owner's *actual* arrangement, so the floor and the bill agree.
+   * Not optional here even though `FareFloorInputs` allows it: a provider that
+   * silently omitted it is exactly how the floor came to disagree with the
+   * settlement in the first place.
+   */
+  handlingPriceFactor: number;
   originFees: AirportFees;
   destinationFees: AirportFees;
   /** Today's pool for this pair, per segment, from M3-01 and M3-02. */
@@ -142,6 +152,7 @@ export function floorFor(economics: RouteEconomics, greatCircleNm: number) {
         originStation: economics.originStation,
         originFees: economics.originFees,
         destinationFees: economics.destinationFees,
+        handlingPriceFactor: economics.handlingPriceFactor,
       },
       economics.settlement,
     ),

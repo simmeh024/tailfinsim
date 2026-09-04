@@ -26,11 +26,13 @@
 import { and, count, eq } from 'drizzle-orm';
 
 import type { AirportFees, DemandSegment } from '@tailfin/shared';
+import { handlingPriceFactor } from '@tailfin/sim';
 import type { FareFloorAircraft, FuelMarket, FuelStation } from '@tailfin/sim';
 
 import { demandPool, route } from '../db/schema';
 import { loadWorldFuelContext, marketNow, stationFor, loadAirportFuelRows } from '../economy/fuel';
 import { loadWorldEconomyConfig } from '../economy/loader';
+import { handlingArrangementFor, handlingPriceBalanceOf } from '../ground/contracts';
 import { activeSocialMediaEffects } from '../office/specialists';
 
 import { competitorsFor } from './competitors';
@@ -85,6 +87,25 @@ export const REFERENCE_STATION: FuelStation = {
   regionFactor: 1,
   intoPlaneFeePerTonne: 35,
 };
+
+/**
+ * The handling multiplier for a caller with no airline to resolve one for.
+ *
+ * 1 is the standard grade — the reference, in the same sense as
+ * {@link REFERENCE_AIRFRAME} and {@link REFERENCE_FEES}, and for the same reason
+ * those exist: a system that does not exist yet arrives as a named reference
+ * rather than as a stub.
+ *
+ * The system that does not exist here is **NPC ground handling**. Nothing signs a
+ * ground contract for a `kind = 'npc'` airline, so an NPC's real arrangement
+ * today is walk-up — and costing them at 1.35× would charge them for a feature
+ * that has not been built for them rather than for a choice they made. Costing
+ * them at the standard grade treats them as holding a contract any player can
+ * also hold, which is what M3-12's *"never receive resources or modifiers
+ * unavailable to players"* actually asks for. When NPCs sign contracts, resolve
+ * it the way `createEconomicsProvider` does below and delete this.
+ */
+export const REFERENCE_HANDLING_PRICE_FACTOR = 1;
 
 /** What an airline is assumed to be, until M6 and §15 can say. */
 export const REFERENCE_SELF = { reputation: 0.35, productScore: 0.6, frequency: 2 };
@@ -194,6 +215,24 @@ export function createEconomicsProvider(
     const attractiveness =
       effects.attractiveness && activeRoutes > 1 ? economy.socialMedia.attractivenessUtility : 0;
 
+    /*
+     * What the origin's handling costs *this* airline (M5-06, §9.3). The floor
+     * has to be drawn against the handling the flight will actually be billed,
+     * or it is not a floor — see `fare-floor.ts`'s note on the release where it
+     * was not.
+     *
+     * The origin's tier is handed in from `originRows`, which was already read
+     * for the fuel station, so this does not pay for a second airport lookup.
+     */
+    const arrangement = await handlingArrangementFor(
+      db,
+      row.airlineId,
+      row.originIcao,
+      'ramp_baggage',
+      economy,
+      originRows.get(row.originIcao)?.tier ?? null,
+    );
+
     const competitors = await competitorsFor(db, {
       worldId: row.worldId,
       originIcao: row.originIcao,
@@ -228,6 +267,7 @@ export function createEconomicsProvider(
         fuelCtx === null
           ? { ...economy.fuel.defaultStation, icao: row.originIcao }
           : stationFor(row.originIcao, originRows.get(row.originIcao), fuelCtx, economy),
+      handlingPriceFactor: handlingPriceFactor(arrangement, handlingPriceBalanceOf(economy)),
       originFees: REFERENCE_FEES,
       destinationFees: REFERENCE_FEES,
       segmentPools,

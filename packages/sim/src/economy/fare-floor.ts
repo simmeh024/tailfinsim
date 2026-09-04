@@ -24,6 +24,14 @@
  * settles a real arrival — then divides the cost by the seats. There is exactly
  * one cost model in this codebase, and this is not a second one.
  *
+ * That claim is only true if every input the settlement bills against arrives
+ * here too, and for one release it was not: M5-06 gave a handler grade a price
+ * and this function kept passing none, so the floor was drawn against
+ * standard-grade handling for an airline the settlement was billing at 1.35× for
+ * walk-up or 0.15× for its own people. {@link FareFloorInputs.handlingPriceFactor}
+ * is that input, and the caller is responsible for it being the same one the
+ * flight will be billed under.
+ *
  * That also gives the floor the right shape for free: §13.4's split between
  * flight-caused and period costs already lives in `settleFlight`, so the floor
  * is drawn against **direct operating cost** rather than against a share of the
@@ -72,6 +80,17 @@ export interface FareFloorInputs {
   destinationFees: AirportFees;
   /** Defaults to `DEFAULT_FLIGHT_PROFILE`; a sector with its own climb profile should pass it. */
   profile?: FlightProfile;
+  /**
+   * What the departure turn's handling costs relative to the standard grade
+   * (M5-06, §9.3) — `handlingPriceFactor` in `ground/vendor.ts`.
+   *
+   * Optional, and 1 when absent, matching `settleFlight`'s own default. A caller
+   * that knows how the origin is handled **must** pass it: a floor drawn against
+   * a handling cost the flight will not be billed is not a floor, and it is wrong
+   * in both directions — too low for a walk-up or premium station, too high for a
+   * budget or self-handled one.
+   */
+  handlingPriceFactor?: number;
 }
 
 export interface RouteVariableCost {
@@ -130,6 +149,7 @@ export function routeVariableCostPerSeatMinor(
       aircraft: { maxTakeoffWeightT: inputs.aircraft.maxTakeoffWeightT },
       originFees: inputs.originFees,
       destinationFees: inputs.destinationFees,
+      handlingPriceFactor: inputs.handlingPriceFactor,
     },
     config,
   );
