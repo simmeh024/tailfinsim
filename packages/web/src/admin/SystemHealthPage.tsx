@@ -1,5 +1,7 @@
 import type { AdminNodeHealth, AdminSystemHealthResponse, NodeState } from '@tailfin/shared';
 
+import { StateBlock } from '../ui/StateBlock';
+
 import { fetchSystemHealth } from './api';
 import { usePolledData } from './polling';
 
@@ -200,7 +202,7 @@ export function SystemHealthPage(): ReactNode {
     return (
       <section className="admin__section">
         <h2 className="admin__heading">System health</h2>
-        <p className="admin__note">Loading…</p>
+        <StateBlock kind="loading">Loading…</StateBlock>
       </section>
     );
   }
@@ -209,9 +211,7 @@ export function SystemHealthPage(): ReactNode {
     return (
       <section className="admin__section">
         <h2 className="admin__heading">System health</h2>
-        <p className="admin__note" role="alert">
-          Could not load system health.
-        </p>
+        <StateBlock kind="broken">Could not load system health.</StateBlock>
       </section>
     );
   }
@@ -265,10 +265,10 @@ export function SystemHealthPage(): ReactNode {
         )}
 
         {value.nodes.length === 0 ? (
-          <p className="admin__note">
+          <StateBlock kind="empty">
             No node has ever written a heartbeat to this database. Either nothing is running, or
             everything running predates the heartbeat.
-          </p>
+          </StateBlock>
         ) : (
           <div className="node__list">
             {value.nodes.map((node) => (

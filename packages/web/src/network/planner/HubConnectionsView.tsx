@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import type { HubConnectionBank, HubConnectionsResponse, HubTerminalFlight } from '@tailfin/shared';
 
+import { StateBlock } from '../../ui/StateBlock';
 import { fetchHubConnections } from '../api';
 
 import { Chip, Meter, StatTile } from './ui';
@@ -55,14 +56,10 @@ export function HubConnectionsView(): ReactNode {
   }, []);
 
   if (data === 'loading') {
-    return <p className="admin__note">Loading your hub…</p>;
+    return <StateBlock kind="loading">Loading your hub…</StateBlock>;
   }
   if (data === 'error') {
-    return (
-      <p className="page__note" role="alert">
-        Could not load your hub connections.
-      </p>
-    );
+    return <StateBlock kind="broken">Could not load your hub connections.</StateBlock>;
   }
 
   if (data.inboundFlights === 0 && data.outboundFlights === 0) {
@@ -71,10 +68,10 @@ export function HubConnectionsView(): ReactNode {
         <div className="net-panel__head">
           <h2 className="net-panel__title">Connections at {data.hubIcao}</h2>
         </div>
-        <p className="admin__note">
+        <StateBlock kind="empty">
           Nothing is scheduled through your hub yet. Publish a rotation on the Schedule tab, and
           once it is flying this will show how your arrivals and departures bank for connections.
-        </p>
+        </StateBlock>
       </section>
     );
   }

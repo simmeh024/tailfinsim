@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import type { RoutePerformanceResponse } from '@tailfin/shared';
 
+import { StateBlock } from '../../ui/StateBlock';
 import { fetchPerformance } from '../api';
 
 import { compactMoney, Sparkline, StatTile } from './ui';
@@ -36,14 +37,10 @@ export function PerformanceTab({ routeId }: { routeId: string }): ReactNode {
   }, [routeId]);
 
   if (data === 'loading') {
-    return <p className="admin__note">Loading performance…</p>;
+    return <StateBlock kind="loading">Loading performance…</StateBlock>;
   }
   if (data === 'error') {
-    return (
-      <p className="page__note" role="alert">
-        Could not load this route’s performance.
-      </p>
-    );
+    return <StateBlock kind="broken">Could not load this route’s performance.</StateBlock>;
   }
 
   if (data.flights === 0) {
@@ -52,10 +49,10 @@ export function PerformanceTab({ routeId }: { routeId: string }): ReactNode {
         <div className="net-panel__head">
           <h2 className="net-panel__title">Performance</h2>
         </div>
-        <p className="admin__note">
+        <StateBlock kind="empty">
           This route hasn’t flown yet. Once its schedule produces flights and they arrive, their
           load factor, punctuality and economics roll up here over the last twelve weeks.
-        </p>
+        </StateBlock>
       </section>
     );
   }

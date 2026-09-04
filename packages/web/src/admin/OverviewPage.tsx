@@ -3,6 +3,8 @@ import { Link } from 'react-router';
 
 import type { AdminAlert, AdminGrantSummary, AdminOverviewResponse } from '@tailfin/shared';
 
+import { StateBlock } from '../ui/StateBlock';
+
 import { fetchAdmins, fetchOverview } from './api';
 import { Ago, usePolledData } from './polling';
 
@@ -320,11 +322,9 @@ export function OverviewPage(): ReactNode {
           The last refresh failed. These figures are from <Ago at={overview.lastLoadedAt} />.
         </p>
       )}
-      {overview.loading && <p className="admin__note">Loading overview…</p>}
+      {overview.loading && <StateBlock kind="loading">Loading overview…</StateBlock>}
       {overview.failed && value === null && (
-        <p className="admin__note" role="alert">
-          Could not load the overview.
-        </p>
+        <StateBlock kind="broken">Could not load the overview.</StateBlock>
       )}
 
       {value !== null && (
@@ -387,7 +387,7 @@ export function OverviewPage(): ReactNode {
                 </h2>
                 {value.alerts.length === 0 ? (
                   // Silence has to mean silence, or the panel stops being read.
-                  <p className="admin__note">Nothing wants attention.</p>
+                  <StateBlock kind="empty">Nothing wants attention.</StateBlock>
                 ) : (
                   <ul className="alerts">
                     {value.alerts.map((alert) => (
@@ -399,11 +399,9 @@ export function OverviewPage(): ReactNode {
 
               <section className="card">
                 <h2 className="card__heading">Administrators</h2>
-                {admins.state === 'loading' && <p className="admin__note">Loading…</p>}
+                {admins.state === 'loading' && <StateBlock kind="loading">Loading…</StateBlock>}
                 {admins.state === 'failed' && (
-                  <p className="admin__note" role="alert">
-                    Could not load the administrator list.
-                  </p>
+                  <StateBlock kind="broken">Could not load the administrator list.</StateBlock>
                 )}
                 {admins.state === 'ready' && (
                   <table className="admin__table">

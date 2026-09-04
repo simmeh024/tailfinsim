@@ -8,6 +8,8 @@ import type {
   FleetCatalogueResponse,
 } from '@tailfin/shared';
 
+import { StateBlock } from '../ui/StateBlock';
+
 import { AirframeDetail } from './AirframeDetail';
 import {
   fetchAircraftOrders,
@@ -135,22 +137,18 @@ export function FleetPage(): ReactNode {
 
       <h2 className="fleet__section-heading">Your aircraft</h2>
       {fleetFailed ? (
-        <p className="admin__note" role="alert">
-          Could not load your fleet.
-        </p>
+        <StateBlock kind="broken">Could not load your fleet.</StateBlock>
       ) : fleet === null ? (
-        <p className="admin__note">Loading your fleet…</p>
+        <StateBlock kind="loading">Loading your fleet…</StateBlock>
       ) : (
         <FleetTable airframes={fleet.airframes} selectedId={selectedId} onSelect={setSelectedId} />
       )}
 
       {selectedId !== null &&
         (detailFailed ? (
-          <p className="admin__note" role="alert">
-            Could not load that aircraft.
-          </p>
+          <StateBlock kind="broken">Could not load that aircraft.</StateBlock>
         ) : detail === null ? (
-          <p className="admin__note">Loading aircraft…</p>
+          <StateBlock kind="loading">Loading aircraft…</StateBlock>
         ) : (
           <AirframeDetail
             detail={detail}
@@ -162,29 +160,25 @@ export function FleetPage(): ReactNode {
 
       <h2 className="fleet__section-heading">Open orders</h2>
       {ordersFailed ? (
-        <p className="admin__note" role="alert">
-          Could not load your aircraft orders.
-        </p>
+        <StateBlock kind="broken">Could not load your aircraft orders.</StateBlock>
       ) : orders === null ? (
-        <p className="admin__note">Loading your aircraft orders…</p>
+        <StateBlock kind="loading">Loading your aircraft orders…</StateBlock>
       ) : (
         <FleetOrders orders={orders.orders} />
       )}
 
       <h2 className="fleet__section-heading">Catalogue</h2>
       {catalogueFailed ? (
-        <p className="admin__note" role="alert">
-          Could not load the aircraft catalogue.
-        </p>
+        <StateBlock kind="broken">Could not load the aircraft catalogue.</StateBlock>
       ) : catalogue === null ? (
-        <p className="admin__note">Loading the catalogue…</p>
+        <StateBlock kind="loading">Loading the catalogue…</StateBlock>
       ) : catalogue.types.length === 0 ? (
         // The 1950s world: a real state, and a very different one from a
         // failed request.
-        <p className="admin__note">
+        <StateBlock kind="empty">
           No aircraft type has flown yet in this world. Nothing in the catalogue exists at this
           date.
-        </p>
+        </StateBlock>
       ) : (
         <FleetMarket
           catalogue={catalogue}

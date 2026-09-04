@@ -3,6 +3,8 @@ import { Link, useParams } from 'react-router';
 
 import type { AdminPlayerDetail, AdminPlayerSummary } from '@tailfin/shared';
 
+import { StateBlock } from '../ui/StateBlock';
+
 import { fetchPlayer, fetchPlayers, revokePlayerSessions } from './api';
 
 import type { ReactNode } from 'react';
@@ -111,19 +113,17 @@ function PlayerList(): ReactNode {
       </section>
 
       <section className="admin__section">
-        {page.state === 'loading' && <p className="admin__note">Loading…</p>}
+        {page.state === 'loading' && <StateBlock kind="loading">Loading…</StateBlock>}
         {page.state === 'failed' && (
-          <p className="admin__note" role="alert">
-            Could not load the player list.
-          </p>
+          <StateBlock kind="broken">Could not load the player list.</StateBlock>
         )}
         {page.state === 'ready' &&
           (page.value.players.length === 0 ? (
-            <p className="admin__note">
+            <StateBlock kind="empty">
               {page.value.query === ''
                 ? 'No players yet.'
                 : `Nothing matches “${page.value.query}”.`}
-            </p>
+            </StateBlock>
           ) : (
             <>
               <p className="admin__note">
@@ -202,21 +202,23 @@ function PlayerDetail({ playerId }: { playerId: string }): ReactNode {
     };
   }, [playerId]);
 
-  if (detail.state === 'loading') return <p className="admin__note">Loading…</p>;
+  if (detail.state === 'loading') return <StateBlock kind="loading">Loading…</StateBlock>;
   if (detail.state === 'failed')
-    return (
-      <p className="admin__note" role="alert">
-        Could not load this player.
-      </p>
-    );
+    return <StateBlock kind="broken">Could not load this player.</StateBlock>;
   if (detail.value === null)
     return (
       <section className="admin__section">
         <h2 className="admin__heading">Not found</h2>
-        <p className="admin__note">No player with that id.</p>
-        <Link className="admin__back" to="/admin/players">
-          Back to players
-        </Link>
+        <StateBlock
+          kind="empty"
+          action={
+            <Link className="admin__back" to="/admin/players">
+              Back to players
+            </Link>
+          }
+        >
+          No player with that id.
+        </StateBlock>
       </section>
     );
 
@@ -239,7 +241,7 @@ function PlayerDetail({ playerId }: { playerId: string }): ReactNode {
       <section className="admin__section">
         <h3 className="admin__heading">Identities</h3>
         {player.identities.length === 0 ? (
-          <p className="admin__note">No sign-in identity — this account cannot sign in.</p>
+          <StateBlock kind="empty">No sign-in identity — this account cannot sign in.</StateBlock>
         ) : (
           <table className="admin__table">
             <thead>
@@ -271,7 +273,7 @@ function PlayerDetail({ playerId }: { playerId: string }): ReactNode {
       <section className="admin__section">
         <h3 className="admin__heading">Sessions</h3>
         {player.sessions.length === 0 ? (
-          <p className="admin__note">No sessions.</p>
+          <StateBlock kind="empty">No sessions.</StateBlock>
         ) : (
           <table className="admin__table">
             <thead>
@@ -331,7 +333,7 @@ function PlayerDetail({ playerId }: { playerId: string }): ReactNode {
       <section className="admin__section">
         <h3 className="admin__heading">Airlines</h3>
         {player.airlines.length === 0 ? (
-          <p className="admin__note">No airlines in any world.</p>
+          <StateBlock kind="empty">No airlines in any world.</StateBlock>
         ) : (
           <table className="admin__table">
             <thead>

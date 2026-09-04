@@ -549,10 +549,12 @@ describe('open aircraft orders', () => {
     stubApi(CATALOGUE, FLEET, null);
     await openFleet();
 
-    expect(await screen.findByText('Could not load your aircraft orders.')).toHaveAttribute(
-      'role',
-      'alert',
-    );
+    // The `alert` sits on the state block rather than on the sentence itself,
+    // so the glyph and any resolving action are announced with it. What matters
+    // is that the failure announces itself at all, not which node carries the
+    // attribute.
+    const failure = await screen.findByText('Could not load your aircraft orders.');
+    expect(failure.closest('[role="alert"]')).not.toBeNull();
     expect(screen.getByText('PH-TFB')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /View Airbus A320neo/i })).toBeInTheDocument();
   });

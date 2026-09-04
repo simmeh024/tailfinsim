@@ -2,6 +2,8 @@ import { Fragment, useCallback, useEffect, useState } from 'react';
 
 import type { AdminWorldSummary } from '@tailfin/shared';
 
+import { StateBlock } from '../ui/StateBlock';
+
 import { createWorld, fetchWorlds, type FieldErrors } from './api';
 import { WorldLifecycle } from './WorldLifecycle';
 import { WorldSpeed } from './WorldSpeed';
@@ -186,15 +188,11 @@ export function WorldsPanel(): ReactNode {
     <>
       <section className="admin__section">
         <h2 className="admin__heading">Worlds</h2>
-        {worlds === null && !loadFailed && <p className="admin__note">Loading…</p>}
-        {loadFailed && (
-          <p className="admin__note" role="alert">
-            Could not load the world list.
-          </p>
-        )}
+        {worlds === null && !loadFailed && <StateBlock kind="loading">Loading…</StateBlock>}
+        {loadFailed && <StateBlock kind="broken">Could not load the world list.</StateBlock>}
         {worlds !== null &&
           (worlds.length === 0 ? (
-            <p className="admin__note">No worlds yet.</p>
+            <StateBlock kind="empty">No worlds yet.</StateBlock>
           ) : (
             <table className="admin__table">
               <thead>

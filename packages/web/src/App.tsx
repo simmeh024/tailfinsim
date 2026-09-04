@@ -27,6 +27,7 @@ import { BoardPage, FinancePage } from './routes/Placeholder';
 import { SettingsPage } from './settings/SettingsPage';
 import { AppShell } from './shell/AppShell';
 import { ThemeProvider } from './theme/ThemeProvider';
+import { StateBlock } from './ui/StateBlock';
 import { WorldPage } from './world/WorldPage';
 
 import type { ReactNode } from 'react';
@@ -68,9 +69,9 @@ function IndexRedirect(): ReactNode {
     return (
       <section className="page">
         <h1 className="page__title">Cannot choose a landing page</h1>
-        <p className="page__note" role="alert">
+        <StateBlock kind="broken">
           Tailfin could not read your airline context. Reload to try again.
-        </p>
+        </StateBlock>
       </section>
     );
   }
@@ -78,9 +79,7 @@ function IndexRedirect(): ReactNode {
     return (
       <section className="page">
         <h1 className="page__title">Opening your desk</h1>
-        <p className="page__note" aria-live="polite">
-          Checking your airline…
-        </p>
+        <StateBlock kind="loading">Checking your airline…</StateBlock>
       </section>
     );
   }
@@ -166,7 +165,7 @@ export function App(): ReactNode {
                   element={
                     <section className="page">
                       <h1 className="page__title">Not found</h1>
-                      <p className="page__note">No such view.</p>
+                      <StateBlock kind="empty">No such view.</StateBlock>
                     </section>
                   }
                 />

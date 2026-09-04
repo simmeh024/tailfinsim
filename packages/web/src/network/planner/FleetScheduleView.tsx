@@ -1,3 +1,5 @@
+import { StateBlock } from '../../ui/StateBlock';
+
 import { Timeline, TimelineBlock, TimelineRow, minuteLabel } from './Timeline';
 import { Meter } from './ui';
 
@@ -94,9 +96,9 @@ export function FleetScheduleView({
           );
         })}
         {flyers.length === 0 && (
-          <p className="admin__note">
+          <StateBlock kind="empty">
             No aircraft in the fleet yet. Acquire one on the Fleet page to schedule flights.
-          </p>
+          </StateBlock>
         )}
       </Timeline>
     </div>

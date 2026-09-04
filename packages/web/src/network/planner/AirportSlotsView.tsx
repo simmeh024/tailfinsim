@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { AirportSlotBand, AirportSlotsResponse } from '@tailfin/shared';
 
+import { StateBlock } from '../../ui/StateBlock';
 import { claimSlot, fetchAirportSlots, releaseSlot } from '../api';
 
 import { Chip, Meter } from './ui';
@@ -73,10 +74,10 @@ export function AirportSlotsView({ airports }: { airports: readonly string[] }):
         <div className="net-panel__head">
           <h2 className="net-panel__title">Slots</h2>
         </div>
-        <p className="admin__note">
+        <StateBlock kind="empty">
           Open a route first. Slots are held at the airports you fly from, so there is nothing to
           manage until you have one.
-        </p>
+        </StateBlock>
       </section>
     );
   }
@@ -101,11 +102,9 @@ export function AirportSlotsView({ airports }: { airports: readonly string[] }):
         </label>
       </div>
 
-      {data === 'loading' && <p className="admin__note">Loading slots…</p>}
+      {data === 'loading' && <StateBlock kind="loading">Loading slots…</StateBlock>}
       {data === 'error' && (
-        <p className="page__note" role="alert">
-          Could not load this airport’s slots.
-        </p>
+        <StateBlock kind="broken">Could not load this airport’s slots.</StateBlock>
       )}
 
       {typeof data === 'object' && !data.coordinated && (

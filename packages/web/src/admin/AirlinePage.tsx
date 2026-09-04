@@ -8,6 +8,8 @@ import type {
   FareTable,
 } from '@tailfin/shared';
 
+import { StateBlock } from '../ui/StateBlock';
+
 import { fetchAdminAirline } from './api';
 
 import type { ReactNode } from 'react';
@@ -65,7 +67,7 @@ function formatFares(fares: FareTable): string {
 }
 
 function RouteRows({ routes }: { routes: AdminAirlineRoute[] }): ReactNode {
-  if (routes.length === 0) return <p className="admin__note">No routes recorded.</p>;
+  if (routes.length === 0) return <StateBlock kind="empty">No routes recorded.</StateBlock>;
   return (
     <table className="admin__table">
       <thead>
@@ -119,22 +121,24 @@ export function AdminAirlinePage(): ReactNode {
     };
   }, [airlineId, movementOffset]);
 
-  if (detail.state === 'loading') return <p className="admin__note">Loading…</p>;
+  if (detail.state === 'loading') return <StateBlock kind="loading">Loading…</StateBlock>;
   if (detail.state === 'failed') {
-    return (
-      <p className="admin__note" role="alert">
-        Could not load this airline.
-      </p>
-    );
+    return <StateBlock kind="broken">Could not load this airline.</StateBlock>;
   }
   if (detail.value === null) {
     return (
       <section className="admin__section">
         <h2 className="admin__heading">Not found</h2>
-        <p className="admin__note">No airline with that id.</p>
-        <Link className="admin__back" to="/admin/players">
-          Back to players
-        </Link>
+        <StateBlock
+          kind="empty"
+          action={
+            <Link className="admin__back" to="/admin/players">
+              Back to players
+            </Link>
+          }
+        >
+          No airline with that id.
+        </StateBlock>
       </section>
     );
   }
@@ -223,7 +227,7 @@ export function AdminAirlinePage(): ReactNode {
       <section className="admin__section">
         <h3 className="admin__heading">Cash movements ({cashMovements.total})</h3>
         {cashMovements.entries.length === 0 ? (
-          <p className="admin__note">No cash movements recorded.</p>
+          <StateBlock kind="empty">No cash movements recorded.</StateBlock>
         ) : (
           <table className="admin__table">
             <thead>

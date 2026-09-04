@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import type { RouteCompetitionResponse, RouteCompetitor } from '@tailfin/shared';
 
+import { StateBlock } from '../../ui/StateBlock';
 import { fetchCompetition } from '../api';
 
 import { Chip, major, Meter } from './ui';
@@ -44,14 +45,10 @@ export function CompetitionTab({ routeId }: { routeId: string }): ReactNode {
   }, [routeId]);
 
   if (data === 'loading') {
-    return <p className="admin__note">Loading the market…</p>;
+    return <StateBlock kind="loading">Loading the market…</StateBlock>;
   }
   if (data === 'error') {
-    return (
-      <p className="page__note" role="alert">
-        Could not load this route’s competition.
-      </p>
-    );
+    return <StateBlock kind="broken">Could not load this route’s competition.</StateBlock>;
   }
 
   const you = data.operators.find((operator) => operator.isYou);
@@ -63,10 +60,10 @@ export function CompetitionTab({ routeId }: { routeId: string }): ReactNode {
         <div className="net-panel__head">
           <h2 className="net-panel__title">Competition</h2>
         </div>
-        <p className="admin__note">
+        <StateBlock kind="empty">
           Nobody else is selling this market. You have the route to yourself — set the fare where
           the demand model pays you best.
-        </p>
+        </StateBlock>
       </section>
     );
   }
