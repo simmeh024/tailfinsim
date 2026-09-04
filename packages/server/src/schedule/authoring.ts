@@ -26,6 +26,7 @@ import {
 
 import { airframe, route, schedule, world } from '../db/schema';
 import { openRoute } from '../network/open-route';
+import { resolveLegSlots } from '../network/slots';
 
 import { readSchedule } from './read';
 import {
@@ -415,13 +416,20 @@ export async function authorSchedule(
   if (!prepared.ok)
     return { status: 'refused', problem: prepared.problem, detail: prepared.detail };
 
-  const result = await createSchedule(db, {
-    worldId: own.worldId,
-    airlineId: own.id,
-    airframeId: request.airframeId,
-    legs: placeLegs(prepared.legs, spec.cruiseSpeedKt),
-    repeat: toSimRepeat(request.repeat),
-  });
+  const placed = placeLegs(prepared.legs, spec.cruiseSpeedKt);
+  const result = await createSchedule(
+    db,
+    {
+      worldId: own.worldId,
+      airlineId: own.id,
+      airframeId: request.airframeId,
+      legs: placed,
+      repeat: toSimRepeat(request.repeat),
+    },
+    // Slots resolved from real holdings — the M7-05 wiring the store has waited for.
+    // `crewLegal` stays undefined so the database still decides crew.
+    { slots: await resolveLegSlots(db, own, placed) },
+  );
   if (!result.ok) {
     return { status: 'refused', problem: result.problem, detail: result.detail };
   }
@@ -502,13 +510,16 @@ export async function editSchedule(
   if (clock === null) return { status: 'not_found' };
   const gameNow = gameTime(clock, now);
 
+  const placed = placeLegs(prepared.legs, spec.cruiseSpeedKt);
   const outcome = await replaceScheduleLegs(
     db,
     scheduleId,
-    placeLegs(prepared.legs, spec.cruiseSpeedKt),
+    placed,
     toSimRepeat(request.repeat),
     gameNow,
     horizonFrom(gameNow),
+    // Same slot resolution as create — an edit is authored under the same rule.
+    { slots: await resolveLegSlots(db, own, placed) },
   );
   if (!outcome.ok) return { status: 'refused', problem: outcome.problem, detail: outcome.detail };
 

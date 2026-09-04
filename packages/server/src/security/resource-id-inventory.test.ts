@@ -31,6 +31,12 @@ const NON_UUID_PATH_IDENTIFIERS = [
   'PUT /api/automation/:system',
   'GET /api/ground/:icao',
   'POST /api/ground/:icao/contracts',
+  // Airport slots (M7-05): `:icao` is a public airport identifier and `:band` a
+  // public 0–23 selector; ownership of a holding is resolved from the session,
+  // never from the path, exactly like the ground endpoints above.
+  'GET /api/airports/:icao/slots',
+  'POST /api/airports/:icao/slots/:band',
+  'DELETE /api/airports/:icao/slots/:band',
 ] as const;
 
 const BODY_UUID_CONTRACTS = [

@@ -53,6 +53,7 @@ export * from './fleet';
 export * from './livery';
 export * from './livery-resources';
 export * from './network';
+export * from './slots';
 export * from './automation';
 export * from './ground';
 export * from './office';
