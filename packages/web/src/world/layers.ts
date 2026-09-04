@@ -299,6 +299,16 @@ const TERMINATOR_POLYGON_OFFSET = (): [number, number] => [0, -20000];
 const OVERLAY_POLYGON_OFFSET = (): [number, number] => [0, -60000];
 
 /**
+ * How far up the altitude wash a route line starts and finishes.
+ *
+ * Zero would take the ends to the ground colour, which is the amber the airport dots
+ * and the pale terrain already use — and a line that arrives at the colour of what it
+ * is drawn on has no visible end. This keeps the warm-to-cool reading while leaving
+ * both ends unmistakably part of the route.
+ */
+const ALTITUDE_WASH_FLOOR = 0.55;
+
+/**
  * A `BitmapLayer` that rebuilds its mesh when the viewport that draws it changes.
  *
  * **This is what keeps the globe from going black after a projection switch.**
@@ -466,7 +476,13 @@ export function createWorldLayers({
   const highAltitude = palette.route;
   const routeColors: [number, number, number, number][] = [];
   for (let i = 0; i <= routeSegments; i += 1) {
-    const climb = altitudeProfile(i / routeSegments);
+    // Floored rather than run to the ground colour. Taken all the way, the last tenth
+    // of every leg arrived at the amber the airports and the pale terrain are already
+    // drawn in — so a route ended by dissolving into the map, and you could not see
+    // where it went. The wash still reads as low-warm to high-cool; it just never
+    // stops being a route.
+    const climb =
+      ALTITUDE_WASH_FLOOR + (1 - ALTITUDE_WASH_FLOOR) * altitudeProfile(i / routeSegments);
     routeColors.push([
       Math.round(lowAltitude[0] + (highAltitude[0] - lowAltitude[0]) * climb),
       Math.round(lowAltitude[1] + (highAltitude[1] - lowAltitude[1]) * climb),

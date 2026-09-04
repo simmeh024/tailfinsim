@@ -141,50 +141,65 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-/**
- * How much of the leg a turn is rolled through, as a fraction of it.
- *
- * The corner at a waypoint is blended over this much of the track. Zero would give a
- * mathematically sharp kink, which no aeroplane flies; much more and the dogleg melts
- * back into the smooth curve this exists to avoid.
- */
-const TURN_WIDTH = 0.09;
-
-/** A cleared deviation: how far off the direct track, at what fraction along it. */
+/** A deviation from the direct track: how far off, where, and how sharply flown. */
 interface Waypoint {
   /** Fraction along the leg, 0 to 1. */
   at: number;
   /** Lateral offset as a share of the maximum for this leg; negative is the far side. */
   offset: number;
+  /**
+   * How much of the leg the turn is rolled through.
+   *
+   * This is what separates the two things a bend can be. A **wide** turn spreads the
+   * heading change across most of the leg, which is the continuous drift of a track
+   * being flown — no corner anywhere, just a line that is never quite a ruler. A
+   * **narrow** one puts the whole change in one place, which is a dogleg: the corner
+   * you see when a controller turns an aircraft around something.
+   */
+  turn: number;
 }
 
 /**
- * The waypoints air traffic control has given this route — usually none.
+ * The deviations this route is flown with.
  *
- * Roughly three legs in five are flown direct. Most of the rest take a single dogleg;
- * a few get two, which is the shape of being offset onto a parallel track and later
- * rejoining. The thresholds are arbitrary, but their ordering is the point: straight is
- * the common case, and a kink is the exception.
+ * Three regimes, and the proportions are the whole look of the map:
+ *
+ * - a few legs are flown exactly as filed, dead straight;
+ * - **most drift gently** — one waypoint, a modest offset, and a turn so wide the
+ *   track never has a corner in it, only a slow bow;
+ * - some get a real dogleg, and a few of those get two, which is the shape of being
+ *   offset onto a parallel track and later rejoining.
+ *
+ * A ruler-straight line looks unflown and a wave looks drawn; the gentle bow is what
+ * an aircraft track actually looks like, so it is the common case.
  */
 function routeWaypoints(seed: number): Waypoint[] {
   const rng = mulberry32(seed);
   const roll = rng();
-  if (roll < 0.62) return [];
+
+  // Cleared as filed, and flown that way.
+  if (roll < 0.14) return [];
 
   // Which side of the direct track the deviation runs.
   const side = rng() < 0.5 ? -1 : 1;
 
-  if (roll < 0.92) {
-    // One waypoint in the middle two thirds of the leg: a single change of heading.
-    return [{ at: 0.25 + rng() * 0.5, offset: side * (0.55 + rng() * 0.45) }];
+  if (roll < 0.79) {
+    // The common case: a slow bow across the middle of the leg. The turn is half the
+    // leg wide, so the heading changes continuously and no part of it reads as a kink.
+    return [{ at: 0.4 + rng() * 0.2, offset: side * (0.45 + rng() * 0.45), turn: 0.5 }];
   }
 
-  // Two waypoints, usually the same side: an offset joined and later rejoined, rather
-  // than a slalom.
+  if (roll < 0.94) {
+    // A dogleg: the same lateral idea, flown as one distinct turn instead of a drift.
+    return [{ at: 0.28 + rng() * 0.44, offset: side * (0.6 + rng() * 0.4), turn: 0.11 }];
+  }
+
+  // Offset onto a parallel track and later rejoined — usually the same side, so it
+  // reads as a detour rather than a slalom.
   const secondSide = rng() < 0.8 ? side : -side;
   return [
-    { at: 0.2 + rng() * 0.18, offset: side * (0.5 + rng() * 0.5) },
-    { at: 0.6 + rng() * 0.2, offset: secondSide * (0.5 + rng() * 0.5) },
+    { at: 0.22 + rng() * 0.16, offset: side * (0.55 + rng() * 0.45), turn: 0.1 },
+    { at: 0.62 + rng() * 0.16, offset: secondSide * (0.55 + rng() * 0.45), turn: 0.1 },
   ];
 }
 
@@ -197,14 +212,21 @@ function smoothstep(u: number): number {
 /**
  * The lateral offset at fraction `t`, in roughly [-1, 1] and zero at both ends.
  *
- * **Piecewise linear** between the waypoints — which is what makes the track read as
- * straight legs rather than a curve — with each corner blended over {@link TURN_WIDTH}
- * so the turn is flown rather than hinged. A leg with no waypoints is offset zero the
- * whole way, which is exactly the great circle.
+ * Piecewise linear between the waypoints, with each corner rolled through over that
+ * waypoint's own `turn`. The width of the turn is what decides the character: wide
+ * enough and the linear stretches vanish into one continuous bow, narrow and they stay
+ * straight either side of a corner. A leg with no waypoints is offset zero the whole
+ * way, which is exactly the great circle.
  */
 function lateralAt(t: number, waypoints: readonly Waypoint[]): number {
   if (waypoints.length === 0) return 0;
-  const points: Waypoint[] = [{ at: 0, offset: 0 }, ...waypoints, { at: 1, offset: 0 }];
+  // The two airports bracket the waypoints. Neither is ever a corner — the loop below
+  // only rolls a turn at an interior point — so their `turn` is unused.
+  const points: Waypoint[] = [
+    { at: 0, offset: 0, turn: 0 },
+    ...waypoints,
+    { at: 1, offset: 0, turn: 0 },
+  ];
 
   /** The straight leg arriving at `points[i]`, extended to any fraction. */
   const leg = (i: number, at: number): number => {
@@ -219,9 +241,10 @@ function lateralAt(t: number, waypoints: readonly Waypoint[]): number {
     const corner = points[i]!;
     if (i < points.length - 1) {
       // Half-width of the turn, clamped so it can never reach past the waypoint on
-      // either side of it.
+      // either side of it — which is also what keeps a wide turn from swallowing an
+      // endpoint and lifting the track off its airport.
       const half = Math.min(
-        TURN_WIDTH,
+        corner.turn,
         (corner.at - points[i - 1]!.at) / 2,
         (points[i + 1]!.at - corner.at) / 2,
       );
@@ -271,7 +294,7 @@ function makeFlightArc(source: LngLat, target: LngLat, seed: number): FlightArc 
   const a = toVec(source);
   const b = toVec(target);
   const omega = Math.acos(Math.max(-1, Math.min(1, dot3(a, b))));
-  return { a, b, waypoints: routeWaypoints(seed), maxAngle: Math.min(omega * 0.1, 2 * RAD) };
+  return { a, b, waypoints: routeWaypoints(seed), maxAngle: Math.min(omega * 0.16, 3 * RAD) };
 }
 
 /** The unit vector on this route's track at fraction `t`. */

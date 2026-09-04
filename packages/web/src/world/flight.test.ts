@@ -111,7 +111,7 @@ describe('flightPath', () => {
     });
   };
 
-  /** Turning points in a profile — one per dogleg, many for a wave. */
+  /** Turning points in a profile — one per bend, many for a wave. */
   const peaks = (profile: readonly number[]): number => {
     let found = 0;
     for (let i = 1; i < profile.length - 1; i += 1) {
@@ -120,26 +120,87 @@ describe('flightPath', () => {
     return found;
   };
 
+  /**
+   * Cross-track angle at each sample: how far the track lies off the plane of the
+   * direct great circle, signed, in radians.
+   *
+   * This is the quantity the model makes piecewise linear, so curvature shows up in it
+   * exactly. Measuring drift in longitude and latitude instead folds in the projection,
+   * which curves even a dead-straight track slightly all by itself.
+   */
+  const crossTrack = (id: string, segments: number): number[] => {
+    const rad = Math.PI / 180;
+    const vec = ([lon, lat]: LngLat): [number, number, number] => [
+      Math.cos(lat * rad) * Math.cos(lon * rad),
+      Math.cos(lat * rad) * Math.sin(lon * rad),
+      Math.sin(lat * rad),
+    ];
+    const [ax, ay, az] = vec(ams);
+    const [bx, by, bz] = vec(nce);
+    const normal = [ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx];
+    const length = Math.hypot(...normal) || 1;
+    const unit = normal.map((c) => c / length);
+    return flightPath(ams, nce, routeSeed(id), segments).map((point) => {
+      const [px, py, pz] = vec(point);
+      const dot = px * unit[0]! + py * unit[1]! + pz * unit[2]!;
+      return Math.asin(Math.max(-1, Math.min(1, dot)));
+    });
+  };
+
+  /**
+   * What share of a leg is actually turning.
+   *
+   * Zero second difference in the cross-track angle is a straight leg; only a rolled
+   * turn bends. So this separates the two characters a bend can have: a slow bow turns
+   * across most of the leg, a dogleg turns in one small part of it.
+   */
+  const bendingFraction = (id: string, segments = 256): number => {
+    const track = crossTrack(id, segments);
+    let bending = 0;
+    for (let i = 1; i < track.length - 1; i += 1) {
+      if (Math.abs(track[i - 1]! - 2 * track[i]! + track[i + 1]!) > 1e-9) bending += 1;
+    }
+    return bending / track.length;
+  };
+
   const ids = Array.from({ length: 60 }, (_, i) => `route-${String(i)}`);
 
-  it('flies most legs exactly on the great circle', () => {
-    // An aeroplane cleared as filed does not wander off its own track, so the common
-    // case has to be a drift of precisely nothing — not merely a small one.
+  it('flies a few legs exactly as filed, and most with some drift', () => {
+    // Cleared as filed means a drift of precisely nothing, not merely a small one — so
+    // some legs must measure exactly zero. But a map of ruler-straight lines looks
+    // unflown, so those are the minority: most legs leave the direct track a little.
     const direct = ids.filter((id) => Math.max(...driftProfile(id)) === 0);
-    expect(direct.length).toBeGreaterThan(ids.length / 2);
+    expect(direct.length).toBeGreaterThan(0);
+    expect(direct.length).toBeLessThan(ids.length / 3);
+  });
+
+  it('drifts off the track gently on most legs, and doglegs on a few', () => {
+    // The two characters a bend can have, told apart by how much of the leg is turning:
+    // a bow spreads the heading change across the middle of the leg, a dogleg puts it
+    // all in one place. Both must actually occur, or the map is all curves or all kinks.
+    const bendingFractions = ids
+      .filter((id) => Math.max(...driftProfile(id)) > 0)
+      .map((id) => ({ id, bending: bendingFraction(id) }));
+
+    expect(bendingFractions.some(({ bending }) => bending > 0.4)).toBe(true);
+    expect(bendingFractions.some(({ bending }) => bending < 0.3)).toBe(true);
   });
 
   it('re-routes some legs, and those are the only ones that leave the track', () => {
     const deviating = ids.filter((id) => Math.max(...driftProfile(id)) > 0);
     expect(deviating.length).toBeGreaterThan(0);
+    const degrees = 180 / Math.PI;
     for (const id of deviating) {
-      const profile = driftProfile(id);
-      // Off-track by real degrees, but a kink rather than a detour.
-      expect(Math.max(...profile), id).toBeGreaterThan(0.001);
-      expect(Math.max(...profile), id).toBeLessThan(2);
+      // Measured as the cross-track angle, not a longitude/latitude distance: the
+      // latter exaggerates by 1/cos(latitude), which at 48°N turns a 1.5° deviation
+      // into a 2° reading and would make this bound about the projection.
+      const track = crossTrack(id, 128).map((angle) => Math.abs(angle) * degrees);
+      // Off the direct track by real degrees, but a bend rather than a detour.
+      expect(Math.max(...track), id).toBeGreaterThan(0.001);
+      expect(Math.max(...track), id).toBeLessThan(2);
       // Still joined to both airports.
-      expect(profile[0], id).toBeCloseTo(0, 9);
-      expect(profile.at(-1), id).toBeCloseTo(0, 9);
+      expect(track[0], id).toBeCloseTo(0, 9);
+      expect(track.at(-1), id).toBeCloseTo(0, 9);
     }
   });
 
@@ -155,50 +216,17 @@ describe('flightPath', () => {
     expect(ids.some((id) => peaks(driftProfile(id)) === 1)).toBe(true);
   });
 
-  it('holds a straight heading everywhere except in the turns', () => {
-    /**
-     * Cross-track angle: how far the track lies off the plane of the direct great
-     * circle, signed, in radians.
-     *
-     * This is the quantity the model makes piecewise linear, so curvature shows up in
-     * it exactly. Measuring drift in longitude and latitude instead would fold in the
-     * projection, which curves a straight track slightly all by itself.
-     */
-    const crossTrack = (id: string, segments: number): number[] => {
-      const rad = Math.PI / 180;
-      const vec = ([lon, lat]: LngLat): [number, number, number] => [
-        Math.cos(lat * rad) * Math.cos(lon * rad),
-        Math.cos(lat * rad) * Math.sin(lon * rad),
-        Math.sin(lat * rad),
-      ];
-      const [ax, ay, az] = vec(ams);
-      const [bx, by, bz] = vec(nce);
-      const normal = [ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx];
-      const length = Math.hypot(...normal) || 1;
-      const unit = normal.map((c) => c / length);
-      return flightPath(ams, nce, routeSeed(id), segments).map((point) => {
-        const [px, py, pz] = vec(point);
-        const dot = px * unit[0]! + py * unit[1]! + pz * unit[2]!;
-        return Math.asin(Math.max(-1, Math.min(1, dot)));
-      });
-    };
+  it('flies a dogleg as straight legs either side of one turn', () => {
+    // Pick the tightest bend on offer — the dogleg regime — and show the rest of that
+    // leg is dead straight. A sum of sines curves at every sample, so it would score
+    // near 1 here rather than a small fraction.
+    const tightest = ids
+      .filter((id) => Math.max(...driftProfile(id)) > 0)
+      .map((id) => ({ id, bending: bendingFraction(id) }))
+      .reduce((best, next) => (next.bending < best.bending ? next : best));
 
-    const rerouted = ids.find((id) => peaks(driftProfile(id)) === 1);
-    expect(rerouted).toBeDefined();
-
-    const segments = 256;
-    const track = crossTrack(rerouted!, segments);
-    // A straight leg has zero second difference; only the rolled turn bends.
-    let bending = 0;
-    for (let i = 1; i < track.length - 1; i += 1) {
-      if (Math.abs(track[i - 1]! - 2 * track[i]! + track[i + 1]!) > 1e-9) bending += 1;
-    }
-    const bendingFraction = bending / track.length;
-    // There is a turn…
-    expect(bendingFraction).toBeGreaterThan(0);
-    // …and the rest of the leg is dead straight. A sum of sines curves at every
-    // sample, so it would score ~1 here rather than under a third.
-    expect(bendingFraction).toBeLessThan(0.35);
+    expect(tightest.bending).toBeGreaterThan(0);
+    expect(tightest.bending).toBeLessThan(0.3);
   });
 });
 
