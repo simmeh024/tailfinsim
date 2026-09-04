@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router';
 
 import type { AdminPlayerDetail, AdminPlayerSummary } from '@tailfin/shared';
 
+import { Button } from '../ui/Button';
 import { StateBlock } from '../ui/StateBlock';
 
 import { fetchPlayer, fetchPlayers, revokePlayerSessions } from './api';
@@ -106,9 +107,9 @@ function PlayerList(): ReactNode {
               Player name, airline name, or IATA/ICAO code — whichever you were given.
             </span>
           </div>
-          <button className="admin__submit" type="submit">
+          <Button variant="primary" type="submit">
             Search
-          </button>
+          </Button>
         </form>
       </section>
 
@@ -300,9 +301,8 @@ function PlayerDetail({ playerId }: { playerId: string }): ReactNode {
           Metadata only. The session token is never stored — only a SHA-256 of it — so there is
           nothing here that could sign anybody in.
         </p>
-        <button
-          className="admin__submit"
-          type="button"
+        <Button
+          variant="danger"
           disabled={revocation.state === 'working' || player.sessions.length === 0}
           onClick={() => {
             setRevocation({ state: 'working' });
@@ -317,7 +317,7 @@ function PlayerDetail({ playerId }: { playerId: string }): ReactNode {
           }}
         >
           Revoke all sessions
-        </button>
+        </Button>
         {revocation.state === 'done' && (
           <p className="admin__note" role="status">
             Revoked {revocation.count} {revocation.count === 1 ? 'session' : 'sessions'}.

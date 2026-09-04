@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { AutomationMode, AutomationStateResponse, OperationsTaskView } from '@tailfin/shared';
 
+import { Button } from '../ui/Button';
+
 import { fetchAutomation, setAutomation } from './automation';
 
 import type { ReactNode } from 'react';
@@ -231,17 +233,12 @@ export function PoliciesModal({ open, onClose, hasOpsController }: PoliciesModal
         </div>
 
         <footer className="modal__footer">
-          <button type="button" className="modal__button" onClick={onClose} disabled={saving}>
+          <Button variant="tertiary" onClick={onClose} disabled={saving}>
             Cancel
-          </button>
-          <button
-            type="button"
-            className="modal__button modal__button--primary"
-            onClick={() => void onSave()}
-            disabled={loading || saving}
-          >
+          </Button>
+          <Button variant="primary" onClick={() => void onSave()} disabled={loading || saving}>
             {saving ? 'Saving…' : 'Save policy'}
-          </button>
+          </Button>
         </footer>
       </div>
     </div>

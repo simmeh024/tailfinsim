@@ -1,3 +1,4 @@
+import { Button } from '../ui/Button';
 import { BuildBadge } from '../version/BuildBadge';
 
 import { LoginPage } from './LoginPage';
@@ -45,9 +46,13 @@ export function RequireSession({ children }: { children: ReactNode }): ReactNode
           <p className="gate__message">
             The server did not answer. It may be mid-deploy — this usually clears within a minute.
           </p>
-          <button type="button" className="gate__retry" onClick={() => window.location.reload()}>
+          <Button
+            variant="primary"
+            className="gate__retry"
+            onClick={() => window.location.reload()}
+          >
             Try again
-          </button>
+          </Button>
         </div>
         <BuildBadge />
       </div>

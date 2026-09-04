@@ -9,6 +9,7 @@ import {
   type NpcDecisionKind,
 } from '@tailfin/shared';
 
+import { Button } from '../ui/Button';
 import { StateBlock } from '../ui/StateBlock';
 
 import { fetchNpcCarriers, fetchWorlds } from './api';
@@ -228,9 +229,9 @@ export function CarriersPage(): ReactNode {
         </>
       )}
 
-      <button className="admin__submit" type="button" onClick={refresh}>
+      <Button variant="secondary" onClick={refresh}>
         Refresh now
-      </button>
+      </Button>
     </section>
   );
 }

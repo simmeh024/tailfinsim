@@ -645,21 +645,13 @@ body {
   background: var(--accent-quiet);
 }
 
+/* Placement only; sign out is a tertiary Button. It sits in a stacked menu,
+   hence the full width and the left edge. */
 .account__signout {
+  justify-content: flex-start;
+  width: 100%;
   padding: var(--space-1) var(--space-3);
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  font: inherit;
   font-size: var(--text-xs);
-  text-align: left;
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-}
-
-.account__signout:hover {
-  color: var(--text-primary);
-  text-decoration: underline;
 }
 
 /* ---------------------------------------------------------------- panel ---- */
@@ -955,21 +947,10 @@ body {
   font-size: var(--text-sm);
 }
 
+/* Placement only; the retry is a primary Button. */
 .gate__retry {
   align-self: center;
   padding: var(--space-2) var(--space-4);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-primary);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
-
-.gate__retry:hover {
-  border-color: var(--accent);
-  color: var(--accent);
 }
 
 /* --------------------------------------------------------------- build ---- */
@@ -2464,29 +2445,6 @@ body {
   list-style: none;
 }
 
-.admin__submit {
-  align-self: flex-start;
-  padding: var(--space-1) var(--space-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-primary);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
-
-.admin__submit:hover:not(:disabled),
-.admin__submit:focus-visible {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.admin__submit:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
 .admin__ok {
   font-size: var(--text-sm);
   color: var(--status-ontime, var(--accent));
@@ -3043,22 +3001,6 @@ body {
   gap: var(--space-3);
 }
 
-.admin__cancel {
-  border: 0;
-  background: none;
-  color: var(--text-muted);
-  font: inherit;
-  font-size: var(--text-sm);
-  text-decoration: underline;
-  text-underline-offset: 0.2em;
-  cursor: pointer;
-}
-
-.admin__cancel:hover,
-.admin__cancel:focus-visible {
-  color: var(--text-primary);
-}
-
 /*
  * Available to a screen reader, absent from the page.
  *
@@ -3108,31 +3050,8 @@ body {
   color: var(--status-cancelled);
 }
 
-.admin__danger-button {
-  align-self: flex-start;
-  padding: var(--space-1) var(--space-4);
-  border: 1px solid var(--status-cancelled);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--status-cancelled);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
-
-.admin__danger-button:hover:not(:disabled),
-.admin__danger-button:focus-visible {
-  background: var(--status-cancelled);
-  color: var(--text-on-accent);
-}
-
 /* Disabled until the world's name has been typed, which is most of the time —
    so it has to read as "not yet", not as "broken". */
-.admin__danger-button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
 .admin__confirm--danger {
   border-color: var(--status-cancelled);
 }
@@ -5127,24 +5046,18 @@ body {
   font-size: var(--text-xs);
 }
 
+/*
+ * The market keeps its own typographic voice — uppercase and letter-spaced —
+ * and nothing else. The `!important` on size and weight existed only to beat
+ * whichever button base the markup happened to carry; `Button` owns weight now,
+ * and a 700 here would make every secondary market action read as a primary
+ * one.
+ */
 .market-action {
   min-height: 2.6rem;
-  padding: var(--space-2) var(--space-3);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  font-size: var(--text-xs) !important;
-  font-weight: 700 !important;
-}
-
-.market-action--primary {
-  border-color: var(--accent) !important;
-  background: var(--accent) !important;
-  color: var(--text-on-accent) !important;
-}
-
-.market-action:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
+  font-size: var(--text-xs);
 }
 
 .market-action span {
@@ -8030,27 +7943,6 @@ body {
   gap: var(--space-2);
   padding: var(--space-4);
   border-top: 1px solid var(--border-subtle);
-}
-
-.modal__button {
-  padding: var(--space-2) var(--space-4);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--bg-inset);
-  color: var(--text-primary);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.modal__button--primary {
-  background: var(--accent-quiet);
-  border-color: var(--accent);
-}
-
-.modal__button:disabled {
-  opacity: 0.6;
-  cursor: default;
 }
 
 .modal__error {

@@ -743,57 +743,6 @@
 }
 
 /* Small buttons used across the toolbar and context actions. */
-.net-btn {
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--bg-inset);
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: var(--text-sm);
-  padding: var(--space-1) var(--space-3);
-  cursor: pointer;
-}
-
-.net-btn:hover:not(:disabled) {
-  color: var(--text-primary);
-  border-color: var(--text-muted);
-}
-
-.net-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.net-btn--sm {
-  font-size: var(--text-xs);
-  padding: 2px var(--space-2);
-}
-
-.net-btn--accent {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-quiet);
-}
-
-.net-btn--publish {
-  border-color: var(--status-ontime);
-  color: var(--text-on-accent);
-  background: var(--status-ontime);
-  font-weight: 600;
-}
-
-.net-btn--publish:disabled {
-  background: var(--bg-inset);
-  color: var(--text-muted);
-  border-color: var(--border-strong);
-}
-
-.net-btn--danger {
-  border-color: var(--status-cancelled);
-  color: var(--status-cancelled);
-  background: var(--status-cancelled-quiet);
-}
-
 /* Live schedule warnings. */
 .net-warnings {
   display: flex;

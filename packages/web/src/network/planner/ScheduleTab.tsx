@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { Button } from '../../ui/Button';
+
 import {
   rankedSlots,
   scheduleIssues,
@@ -245,56 +247,44 @@ export function ScheduleTab({
 
         <div className="net-schedule__group">
           <span className="net-schedule__group-label">Templates</span>
-          <button type="button" className="net-btn" onClick={() => applyTemplate('peaks')}>
+          <Button variant="secondary" onClick={() => applyTemplate('peaks')}>
             Peak banks
-          </button>
-          <button type="button" className="net-btn" onClick={() => applyTemplate('spread')}>
+          </Button>
+          <Button variant="secondary" onClick={() => applyTemplate('spread')}>
             Even spread
-          </button>
-          <button type="button" className="net-btn net-btn--accent" onClick={suggest}>
+          </Button>
+          <Button variant="secondary" onClick={suggest}>
             ✨ Suggest
-          </button>
-          <button type="button" className="net-btn" onClick={() => applyTemplate('clear')}>
+          </Button>
+          <Button variant="secondary" onClick={() => applyTemplate('clear')}>
             Clear
-          </button>
+          </Button>
         </div>
 
         <div className="net-schedule__group net-schedule__group--right">
-          <button
-            type="button"
-            className="net-btn"
-            disabled={!editor.canUndo}
-            onClick={editor.undo}
-          >
+          <Button variant="secondary" disabled={!editor.canUndo} onClick={editor.undo}>
             ↩ Undo
-          </button>
-          <button
-            type="button"
-            className="net-btn"
-            disabled={!editor.canRedo}
-            onClick={editor.redo}
-          >
+          </Button>
+          <Button variant="secondary" disabled={!editor.canRedo} onClick={editor.redo}>
             Redo ↪
-          </button>
-          <button
-            type="button"
-            className="net-btn"
+          </Button>
+          <Button
+            variant="secondary"
             onClick={() => {
               editor.resetRoute(route, aircraft);
             }}
           >
             Reset
-          </button>
-          <button
-            type="button"
-            className="net-btn net-btn--publish"
+          </Button>
+          <Button
+            variant="primary"
             disabled={!dirty}
             onClick={() => {
               editor.publish(route.id);
             }}
           >
             {dirty ? 'Publish' : 'Published'}
-          </button>
+          </Button>
           {dirty && <Chip tone="warn">Unsaved</Chip>}
         </div>
       </div>

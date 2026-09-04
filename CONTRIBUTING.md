@@ -218,6 +218,55 @@ pnpm build
 node packages/server/dist/worker.js
 ```
 
+### One action hierarchy, through `Button`
+
+`packages/web/src/ui/Button.tsx` owns the four levels. They were not invented —
+every one already existed in the client under a different name, which is the
+problem it fixes:
+
+| level       | treatment                                       | what it used to be                                  |
+| ----------- | ----------------------------------------------- | --------------------------------------------------- |
+| `primary`   | filled accent, and the only bold variant        | `login__button`, `market-action--primary`           |
+| `secondary` | outlined on an inset ground                     | `net-btn`, `cc-btn`, `admin__submit`, `gate__retry` |
+| `tertiary`  | text weight, no chrome                          | `admin__cancel`, `account__signout`                 |
+| `danger`    | the cancelled status colour, inverting on hover | `net-btn--danger`, `admin__danger-button`           |
+
+- **`primary` means one per task region, and the default is `secondary`.** If the
+  default were `primary`, every button nobody thought about would be dominant and
+  the hierarchy would be gone inside a milestone — which is how the old classes
+  lost theirs. A task region is not a page: the schedule tab's templates and its
+  _Suggest_ are shortcuts, and _Publish_ is the task.
+- **The hierarchy does not rest on colour.** `primary` is the only filled _and_
+  the only bold variant, so it survives a greyscale screenshot. That is the same
+  requirement `tokens.css` states for status, and the reason the status chips in
+  `shell.css` carry a glyph as well as a hue. `Button.test.tsx` parses `ui.css`
+  and holds the property.
+- **A surface keeps its placement and its typographic voice through
+  `className`, never its own button.** The fleet market stays uppercase and
+  letter-spaced; the session gate stays centred. The variant owns weight, fill
+  and border — a surviving class that sets those is a bug, and `market-action`
+  used `!important` to win that fight before this existed.
+- **`type` defaults to `button`.** A `<button>` in a `<form>` with no type
+  submits it, which is never what an inline action meant. Say `type="submit"`
+  when you mean it; all eight forms in the client already do.
+- Retired: `net-btn` and its modifiers, `admin__submit`, `admin__cancel`,
+  `admin__danger-button`, `modal__button`, `market-action--primary`. A test
+  scans every `.tsx` `className` and every stylesheet's selectors so they stay
+  retired — deleting them was only half the fix.
+
+**Not yet built, and named so nobody assumes otherwise:** UX-08's confirmation
+tiers keyed to reversibility (promoting `WorldLifecycle`'s typed confirmation
+into shared use), the rule that a disabled control must explain itself, and
+defined focus behaviour. A destructive action also needs separating by position
+and label, which is a decision about the surface around the button rather than
+about the button.
+
+Links that look like buttons — the sign-in `login__button`, `alert__action`,
+`admin__back` — are still links. `Button` renders a `<button>`; something that
+navigates should not.
+
+---
+
 ### Say loading, empty, refused and broken through `StateBlock`
 
 `packages/web/src/ui/` is the shared component layer, and `StateBlock` owns the four

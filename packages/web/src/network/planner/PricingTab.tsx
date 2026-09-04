@@ -10,6 +10,7 @@ import type {
   WaterfallSegment,
 } from '@tailfin/shared';
 
+import { Button } from '../../ui/Button';
 import { StateBlock } from '../../ui/StateBlock';
 import {
   fetchWaterfall,
@@ -406,9 +407,9 @@ export function PricingTab({ route }: { route: RouteSummary }): ReactNode {
       )}
 
       <div className="fares__actions">
-        <button className="admin__submit" type="button" onClick={() => void onSave()}>
+        <Button variant="primary" onClick={() => void onSave()}>
           Save fares
-        </button>
+        </Button>
         <button
           className="waterfall__toggle"
           type="button"
