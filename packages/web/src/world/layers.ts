@@ -92,6 +92,24 @@ export function airportLevelForZoom(zoom: number): number {
   return 0;
 }
 
+/**
+ * The plane sprite's size in pixels, by zoom (M7-02).
+ *
+ * An aircraft is drawn as an aircraft at every zoom. It used to swap for a plain
+ * coloured dot below a zoom threshold — which meant that on the two views a player
+ * actually plans from, the whole-world and the continental, their fleet was a scatter
+ * of circles. A dot says only "something is here"; the silhouette says which way the
+ * aeroplane is pointing, which is the entire reason a heading is computed for it.
+ *
+ * It does have to shrink rather than stay put: eighteen pixels of aeroplane per leg
+ * turns the whole-world view into a pile of overlapping sprites. So the sprite scales
+ * down instead of being replaced by something that is not an aeroplane.
+ */
+export function planeSpriteSize(zoom: number): number {
+  const growth = Math.max(0, Math.min(1, (zoom - 0.5) / 3.5));
+  return 8 + 10 * growth;
+}
+
 /** The airports to draw at a zoom level: every tier at or above the level's cutoff. */
 export function visibleAirportsAtLevel(
   airports: readonly WorldAirport[],

@@ -1,5 +1,5 @@
 import { MapView, _GlobeView as GlobeView, type Layer, type MapViewState } from '@deck.gl/core';
-import { IconLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
+import { IconLayer, PathLayer } from '@deck.gl/layers';
 import DeckGL, { type DeckGLRef } from '@deck.gl/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
@@ -14,6 +14,7 @@ import { COARSE_WORLD, LAND_DETAIL_ZOOM, loadDetailedWorld, type WorldGeometry }
 import {
   airportLevelForZoom,
   createWorldLayers,
+  planeSpriteSize,
   visibleAirportsAtLevel,
   type RendererQuality,
   type WorldAirport,
@@ -93,14 +94,6 @@ const PLANE_ICON = 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.o
 
 /** How fast a plane crosses its whole route: ~1/26 per second, so a full pass is ~26s. */
 const PLANE_SPEED_PER_SECOND = 0.038;
-
-/**
- * The zoom at which a plane grows from a coloured mark into a full sprite (M7-02's
- * LOD). Below it — the whole-world and continental views — a carrier is a dot in its
- * brand colour, which is all that reads at that scale and all that a busy world can
- * draw cheaply; above it the top-down silhouette resolves, nose to travel.
- */
-const SPRITE_ZOOM = 3;
 
 export interface WorldRendererProps {
   routes?: readonly WorldRoute[];
@@ -435,18 +428,46 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     () => planesForRoutes(visiblePlaneRoutes, phase, 1),
     [visiblePlaneRoutes, phase],
   );
-  const detailed = viewState.zoom >= SPRITE_ZOOM;
+  const spriteSize = planeSpriteSize(viewState.zoom);
 
-  // High zoom: the full top-down silhouette, tinted the carrier's colour and pointed
-  // the way it is going.
+  /*
+   * A dark silhouette a little larger than the aircraft, drawn underneath it.
+   *
+   * `IconLayer` cannot stroke, and a carrier flying a pale brand hue over pale
+   * terrain is the same disappearing act the route ends used to perform. So the
+   * outline is a second copy of the same sprite: one extra instanced quad per plane,
+   * and the aircraft reads over land, sea and the day/night wash alike.
+   */
+  const planeHaloLayer = useMemo(() => {
+    if (planes.length === 0) return false;
+    return new IconLayer<WorldPlane>({
+      id: 'world-plane-halos',
+      data: planes,
+      getPosition: (p) => p.position,
+      getIcon: () => ({ url: PLANE_ICON, width: 24, height: 24, mask: true }),
+      getSize: spriteSize + 3,
+      sizeUnits: 'pixels',
+      getAngle: (p) => p.angle,
+      getColor: [palette.night[0], palette.night[1], palette.night[2], 235],
+      // Not pickable: the coloured sprite on top owns the click, and two hit targets
+      // at the same point would make the topmost one arbitrary.
+      pickable: false,
+      billboard: true,
+      getPolygonOffset: () => [0, -60000],
+      parameters: { cullMode: 'none' },
+    });
+  }, [planes, spriteSize, palette.night]);
+
+  // The aircraft itself: the top-down silhouette, tinted the carrier's colour and
+  // pointed the way it is going, at every zoom.
   const planeLayer = useMemo(() => {
-    if (!detailed) return false;
+    if (planes.length === 0) return false;
     return new IconLayer<WorldPlane>({
       id: 'world-planes',
       data: planes,
       getPosition: (p) => p.position,
       getIcon: () => ({ url: PLANE_ICON, width: 24, height: 24, mask: true }),
-      getSize: 18,
+      getSize: spriteSize,
       sizeUnits: 'pixels',
       getAngle: (p) => p.angle,
       getColor: colourFor,
@@ -458,37 +479,10 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       billboard: true,
       // Lift the plane off the surface like the routes and airports, so it is not
       // depth-rejected by the terrain at the whole-globe zoom.
-      getPolygonOffset: () => [0, -60000],
+      getPolygonOffset: () => [0, -61000],
       parameters: { cullMode: 'none' },
     });
-  }, [detailed, planes, colourFor, colourById, onPlaneClick]);
-
-  // Low zoom: the same aircraft simplified to a coloured mark in the carrier's hue —
-  // all that reads at the whole-world scale, and all a busy world can afford to draw.
-  const planeMarkLayer = useMemo(() => {
-    if (detailed) return false;
-    return new ScatterplotLayer<WorldPlane>({
-      id: 'world-plane-marks',
-      data: planes,
-      getPosition: (p) => p.position,
-      getRadius: 4,
-      radiusUnits: 'pixels',
-      radiusMinPixels: 3,
-      radiusMaxPixels: 7,
-      getFillColor: colourFor,
-      updateTriggers: { getFillColor: [colourById] },
-      stroked: true,
-      getLineColor: palette.night,
-      lineWidthUnits: 'pixels',
-      getLineWidth: 1,
-      lineWidthMinPixels: 0.5,
-      pickable: true,
-      onClick: onPlaneClick,
-      billboard: true,
-      getPolygonOffset: () => [0, -60000],
-      parameters: { cullMode: 'none' },
-    });
-  }, [detailed, planes, colourFor, colourById, palette.night, onPlaneClick]);
+  }, [planes, spriteSize, colourFor, colourById, onPlaneClick]);
 
   // The clicked plane's route, drawn on demand: an NPC's line does not otherwise
   // appear, and this is what "show their route" puts on the map. Coloured its
@@ -621,7 +615,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       corridorLayer,
       selectedRouteLayer,
       shimmerLayer,
-      planeMarkLayer,
+      planeHaloLayer,
       planeLayer,
     ],
     [
@@ -630,7 +624,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       corridorLayer,
       selectedRouteLayer,
       shimmerLayer,
-      planeMarkLayer,
+      planeHaloLayer,
       planeLayer,
     ],
   );
