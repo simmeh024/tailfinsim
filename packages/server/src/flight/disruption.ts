@@ -4,7 +4,7 @@ import {
   applicableOutcome,
   deriveRng,
   groundVendorRisk,
-  handlerProfile,
+  handlingProfile,
   NO_RISK,
   rollDisruption,
   type DisruptionRoll,
@@ -12,7 +12,8 @@ import {
 
 import { airframeTechnicalRisk } from '../aircraft/maintenance';
 import { world } from '../db/schema';
-import { contractedGrade } from '../ground/contracts';
+import { loadWorldEconomyConfig } from '../economy/loader';
+import { handlingArrangementFor } from '../ground/contracts';
 
 import type { Database } from '../db/client';
 
@@ -68,13 +69,26 @@ export async function rollGroundDisruption(
 
   const technical = await airframeTechnicalRisk(db, input.airframeId);
 
-  // The ramp handler working the departure turn (M5-06). No contract is a
-  // "walk-up" — the airline scrambles the bags itself, at budget-grade
-  // reliability — so a station handled well is a real, purchased advantage over
-  // one handled on the day.
-  const grade =
-    (await contractedGrade(db, input.airlineId, input.originIcao, 'ramp_baggage')) ?? 'budget';
-  const groundVendor = groundVendorRisk(handlerProfile(grade));
+  /*
+   * Whoever is working the departure turn (M5-06). Three answers, and all three
+   * are real states: a contracted grade, the airline's **own people** at whatever
+   * staffing it is paying for, or nothing arranged at all — which reads as
+   * budget-grade, because the airline scrambles the bags itself.
+   *
+   * So a station handled well is a real, purchased advantage over one handled on
+   * the day; and an understaffed operation of your own is worse than the cheapest
+   * contractor, which is what makes cutting ramp heads a decision rather than a
+   * saving.
+   */
+  const economy = await loadWorldEconomyConfig(db, input.worldId);
+  const arrangement = await handlingArrangementFor(
+    db,
+    input.airlineId,
+    input.originIcao,
+    'ramp_baggage',
+    economy,
+  );
+  const groundVendor = groundVendorRisk(handlingProfile(arrangement));
 
   const rng = deriveRng(worldRow.seed, 'disruption', input.flightId);
   const roll = rollDisruption(rng, { ...NO_RISK, technical, groundVendor });

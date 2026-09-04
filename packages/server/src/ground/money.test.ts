@@ -1,0 +1,1017 @@
+import { randomUUID } from 'node:crypto';
+
+import { and, eq } from 'drizzle-orm';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+
+import type { AirportTier } from '@tailfin/shared';
+import { realTimeAtGameTime, type WorldClock } from '@tailfin/sim';
+
+import { moveAirlineCash } from '../airline/cash';
+import { createDatabase, type DatabaseHandle } from '../db/client';
+import {
+  airline,
+  airlineHub,
+  airport,
+  cashMovement,
+  flight,
+  groundContract,
+  groundSelfHandling,
+  flightResult,
+  ledgerEntry,
+  world,
+} from '../db/schema';
+import { loadWorldEconomyConfig } from '../economy/loader';
+import { settleArrivedFlight } from '../flight/settle';
+import {
+  createFoundedAirlineFixtureHarness,
+  type FoundedAirlineFixture,
+  type FoundedAirlineFixtureHarness,
+} from '../test-fixtures/founded-airline';
+
+import {
+  closeSelfHandling,
+  expireGroundContracts,
+  handlingArrangementFor,
+  listAirlineContracts,
+  openSelfHandling,
+  readStation,
+  signContract,
+  terminateContract,
+} from './contracts';
+import { runGroundPayroll } from './payroll';
+
+import type { ResolvedPlayerAirline } from '../airline/context';
+
+const DAY = 86_400_000;
+
+/**
+ * What ground handling costs, and the alternative to a vendor (M5-06, §9.3).
+ *
+ * `contracts.test.ts` proves the two shared-world rules — one handler per line,
+ * finite capacity. This file proves the three things the section asks for that
+ * cost an airline money, and each of them was a column with nothing behind it
+ * until now:
+ *
+ *   - *"Breaking one early costs a penalty"* — charged on an explicit exit **and**
+ *     on a grade switch, because a switch is an early break and a free switch
+ *     would mean nobody ever terminated;
+ *   - *"contracts run for a fixed term with volume commitments"* — billed at the
+ *     end for the departures the airline committed to and did not fly, and
+ *     pro-rated on an early exit so leaving cannot escape a shortfall already run
+ *     up;
+ *   - *"self-handling as an alternative requiring a station and headcount"* — a
+ *     hub, heads on a monthly payroll, and a per-turn price a vendor cannot match.
+ *
+ * Every one of them moves cash, so every one of them is checked against AIR-06's
+ * ledger rather than against a return value.
+ *
+ * Requires `DATABASE_URL`; CI provides it.
+ */
+
+const url = process.env.DATABASE_URL;
+if (!url) console.warn('\n  [ground/money.test] DATABASE_URL not set — skipping.\n');
+const describeDb = url ? describe : describe.skip;
+
+function own(fixture: FoundedAirlineFixture): ResolvedPlayerAirline {
+  return { id: fixture.airline.id, worldId: fixture.world.id, status: 'active' };
+}
+
+describeDb('what ground handling costs', () => {
+  let db: DatabaseHandle;
+  let fixtures: FoundedAirlineFixtureHarness;
+  const madeAirports: string[] = [];
+  let seq = 0;
+
+  beforeAll(() => {
+    db = createDatabase();
+    fixtures = createFoundedAirlineFixtureHarness(db.db);
+  });
+
+  afterEach(async () => {
+    await fixtures.cleanup();
+  });
+
+  afterAll(async () => {
+    for (const id of madeAirports.splice(0)) {
+      await db.db.delete(airport).where(eq(airport.id, id));
+    }
+    await db.close();
+  });
+
+  async function makeAirport(icao: string, tier: AirportTier): Promise<string> {
+    const n = seq++;
+    const [created] = await db.db
+      .insert(airport)
+      .values({
+        sourceId: -(9_800_000 + n),
+        ident: icao,
+        icaoCode: icao,
+        name: `Ground Money Test ${icao}`,
+        isoCountry: 'US',
+        kind: 'large_airport',
+        latitude: 7,
+        longitude: -30 - n,
+        scheduledService: true,
+        hasRunwayData: false,
+        tier,
+        elevationFt: 0,
+      })
+      .returning({ id: airport.id });
+    if (!created) throw new Error(`no airport ${icao}`);
+    madeAirports.push(created.id);
+    return icao;
+  }
+
+  /** Give this airline a hub at a station, which is §9.3's "station". */
+  async function giveHub(fixture: FoundedAirlineFixture, icao: string): Promise<void> {
+    const [row] = await db.db
+      .select({ id: airport.id })
+      .from(airport)
+      .where(eq(airport.icaoCode, icao))
+      .limit(1);
+    if (!row) throw new Error(`no airport ${icao}`);
+    await db.db
+      .insert(airlineHub)
+      .values({ airlineId: fixture.airline.id, airportId: row.id })
+      .onConflictDoNothing();
+  }
+
+  async function clockOf(worldId: string): Promise<WorldClock> {
+    const [row] = await db.db
+      .select({
+        epoch: world.epoch,
+        launchDate: world.launchDate,
+        speedMultiplier: world.speedMultiplier,
+      })
+      .from(world)
+      .where(eq(world.id, worldId))
+      .limit(1);
+    if (!row) throw new Error('no world');
+    return { ...row, speedMultiplier: Number(row.speedMultiplier) };
+  }
+
+  /**
+   * The wall-clock instant at which this world's game clock reads `gameAt`.
+   *
+   * A term is a span in the world's calendar, so a test that wants to be "sixty
+   * game days later" has to hand the code the real instant that reads as such.
+   */
+  async function realTimeAt(worldId: string, gameAt: Date): Promise<Date> {
+    return realTimeAtGameTime(await clockOf(worldId), gameAt);
+  }
+
+  async function cashOf(airlineId: string): Promise<number> {
+    const [row] = await db.db
+      .select({ cash: airline.cashMinor })
+      .from(airline)
+      .where(eq(airline.id, airlineId));
+    return row?.cash ?? 0;
+  }
+
+  async function movementsOf(
+    airlineId: string,
+    cause: 'ground_contract_penalty' | 'ground_volume_shortfall' | 'ground_self_handling_payroll',
+  ): Promise<{ amountMinor: number; reference: string }[]> {
+    return db.db
+      .select({ amountMinor: cashMovement.amountMinor, reference: cashMovement.reference })
+      .from(cashMovement)
+      .where(and(eq(cashMovement.airlineId, airlineId), eq(cashMovement.cause, cause)));
+  }
+
+  /** Sign a standard ramp contract and hand back its id and the term. */
+  async function signStandard(
+    fixture: FoundedAirlineFixture,
+    icao: string,
+    now = new Date(),
+  ): Promise<{ id: string; termEnd: Date; committed: number; penaltyMinor: number }> {
+    const result = await signContract(
+      db.db,
+      own(fixture),
+      icao,
+      { serviceLine: 'ramp_baggage', grade: 'standard' },
+      now,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('sign failed');
+    const line = result.station.lines.find((l) => l.serviceLine === 'ramp_baggage');
+    const contracted = line?.contracted;
+    if (!contracted?.termEnd) throw new Error('expected a term');
+    return {
+      id: contracted.id,
+      termEnd: new Date(contracted.termEnd),
+      committed: contracted.committedDepartures ?? 0,
+      penaltyMinor: contracted.earlyTerminationPenaltyMinor,
+    };
+  }
+
+  /**
+   * Somewhere for a test flight to go.
+   *
+   * A named airport rather than the fixture's hub, because `airport.icao_code` is
+   * **nullable** — M1-01's note: the universal identifier is `ident` — and a
+   * fallback to the origin makes the flight circular, which `flight_not_circular`
+   * refuses.
+   */
+  let destination: string | null = null;
+  async function elsewhere(): Promise<string> {
+    destination ??= await makeAirport('GMZZ', 'large');
+    return destination;
+  }
+
+  /** Record a flight that actually departed, so it counts against a commitment. */
+  async function flew(
+    fixture: FoundedAirlineFixture,
+    icao: string,
+    departedAt: Date,
+  ): Promise<void> {
+    await db.db.insert(flight).values({
+      worldId: fixture.world.id,
+      airlineId: fixture.airline.id,
+      airframeId: randomUUID(),
+      originIcao: icao,
+      destinationIcao: await elsewhere(),
+      scheduledDeparture: departedAt,
+      actualDeparture: departedAt,
+      estimatedArrival: new Date(departedAt.getTime() + 3_600_000),
+    });
+  }
+
+  /**
+   * Spend an airline down to almost nothing, through AIR-06.
+   *
+   * Not a direct `update airline set cash_minor`: a deferred constraint trigger
+   * reconciles the balance against the sum of its movements, so money only ever
+   * moves by a movement. That guard is the point of AIR-06 and a test must not
+   * route around it.
+   */
+  async function spendDownTo(airlineId: string, leaveMinor: number): Promise<void> {
+    const current = await cashOf(airlineId);
+    await db.db.transaction((tx) =>
+      moveAirlineCash(tx, {
+        airlineId,
+        amountMinor: -(current - leaveMinor),
+        cause: 'admin_adjustment',
+        reference: `test:${randomUUID()}`,
+        occurredAt: new Date(),
+      }),
+    );
+  }
+
+  // ------------------------------------------------------------------ penalty
+
+  describe('breaking a contract early', () => {
+    it('charges most of the penalty on the first day and books it as ground handling', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMP1', 'flagship');
+      const signed = await signStandard(a, icao);
+
+      // Nothing served yet, so essentially the whole term is being walked away
+      // from — and the station view said so before the player pressed anything.
+      expect(signed.penaltyMinor).toBeGreaterThan(0);
+
+      const before = await cashOf(a.airline.id);
+      const result = await terminateContract(db.db, own(a), signed.id);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.penaltyMinor).toBe(signed.penaltyMinor);
+      expect(await cashOf(a.airline.id)).toBe(before - result.penaltyMinor);
+
+      const [movement] = await movementsOf(a.airline.id, 'ground_contract_penalty');
+      expect(movement?.amountMinor).toBe(-result.penaltyMinor);
+      expect(movement?.reference).toBe(`contract:${signed.id}`);
+
+      // AIR-06's projection: a player asking what handling cost them finds it.
+      const [entry] = await db.db
+        .select({ category: ledgerEntry.category })
+        .from(ledgerEntry)
+        .where(eq(ledgerEntry.airlineId, a.airline.id))
+        .orderBy(ledgerEntry.recordedAt);
+      expect(entry).toBeDefined();
+      const categories = (
+        await db.db
+          .select({ category: ledgerEntry.category })
+          .from(ledgerEntry)
+          .where(eq(ledgerEntry.airlineId, a.airline.id))
+      ).map((r) => r.category);
+      expect(categories).toContain('ground_handling');
+    });
+
+    it('costs almost nothing on the last day of the term', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMP2', 'flagship');
+      const signed = await signStandard(a, icao);
+
+      // A day short of the term's end: nearly all of it served.
+      const nearlyOver = await realTimeAt(a.world.id, new Date(signed.termEnd.getTime() - DAY));
+      const result = await terminateContract(db.db, own(a), signed.id, nearlyOver);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.penaltyMinor).toBeLessThan(signed.penaltyMinor * 0.05);
+    });
+
+    it('charges the penalty on a grade switch too, because a switch is a break', async () => {
+      // Otherwise switching would be the free exit and nobody would ever
+      // terminate: sign premium, switch to budget, walk away owing nothing.
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMP3', 'flagship');
+      const signed = await signStandard(a, icao);
+
+      const before = await cashOf(a.airline.id);
+      const switched = await signContract(db.db, own(a), icao, {
+        serviceLine: 'ramp_baggage',
+        grade: 'budget',
+      });
+      expect(switched.ok).toBe(true);
+      expect(await cashOf(a.airline.id)).toBe(before - signed.penaltyMinor);
+      expect(await movementsOf(a.airline.id, 'ground_contract_penalty')).toHaveLength(1);
+    });
+
+    it('refuses the exit when the airline cannot pay for it, and changes nothing', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMP4', 'flagship');
+      const signed = await signStandard(a, icao);
+
+      // Leave the airline a few cents. Every other player-initiated spend in the
+      // game refuses rather than going negative, and so does this.
+      await spendDownTo(a.airline.id, 10);
+
+      const result = await terminateContract(db.db, own(a), signed.id);
+      expect(result).toEqual({ ok: false, code: 'insufficient_funds' });
+
+      // The refusal proves the target and the money are both untouched (SEC-07).
+      expect(await cashOf(a.airline.id)).toBe(10);
+      const [row] = await db.db
+        .select({ status: groundContract.status })
+        .from(groundContract)
+        .where(eq(groundContract.id, signed.id));
+      expect(row?.status).toBe('active');
+      expect(await movementsOf(a.airline.id, 'ground_contract_penalty')).toHaveLength(0);
+    });
+
+    it('will not break another airline’s contract', async () => {
+      const a = await fixtures.create();
+      const b = await fixtures.create({ worldId: a.world.id });
+      const icao = await makeAirport('GMP5', 'flagship');
+      const signed = await signStandard(a, icao);
+
+      expect(await terminateContract(db.db, own(b), signed.id)).toEqual({
+        ok: false,
+        code: 'not_found',
+      });
+      expect(await movementsOf(a.airline.id, 'ground_contract_penalty')).toHaveLength(0);
+      expect(await movementsOf(b.airline.id, 'ground_contract_penalty')).toHaveLength(0);
+    });
+  });
+
+  // -------------------------------------------------------- volume commitment
+
+  describe('the volume commitment', () => {
+    it('bills the departures a term ended without flying', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMV1', 'flagship');
+      const signed = await signStandard(a, icao);
+      expect(signed.committed).toBeGreaterThan(0);
+
+      const economy = await loadWorldEconomyConfig(db.db, a.world.id);
+      const before = await cashOf(a.airline.id);
+
+      // The term ends with nothing flown out of the station at all.
+      const result = await expireGroundContracts(
+        db.db,
+        a.world.id,
+        new Date(signed.termEnd.getTime() + DAY),
+      );
+      expect(result.expired).toBe(1);
+      expect(result.shortfalls).toBe(1);
+      expect(result.shortfallMinor).toBe(
+        signed.committed * economy.ground.contract.shortfallFeePerDepartureMinor,
+      );
+      expect(await cashOf(a.airline.id)).toBe(before - result.shortfallMinor);
+    });
+
+    it('bills nothing when the airline flew what it promised', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMV2', 'flagship');
+      const signed = await signStandard(a, icao);
+
+      // Fly the whole commitment inside the term.
+      const start = signed.termEnd.getTime() - 90 * DAY;
+      for (let i = 0; i < signed.committed; i += 1) {
+        await flew(a, icao, new Date(start + (i + 1) * 3_600_000));
+      }
+
+      const before = await cashOf(a.airline.id);
+      const result = await expireGroundContracts(
+        db.db,
+        a.world.id,
+        new Date(signed.termEnd.getTime() + DAY),
+      );
+      expect(result.expired).toBe(1);
+      expect(result.shortfalls).toBe(0);
+      expect(await cashOf(a.airline.id)).toBe(before);
+    });
+
+    it('counts only flights that actually left the stand', async () => {
+      // A cancelled or never-dispatched flight was never handled, so crediting it
+      // would pay the airline for work the vendor did not do.
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMV3', 'flagship');
+      const signed = await signStandard(a, icao);
+      const start = signed.termEnd.getTime() - 90 * DAY;
+
+      for (let i = 0; i < signed.committed; i += 1) {
+        await db.db.insert(flight).values({
+          worldId: a.world.id,
+          airlineId: a.airline.id,
+          airframeId: randomUUID(),
+          originIcao: icao,
+          destinationIcao: await elsewhere(),
+          scheduledDeparture: new Date(start + (i + 1) * 3_600_000),
+          // Scheduled and never dispatched.
+          actualDeparture: null,
+          estimatedArrival: new Date(start + (i + 1) * 3_600_000 + 3_600_000),
+        });
+      }
+
+      const result = await expireGroundContracts(
+        db.db,
+        a.world.id,
+        new Date(signed.termEnd.getTime() + DAY),
+      );
+      expect(result.shortfalls).toBe(1);
+    });
+
+    it('does not count another station’s departures', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMV4', 'flagship');
+      const elsewhere = await makeAirport('GMV5', 'flagship');
+      const signed = await signStandard(a, icao);
+      const start = signed.termEnd.getTime() - 90 * DAY;
+      for (let i = 0; i < signed.committed; i += 1) {
+        await flew(a, elsewhere, new Date(start + (i + 1) * 3_600_000));
+      }
+      const result = await expireGroundContracts(
+        db.db,
+        a.world.id,
+        new Date(signed.termEnd.getTime() + DAY),
+      );
+      expect(result.shortfalls).toBe(1);
+    });
+
+    it('pro-rates the shortfall on an early exit rather than forgiving it', async () => {
+      // The dodge this closes: sign premium, fly nothing, terminate the day
+      // before the term ends and owe nothing at all.
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMV6', 'flagship');
+      const signed = await signStandard(a, icao);
+
+      const nearlyOver = await realTimeAt(a.world.id, new Date(signed.termEnd.getTime() - DAY));
+      const result = await terminateContract(db.db, own(a), signed.id, nearlyOver);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // Nearly the whole commitment was owed, and none of it was flown.
+      const economy = await loadWorldEconomyConfig(db.db, a.world.id);
+      expect(result.shortfallMinor).toBeGreaterThan(
+        signed.committed * economy.ground.contract.shortfallFeePerDepartureMinor * 0.9,
+      );
+    });
+
+    it('bills each term once, however many times the sweep runs', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMV7', 'flagship');
+      const signed = await signStandard(a, icao);
+      const after = new Date(signed.termEnd.getTime() + DAY);
+
+      const first = await expireGroundContracts(db.db, a.world.id, after);
+      const second = await expireGroundContracts(db.db, a.world.id, after);
+      expect(first.expired).toBe(1);
+      expect(second).toEqual({ expired: 0, shortfalls: 0, shortfallMinor: 0 });
+      expect(await movementsOf(a.airline.id, 'ground_volume_shortfall')).toHaveLength(1);
+    });
+
+    it('warns about a live shortfall before the term closes', async () => {
+      // §9.3's alert, applied to the more expensive surprise of the two: a term
+      // running out short is billed at the end, when nothing can be done.
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMV8', 'flagship');
+      const signed = await signStandard(a, icao);
+
+      const halfway = await realTimeAt(a.world.id, new Date(signed.termEnd.getTime() - 45 * DAY));
+      const listed = await listAirlineContracts(db.db, own(a), halfway);
+      const alert = listed.contracts.find((c) => c.icao === icao);
+      expect(alert?.kind).toBe('vendor');
+      expect(alert?.committedDepartures).toBe(signed.committed);
+      expect(alert?.departuresFlown).toBe(0);
+      // Half the term served with nothing flown: about half the commitment owed.
+      expect(alert?.shortfallFeeMinor).toBeGreaterThan(0);
+      expect(alert?.earlyTerminationPenaltyMinor).toBeGreaterThan(0);
+    });
+
+    it('never bills a contract signed before terms were priced', async () => {
+      // `term_start`, `volume_commitment` and `penalty_minor` are all null on such
+      // a row, and null means nobody agreed anything. It still lapses.
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMV9', 'flagship');
+      const clock = await clockOf(a.world.id);
+      const gameNow = new Date(clock.epoch.getTime() + 10 * DAY);
+      await db.db.insert(groundContract).values({
+        worldId: a.world.id,
+        airlineId: a.airline.id,
+        airportIcao: icao,
+        serviceLine: 'ramp_baggage',
+        grade: 'premium',
+        status: 'active',
+        termEnd: gameNow,
+      });
+
+      const result = await expireGroundContracts(
+        db.db,
+        a.world.id,
+        new Date(gameNow.getTime() + DAY),
+      );
+      expect(result).toEqual({ expired: 1, shortfalls: 0, shortfallMinor: 0 });
+      expect(await movementsOf(a.airline.id, 'ground_volume_shortfall')).toHaveLength(0);
+    });
+  });
+
+  // ------------------------------------------------------------ self-handling
+
+  describe('handling a line yourself', () => {
+    it('needs a hub at the station, which is §9.3’s "station"', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMS1', 'large');
+      expect(
+        await openSelfHandling(db.db, own(a), icao, { serviceLine: 'ramp_baggage', headcount: 20 }),
+      ).toEqual({ ok: false, code: 'needs_hub' });
+      expect(
+        await db.db
+          .select({ id: groundSelfHandling.id })
+          .from(groundSelfHandling)
+          .where(eq(groundSelfHandling.airlineId, a.airline.id)),
+      ).toHaveLength(0);
+    });
+
+    it('says on the station view why it is unavailable, and what it would take', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMS2', 'large');
+      const economy = await loadWorldEconomyConfig(db.db, a.world.id);
+      const station = await readStation(db.db, own(a), icao);
+      const ramp = station?.lines.find((l) => l.serviceLine === 'ramp_baggage');
+      expect(ramp?.selfHandling).toEqual({
+        available: false,
+        unavailableReason: 'needs_hub',
+        requiredHeadcount: economy.ground.selfHandling.requiredHeadcountByTier.large,
+        salaryPerHeadMinor: economy.ground.selfHandling.salaryPerHeadMinor,
+      });
+    });
+
+    it('opens with a hub, and reports how well it is staffed', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMS3', 'large');
+      await giveHub(a, icao);
+      const economy = await loadWorldEconomyConfig(db.db, a.world.id);
+      const required = economy.ground.selfHandling.requiredHeadcountByTier.large;
+
+      const result = await openSelfHandling(db.db, own(a), icao, {
+        serviceLine: 'ramp_baggage',
+        headcount: required,
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const ramp = result.station.lines.find((l) => l.serviceLine === 'ramp_baggage');
+      expect(ramp?.contracted?.kind).toBe('self');
+      expect(ramp?.contracted?.grade).toBeNull();
+      expect(ramp?.contracted?.headcount).toBe(required);
+      expect(ramp?.contracted?.staffing).toBe(1);
+      // No term and nothing to commit to: there is no counterparty.
+      expect(ramp?.contracted?.termEnd).toBeNull();
+      expect(ramp?.contracted?.committedDepartures).toBeNull();
+      expect(ramp?.contracted?.earlyTerminationPenaltyMinor).toBe(0);
+    });
+
+    it('reports an understaffed operation as understaffed', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMS4', 'large');
+      await giveHub(a, icao);
+      const result = await openSelfHandling(db.db, own(a), icao, {
+        serviceLine: 'ramp_baggage',
+        headcount: 4,
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const ramp = result.station.lines.find((l) => l.serviceLine === 'ramp_baggage');
+      expect(ramp?.contracted?.staffing).toBeLessThan(1);
+      expect(ramp?.contracted?.staffing).toBeGreaterThan(0);
+    });
+
+    it('restaffs in place rather than opening a second operation', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMS5', 'large');
+      await giveHub(a, icao);
+      await openSelfHandling(db.db, own(a), icao, { serviceLine: 'ramp_baggage', headcount: 6 });
+      const result = await openSelfHandling(db.db, own(a), icao, {
+        serviceLine: 'ramp_baggage',
+        headcount: 24,
+      });
+      expect(result.ok).toBe(true);
+
+      const rows = await db.db
+        .select({ headcount: groundSelfHandling.headcount, status: groundSelfHandling.status })
+        .from(groundSelfHandling)
+        .where(eq(groundSelfHandling.airlineId, a.airline.id));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ headcount: 24, status: 'active' });
+    });
+
+    it('is exclusive with a vendor — taking a line back breaks the contract', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMS6', 'flagship');
+      await giveHub(a, icao);
+      const signed = await signStandard(a, icao);
+
+      const before = await cashOf(a.airline.id);
+      const result = await openSelfHandling(db.db, own(a), icao, {
+        serviceLine: 'ramp_baggage',
+        headcount: 10,
+      });
+      expect(result.ok).toBe(true);
+
+      // The vendor's contract is gone, its slot is free, and the break was paid
+      // for: "open self-handling with one head" must not be the free way out.
+      const [contract] = await db.db
+        .select({ status: groundContract.status })
+        .from(groundContract)
+        .where(eq(groundContract.id, signed.id));
+      expect(contract?.status).toBe('terminated');
+      expect(await cashOf(a.airline.id)).toBeLessThan(before);
+      expect(await movementsOf(a.airline.id, 'ground_contract_penalty')).toHaveLength(1);
+    });
+
+    it('is exclusive the other way too — signing a vendor closes the operation', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMS7', 'flagship');
+      await giveHub(a, icao);
+      await openSelfHandling(db.db, own(a), icao, { serviceLine: 'ramp_baggage', headcount: 10 });
+
+      const signed = await signContract(db.db, own(a), icao, {
+        serviceLine: 'ramp_baggage',
+        grade: 'premium',
+      });
+      expect(signed.ok).toBe(true);
+      if (!signed.ok) return;
+      const ramp = signed.station.lines.find((l) => l.serviceLine === 'ramp_baggage');
+      expect(ramp?.contracted?.kind).toBe('vendor');
+
+      const active = await db.db
+        .select({ status: groundSelfHandling.status })
+        .from(groundSelfHandling)
+        .where(
+          and(
+            eq(groundSelfHandling.airlineId, a.airline.id),
+            eq(groundSelfHandling.status, 'active'),
+          ),
+        );
+      expect(active).toHaveLength(0);
+    });
+
+    it('closes without a penalty, dropping the line back to walk-up', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMS8', 'large');
+      await giveHub(a, icao);
+      const opened = await openSelfHandling(db.db, own(a), icao, {
+        serviceLine: 'ramp_baggage',
+        headcount: 10,
+      });
+      expect(opened.ok).toBe(true);
+      if (!opened.ok) return;
+      const id = opened.station.lines.find((l) => l.serviceLine === 'ramp_baggage')?.contracted?.id;
+      if (!id) throw new Error('no operation id');
+
+      const before = await cashOf(a.airline.id);
+      expect(await closeSelfHandling(db.db, own(a), id)).toBe(icao);
+      expect(await cashOf(a.airline.id)).toBe(before);
+
+      const station = await readStation(db.db, own(a), icao);
+      expect(station?.lines.find((l) => l.serviceLine === 'ramp_baggage')?.contracted).toBeNull();
+    });
+
+    it('will not close another airline’s operation', async () => {
+      const a = await fixtures.create();
+      const b = await fixtures.create({ worldId: a.world.id });
+      const icao = await makeAirport('GMS9', 'large');
+      await giveHub(a, icao);
+      const opened = await openSelfHandling(db.db, own(a), icao, {
+        serviceLine: 'ramp_baggage',
+        headcount: 10,
+      });
+      expect(opened.ok).toBe(true);
+      if (!opened.ok) return;
+      const id = opened.station.lines.find((l) => l.serviceLine === 'ramp_baggage')?.contracted?.id;
+      if (!id) throw new Error('no operation id');
+
+      expect(await closeSelfHandling(db.db, own(b), id)).toBeNull();
+      const [row] = await db.db
+        .select({ status: groundSelfHandling.status })
+        .from(groundSelfHandling)
+        .where(eq(groundSelfHandling.id, id));
+      expect(row?.status).toBe('active');
+    });
+
+    it('is what the sim reads for the turn, ahead of any vendor', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMSA', 'large');
+      await giveHub(a, icao);
+      const economy = await loadWorldEconomyConfig(db.db, a.world.id);
+      await openSelfHandling(db.db, own(a), icao, { serviceLine: 'ramp_baggage', headcount: 7 });
+
+      expect(
+        await handlingArrangementFor(db.db, a.airline.id, icao, 'ramp_baggage', economy),
+      ).toEqual({
+        kind: 'self',
+        headcount: 7,
+        requiredHeadcount: economy.ground.selfHandling.requiredHeadcountByTier.large,
+      });
+    });
+
+    it('reads as walk-up when the airline has arranged nothing', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMSB', 'large');
+      const economy = await loadWorldEconomyConfig(db.db, a.world.id);
+      expect(
+        await handlingArrangementFor(db.db, a.airline.id, icao, 'ramp_baggage', economy),
+      ).toEqual({ kind: 'walk_up' });
+    });
+
+    it('lists an operation on the network alert with no term and no shortfall', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMSC', 'large');
+      await giveHub(a, icao);
+      await openSelfHandling(db.db, own(a), icao, { serviceLine: 'ramp_baggage', headcount: 14 });
+
+      const listed = await listAirlineContracts(db.db, own(a));
+      const alert = listed.contracts.find((c) => c.icao === icao);
+      expect(alert).toMatchObject({
+        kind: 'self',
+        grade: null,
+        headcount: 14,
+        termEnd: null,
+        expiring: false,
+        committedDepartures: null,
+        departuresFlown: null,
+        shortfallFeeMinor: 0,
+        earlyTerminationPenaltyMinor: 0,
+      });
+    });
+  });
+
+  // ------------------------------------------------------------------ payroll
+
+  describe('self-handling payroll', () => {
+    it('bills the month’s heads once, however many ticks run', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMR1', 'large');
+      await giveHub(a, icao);
+      await openSelfHandling(db.db, own(a), icao, { serviceLine: 'ramp_baggage', headcount: 12 });
+
+      const economy = await loadWorldEconomyConfig(db.db, a.world.id);
+      const expected = 12 * economy.ground.selfHandling.salaryPerHeadMinor;
+      // A game instant in the month after the operation opened, so there is a
+      // closed month to bill.
+      const clock = await clockOf(a.world.id);
+      const gameNow = new Date(clock.epoch.getTime() + 60 * DAY);
+
+      const before = await cashOf(a.airline.id);
+      const first = await runGroundPayroll(db.db, a.world.id, gameNow);
+      expect(first).toMatchObject({ airlinesBilled: 1, totalMinor: expected, headcount: 12 });
+      expect(await cashOf(a.airline.id)).toBe(before - expected);
+
+      // Attempted every tick; billed once. No "last billed" column, so nothing to
+      // reset on a world reset (ADR-0005).
+      const second = await runGroundPayroll(db.db, a.world.id, gameNow);
+      expect(second.airlinesBilled).toBe(0);
+      expect(await cashOf(a.airline.id)).toBe(before - expected);
+      expect(await movementsOf(a.airline.id, 'ground_self_handling_payroll')).toHaveLength(1);
+    });
+
+    it('does not throw when the airline restaffs mid-month', async () => {
+      // AIR-06's replay guard asserts a movement is replayed with the same facts,
+      // so a bill whose amount moved would *throw* rather than no-op — the defect
+      // crew payroll's own note records after it climbed `crewErrors` on dev once
+      // a second. The already-billed reference is read first for exactly this.
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMR2', 'large');
+      await giveHub(a, icao);
+      await openSelfHandling(db.db, own(a), icao, { serviceLine: 'ramp_baggage', headcount: 12 });
+      const clock = await clockOf(a.world.id);
+      const gameNow = new Date(clock.epoch.getTime() + 60 * DAY);
+
+      await runGroundPayroll(db.db, a.world.id, gameNow);
+      await openSelfHandling(db.db, own(a), icao, { serviceLine: 'ramp_baggage', headcount: 30 });
+      const again = await runGroundPayroll(db.db, a.world.id, gameNow);
+      expect(again.airlinesBilled).toBe(0);
+    });
+
+    it('stops billing a closed operation', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMR3', 'large');
+      await giveHub(a, icao);
+      const opened = await openSelfHandling(db.db, own(a), icao, {
+        serviceLine: 'ramp_baggage',
+        headcount: 12,
+      });
+      expect(opened.ok).toBe(true);
+      if (!opened.ok) return;
+      const id = opened.station.lines.find((l) => l.serviceLine === 'ramp_baggage')?.contracted?.id;
+      if (!id) throw new Error('no operation id');
+      await closeSelfHandling(db.db, own(a), id);
+
+      const clock = await clockOf(a.world.id);
+      expect(
+        await runGroundPayroll(db.db, a.world.id, new Date(clock.epoch.getTime() + 60 * DAY)),
+      ).toEqual({ airlinesBilled: 0, totalMinor: 0, headcount: 0 });
+    });
+
+    it('bills nothing in a world where nobody handles anything themselves', async () => {
+      const a = await fixtures.create();
+      const clock = await clockOf(a.world.id);
+      expect(
+        await runGroundPayroll(db.db, a.world.id, new Date(clock.epoch.getTime() + 60 * DAY)),
+      ).toEqual({ airlinesBilled: 0, totalMinor: 0, headcount: 0 });
+    });
+
+    it('is scoped to one world', async () => {
+      const a = await fixtures.create();
+      const b = await fixtures.create();
+      const icao = await makeAirport('GMR4', 'large');
+      await giveHub(b, icao);
+      await openSelfHandling(db.db, own(b), icao, { serviceLine: 'ramp_baggage', headcount: 9 });
+
+      const clock = await clockOf(a.world.id);
+      const result = await runGroundPayroll(
+        db.db,
+        a.world.id,
+        new Date(clock.epoch.getTime() + 60 * DAY),
+      );
+      expect(result.airlinesBilled).toBe(0);
+      expect(await movementsOf(b.airline.id, 'ground_self_handling_payroll')).toHaveLength(0);
+    });
+  });
+
+  // ------------------------------------------------------- what a turn costs
+
+  describe('what a turn costs a settled flight', () => {
+    /**
+     * The §9.3 trade, where a player actually meets it: the `handling` line of a
+     * settled `flight_result`.
+     *
+     * One station and one world throughout, with the arrangement changed between
+     * flights — so the handler is the only thing that can have moved the bill.
+     * Everything else about these flights is identical by construction.
+     */
+    async function settleFrom(
+      fixture: FoundedAirlineFixture,
+      originIcao: string,
+      destinationIcao: string,
+    ): Promise<{ handlingMinor: number; detail: string }> {
+      const departs = new Date('2026-08-17T06:00:00.000Z');
+      const [f] = await db.db
+        .insert(flight)
+        .values({
+          worldId: fixture.world.id,
+          airlineId: fixture.airline.id,
+          airframeId: randomUUID(),
+          originIcao,
+          destinationIcao,
+          scheduledDeparture: departs,
+          actualDeparture: departs,
+          estimatedArrival: new Date(departs.getTime() + 75 * 60_000),
+          load: JSON.stringify({ economy: { seats: 70, passengers: 47, revenue: 47 * 7_500 } }),
+        })
+        .returning({ id: flight.id });
+      if (!f) throw new Error('no flight');
+
+      const outcome = await db.db.transaction((tx) =>
+        settleArrivedFlight(tx, f.id, new Date(departs.getTime() + 75 * 60_000)),
+      );
+      expect(outcome.status).toBe('settled');
+
+      const [row] = await db.db
+        .select({ breakdown: flightResult.breakdown })
+        .from(flightResult)
+        .where(eq(flightResult.flightId, f.id));
+      if (!row) throw new Error('no result');
+      const breakdown = JSON.parse(row.breakdown) as {
+        costs: { source: string; amountMinor: number; detail: string }[];
+      };
+      const handling = breakdown.costs.find((c) => c.source === 'handling');
+      if (!handling) throw new Error('no handling line');
+      return { handlingMinor: handling.amountMinor, detail: handling.detail };
+    }
+
+    it('prices the five ways of getting an aeroplane away in the designed order', async () => {
+      /*
+       * The whole of §9.3's price axis, on one station in one world. Before
+       * M5-06's money every one of these five numbers was identical — which is
+       * why the budget handler, slower and clumsier at *the same price*, was a
+       * choice no player would ever have made.
+       *
+       * The order is: your own people, then budget, standard, walk-up, premium.
+       * Two parts of it carry the design:
+       *
+       *   - **walk-up is dearer than standard.** Handling bought on the day
+       *     costs more than handling bought on a term, which is what makes
+       *     signing anything worth doing — and a budget contract nearly halves
+       *     it while *matching* walk-up's reliability, which is why the cheap
+       *     handler is a real choice rather than a trap.
+       *   - **premium is dearer than walk-up.** It is not a discount for
+       *     committing; it is the best service in the market, and it costs the
+       *     most of anything a vendor sells.
+       */
+      const a = await fixtures.create();
+      const origin = await makeAirport('GTC1', 'flagship');
+      const destination = await makeAirport('GTC2', 'large');
+      await giveHub(a, origin);
+
+      const walkUp = await settleFrom(a, origin, destination);
+
+      await signContract(db.db, own(a), origin, { serviceLine: 'ramp_baggage', grade: 'premium' });
+      const premium = await settleFrom(a, origin, destination);
+
+      await signContract(db.db, own(a), origin, {
+        serviceLine: 'ramp_baggage',
+        grade: 'standard',
+      });
+      const standard = await settleFrom(a, origin, destination);
+
+      await signContract(db.db, own(a), origin, { serviceLine: 'ramp_baggage', grade: 'budget' });
+      const budget = await settleFrom(a, origin, destination);
+
+      await openSelfHandling(db.db, own(a), origin, {
+        serviceLine: 'ramp_baggage',
+        headcount: 40,
+      });
+      const mine = await settleFrom(a, origin, destination);
+
+      expect(mine.handlingMinor).toBeLessThan(budget.handlingMinor);
+      expect(budget.handlingMinor).toBeLessThan(standard.handlingMinor);
+      expect(standard.handlingMinor).toBeLessThan(walkUp.handlingMinor);
+      expect(walkUp.handlingMinor).toBeLessThan(premium.handlingMinor);
+    });
+
+    it('says on the line why it cost what it did', async () => {
+      // §14.1: no figure a player cannot interrogate. A multiplier applied
+      // silently would leave "why is my handling 992 and not 735" unanswerable.
+      const a = await fixtures.create();
+      const origin = await makeAirport('GTC3', 'flagship');
+      const destination = await makeAirport('GTC4', 'large');
+
+      const walkUp = await settleFrom(a, origin, destination);
+      expect(walkUp.detail).toMatch(/for how this station is handled/);
+
+      await signContract(db.db, own(a), origin, { serviceLine: 'ramp_baggage', grade: 'standard' });
+      const standard = await settleFrom(a, origin, destination);
+      // The standard grade *is* the rate, so there is no multiplier to explain.
+      expect(standard.detail).not.toMatch(/for how this station is handled/);
+    });
+
+    it('reads the origin’s handler, not the destination’s', async () => {
+      // The departure turn is the one being billed, so it is the origin's ramp
+      // that works it.
+      const a = await fixtures.create();
+      const origin = await makeAirport('GTC5', 'flagship');
+      const destination = await makeAirport('GTC6', 'flagship');
+
+      await signContract(db.db, own(a), destination, {
+        serviceLine: 'ramp_baggage',
+        grade: 'budget',
+      });
+      const stillWalkUp = await settleFrom(a, origin, destination);
+
+      await signContract(db.db, own(a), origin, { serviceLine: 'ramp_baggage', grade: 'budget' });
+      const contracted = await settleFrom(a, origin, destination);
+
+      expect(contracted.handlingMinor).toBeLessThan(stillWalkUp.handlingMinor);
+    });
+
+    it('charges an understaffed operation the same per turn as a full one', async () => {
+      // Understaffing saves money on the payroll, not on the turn — folding it in
+      // here would pay a player twice for the same cut, and the consequence of
+      // the cut is a worse handler rather than a cheaper one.
+      const a = await fixtures.create();
+      const origin = await makeAirport('GTC7', 'large');
+      const destination = await makeAirport('GTC8', 'large');
+      await giveHub(a, origin);
+
+      await openSelfHandling(db.db, own(a), origin, {
+        serviceLine: 'ramp_baggage',
+        headcount: 28,
+      });
+      const full = await settleFrom(a, origin, destination);
+
+      await openSelfHandling(db.db, own(a), origin, { serviceLine: 'ramp_baggage', headcount: 2 });
+      const thin = await settleFrom(a, origin, destination);
+
+      expect(thin.handlingMinor).toBe(full.handlingMinor);
+    });
+  });
+});

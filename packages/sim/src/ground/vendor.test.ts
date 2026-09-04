@@ -49,12 +49,10 @@ describe('ground handler grades', () => {
   });
 
   it('clamps the risk into [0, 1]', () => {
-    expect(groundVendorRisk({ reliability: 1, speedFactor: 1, quality: 1, priceIndex: 1 })).toBe(0);
-    expect(groundVendorRisk({ reliability: 0, speedFactor: 1, quality: 1, priceIndex: 1 })).toBe(1);
+    expect(groundVendorRisk({ reliability: 1 })).toBe(0);
+    expect(groundVendorRisk({ reliability: 0 })).toBe(1);
     // Defensive against a mis-tuned config beyond the sane range.
-    expect(groundVendorRisk({ reliability: 1.5, speedFactor: 1, quality: 1, priceIndex: 1 })).toBe(
-      0,
-    );
+    expect(groundVendorRisk({ reliability: 1.5 })).toBe(0);
   });
 
   it('exposes a versioned default config', () => {

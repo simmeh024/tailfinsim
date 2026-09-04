@@ -101,6 +101,17 @@ function categoryForCause(cause: CashMovementCause): LedgerCategory {
       return 'crew';
     case 'office_salary':
       return 'office_salary';
+    /*
+     * All three are ground handling in a P&L, and §14.1's rule is that a figure
+     * must be interrogable rather than that every cause needs its own category: a
+     * player asking *"what did handling cost me"* wants the penalty, the shortfall
+     * and the payroll in that answer, and the `cause` on the movement is what
+     * separates them when they ask which.
+     */
+    case 'ground_contract_penalty':
+    case 'ground_volume_shortfall':
+    case 'ground_self_handling_payroll':
+      return 'ground_handling';
     case 'office_expansion':
     case 'executive_floor':
     case 'executive_office':

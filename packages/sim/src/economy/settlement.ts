@@ -270,6 +270,27 @@ export interface SettlementInputs {
    * airframe to ask.
    */
   restrictionSurchargeMinor?: number;
+  /**
+   * What the departure turn's handling costs, relative to the standard grade
+   * (M5-06, §9.3).
+   *
+   * `handlingPriceFactor` in `ground/vendor.ts` produces it, from the airline's
+   * arrangement at the **origin** — the station whose ramp works this turn.
+   * Optional, and 1 when absent, so a caller that does not know how a flight was
+   * handled bills the standard rate rather than nothing.
+   *
+   * This is the fifth of §9.3's five vendor numbers and it was the missing one.
+   * Until it arrived, a grade changed a turn's *speed* and *reliability* and not
+   * its cost — so the budget handler was slower and clumsier for exactly the same
+   * money, and no player would ever have signed one. The whole trade the section
+   * describes hangs on this multiplier existing.
+   *
+   * It scales the **ramp and baggage** turn, which is the line the cost table
+   * describes and the line `disruption.ts` already reads for its reliability. The
+   * other five service lines are modelled and contracted and have no priced
+   * consumer yet — the same state `quality` is in, and stated rather than hidden.
+   */
+  handlingPriceFactor?: number;
 }
 
 /** Order for display, so a readout is stable and a test can prove each is reachable. */
@@ -455,15 +476,19 @@ export function settleFlight(
       `${money(originFees.paxFee)} each (${money(paxFeeMinor)}).`,
   });
 
-  const handlingMinor = roundMinor(
-    config.groundHandlingPerTurnMinor + seats * config.groundHandlingPerSeatMinor,
-  );
+  const handlingFactor = inputs.handlingPriceFactor ?? 1;
+  const handlingBaseMinor =
+    config.groundHandlingPerTurnMinor + seats * config.groundHandlingPerSeatMinor;
+  const handlingMinor = roundMinor(handlingBaseMinor * handlingFactor);
   costs.push({
     source: 'handling',
     amountMinor: handlingMinor,
     detail:
       `Ramp, bags and cleaning: ${money(config.groundHandlingPerTurnMinor)} a turn plus ` +
-      `${String(seats)} seats at ${money(config.groundHandlingPerSeatMinor)}.`,
+      `${String(seats)} seats at ${money(config.groundHandlingPerSeatMinor)}` +
+      (handlingFactor === 1
+        ? '.'
+        : `, at ${round(handlingFactor, 2)}× for how this station is handled.`),
   });
 
   // §7.2b's era restrictions (M4-02). Only a line when there is something to

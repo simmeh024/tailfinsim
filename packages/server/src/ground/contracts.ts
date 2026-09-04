@@ -1,48 +1,93 @@
-import { and, eq, isNotNull, lte, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNotNull, lt, lte, sql } from 'drizzle-orm';
 
 import {
   GROUND_SERVICE_LINES,
   type AirportTier,
+  type GroundContractAlert,
   type GroundContractsResponse,
+  type GroundContractView,
   type GroundServiceLine,
   type GroundServiceLineView,
   type GroundStationResponse,
   type HandlerGrade,
+  type OpenSelfHandlingRequest,
   type SignContractRequest,
 } from '@tailfin/shared';
 import {
+  committedDepartures,
   contractExpiring,
   contractTermEnd,
+  elapsedTermFraction,
   gameTime,
   handlerProfile,
+  selfHandlingProfile,
   stationVendors,
+  type HandlingArrangement,
   type WorldClock,
 } from '@tailfin/sim';
 
-import { airport, groundContract, world } from '../db/schema';
+import { moveAirlineCash } from '../airline/cash';
+import {
+  airlineHub,
+  airport,
+  flight,
+  groundContract,
+  groundSelfHandling,
+  world,
+} from '../db/schema';
+import { loadWorldEconomyConfig } from '../economy/loader';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
 import type { Database } from '../db/client';
+import type { PinnedEconomyConfig } from '../economy/config';
 
 /**
  * Ground handling contracts (M5-06, §9.3).
  *
- * The vendors are derived; this owns the rows an airline signs against them, and
- * the two rules that make ground ops a shared world: **one active handler per
+ * The vendors are derived; this owns the rows an airline signs against them, the
+ * two rules that make ground ops a shared world — **one active handler per
  * service line at a station**, and a vendor's **finite capacity** that competing
- * airlines exhaust. Owner-scoped throughout — the airline is resolved from the
- * session, never accepted from the client.
+ * airlines exhaust — and, since the milestone's money landed, the three ways
+ * ground handling costs an airline something other than a per-turn fee:
+ *
+ *   - **the early-termination penalty** (§9.3: *"breaking one early costs a
+ *     penalty"*), pro-rated to what is left of the term and charged on a grade
+ *     switch as well as an explicit exit, because a switch *is* an early break;
+ *   - **the volume shortfall**, billed when a term ends without the committed
+ *     departures having been flown, and pro-rated on an early exit so that
+ *     leaving cannot be used to escape a shortfall already run up;
+ *   - **self-handling**, which is not a contract with anyone: it needs a hub at
+ *     the station and heads on the payroll, and it trades a per-turn fee for a
+ *     fixed monthly one.
+ *
+ * Owner-scoped throughout — the airline is resolved from the session, never
+ * accepted from the client.
+ *
+ * ## Exclusivity spans two tables, so a lock spans them too
+ *
+ * A partial unique index gives each table its own one-active-per-line rule, but
+ * no constraint can say *"a vendor contract and your own people may not both
+ * work this line"*. Every writer therefore takes
+ * `pg_advisory_xact_lock(hashtext(world:icao:line))` and closes the other kind
+ * inside it. That lock is deliberately coarser than the `world:icao:line:grade`
+ * key it replaced: a line-level lock still serialises everyone contending for any
+ * grade's last slot, so the capacity limit stays exact, and it is the only key
+ * both writers can agree on.
  */
 
 interface StationContext {
   seed: string;
-  tier: AirportTier;
+  tier: AirportTier | null;
   clock: WorldClock;
+  economy: PinnedEconomyConfig;
+  /** Whether this airline holds a hub here — §9.3's *"requiring a station"*. */
+  hasHub: boolean;
 }
 
 async function loadStationContext(
   db: Database,
   worldId: string,
+  airlineId: string,
   icao: string,
 ): Promise<StationContext | null> {
   const clock = await loadWorldClock(db, worldId);
@@ -54,13 +99,26 @@ async function loadStationContext(
     .limit(1);
   if (!w) return null;
   const [a] = await db
-    .select({ tier: airport.tier })
+    .select({ id: airport.id, tier: airport.tier })
     .from(airport)
     .where(eq(airport.icaoCode, icao))
     .limit(1);
   if (!a) return null;
   if (a.tier === null) return null;
-  return { seed: w.seed, tier: a.tier, clock };
+
+  const [hub] = await db
+    .select({ id: airlineHub.id })
+    .from(airlineHub)
+    .where(and(eq(airlineHub.airlineId, airlineId), eq(airlineHub.airportId, a.id)))
+    .limit(1);
+
+  return {
+    seed: w.seed,
+    tier: a.tier,
+    clock,
+    economy: await loadWorldEconomyConfig(db, worldId),
+    hasHub: hub !== undefined,
+  };
 }
 
 /** The world's clock parameters, or null for an unknown world. */
@@ -82,12 +140,51 @@ async function loadWorldClock(db: Database, worldId: string): Promise<WorldClock
   };
 }
 
+/**
+ * Heads a station needs staffed for the airline to handle it itself.
+ *
+ * The station's requirement rather than the schedule's — see the economy config's
+ * note on why. A field with no tier is charged the `medium` requirement rather
+ * than refused, the same fallback per-station fuel pricing makes: a tier is null
+ * only where there is no scheduled service, and an aeroplane that got there still
+ * needed handling.
+ */
+export function requiredHeadcount(tier: AirportTier | null, economy: PinnedEconomyConfig): number {
+  return economy.ground.selfHandling.requiredHeadcountByTier[tier ?? 'medium'];
+}
+
+/** The money terms `handlingPriceFactor` needs, sliced out of a world's economy. */
+export function handlingPriceBalanceOf(economy: PinnedEconomyConfig): {
+  walkUpPriceIndex: number;
+  selfHandlingTurnPriceIndex: number;
+} {
+  return {
+    walkUpPriceIndex: economy.ground.walkUpPriceIndex,
+    selfHandlingTurnPriceIndex: economy.ground.selfHandling.turnPriceIndex,
+  };
+}
+
+/** What a grade's full-term break fee is, at signing. */
+function fullTermPenaltyMinor(grade: HandlerGrade, economy: PinnedEconomyConfig): number {
+  return Math.round(
+    economy.ground.contract.terminationPenaltyPerTermMinor * handlerProfile(grade).priceIndex,
+  );
+}
+
+/** What a grade's term commits the airline to flying. */
+function commitmentFor(grade: HandlerGrade, economy: PinnedEconomyConfig): number {
+  return committedDepartures(economy.ground.contract.committedDeparturesPerDay[grade]);
+}
+
 interface ActiveRow {
   id: string;
   airlineId: string;
   serviceLine: string;
   grade: string;
+  termStart: Date | null;
   termEnd: Date | null;
+  volumeCommitment: number | null;
+  penaltyMinor: number | null;
 }
 
 async function activeAt(db: Database, worldId: string, icao: string): Promise<ActiveRow[]> {
@@ -97,7 +194,10 @@ async function activeAt(db: Database, worldId: string, icao: string): Promise<Ac
       airlineId: groundContract.airlineId,
       serviceLine: groundContract.serviceLine,
       grade: groundContract.grade,
+      termStart: groundContract.termStart,
       termEnd: groundContract.termEnd,
+      volumeCommitment: groundContract.volumeCommitment,
+      penaltyMinor: groundContract.penaltyMinor,
     })
     .from(groundContract)
     .where(
@@ -109,11 +209,91 @@ async function activeAt(db: Database, worldId: string, icao: string): Promise<Ac
     );
 }
 
+interface SelfRow {
+  id: string;
+  serviceLine: string;
+  headcount: number;
+}
+
+/** This airline's own operations at one station. */
+async function selfHandlingAt(db: Database, airlineId: string, icao: string): Promise<SelfRow[]> {
+  return db
+    .select({
+      id: groundSelfHandling.id,
+      serviceLine: groundSelfHandling.serviceLine,
+      headcount: groundSelfHandling.headcount,
+    })
+    .from(groundSelfHandling)
+    .where(
+      and(
+        eq(groundSelfHandling.airlineId, airlineId),
+        eq(groundSelfHandling.airportIcao, icao),
+        eq(groundSelfHandling.status, 'active'),
+      ),
+    );
+}
+
+/**
+ * What walking away from a contract costs right now.
+ *
+ * The stored full-term figure, pro-rated to the part of the term **not served**.
+ * A row with no term — signed before terms were priced — costs nothing to leave,
+ * which is the truthful answer for a contract nobody agreed a term with.
+ */
+function penaltyNowMinor(row: ActiveRow, gameNow: Date): number {
+  if (row.penaltyMinor === null || row.termStart === null || row.termEnd === null) return 0;
+  const unserved = 1 - elapsedTermFraction(row.termStart, row.termEnd, gameNow);
+  return Math.max(0, Math.round(row.penaltyMinor * unserved));
+}
+
+/** The vendor-contract half of a station's line view. */
+function contractView(
+  row: ActiveRow,
+  serviceLine: GroundServiceLine,
+  gameNow: Date,
+): GroundContractView {
+  return {
+    id: row.id,
+    serviceLine,
+    kind: 'vendor',
+    grade: row.grade as HandlerGrade,
+    headcount: null,
+    staffing: null,
+    termEnd: row.termEnd === null ? null : row.termEnd.toISOString(),
+    expiring: contractExpiring(row.termEnd, gameNow),
+    committedDepartures: row.volumeCommitment,
+    earlyTerminationPenaltyMinor: penaltyNowMinor(row, gameNow),
+  };
+}
+
+/** The self-handling half of a station's line view. */
+function selfView(
+  row: SelfRow,
+  serviceLine: GroundServiceLine,
+  required: number,
+): GroundContractView {
+  return {
+    id: row.id,
+    serviceLine,
+    kind: 'self',
+    grade: null,
+    headcount: row.headcount,
+    staffing: selfHandlingProfile(row.headcount, required).staffing,
+    // No term, so nothing to expire and nothing to commit to: there is no
+    // counterparty to have agreed either with.
+    termEnd: null,
+    expiring: false,
+    committedDepartures: null,
+    earlyTerminationPenaltyMinor: 0,
+  };
+}
+
 /** Build the station view from its offers and the world's active contracts there. */
 function buildStation(
   icao: string,
   ctx: StationContext,
   active: readonly ActiveRow[],
+  own: readonly SelfRow[],
   airlineId: string,
   gameNow: Date,
 ): GroundStationResponse {
@@ -124,21 +304,23 @@ function buildStation(
     taken.set(key, (taken.get(key) ?? 0) + 1);
   }
 
+  const required = requiredHeadcount(ctx.tier, ctx.economy);
+
   const lines: GroundServiceLineView[] = GROUND_SERVICE_LINES.map((serviceLine) => {
     const mine = active.find((r) => r.airlineId === airlineId && r.serviceLine === serviceLine);
+    const mineSelf = own.find((r) => r.serviceLine === serviceLine);
     return {
       serviceLine,
+      // Exclusive by construction, and the advisory lock is what makes that true
+      // rather than this ordering — but if both somehow existed, the airline's own
+      // people are what is actually working the turn.
       contracted:
-        mine === undefined
-          ? null
-          : {
-              id: mine.id,
-              serviceLine,
-              grade: mine.grade as HandlerGrade,
-              termEnd: mine.termEnd === null ? null : mine.termEnd.toISOString(),
-              expiring: contractExpiring(mine.termEnd, gameNow),
-            },
-      offers: stationVendors(ctx.seed, icao, serviceLine, ctx.tier).map((offer) => {
+        mineSelf !== undefined
+          ? selfView(mineSelf, serviceLine, required)
+          : mine !== undefined
+            ? contractView(mine, serviceLine, gameNow)
+            : null,
+      offers: stationVendors(ctx.seed, icao, serviceLine, ctx.tier ?? 'medium').map((offer) => {
         const profile = handlerProfile(offer.grade);
         return {
           grade: offer.grade,
@@ -147,39 +329,196 @@ function buildStation(
           reliability: profile.reliability,
           speedFactor: profile.speedFactor,
           quality: profile.quality,
+          priceIndex: profile.priceIndex,
+          committedDepartures: commitmentFor(offer.grade, ctx.economy),
+          fullTermPenaltyMinor: fullTermPenaltyMinor(offer.grade, ctx.economy),
         };
       }),
+      selfHandling: {
+        available: ctx.hasHub,
+        unavailableReason: ctx.hasHub ? null : 'needs_hub',
+        requiredHeadcount: required,
+        salaryPerHeadMinor: ctx.economy.ground.selfHandling.salaryPerHeadMinor,
+      },
+      walkUpPriceIndex: ctx.economy.ground.walkUpPriceIndex,
     };
   });
 
   return { icao, lines };
 }
 
-/** A station's vendors and this airline's contracts there, or null for an unknown station. */
+/** A station's vendors and this airline's arrangements there, or null for an unknown station. */
 export async function readStation(
   db: Database,
   own: ResolvedPlayerAirline,
   icao: string,
   now: Date = new Date(),
 ): Promise<GroundStationResponse | null> {
-  const ctx = await loadStationContext(db, own.worldId, icao);
+  const ctx = await loadStationContext(db, own.worldId, own.id, icao);
   if (ctx === null) return null;
-  const active = await activeAt(db, own.worldId, icao);
-  return buildStation(icao, ctx, active, own.id, gameTime(ctx.clock, now));
+  const [active, mine] = await Promise.all([
+    activeAt(db, own.worldId, icao),
+    selfHandlingAt(db, own.id, icao),
+  ]);
+  return buildStation(icao, ctx, active, mine, own.id, gameTime(ctx.clock, now));
+}
+
+/**
+ * Departures this airline actually flew out of a station inside a window.
+ *
+ * Flights that **left the stand** — a cancelled or never-dispatched flight was
+ * never handled, so counting it against a volume commitment would credit the
+ * airline for work the vendor did not do. Game time throughout, like the term it
+ * is measured against.
+ */
+async function departuresFlown(
+  db: Database,
+  airlineId: string,
+  icao: string,
+  from: Date,
+  to: Date,
+): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(flight)
+    .where(
+      and(
+        eq(flight.airlineId, airlineId),
+        eq(flight.originIcao, icao),
+        isNotNull(flight.actualDeparture),
+        gte(flight.actualDeparture, from),
+        lt(flight.actualDeparture, to),
+      ),
+    );
+  return row?.count ?? 0;
+}
+
+/**
+ * What a term's unflown commitment costs, and how short it is.
+ *
+ * `upTo` is where the measurement stops: the term's end at expiry, or *now* on an
+ * early exit — and on an early exit the commitment is pro-rated to the part of
+ * the term served, so leaving early neither forgives a shortfall already run up
+ * nor invents one for months the airline never had.
+ */
+async function shortfall(
+  db: Database,
+  row: ActiveRow,
+  airlineId: string,
+  icao: string,
+  upTo: Date,
+  economy: PinnedEconomyConfig,
+): Promise<{ committed: number; flown: number; feeMinor: number }> {
+  if (row.termStart === null || row.termEnd === null || row.volumeCommitment === null) {
+    return { committed: 0, flown: 0, feeMinor: 0 };
+  }
+  const served = elapsedTermFraction(row.termStart, row.termEnd, upTo);
+  const committed = Math.round(row.volumeCommitment * served);
+  if (committed <= 0) return { committed: 0, flown: 0, feeMinor: 0 };
+
+  const flown = await departuresFlown(db, airlineId, icao, row.termStart, upTo);
+  const short = Math.max(0, committed - flown);
+  return {
+    committed,
+    flown,
+    feeMinor: Math.round(short * economy.ground.contract.shortfallFeePerDepartureMinor),
+  };
+}
+
+/** Thrown to roll a write back when the airline cannot pay for it. */
+class InsufficientFunds extends Error {
+  constructor() {
+    super('The airline does not have enough cash for this ground handling operation');
+  }
+}
+
+/** Thrown to roll the sign transaction back when the vendor has no slot left. */
+class CapacityExhausted extends Error {
+  constructor() {
+    super('The handler has no capacity left');
+  }
+}
+
+/**
+ * Serialise every writer contending for one service line at one station.
+ *
+ * The key is the line rather than the vendor slot, because exclusivity spans two
+ * tables and this is the only key both writers can agree on. See the module note.
+ */
+async function lockLine(
+  tx: Database,
+  worldId: string,
+  icao: string,
+  serviceLine: string,
+): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtext(${`${worldId}:${icao}:${serviceLine}`}))`,
+  );
+}
+
+/**
+ * Break a vendor contract this airline holds, charging what breaking it costs.
+ *
+ * One place, three callers: an explicit termination, a grade switch, and opening
+ * self-handling on a line a vendor was working. All three are §9.3's *"breaking
+ * one early"*, and routing them through one function is what stops a switch being
+ * the free exit.
+ *
+ * Two movements rather than one, for §14.1's reason: *"why did I pay 31,400"* has
+ * two answers — the term you walked away from and the flights you never flew —
+ * and one line would fuse them into a figure nobody can argue with.
+ */
+async function breakContract(
+  tx: Database,
+  row: ActiveRow,
+  airlineId: string,
+  icao: string,
+  gameNow: Date,
+  economy: PinnedEconomyConfig,
+): Promise<{ penaltyMinor: number; shortfallMinor: number }> {
+  await tx
+    .update(groundContract)
+    .set({ status: 'terminated' })
+    .where(and(eq(groundContract.id, row.id), eq(groundContract.status, 'active')));
+
+  const penalty = penaltyNowMinor(row, gameNow);
+  const short = await shortfall(tx, row, airlineId, icao, gameNow, economy);
+
+  for (const [amount, cause] of [
+    [penalty, 'ground_contract_penalty'],
+    [short.feeMinor, 'ground_volume_shortfall'],
+  ] as const) {
+    if (amount <= 0) continue;
+    const movement = await moveAirlineCash(tx, {
+      airlineId,
+      amountMinor: -amount,
+      cause,
+      // The contract, not a fresh uuid: a contract is broken once, so this is a
+      // natural idempotency key and a replay is a no-op rather than a second bill.
+      reference: `contract:${row.id}`,
+      occurredAt: gameNow,
+    });
+    if (movement.movement.balanceAfterMinor < 0) throw new InsufficientFunds();
+  }
+
+  return { penaltyMinor: penalty, shortfallMinor: short.feeMinor };
 }
 
 export type SignOutcome =
   | { ok: true; station: GroundStationResponse }
-  | { ok: false; code: 'unknown_station' | 'grade_not_offered' | 'capacity_exhausted' };
+  | {
+      ok: false;
+      code: 'unknown_station' | 'grade_not_offered' | 'capacity_exhausted' | 'insufficient_funds';
+    };
 
 /**
- * Sign a handler for a service line, replacing any handler already on that line.
+ * Sign a handler for a service line, replacing whatever was working it.
  *
- * A `pg_advisory_xact_lock` on the vendor slot serialises airlines racing for the
- * last opening, so the capacity limit is exact under competition rather than a
- * best-effort count — the property the "capacity can be exhausted" criterion asks
- * for. Switching grades terminates the incumbent first, so its slot is freed
- * before the new one is counted.
+ * The advisory lock serialises airlines racing for the last opening, so the
+ * capacity limit is exact under competition rather than a best-effort count — the
+ * property the "capacity can be exhausted" criterion asks for. Switching grades
+ * breaks the incumbent first, which frees its slot **and charges the penalty**;
+ * so does taking a line back off your own people.
  */
 export async function signContract(
   db: Database,
@@ -188,10 +527,10 @@ export async function signContract(
   request: SignContractRequest,
   now: Date = new Date(),
 ): Promise<SignOutcome> {
-  const ctx = await loadStationContext(db, own.worldId, icao);
+  const ctx = await loadStationContext(db, own.worldId, own.id, icao);
   if (ctx === null) return { ok: false, code: 'unknown_station' };
 
-  const offer = stationVendors(ctx.seed, icao, request.serviceLine, ctx.tier).find(
+  const offer = stationVendors(ctx.seed, icao, request.serviceLine, ctx.tier ?? 'medium').find(
     (o) => o.grade === request.grade,
   );
   if (offer === undefined) return { ok: false, code: 'grade_not_offered' };
@@ -203,22 +542,27 @@ export async function signContract(
 
   return db
     .transaction(async (tx) => {
-      // Serialise everyone contending for this exact vendor slot.
-      await tx.execute(
-        sql`select pg_advisory_xact_lock(hashtext(${`${own.worldId}:${icao}:${request.serviceLine}:${request.grade}`}))`,
-      );
+      await lockLine(tx, own.worldId, icao, request.serviceLine);
 
-      // Retire any handler already on this line for this airline; it may be a
-      // different grade whose slot must be freed before we count the new one.
+      // Retire whatever this airline had on this line. A vendor contract is
+      // *broken* — its term was an agreement — while its own operation is simply
+      // closed, because there was nobody to agree a term with.
+      const incumbents = await activeAt(tx, own.worldId, icao);
+      const incumbent = incumbents.find(
+        (r) => r.airlineId === own.id && r.serviceLine === request.serviceLine,
+      );
+      if (incumbent) {
+        await breakContract(tx, incumbent, own.id, icao, gameNow, ctx.economy);
+      }
       await tx
-        .update(groundContract)
-        .set({ status: 'terminated' })
+        .update(groundSelfHandling)
+        .set({ status: 'closed', closedAt: gameNow })
         .where(
           and(
-            eq(groundContract.airlineId, own.id),
-            eq(groundContract.airportIcao, icao),
-            eq(groundContract.serviceLine, request.serviceLine),
-            eq(groundContract.status, 'active'),
+            eq(groundSelfHandling.airlineId, own.id),
+            eq(groundSelfHandling.airportIcao, icao),
+            eq(groundSelfHandling.serviceLine, request.serviceLine),
+            eq(groundSelfHandling.status, 'active'),
           ),
         );
 
@@ -246,78 +590,288 @@ export async function signContract(
         serviceLine: request.serviceLine,
         grade: request.grade,
         status: 'active',
+        termStart: gameNow,
         termEnd,
+        // Both fixed at signing, so the contract is judged at the end against what
+        // was agreed rather than against whatever the economy says by then.
+        volumeCommitment: commitmentFor(request.grade, ctx.economy),
+        penaltyMinor: fullTermPenaltyMinor(request.grade, ctx.economy),
       });
 
-      const active = await activeAt(tx, own.worldId, icao);
-      return { ok: true as const, station: buildStation(icao, ctx, active, own.id, gameNow) };
+      const [active, mine] = await Promise.all([
+        activeAt(tx, own.worldId, icao),
+        selfHandlingAt(tx, own.id, icao),
+      ]);
+      return {
+        ok: true as const,
+        station: buildStation(icao, ctx, active, mine, own.id, gameNow),
+      };
     })
     .catch((error: unknown): SignOutcome => {
       if (error instanceof CapacityExhausted) {
         return { ok: false, code: 'capacity_exhausted' as const };
       }
+      if (error instanceof InsufficientFunds) {
+        return { ok: false, code: 'insufficient_funds' as const };
+      }
       throw error;
     });
 }
 
-/** Thrown to roll the sign transaction back when the vendor has no slot left. */
-class CapacityExhausted extends Error {
-  constructor() {
-    super('The handler has no capacity left');
-  }
+export type SelfHandlingOutcome =
+  | { ok: true; station: GroundStationResponse }
+  | { ok: false; code: 'unknown_station' | 'needs_hub' | 'insufficient_funds' };
+
+/**
+ * Handle a service line with your own people, or restaff an operation already open
+ * (§9.3).
+ *
+ * §9.3 asks for self-handling *"requiring a station and headcount"*, and the hub
+ * is the station: an airline that has not bought its way into an airport has no
+ * ground operation there to staff. That is also what stops self-handling being
+ * the universally correct answer — App. B.5 doubles the price of every hub you
+ * already own, so a network of self-handled outstations is not something a player
+ * can quietly accumulate.
+ *
+ * Restaffing goes through the same request rather than a separate resize: the
+ * client says what the staffing should be, which is the only thing it knows.
+ */
+export async function openSelfHandling(
+  db: Database,
+  own: ResolvedPlayerAirline,
+  icao: string,
+  request: OpenSelfHandlingRequest,
+  now: Date = new Date(),
+): Promise<SelfHandlingOutcome> {
+  const ctx = await loadStationContext(db, own.worldId, own.id, icao);
+  if (ctx === null) return { ok: false, code: 'unknown_station' };
+  if (!ctx.hasHub) return { ok: false, code: 'needs_hub' };
+
+  const gameNow = gameTime(ctx.clock, now);
+
+  return db
+    .transaction(async (tx) => {
+      await lockLine(tx, own.worldId, icao, request.serviceLine);
+
+      // Taking the line off a vendor is breaking its contract, and costs what
+      // breaking it costs. Charged here rather than waived, because otherwise
+      // "open self-handling with one head" would be the free way out of a term.
+      const incumbents = await activeAt(tx, own.worldId, icao);
+      const incumbent = incumbents.find(
+        (r) => r.airlineId === own.id && r.serviceLine === request.serviceLine,
+      );
+      if (incumbent) {
+        await breakContract(tx, incumbent, own.id, icao, gameNow, ctx.economy);
+      }
+
+      /*
+       * Update or insert, rather than an upsert. The unique index is **partial**
+       * — `where status = 'active'` — and Postgres will not infer a partial index
+       * from an `on conflict` target without being handed the predicate too; the
+       * first version of this was an upsert and every write failed with *"no
+       * unique or exclusion constraint matching the ON CONFLICT specification"*.
+       *
+       * Two statements under the line lock is also simply clearer than an upsert
+       * carrying two separate `where` clauses, and the lock is what makes it safe.
+       */
+      const [existing] = await tx
+        .select({ id: groundSelfHandling.id })
+        .from(groundSelfHandling)
+        .where(
+          and(
+            eq(groundSelfHandling.airlineId, own.id),
+            eq(groundSelfHandling.airportIcao, icao),
+            eq(groundSelfHandling.serviceLine, request.serviceLine),
+            eq(groundSelfHandling.status, 'active'),
+          ),
+        )
+        .limit(1);
+
+      if (existing) {
+        // Restaffing keeps `opened_at`: it is the same operation, and moving its
+        // start would rewrite when the airline took the station on.
+        await tx
+          .update(groundSelfHandling)
+          .set({ headcount: request.headcount })
+          .where(eq(groundSelfHandling.id, existing.id));
+      } else {
+        await tx.insert(groundSelfHandling).values({
+          worldId: own.worldId,
+          airlineId: own.id,
+          airportIcao: icao,
+          serviceLine: request.serviceLine,
+          headcount: request.headcount,
+          status: 'active',
+          openedAt: gameNow,
+        });
+      }
+
+      const [active, mine] = await Promise.all([
+        activeAt(tx, own.worldId, icao),
+        selfHandlingAt(tx, own.id, icao),
+      ]);
+      return {
+        ok: true as const,
+        station: buildStation(icao, ctx, active, mine, own.id, gameNow),
+      };
+    })
+    .catch((error: unknown): SelfHandlingOutcome => {
+      if (error instanceof InsufficientFunds) {
+        return { ok: false, code: 'insufficient_funds' as const };
+      }
+      throw error;
+    });
 }
 
-/** Terminate a contract this airline holds. Returns the station it was at, or null. */
+/**
+ * Close an operation of your own, dropping the line back to walk-up handling.
+ *
+ * No penalty: there was no term and no counterparty. What it costs is what it
+ * stops costing — next month's payroll for those heads, which is the only reason
+ * to close one.
+ */
+export async function closeSelfHandling(
+  db: Database,
+  own: ResolvedPlayerAirline,
+  id: string,
+  now: Date = new Date(),
+): Promise<string | null> {
+  const clock = await loadWorldClock(db, own.worldId);
+  const gameNow = clock === null ? now : gameTime(clock, now);
+  const [row] = await db
+    .update(groundSelfHandling)
+    .set({ status: 'closed', closedAt: gameNow })
+    .where(
+      and(
+        eq(groundSelfHandling.id, id),
+        eq(groundSelfHandling.airlineId, own.id),
+        eq(groundSelfHandling.status, 'active'),
+      ),
+    )
+    .returning({ icao: groundSelfHandling.airportIcao });
+  return row?.icao ?? null;
+}
+
+export type TerminateOutcome =
+  | { ok: true; icao: string; penaltyMinor: number; shortfallMinor: number }
+  | { ok: false; code: 'not_found' | 'insufficient_funds' };
+
+/**
+ * Terminate a vendor contract this airline holds, early, and pay for it.
+ *
+ * The explicit half of §9.3's *"breaking one early costs a penalty"*. Refused
+ * when the airline cannot pay, which is how every other player-initiated spend in
+ * the game behaves — an airline with no cash is locked into its handler, which is
+ * a real consequence of running out of money rather than an inconsistency.
+ */
 export async function terminateContract(
   db: Database,
   own: ResolvedPlayerAirline,
   contractId: string,
-): Promise<string | null> {
-  const [row] = await db
-    .update(groundContract)
-    .set({ status: 'terminated' })
-    .where(
-      and(
-        eq(groundContract.id, contractId),
-        eq(groundContract.airlineId, own.id),
-        eq(groundContract.status, 'active'),
-      ),
-    )
-    .returning({ icao: groundContract.airportIcao });
-  return row?.icao ?? null;
+  now: Date = new Date(),
+): Promise<TerminateOutcome> {
+  const clock = await loadWorldClock(db, own.worldId);
+  if (clock === null) return { ok: false, code: 'not_found' };
+  const gameNow = gameTime(clock, now);
+  const economy = await loadWorldEconomyConfig(db, own.worldId);
+
+  return db
+    .transaction(async (tx) => {
+      const [row] = await tx
+        .select({
+          id: groundContract.id,
+          airlineId: groundContract.airlineId,
+          icao: groundContract.airportIcao,
+          serviceLine: groundContract.serviceLine,
+          grade: groundContract.grade,
+          termStart: groundContract.termStart,
+          termEnd: groundContract.termEnd,
+          volumeCommitment: groundContract.volumeCommitment,
+          penaltyMinor: groundContract.penaltyMinor,
+        })
+        .from(groundContract)
+        .where(
+          and(
+            eq(groundContract.id, contractId),
+            eq(groundContract.airlineId, own.id),
+            eq(groundContract.status, 'active'),
+          ),
+        )
+        .limit(1);
+      if (!row) return { ok: false as const, code: 'not_found' as const };
+
+      await lockLine(tx, own.worldId, row.icao, row.serviceLine);
+      const charged = await breakContract(tx, row, own.id, row.icao, gameNow, economy);
+      return {
+        ok: true as const,
+        icao: row.icao,
+        penaltyMinor: charged.penaltyMinor,
+        shortfallMinor: charged.shortfallMinor,
+      };
+    })
+    .catch((error: unknown): TerminateOutcome => {
+      if (error instanceof InsufficientFunds) {
+        return { ok: false, code: 'insufficient_funds' as const };
+      }
+      throw error;
+    });
 }
 
 export interface ExpiryResult {
   /** Contracts whose term ran out and were lapsed back to walk-up handling. */
   expired: number;
+  /** Of those, how many ended short of their committed departures. */
+  shortfalls: number;
+  /** What those shortfalls cost, in minor units. */
+  shortfallMinor: number;
 }
 
 /**
- * Lapse every contract in this world whose term has ended (M5-06, §9.3).
+ * Lapse every contract in this world whose term has ended, and bill what it owes
+ * (M5-06, §9.3).
  *
- * The other half of *"Contracts run for a fixed term"*: signing sets `term_end`,
- * and this is what makes the end mean something. A lapsed contract flips to
- * `expired`, which frees its vendor slot (capacity counts only `active` rows) and
- * drops the airline back to walk-up handling — so the ramp handler it was paying
- * for stops smoothing its turns, exactly as if it had never signed.
+ * The other half of *"Contracts run for a fixed term with volume commitments"*:
+ * signing sets `term_end` and the commitment, and this is what makes the end mean
+ * something. A lapsed contract flips to `expired`, which frees its vendor slot
+ * (capacity counts only `active` rows) and drops the airline back to walk-up
+ * handling — and if the term closed short of what it committed to, the vendor
+ * bills for the capacity it held and the airline did not use.
  *
  * Runs on the **worker** against the world's game clock, like every crew and
  * maintenance sweep. **Production has no worker**, so there a term would never
- * lapse: a contract signed on opening day would run for ever and its vendor slot
- * would never come free for a competitor. `groundContractsExpired` is the counter
- * that tells that apart from a world where nothing has reached its term yet.
+ * lapse: a contract signed on opening day would run for ever, its vendor slot
+ * would never come free for a competitor, and no shortfall would ever be billed —
+ * which reads as a generous market rather than a missing process.
+ * `groundContractsExpired` is the counter that tells that apart from a world where
+ * nothing has reached its term yet.
  *
- * World-scoped and idempotent: a second run finds nothing still `active` past its
- * term, so two workers racing lapse each contract once.
+ * World-scoped and idempotent twice over: the status flip means a second run finds
+ * nothing still `active` past its term, and the shortfall movement is keyed on the
+ * contract, so two workers racing bill each term once.
+ *
+ * Insolvency is not modelled here and the shortfall can cause it, exactly as crew
+ * payroll can: the vendor held the capacity, so the bill cannot be refused, and an
+ * airline that cannot pay goes negative. What must not happen is the sweep
+ * skipping it, which would make "sign premium everywhere and never fly" free.
  */
 export async function expireGroundContracts(
   db: Database,
   worldId: string,
   gameNow: Date,
 ): Promise<ExpiryResult> {
-  const lapsed = await db
-    .update(groundContract)
-    .set({ status: 'expired' })
+  const due = await db
+    .select({
+      id: groundContract.id,
+      airlineId: groundContract.airlineId,
+      icao: groundContract.airportIcao,
+      serviceLine: groundContract.serviceLine,
+      grade: groundContract.grade,
+      termStart: groundContract.termStart,
+      termEnd: groundContract.termEnd,
+      volumeCommitment: groundContract.volumeCommitment,
+      penaltyMinor: groundContract.penaltyMinor,
+    })
+    .from(groundContract)
     .where(
       and(
         eq(groundContract.worldId, worldId),
@@ -325,18 +879,66 @@ export async function expireGroundContracts(
         isNotNull(groundContract.termEnd),
         lte(groundContract.termEnd, gameNow),
       ),
-    )
-    .returning({ id: groundContract.id });
-  return { expired: lapsed.length };
+    );
+  if (due.length === 0) return { expired: 0, shortfalls: 0, shortfallMinor: 0 };
+
+  const economy = await loadWorldEconomyConfig(db, worldId);
+  let expired = 0;
+  let shortfalls = 0;
+  let shortfallMinor = 0;
+
+  for (const row of due) {
+    const billed = await db.transaction(async (tx) => {
+      const lapsed = await tx
+        .update(groundContract)
+        .set({ status: 'expired' })
+        .where(and(eq(groundContract.id, row.id), eq(groundContract.status, 'active')))
+        .returning({ id: groundContract.id });
+      // Another worker got here first. Its transaction owns the bill.
+      if (lapsed.length === 0) return null;
+
+      // Measured to the term's own end rather than to now: a sweep that ran late
+      // must not credit the airline for flights after the vendor stopped working.
+      const short = await shortfall(
+        tx,
+        row,
+        row.airlineId,
+        row.icao,
+        row.termEnd ?? gameNow,
+        economy,
+      );
+      if (short.feeMinor <= 0) return 0;
+
+      await moveAirlineCash(tx, {
+        airlineId: row.airlineId,
+        amountMinor: -short.feeMinor,
+        cause: 'ground_volume_shortfall',
+        reference: `contract:${row.id}`,
+        occurredAt: row.termEnd ?? gameNow,
+      });
+      return short.feeMinor;
+    });
+
+    if (billed === null) continue;
+    expired += 1;
+    if (billed > 0) {
+      shortfalls += 1;
+      shortfallMinor += billed;
+    }
+  }
+
+  return { expired, shortfalls, shortfallMinor };
 }
 
 /**
- * Every active contract this airline holds, across all stations, with the ones
- * about to lapse flagged.
+ * Every arrangement this airline holds, across all stations, with what is about to
+ * cost it money.
  *
  * §9.3's alert *"before it lapses"* wants the whole network in one read rather
- * than a page-by-page sweep, so a client can badge the airline the moment any
- * term is inside its warning window.
+ * than a page-by-page sweep — and since the commitment landed there is a second
+ * thing worth warning about that a station page cannot show either: a term running
+ * out **short of its committed departures**. That one is the more expensive
+ * surprise, because it is billed at the end, when nothing can be done about it.
  */
 export async function listAirlineContracts(
   db: Database,
@@ -346,35 +948,173 @@ export async function listAirlineContracts(
   const clock = await loadWorldClock(db, own.worldId);
   if (clock === null) return { contracts: [] };
   const gameNow = gameTime(clock, now);
+  const economy = await loadWorldEconomyConfig(db, own.worldId);
 
-  const rows = await db
-    .select({
-      id: groundContract.id,
-      icao: groundContract.airportIcao,
-      serviceLine: groundContract.serviceLine,
-      grade: groundContract.grade,
-      termEnd: groundContract.termEnd,
-    })
-    .from(groundContract)
-    .where(and(eq(groundContract.airlineId, own.id), eq(groundContract.status, 'active')));
+  const [rows, mine] = await Promise.all([
+    db
+      .select({
+        id: groundContract.id,
+        airlineId: groundContract.airlineId,
+        icao: groundContract.airportIcao,
+        serviceLine: groundContract.serviceLine,
+        grade: groundContract.grade,
+        termStart: groundContract.termStart,
+        termEnd: groundContract.termEnd,
+        volumeCommitment: groundContract.volumeCommitment,
+        penaltyMinor: groundContract.penaltyMinor,
+      })
+      .from(groundContract)
+      .where(and(eq(groundContract.airlineId, own.id), eq(groundContract.status, 'active'))),
+    db
+      .select({
+        id: groundSelfHandling.id,
+        icao: groundSelfHandling.airportIcao,
+        serviceLine: groundSelfHandling.serviceLine,
+        headcount: groundSelfHandling.headcount,
+      })
+      .from(groundSelfHandling)
+      .where(
+        and(eq(groundSelfHandling.airlineId, own.id), eq(groundSelfHandling.status, 'active')),
+      ),
+  ]);
 
-  return {
-    contracts: rows.map((row) => ({
+  const contracts: GroundContractAlert[] = [];
+
+  for (const row of rows) {
+    // Measured to *now*, so the figure falls as the airline flies — which is the
+    // whole point of surfacing it before the term closes.
+    const short = await shortfall(db, row, own.id, row.icao, gameNow, economy);
+    contracts.push({
       id: row.id,
       icao: row.icao,
       serviceLine: row.serviceLine as GroundServiceLine,
+      kind: 'vendor',
       grade: row.grade as HandlerGrade,
+      headcount: null,
+      staffing: null,
       termEnd: row.termEnd === null ? null : row.termEnd.toISOString(),
       expiring: contractExpiring(row.termEnd, gameNow),
-    })),
-  };
+      committedDepartures: row.volumeCommitment,
+      departuresFlown: row.termStart === null ? null : short.flown,
+      shortfallFeeMinor: short.feeMinor,
+      earlyTerminationPenaltyMinor: penaltyNowMinor(row, gameNow),
+    });
+  }
+
+  if (mine.length > 0) {
+    // One query for every station the airline handles itself, rather than one per
+    // row — the pattern CLAUDE.md records after a correlated subquery came back
+    // empty against real Postgres.
+    const tiers = await db
+      .select({ icao: airport.icaoCode, tier: airport.tier })
+      .from(airport)
+      .where(
+        inArray(
+          airport.icaoCode,
+          mine.map((r) => r.icao),
+        ),
+      );
+    const tierOf = new Map(tiers.map((t) => [t.icao, t.tier]));
+
+    for (const row of mine) {
+      const required = requiredHeadcount(tierOf.get(row.icao) ?? null, economy);
+      contracts.push({
+        id: row.id,
+        icao: row.icao,
+        serviceLine: row.serviceLine as GroundServiceLine,
+        kind: 'self',
+        grade: null,
+        headcount: row.headcount,
+        staffing: selfHandlingProfile(row.headcount, required).staffing,
+        termEnd: null,
+        expiring: false,
+        committedDepartures: null,
+        departuresFlown: null,
+        shortfallFeeMinor: 0,
+        earlyTerminationPenaltyMinor: 0,
+      });
+    }
+  }
+
+  return { contracts };
 }
 
 /**
- * The grade an airline uses for a service line at a station, for the sim to read.
+ * How an airline's turns at a station are actually being handled, for the sim.
  *
- * Null when nothing is contracted — the caller decides what "walk-up" handling
- * means. A single indexed lookup, so a departure can ask it cheaply.
+ * The one lookup the turnaround, disruption and settlement models share, and the
+ * only place that knows the three cases are three cases. Walk-up is the answer
+ * when nothing is arranged, which is a real state rather than a missing row: the
+ * airline scrambles the bags itself, at budget-grade reliability and above
+ * standard price.
+ *
+ * `tier` is passed in by a caller that already has the airport row — a settlement
+ * does — so the common path costs one indexed read rather than two.
+ */
+export async function handlingArrangementFor(
+  db: Database,
+  airlineId: string,
+  icao: string,
+  serviceLine: GroundServiceLine,
+  economy: PinnedEconomyConfig,
+  tier?: AirportTier | null,
+): Promise<HandlingArrangement> {
+  const [mine, contracted] = await Promise.all([
+    db
+      .select({ headcount: groundSelfHandling.headcount })
+      .from(groundSelfHandling)
+      .where(
+        and(
+          eq(groundSelfHandling.airlineId, airlineId),
+          eq(groundSelfHandling.airportIcao, icao),
+          eq(groundSelfHandling.serviceLine, serviceLine),
+          eq(groundSelfHandling.status, 'active'),
+        ),
+      )
+      .limit(1),
+    db
+      .select({ grade: groundContract.grade })
+      .from(groundContract)
+      .where(
+        and(
+          eq(groundContract.airlineId, airlineId),
+          eq(groundContract.airportIcao, icao),
+          eq(groundContract.serviceLine, serviceLine),
+          eq(groundContract.status, 'active'),
+        ),
+      )
+      .limit(1),
+  ]);
+
+  const own = mine[0];
+  if (own) {
+    let stationTier = tier;
+    if (stationTier === undefined) {
+      const [a] = await db
+        .select({ tier: airport.tier })
+        .from(airport)
+        .where(eq(airport.icaoCode, icao))
+        .limit(1);
+      stationTier = a?.tier ?? null;
+    }
+    return {
+      kind: 'self',
+      headcount: own.headcount,
+      requiredHeadcount: requiredHeadcount(stationTier, economy),
+    };
+  }
+
+  const vendor = contracted[0];
+  if (vendor) return { kind: 'vendor', grade: vendor.grade as HandlerGrade };
+  return { kind: 'walk_up' };
+}
+
+/**
+ * The grade an airline uses for a service line at a station.
+ *
+ * Kept for callers that only want the vendor grade. New code should read
+ * {@link handlingArrangementFor}, which can also answer *"their own people"* —
+ * this cannot, and returns null for a self-handled line as it does for walk-up.
  */
 export async function contractedGrade(
   db: Database,

@@ -181,12 +181,20 @@ describeDb('what a flight pays for its fuel', () => {
   it('differs measurably between two stations on the same sector', async () => {
     // M5-07's first acceptance criterion, in the only place a player meets it:
     // the fuel line of a settled flight. Same distance, same airframe, same
-    // load — and a bill a fifth apart even against the spread.
+    // load, **same world** — and a bill a fifth apart even against the spread.
+    //
+    // One world matters: the curve level is a property of the world's seed, so
+    // two fixture worlds would have put the two flights at two different points
+    // on it, and a ±24% curve swing can outweigh a 56% regional gap. Vary one
+    // thing.
+    const shared = await fixtures.create();
     const gulf = await settleFrom(
       await makeAirport({ continent: 'AS', isoCountry: 'AE', tier: 'flagship' }, ORIGIN_AT),
+      { worldId: shared.world.id },
     );
     const africa = await settleFrom(
       await makeAirport({ continent: 'AF', isoCountry: 'KE', tier: 'large' }, ORIGIN_AT),
+      { worldId: shared.world.id },
     );
 
     expect(gulf.fuel.amountMinor).toBeLessThan(africa.fuel.amountMinor * 0.8);
@@ -209,12 +217,16 @@ describeDb('what a flight pays for its fuel', () => {
 
   it('buys the fuel at the origin, not at the airport it lands at', async () => {
     // Both destinations are European large fields, so if the destination were
-    // being priced these two would differ only by the destination's spread.
+    // being priced these two would differ only by the destination's spread. One
+    // world, for the reason the test above gives.
+    const shared = await fixtures.create();
     const fromGulf = await settleFrom(
       await makeAirport({ continent: 'AS', isoCountry: 'AE', tier: 'flagship' }, ORIGIN_AT),
+      { worldId: shared.world.id },
     );
     const fromAfrica = await settleFrom(
       await makeAirport({ continent: 'AF', isoCountry: 'KE', tier: 'flagship' }, ORIGIN_AT),
+      { worldId: shared.world.id },
     );
     expect(fromGulf.fuel.amountMinor).toBeLessThan(fromAfrica.fuel.amountMinor * 0.8);
   });

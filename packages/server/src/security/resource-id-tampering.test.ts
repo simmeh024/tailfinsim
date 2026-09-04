@@ -15,16 +15,18 @@ import {
   aircraftOrder,
   airframe,
   airline,
+  airlineHub,
   airport,
   crewBase,
   crewPool,
   groundContract,
+  groundSelfHandling,
   player,
   usedAircraftListing,
   world,
 } from '../db/schema';
 import { type ServerEnv } from '../env';
-import { readStation, signContract } from '../ground/contracts';
+import { openSelfHandling, readStation, signContract } from '../ground/contracts';
 import { createOwnershipTestSuite, type OwnershipTestSuite } from '../test-fixtures/ownership';
 import {
   ABSENT_RESOURCE_UUID,
@@ -70,6 +72,9 @@ describeDb('SEC-07 resource id tampering at owner-scoped HTTP boundaries', () =>
   let ownContractId: string;
   let competitorContractId: string;
   let otherWorldContractId: string;
+  let ownSelfHandlingId: string;
+  let competitorSelfHandlingId: string;
+  let otherWorldSelfHandlingId: string;
   let extraAirlineId: string | undefined;
 
   function own(airlineFixture: OwnershipTestSuite['airlineA']): ResolvedPlayerAirline {
@@ -162,6 +167,41 @@ describeDb('SEC-07 resource id tampering at owner-scoped HTTP boundaries', () =>
     ownContractId = await makeContract(suite.airlineA, 'SZAA');
     competitorContractId = await makeContract(suite.airlineB, 'SZAB');
     otherWorldContractId = await makeContract(suite.airlineAOther, 'SZAC');
+
+    /*
+     * Self-handling (M5-06) needs a hub at the station — §9.3's "requiring a
+     * station" — so each airline gets one, and each takes a **different** service
+     * line from the contract above: opening one on the contracted line would
+     * break that contract and invalidate the ids the test beside this uses.
+     */
+    async function makeSelfHandling(
+      airlineFixture: OwnershipTestSuite['airlineA'],
+      icao: string,
+    ): Promise<string> {
+      const [row] = await db.db
+        .select({ id: airport.id })
+        .from(airport)
+        .where(eq(airport.icaoCode, icao))
+        .limit(1);
+      if (!row) throw new Error(`SEC-07 self-handling airport ${icao} was not created`);
+      await db.db
+        .insert(airlineHub)
+        .values({ airlineId: airlineFixture.airline.id, airportId: row.id })
+        .onConflictDoNothing();
+
+      const opened = await openSelfHandling(db.db, own(airlineFixture), icao, {
+        serviceLine: 'catering',
+        headcount: 4,
+      });
+      if (!opened.ok) throw new Error('SEC-07 self-handling was not opened');
+      const id = opened.station.lines.find((value) => value.serviceLine === 'catering')?.contracted
+        ?.id;
+      if (!id) throw new Error('SEC-07 self-handling was not returned');
+      return id;
+    }
+    ownSelfHandlingId = await makeSelfHandling(suite.airlineA, 'SZAA');
+    competitorSelfHandlingId = await makeSelfHandling(suite.airlineB, 'SZAB');
+    otherWorldSelfHandlingId = await makeSelfHandling(suite.airlineAOther, 'SZAC');
     await topUp(suite.airlineA.airline.id, 'sec-07-player-a-top-up');
     await topUp(suite.airlineB.airline.id, 'sec-07-player-b-top-up');
 
@@ -431,6 +471,85 @@ describeDb('SEC-07 resource id tampering at owner-scoped HTTP boundaries', () =>
     expect(
       await db.db.select().from(groundContract).where(eq(groundContract.id, ownContractId)),
     ).toMatchObject([{ status: 'terminated' }]);
+  });
+
+  it('conceals self-handling ids and leaves every refused closure untouched', async () => {
+    const snapshot = async () => ({
+      competitor: await db.db
+        .select()
+        .from(groundSelfHandling)
+        .where(eq(groundSelfHandling.id, competitorSelfHandlingId)),
+      own: await db.db
+        .select()
+        .from(groundSelfHandling)
+        .where(eq(groundSelfHandling.id, ownSelfHandlingId)),
+      otherWorld: await db.db
+        .select()
+        .from(groundSelfHandling)
+        .where(eq(groundSelfHandling.id, otherWorldSelfHandlingId)),
+      cash: await db.db
+        .select({ cashMinor: airline.cashMinor })
+        .from(airline)
+        .where(eq(airline.id, suite.airlineA.airline.id)),
+    });
+    const before = await snapshot();
+    const denied = resourceIdCases({
+      own: ownSelfHandlingId,
+      anotherPlayer: competitorSelfHandlingId,
+      wrongEntity: suite.worldMain.id,
+    }).filter(({ expected }) => expected === 'conceal');
+    for (const id of [
+      ...denied.map((testCase) => testCase.id),
+      otherWorldSelfHandlingId,
+      ...MALFORMED_RESOURCE_IDS,
+    ]) {
+      const response = await suite.as(
+        { actor: 'playerA', worldId: suite.worldMain.id },
+        { method: 'DELETE', url: `/api/ground/self-handling/${encodeURIComponent(id)}` },
+      );
+      expect(response.statusCode, response.body).toBe(404);
+      if (id !== '') {
+        expect(response.json()).toEqual({ code: 'not_found', message: 'No such operation' });
+      }
+      expect(await snapshot()).toEqual(before);
+    }
+    const allowed = await suite.as(
+      { actor: 'playerA', worldId: suite.worldMain.id },
+      { method: 'DELETE', url: `/api/ground/self-handling/${ownSelfHandlingId}` },
+    );
+    expect(allowed.statusCode, allowed.body).toBe(200);
+    expect(
+      await db.db
+        .select()
+        .from(groundSelfHandling)
+        .where(eq(groundSelfHandling.id, ownSelfHandlingId)),
+    ).toMatchObject([{ status: 'closed' }]);
+  });
+
+  it('refuses to open self-handling at a station the airline has no hub at', async () => {
+    // §9.3's "requiring a station", over HTTP. `SZAB` is the competitor's hub, so
+    // this is also a cross-owner attempt wearing the shape of a legitimate one.
+    const response = await suite.as(
+      { actor: 'playerA', worldId: suite.worldMain.id },
+      {
+        method: 'POST',
+        url: '/api/ground/SZAB/self-handling',
+        payload: { serviceLine: 'cleaning', headcount: 3 },
+      },
+    );
+    expect(response.statusCode, response.body).toBe(422);
+    expect(response.json()).toMatchObject({ code: 'needs_hub' });
+    expect(
+      await db.db
+        .select()
+        .from(groundSelfHandling)
+        .where(
+          and(
+            eq(groundSelfHandling.airlineId, suite.airlineA.airline.id),
+            eq(groundSelfHandling.serviceLine, 'cleaning'),
+          ),
+        ),
+    ).toHaveLength(0);
   });
 
   it('conceals refused maintenance targets and leaves the foreign airframe unchanged', async () => {

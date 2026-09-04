@@ -504,6 +504,12 @@ export const cashMovementCause = pgEnum('cash_movement_cause', [
   'office_expansion',
   'executive_floor',
   'executive_office',
+  /** §9.3's *"breaking one early costs a penalty"*, pro-rated to what is left of the term. */
+  'ground_contract_penalty',
+  /** The committed departures a term ended without flying (§9.3). */
+  'ground_volume_shortfall',
+  /** Monthly payroll for a station the airline handles itself (§9.3). */
+  'ground_self_handling_payroll',
   'admin_adjustment',
   'flight_settlement',
   'disruption_cost',
@@ -3650,11 +3656,37 @@ export const groundContract = pgTable(
     grade: text('grade').notNull(),
     /** `'active' | 'terminated'`. */
     status: text('status').notNull(),
-    /** Game time the term ends; null while a term/expiry model is not yet applied. */
+    /**
+     * Game time the term **starts**.
+     *
+     * Not the same instant as `signed_at`, and the difference is the whole reason
+     * this column exists: `signed_at` defaults to `now()` and is therefore wall
+     * clock, while `term_end` is the world's own calendar. Pro-rating a penalty
+     * or a volume commitment across a term needs both ends measured on the same
+     * clock, and mixing the two would have made a term look decades long.
+     *
+     * **Null means a contract signed before terms were priced** (M5-06 PR5 or
+     * earlier). Such a row never expires and never bills, which is the truthful
+     * behaviour for a contract nobody agreed a term with.
+     */
+    termStart: timestamp('term_start', { withTimezone: true }),
+    /** Game time the term ends; null for a contract signed before terms existed. */
     termEnd: timestamp('term_end', { withTimezone: true }),
-    /** Departures committed over the term; carried for the volume model, unused yet. */
+    /**
+     * Departures committed over the term (§9.3), fixed at signing.
+     *
+     * Stored rather than recomputed, because the balance it came from is
+     * retunable: a contract must be judged at the end against the commitment it
+     * was actually signed under, not against whatever the economy says today.
+     */
     volumeCommitment: integer('volume_commitment'),
-    /** Early-termination penalty in minor units; carried for the money model, unused yet. */
+    /**
+     * What breaking the **whole** term would cost, in minor units, fixed at
+     * signing for the same reason as the commitment.
+     *
+     * The charge actually levied is this pro-rated to the unserved part of the
+     * term, so leaving on the last day is nearly free.
+     */
     penaltyMinor: bigint('penalty_minor', { mode: 'number' }),
     signedAt: timestamp('signed_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -3673,3 +3705,68 @@ export const groundContract = pgTable(
 );
 
 export type GroundContractRow = typeof groundContract.$inferSelect;
+
+/**
+ * A service line an airline handles with its own people (M5-06, §9.3).
+ *
+ * §9.3's *"self-handling as an alternative requiring a station and headcount"*.
+ * A separate table from `ground_contract` rather than a flag on it, and the
+ * reason is a rollback: a self-handled line has **no grade**, so representing one
+ * in `ground_contract` would mean either a null in a column the previous release
+ * reads as non-null — breaking its `/api/ground/:icao` response for exactly the
+ * airlines that had adopted the feature — or storing a grade that is a lie. The
+ * expand rule is that the previous release keeps working against the result, and
+ * a table it has never heard of satisfies that completely.
+ *
+ * ## One handler per line, across two tables
+ *
+ * The partial unique index below gives this table its own one-active-per-line
+ * rule; the cross-table rule — you cannot have a vendor *and* your own people on
+ * the same line — is enforced by both writers taking the same
+ * `pg_advisory_xact_lock` on `(world, airport, service line)` and closing the
+ * other kind inside that lock. A database constraint cannot span two tables, so
+ * the lock is the mechanism and `contracts.test.ts` is what proves it.
+ *
+ * ## Times are game time
+ *
+ * `opened_at` and `closed_at` are the world's own calendar, like a contract's
+ * term and unlike `ground_contract.signed_at`. There is no term: an operation of
+ * your own runs until you close it, which is why there is nothing here for the
+ * worker to expire.
+ */
+export const groundSelfHandling = pgTable(
+  'ground_self_handling',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    airportIcao: text('airport_icao').notNull(),
+    /** A `@tailfin/shared` `GroundServiceLine`. */
+    serviceLine: text('service_line').notNull(),
+    /**
+     * Heads employed here. Compared against the station's requirement to give a
+     * staffing ratio, which is what decides how well the line is handled.
+     */
+    headcount: integer('headcount').notNull(),
+    /** `'active' | 'closed'`. */
+    status: text('status').notNull(),
+    /** Game time, so a reset moves it with everything else (ADR-0005). */
+    openedAt: timestamp('opened_at', { withTimezone: true }).notNull(),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('ground_self_handling_active_line_key')
+      .on(table.airlineId, table.airportIcao, table.serviceLine)
+      .where(sql`status = 'active'`),
+    index('ground_self_handling_payroll_idx').on(table.worldId, table.status),
+    // Zero heads is not a staffing level, it is a closed operation.
+    check('ground_self_handling_headcount_positive', sql`${table.headcount} > 0`),
+  ],
+);
+
+export type GroundSelfHandlingRow = typeof groundSelfHandling.$inferSelect;

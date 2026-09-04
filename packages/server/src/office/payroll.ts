@@ -1,7 +1,7 @@
 import { eq, inArray } from 'drizzle-orm';
 
 import { moveAirlineCash } from '../airline/cash';
-import { previousMonth } from '../crew/payroll';
+import { monthAfter, previousMonth } from '../crew/payroll';
 import { cashMovement, executiveHire, officeHire } from '../db/schema';
 
 import type { Database } from '../db/client';
@@ -114,13 +114,4 @@ export async function runOfficePayroll(
   }
 
   return { airlinesBilled, totalMinor };
-}
-
-/** `2024-11` for `2024-10`. Names the instant a month closed. */
-function monthAfter(period: string): string {
-  const [year, month] = period.split('-').map(Number);
-  if (year === undefined || month === undefined) return period;
-  return month === 12
-    ? `${String(year + 1)}-01`
-    : `${String(year)}-${String(month + 1).padStart(2, '0')}`;
 }

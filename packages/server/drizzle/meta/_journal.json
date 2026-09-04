@@ -365,6 +365,13 @@
       "when": 1788552547823,
       "tag": "0051_one_ledger_one_clock",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1788559608634,
+      "tag": "0052_true_sway",
+      "breakpoints": true
     }
   ]
 }
