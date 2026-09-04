@@ -71,14 +71,30 @@ describe('projection-independent world layers', () => {
     }
     expect(Math.max(...path.map(([lon]) => lon))).toBeGreaterThan(180);
 
-    // The colour is an altitude gradient: one colour per path vertex, warm on the
+    // The colour is an altitude gradient: one colour per path vertex, warmer near the
     // ground at the ends and the route blue at cruise in the middle.
     const getColor = routes?.props.getColor as () => [number, number, number, number][];
     const colors = getColor();
     expect(colors).toHaveLength(path.length);
-    expect(colors[0]).toEqual([...palette.airport.slice(0, 3), 255]);
     const mid = colors[Math.floor(colors.length / 2)]!;
     expect(mid.slice(0, 3)).toEqual(palette.route.slice(0, 3));
+
+    // The ends are warmed towards the ground colour but never reach it. Arriving at
+    // the amber the airport dots and the pale terrain are drawn in is what made a
+    // route dissolve into the map with no visible end.
+    const end = colors[0]!;
+    // Warmed towards the ground, but it must not arrive: a route that ends in the
+    // ground colour ends in the colour of the airport dots and the pale terrain, and
+    // so has no visible end at all.
+    expect(end.slice(0, 3)).not.toEqual(palette.airport.slice(0, 3));
+    expect(end.slice(0, 3)).not.toEqual(palette.route.slice(0, 3));
+    for (let channel = 0; channel < 3; channel += 1) {
+      const ground = palette.airport[channel]!;
+      const cruise = palette.route[channel]!;
+      // Strictly inside the ramp — a blend of the two, neither endpoint of it.
+      expect(end[channel]!).toBeGreaterThan(Math.min(ground, cruise));
+      expect(end[channel]!).toBeLessThan(Math.max(ground, cruise));
+    }
   });
 
   it('keeps the layer ids and visibility independent of projection', () => {
