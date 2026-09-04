@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import { Button } from '../../ui/Button';
 import { openRoute, type OpenRouteOutcome } from '../api';
 
 import type { ReactNode } from 'react';
@@ -85,14 +86,13 @@ export function OpenRouteForm({
             }}
           />
         </label>
-        <button
-          className="admin__submit"
-          type="button"
+        <Button
+          variant="primary"
           disabled={busy || origin.length < 4 || destination.length < 4}
           onClick={() => void submit()}
         >
           Open
-        </button>
+        </Button>
       </div>
 
       {outcome !== null && !outcome.ok && (

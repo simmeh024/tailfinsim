@@ -17,6 +17,7 @@ import type {
 
 import { fetchOwnAirline } from '../airline/api';
 import { useContextSelection } from '../shell/context-selection';
+import { Button } from '../ui/Button';
 
 import { AircraftImage } from './AircraftImage';
 import { acquireAircraft, fetchUsedMarket, quoteAircraft, type FleetApiRefusal } from './api';
@@ -340,9 +341,9 @@ function UsedListingCard({
         {decimal(listing.valuation.configurationFactor, 2)} configuration.
       </p>
       {canAcquire && (
-        <button type="button" className="market-action market-action--primary" onClick={onReview}>
+        <Button variant="primary" className="market-action" onClick={onReview}>
           Review used purchase
-        </button>
+        </Button>
       )}
     </article>
   );
@@ -982,27 +983,31 @@ export function FleetMarket({
                       </p>
                     )}
                     {activeAirline && exposesMethod(selected, 'new', typeListings.length) && (
-                      <button
-                        type="button"
-                        className="market-action market-action--primary"
+                      <Button
+                        variant="primary"
+                        className="market-action"
                         onClick={() => beginAcquisition('new')}
                       >
                         Order new
-                      </button>
+                      </Button>
                     )}
                     {activeAirline && exposesMethod(selected, 'lease', typeListings.length) && (
-                      <button
-                        type="button"
+                      <Button
+                        variant="secondary"
                         className="market-action"
                         onClick={() => beginAcquisition('lease')}
                       >
                         Lease
-                      </button>
+                      </Button>
                     )}
                     {exposesMethod(selected, 'used', typeListings.length) && (
-                      <button type="button" className="market-action" onClick={openUsedMarket}>
+                      <Button
+                        variant="secondary"
+                        className="market-action"
+                        onClick={openUsedMarket}
+                      >
                         View used aircraft <span>{typeListings.length}</span>
-                      </button>
+                      </Button>
                     )}
                     {usedFailed && <p role="alert">Used inventory could not be checked.</p>}
                     {!exposesMethod(selected, 'new', typeListings.length) &&
@@ -1086,8 +1091,8 @@ export function FleetMarket({
                         </p>
                       )}
                       <div className="acquisition-review__buttons">
-                        <button
-                          type="button"
+                        <Button
+                          variant="secondary"
                           className="market-action"
                           onClick={() => {
                             setUsedReview(null);
@@ -1096,15 +1101,15 @@ export function FleetMarket({
                           }}
                         >
                           Cancel
-                        </button>
-                        <button
-                          type="button"
-                          className="market-action market-action--primary"
+                        </Button>
+                        <Button
+                          variant="primary"
+                          className="market-action"
                           disabled={submitting}
                           onClick={() => void submitUsedAcquisition()}
                         >
                           {submitting ? 'Submitting…' : 'Confirm used purchase'}
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   ) : (
@@ -1293,14 +1298,14 @@ export function FleetMarket({
                               submitted.
                             </small>
                           </label>
-                          <button
-                            type="button"
-                            className="market-action market-action--primary"
+                          <Button
+                            variant="primary"
+                            className="market-action"
                             disabled={deliveryAirport.length !== 4 || quote.resultingCashMinor < 0}
                             onClick={() => setReviewing(true)}
                           >
                             Review {acquisitionKind === 'new' ? 'order' : 'lease'}
-                          </button>
+                          </Button>
                           {quote.resultingCashMinor < 0 && (
                             <p className="acquisition-error">
                               The current cash snapshot is below this quote. The server will
@@ -1355,8 +1360,8 @@ export function FleetMarket({
                             </p>
                           )}
                           <div className="acquisition-review__buttons">
-                            <button
-                              type="button"
+                            <Button
+                              variant="secondary"
                               className="market-action"
                               onClick={() => {
                                 setReviewing(false);
@@ -1365,10 +1370,10 @@ export function FleetMarket({
                               }}
                             >
                               Change order
-                            </button>
-                            <button
-                              type="button"
-                              className="market-action market-action--primary"
+                            </Button>
+                            <Button
+                              variant="primary"
+                              className="market-action"
                               disabled={submitting}
                               onClick={() => void submitTypeAcquisition()}
                             >
@@ -1377,7 +1382,7 @@ export function FleetMarket({
                                 : acquisitionKind === 'new'
                                   ? 'Confirm and order'
                                   : 'Confirm lease deposit'}
-                            </button>
+                            </Button>
                           </div>
                         </div>
                       )}

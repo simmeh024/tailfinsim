@@ -6,6 +6,8 @@ import {
   type AdminWorldSummary,
 } from '@tailfin/shared';
 
+import { Button } from '../ui/Button';
+
 import { changeWorldSpeed, type FieldErrors } from './api';
 
 import type { ReactNode } from 'react';
@@ -145,9 +147,8 @@ export function WorldSpeed({
       </div>
 
       {!confirming && (
-        <button
-          className="admin__submit"
-          type="button"
+        <Button
+          variant="primary"
           disabled={!usable || next === world.speedMultiplier}
           onClick={() => {
             setConfirming(true);
@@ -155,7 +156,7 @@ export function WorldSpeed({
           }}
         >
           Review change
-        </button>
+        </Button>
       )}
 
       {confirming && usable && (
@@ -192,23 +193,17 @@ export function WorldSpeed({
           </ul>
 
           <div className="admin__confirm-actions">
-            <button
-              className="admin__submit"
-              type="button"
-              disabled={submitting}
-              onClick={() => void commit()}
-            >
+            <Button variant="primary" disabled={submitting} onClick={() => void commit()}>
               {submitting ? 'Changing…' : `Change speed to ${next.toFixed(2)}×`}
-            </button>
-            <button
-              className="admin__cancel"
-              type="button"
+            </Button>
+            <Button
+              variant="tertiary"
               onClick={() => {
                 setConfirming(false);
               }}
             >
               Cancel
-            </button>
+            </Button>
           </div>
         </div>
       )}

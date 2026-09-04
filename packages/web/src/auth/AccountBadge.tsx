@@ -1,5 +1,7 @@
 import { NavLink } from 'react-router';
 
+import { Button } from '../ui/Button';
+
 import { useSession } from './SessionProvider';
 
 import type { ReactNode } from 'react';
@@ -55,12 +57,16 @@ export function AccountBadge({ airlineName }: { airlineName: string | null }): R
         </NavLink>
       )}
 
-      <button type="button" className="account__signout" onClick={() => void signOut()}>
+      <Button variant="tertiary" className="account__signout" onClick={() => void signOut()}>
         Sign out
-      </button>
-      <button type="button" className="account__signout" onClick={() => void signOutEverywhere()}>
+      </Button>
+      <Button
+        variant="tertiary"
+        className="account__signout"
+        onClick={() => void signOutEverywhere()}
+      >
         Sign out everywhere
-      </button>
+      </Button>
     </div>
   );
 }

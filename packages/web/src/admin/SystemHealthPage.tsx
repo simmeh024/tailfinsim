@@ -1,5 +1,6 @@
 import type { AdminNodeHealth, AdminSystemHealthResponse, NodeState } from '@tailfin/shared';
 
+import { Button } from '../ui/Button';
 import { StateBlock } from '../ui/StateBlock';
 
 import { fetchSystemHealth } from './api';
@@ -285,9 +286,9 @@ export function SystemHealthPage(): ReactNode {
           node that stops reporting is detected rather than merely unreachable.
         </p>
 
-        <button className="admin__submit" type="button" onClick={refresh}>
+        <Button variant="secondary" onClick={refresh}>
           Refresh now
-        </button>
+        </Button>
       </section>
     </>
   );

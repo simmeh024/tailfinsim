@@ -8,6 +8,7 @@ import type {
   FareTable,
 } from '@tailfin/shared';
 
+import { Button } from '../ui/Button';
 import { StateBlock } from '../ui/StateBlock';
 
 import { fetchAdminAirline } from './api';
@@ -257,29 +258,27 @@ export function AdminAirlinePage(): ReactNode {
 
         {cashMovements.total > cashMovements.limit && (
           <div className="admin__form" aria-label="Cash movement pages">
-            <button
-              className="admin__submit"
-              type="button"
+            <Button
+              variant="secondary"
               disabled={cashMovements.offset === 0}
               onClick={() => {
                 setMovementOffset(Math.max(0, cashMovements.offset - cashMovements.limit));
               }}
             >
               Newer
-            </button>
+            </Button>
             <span className="admin__note" role="status">
               {cashMovements.offset + 1}–{movementEnd} of {cashMovements.total}
             </span>
-            <button
-              className="admin__submit"
-              type="button"
+            <Button
+              variant="secondary"
               disabled={movementEnd >= cashMovements.total}
               onClick={() => {
                 setMovementOffset(cashMovements.offset + cashMovements.limit);
               }}
             >
               Older
-            </button>
+            </Button>
           </div>
         )}
       </section>

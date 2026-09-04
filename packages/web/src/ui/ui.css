@@ -144,3 +144,101 @@
     animation: none;
   }
 }
+
+/* -------------------------------------------------------------- buttons ---- */
+
+/*
+ * The four levels of UX-08's action hierarchy. Each is the treatment the client
+ * already used for that level somewhere, consolidated: a filled accent for
+ * primary, outlined-on-inset for secondary, text weight for tertiary, and the
+ * cancelled status colour for destructive.
+ *
+ * Weight carries the hierarchy as well as colour. `primary` is the only filled
+ * variant *and* the only bold one, so it still reads as dominant in a
+ * screenshot with the hue stripped — which is the same requirement
+ * `tokens.css` states for status, and the reason the status chips in
+ * `shell.css` carry a glyph as well as a colour.
+ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) ease,
+    border-color var(--motion-fast) ease,
+    color var(--motion-fast) ease;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn--primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-weight: 600;
+}
+
+.btn--primary:hover:not(:disabled) {
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+}
+
+.btn--secondary {
+  border-color: var(--border-strong);
+  background: var(--bg-inset);
+  color: var(--text-secondary);
+}
+
+.btn--secondary:hover:not(:disabled) {
+  border-color: var(--text-muted);
+  color: var(--text-primary);
+}
+
+.btn--tertiary {
+  padding-inline: var(--space-1);
+  background: none;
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.btn--tertiary:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+/*
+ * Destructive. Inverts to a solid fill on hover rather than merely darkening,
+ * so the moment before the click is the loudest the button ever looks.
+ *
+ * Colour is not doing this alone, but the button cannot finish the job either:
+ * UX-08 wants a destructive action separated by position and labelled as what
+ * it does, and that is a decision about the surface around it. The confirmation
+ * tiers keyed to reversibility — promoting `WorldLifecycle`'s typed
+ * confirmation into shared use — are the follow-up, not this file.
+ */
+.btn--danger {
+  border-color: var(--status-cancelled);
+  background: var(--status-cancelled-quiet);
+  color: var(--status-cancelled);
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: var(--status-cancelled);
+  color: var(--text-on-accent);
+}
+
+.btn--sm {
+  padding: 2px var(--space-2);
+  font-size: var(--text-xs);
+}

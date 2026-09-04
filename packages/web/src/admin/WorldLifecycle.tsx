@@ -2,6 +2,8 @@ import { useState } from 'react';
 
 import { WORLD_TRANSITIONS, type AdminWorldSummary, type WorldStatus } from '@tailfin/shared';
 
+import { Button } from '../ui/Button';
+
 import { changeWorldStatus, type FieldErrors, resetWorld } from './api';
 
 import type { ReactNode } from 'react';
@@ -113,10 +115,9 @@ export function WorldLifecycle({
       {pending === null && allowed.length > 0 && (
         <div className="admin__confirm-actions">
           {allowed.map((status) => (
-            <button
+            <Button
+              variant="primary"
               key={status}
-              className="admin__submit"
-              type="button"
               onClick={() => {
                 setPending(status);
                 setDone(null);
@@ -124,7 +125,7 @@ export function WorldLifecycle({
               }}
             >
               {VERB[status]}
-            </button>
+            </Button>
           ))}
         </div>
       )}
@@ -149,23 +150,17 @@ export function WorldLifecycle({
             <li>Recorded in the audit log, with the before and after.</li>
           </ul>
           <div className="admin__confirm-actions">
-            <button
-              className="admin__submit"
-              type="button"
-              disabled={busy}
-              onClick={() => void commit(pending)}
-            >
+            <Button variant="primary" disabled={busy} onClick={() => void commit(pending)}>
               {busy ? 'Working…' : `${VERB[pending]} “${world.name}”`}
-            </button>
-            <button
-              className="admin__cancel"
-              type="button"
+            </Button>
+            <Button
+              variant="tertiary"
               onClick={() => {
                 setPending(null);
               }}
             >
               Cancel
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -246,9 +241,8 @@ function WorldReset({
             Rewinds the clock to the epoch and destroys everything the rewind invalidates. There is
             no undo.
           </p>
-          <button
-            className="admin__danger-button"
-            type="button"
+          <Button
+            variant="danger"
             onClick={() => {
               setOpen(true);
               setDone(null);
@@ -256,7 +250,7 @@ function WorldReset({
             }}
           >
             Reset “{world.name}”…
-          </button>
+          </Button>
         </>
       )}
 
@@ -341,17 +335,15 @@ function WorldReset({
           </div>
 
           <div className="admin__confirm-actions">
-            <button
-              className="admin__danger-button"
-              type="button"
+            <Button
+              variant="danger"
               disabled={busy || !nameMatches || !reasonUsable}
               onClick={() => void commit()}
             >
               {busy ? 'Resetting…' : `Reset “${world.name}” permanently`}
-            </button>
-            <button
-              className="admin__cancel"
-              type="button"
+            </Button>
+            <Button
+              variant="tertiary"
               onClick={() => {
                 setOpen(false);
                 setTypedName('');
@@ -359,7 +351,7 @@ function WorldReset({
               }}
             >
               Cancel
-            </button>
+            </Button>
           </div>
         </div>
       )}

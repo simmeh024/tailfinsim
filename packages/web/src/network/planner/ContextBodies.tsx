@@ -1,3 +1,5 @@
+import { Button } from '../../ui/Button';
+
 import { minuteLabel } from './Timeline';
 import { Chip, compactMoney, major, Meter } from './ui';
 
@@ -100,28 +102,28 @@ export function describeSelection(
               {flyers
                 .filter((a) => a.id !== flight.aircraftId)
                 .map((a) => (
-                  <button
+                  <Button
+                    variant="secondary"
+                    size="sm"
                     key={a.id}
-                    type="button"
-                    className="net-btn net-btn--sm"
                     onClick={() => {
                       actions.reassignFlight(flight.id, a.id);
                     }}
                   >
                     {a.registration}
-                  </button>
+                  </Button>
                 ))}
             </div>
           )}
-          <button
-            type="button"
-            className="net-btn net-btn--sm net-btn--danger"
+          <Button
+            variant="danger"
+            size="sm"
             onClick={() => {
               actions.removeFlight(flight.id);
             }}
           >
             Remove flight
-          </button>
+          </Button>
         </div>
       ),
     };
@@ -160,15 +162,15 @@ export function describeSelection(
                 : 'This aircraft is idle on the route. Drag a flight onto its row, or add a rotation from a slot.'}
           </p>
           {!frame.isPool && rowFlights.length > 0 && (
-            <button
-              type="button"
-              className="net-btn net-btn--sm net-btn--danger"
+            <Button
+              variant="danger"
+              size="sm"
               onClick={() => {
                 actions.removeAircraft(frame.id);
               }}
             >
               Remove from route
-            </button>
+            </Button>
           )}
         </div>
       ),
@@ -209,16 +211,16 @@ export function describeSelection(
           <div className="net-ctx__actions">
             <span className="net-ctx__actions-label">Add rotation</span>
             {flyers.map((a) => (
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 key={a.id}
-                type="button"
-                className="net-btn net-btn--sm"
                 onClick={() => {
                   actions.addRotation(a.id, hour);
                 }}
               >
                 {a.registration}
-              </button>
+              </Button>
             ))}
           </div>
         )}

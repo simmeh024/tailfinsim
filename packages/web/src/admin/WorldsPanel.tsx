@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react';
 
 import type { AdminWorldSummary } from '@tailfin/shared';
 
+import { Button } from '../ui/Button';
 import { StateBlock } from '../ui/StateBlock';
 
 import { createWorld, fetchWorlds, type FieldErrors } from './api';
@@ -376,9 +377,9 @@ export function WorldsPanel(): ReactNode {
             )}
           </Field>
 
-          <button className="admin__submit" type="submit" disabled={submitting}>
+          <Button variant="primary" type="submit" disabled={submitting}>
             {submitting ? 'Creating…' : 'Create world'}
-          </button>
+          </Button>
 
           {created !== null && (
             <p className="admin__ok" role="status">
