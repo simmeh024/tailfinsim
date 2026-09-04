@@ -91,25 +91,114 @@ describe('flightPath', () => {
     expect(path[32]![1]).toBeCloseTo(nce[1], 6);
   });
 
-  it('is deterministic for a seed and varies between seeds', () => {
+  it('is deterministic for a seed', () => {
     const a = flightPath(ams, nce, routeSeed('r1'), 32);
     const b = flightPath(ams, nce, routeSeed('r1'), 32);
     expect(b).toEqual(a);
-    const c = flightPath(ams, nce, routeSeed('r2'), 32);
-    // Different seed → a different track (the interior differs even if the ends match).
-    const mid = 16;
-    expect(c[mid]).not.toEqual(a[mid]);
   });
 
-  it('wanders off the great circle in the middle but not at the ends', () => {
-    const seed = routeSeed('wandering');
-    const path = flightPath(ams, nce, seed, 64);
-    const gcMid = interpolateGreatCircle(ams, nce, 0.5);
-    const mid = path[32]!;
-    const drift = Math.hypot(mid[0] - gcMid[0], mid[1] - gcMid[1]);
-    // A real, non-zero lateral offset at mid-leg, but small — degrees, not a detour.
-    expect(drift).toBeGreaterThan(0.001);
-    expect(drift).toBeLessThan(2);
+  /**
+   * How far each sampled point sits off the direct great circle, in degrees.
+   *
+   * The shape of this profile is the whole point of the track model: flat at zero for
+   * a leg flown as filed, and a single peak for one air traffic control re-routed.
+   */
+  const driftProfile = (id: string, segments = 128): number[] => {
+    const path = flightPath(ams, nce, routeSeed(id), segments);
+    return path.map((point, i) => {
+      const direct = interpolateGreatCircle(ams, nce, i / segments);
+      return Math.hypot(point[0] - direct[0], point[1] - direct[1]);
+    });
+  };
+
+  /** Turning points in a profile — one per dogleg, many for a wave. */
+  const peaks = (profile: readonly number[]): number => {
+    let found = 0;
+    for (let i = 1; i < profile.length - 1; i += 1) {
+      if (profile[i]! > profile[i - 1]! + 1e-9 && profile[i]! >= profile[i + 1]!) found += 1;
+    }
+    return found;
+  };
+
+  const ids = Array.from({ length: 60 }, (_, i) => `route-${String(i)}`);
+
+  it('flies most legs exactly on the great circle', () => {
+    // An aeroplane cleared as filed does not wander off its own track, so the common
+    // case has to be a drift of precisely nothing — not merely a small one.
+    const direct = ids.filter((id) => Math.max(...driftProfile(id)) === 0);
+    expect(direct.length).toBeGreaterThan(ids.length / 2);
+  });
+
+  it('re-routes some legs, and those are the only ones that leave the track', () => {
+    const deviating = ids.filter((id) => Math.max(...driftProfile(id)) > 0);
+    expect(deviating.length).toBeGreaterThan(0);
+    for (const id of deviating) {
+      const profile = driftProfile(id);
+      // Off-track by real degrees, but a kink rather than a detour.
+      expect(Math.max(...profile), id).toBeGreaterThan(0.001);
+      expect(Math.max(...profile), id).toBeLessThan(2);
+      // Still joined to both airports.
+      expect(profile[0], id).toBeCloseTo(0, 9);
+      expect(profile.at(-1), id).toBeCloseTo(0, 9);
+    }
+  });
+
+  it('bends at a waypoint or two rather than oscillating like a wave', () => {
+    // The assertion that separates a flight path from a sine wave: at most two turning
+    // points, because a track is straight legs joined at one or two waypoints. The
+    // sum-of-sines this replaced produced four and more.
+    for (const id of ids) {
+      expect(peaks(driftProfile(id)), id).toBeLessThanOrEqual(2);
+    }
+    // And at least one leg genuinely has a single dogleg, or the bound above would be
+    // satisfied by drawing nothing at all.
+    expect(ids.some((id) => peaks(driftProfile(id)) === 1)).toBe(true);
+  });
+
+  it('holds a straight heading everywhere except in the turns', () => {
+    /**
+     * Cross-track angle: how far the track lies off the plane of the direct great
+     * circle, signed, in radians.
+     *
+     * This is the quantity the model makes piecewise linear, so curvature shows up in
+     * it exactly. Measuring drift in longitude and latitude instead would fold in the
+     * projection, which curves a straight track slightly all by itself.
+     */
+    const crossTrack = (id: string, segments: number): number[] => {
+      const rad = Math.PI / 180;
+      const vec = ([lon, lat]: LngLat): [number, number, number] => [
+        Math.cos(lat * rad) * Math.cos(lon * rad),
+        Math.cos(lat * rad) * Math.sin(lon * rad),
+        Math.sin(lat * rad),
+      ];
+      const [ax, ay, az] = vec(ams);
+      const [bx, by, bz] = vec(nce);
+      const normal = [ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx];
+      const length = Math.hypot(...normal) || 1;
+      const unit = normal.map((c) => c / length);
+      return flightPath(ams, nce, routeSeed(id), segments).map((point) => {
+        const [px, py, pz] = vec(point);
+        const dot = px * unit[0]! + py * unit[1]! + pz * unit[2]!;
+        return Math.asin(Math.max(-1, Math.min(1, dot)));
+      });
+    };
+
+    const rerouted = ids.find((id) => peaks(driftProfile(id)) === 1);
+    expect(rerouted).toBeDefined();
+
+    const segments = 256;
+    const track = crossTrack(rerouted!, segments);
+    // A straight leg has zero second difference; only the rolled turn bends.
+    let bending = 0;
+    for (let i = 1; i < track.length - 1; i += 1) {
+      if (Math.abs(track[i - 1]! - 2 * track[i]! + track[i + 1]!) > 1e-9) bending += 1;
+    }
+    const bendingFraction = bending / track.length;
+    // There is a turn…
+    expect(bendingFraction).toBeGreaterThan(0);
+    // …and the rest of the leg is dead straight. A sum of sines curves at every
+    // sample, so it would score ~1 here rather than under a third.
+    expect(bendingFraction).toBeLessThan(0.35);
   });
 });
 

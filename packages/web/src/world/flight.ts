@@ -100,16 +100,22 @@ export function headingAt(a: LngLat, b: LngLat, t: number): number {
 }
 
 /**
- * Per-route track variation, so a route is not a mathematically perfect great
- * circle.
+ * Per-route track variation — a re-route, not a wander.
  *
- * A real leg wanders: a departure turn onto an airway, a dogleg around a sector, a
- * few degrees of drift, an approach from one side or the other. This adds that as a
- * smooth **lateral** offset from the great circle — a sum of a handful of sine
- * waves whose amplitudes, frequencies and phases are seeded from the route id, so
- * every route has its own shape and it is the *same* shape every render (the line
- * and the plane share it). The offset is enveloped to zero at both ends, so the
- * track still begins and ends exactly at the two airports.
+ * An aeroplane flies the direct track. Cleared as filed it runs from one end to the
+ * other along the great circle, and the one thing it never does is meander: a
+ * sinusoidal flight path is the tell of a graphic rather than a flight.
+ *
+ * What does happen is air traffic control giving you something else — a lateral offset
+ * onto a parallel airway, a dogleg around a busy sector or a line of weather, a
+ * re-route that puts a kink in an otherwise straight line. So a track here is
+ * **straight great-circle legs joined at one or two waypoints**, with the corner
+ * rounded because an aeroplane rolls into a turn rather than hinging at a point.
+ *
+ * Which legs are re-routed, where their waypoints sit and how far off-track they run
+ * are all drawn from the route id, so a route has one track and it is the same track
+ * every render — the line and the plane share it. **Most routes get no waypoints at
+ * all**, which is what makes the exceptions read as exceptions.
  */
 const FNV_OFFSET = 2166136261;
 const FNV_PRIME = 16777619;
@@ -135,36 +141,99 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-interface Harmonic {
-  frequency: number;
-  phase: number;
-  weight: number;
+/**
+ * How much of the leg a turn is rolled through, as a fraction of it.
+ *
+ * The corner at a waypoint is blended over this much of the track. Zero would give a
+ * mathematically sharp kink, which no aeroplane flies; much more and the dogleg melts
+ * back into the smooth curve this exists to avoid.
+ */
+const TURN_WIDTH = 0.09;
+
+/** A cleared deviation: how far off the direct track, at what fraction along it. */
+interface Waypoint {
+  /** Fraction along the leg, 0 to 1. */
+  at: number;
+  /** Lateral offset as a share of the maximum for this leg; negative is the far side. */
+  offset: number;
 }
 
-/** The mix of waves this route meanders by, drawn from its seed. */
-function routeHarmonics(seed: number): Harmonic[] {
+/**
+ * The waypoints air traffic control has given this route — usually none.
+ *
+ * Roughly three legs in five are flown direct. Most of the rest take a single dogleg;
+ * a few get two, which is the shape of being offset onto a parallel track and later
+ * rejoining. The thresholds are arbitrary, but their ordering is the point: straight is
+ * the common case, and a kink is the exception.
+ */
+function routeWaypoints(seed: number): Waypoint[] {
   const rng = mulberry32(seed);
-  const harmonics: Harmonic[] = [];
-  for (let k = 0; k < 3; k += 1) {
-    harmonics.push({
-      frequency: 1 + Math.floor(rng() * 4),
-      phase: rng() * Math.PI * 2,
-      weight: 0.5 + rng() * 0.5,
-    });
+  const roll = rng();
+  if (roll < 0.62) return [];
+
+  // Which side of the direct track the deviation runs.
+  const side = rng() < 0.5 ? -1 : 1;
+
+  if (roll < 0.92) {
+    // One waypoint in the middle two thirds of the leg: a single change of heading.
+    return [{ at: 0.25 + rng() * 0.5, offset: side * (0.55 + rng() * 0.45) }];
   }
-  return harmonics;
+
+  // Two waypoints, usually the same side: an offset joined and later rejoined, rather
+  // than a slalom.
+  const secondSide = rng() < 0.8 ? side : -side;
+  return [
+    { at: 0.2 + rng() * 0.18, offset: side * (0.5 + rng() * 0.5) },
+    { at: 0.6 + rng() * 0.2, offset: secondSide * (0.5 + rng() * 0.5) },
+  ];
 }
 
-/** The lateral wander at fraction `t`, in roughly [-1, 1], zero at both ends. */
-function meander(t: number, harmonics: Harmonic[]): number {
-  let sum = 0;
-  let weightSum = 0;
-  for (const { frequency, phase, weight } of harmonics) {
-    sum += weight * Math.sin(Math.PI * frequency * t + phase);
-    weightSum += weight;
+/** Cubic ease, for rolling into and out of a turn. */
+function smoothstep(u: number): number {
+  const x = Math.max(0, Math.min(1, u));
+  return x * x * (3 - 2 * x);
+}
+
+/**
+ * The lateral offset at fraction `t`, in roughly [-1, 1] and zero at both ends.
+ *
+ * **Piecewise linear** between the waypoints — which is what makes the track read as
+ * straight legs rather than a curve — with each corner blended over {@link TURN_WIDTH}
+ * so the turn is flown rather than hinged. A leg with no waypoints is offset zero the
+ * whole way, which is exactly the great circle.
+ */
+function lateralAt(t: number, waypoints: readonly Waypoint[]): number {
+  if (waypoints.length === 0) return 0;
+  const points: Waypoint[] = [{ at: 0, offset: 0 }, ...waypoints, { at: 1, offset: 0 }];
+
+  /** The straight leg arriving at `points[i]`, extended to any fraction. */
+  const leg = (i: number, at: number): number => {
+    const from = points[i - 1]!;
+    const to = points[i]!;
+    const span = to.at - from.at;
+    if (span <= 0) return to.offset;
+    return from.offset + ((at - from.at) / span) * (to.offset - from.offset);
+  };
+
+  for (let i = 1; i < points.length; i += 1) {
+    const corner = points[i]!;
+    if (i < points.length - 1) {
+      // Half-width of the turn, clamped so it can never reach past the waypoint on
+      // either side of it.
+      const half = Math.min(
+        TURN_WIDTH,
+        (corner.at - points[i - 1]!.at) / 2,
+        (points[i + 1]!.at - corner.at) / 2,
+      );
+      if (half > 0 && t > corner.at - half && t < corner.at + half) {
+        // Inside the turn: roll the incoming leg into the outgoing one.
+        const u = smoothstep((t - (corner.at - half)) / (2 * half));
+        return leg(i, t) * (1 - u) + leg(i + 1, t) * u;
+      }
+    }
+    if (t <= corner.at) return leg(i, t);
   }
-  const envelope = Math.sin(Math.PI * t);
-  return weightSum > 0 ? (envelope * sum) / weightSum : 0;
+  return 0;
 }
 
 function dot3(a: Vec3, b: Vec3): number {
@@ -191,9 +260,10 @@ function slerpVec(a: Vec3, b: Vec3, t: number): Vec3 {
 interface FlightArc {
   a: Vec3;
   b: Vec3;
-  harmonics: Harmonic[];
-  /** The largest lateral swing, in radians — scaled to the leg, capped so a long
-   * haul does not wander wildly. */
+  /** The deviations this leg was given. Empty — the common case — is flown direct. */
+  waypoints: Waypoint[];
+  /** How far off-track a full deviation runs, in radians — scaled to the leg and
+   * capped, so a long haul kinks rather than detours. */
   maxAngle: number;
 }
 
@@ -201,20 +271,23 @@ function makeFlightArc(source: LngLat, target: LngLat, seed: number): FlightArc 
   const a = toVec(source);
   const b = toVec(target);
   const omega = Math.acos(Math.max(-1, Math.min(1, dot3(a, b))));
-  return { a, b, harmonics: routeHarmonics(seed), maxAngle: Math.min(omega * 0.12, 2.5 * RAD) };
+  return { a, b, waypoints: routeWaypoints(seed), maxAngle: Math.min(omega * 0.1, 2 * RAD) };
 }
 
-/** The unit vector on the varied track at fraction `t`. */
+/** The unit vector on this route's track at fraction `t`. */
 function arcVec(arc: FlightArc, t: number): Vec3 {
   const point = slerpVec(arc.a, arc.b, t);
-  if (t <= 0 || t >= 1 || arc.maxAngle <= 0) return point;
-  // Rotate the great-circle point sideways by the meander: `left` is the tangent
-  // perpendicular to travel, and rotating `point` towards it by `offset` radians
-  // shifts the track laterally while keeping it on the sphere.
+  // A leg flown as filed *is* the great circle, and most are: no rotation, and no trig
+  // beyond the slerp — which is also what keeps the per-frame plane animation cheap.
+  if (arc.waypoints.length === 0 || t <= 0 || t >= 1 || arc.maxAngle <= 0) return point;
+  const offset = arc.maxAngle * lateralAt(t, arc.waypoints);
+  if (offset === 0) return point;
+  // Rotate the great-circle point sideways onto the cleared track: `left` is the
+  // tangent perpendicular to travel, and rotating `point` towards it by `offset`
+  // radians shifts the track laterally while keeping it on the sphere.
   const ahead = slerpVec(arc.a, arc.b, Math.min(1, t + 1e-3));
   const travel = normalize3([ahead[0] - point[0], ahead[1] - point[1], ahead[2] - point[2]]);
   const left = normalize3(cross3(point, travel));
-  const offset = arc.maxAngle * meander(t, arc.harmonics);
   const cos = Math.cos(offset);
   const sin = Math.sin(offset);
   return normalize3([
