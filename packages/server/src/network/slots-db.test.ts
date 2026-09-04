@@ -57,7 +57,11 @@ describeDb('airport slots', () => {
     return `S${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
   }
 
-  async function makeAirport(slotLevel: number | null, tier: string | null): Promise<string> {
+  async function makeAirport(
+    slotLevel: number | null,
+    tier: string | null,
+    utcOffsetMinutes: number | null = null,
+  ): Promise<string> {
     const icao = code();
     await db.db.insert(airport).values({
       sourceId: Math.floor(Math.random() * 2_000_000_000),
@@ -73,6 +77,7 @@ describeDb('airport slots', () => {
       slotLevel,
       // The column is the airport_tier enum; the fixture only ever passes real values.
       tier: tier as 'flagship' | 'large' | 'medium' | 'small' | 'regional' | null,
+      utcOffsetMinutes,
     });
     madeAirports.push(icao);
     return icao;
@@ -199,5 +204,21 @@ describeDb('airport slots', () => {
     // Another airline's holdings do not count for you.
     const b = await fixtures.create({ worldId: a.world.id, baseCountry: 'GB' });
     expect(await resolveLegSlots(db.db, own(b), legs)).toEqual([false, true, false]);
+  });
+
+  it('matches a leg to its slot by the origin’s LOCAL band, not the stored absolute one', async () => {
+    // The airport sits at UTC+2. A slot is claimed for the local 08:00 band; a leg
+    // whose *stored* (absolute) departure is 06:00 UTC is an 08:00 local departure
+    // and must match that slot (M3-04a).
+    const a = await fixtures.create({ baseCountry: 'GB' });
+    const icao = await makeAirport(3, 'large', 120); // UTC+2
+    await claimSlot(db.db, own(a), icao, 8); // claim the local 08:00 band
+
+    const local0800 = [{ originIcao: icao, departureMinute: 6 * 60 }]; // 06:00 UTC = 08:00 local
+    expect(await resolveLegSlots(db.db, own(a), local0800)).toEqual([true]);
+
+    // A leg stored at 08:00 UTC is the local 10:00 band, which is not held.
+    const local1000 = [{ originIcao: icao, departureMinute: 8 * 60 }];
+    expect(await resolveLegSlots(db.db, own(a), local1000)).toEqual([false]);
   });
 });

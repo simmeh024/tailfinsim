@@ -38,6 +38,7 @@ import {
   type AirframeRow,
 } from '../db/schema';
 import { loadEconomyConfig } from '../economy/loader';
+import { loadAirportOffsets, localFromAbsolute } from '../network/airport-time';
 
 import { loadCatalogueVersion, type PinnedCatalogueVersion } from './catalogue';
 import { stateOf } from './maintenance';
@@ -356,6 +357,13 @@ async function assignmentsFor(
     else list.push(leg);
   }
 
+  // A stored departure is absolute (UTC-anchor); the airframe schedule shows it in
+  // the origin's local time, the same as the network page (M3-04a).
+  const offsets = await loadAirportOffsets(
+    db,
+    legs.map((leg) => leg.originIcao),
+  );
+
   for (const row of schedules) {
     const ordered = legsBySchedule.get(row.id) ?? [];
     // The discriminated union `network.ts` insists on, rebuilt from the two
@@ -374,7 +382,7 @@ async function assignmentsFor(
         legIndex: leg.legIndex,
         originIcao: leg.originIcao,
         destinationIcao: leg.destinationIcao,
-        departureMinute: leg.departureMinute,
+        departureMinute: localFromAbsolute(leg.departureMinute, offsets.get(leg.originIcao) ?? 0),
         blockMinutes: leg.blockMinutes,
         turnaroundMinutes: leg.turnaroundMinutes,
       })),

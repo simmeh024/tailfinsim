@@ -275,7 +275,11 @@ export async function resolveLegSlots(
 
   const [levelRows, holdingRows] = await Promise.all([
     db
-      .select({ icao: airport.icaoCode, slotLevel: airport.slotLevel })
+      .select({
+        icao: airport.icaoCode,
+        slotLevel: airport.slotLevel,
+        offset: airport.utcOffsetMinutes,
+      })
       .from(airport)
       .where(inArray(airport.icaoCode, origins)),
     db
@@ -287,10 +291,14 @@ export async function resolveLegSlots(
   const coordinated = new Set(
     levelRows.filter((r) => r.icao !== null && isCoordinated(r.slotLevel)).map((r) => r.icao),
   );
+  // A slot is claimed for a **local** band, but a leg's departure is stored
+  // absolute — so the leg's band is read at the origin's local time (M3-04a).
+  const offsetOf = new Map(levelRows.map((r) => [r.icao, r.offset ?? 0]));
   const held = new Set(holdingRows.map((r) => `${r.icao}|${String(r.band)}`));
 
   return legs.map((leg) => {
     if (!coordinated.has(leg.originIcao)) return true;
-    return held.has(`${leg.originIcao}|${String(bandOf(leg.departureMinute))}`);
+    const band = bandOf(leg.departureMinute + (offsetOf.get(leg.originIcao) ?? 0));
+    return held.has(`${leg.originIcao}|${String(band)}`);
   });
 }
