@@ -116,6 +116,47 @@ describe('placeLegs', () => {
       expect(minutes[i]).toBeGreaterThan(minutes[i - 1]!);
     }
   });
+
+  // Local departure times (M3-04a): the chosen minute is local to the origin, so
+  // it is converted to the absolute (UTC-anchor) minute the pipeline stores.
+  it('converts a chosen local departure to absolute by the origin offset', () => {
+    // 08:00 at UTC−5 is 13:00 UTC → absolute minute 780.
+    const west = placeLegs(
+      [resolved('KJFK', 'KBOS', shortHopNm, 480)],
+      CRUISE_KT,
+      new Map([['KJFK', -300]]),
+    );
+    expect(west[0]?.departureMinute).toBe(780);
+
+    // 06:00 at UTC+9 is 21:00 UTC the day before → minute-of-day 1,260.
+    const east = placeLegs(
+      [resolved('RJTT', 'ROAH', shortHopNm, 360)],
+      CRUISE_KT,
+      new Map([['RJTT', 540]]),
+    );
+    expect(east[0]?.departureMinute).toBe(1_260);
+
+    // No offset supplied → treated as UTC, unchanged (the default behaviour).
+    const utc = placeLegs([resolved('EGLL', 'LEBL', shortHopNm, 480)], CRUISE_KT);
+    expect(utc[0]?.departureMinute).toBe(480);
+  });
+
+  it('still chains a later leg after the previous one, in absolute minutes', () => {
+    const legs = placeLegs(
+      [
+        resolved('KJFK', 'KBOS', shortHopNm, 480), // 08:00 local → 13:00 UTC (780)
+        resolved('KBOS', 'KJFK', shortHopNm, null), // auto-return, ASAP
+      ],
+      CRUISE_KT,
+      new Map([['KJFK', -300]]),
+    );
+    const first = legs[0]!;
+    const ret = legs[1]!;
+    expect(first.departureMinute).toBe(780);
+    expect(ret.departureMinute).toBe(
+      first.departureMinute + first.blockMinutes + first.turnaroundMinutes,
+    );
+  });
 });
 
 describe('airframeCapability', () => {

@@ -25,6 +25,7 @@ import {
 } from '@tailfin/sim';
 
 import { airframe, route, schedule, world } from '../db/schema';
+import { absoluteFromLocal, loadAirportOffsets } from '../network/airport-time';
 import { openRoute } from '../network/open-route';
 import { resolveLegSlots } from '../network/slots';
 
@@ -285,12 +286,25 @@ export async function prepareLegs(
  * Place resolved legs into a rotation: absolute minutes from the cycle anchor,
  * with each leg's computed block and turnaround.
  *
- * Leg 0 departs at its own minute-of-day; each later leg with a chosen time
- * departs at the first occurrence of that minute-of-day at or after the previous
- * leg has landed and turned, so a rotation that spills past midnight rolls to the
- * next day. A leg with no chosen time (the auto-return) departs as soon as it can.
+ * A chosen departure time is **local** to the airport the leg leaves from, so it
+ * is converted to the absolute (UTC-anchor) minute the rest of the pipeline runs
+ * on via that airport's UTC offset (M3-04a). Leg 0 departs at its own converted
+ * minute-of-day; each later leg with a chosen time departs at the first
+ * occurrence of that minute at or after the previous leg has landed and turned,
+ * so a rotation that spills past midnight rolls to the next day. A leg with no
+ * chosen time (the auto-return) departs as soon as it can — an absolute quantity
+ * already, and its local time is a consequence.
+ *
+ * The one edge this first cut does not fully model: for a **weekly** rotation at
+ * a large offset, a local departure can cross UTC midnight and so land on the
+ * adjacent UTC cycle day. The time is correct; the calendar day can be off by
+ * one at the extremes. Daily rotations — the common case — are exact.
  */
-export function placeLegs(legs: readonly ResolvedLeg[], cruiseSpeedKt: number): LegInput[] {
+export function placeLegs(
+  legs: readonly ResolvedLeg[],
+  cruiseSpeedKt: number,
+  offsets: ReadonlyMap<string, number> = new Map(),
+): LegInput[] {
   const placed: LegInput[] = [];
   let earliest = 0;
   for (const [index, leg] of legs.entries()) {
@@ -306,7 +320,10 @@ export function placeLegs(legs: readonly ResolvedLeg[], cruiseSpeedKt: number): 
     if (leg.departureMinuteLocal === null) {
       departureMinute = earliest;
     } else {
-      departureMinute = leg.departureMinuteLocal;
+      departureMinute = absoluteFromLocal(
+        leg.departureMinuteLocal,
+        offsets.get(leg.originIcao) ?? 0,
+      );
       if (index > 0) {
         while (departureMinute < earliest) departureMinute += MINUTES_PER_DAY;
       }
@@ -416,7 +433,11 @@ export async function authorSchedule(
   if (!prepared.ok)
     return { status: 'refused', problem: prepared.problem, detail: prepared.detail };
 
-  const placed = placeLegs(prepared.legs, spec.cruiseSpeedKt);
+  const offsets = await loadAirportOffsets(
+    db,
+    prepared.legs.map((leg) => leg.originIcao),
+  );
+  const placed = placeLegs(prepared.legs, spec.cruiseSpeedKt, offsets);
   const result = await createSchedule(
     db,
     {
@@ -510,7 +531,11 @@ export async function editSchedule(
   if (clock === null) return { status: 'not_found' };
   const gameNow = gameTime(clock, now);
 
-  const placed = placeLegs(prepared.legs, spec.cruiseSpeedKt);
+  const offsets = await loadAirportOffsets(
+    db,
+    prepared.legs.map((leg) => leg.originIcao),
+  );
+  const placed = placeLegs(prepared.legs, spec.cruiseSpeedKt, offsets);
   const outcome = await replaceScheduleLegs(
     db,
     scheduleId,

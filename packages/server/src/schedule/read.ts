@@ -3,6 +3,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { RepeatPattern, ScheduleLegView, ScheduleView } from '@tailfin/shared';
 
 import { flight, route, schedule, scheduleLeg } from '../db/schema';
+import { loadAirportOffsets, localFromAbsolute } from '../network/airport-time';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
 import type { Database } from '../db/client';
@@ -73,6 +74,13 @@ export async function listSchedules(
     .where(inArray(scheduleLeg.scheduleId, ids))
     .orderBy(scheduleLeg.scheduleId, scheduleLeg.legIndex);
 
+  // A stored departure is an absolute (UTC-anchor) minute; the player reads it in
+  // the local time of the airport it leaves from (M3-04a).
+  const offsets = await loadAirportOffsets(
+    db,
+    legs.map((leg) => leg.originIcao),
+  );
+
   // Flights on the books this schedule has not yet flown — the horizon the worker
   // has rolled so far. Grouped rather than counted per schedule, which is the
   // pattern CLAUDE.md records for a correlated count that came back empty.
@@ -92,7 +100,7 @@ export async function listSchedules(
       routeId: routeByPair.get(`${leg.originIcao}:${leg.destinationIcao}`) ?? null,
       originIcao: leg.originIcao,
       destinationIcao: leg.destinationIcao,
-      departureMinute: leg.departureMinute,
+      departureMinute: localFromAbsolute(leg.departureMinute, offsets.get(leg.originIcao) ?? 0),
       blockMinutes: leg.blockMinutes,
       turnaroundMinutes: leg.turnaroundMinutes,
     };
