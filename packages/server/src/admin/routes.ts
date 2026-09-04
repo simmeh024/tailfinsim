@@ -799,12 +799,10 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
       }
       const changes = await compareEconomyConfigVersions(db.db, against, request.params.version);
       if (changes === null) {
-        return reply
-          .code(404)
-          .send({
-            code: 'economy_config_not_found',
-            message: 'No economy config with that version.',
-          });
+        return reply.code(404).send({
+          code: 'economy_config_not_found',
+          message: 'No economy config with that version.',
+        });
       }
       return reply.code(200).send({ from: against, to: request.params.version, changes });
     },
