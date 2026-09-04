@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../app';
 import { createSession, SESSION_COOKIE } from '../auth/session';
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { adminAudit, adminGrant, player, session } from '../db/schema';
+import { adminGrant, player, session } from '../db/schema';
 import { type ServerEnv } from '../env';
 
 import { type AdminRole } from './capabilities';
@@ -62,7 +62,10 @@ describeDb('administrator roles are enforced by the server', () => {
     if (ids.length > 0) {
       await db.db.delete(session).where(inArray(session.playerId, ids));
       await db.db.delete(adminGrant).where(inArray(adminGrant.playerId, ids));
-      await db.db.delete(adminAudit).where(inArray(adminAudit.subjectId, ids));
+      // `admin_audit` is deliberately left alone: it is append-only and a trigger
+      // refuses DELETE (migration 0008). Its actor/subject are not foreign keys
+      // precisely so the log outlives the accounts it describes, which is why
+      // removing the players below is safe with the rows still there.
       await db.db.delete(player).where(inArray(player.id, ids));
     }
     await app.close();
