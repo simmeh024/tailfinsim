@@ -4,6 +4,7 @@ import type {
   FarePreviewResponse,
   FareTable,
   FareWaterfallResponse,
+  HubConnectionsResponse,
   RepeatPattern,
   RouteCompetitionResponse,
   RoutePerformanceResponse,
@@ -239,6 +240,15 @@ export async function fetchCompetition(routeId: string): Promise<RouteCompetitio
     throw new Error(`GET /api/routes/${routeId}/competition failed with ${String(status)}`);
   }
   return body as RouteCompetitionResponse;
+}
+
+/** How well your hub banks for connections — a timing read over materialised flights (§7.4). */
+export async function fetchHubConnections(): Promise<HubConnectionsResponse> {
+  const { status, body } = await json('/api/network/connections');
+  if (status !== 200) {
+    throw new Error(`GET /api/network/connections failed with ${String(status)}`);
+  }
+  return body as HubConnectionsResponse;
 }
 
 /* --------------------------------------------------- schedules (M2-03) ---- */
