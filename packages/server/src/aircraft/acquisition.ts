@@ -42,7 +42,17 @@ import { loadCatalogueVersion } from './catalogue';
 
 /** §7.2: a lease starts with two months paid as a deposit. */
 export const LEASE_DEPOSIT_MONTHS = 2;
-const REAL_WEEK_MS = 7 * 24 * 60 * 60 * 1_000;
+
+/**
+ * A week of the world's own calendar (TIME-01, ADR-0026).
+ *
+ * The arithmetic is the same as a wall-clock week; the *domain* is not. A
+ * factory lead time is a span inside the world, so it is measured on the
+ * world's clock like a C-check's downtime or a crew conversion — which means a
+ * world at 4× takes half the real time to build the same aeroplane. That is a
+ * deliberate reversal of §7.2's parenthetical "real time", recorded in ADR-0026.
+ */
+const GAME_WEEK_MS = 7 * 24 * 60 * 60 * 1_000;
 
 export type AircraftAcquisitionRefusal =
   | { ok: false; kind: 'request-id-conflict' }
@@ -386,8 +396,9 @@ export async function quoteAircraftAcquisition(
   const selectedWorld = worlds[0];
   if (!selectedWorld) throw new Error(`No world ${own.worldId}`);
 
+  const inGameNow = gameTime(clockOf(selectedWorld), realNow);
   const catalogue = await loadCatalogueVersion(db, selectedWorld.catalogueVersion);
-  const offer = catalogueOffer(catalogue, input, gameTime(clockOf(selectedWorld), realNow));
+  const offer = catalogueOffer(catalogue, input, inGameNow);
   if (!offer.ok) return offer;
 
   const totalLeadTimeWeeks = offer.facts.baseLeadTimeWeeks + offer.facts.optionLeadTimeWeeks;
@@ -406,9 +417,12 @@ export async function quoteAircraftAcquisition(
       totalLeadTimeWeeks,
       cashMinor: currentAirline.cash,
       resultingCashMinor: currentAirline.cash - offer.facts.chargedMinor,
-      quotedAt: realNow.toISOString(),
+      // Both game instants, and they have to be: a quote whose "now" came from
+      // the wall clock and whose delivery came from the world's calendar would
+      // be two numbers a client could not subtract.
+      quotedAt: inGameNow.toISOString(),
       estimatedDeliveryAt: new Date(
-        realNow.getTime() + totalLeadTimeWeeks * REAL_WEEK_MS,
+        inGameNow.getTime() + totalLeadTimeWeeks * GAME_WEEK_MS,
       ).toISOString(),
     },
   };
@@ -581,7 +595,7 @@ export async function acquireAircraft(
 
       const immediate = input.kind !== 'new';
       const deliveryAt = new Date(
-        realNow.getTime() + (facts.baseLeadTimeWeeks + facts.optionLeadTimeWeeks) * REAL_WEEK_MS,
+        inGameNow.getTime() + (facts.baseLeadTimeWeeks + facts.optionLeadTimeWeeks) * GAME_WEEK_MS,
       );
       const inserted = await tx
         .insert(aircraftOrder)
@@ -607,9 +621,13 @@ export async function acquireAircraft(
           optionLeadTimeWeeks: facts.optionLeadTimeWeeks,
           deliveryAirportIcao: facts.deliveryAirportIcao,
           usedListingId: facts.usedListingId,
-          orderedAt: realNow,
+          // Every instant on the order is the world's own calendar (TIME-01):
+          // the date the airline signed, the date the aeroplane is promised and
+          // the date it arrived are the three dates a player reads next to the
+          // world clock, so none of them may come from the wall clock.
+          orderedAt: inGameNow,
           deliveryAt,
-          deliveredAt: immediate ? realNow : null,
+          deliveredAt: immediate ? inGameNow : null,
         })
         .returning();
       const order = inserted[0];
@@ -632,7 +650,10 @@ export async function acquireAircraft(
       if (input.kind === 'used') {
         const sold = await tx
           .update(usedAircraftListing)
-          .set({ status: 'sold', soldAt: realNow })
+          // Game time, like the listing's own `available_at`, `built_at` and
+          // `expires_at`. A listing that appeared and expires on the world's
+          // calendar cannot have been sold on the wall clock.
+          .set({ status: 'sold', soldAt: inGameNow })
           .where(
             and(
               eq(usedAircraftListing.id, input.listingId),
@@ -685,7 +706,13 @@ export interface DeliverySweepResult {
 }
 
 /**
- * Materialise due new orders against **real time**, owned only by the Worker.
+ * Materialise due new orders against **this world's game clock**, owned only by
+ * the Worker.
+ *
+ * `gameNow` has no default on purpose. It used to be `new Date()`, which was
+ * correct while delivery was a wall-clock date and would now be a silent
+ * cross-domain comparison — the exact failure TIME-01 removed, and one no type
+ * would catch. A caller has to say which world's calendar it is reading.
  *
  * One transaction per order and `SKIP LOCKED`: two Workers during a rolling
  * handover may race, but `airframe.source_order_id` and the order row lock make
@@ -695,7 +722,7 @@ export interface DeliverySweepResult {
 export async function deliverDueAircraftOrders(
   db: Database,
   worldId: string,
-  realNow: Date = new Date(),
+  gameNow: Date,
   batchSize = 100,
 ): Promise<DeliverySweepResult> {
   let delivered = 0;
@@ -710,7 +737,7 @@ export async function deliverDueAircraftOrders(
             eq(aircraftOrder.worldId, worldId),
             eq(aircraftOrder.kind, 'new'),
             eq(aircraftOrder.status, 'pending'),
-            lte(aircraftOrder.deliveryAt, realNow),
+            lte(aircraftOrder.deliveryAt, gameNow),
           ),
         )
         .orderBy(asc(aircraftOrder.deliveryAt), asc(aircraftOrder.id))
@@ -721,7 +748,7 @@ export async function deliverDueAircraftOrders(
 
       const updated = await tx
         .update(aircraftOrder)
-        .set({ status: 'delivered', deliveredAt: realNow })
+        .set({ status: 'delivered', deliveredAt: gameNow })
         .where(and(eq(aircraftOrder.id, order.id), eq(aircraftOrder.status, 'pending')))
         .returning();
       const deliveredOrder = updated[0];

@@ -127,8 +127,9 @@ so a flying aeroplane reads as one that was being maintained.
 | **Completion and grounding** | the **worker**, once per world per tick, on that world's **game** clock.                              |
 
 A check's downtime is game days, so a world at 4× returns its aeroplanes to service twice as
-fast in real time as one at 2×. Factory lead time is the one fleet thing that stays in real
-weeks (§7.2) — two time domains, deliberately, as M4-04 documents.
+fast in real time as one at 2×. Factory lead time used to be the one fleet thing measured in
+real weeks (§7.2); TIME-01 ([ADR-0026](adr/0026-in-world-spans-are-game-time.md)) put it on the
+world's clock as well, so the fleet now has one time domain rather than two.
 
 > **Production has no worker**, so a production world's checks would never complete and
 > nothing would ever be grounded. An aeroplane booked into a check there would stay in it for

@@ -61,13 +61,21 @@ costs more, and only `out_of_service` makes it illegal. The dates are the catalo
 rates are the economy's, so a world can make old aircraft dearer without re-issuing its
 catalogue.
 
-**Aircraft acquisition has two clocks and one owner.** `POST /api/fleet/acquisitions`
-atomically writes the pinned commercial/build snapshot and its AIR-06 movement. Lease and
-used paths deliver in that request; used configuration comes only from a locked
-`used_aircraft_listing`, never the client. New orders store a wall-clock `delivery_at` — §7.2
-explicitly says real weeks — and only the Worker materialises them. Do not turn those dates
-into `world_event.fire_at`, which is game time and changes meaning with world speed. The
-complete boundary and its current exclusions are in
+**Aircraft acquisition has one clock and one owner, and the clock is the world's.**
+`POST /api/fleet/acquisitions` atomically writes the pinned commercial/build snapshot and its
+AIR-06 movement. Lease and used paths deliver in that request; used configuration comes only
+from a locked `used_aircraft_listing`, never the client. A new order's `ordered_at`,
+`delivery_at` and `delivered_at` are **game** instants, its lead is game weeks, and only the
+Worker materialises it — sweeping `delivery_at` against `gameTime(clock, now())` like every
+other per-world sweep beside it. §7.2 used to say real weeks and TIME-01
+([ADR-0026](docs/adr/0026-in-world-spans-are-game-time.md)) reversed it: a factory order was
+the one span inside a world that ignored world speed, and a page showing both calendars at
+once could not say which date the aeroplane arrived on. Migration 0050 converted the existing
+rows, so for those rows only `delivery_at - ordered_at` is a game span that no longer equals
+the stored lead weeks — legacy arithmetic, not a broken invariant. Still a scanned due column
+rather than a `world_event.fire_at`: the order row already carries the commitment, its due
+index and the trigger admitting only `pending -> delivered`, and a queued event would be a
+second place the same promise lives. The complete boundary and its current exclusions are in
 [`docs/aircraft-acquisition.md`](docs/aircraft-acquisition.md).
 
 **Aircraft runtime assets are generated identities, never hand-written paths.** An M6-11 source

@@ -468,12 +468,13 @@ function maintenanceView(row: AirframeRow, context: RowContext): MaintenanceAirf
  * §2488's onboarding warning fires on exactly this number — so it would tell a
  * player to stop buying aircraft on the day their first one arrived.
  *
- * `deliveredAt` is real time (factory lead times are wall-clock weeks, §7.2), so
- * it is converted to the world's clock before being compared with a game instant.
+ * `deliveredAt` is a game instant since TIME-01, so it is subtracted from
+ * `gameNow` directly. It used to be wall-clock and was converted here; the
+ * conversion is gone rather than made harmless, because a `gameTime()` call on
+ * something already in game time is the kind of line that survives a decade.
  */
 function utilisationOf(row: AirframeRow, context: RowContext): FleetUtilisation | null {
-  const deliveredInGame = gameTime(context.clock, row.deliveredAt);
-  const gameDaysOwned = (context.gameNow.getTime() - deliveredInGame.getTime()) / MS_PER_DAY;
+  const gameDaysOwned = (context.gameNow.getTime() - row.deliveredAt.getTime()) / MS_PER_DAY;
   const windowDays = Math.min(UTILISATION_WINDOW_DAYS, gameDaysOwned);
 
   // Less than a game day of ownership: there is no rate yet, and inventing one

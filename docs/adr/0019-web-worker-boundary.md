@@ -70,13 +70,19 @@ Web writes a row; the worker picks it up. No RPC, no shared memory, no HTTP call
 that has to be retried, authenticated and monitored. Where web needs something to happen _now_,
 it writes the row with a `fire_at` already due.
 
-M4-04 adds the first deliberately wall-clock scheduled mutation. Factory aircraft delivery
-is measured in real weeks by §7.2, whereas `world_event.fire_at` is game time and accelerates
-with the world's speed. A new order therefore persists an indexed real `delivery_at`, and the
-same Worker tick claims due `aircraft_order` rows with `FOR UPDATE SKIP LOCKED`. This is an
-extension of the channel, not an exception to the ownership rule: web records the commitment,
-the Worker alone starts the delayed work, and Postgres still makes claim plus materialisation
-atomic.
+M4-04 adds a scheduled mutation that is a due column rather than a queued event. A new order
+persists an indexed `delivery_at`, and the same Worker tick claims due `aircraft_order` rows
+with `FOR UPDATE SKIP LOCKED`. This is an extension of the channel, not an exception to the
+ownership rule: web records the commitment, the Worker alone starts the delayed work, and
+Postgres still makes claim plus materialisation atomic.
+
+> **Superseded in part by [ADR-0026](0026-in-world-spans-are-game-time.md) (TIME-01,
+> 2026-09-04).** This paragraph originally justified `delivery_at` as _wall-clock_ — §7.2 called
+> a factory lead time weeks of real time, whereas `world_event.fire_at` is game time and
+> accelerates with world speed. That exception is gone: `delivery_at` is now a game instant and
+> the sweep compares it against `gameTime(clock, now())`. What survives unchanged is the shape
+> and the ownership — a due column on the row that already owns the promise, claimed only by the
+> Worker, rather than a second copy of it in the queue.
 
 ### 5. The boundary is enforced, not merely documented
 

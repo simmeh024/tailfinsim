@@ -222,8 +222,8 @@ describeDb('the fleet', () => {
    * lessor's shelf both deliver an aircraft as it is, and only a factory order is
    * configured (C.3). So a decomposition test that leased an aeroplane and passed
    * `optionIds` would be asserting over zero steps and proving nothing. Hence the
-   * full path: order, wait past the real-time lead, and let the delivery sweep
-   * materialise the airframe exactly as the Worker would.
+   * full path: order, move the world's calendar past the lead, and let the
+   * delivery sweep materialise the airframe exactly as the Worker would.
    *
    * None of the options used here needs research: `acquireAircraft` calls
    * `resolveOptions` with no held topics, so ETOPS and Cat IIIb are refused at
@@ -251,10 +251,12 @@ describeDb('the fleet', () => {
       fixture.world.launchDate,
     );
     if (!ordered.ok) throw new Error(`Order refused: ${JSON.stringify(ordered)}`);
-    // A new order delivers in real weeks (§7.2), never in game time.
+    // A new order is never delivered in the request; the Worker's sweep does it.
     expect(ordered.airframe).toBeNull();
 
-    const oneYearOn = new Date(fixture.world.launchDate.getTime() + 365 * DAY_MS);
+    // A game instant well past any authored lead (TIME-01: the sweep reads the
+    // world's calendar, so this is a game date rather than a real one).
+    const oneYearOn = new Date(fixture.world.epoch.getTime() + 365 * DAY_MS);
     const swept = await deliverDueAircraftOrders(db.db, fixture.world.id, oneYearOn);
     expect(swept.delivered).toBe(1);
 

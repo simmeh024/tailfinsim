@@ -21,8 +21,10 @@ that same function. A used action additionally requires a live physical listing 
 M4-05.
 
 - **Buy new** asks the quote endpoint to fold selected M4-03 option ids into the canonical
-  effective specification, price and real-time lead. The confirmation names the aircraft,
-  configuration, charge, delivery and resulting cash snapshot.
+  effective specification, price and lead — weeks of the world's own calendar, with a quoted
+  instant and an estimated delivery instant that are both game time and therefore comparable
+  (TIME-01). The confirmation names the aircraft, configuration, charge, delivery and resulting
+  cash snapshot.
 - **Lease** shows the current M4-04 deposit and monthly obligation. It does not invent the
   recurring settlement calendar reserved for M8.
 - **Buy used** opens type-filtered physical airframes with registration, age, hours, cycles,

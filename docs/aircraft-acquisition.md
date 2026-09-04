@@ -3,11 +3,11 @@
 Tailfin has three server-owned acquisition paths behind
 `POST /api/fleet/acquisitions`:
 
-| Path     |              Cash due on acceptance | Availability                                    | Delivery                                  |
-| -------- | ----------------------------------: | ----------------------------------------------- | ----------------------------------------- |
-| Lease    | two monthly payments as the deposit | orderable and used-only types with a lease term | immediate                                 |
-| Buy used |          the listing's asking price | one locked, available server listing            | immediate at the listing's airport        |
-| Buy new  |     list price plus factory options | types currently orderable in the world's era    | base lead plus option weeks, in real time |
+| Path     |              Cash due on acceptance | Availability                                    | Delivery                                 |
+| -------- | ----------------------------------: | ----------------------------------------------- | ---------------------------------------- |
+| Lease    | two monthly payments as the deposit | orderable and used-only types with a lease term | immediate                                |
+| Buy used |          the listing's asking price | one locked, available server listing            | immediate at the listing's airport       |
+| Buy new  |     list price plus factory options | types currently orderable in the world's era    | base lead plus option weeks of game time |
 
 Every request carries a UUID `requestId`. It becomes the `aircraft_order.id` and the AIR-06
 cash-movement reference, so retrying a timed-out request returns the first order and cannot
@@ -26,7 +26,7 @@ reloads and locks the airline and independently validates funds before writing.
 
 `aircraft_order` is the immutable commercial/build snapshot: acquisition kind, pinned
 catalogue version, designation, canonical option ids, cached effective spec, amount charged,
-lease rate, base/option lead, delivery airport and the real order/delivery instants.
+lease rate, base/option lead, delivery airport and the game-time order/delivery instants.
 
 `airframe` is the physical aircraft created from that snapshot. It carries registration,
 options, cabin and livery ids, effective spec, hours, cycles, ownership, prior-owner history
@@ -48,18 +48,34 @@ The order, explaining cash movement, used-listing claim and any immediate airfra
 database transaction. An acquisition that would leave the airline below zero rolls back all
 of them.
 
-## The two time domains
+## One time domain
 
-Era eligibility and the cash movement's `occurred_at` use the world's game clock. Factory
-lead time does not: §7.2 says weeks of **real time**, so `aircraft_order.delivery_at` is a
-wall-clock instant unaffected by world speed.
+Every instant on an order is the world's own calendar: era eligibility, the cash movement's
+`occurred_at`, `ordered_at`, `delivery_at`, `delivered_at`, the airframe's `delivered_at` and a
+claimed listing's `sold_at`. A lead time is **game** weeks, so a world at 4× builds the same
+aeroplane in half the real time of a world at 2×.
+
+This was not always so. §7.2 called a delivery slot _"weeks out (real time)"_, and until TIME-01
+`delivery_at` was a wall-clock instant unaffected by world speed — the one span inside a world
+that ignored the dial §22.2 exists to turn, and the reason FLEET-MARKET could print
+`10 real weeks · est. 8 Nov 2026` beside a world clock reading a different year.
+[ADR-0026](adr/0026-in-world-spans-are-game-time.md) records the reversal, the migration that
+converted the existing rows, and the one legacy artefact it leaves: for a converted row,
+`delivery_at - ordered_at` is the game span the same real wait now buys and no longer equals
+`base_lead_time_weeks + option_lead_time_weeks`.
+
+The quote is the same domain throughout — `quotedAt` and `estimatedDeliveryAt` are both game
+instants, so a client may subtract them. It must not add `totalLeadTimeWeeks` to its own
+`Date.now()`.
 
 Only the Worker sweeps due new orders. It claims one pending order at a time with
 `FOR UPDATE SKIP LOCKED`, updates it to delivered and inserts its airframe in the same
 transaction. `airframe.source_order_id` is unique, so a rolling handover between two Workers
-cannot deliver the same aircraft twice. Production still has no Worker; pending production
-orders therefore cannot be enabled until OPS-12 supplies one. The dev Worker performs this
-sweep before draining game-time events and exposes cumulative `aircraftDeliveries` and
+cannot deliver the same aircraft twice. `deliverDueAircraftOrders` takes a required `gameNow`
+with no default: the `new Date()` it used to default to would now be a silent cross-domain
+comparison that no type would catch. Production still has no Worker; pending production orders
+therefore cannot be enabled until OPS-12 supplies one. The dev Worker performs this sweep before
+draining that world's game-time events and exposes cumulative `aircraftDeliveries` and
 `aircraftDeliveryErrors` counters in its loopback health snapshot.
 
 ## Authored v1 terms
@@ -68,7 +84,9 @@ The design gives one concrete lease term: Appendix B.4's ATR 72 deposit is $170k
 months, so v1 stores $85k/month. Other v1 lease rates remain the documented commercial
 approximation. The design specifies weeks but no per-type standard factory schedule, so v1
 authors a four-week base on the pinned aircraft type; each factory option's already-versioned
-lead weeks are added to it.
+lead weeks are added to it. Those weeks are game weeks since TIME-01, which on the flagship
+world's 2× clock is two real weeks for the base — a balance consequence, and one that belongs to
+`aircraft_type.base_delivery_lead_weeks` in a new catalogue version rather than to a second clock.
 
 M4-04 stores the lease's full monthly rate on the order from day one and charges the defined
 deposit. It does not invent a billing cadence the design has not chosen: recurring lease

@@ -1260,7 +1260,7 @@ export function FleetMarket({
                                 <dd>
                                   {quote.totalLeadTimeWeeks === 0
                                     ? 'Immediate'
-                                    : `${quote.totalLeadTimeWeeks} real weeks · est. ${dateLabel(quote.estimatedDeliveryAt)}`}
+                                    : `${quote.totalLeadTimeWeeks} weeks · est. ${dateLabel(quote.estimatedDeliveryAt)}`}
                                 </dd>
                               </div>
                               <div>

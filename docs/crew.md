@@ -274,8 +274,9 @@ and measure one world's rest against another world's clock.
 
 A conversion completes on the worker's tick, against the world's **game** clock — a fortnight
 of training is a span in the world's calendar, so a world at 4× returns its crew twice as fast
-in real time as one at 2×. §7.2's real weeks on factory deliveries are the one deliberate
-exception in the fleet; training is not one.
+in real time as one at 2×. Nothing in the fleet is an exception any more: §7.2's real weeks on
+factory deliveries were the last one, and TIME-01
+([ADR-0026](adr/0026-in-world-spans-are-game-time.md)) moved them onto the world's clock too.
 
 **Production has no worker.** A production world would therefore put crew into a conversion and
 never take them out: visibly `unavailable` on the Crew page, counted against the airline, and

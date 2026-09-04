@@ -185,10 +185,11 @@ them is not what they are made of but **who is allowed to start work**.
 **Neither owns both, and a scheduled job has exactly one owner — the worker.** If you find
 yourself wanting a timer in a route, persist the commitment and let the Worker claim it. A
 game-time due date is normally a `world_event` written with `scheduleEvent()`; a `fire_at`
-that is already due means "now". An explicitly wall-clock commitment must not be squeezed
-into that queue: M4-04's aircraft orders store `delivery_at` as real time and the Worker
-claims due rows with `FOR UPDATE SKIP LOCKED`. Both shapes keep timers out of HTTP handlers
-and make the data change and job completion one transaction.
+that is already due means "now". A commitment can also be a due column on the row that already
+owns it: M4-04's aircraft orders carry a game-time `delivery_at` and the Worker claims due rows
+with `FOR UPDATE SKIP LOCKED` rather than duplicating the promise into the queue (TIME-01,
+[ADR-0026](docs/adr/0026-in-world-spans-are-game-time.md)). Both shapes keep timers out of HTTP
+handlers and make the data change and job completion one transaction.
 
 That is also the only channel between them. Web writes a row; the worker picks it up. There
 is no RPC and no HTTP call from one to the other — see

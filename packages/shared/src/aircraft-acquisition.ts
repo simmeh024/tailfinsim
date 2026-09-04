@@ -82,6 +82,13 @@ export const AircraftAcquisitionQuoteResponse = z
     effectiveSpec: AircraftSpec,
     chargedMinor: MinorUnits.nonnegative(),
     monthlyLeaseRateMinor: MinorUnits.nonnegative().nullable(),
+    /**
+     * Weeks of the **world's** calendar, not of the wall clock (TIME-01).
+     *
+     * A client may render these as a span and may add them to
+     * `quotedAt` — but only because both instants below are game time too. It
+     * must not add them to its own `Date.now()`.
+     */
     baseLeadTimeWeeks: z.number().int().nonnegative(),
     optionLeadTimeWeeks: z.number().int().nonnegative(),
     totalLeadTimeWeeks: z.number().int().nonnegative(),
@@ -89,6 +96,7 @@ export const AircraftAcquisitionQuoteResponse = z
     cashMinor: MinorUnits,
     /** May be negative; the quote explains affordability but does not authorise it. */
     resultingCashMinor: MinorUnits,
+    /** Game instants on the active world's clock, so the two are comparable. */
     quotedAt: Timestamp,
     estimatedDeliveryAt: Timestamp,
   })
@@ -112,6 +120,12 @@ export const AircraftOrder = z
     baseLeadTimeWeeks: z.number().int().nonnegative(),
     optionLeadTimeWeeks: z.number().int().nonnegative(),
     deliveryAirportIcao: DeliveryAirportIcao,
+    /**
+     * Game instants on the owning world's clock (TIME-01).
+     *
+     * The dates a player is shown next to the world clock, so a client renders
+     * them as world dates and never against the browser's own.
+     */
     orderedAt: Timestamp,
     deliveryAt: Timestamp,
     deliveredAt: Timestamp.nullable(),

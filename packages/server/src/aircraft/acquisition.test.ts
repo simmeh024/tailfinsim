@@ -9,7 +9,7 @@ import {
   AircraftAcquisitionResponse,
   AircraftOrderListResponse,
 } from '@tailfin/shared';
-import { computeEffectiveBuild } from '@tailfin/sim';
+import { computeEffectiveBuild, gameTime, realTimeAtGameTime, type WorldClock } from '@tailfin/sim';
 
 import { moveAirlineCash, reconcileAirlineCash } from '../airline/cash';
 import { type ResolvedPlayerAirline } from '../airline/context';
@@ -43,6 +43,8 @@ import { seedAircraftCatalogue } from './catalogue';
  */
 
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+/** A week of the world's calendar, which is what a factory lead is (TIME-01). */
+const WEEK_MS = 7 * 24 * 60 * 60 * 1_000;
 
 const url = process.env.DATABASE_URL;
 if (!url) console.warn('\n  [acquisition.test] DATABASE_URL not set — skipping.\n');
@@ -290,6 +292,139 @@ describeDb('aircraft acquisition', () => {
     ).toBe(JSON.stringify(heavyOptionIds.slice().sort()));
   });
 
+  /*
+   * TIME-01 / ADR-0026: the acceptance criterion for moving the factory clock.
+   *
+   * Two worlds, identical but for `speedMultiplier`, ordering the same standard
+   * A321neo at the same real instant. What must hold:
+   *
+   *   - the **game** span is the authored lead exactly, and identical in both --
+   *     the world's calendar is where the number lives now;
+   *   - the **real** wait is that span divided by world speed, so the 4x world
+   *     receives its aeroplane in half the real time of the 2x one. Under the
+   *     wall-clock rule this was the same real instant for both, which is the
+   *     bug: world speed is supposed to mean "everything inside here is faster".
+   *
+   * Asserted through `realTimeAtGameTime`, the inverse the event queue already
+   * uses, rather than by recomputing the clock arithmetic in the test.
+   */
+  it('measures a factory lead in game weeks, so a faster world waits less real time', async () => {
+    const type = AIRCRAFT_CATALOGUE_V1.types.find((entry) => entry.designation === 'A321neo');
+    if (!type) throw new Error('A321neo is missing from the shipped catalogue');
+    const designation = type.designation;
+    const leadMs = type.baseDeliveryLeadWeeks * WEEK_MS;
+
+    async function orderIn(
+      speedMultiplier: number,
+    ): Promise<{ clock: WorldClock; orderedAt: string; deliveryAt: string; realWaitMs: number }> {
+      const fixture = await fixtures.create({ worldConfig: { speedMultiplier } });
+      const deliveryAirportIcao = await makeDeliveryAirport();
+      await topUp(fixture, 50_000_000_000);
+
+      // One real hour into the world, so game and real time have measurably
+      // diverged and an accidental wall-clock value could not pass by luck.
+      const realNow = new Date(fixture.world.launchDate.getTime() + 60 * 60 * 1_000);
+      const ordered = await acquireAircraft(
+        db.db,
+        own(fixture),
+        {
+          requestId: randomUUID(),
+          kind: 'new',
+          typeDesignation: designation,
+          optionIds: [],
+          deliveryAirportIcao,
+        },
+        realNow,
+      );
+      if (!ordered.ok) throw new Error(`Order refused: ${JSON.stringify(ordered)}`);
+      expect(ordered.order.optionLeadTimeWeeks).toBe(0);
+
+      const clock: WorldClock = {
+        epoch: fixture.world.epoch,
+        launchDate: fixture.world.launchDate,
+        speedMultiplier: Number(fixture.world.speedMultiplier),
+      };
+      return {
+        clock,
+        orderedAt: ordered.order.orderedAt,
+        deliveryAt: ordered.order.deliveryAt,
+        realWaitMs:
+          realTimeAtGameTime(clock, new Date(ordered.order.deliveryAt)).getTime() -
+          realNow.getTime(),
+      };
+    }
+
+    const twice = await orderIn(2);
+    const fourTimes = await orderIn(4);
+
+    for (const world of [twice, fourTimes]) {
+      // The order is dated in its world's calendar, not the wall clock it was
+      // placed on: one real hour after launch at 2x is two game hours after the
+      // epoch, and at 4x it is four.
+      expect(Date.parse(world.orderedAt)).toBe(
+        gameTime(
+          world.clock,
+          new Date(world.clock.launchDate.getTime() + 60 * 60 * 1_000),
+        ).getTime(),
+      );
+      expect(Date.parse(world.deliveryAt) - Date.parse(world.orderedAt)).toBe(leadMs);
+    }
+
+    expect(twice.realWaitMs).toBe(leadMs / 2);
+    expect(fourTimes.realWaitMs).toBe(leadMs / 4);
+  });
+
+  /*
+   * The other half of the same claim: the sweep reads the world's calendar.
+   *
+   * `deliverDueAircraftOrders` takes a required `gameNow` and no default, so
+   * this is the test that would fail if anyone reinstated `= new Date()`.
+   */
+  it('delivers when the world s calendar reaches the promise, and not before', async () => {
+    const fixture = await fixtures.create();
+    const deliveryAirportIcao = await makeDeliveryAirport();
+    await topUp(fixture, 50_000_000_000);
+
+    const ordered = await acquireAircraft(
+      db.db,
+      own(fixture),
+      {
+        requestId: randomUUID(),
+        kind: 'new',
+        typeDesignation: 'A321neo',
+        optionIds: [],
+        deliveryAirportIcao,
+      },
+      fixture.world.launchDate,
+    );
+    if (!ordered.ok) throw new Error(`Order refused: ${JSON.stringify(ordered)}`);
+    expect(ordered.order.status).toBe('pending');
+    expect(ordered.airframe).toBeNull();
+
+    const dueAt = new Date(ordered.order.deliveryAt);
+    const aDayShort = new Date(dueAt.getTime() - 24 * 60 * 60 * 1_000);
+    expect(await deliverDueAircraftOrders(db.db, fixture.world.id, aDayShort)).toEqual({
+      delivered: 0,
+    });
+    expect(await deliverDueAircraftOrders(db.db, fixture.world.id, dueAt)).toEqual({
+      delivered: 1,
+    });
+
+    // The two dates the fleet reads afterwards are that same game instant --
+    // `fleet.ts` subtracts `airframe.delivered_at` from `gameNow` directly, so a
+    // wall-clock value here would make a brand-new aeroplane look years old.
+    const [row] = await db.db
+      .select()
+      .from(aircraftOrder)
+      .where(eq(aircraftOrder.id, ordered.order.id));
+    expect(row?.deliveredAt?.toISOString()).toBe(dueAt.toISOString());
+    const [frame] = await db.db
+      .select()
+      .from(airframe)
+      .where(eq(airframe.sourceOrderId, ordered.order.id));
+    expect(frame?.deliveredAt.toISOString()).toBe(dueAt.toISOString());
+  });
+
   it('quotes through the exact option fold and commercial facts the transaction stores', async () => {
     const fixture = await fixtures.create();
     const deliveryAirportIcao = await makeDeliveryAirport();
@@ -394,11 +529,14 @@ describeDb('aircraft acquisition', () => {
       ownership: 'owned',
       deliveredToIcao: locationIcao,
     });
+    // `soldAt` is game time (TIME-01): ordering at `launchDate` is game time at
+    // the epoch, which is the calendar the listing's own `available_at`,
+    // `built_at` and `expires_at` were already on.
     expect(
       (
         await db.db.select().from(usedAircraftListing).where(eq(usedAircraftListing.id, listing.id))
       )[0],
-    ).toMatchObject({ status: 'sold', soldAt: fixture.world.launchDate });
+    ).toMatchObject({ status: 'sold', soldAt: fixture.world.epoch });
   });
 
   it('rolls the order and movement back when the airline cannot afford it', async () => {
