@@ -61,13 +61,21 @@ costs more, and only `out_of_service` makes it illegal. The dates are the catalo
 rates are the economy's, so a world can make old aircraft dearer without re-issuing its
 catalogue.
 
-**Aircraft acquisition has two clocks and one owner.** `POST /api/fleet/acquisitions`
-atomically writes the pinned commercial/build snapshot and its AIR-06 movement. Lease and
-used paths deliver in that request; used configuration comes only from a locked
-`used_aircraft_listing`, never the client. New orders store a wall-clock `delivery_at` — §7.2
-explicitly says real weeks — and only the Worker materialises them. Do not turn those dates
-into `world_event.fire_at`, which is game time and changes meaning with world speed. The
-complete boundary and its current exclusions are in
+**Aircraft acquisition has one clock and one owner, and the clock is the world's.**
+`POST /api/fleet/acquisitions` atomically writes the pinned commercial/build snapshot and its
+AIR-06 movement. Lease and used paths deliver in that request; used configuration comes only
+from a locked `used_aircraft_listing`, never the client. A new order's `ordered_at`,
+`delivery_at` and `delivered_at` are **game** instants, its lead is game weeks, and only the
+Worker materialises it — sweeping `delivery_at` against `gameTime(clock, now())` like every
+other per-world sweep beside it. §7.2 used to say real weeks and TIME-01
+([ADR-0026](docs/adr/0026-in-world-spans-are-game-time.md)) reversed it: a factory order was
+the one span inside a world that ignored world speed, and a page showing both calendars at
+once could not say which date the aeroplane arrived on. Migration 0050 converted the existing
+rows, so for those rows only `delivery_at - ordered_at` is a game span that no longer equals
+the stored lead weeks — legacy arithmetic, not a broken invariant. Still a scanned due column
+rather than a `world_event.fire_at`: the order row already carries the commitment, its due
+index and the trigger admitting only `pending -> delivered`, and a queued event would be a
+second place the same promise lives. The complete boundary and its current exclusions are in
 [`docs/aircraft-acquisition.md`](docs/aircraft-acquisition.md).
 
 **Aircraft runtime assets are generated identities, never hand-written paths.** An M6-11 source
@@ -316,8 +324,8 @@ for ever. `checksCompleted`, `airframesGrounded` and `maintenanceErrors` are the
 worker's tick, against the world's game clock, so on a production world crew sent to convert
 onto a new family would sit in `unavailable` for ever — visible on the Crew page, counted
 against the airline, and never coming back. `crewConversionsCompleted` and `crewErrors` are the
-counters. The reason it is game time rather than real weeks is that training happens _inside_
-the world; §7.2's factory lead time is the one deliberate exception in the fleet.
+counters. The reason it is game time is that training happens _inside_ the world — which since
+TIME-01 is true of factory deliveries as well, so the fleet no longer has an exception.
 
 **And M5-02 makes that failure mode total, not partial.** Crew duty periods open at departure
 and close on the worker's tick — `standDownIdleCrew` ends the day for a set nothing dispatched,

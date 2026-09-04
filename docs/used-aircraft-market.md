@@ -161,8 +161,10 @@ same aeroplane; run two workers, get the same aeroplane.
 ## Where it runs, and the fact that is invisible
 
 The refresh is the **Worker's**, called once per tickable world per tick, against that world's
-**game** clock. Factory lead time is real time (§7.2) and the market is not: a world at 4×
-renews its market twice as often in real time as one at 2×.
+**game** clock — as is the factory delivery sweep beside it since TIME-01
+([ADR-0026](adr/0026-in-world-spans-are-game-time.md)). A world at 4× renews its market twice as
+often in real time as one at 2×. A listing's `sold_at` is game time too, so it agrees with the
+`available_at`, `built_at` and `expires_at` it sits next to.
 
 > **Production has no Worker**, so a production world's used market would never generate,
 > never refresh and never expire. The market is a dev-only mechanism until OPS-12 (#191)

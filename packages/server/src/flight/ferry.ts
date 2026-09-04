@@ -28,8 +28,8 @@ import type { Database } from '../db/client';
  *
  * ## Where the delivery airport comes from
  *
- * It does not, yet. M4-04 owns ordering — *"buy new: … wait weeks of real time
- * for delivery"* — and the airport an aircraft is delivered to is part of that
+ * It does not, yet. M4-04 owns ordering — *"buy new: … delivery slots are weeks
+ * out"* — and the airport an aircraft is delivered to is part of that
  * order. Until it exists there is no row to read a delivery from, so it arrives
  * as a parameter here rather than as a stub, the same way M2-04 took congestion
  * and M2-05 took cruise speed.

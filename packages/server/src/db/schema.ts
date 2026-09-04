@@ -2620,6 +2620,16 @@ export const usedAircraftListing = pgTable(
       .notNull()
       .references(() => airport.icaoCode),
     status: usedAircraftListingStatus('status').notNull().default('available'),
+    /**
+     * Game instants, both of them: the world's own calendar, like `built_at` and
+     * `expires_at` below.
+     *
+     * `defaultNow()` is a wall-clock fallback that only a hand-written row can
+     * reach — M4-05's generator always supplies the world's `gameNow`, and
+     * `soldAt` is written by the acquisition transaction, which since TIME-01
+     * uses game time as well. The default is kept because dropping a `NOT NULL`
+     * column's default is not an expand-safe change, not because it is right.
+     */
     availableAt: timestamp('available_at', { withTimezone: true }).notNull().defaultNow(),
     soldAt: timestamp('sold_at', { withTimezone: true }),
 
@@ -2755,6 +2765,24 @@ export const aircraftOrder = pgTable(
     usedListingId: uuid('used_listing_id')
       .unique()
       .references(() => usedAircraftListing.id, { onDelete: 'restrict' }),
+    /**
+     * All three are **game** instants on the owning world's calendar (TIME-01,
+     * ADR-0025).
+     *
+     * They were wall-clock until then, because §7.2 called a delivery slot
+     * "weeks out (real time)" — the one span inside a world that did not
+     * accelerate with world speed. `delivery_at` is therefore now the same kind
+     * of quantity as `airframe.check_completes_at` or a `world_event.fire_at`,
+     * and the Worker's sweep compares it against `gameTime(clock, now())`.
+     *
+     * Rows written before migration 0050 were converted through their world's
+     * clock, so a pending order still arrives at the real instant it was
+     * promised. The consequence for those rows only: `delivery_at - ordered_at`
+     * is the *game* span the same real wait now buys, so it no longer equals
+     * `base_lead_time_weeks + option_lead_time_weeks`. Legacy arithmetic, not a
+     * new invariant — do not "repair" it by rewriting the lead weeks, which are
+     * the immutable commercial fact the order was priced under.
+     */
     orderedAt: timestamp('ordered_at', { withTimezone: true }).notNull(),
     deliveryAt: timestamp('delivery_at', { withTimezone: true }).notNull(),
     deliveredAt: timestamp('delivered_at', { withTimezone: true }),
@@ -2819,6 +2847,15 @@ export const airframe = pgTable(
     deliveredToIcao: text('delivered_to_icao')
       .notNull()
       .references(() => airport.icaoCode),
+    /**
+     * When this aeroplane entered the world, as a **game** instant (TIME-01).
+     *
+     * Carried from the order, so it is the world's calendar for the same reason
+     * `built_at` beside it always was. `created_at` below is the row's own
+     * wall-clock audit stamp and is the only real instant on this table — the
+     * two are not interchangeable and the fleet's utilisation window reads this
+     * one.
+     */
     deliveredAt: timestamp('delivered_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 

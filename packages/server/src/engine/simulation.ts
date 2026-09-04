@@ -76,7 +76,7 @@ export interface TickReport {
   failed: number;
   /** Events left for a Worker that knows their type (SCALE-05). */
   unsupported: number;
-  /** New factory orders materialised against wall-clock delivery dates. */
+  /** New factory orders materialised on this world's game calendar (TIME-01). */
   aircraftDelivered: number;
   /** Used-market berths filled on this tick (M4-05). Zero on almost every one. */
   usedListingsCreated: number;
@@ -154,7 +154,7 @@ export interface SimulationEngineOptions {
    * world full of carriers to assert the loop.
    */
   reviewNpcs?: typeof reviewNpcCarriers;
-  /** Real-time aircraft delivery sweep (M4-04), injected in engine tests. */
+  /** Game-time aircraft delivery sweep (M4-04), injected in engine tests. */
   deliverAircraft?: typeof deliverDueAircraftOrders;
   /** Used-market generation and withdrawal (M4-05), injected in engine tests. */
   refreshUsedMarket?: typeof refreshUsedAircraftMarket;
@@ -499,11 +499,18 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     }
 
     for (const entry of worlds) {
-      // Aircraft factory lead time is explicitly **real time** (§7.2), not a
-      // world-event fire_at. The Worker still owns it: one sweep per tickable
-      // world, exactly where other scheduled mutations live (ADR-0019).
+      // Factory deliveries (M4-04), on this world's **game** clock since
+      // TIME-01 — the same domain as every sweep below it. §7.2's parenthetical
+      // "real time" was the one exception in the fleet and is now reversed
+      // (ADR-0026): a world at 4× builds the same aeroplane in half the real
+      // time, which is what "everything inside the world" has to mean.
+      //
+      // Still a scanned column rather than a `world_event.fire_at`. The order
+      // row already carries the commitment, its due index, and the immutability
+      // trigger that lets only `pending -> delivered` through; a queued event
+      // would be a second place the same promise lives.
       try {
-        const delivery = await deliverAircraft(db, entry.id, now());
+        const delivery = await deliverAircraft(db, entry.id, gameTime(entry.clock, now()));
         tickAircraftDelivered += delivery.delivered;
         if (delivery.delivered > 0) {
           log?.info?.(
@@ -546,8 +553,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
 
       // Maintenance (M4-06), also on this world's game clock: a check's downtime
       // is a span in the world's calendar, so a world at 4× returns its aeroplanes
-      // to service twice as fast in real time. Factory lead time is the one thing
-      // in the fleet that stays in real weeks (§7.2).
+      // to service twice as fast in real time -- and since TIME-01 so does the
+      // factory delivery sweep above, which used to be the fleet's one exception.
       //
       // Isolated like the two above. A sweep that could not run this tick runs the
       // next one; the aeroplane stays in its check a second longer, which is a

@@ -113,7 +113,7 @@ export function FleetTable({
     return (
       <p className="fleet__empty">
         No aircraft yet. Lease one and it can start flying the day it arrives; a factory order takes
-        real weeks.
+        weeks of the world's calendar.
       </p>
     );
   }

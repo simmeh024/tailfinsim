@@ -310,7 +310,7 @@ export const AirframeProvenance = z
   .object({
     /** When the airframe was built. Null before M4-05 added the column. */
     builtAt: Timestamp.nullable(),
-    /** Real time: factory lead times are wall-clock weeks (§7.2). */
+    /** Game time, like `builtAt` above: the world's calendar (TIME-01). */
     deliveredAt: Timestamp,
     deliveredToIcao: AirportIcaoCode,
     /** How it was acquired — new, leased or bought used (M4-04). */

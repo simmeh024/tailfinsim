@@ -245,7 +245,7 @@ Each type: capacity envelope, range, cruise speed, fuel burn, purchase price, le
 
 - **Lease** — low upfront, monthly drain, available immediately. The MVP entry path.
 - **Buy used** — market of listed airframes with age, hours, and existing config
-- **Buy new** — cheapest per-hour long-run, but **delivery slots are weeks out** (real time). Ordering is a bet on your future network.
+- **Buy new** — cheapest per-hour long-run, but **delivery slots are weeks out**, measured on the world's own calendar like every other span inside a world. Ordering is a bet on your future network. *(Amended by [ADR-0026](adr/0026-in-world-spans-are-game-time.md): this originally said "real time", which made a factory order the one thing in a world that did not accelerate with world speed.)*
 
 ### 7.2b Era gating — aircraft unlock by in-game date **`[MVP]`**
 

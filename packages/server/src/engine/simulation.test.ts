@@ -165,13 +165,15 @@ describe('what the engine reports', () => {
     expect(snapshot.worlds).toBe(1);
   });
 
-  it('sweeps real-time aircraft deliveries for every tickable world', async () => {
-    const deliverAircraft = vi.fn((_db: Database, worldId: string) =>
+  it('sweeps aircraft deliveries for every tickable world, on that world s game clock', async () => {
+    const deliverAircraft = vi.fn((_db: Database, worldId: string, _gameNow: Date) =>
       Promise.resolve({ delivered: worldId === 'world-0' ? 2 : 1 }),
     );
     const engine = createSimulationEngine({
       db,
       handlers: {},
+      // Fixed, so the game instant below is arithmetic rather than a range.
+      now: () => new Date('2026-08-21T12:00:00.000Z'),
       listWorlds: () => Promise.resolve(worldsFixture('Flagship', 'Second')),
       drain: () => Promise.resolve(drainResult(0)),
       deliverAircraft,
@@ -183,6 +185,20 @@ describe('what the engine reports', () => {
     expect(engine.snapshot().aircraftDeliveries).toBe(3);
     expect(engine.snapshot().aircraftDeliveryErrors).toBe(0);
     expect(deliverAircraft.mock.calls.map((call) => call[1])).toEqual(['world-0', 'world-1']);
+
+    /*
+     * TIME-01: the sweep receives **game** time, not the wall clock it took
+     * until ADR-0026. Three and a half real days after this world launched, at
+     * 2x, is seven game days after its epoch -- so the instant handed to the
+     * sweep is 2024-10-27, not the 2026-08-21 the engine is ticking on.
+     *
+     * Asserted here rather than trusted, because both values are Dates and
+     * handing over the wrong one is a mistake no type can see.
+     */
+    expect(deliverAircraft.mock.calls.map((call) => call[2].toISOString())).toEqual([
+      '2024-10-27T00:00:00.000Z',
+      '2024-10-27T00:00:00.000Z',
+    ]);
   });
 
   it('materialises schedules for every tickable world', async () => {
