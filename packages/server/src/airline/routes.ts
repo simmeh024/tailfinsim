@@ -329,7 +329,7 @@ export function registerAirlineRoutes(
   app.patch<{ Params: { airlineId: string }; Body: unknown }>(
     '/api/admin/airlines/:airlineId/identity',
     {
-      onRequest: app.requireAdmin,
+      onRequest: app.requireCapability('airline.identity'),
       schema: {
         response: {
           200: forceRenameAirlineResponseJsonSchema,

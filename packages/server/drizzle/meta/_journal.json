@@ -344,6 +344,13 @@
       "when": 1788486977830,
       "tag": "0048_perpetual_tag",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1788497645441,
+      "tag": "0049_wonderful_maggott",
+      "breakpoints": true
     }
   ]
 }

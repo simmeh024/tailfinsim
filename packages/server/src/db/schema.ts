@@ -1235,10 +1235,38 @@ export type NewRunwayRow = typeof runway.$inferInsert;
  * Presence of a row *is* the grant — revoking deletes it. The permanent record
  * of both lives in `admin_audit`, which cannot be edited.
  */
+/**
+ * The administrator roles §22.1 names (M11-01).
+ *
+ * The authority a role carries lives in `admin/capabilities.ts`, not here — this
+ * is only how the choice is stored. `capabilities.test.ts` holds the two lists
+ * to the same set, so a role added in one place and not the other fails a test
+ * rather than silently granting nothing.
+ */
+export const adminRole = pgEnum('admin_role', [
+  'support',
+  'game_master',
+  'economist',
+  'world_admin',
+  'super_admin',
+]);
+export type AdminRoleName = (typeof adminRole.enumValues)[number];
+
 export const adminGrant = pgTable('admin_grant', {
   playerId: uuid('player_id')
     .primaryKey()
     .references(() => player.id, { onDelete: 'cascade' }),
+
+  /**
+   * What this administrator may do.
+   *
+   * Defaults to `super_admin` deliberately: every grant that existed before
+   * roles did carried unrestricted access, and a migration that quietly demoted
+   * the people holding the keys — possibly including the only account that can
+   * grant anything — would be a lockout dressed as a security improvement.
+   * Narrowing an existing grant is an explicit act, not a side effect of a deploy.
+   */
+  role: adminRole('role').notNull().default('super_admin'),
   /**
    * Null for the first admin.
    *

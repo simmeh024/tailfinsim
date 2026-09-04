@@ -111,7 +111,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
   app.get(
     '/api/admin/overview',
     {
-      onRequest: app.requireAdmin,
+      onRequest: app.requireCapability('console.read'),
       schema: { response: { 200: adminOverviewResponseJsonSchema } },
     },
     async (_request, reply) => reply.code(200).send(await buildOverview(db.db)),
@@ -120,7 +120,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
   app.get<{ Querystring: { includeViews?: string } }>(
     '/api/admin/audit',
     {
-      onRequest: app.requireAdmin,
+      onRequest: app.requireCapability('audit.read'),
       schema: { response: { 200: adminAuditResponseJsonSchema } },
     },
     async (request, reply) => {
@@ -149,7 +149,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
   app.get(
     '/api/admin/admins',
     {
-      onRequest: app.requireAdmin,
+      onRequest: app.requireCapability('admin.read'),
       schema: { response: { 200: adminListResponseJsonSchema } },
     },
     async (_request, reply) => {
@@ -171,7 +171,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
   app.get<{ Querystring: { q?: string; limit?: string; offset?: string } }>(
     '/api/admin/players',
     {
-      onRequest: app.requireAdmin,
+      onRequest: app.requireCapability('player.read'),
       schema: { response: { 200: adminPlayerListResponseJsonSchema } },
     },
     async (request, reply) => {
@@ -189,7 +189,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
   app.get<{ Params: { playerId: string } }>(
     '/api/admin/players/:playerId',
     {
-      onRequest: app.requireAdmin,
+      onRequest: app.requireCapability('player.read'),
       schema: {
         response: { 200: adminPlayerDetailResponseJsonSchema, 404: apiErrorJsonSchema },
       },
@@ -219,7 +219,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
   app.post<{ Params: { playerId: string } }>(
     '/api/admin/players/:playerId/sessions/revoke',
     {
-      onRequest: app.requireAdmin,
+      onRequest: app.requireCapability('player.sessions.revoke'),
       schema: {
         response: { 200: revokeSessionsResponseJsonSchema, 404: apiErrorJsonSchema },
       },
@@ -253,7 +253,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
   }>(
     '/api/admin/airlines/:airlineId',
     {
-      onRequest: app.requireAdmin,
+      onRequest: app.requireCapability('airline.read'),
       schema: {
         response: { 200: adminAirlineDetailResponseJsonSchema, 404: apiErrorJsonSchema },
       },
@@ -298,7 +298,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
   app.get(
     '/api/admin/worlds/health',
     {
-      onRequest: app.requireAdmin,
+      onRequest: app.requireCapability('world.read'),
       schema: { response: { 200: adminWorldHealthResponseJsonSchema } },
     },
     async (_request, reply) => {
@@ -322,7 +322,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
   app.get(
     '/api/admin/system-health',
     {
-      onRequest: app.requireAdmin,
+      onRequest: app.requireCapability('system.read'),
       schema: { response: { 200: adminSystemHealthResponseJsonSchema } },
     },
     async (_request, reply) => {
@@ -341,7 +341,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
   app.get(
     '/api/admin/worlds',
     {
-      onRequest: app.requireAdmin,
+      onRequest: app.requireCapability('world.read'),
       schema: { response: { 200: adminWorldListResponseJsonSchema } },
     },
     async (_request, reply) => reply.code(200).send({ worlds: await listWorlds(db.db) }),
@@ -350,7 +350,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
   app.post(
     '/api/admin/worlds',
     {
-      onRequest: app.requireAdmin,
+      onRequest: app.requireCapability('world.create'),
       schema: {
         response: {
           201: adminCreateWorldResponseJsonSchema,
@@ -439,7 +439,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
   app.post<{ Params: { worldId: string } }>(
     '/api/admin/worlds/:worldId/speed',
     {
-      onRequest: app.requireAdmin,
+      onRequest: app.requireCapability('world.speed'),
       schema: {
         response: {
           200: adminSpeedChangeResponseJsonSchema,
@@ -537,7 +537,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
   app.post<{ Params: { worldId: string } }>(
     '/api/admin/worlds/:worldId/status',
     {
-      onRequest: app.requireAdmin,
+      onRequest: app.requireCapability('world.lifecycle'),
       schema: {
         response: {
           200: adminWorldStatusResponseJsonSchema,
@@ -593,7 +593,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
   app.post<{ Params: { worldId: string } }>(
     '/api/admin/worlds/:worldId/reset',
     {
-      onRequest: app.requireAdmin,
+      onRequest: app.requireCapability('world.reset'),
       schema: {
         response: {
           200: adminResetWorldResponseJsonSchema,
@@ -689,7 +689,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
   app.get(
     '/api/admin/economy-config',
     {
-      onRequest: app.requireAdmin,
+      onRequest: app.requireCapability('economy.read'),
       schema: { response: { 200: adminEconomyConfigListResponseJsonSchema } },
     },
     async (_request, reply) => {
@@ -711,7 +711,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
   app.get<{ Params: { version: string } }>(
     '/api/admin/economy-config/:version',
     {
-      onRequest: app.requireAdmin,
+      onRequest: app.requireCapability('economy.read'),
       schema: {
         response: {
           200: adminEconomyConfigDetailResponseJsonSchema,
@@ -742,7 +742,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
   app.post(
     '/api/admin/economy-config',
     {
-      onRequest: app.requireAdmin,
+      onRequest: app.requireCapability('economy.publish'),
       schema: {
         response: {
           201: adminCreateEconomyConfigResponseJsonSchema,
@@ -786,7 +786,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
   app.post<{ Params: { worldId: string } }>(
     '/api/admin/worlds/:worldId/economy-config',
     {
-      onRequest: app.requireAdmin,
+      onRequest: app.requireCapability('economy.pin'),
       schema: {
         response: {
           200: adminPinEconomyConfigResponseJsonSchema,
@@ -860,7 +860,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
   app.get<{ Params: { worldId: string } }>(
     '/api/admin/worlds/:worldId/npc',
     {
-      onRequest: app.requireAdmin,
+      onRequest: app.requireCapability('npc.read'),
       schema: {
         response: { 200: adminNpcResponseJsonSchema, 404: apiErrorJsonSchema },
       },
@@ -892,7 +892,7 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
   app.post(
     '/api/admin/events/requeue',
     {
-      onRequest: app.requireAdmin,
+      onRequest: app.requireCapability('event.requeue'),
       schema: {
         response: { 200: adminRequeueEventsResponseJsonSchema, 400: apiErrorJsonSchema },
       },

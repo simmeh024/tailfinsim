@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 
+import { ADMIN_ROLES, type AdminRole, isAdminRole } from './admin/capabilities';
 import { adjustAirlineCash } from './admin/cash';
 import { BOOTSTRAP_ACTOR, grantAdmin, listAdmins, revokeAdmin } from './admin/grants';
 import { createDatabase } from './db/client';
@@ -55,6 +56,8 @@ interface Args {
   /** Major units as typed; converted to minor once, in `main`. */
   amount: string;
   reason: string;
+  /** The authority a `grant` hands over (M11-01). Ignored by the other commands. */
+  role: AdminRole;
 }
 
 function parseArgs(argv: readonly string[]): Args {
@@ -73,6 +76,9 @@ function parseArgs(argv: readonly string[]): Args {
     airlineId: '',
     amount: '',
     reason: '',
+    // The bootstrap path: whoever runs this already has a shell on the box, so
+    // the default is the unrestricted role. Narrowing is an explicit `--role`.
+    role: 'super_admin',
   };
   for (let i = 0; i < rest.length; i += 1) {
     const arg = rest[i];
@@ -96,6 +102,13 @@ function parseArgs(argv: readonly string[]): Args {
     } else if (arg === '--reason') {
       if (next === undefined) throw new Error('--reason needs a sentence');
       args.reason = next;
+      i += 1;
+    } else if (arg === '--role') {
+      if (next === undefined) throw new Error(`--role needs one of: ${ADMIN_ROLES.join(', ')}`);
+      if (!isAdminRole(next)) {
+        throw new Error(`unknown role "${next}"; expected one of: ${ADMIN_ROLES.join(', ')}`);
+      }
+      args.role = next;
       i += 1;
     } else {
       throw new Error(`unknown option: ${String(arg)}`);
@@ -189,7 +202,7 @@ async function main(): Promise<void> {
     const displayName = named[0]?.displayName ?? playerId;
 
     if (args.command === 'grant') {
-      const { changed } = await grantAdmin(db.db, playerId, BOOTSTRAP_ACTOR);
+      const { changed } = await grantAdmin(db.db, playerId, BOOTSTRAP_ACTOR, args.role);
       out(
         changed
           ? `Granted admin to ${displayName} (${playerId})`
