@@ -299,7 +299,10 @@ ssh tailfin@<ip> → cd /srv/tailfin → ./deploy/deploy.sh
 
 That diagram is the migration-owning Web path. The dev Worker uses
 `deploy-dev-worker.sh`, which sets `RUNS_MIGRATIONS=0`, checks that its event handlers cover
-the pending queue and polls the Worker's loopback health endpoint. It connects to
+the pending queue and polls the Worker's loopback health endpoint. It also sets
+`SERVES_PUBLIC_SURFACE=0`, so it runs no post-deploy browser smoke: that suite asks whether a
+public origin serves the deployed commit, and this node has no public origin — its health
+poll, which fails a live process whose engine is not ticking, is the evidence instead. It connects to
 `tailfin_dev` through `tailfin-db-tunnel.service` as the restricted `tailfin_worker_dev`
 database role; it never receives a production database grant. The canonical topology links
 the login/deploy command, and the

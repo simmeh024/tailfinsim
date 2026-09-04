@@ -45,6 +45,7 @@ you:  ssh tailfin@<ip>
              ├─ atomic migrate       ── reports rollback / commit / unknown
              ├─ systemctl restart tailfin
              └─ poll /healthz, then smoke the public page and deployed commit
+                                     ── the smoke is web nodes only; see below
 ```
 
 **Running the command is the approval step.** There is no CI involvement in deploys, no
@@ -65,8 +66,31 @@ commit the deploy checked out, that the served holding page or anonymous app fro
 visibly rendered and styled, and that the browser reports no load errors. The first run
 downloads Chromium into the `tailfin` user's Playwright cache; later deploys reuse it.
 
-Chromium's shared libraries are a one-time root-level host dependency. After the checkout has
-installed dependencies, provision them with:
+**Only nodes that serve a public surface run it.** `SERVES_PUBLIC_SURFACE` defaults to `1`,
+and `deploy-dev-worker.sh` is the one caller that sets `0`. The suite asks a single question —
+does the origin a user reaches serve the commit this deploy just checked out? — and the dev
+worker has no origin to ask it about: loopback 3100, no Caddy vhost, deliberately and
+permanently. The skip is logged, naming the health endpoint that answered instead.
+
+Aiming it somewhere else was tried and is worse, in both available directions. Until this
+was fixed the wrapper simply set neither variable, so it inherited `deploy.sh`'s production
+defaults and a **dev worker** deploy asserted that the front door was serving the worker's
+ref — pointed at the public site, and false by construction, since production is normally
+many commits behind `main`. Pointing it at dev web only moves the bug: the two dev nodes are
+deployed separately and on purpose, so they sit at different refs routinely, and
+`POST_DEPLOY_EXPECTED_COMMIT` is always _this_ node's — the smoke would fail whenever dev web
+had not yet been deployed to the same ref. A worker's real post-deploy evidence is its health
+poll, which for that role is stronger than a page load: `worker.js` answers 503 on a live
+process whose engine is not ticking, and no page load would catch that.
+
+The consequence for provisioning is that **the worker node needs no browser and no GTK/ATK
+libraries**. It has never had them — a worker deploy there used to fail at
+`chrome-headless-shell: error while loading shared libraries: libatk-1.0.so.0`, which is what
+masked the wrong-origin bug underneath it. Do not install them to make the step pass; the step
+should not run there.
+
+Chromium's shared libraries are a one-time root-level host dependency **on web nodes**. After
+the checkout has installed dependencies, provision them with:
 
 ```bash
 sudo bash -lc 'cd /srv/tailfin && pnpm exec playwright install-deps chromium'
@@ -1046,6 +1070,7 @@ is the point: production must not be where the engine's operational behaviour ge
 | Port            | 3001, proxied by Caddy           | 3100, **loopback only, no vhost**                              |
 | Database        | local socket, role `tailfin_dev` | `127.0.0.1:5433` through the tunnel, role `tailfin_worker_dev` |
 | Owns migrations | **yes**                          | no (`RUNS_MIGRATIONS=0`)                                       |
+| Browser smoke   | **yes**, against the public host | no (`SERVES_PUBLIC_SURFACE=0`) — no public surface to smoke    |
 | Log in as       | `tailfin@…` directly             | `ubuntu@…`, then `sudo -u tailfin` — see below                 |
 | Deploy          | `./deploy/deploy-dev.sh`         | `./deploy/deploy-dev-worker.sh`, **not as `ubuntu`**           |
 
@@ -1112,18 +1137,19 @@ Worker-only keys are `WORKER_HEALTH_PORT`, `WORKER_HEALTH_HOST` and `WORKER_TICK
 
 ### Failure modes
 
-| Symptom                                                     | Cause                                                | What to do                                                                                                                                                   |
-| ----------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `worker` inactive, `tunnel` inactive                        | The unit `Requires=` the tunnel, so it stops with it | `systemctl start tailfin-db-tunnel` then the worker; the dependency is deliberate — a worker logging connection failures at 1 Hz is worse than a stopped one |
-| `/healthz` 503, `engine.status: stopped`                    | Process alive, loop not running                      | The failure `systemctl is-active` cannot see. Read the journal; this is why the endpoint exists                                                              |
-| `/healthz` 503, `db: down`, `engine.status: running`        | Tunnel up but Postgres unreachable                   | Counters keep working through it by design — the snapshot needs no database                                                                                  |
-| `engine.errors` rising                                      | Each tick is throwing                                | `journalctl -u tailfin-dev-worker`; a failing tick does not stop the clock, so this climbs quietly                                                           |
-| `engine.failed` rising                                      | A handler is throwing                                | Genuinely broken, since SCALE-05: a type with no handler is counted as `unsupported` instead. `journalctl -u tailfin-dev-worker`                             |
-| `engine.unsupported` rising                                 | Events drained of a type with no handler             | Work paused, not lost. The deploy gate below normally refuses this build; reaching it means `ALLOW_HANDLER_GAP`, or rows parked before the gate existed      |
-| Deploy says "does not own them — deploy the web node first" | Schema change pending                                | Deploy dev web first. Ordering is enforced, not documented                                                                                                   |
-| Deploy says "no handler for event types with queued work"   | This build cannot do what is queued                  | Deploy a build that registers the handler, or accept the pause with `ALLOW_HANDLER_GAP=1` — see [The handler gate](#the-handler-gate-scale-06)               |
-| `dubious ownership` at `==> Fetching`                       | Deploy run as `ubuntu`; `tailfin` owns the checkout  | Re-run through `sudo -n -u tailfin -H` — see [Which user the deploy runs as](#which-user-the-deploy-runs-as). **Do not add `safe.directory`**                |
-| `Permission denied` running the deploy script               | Checkout is at a commit predating it                 | `git checkout --detach origin/<ref>` once, then deploy normally                                                                                              |
+| Symptom                                                     | Cause                                                | What to do                                                                                                                                                                         |
+| ----------------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `worker` inactive, `tunnel` inactive                        | The unit `Requires=` the tunnel, so it stops with it | `systemctl start tailfin-db-tunnel` then the worker; the dependency is deliberate — a worker logging connection failures at 1 Hz is worse than a stopped one                       |
+| `/healthz` 503, `engine.status: stopped`                    | Process alive, loop not running                      | The failure `systemctl is-active` cannot see. Read the journal; this is why the endpoint exists                                                                                    |
+| `/healthz` 503, `db: down`, `engine.status: running`        | Tunnel up but Postgres unreachable                   | Counters keep working through it by design — the snapshot needs no database                                                                                                        |
+| `engine.errors` rising                                      | Each tick is throwing                                | `journalctl -u tailfin-dev-worker`; a failing tick does not stop the clock, so this climbs quietly                                                                                 |
+| `engine.failed` rising                                      | A handler is throwing                                | Genuinely broken, since SCALE-05: a type with no handler is counted as `unsupported` instead. `journalctl -u tailfin-dev-worker`                                                   |
+| `engine.unsupported` rising                                 | Events drained of a type with no handler             | Work paused, not lost. The deploy gate below normally refuses this build; reaching it means `ALLOW_HANDLER_GAP`, or rows parked before the gate existed                            |
+| Deploy says "does not own them — deploy the web node first" | Schema change pending                                | Deploy dev web first. Ordering is enforced, not documented                                                                                                                         |
+| Deploy says "no handler for event types with queued work"   | This build cannot do what is queued                  | Deploy a build that registers the handler, or accept the pause with `ALLOW_HANDLER_GAP=1` — see [The handler gate](#the-handler-gate-scale-06)                                     |
+| `dubious ownership` at `==> Fetching`                       | Deploy run as `ubuntu`; `tailfin` owns the checkout  | Re-run through `sudo -n -u tailfin -H` — see [Which user the deploy runs as](#which-user-the-deploy-runs-as). **Do not add `safe.directory`**                                      |
+| `Permission denied` running the deploy script               | Checkout is at a commit predating it                 | `git checkout --detach origin/<ref>` once, then deploy normally                                                                                                                    |
+| `libatk-1.0.so.0: cannot open shared object file`           | Deploying a build predating `SERVES_PUBLIC_SURFACE`  | That build browser-smokes the **production** front door from this node. The app itself deployed and is healthy. Deploy a build that sets `0`; do not install the browser libraries |
 
 ### The handler gate (SCALE-06)
 

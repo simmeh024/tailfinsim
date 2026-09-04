@@ -244,6 +244,7 @@ The third node, alongside dev web:
 | you log in as | `ubuntu`; the checkout is `tailfin`'s — see below       |
 | deploy with   | `./deploy/deploy-dev-worker.sh <ref>`, **as `tailfin`** |
 | migrations    | **no** — the web node owns them                         |
+| browser smoke | **no** — no public surface; `/healthz` is the evidence  |
 
 **The dev worker is the one box where the login user is not the deploy user.** You reach
 it as `ubuntu`, but `/srv/tailfin-dev-worker` and the service belong to `tailfin`, and there
