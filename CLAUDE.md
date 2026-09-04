@@ -324,8 +324,8 @@ for ever. `checksCompleted`, `airframesGrounded` and `maintenanceErrors` are the
 worker's tick, against the world's game clock, so on a production world crew sent to convert
 onto a new family would sit in `unavailable` for ever — visible on the Crew page, counted
 against the airline, and never coming back. `crewConversionsCompleted` and `crewErrors` are the
-counters. The reason it is game time rather than real weeks is that training happens _inside_
-the world; §7.2's factory lead time is the one deliberate exception in the fleet.
+counters. The reason it is game time is that training happens _inside_ the world — which since
+TIME-01 is true of factory deliveries as well, so the fleet no longer has an exception.
 
 **And M5-02 makes that failure mode total, not partial.** Crew duty periods open at departure
 and close on the worker's tick — `standDownIdleCrew` ends the day for a set nothing dispatched,

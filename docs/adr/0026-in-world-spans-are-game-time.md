@@ -95,6 +95,13 @@ sessions and their expiry, admin audit stamps, `airframe.created_at`, ops heartb
 metadata, the engine's own tick interval and health lateness, and M8-02's FX refresh — an exchange
 rate is a real-world quantity and stays global and real, deliberately.
 
+**It settles the question for spans not yet built.** The design doc says "real weeks" in several
+places describing systems that do not exist yet — crew promotion (§ "Crew"), academy and network-node
+construction, demand recovery curves, research earned over time. Those sentences are not amended
+here, because amending unbuilt design text would be pre-deciding the work. The rule they inherit is
+this one: unless a span is genuinely a real-world quantity in the way an exchange rate is, it is
+measured on the world's clock, and the burden is on the exception to argue for itself.
+
 **What this does not change.** Money is still USD integer minor units; the economy is still a
 pinned `EconomyConfig` row; the catalogue's era dates were always game time; and the Worker is still
 the only process that materialises a delivery (ADR-0019's ownership rule is untouched — only its

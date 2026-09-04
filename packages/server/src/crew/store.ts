@@ -55,9 +55,10 @@ import type { CrewRankValue } from '../db/schema';
  * ## Game time, not real time
  *
  * A conversion completes on the **world's** clock, like a maintenance check and
- * unlike an aircraft delivery. Training happens inside the world, so a world at
- * 4× should train twice as fast in real time as one at 2×. §7.2 asks for real
- * weeks on factory deliveries and that is the deliberate exception, not the rule.
+ * — since TIME-01 (ADR-0026) — like an aircraft delivery too. Training happens
+ * inside the world, so a world at 4× should train twice as fast in real time as
+ * one at 2×. §7.2 asked for real weeks on factory deliveries; that was the last
+ * exception in the fleet and it is gone.
  */
 
 export interface CrewClockRow {
