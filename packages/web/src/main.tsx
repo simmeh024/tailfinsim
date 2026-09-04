@@ -7,6 +7,7 @@ import { readStoredTheme } from './theme/ThemeProvider';
 
 import './theme/tokens.css';
 import './shell/shell.css';
+import './ui/ui.css';
 
 /**
  * Browser entry point.

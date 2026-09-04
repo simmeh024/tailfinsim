@@ -4,6 +4,7 @@ import type { FleetAirframeView } from '@tailfin/shared';
 
 import { fetchFleetAirframes } from '../fleet/api';
 import { useContextSelection } from '../shell/context-selection';
+import { StateBlock } from '../ui/StateBlock';
 
 import { closeRoute, fetchRoutes, setRouteActive, type RouteSummary } from './api';
 import { AirportSlotsView } from './planner/AirportSlotsView';
@@ -293,11 +294,7 @@ export function NetworkPage(): ReactNode {
         />
       </header>
 
-      {failed && (
-        <p className="page__note" role="alert">
-          Could not load your routes.
-        </p>
-      )}
+      {failed && <StateBlock kind="broken">Could not load your routes.</StateBlock>}
 
       <div className="net-layout">
         <aside className="net-rail" aria-label="Routes">

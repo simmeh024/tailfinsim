@@ -9,6 +9,8 @@ import {
   type NpcDecisionKind,
 } from '@tailfin/shared';
 
+import { StateBlock } from '../ui/StateBlock';
+
 import { fetchNpcCarriers, fetchWorlds } from './api';
 import { usePolledData } from './polling';
 
@@ -177,13 +179,13 @@ export function CarriersPage(): ReactNode {
         </p>
       )}
 
-      {loading && value === null && <p className="admin__note">Loading…</p>}
+      {loading && value === null && <StateBlock kind="loading">Loading…</StateBlock>}
 
       {value !== null && !value.seeded && (
-        <p className="admin__note">
+        <StateBlock kind="empty">
           This world has no NPC carriers. Seed them with <code>pnpm npc:seed &lt;worldId&gt;</code>{' '}
           — the world needs its demand pools generated first.
-        </p>
+        </StateBlock>
       )}
 
       {value !== null && value.seeded && (
@@ -196,10 +198,10 @@ export function CarriersPage(): ReactNode {
 
           <h3 className="admin__heading">Recent decisions</h3>
           {value.decisions.length === 0 ? (
-            <p className="admin__note">
+            <StateBlock kind="empty">
               No decisions recorded yet. Carriers review their networks weekly in game time, so a
               young world has not reached its first review.
-            </p>
+            </StateBlock>
           ) : (
             <table>
               <caption>

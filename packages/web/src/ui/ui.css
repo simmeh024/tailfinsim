@@ -1,0 +1,146 @@
+/*
+ * Shared UI components (UX-07).
+ *
+ * Tokens only — no colour literal, no bare pixel colour, no font stack. The
+ * colour-literal guard in theme/tokens.test.ts walks this file like every
+ * other, which is the point: a component layer that reached for its own greys
+ * would be a second theme.
+ */
+
+/*
+ * A note for whoever does UX-11 (#472).
+ *
+ * `.state` below and `shell.css`'s `.alert` converged on the same geometry
+ * independently: flex row, glyph in a gutter, message beside it, optional
+ * action under it, colour on a thick left rule. That is good evidence the
+ * geometry is right, and it is also two blocks doing one layout.
+ *
+ * They are deliberately not merged yet, because they do not mean the same
+ * thing. `.alert` is a server-decided item *about the world* — one row in a
+ * list of many, carrying a severity, a detail and a link. `.state` is what a
+ * single panel says when it has no content to show. Merging them today would
+ * also drag `--console-card-raised` onto player pages, and #472 is the issue
+ * that owns promoting `.alert` and `.gate` out of the admin namespace. Do it
+ * there, from both directions, rather than by having one inherit the other.
+ */
+
+/* --------------------------------------------------------- state blocks ---- */
+
+.state {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.state__glyph {
+  /* Aligned to the first line of text rather than the block, so a two-line
+     message keeps its glyph beside the sentence and not floating in the middle. */
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: 1.5em;
+}
+
+.state__body {
+  min-width: 0;
+  /* A measure, so a long explanatory empty state stays readable on a wide
+     panel instead of running the full width of a desktop console. */
+  max-width: 60ch;
+}
+
+.state__message {
+  margin: 0;
+}
+
+.state__action {
+  margin-top: var(--space-2);
+}
+
+/*
+ * Absence is quiet; failure is not.
+ *
+ * `loading` and `empty` keep the plain muted sentence the app already had —
+ * they are the normal resting states of a panel, and giving every "No routes
+ * recorded." its own bordered card would make a healthy console look alarming.
+ * `refused` and `broken` earn chrome, because they are the two the user has to
+ * notice.
+ */
+.state--loading,
+.state--empty {
+  padding: var(--space-2) 0;
+}
+
+.state--refused,
+.state--broken {
+  padding: var(--space-3);
+  border-left: 2px solid currentcolor;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+}
+
+.state--refused {
+  border-left-color: var(--status-delayed);
+  background: var(--status-delayed-quiet);
+}
+
+.state--refused .state__glyph {
+  color: var(--status-delayed);
+}
+
+.state--broken {
+  border-left-color: var(--status-cancelled);
+  background: var(--status-cancelled-quiet);
+}
+
+.state--broken .state__glyph {
+  color: var(--status-cancelled);
+}
+
+/* The loading pulse. */
+
+.state__dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.state__dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentcolor;
+  animation: state-pulse 1.1s ease-in-out infinite;
+}
+
+.state__dot:nth-child(2) {
+  animation-delay: 160ms;
+}
+
+.state__dot:nth-child(3) {
+  animation-delay: 320ms;
+}
+
+@keyframes state-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+/*
+ * Zeroing --motion-* is not enough here: an infinite animation with a zero
+ * duration still runs. This has to stop it outright.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .state__dot {
+    opacity: 0.6;
+    animation: none;
+  }
+}

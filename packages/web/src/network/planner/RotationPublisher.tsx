@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { FleetAirframeView, ScheduleCostEstimate, ScheduleView } from '@tailfin/shared';
 
 import { fetchFleetAirframes } from '../../fleet/api';
+import { StateBlock } from '../../ui/StateBlock';
 import {
   deleteSchedule,
   fetchSchedules,
@@ -423,14 +424,14 @@ function SavedRotations({
     [onChanged],
   );
 
-  if (schedules === null) return <p className="admin__note">Loading your rotations…</p>;
+  if (schedules === null) return <StateBlock kind="loading">Loading your rotations…</StateBlock>;
   if (schedules.length === 0) {
     return (
       <section className="net-panel">
         <div className="net-panel__head">
           <h3 className="net-panel__title">Your rotations</h3>
         </div>
-        <p className="admin__note">No rotations yet. Build one above and publish it.</p>
+        <StateBlock kind="empty">No rotations yet. Build one above and publish it.</StateBlock>
       </section>
     );
   }

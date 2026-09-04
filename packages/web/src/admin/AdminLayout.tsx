@@ -1,6 +1,7 @@
 import { Link, NavLink, Outlet } from 'react-router';
 
 import { useSession } from '../auth/SessionProvider';
+import { StateBlock } from '../ui/StateBlock';
 import { useBuildInfo } from '../version/BuildBadge';
 
 import type { ReactNode } from 'react';
@@ -64,12 +65,16 @@ export function AdminLayout(): ReactNode {
     return (
       <section className="admin admin--refused">
         <h1 className="admin__title">Administrators only</h1>
-        <p className="admin__note">
+        <StateBlock
+          kind="refused"
+          action={
+            <Link className="admin__back" to="/world">
+              Back to the world
+            </Link>
+          }
+        >
           This account does not hold an admin grant. If that is wrong, ask someone who does.
-        </p>
-        <Link className="admin__back" to="/world">
-          Back to the world
-        </Link>
+        </StateBlock>
       </section>
     );
   }

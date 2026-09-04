@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { AdminTickState, AdminWorldHealth } from '@tailfin/shared';
 
+import { StateBlock } from '../ui/StateBlock';
+
 import { fetchWorldHealth } from './api';
 import { usePolledData } from './polling';
 
@@ -192,9 +194,7 @@ export function WorldHealth(): ReactNode {
     return (
       <section className="admin__section">
         <h2 className="admin__heading">Health</h2>
-        <p className="admin__note" role="alert">
-          Could not load world health.
-        </p>
+        <StateBlock kind="broken">Could not load world health.</StateBlock>
       </section>
     );
   }
@@ -203,7 +203,7 @@ export function WorldHealth(): ReactNode {
     return (
       <section className="admin__section">
         <h2 className="admin__heading">Health</h2>
-        <p className="admin__note">Loading…</p>
+        <StateBlock kind="loading">Loading…</StateBlock>
       </section>
     );
   }
@@ -215,7 +215,7 @@ export function WorldHealth(): ReactNode {
       <h2 className="admin__heading">Health</h2>
 
       {report.worlds.length === 0 ? (
-        <p className="admin__note">No worlds yet.</p>
+        <StateBlock kind="empty">No worlds yet.</StateBlock>
       ) : (
         <div className="health__list">
           {report.worlds.map((world) => (

@@ -3,6 +3,8 @@ import { Link, useOutletContext } from 'react-router';
 
 import { defaultAirlineLogo, type UpdateOwnAirlineInput } from '@tailfin/shared';
 
+import { StateBlock } from '../ui/StateBlock';
+
 import { AirlineLogoEmblem } from './AirlineLogoEmblem';
 import { formatMinorUnits, patchOwnAirline } from './api';
 
@@ -58,9 +60,7 @@ export function AirlinePage(): ReactNode {
     return (
       <section className="page airline-page">
         <h1 className="page__title">Your airline</h1>
-        <p className="page__note" aria-live="polite">
-          Reading your airline…
-        </p>
+        <StateBlock kind="loading">Reading your airline…</StateBlock>
       </section>
     );
   }
@@ -69,9 +69,7 @@ export function AirlinePage(): ReactNode {
     return (
       <section className="page airline-page">
         <h1 className="page__title">Your airline</h1>
-        <p className="page__note" role="alert">
-          Your airline could not be read. Reload to try again.
-        </p>
+        <StateBlock kind="broken">Your airline could not be read. Reload to try again.</StateBlock>
       </section>
     );
   }
@@ -80,10 +78,16 @@ export function AirlinePage(): ReactNode {
     return (
       <section className="page airline-page">
         <h1 className="page__title">Your airline</h1>
-        <p className="page__note">There is no airline in the active world yet.</p>
-        <Link className="airline-page__found" to="/found">
-          Open the founding desk
-        </Link>
+        <StateBlock
+          kind="empty"
+          action={
+            <Link className="airline-page__found" to="/found">
+              Open the founding desk
+            </Link>
+          }
+        >
+          There is no airline in the active world yet.
+        </StateBlock>
       </section>
     );
   }

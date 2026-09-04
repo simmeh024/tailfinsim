@@ -1,5 +1,7 @@
 import type { AircraftOrder } from '@tailfin/shared';
 
+import { StateBlock } from '../ui/StateBlock';
+
 import { formatMoney } from './market-model';
 
 import type { ReactNode } from 'react';
@@ -21,7 +23,7 @@ export function FleetOrders({ orders }: { orders: readonly AircraftOrder[] }): R
   const pending = orders.filter((order) => order.status === 'pending');
 
   if (pending.length === 0) {
-    return <p className="admin__note">No aircraft are awaiting delivery.</p>;
+    return <StateBlock kind="empty">No aircraft are awaiting delivery.</StateBlock>;
   }
 
   return (

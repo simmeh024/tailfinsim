@@ -1,3 +1,5 @@
+import { StateBlock } from '../ui/StateBlock';
+
 import type { ReactNode } from 'react';
 
 /**
@@ -12,7 +14,7 @@ export function Placeholder({ title, note }: { title: string; note: string }): R
   return (
     <section className="page">
       <h1 className="page__title">{title}</h1>
-      <p className="page__note">{note}</p>
+      <StateBlock kind="empty">{note}</StateBlock>
     </section>
   );
 }

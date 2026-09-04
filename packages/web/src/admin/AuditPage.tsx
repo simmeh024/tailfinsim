@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 
 import type { AdminAuditEntry } from '@tailfin/shared';
 
+import { StateBlock } from '../ui/StateBlock';
+
 import { fetchAdminAudit } from './api';
 
 import type { ReactNode } from 'react';
@@ -92,15 +94,13 @@ export function AuditPage(): ReactNode {
         cannot bury the ones that changed something.
       </p>
 
-      {audit.state === 'loading' && <p className="admin__note">Loading…</p>}
+      {audit.state === 'loading' && <StateBlock kind="loading">Loading…</StateBlock>}
       {audit.state === 'failed' && (
-        <p className="admin__note" role="alert">
-          Could not load the audit log.
-        </p>
+        <StateBlock kind="broken">Could not load the audit log.</StateBlock>
       )}
       {audit.state === 'ready' &&
         (audit.value.length === 0 ? (
-          <p className="admin__note">Nothing recorded yet.</p>
+          <StateBlock kind="empty">Nothing recorded yet.</StateBlock>
         ) : (
           <table className="admin__table">
             <thead>

@@ -1,3 +1,5 @@
+import { StateBlock } from '../../ui/StateBlock';
+
 import { Chip, compactMoney, major, Meter, StatTile } from './ui';
 
 import type { RoutePlan } from './types';
@@ -94,7 +96,9 @@ export function OverviewTab({ plan }: { plan: RoutePlan }): ReactNode {
             </span>
           </div>
           {competitors.length === 0 ? (
-            <p className="admin__note">You have this market to yourself — no rivals selling it.</p>
+            <StateBlock kind="empty">
+              You have this market to yourself — no rivals selling it.
+            </StateBlock>
           ) : (
             <ul className="net-rivals">
               {competitors.map((rival) => (

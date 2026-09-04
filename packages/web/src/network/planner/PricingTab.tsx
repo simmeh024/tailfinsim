@@ -10,6 +10,7 @@ import type {
   WaterfallSegment,
 } from '@tailfin/shared';
 
+import { StateBlock } from '../../ui/StateBlock';
 import {
   fetchWaterfall,
   previewFares,
@@ -197,20 +198,16 @@ function Waterfall({ route }: { route: RouteSummary }): ReactNode {
   }, [route.id, cabin, rival]);
 
   if (failed) {
-    return (
-      <p className="admin__note" role="alert">
-        The market would not answer just now.
-      </p>
-    );
+    return <StateBlock kind="broken">The market would not answer just now.</StateBlock>;
   }
-  if (outcome === null) return <p className="admin__note">Working out why…</p>;
+  if (outcome === null) return <StateBlock kind="loading">Working out why…</StateBlock>;
 
   if (!outcome.ok && outcome.kind === 'no-rival') {
     return (
-      <p className="admin__note">
+      <StateBlock kind="empty">
         Nobody else is selling {route.originIcao} → {route.destinationIcao}, so there is no gap to
         decompose. You have the route to yourself.
-      </p>
+      </StateBlock>
     );
   }
 
@@ -266,11 +263,11 @@ function Waterfall({ route }: { route: RouteSummary }): ReactNode {
           ))}
         </div>
       ) : (
-        <p className="admin__note">
+        <StateBlock kind="empty">
           {outcome.kind === 'cabin-not-contested'
             ? `Nobody else sells ${CABIN_LABEL[outcome.cabin].toLowerCase()} on this route.`
             : 'That airline does not fly this route.'}
-        </p>
+        </StateBlock>
       )}
     </div>
   );
@@ -368,7 +365,9 @@ export function PricingTab({ route }: { route: RouteSummary }): ReactNode {
         </tbody>
       </table>
 
-      {preview === null && !failed && <p className="admin__note">Working out the market…</p>}
+      {preview === null && !failed && (
+        <StateBlock kind="loading">Working out the market…</StateBlock>
+      )}
       {failed && (
         <p className="admin__note" role="alert">
           Could not reach the market model. The figures above may be stale.

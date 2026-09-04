@@ -218,6 +218,41 @@ pnpm build
 node packages/server/dist/worker.js
 ```
 
+### Say loading, empty, refused and broken through `StateBlock`
+
+`packages/web/src/ui/` is the shared component layer, and `StateBlock` owns the four
+things a panel can say instead of its content: `loading`, `empty`, `refused`, `broken`.
+Before it existed the client had two note classes doing the same job — `admin__note` and
+`page__note` — picked more or less at random, so the competition tab announced its loading
+state with one and the failure beside it with the other. Worse, they were not equivalent to
+a screen reader: a failure was an `alert`, but _"Loading the market…"_ was a plain
+paragraph, so a slow request read as an empty panel.
+
+- **`empty` and `broken` are not the same state.** A catalogue with no aircraft in a 1950s
+  world is a correct answer; a catalogue that could not be read is a fault. Painting both as
+  grey text hid the difference from the player, and the pair is the one worth keeping apart
+  most carefully.
+- **A block carries the _answer_ to a request.** A stale-data caveat is not an answer — it
+  is a qualification on an answer already on screen (_"the figures below are older than they
+  look"_), and so is the outcome of an action (_"Revoked 3 sessions."_). Those stay as plain
+  notes; a banner component for them is not built yet.
+- **Absence is quiet, failure is not.** `loading` and `empty` keep the muted sentence the
+  app already had; only `refused` and `broken` get chrome. Giving every _"No routes
+  recorded."_ a bordered card makes a healthy console look alarming.
+- **The announcement belongs to the kind, not the caller.** `loading` is a polite `status`,
+  `refused` and `broken` are `alert`s, `empty` announces nothing. `STATE_KINDS` is a runtime
+  tuple that derives the type, so a fifth kind cannot arrive without a test forcing that
+  decision.
+- A resolving link or control goes in the `action` prop, not beside the block — several of
+  these notes used to have their _"Back to players"_ sitting outside as a loose sibling.
+
+`ui.css` may use **tokens only**; the colour-literal guard walks it like every other file. A
+test in `StateBlock.test.tsx` scans the client for a hand-written note whose sentence opens
+with _"Loading"_ or _"Could not load"_, because a third note class is otherwise always the
+path of least resistance.
+
+---
+
 ### The browser world renderer
 
 M7-01's renderer is one deck.gl instance with `MapView` and `_GlobeView` over the same layer
