@@ -1,4 +1,4 @@
-import { count, desc, eq } from 'drizzle-orm';
+import { count, desc, eq, inArray } from 'drizzle-orm';
 
 import {
   AdminCreateEconomyConfigRequest,
@@ -155,6 +155,44 @@ export async function listEconomyConfigVersions(
     worldsPerVersion(db),
   ]);
   return rows.map((row) => summarise(row, pinned.get(row.version) ?? 0));
+}
+
+/**
+ * Two versions, compared directly (M11-02/M11-03, §22.3).
+ *
+ * `readEconomyConfigVersion` diffs a version against its **parent**, which
+ * answers *"what did this change?"*. §22.3's promotion path — sandbox → canary →
+ * production — asks a different question: *"what differs between what production
+ * is running and what I am about to pin?"*, and those two versions are usually
+ * not parent and child. Comparing an arbitrary pair is the one the operator
+ * needs before a publish, so it is its own read.
+ *
+ * Null when either version does not exist; the caller turns that into the same
+ * 404 an unknown version already gets. Direction matters: `before` is `from`.
+ */
+export async function compareEconomyConfigVersions(
+  db: Database,
+  from: string,
+  to: string,
+): Promise<AdminEconomyConfigChange[] | null> {
+  // Existence is checked against the table rather than inferred from a load
+  // failure, so an unknown version is a miss instead of a thrown parse error.
+  const rows = await db
+    .select({ version: economyConfig.version })
+    .from(economyConfig)
+    .where(inArray(economyConfig.version, [...new Set([from, to])]));
+  const known = new Set(rows.map((row) => row.version));
+  if (!known.has(from) || !known.has(to)) return null;
+
+  if (from === to) return [];
+
+  // Through the cache, like the parent diff: comparing repeatedly must not
+  // re-parse two immutable payloads every time.
+  const [before, after] = await Promise.all([
+    loadEconomyConfig(db, from),
+    loadEconomyConfig(db, to),
+  ]);
+  return wireDiff(diffEconomyConfig(before, after));
 }
 
 /**
