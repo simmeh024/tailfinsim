@@ -21,6 +21,22 @@ const workerScript = resolve(repoRoot, 'deploy', 'deploy-dev-worker.sh');
 const workerUnit = resolve(repoRoot, 'deploy', 'tailfin-dev-worker.service');
 const tunnelUnit = resolve(repoRoot, 'deploy', 'tailfin-db-tunnel.service');
 
+/**
+ * The script with its comment lines removed.
+ *
+ * Every assertion below is about what a script *does*, and these scripts explain
+ * themselves at length — so a `toContain` against the raw source can be satisfied
+ * by the paragraph describing the setting rather than by the setting. Mutation
+ * testing caught exactly that: deleting `export SERVES_PUBLIC_SURFACE=0` left the
+ * test green, because the comment above it names the variable too.
+ */
+function withoutComments(path: string): string {
+  return readFileSync(path, 'utf8')
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('#'))
+    .join('\n');
+}
+
 function bashExecutable(): string {
   if (process.platform !== 'win32') return 'bash';
   const candidates = [
@@ -68,6 +84,75 @@ describe('deploying the dev worker', () => {
     // database can both reach the migrator, and the second one's pre-migration
     // backup would describe a schema the first had already started changing.
     expect(readFileSync(workerScript, 'utf8')).toContain('RUNS_MIGRATIONS=0');
+  });
+
+  it('serves no public surface, so it runs no browser smoke', () => {
+    expect(withoutComments(workerScript)).toContain('export SERVES_PUBLIC_SURFACE=0');
+  });
+
+  it('names no post-deploy origin, because aiming the smoke is the bug', () => {
+    // This is the regression. The wrapper never set these, so the smoke fell
+    // through to deploy.sh's production defaults and a dev worker deploy asserted
+    // that the front door served the worker's ref — reaching out to the public
+    // site during a dev deploy, and false by construction.
+    //
+    // The obvious repair is to copy dev web's two lines across, which is why this
+    // test asserts their *absence* rather than the fix. The two dev nodes deploy
+    // separately and sit at different commits routinely, and the expected commit
+    // is always this node's, so a dev-web origin fails whenever web has not been
+    // deployed to the same ref yet.
+    const source = withoutComments(workerScript);
+    expect(source).not.toContain('POST_DEPLOY_BASE_URL');
+    expect(source).not.toContain('POST_DEPLOY_EXPECTED_ENVIRONMENT');
+  });
+});
+
+describe('the post-deploy browser smoke', () => {
+  const source = readFileSync(deployScript, 'utf8');
+
+  it('runs by default, so every web deploy is the deploy it was', () => {
+    expect(source).toContain('SERVES_PUBLIC_SURFACE="${SERVES_PUBLIC_SURFACE:-1}"');
+  });
+
+  it('is skipped rather than aimed elsewhere on a node without one', () => {
+    // Structural, because ordering alone is not the property. A guard that opens
+    // and closes above an untouched smoke call satisfies "guard comes first" and
+    // changes nothing on the box — mutation testing walked straight through the
+    // first version of this test. So: the smoke must fall inside the conditional,
+    // with nothing closing it in between, and the skip must be its else branch.
+    const lines = source.split('\n');
+    const guard = lines.findIndex((line) =>
+      line.startsWith('if [ "${SERVES_PUBLIC_SURFACE}" = \'1\' ]; then'),
+    );
+    const smoke = lines.findIndex((line) => line.includes('pnpm test:post-deploy'));
+    const skip = lines.findIndex((line) => line.includes('skipping the post-deploy browser smoke'));
+
+    expect(guard).toBeGreaterThan(-1);
+    expect(smoke).toBeGreaterThan(guard);
+    expect(skip).toBeGreaterThan(smoke);
+    // Nothing at the guard's own indentation closes it before the smoke runs.
+    expect(
+      lines.slice(guard + 1, smoke).filter((line) => line === 'fi' || line === 'else'),
+    ).toEqual([]);
+    // And the skip really is this guard's alternative, not a later block.
+    expect(lines.slice(smoke, skip).filter((line) => line === 'else')).toEqual(['else']);
+  });
+
+  it('still proves the health endpoint answered when it skips', () => {
+    // A step that disappears silently reads as a step somebody forgot. The skip
+    // says which endpoint was actually proved instead.
+    expect(source).toContain('${HEALTH_URL} answered for ${NEXT}');
+  });
+
+  it('keeps production as the default origin it was', () => {
+    // The defaults are correct *for deploy.sh*, which is the production deploy.
+    // The bug was a wrapper inheriting them, not the defaults themselves.
+    expect(source).toContain(
+      'POST_DEPLOY_BASE_URL="${POST_DEPLOY_BASE_URL:-https://tailfinsim.com}"',
+    );
+    expect(source).toContain(
+      'POST_DEPLOY_EXPECTED_ENVIRONMENT="${POST_DEPLOY_EXPECTED_ENVIRONMENT:-production}"',
+    );
   });
 });
 

@@ -81,6 +81,37 @@ RUNS_MIGRATIONS="${RUNS_MIGRATIONS:-1}"
 # ---------------------------------------------------------------------------
 CHECKS_EVENT_HANDLERS="${CHECKS_EVENT_HANDLERS:-0}"
 
+# ---------------------------------------------------------------------------
+# Does this node serve a public HTTP surface? (OPS-09)
+#
+# The post-deploy suite asks one question: does the origin a user reaches serve
+# the commit this deploy just checked out, rendered and without load errors? A
+# node with no public surface cannot answer it about itself. The dev Worker is
+# exactly that node — port 3100 is loopback only and it has no Caddy vhost,
+# deliberately and permanently — so the only way to run the smoke there is to
+# point it at some *other* node, and both available answers are wrong:
+#
+#   * the default origin is production, so a dev Worker deploy would assert that
+#     the front door serves the Worker's ref. Production is normally many commits
+#     behind main, so that fails whenever the browser can run at all — and it
+#     makes a dev deploy reach out and load the public site.
+#   * dev web is no better. The two dev nodes are deployed separately and on
+#     purpose (#193), so they are routinely at different refs, and
+#     POST_DEPLOY_EXPECTED_COMMIT is always *this* node's. The assertion would
+#     fail for the ordinary reason that the other node had not been deployed yet.
+#
+# So the smoke is skipped rather than aimed somewhere. The evidence a Worker
+# deploy actually rests on is the health poll above it, which for this role is
+# stronger than a browser: `worker.js` answers 503 on a live process whose engine
+# is not ticking, which is the failure that matters here and the one no page load
+# would have caught.
+#
+# Defaults to 1, so every web deploy is byte-for-byte the deploy it was. Like
+# RUNS_MIGRATIONS and CHECKS_EVENT_HANDLERS this is a capability rather than a
+# role name, so it collapses into whatever OPS-14 settles on.
+# ---------------------------------------------------------------------------
+SERVES_PUBLIC_SURFACE="${SERVES_PUBLIC_SURFACE:-1}"
+
 case "${MIGRATION_DATABASE}" in
   tailfin | tailfin_dev) ;;
   *)
@@ -405,6 +436,8 @@ if ! curl -fsS --max-time 3 "${HEALTH_URL}" >/dev/null 2>&1; then
   exit 1
 fi
 
+if [ "${SERVES_PUBLIC_SURFACE}" = '1' ]; then
+
 # This suite talks only to the public URL. It has neither a database URL nor a
 # test-auth setup, and its request firewall aborts methods other than GET/HEAD.
 # A failed smoke is evidence for an operator to assess, not permission for a
@@ -420,6 +453,14 @@ if ! env -u DATABASE_URL -u E2E_DATABASE_URL \
   echo "  Inspect the browser failure above, then decide whether to run:" >&2
   echo "  ${ROLLBACK_COMMAND} ${PREVIOUS}   # roll back" >&2
   exit 1
+fi
+
+else
+  # Said out loud, because a step that vanishes silently reads as a step somebody
+  # forgot. The health poll above is this role's evidence, and naming the endpoint
+  # that answered keeps the deploy's own output honest about what was proved.
+  log "No public surface on this node — skipping the post-deploy browser smoke"
+  echo "  ${HEALTH_URL} answered for ${NEXT}; that is this role's evidence."
 fi
 
 log "Deployed ${NEXT}"

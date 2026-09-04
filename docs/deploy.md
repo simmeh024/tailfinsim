@@ -205,6 +205,13 @@ belong in the table above. Web deploys own their database schema; the dev Worker
 `RUNS_MIGRATIONS=0` and still runs migration preflight, refusing a build that needs the web
 node to migrate first.
 
+`SERVES_PUBLIC_SURFACE` is a deploy capability in the same sense, and for the same reason it
+is not in the table. It defaults to `1`; the dev Worker wrapper sets `0`, which skips the
+post-deploy browser smoke. That suite asks whether a public origin serves the deployed commit,
+and this node has no public origin to ask about — so it is skipped rather than aimed at another
+node's surface, whose commit would be a different one. The Worker's health poll is its
+post-deploy evidence, and it fails a live process whose engine is not ticking.
+
 ### Build numbers (M0-12)
 
 Every deploy carries a build number: `git rev-list --count HEAD`, stamped into
@@ -299,7 +306,10 @@ ssh tailfin@<ip> → cd /srv/tailfin → ./deploy/deploy.sh
 
 That diagram is the migration-owning Web path. The dev Worker uses
 `deploy-dev-worker.sh`, which sets `RUNS_MIGRATIONS=0`, checks that its event handlers cover
-the pending queue and polls the Worker's loopback health endpoint. It connects to
+the pending queue and polls the Worker's loopback health endpoint. It also sets
+`SERVES_PUBLIC_SURFACE=0`, so it runs no post-deploy browser smoke: that suite asks whether a
+public origin serves the deployed commit, and this node has no public origin — its health
+poll, which fails a live process whose engine is not ticking, is the evidence instead. It connects to
 `tailfin_dev` through `tailfin-db-tunnel.service` as the restricted `tailfin_worker_dev`
 database role; it never receives a production database grant. The canonical topology links
 the login/deploy command, and the
