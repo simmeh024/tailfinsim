@@ -97,6 +97,10 @@ describe('the fallback palette', () => {
     expect(fallback.grid).toEqual(tokens.grid);
     expect(fallback.night).toEqual(tokens.night);
     expect(fallback.route).toEqual(tokens.route);
+    expect(fallback.altGround).toEqual(tokens['alt-ground']);
+    expect(fallback.altLow).toEqual(tokens['alt-low']);
+    expect(fallback.altMid).toEqual(tokens['alt-mid']);
+    expect(fallback.altHigh).toEqual(tokens['alt-high']);
     expect(fallback.airport).toEqual(tokens.airport);
     expect(fallback.terrain).toEqual(tokens.terrain);
   });
@@ -158,6 +162,27 @@ describe.each(['dark', 'light'] as const)('the %s world meets WCAG AA', (theme) 
   it('keeps a route visible over the sea it crosses, day and night', () => {
     expect(contrastRatio(plain('route'), plain('ocean'))).toBeGreaterThanOrEqual(3);
     expect(contrastRatio(atNight('route'), atNight('ocean'))).toBeGreaterThanOrEqual(3);
+  });
+
+  it('keeps every altitude stop visible over the land it is drawn on', () => {
+    /*
+     * The route test above measures the sea, because that is what a cruising leg
+     * crosses. The altitude ramp has to answer for the **land**, because the low end
+     * of it is at an airport and an airport is on land.
+     *
+     * That was the bug this ramp replaced: the ends of a line were washed to the
+     * amber the airport dots use over pale terrain, so they arrived at the colour of
+     * the thing they were drawn on and the end of a route could not be seen at all.
+     */
+    for (const stop of ['alt-ground', 'alt-low', 'alt-mid', 'alt-high']) {
+      expect(contrastRatio(plain(stop), plain('land')), stop).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('separates the ends of a route line from its cruise', () => {
+    // The reading only works if the two ends of the ramp are told apart, and this is
+    // the part an operator actually looks for: where does this line stop.
+    expect(contrastRatio(plain('alt-ground'), plain('route'))).toBeGreaterThanOrEqual(3);
   });
 
   it('makes the terminator visible over land', () => {

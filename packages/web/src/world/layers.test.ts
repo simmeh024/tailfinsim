@@ -19,6 +19,10 @@ const palette: WorldPalette = {
   grid: [10, 11, 12, 80],
   night: [13, 14, 15, 215],
   route: [16, 17, 18, 230],
+  altGround: [200, 30, 20, 255],
+  altLow: [190, 90, 20, 255],
+  altMid: [170, 140, 20, 255],
+  altHigh: [40, 130, 80, 255],
   airport: [22, 23, 24, 255],
   terrain: [200, 210, 220, 204],
 };
@@ -82,18 +86,47 @@ describe('projection-independent world layers', () => {
     // The ends are warmed towards the ground colour but never reach it. Arriving at
     // the amber the airport dots and the pale terrain are drawn in is what made a
     // route dissolve into the map with no visible end.
-    const end = colors[0]!;
-    // Warmed towards the ground, but it must not arrive: a route that ends in the
-    // ground colour ends in the colour of the airport dots and the pale terrain, and
-    // so has no visible end at all.
-    expect(end.slice(0, 3)).not.toEqual(palette.airport.slice(0, 3));
-    expect(end.slice(0, 3)).not.toEqual(palette.route.slice(0, 3));
-    for (let channel = 0; channel < 3; channel += 1) {
-      const ground = palette.airport[channel]!;
-      const cruise = palette.route[channel]!;
-      // Strictly inside the ramp — a blend of the two, neither endpoint of it.
-      expect(end[channel]!).toBeGreaterThan(Math.min(ground, cruise));
-      expect(end[channel]!).toBeLessThan(Math.max(ground, cruise));
+    // Both ends sit at the bottom of the altitude ramp — on the ground, at the
+    // airport — and the ramp bottom is its own token, not the airport dot colour the
+    // ends used to dissolve into.
+    expect(colors[0]!.slice(0, 3)).toEqual(palette.altGround.slice(0, 3));
+    expect(colors.at(-1)!.slice(0, 3)).toEqual(palette.altGround.slice(0, 3));
+    expect(colors[0]!.slice(0, 3)).not.toEqual(palette.airport.slice(0, 3));
+
+    // And the climb walks the whole ramp, in order. Asserted by which stop each
+    // sample is nearest rather than by exact equality: the samples fall between the
+    // stops, so a line that blends correctly never lands on one exactly.
+    const stops = [
+      palette.altGround,
+      palette.altLow,
+      palette.altMid,
+      palette.altHigh,
+      palette.route,
+    ];
+    const nearestStop = (colour: readonly number[]): number => {
+      let best = 0;
+      let bestDistance = Infinity;
+      stops.forEach((stop, index) => {
+        const distance = [0, 1, 2].reduce(
+          (sum, channel) => sum + (colour[channel]! - stop[channel]!) ** 2,
+          0,
+        );
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = index;
+        }
+      });
+      return best;
+    };
+
+    const climb = colors.slice(0, Math.floor(colors.length / 2) + 1).map(nearestStop);
+    expect(climb[0]).toBe(0); // leaves the airport on the ground
+    expect(climb.at(-1)).toBe(stops.length - 1); // and is at cruise by mid-leg
+    expect(new Set(climb).size).toBe(stops.length); // having passed through every stop
+    for (let i = 1; i < climb.length; i += 1) {
+      // Never descends on the way up — a wash that wandered back down the ramp would
+      // be saying the aircraft lost height.
+      expect(climb[i]!, `sample ${String(i)}`).toBeGreaterThanOrEqual(climb[i - 1]!);
     }
   });
 

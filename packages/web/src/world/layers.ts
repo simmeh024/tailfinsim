@@ -6,7 +6,7 @@ import { terrainImage } from './terrain';
 
 import type { BorderGeometry, LandGeometry } from './land';
 import type { WorldHub } from './map-api';
-import type { WorldPalette } from './palette';
+import type { RgbaColor, WorldPalette } from './palette';
 import type { WorldProjection } from './projection';
 import type { DarknessField, LngLat } from './terminator';
 import type { Layer, UpdateParameters } from '@deck.gl/core';
@@ -299,14 +299,24 @@ const TERMINATOR_POLYGON_OFFSET = (): [number, number] => [0, -20000];
 const OVERLAY_POLYGON_OFFSET = (): [number, number] => [0, -60000];
 
 /**
- * How far up the altitude wash a route line starts and finishes.
+ * Sample a multi-stop colour ramp at `t` (0 to 1), linearly between stops.
  *
- * Zero would take the ends to the ground colour, which is the amber the airport dots
- * and the pale terrain already use — and a line that arrives at the colour of what it
- * is drawn on has no visible end. This keeps the warm-to-cool reading while leaving
- * both ends unmistakably part of the route.
+ * Alpha rides along with the colour, because a stop is a token and a token carries
+ * its own alpha.
  */
-const ALTITUDE_WASH_FLOOR = 0.55;
+function sampleRamp(stops: readonly RgbaColor[], t: number): RgbaColor {
+  const last = stops.length - 1;
+  if (last < 0) return [0, 0, 0, 255];
+  if (last === 0) return [...stops[0]!];
+  const scaled = Math.max(0, Math.min(1, t)) * last;
+  const index = Math.min(last - 1, Math.floor(scaled));
+  const local = scaled - index;
+  const from = stops[index]!;
+  const to = stops[index + 1]!;
+  return [0, 1, 2, 3].map((channel) =>
+    Math.round(from[channel]! + (to[channel]! - from[channel]!) * local),
+  ) as RgbaColor;
+}
 
 /**
  * A `BitmapLayer` that rebuilds its mesh when the viewport that draws it changes.
@@ -472,23 +482,26 @@ export function createWorldLayers({
   // fraction along the leg, identical for every route, so it is built once and the
   // path layer hands the same per-vertex array to each line.
   const routeSegments = quality === 'full' ? 64 : 32;
-  const lowAltitude = palette.airport;
-  const highAltitude = palette.route;
+  /**
+   * The FlightRadar altitude ramp: ground, climb-out, mid, high, cruise.
+   *
+   * Five stops rather than a blend between two, and that is the point. A single pair
+   * gives one washed midtone at each end which says nothing about height — and when
+   * the low colour is near the terrain, as the amber this replaces was, it makes the
+   * end of a line dissolve into the map. A ramp puts a distinct colour at each
+   * altitude, so a leg reads as leaving the ground, climbing and levelling off, and
+   * its ends become the most saturated part of it rather than the least.
+   */
+  const altitudeRamp: readonly RgbaColor[] = [
+    palette.altGround,
+    palette.altLow,
+    palette.altMid,
+    palette.altHigh,
+    palette.route,
+  ];
   const routeColors: [number, number, number, number][] = [];
   for (let i = 0; i <= routeSegments; i += 1) {
-    // Floored rather than run to the ground colour. Taken all the way, the last tenth
-    // of every leg arrived at the amber the airports and the pale terrain are already
-    // drawn in — so a route ended by dissolving into the map, and you could not see
-    // where it went. The wash still reads as low-warm to high-cool; it just never
-    // stops being a route.
-    const climb =
-      ALTITUDE_WASH_FLOOR + (1 - ALTITUDE_WASH_FLOOR) * altitudeProfile(i / routeSegments);
-    routeColors.push([
-      Math.round(lowAltitude[0] + (highAltitude[0] - lowAltitude[0]) * climb),
-      Math.round(lowAltitude[1] + (highAltitude[1] - lowAltitude[1]) * climb),
-      Math.round(lowAltitude[2] + (highAltitude[2] - lowAltitude[2]) * climb),
-      255,
-    ]);
+    routeColors.push(sampleRamp(altitudeRamp, altitudeProfile(i / routeSegments)));
   }
   return [
     new WorldBitmapLayer({
