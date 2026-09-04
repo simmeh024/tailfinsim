@@ -16,6 +16,7 @@ import { OpenRouteForm } from './planner/OpenRouteForm';
 import { OverviewTab } from './planner/OverviewTab';
 import { PerformanceTab } from './planner/PerformanceTab';
 import { PricingTab } from './planner/PricingTab';
+import { RotationPublisher } from './planner/RotationPublisher';
 import { ScheduleTab } from './planner/ScheduleTab';
 import { Chip, Segmented } from './planner/ui';
 
@@ -448,13 +449,19 @@ export function NetworkPage(): ReactNode {
               <div className="net-tabpanel">
                 {tab === 'overview' && <OverviewTab plan={currentPlan} />}
                 {tab === 'schedule' && (
-                  <ScheduleTab
-                    plan={currentPlan}
-                    aircraft={aircraft}
-                    selection={selection}
-                    onSelect={setSelection}
-                    editor={editor}
-                  />
+                  <>
+                    <RotationPublisher
+                      seedOrigin={currentPlan.route.originIcao}
+                      seedDestination={currentPlan.route.destinationIcao}
+                    />
+                    <ScheduleTab
+                      plan={currentPlan}
+                      aircraft={aircraft}
+                      selection={selection}
+                      onSelect={setSelection}
+                      editor={editor}
+                    />
+                  </>
                 )}
                 {tab === 'pricing' && <PricingTab route={currentPlan.route} />}
                 {tab === 'competition' && <CompetitionTab routeId={currentPlan.route.id} />}

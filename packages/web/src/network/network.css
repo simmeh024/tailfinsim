@@ -1197,3 +1197,201 @@
   font-size: var(--text-xs);
   color: var(--text-muted);
 }
+
+/* --- Rotation publisher (M2-03) ----------------------------------------- */
+.net-rotations {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.net-rot-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.net-rot-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+.net-rot-field select {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  color: var(--text-primary);
+}
+.net-rot-legs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-inset);
+}
+.net-rot-leg {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.net-rot-leg__label,
+.net-rot-leg__arrow {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  min-width: 3.5rem;
+}
+.net-rot-leg__arrow {
+  min-width: 1rem;
+  text-align: center;
+}
+.net-rot-icao {
+  width: 5rem;
+  text-transform: uppercase;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  font-family: inherit;
+}
+.net-rot-leg input[type='time'] {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+.net-rot-remove {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 var(--space-1);
+}
+.net-rot-addleg {
+  align-self: flex-start;
+  margin-top: var(--space-1);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--accent);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  font-size: var(--text-sm);
+}
+.net-rot-checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+.net-rot-days {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.net-rot-daily {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+.net-rot-daily--on {
+  background: var(--accent-quiet);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.net-rot-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+.net-rot-publish {
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  padding: var(--space-2) var(--space-4);
+  font-weight: 600;
+  cursor: pointer;
+}
+.net-rot-publish:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.net-rot-warning {
+  font-size: var(--text-sm);
+  color: var(--status-delayed);
+}
+.net-rot-cost {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-inset);
+  font-size: var(--text-sm);
+}
+.net-rot-cost__head {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.net-rot-cost__opened {
+  margin: var(--space-1) 0 0;
+  color: var(--accent);
+  font-size: var(--text-xs);
+}
+.net-rot-cost__legs {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.net-rot-cost__legs li {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-secondary);
+}
+.net-rot-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.net-rot-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+}
+.net-rot-item--paused {
+  opacity: 0.6;
+}
+.net-rot-item__path {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.net-rot-item__meta {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.net-rot-item__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
