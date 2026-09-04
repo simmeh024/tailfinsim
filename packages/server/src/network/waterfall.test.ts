@@ -5,7 +5,12 @@ import { ECONOMY_CONFIG_V1 } from '@tailfin/shared';
 import { DEFAULT_FUEL_MARKET } from '@tailfin/sim';
 import type { ClassOperator } from '@tailfin/sim';
 
-import { REFERENCE_FEES, REFERENCE_SELF, REFERENCE_STATION } from './economics';
+import {
+  REFERENCE_FEES,
+  REFERENCE_HANDLING_PRICE_FACTOR,
+  REFERENCE_SELF,
+  REFERENCE_STATION,
+} from './economics';
 import { rivalsOn, waterfallFor, YOU } from './waterfall';
 
 import type { RouteEconomics, RouteRow } from './fares';
@@ -71,6 +76,7 @@ function economics(over: Partial<RouteEconomics> = {}): RouteEconomics {
     aircraft: A8_AIRCRAFT,
     market: DEFAULT_FUEL_MARKET,
     originStation: REFERENCE_STATION,
+    handlingPriceFactor: REFERENCE_HANDLING_PRICE_FACTOR,
     originFees: REFERENCE_FEES,
     destinationFees: REFERENCE_FEES,
     segmentPools: POOLS,

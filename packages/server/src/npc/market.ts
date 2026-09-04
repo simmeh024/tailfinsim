@@ -13,7 +13,11 @@ import { type Database } from '../db/client';
 import { airline, demandPool, route } from '../db/schema';
 import { type PinnedEconomyConfig } from '../economy/config';
 import { createStationResolver, loadWorldFuelContext, marketNow } from '../economy/fuel';
-import { REFERENCE_AIRFRAME, REFERENCE_FEES } from '../network/economics';
+import {
+  REFERENCE_AIRFRAME,
+  REFERENCE_FEES,
+  REFERENCE_HANDLING_PRICE_FACTOR,
+} from '../network/economics';
 
 /**
  * Turning a stored market into something an NPC can decide about (M3-12).
@@ -88,6 +92,9 @@ export function createCostModel(economy: PinnedEconomyConfig, fuel: NpcFuel) {
         originStation: fuel.resolveStation(originIcao),
         originFees: REFERENCE_FEES,
         destinationFees: REFERENCE_FEES,
+        // Nothing signs a ground contract for an NPC yet — see the constant's
+        // note for why that is costed at the standard grade rather than walk-up.
+        handlingPriceFactor: REFERENCE_HANDLING_PRICE_FACTOR,
       },
       economy.costs.settlement,
     );

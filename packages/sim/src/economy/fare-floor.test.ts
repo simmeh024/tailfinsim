@@ -211,3 +211,58 @@ describe('a rejection explains the floor — the first acceptance criterion', ()
     expect(() => checkFare(Number.NaN, floor)).toThrow(/zero or more/);
   });
 });
+
+describe('the handling a floor is drawn against (BUG-01)', () => {
+  /**
+   * M5-06 gave a handler grade a price and this function kept passing none, so
+   * for one release A.10's floor was computed against standard-grade handling
+   * for an airline the settlement was billing at 1.35x for walk-up or 0.15x for
+   * its own people. The floor's whole job is to refuse a fare below variable
+   * cost; a floor drawn against a cost the flight will not be billed cannot.
+   */
+  it('reads as the standard grade when it is handed nothing', () => {
+    expect(routeVariableCostPerSeatMinor({ ...AMS_LHR, handlingPriceFactor: 1 })).toEqual(
+      routeVariableCostPerSeatMinor(AMS_LHR),
+    );
+  });
+
+  it('rises with a dearer handler and falls with a cheaper one', () => {
+    // The shipped spread, end to end: a self-handled turn against a premium one.
+    const premium = routeVariableCostPerSeatMinor({ ...AMS_LHR, handlingPriceFactor: 1.5 });
+    const walkUp = routeVariableCostPerSeatMinor({ ...AMS_LHR, handlingPriceFactor: 1.35 });
+    const standard = routeVariableCostPerSeatMinor(AMS_LHR);
+    const budget = routeVariableCostPerSeatMinor({ ...AMS_LHR, handlingPriceFactor: 0.7 });
+    const mine = routeVariableCostPerSeatMinor({ ...AMS_LHR, handlingPriceFactor: 0.15 });
+
+    expect(mine.perSeatMinor).toBeLessThan(budget.perSeatMinor);
+    expect(budget.perSeatMinor).toBeLessThan(standard.perSeatMinor);
+    expect(standard.perSeatMinor).toBeLessThan(walkUp.perSeatMinor);
+    expect(walkUp.perSeatMinor).toBeLessThan(premium.perSeatMinor);
+  });
+
+  it('moves the floor itself, not merely the cost figure', () => {
+    // The bug as a player meets it: on walk-up the floor must be higher than the
+    // same route on a standard contract, or it permits fares below what the
+    // flight will actually cost them.
+    const onWalkUp = fareFloor(
+      routeVariableCostPerSeatMinor({ ...AMS_LHR, handlingPriceFactor: 1.35 }),
+    );
+    const onStandard = fareFloor(routeVariableCostPerSeatMinor(AMS_LHR));
+    expect(onWalkUp.floorMinor).toBeGreaterThan(onStandard.floorMinor);
+  });
+
+  it('moves by exactly the handling line settleFlight would bill', () => {
+    // This module's header claims one cost model rather than two. Checked rather
+    // than asserted: the gap between two floors must be exactly the gap between
+    // the two handling lines, to the minor unit.
+    const seats = 70;
+    const base =
+      DEFAULT_SETTLEMENT.groundHandlingPerTurnMinor +
+      seats * DEFAULT_SETTLEMENT.groundHandlingPerSeatMinor;
+    const expectedDelta = Math.round(base * 1.35) - Math.round(base * 1);
+
+    const dearer = routeVariableCostPerSeatMinor({ ...AMS_LHR, handlingPriceFactor: 1.35 });
+    const standard = routeVariableCostPerSeatMinor(AMS_LHR);
+    expect(dearer.sectorCostMinor - standard.sectorCostMinor).toBe(expectedDelta);
+  });
+});
