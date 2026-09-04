@@ -19,9 +19,18 @@
  *
  * 2. Status colour is never the only signal. H.4 is explicit: "status colour is
  *    always paired with a shape or label, never carried by hue alone", and H.7
- *    requires colour-blind-safe palettes with shape redundancy. Hence the
- *    --status-*-glyph tokens — every status has a character that carries the
- *    same meaning with the colour removed.
+ *    requires colour-blind-safe palettes with shape redundancy. This file holds
+ *    only the hue half of that pair. The shape half lives with the components
+ *    that use it — `.status--*::before` in src/shell/shell.css pairs each
+ *    status with a glyph (✔ on time, ▲ delayed, ✕ cancelled, ↑ profit,
+ *    ↓ loss), so the meaning survives greyscale, colour blindness and a
+ *    monochrome print. Other surfaces do the same in their own stylesheet or
+ *    component: the used-market cards, the crew KPI strip, the nav rail.
+ *
+ *    The characters are deliberately not tokens here. A `content` string is not
+ *    a colour, so it has no reason to be quarantined in this file, and a token
+ *    set covering only shell.css's five would read as the canonical registry
+ *    while most of the client's glyphs bypassed it.
  */
 
 :root,
