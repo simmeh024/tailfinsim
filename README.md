@@ -243,7 +243,11 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   server-decided alerts, world creation, speed changes, the full open/lock/archive/reset
   lifecycle, world health, a read-only player browser, linkable airline support records
   with current and historical routes and the complete paginated AIR-06 cash-movement
-  ledger, and the audit log. The airline record has no balance-edit control.
+  ledger, an economy page listing every config version with which worlds pin it, a
+  direct comparison of any two, and a re-pin that states what moves first, and the
+  audit log. The airline record has no balance-edit control; it states instead whether
+  its balance still equals the sum of its movements, and the overview raises an alert
+  naming any airline where it does not.
 - **One world renderer in two projections.** The World page uses one deck.gl layer stack for
   a repeating flat map and a 3D globe, with a persisted device-aware default, shared camera
   and layer controls, bundled Natural Earth land, antimeridian-safe great-circle routes, and

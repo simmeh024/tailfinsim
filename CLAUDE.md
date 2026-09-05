@@ -518,9 +518,19 @@ change is refused and tells you to deploy the web node first.
 holding a grant: overview with server-decided alerts, world creation, speed changes, the
 open/lock/archive/reset lifecycle, world health, a read-only player browser, linkable
 read-only airline support records (identity, standing, current/historical routes and the
-paginated AIR-06 cash ledger), and the audit log. Anything it can answer is faster than SSH,
-and every mutation it performs is audited in the same transaction as the change. The airline
-record deliberately has no cash adjustment path: money still moves only through AIR-06.
+paginated AIR-06 cash ledger), an economy page, and the audit log. Anything it can answer is
+faster than SSH, and every mutation it performs is audited in the same transaction as the
+change. The airline record deliberately has no cash adjustment path: money still moves only
+through AIR-06 — what it does say is whether the balance still equals the sum of its
+movements, and the overview raises an alert naming any airline where it does not.
+
+**The economy page is where a version is reviewed, not written.** It lists every
+`economy_config` row with the number of worlds pinning it, compares **any two** versions
+rather than only a version and its parent, states whether the stored `v1` still matches the
+one this build ships, and re-pins a world behind a confirmation that names the fields that
+move. It deliberately cannot _create_ a version — that is M11-03 — and it does not hide the
+pin control from a role lacking `economy.pin`, because there is no client capability model
+until M11-15 and the server is the boundary either way.
 
 OPS-08 and OPS-09 established the process boundary and the dev Worker; OPS-15 made node/build
 drift visible. The remaining production split is tracked by

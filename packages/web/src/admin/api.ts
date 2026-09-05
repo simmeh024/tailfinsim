@@ -1,5 +1,9 @@
 import type {
   AdminAirlineDetailResponse,
+  AdminEconomyConfigCompareResponse,
+  AdminEconomyConfigDetailResponse,
+  AdminEconomyConfigListResponse,
+  AdminPinEconomyConfigResponse,
   AdminNpcResponse,
   AdminAuditEntry,
   AdminGrantSummary,
@@ -75,6 +79,14 @@ export type FieldErrors = Record<string, string[]>;
  *
  * A refusal always carries *something* to show. A form that silently does
  * nothing is one an admin concludes is broken.
+ *
+ * A 403 is an answer too, and became one the moment roles arrived (M11-01).
+ * Every action reachable from here is gated on a capability, so an admin whose
+ * role does not carry one is refused at the point of doing it — the console has
+ * no client-side capability model yet, and will not until M11-15. The server
+ * deliberately will not say *which* capability, because a 403 that maps the
+ * console is a map drawn for the wrong person; so the sentence is written here,
+ * where it can at least say what kind of refusal it was and where the answer is.
  */
 async function postJson(
   path: string,
@@ -88,6 +100,19 @@ async function postJson(
   });
 
   if (response.ok) return { ok: true, body: await response.json() };
+
+  if (response.status === 403) {
+    return {
+      ok: false,
+      fields: {
+        form: [
+          'Your admin role does not carry the permission for this action. ' +
+            'The server does not say which one — the log on the box names it, and ' +
+            'an admin who can change roles can grant it.',
+        ],
+      },
+    };
+  }
 
   if (response.status === 400 || response.status === 404 || response.status === 409) {
     const body: unknown = await response.json();
@@ -324,4 +349,102 @@ export async function fetchSystemHealth(): Promise<AdminSystemHealthResponse> {
 export async function fetchNpcCarriers(worldId: string): Promise<AdminNpcResponse> {
   const body = await getJson(`/api/admin/worlds/${encodeURIComponent(worldId)}/npc`);
   return body as AdminNpcResponse;
+}
+
+/* ------------------------------------------------------------- economy ---- */
+
+/**
+ * The economy console's reads (M11-37).
+ *
+ * `economy.read` gates all three, and a role without it gets a 403. That is the
+ * correct answer rather than a failure, so it comes back as a value the page can
+ * render — the console has no client-side capability model until M11-15, which
+ * means the first time an admin learns what their role cannot do is when they
+ * try it. Making that a thrown error would turn "you cannot see this" into
+ * "something went wrong", which is a different and worse sentence.
+ */
+export type EconomyRead<T> = { ok: true; value: T } | { ok: false; refused: true };
+
+async function getEconomy<T>(path: string): Promise<EconomyRead<T> | null> {
+  const response = await fetch(path, {
+    headers: { accept: 'application/json' },
+    credentials: 'same-origin',
+  });
+  if (response.status === 403) return { ok: false, refused: true };
+  // 404 and 400 are "no such version" and "no version named to compare
+  // against", which are answers about the argument rather than about access.
+  if (response.status === 404 || response.status === 400) return null;
+  if (!response.ok) {
+    throw new Error(`GET ${path} failed with ${String(response.status)}`);
+  }
+  return { ok: true, value: (await response.json()) as T };
+}
+
+/**
+ * Every version this database holds, and whether the shipped one still matches.
+ *
+ * `shippedMatchesStored` is the field this page exists to state. False means the
+ * stored payload was written by a different build — not an error, because the
+ * database always wins, but the one thing an admin cannot find out any other way.
+ */
+export async function fetchEconomyConfigs(): Promise<EconomyRead<AdminEconomyConfigListResponse>> {
+  // The list has no argument to be wrong about, so `null` cannot happen here.
+  const result = await getEconomy<AdminEconomyConfigListResponse>('/api/admin/economy-config');
+  return result ?? { ok: false, refused: true };
+}
+
+/** One version: its payload as canonical JSON text, and its diff from its parent. */
+export async function fetchEconomyConfig(
+  version: string,
+): Promise<EconomyRead<AdminEconomyConfigDetailResponse> | null> {
+  return getEconomy<AdminEconomyConfigDetailResponse>(
+    `/api/admin/economy-config/${encodeURIComponent(version)}`,
+  );
+}
+
+/**
+ * Two versions, compared directly.
+ *
+ * The question a promotion actually asks is not "what did this change from its
+ * parent" but "what differs between what the world is running and what I am
+ * about to pin it to", and those are usually not parent and child.
+ */
+export async function compareEconomyConfigs(
+  version: string,
+  against: string,
+): Promise<EconomyRead<AdminEconomyConfigCompareResponse> | null> {
+  const params = new URLSearchParams({ against });
+  return getEconomy<AdminEconomyConfigCompareResponse>(
+    `/api/admin/economy-config/${encodeURIComponent(version)}/diff?${params.toString()}`,
+  );
+}
+
+export type PinEconomyResult =
+  { ok: true; pin: AdminPinEconomyConfigResponse } | { ok: false; fields: FieldErrors };
+
+/**
+ * Point a world at a version (M11-37).
+ *
+ * `expectedVersion` is what the console was showing, and the server refuses a
+ * mismatch rather than resolving it — the same guard the speed and status routes
+ * use, for the same reason: if somebody else moved the world while this was on
+ * screen, the sentence the admin agreed to is not the one that would be carried
+ * out.
+ *
+ * Gated on `economy.pin`, which is a *different* capability from the
+ * `economy.read` that draws the page. A role can hold one without the other, so
+ * the refusal arrives here and not at load.
+ */
+export async function pinWorldEconomy(
+  worldId: string,
+  version: string,
+  expectedVersion: string,
+): Promise<PinEconomyResult> {
+  const result = await postJson(`/api/admin/worlds/${encodeURIComponent(worldId)}/economy-config`, {
+    version,
+    expectedVersion,
+  });
+  return result.ok
+    ? { ok: true, pin: result.body as AdminPinEconomyConfigResponse }
+    : { ok: false, fields: result.fields };
 }

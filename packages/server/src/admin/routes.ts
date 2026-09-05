@@ -5,6 +5,7 @@ import {
   adminAuditResponseJsonSchema,
   adminCreateEconomyConfigResponseJsonSchema,
   adminCreateWorldResponseJsonSchema,
+  adminEconomyConfigCompareResponseJsonSchema,
   adminEconomyConfigDetailResponseJsonSchema,
   adminEconomyConfigListResponseJsonSchema,
   adminNpcResponseJsonSchema,
@@ -772,14 +773,6 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
   );
 
   /**
-   * Create a version. Changes nothing on its own.
-   *
-   * A world has to be pinned to it, which is the route below and a separately
-   * audited act. That separation is §22.3's promotion path: a retune can be
-   * written, diffed and reviewed while every world carries on running what it
-   * was already running.
-   */
-  /**
    * Two versions, compared directly (§22.3).
    *
    * The detail route diffs a version against its parent; this answers the
@@ -789,7 +782,16 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
    */
   app.get<{ Params: { version: string }; Querystring: { against?: string } }>(
     '/api/admin/economy-config/:version/diff',
-    { onRequest: app.requireCapability('economy.read') },
+    {
+      onRequest: app.requireCapability('economy.read'),
+      schema: {
+        response: {
+          200: adminEconomyConfigCompareResponseJsonSchema,
+          400: apiErrorJsonSchema,
+          404: apiErrorJsonSchema,
+        },
+      },
+    },
     async (request, reply) => {
       const against = request.query.against;
       if (against === undefined || against.trim() === '') {
@@ -808,6 +810,14 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
     },
   );
 
+  /**
+   * Create a version. Changes nothing on its own.
+   *
+   * A world has to be pinned to it, which is the route below and a separately
+   * audited act. That separation is §22.3's promotion path: a retune can be
+   * written, diffed and reviewed while every world carries on running what it
+   * was already running.
+   */
   app.post(
     '/api/admin/economy-config',
     {
