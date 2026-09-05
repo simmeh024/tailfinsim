@@ -159,6 +159,29 @@ Understaffing saves money on the payroll and **not** on the turn: the per-turn r
 Folding staffing into it would pay a player twice for one cut, and the consequence of the cut is
 supposed to be a worse handler rather than a cheaper one.
 
+### The bill accrues; it is not a monthly snapshot
+
+`billed_through_at` on each operation is how far its payroll has been settled, and the accrual
+is closed at three moments: the **month boundary**, so the ordinary bill still arrives monthly;
+**whenever the headcount changes**; and **when the operation closes**, so a station used for
+half a month pays for half a month.
+
+The middle one is the load-bearing one. The first version billed the previous month against
+whoever was on the books when the sweep happened to run, and staffing is free and instant to
+change - so running 40 heads all month, dropping to 1 on the last day and restaffing afterwards
+billed **one head for the whole month**, repeatably and with no operational downtime. That made
+self-handling free, and a free ground operation is not a trade against a vendor: it is strictly
+better than one at every station. Making the reduction itself settle the period the larger staff
+worked is what closes it.
+
+Crew payroll reads the headcount at billing time and is safe doing so only because hiring costs
+money per head and is capped by `weeklyHiringCapacity`. Ground handling has neither guard, which
+is why it needs the watermark.
+
+A monthly salary accrues at `salary / (365/12)` a day, so a year comes to exactly twelve
+salaries - a flat 30-day month would quietly charge 12.17 of them, and real month lengths would
+make February cheaper than March for no reason a player could act on.
+
 ### It is a separate table, and that was a rollback decision
 
 A self-handled line has **no vendor grade**. Putting one in `ground_contract` would have meant
@@ -182,10 +205,10 @@ Two of the three money paths are the Worker's, and **production has no worker**.
 read as generosity rather than as a missing process, which is the trap CLAUDE.md records about
 every other M4/M5 mechanic.
 
-| sweep                   | clock                  | without a worker                                                         |
-| ----------------------- | ---------------------- | ------------------------------------------------------------------------ |
-| `expireGroundContracts` | the world's game time  | a term never ends: the slot never frees, and no shortfall is ever billed |
-| `runGroundPayroll`      | the world's game month | self-handling is **free**, and therefore strictly better than any vendor |
+| sweep                   | clock                  | without a worker                                                                                                       |
+| ----------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `expireGroundContracts` | the world's game time  | a term never ends: the slot never frees, and no shortfall is ever billed                                               |
+| `runGroundPayroll`      | the world's game month | the accrual never closes at a month boundary, so self-handling is **free** but for what a restaff or a closure settles |
 
 The payroll one is the sharper of the two: an unbilled ground operation beats every vendor at
 every station, so a production world would have a dominant strategy rather than a trade.

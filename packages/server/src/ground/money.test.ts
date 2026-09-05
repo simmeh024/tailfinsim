@@ -767,68 +767,210 @@ describeDb('what ground handling costs', () => {
   // ------------------------------------------------------------------ payroll
 
   describe('self-handling payroll', () => {
-    it('bills the month’s heads once, however many ticks run', async () => {
-      const a = await fixtures.create();
-      const icao = await makeAirport('GMR1', 'large');
-      await giveHub(a, icao);
-      await openSelfHandling(db.db, own(a), icao, { serviceLine: 'ramp_baggage', headcount: 12 });
+    /**
+     * Payroll is an **accrual**, not a monthly snapshot of the headcount.
+     *
+     * The first version billed the previous month against whoever was on the
+     * books when the sweep ran. Staffing is free and instant to change, so that
+     * was trivially avoidable — and self-handling with no payroll is not a trade
+     * against a vendor, it is strictly better than one at every station.
+     */
 
-      const economy = await loadWorldEconomyConfig(db.db, a.world.id);
-      const expected = 12 * economy.ground.selfHandling.salaryPerHeadMinor;
-      // A game instant in the month after the operation opened, so there is a
-      // closed month to bill.
-      const clock = await clockOf(a.world.id);
-      const gameNow = new Date(clock.epoch.getTime() + 60 * DAY);
+    /** Midnight on the first of the month after the world's epoch. */
+    async function firstMonthEnd(worldId: string): Promise<Date> {
+      const { epoch } = await clockOf(worldId);
+      return new Date(Date.UTC(epoch.getUTCFullYear(), epoch.getUTCMonth() + 1, 1));
+    }
 
-      const before = await cashOf(a.airline.id);
-      const first = await runGroundPayroll(db.db, a.world.id, gameNow);
-      expect(first).toMatchObject({ airlinesBilled: 1, totalMinor: expected, headcount: 12 });
-      expect(await cashOf(a.airline.id)).toBe(before - expected);
+    async function paidBy(airlineId: string): Promise<number> {
+      const movements = await movementsOf(airlineId, 'ground_self_handling_payroll');
+      return movements.reduce((total, m) => total - m.amountMinor, 0);
+    }
 
-      // Attempted every tick; billed once. No "last billed" column, so nothing to
-      // reset on a world reset (ADR-0005).
-      const second = await runGroundPayroll(db.db, a.world.id, gameNow);
-      expect(second.airlinesBilled).toBe(0);
-      expect(await cashOf(a.airline.id)).toBe(before - expected);
-      expect(await movementsOf(a.airline.id, 'ground_self_handling_payroll')).toHaveLength(1);
+    it('cannot be dodged by dropping the headcount before the sweep', async () => {
+      // BUG-03, exactly: run 40 heads all month, drop to 1 on the last day, and
+      // the old sweep billed 1 head for the whole month. Restaffing afterwards
+      // cost nothing, so the dodge was repeatable with no downtime.
+      const honest = await fixtures.create();
+      const dodger = await fixtures.create({ worldId: honest.world.id });
+      const icaoA = await makeAirport('GMR1', 'large');
+      const icaoB = await makeAirport('GMR2', 'large');
+      await giveHub(honest, icaoA);
+      await giveHub(dodger, icaoB);
+
+      const monthEnd = await firstMonthEnd(honest.world.id);
+      const openAt = await realTimeAt(
+        honest.world.id,
+        await clockOf(honest.world.id).then((c) => c.epoch),
+      );
+
+      await openSelfHandling(
+        db.db,
+        own(honest),
+        icaoA,
+        { serviceLine: 'ramp_baggage', headcount: 40 },
+        openAt,
+      );
+      await openSelfHandling(
+        db.db,
+        own(dodger),
+        icaoB,
+        { serviceLine: 'ramp_baggage', headcount: 40 },
+        openAt,
+      );
+
+      // The dodge: drop to one head an hour before the month closes.
+      await openSelfHandling(
+        db.db,
+        own(dodger),
+        icaoB,
+        { serviceLine: 'ramp_baggage', headcount: 1 },
+        await realTimeAt(dodger.world.id, new Date(monthEnd.getTime() - 3_600_000)),
+      );
+
+      await runGroundPayroll(db.db, honest.world.id, new Date(monthEnd.getTime() + DAY));
+
+      // Within an hour of 40 heads of each other, which is the sliver the dodger
+      // genuinely did run at one head.
+      const honestPaid = await paidBy(honest.airline.id);
+      const dodgerPaid = await paidBy(dodger.airline.id);
+      expect(dodgerPaid).toBeGreaterThan(honestPaid * 0.99);
     });
 
-    it('does not throw when the airline restaffs mid-month', async () => {
-      // AIR-06's replay guard asserts a movement is replayed with the same facts,
-      // so a bill whose amount moved would *throw* rather than no-op — the defect
-      // crew payroll's own note records after it climbed `crewErrors` on dev once
-      // a second. The already-billed reference is read first for exactly this.
-      const a = await fixtures.create();
-      const icao = await makeAirport('GMR2', 'large');
-      await giveHub(a, icao);
-      await openSelfHandling(db.db, own(a), icao, { serviceLine: 'ramp_baggage', headcount: 12 });
-      const clock = await clockOf(a.world.id);
-      const gameNow = new Date(clock.epoch.getTime() + 60 * DAY);
-
-      await runGroundPayroll(db.db, a.world.id, gameNow);
-      await openSelfHandling(db.db, own(a), icao, { serviceLine: 'ramp_baggage', headcount: 30 });
-      const again = await runGroundPayroll(db.db, a.world.id, gameNow);
-      expect(again.airlinesBilled).toBe(0);
-    });
-
-    it('stops billing a closed operation', async () => {
+    it('charges the whole staff for the span it actually worked', async () => {
       const a = await fixtures.create();
       const icao = await makeAirport('GMR3', 'large');
       await giveHub(a, icao);
-      const opened = await openSelfHandling(db.db, own(a), icao, {
-        serviceLine: 'ramp_baggage',
-        headcount: 12,
-      });
+      const economy = await loadWorldEconomyConfig(db.db, a.world.id);
+      const { epoch } = await clockOf(a.world.id);
+      const monthEnd = await firstMonthEnd(a.world.id);
+
+      await openSelfHandling(
+        db.db,
+        own(a),
+        icao,
+        { serviceLine: 'ramp_baggage', headcount: 10 },
+        await realTimeAt(a.world.id, epoch),
+      );
+      await runGroundPayroll(db.db, a.world.id, new Date(monthEnd.getTime() + DAY));
+
+      // A month's salary is quoted monthly and accrues daily, so a year comes to
+      // exactly twelve of them: the rate is salary / (365/12) a day.
+      const days = (monthEnd.getTime() - epoch.getTime()) / DAY;
+      const expected = Math.round(
+        (10 * economy.ground.selfHandling.salaryPerHeadMinor * days) / (365 / 12),
+      );
+      // Opening happens a moment after the epoch instant asked for, so allow a
+      // few minutes of drift rather than pinning to the minor unit.
+      expect(await paidBy(a.airline.id)).toBeGreaterThan(expected * 0.999);
+      expect(await paidBy(a.airline.id)).toBeLessThanOrEqual(expected);
+    });
+
+    it('bills once a month however many ticks run', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMR4', 'large');
+      await giveHub(a, icao);
+      await openSelfHandling(db.db, own(a), icao, { serviceLine: 'ramp_baggage', headcount: 12 });
+      const monthEnd = await firstMonthEnd(a.world.id);
+      const gameNow = new Date(monthEnd.getTime() + DAY);
+
+      const first = await runGroundPayroll(db.db, a.world.id, gameNow);
+      expect(first.airlinesBilled).toBe(1);
+      const afterFirst = await cashOf(a.airline.id);
+
+      // Attempted every tick, settled once: the watermark is the guard, so a
+      // second run finds a zero-length span rather than reaching AIR-06's replay
+      // check with a different amount.
+      const second = await runGroundPayroll(db.db, a.world.id, gameNow);
+      expect(second).toEqual({ airlinesBilled: 0, totalMinor: 0, headcount: 0 });
+      expect(await cashOf(a.airline.id)).toBe(afterFirst);
+    });
+
+    it('pays for the part of a month a closed operation worked', async () => {
+      // The other half of the dodge: a station used for three weeks and closed
+      // before the sweep used to cost nothing at all.
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMR5', 'large');
+      await giveHub(a, icao);
+      const { epoch } = await clockOf(a.world.id);
+      const opened = await openSelfHandling(
+        db.db,
+        own(a),
+        icao,
+        { serviceLine: 'ramp_baggage', headcount: 15 },
+        await realTimeAt(a.world.id, epoch),
+      );
       expect(opened.ok).toBe(true);
       if (!opened.ok) return;
       const id = opened.station.lines.find((l) => l.serviceLine === 'ramp_baggage')?.contracted?.id;
       if (!id) throw new Error('no operation id');
-      await closeSelfHandling(db.db, own(a), id);
 
-      const clock = await clockOf(a.world.id);
-      expect(
-        await runGroundPayroll(db.db, a.world.id, new Date(clock.epoch.getTime() + 60 * DAY)),
-      ).toEqual({ airlinesBilled: 0, totalMinor: 0, headcount: 0 });
+      await closeSelfHandling(
+        db.db,
+        own(a),
+        id,
+        await realTimeAt(a.world.id, new Date(epoch.getTime() + 21 * DAY)),
+      );
+      expect(await paidBy(a.airline.id)).toBeGreaterThan(0);
+
+      // And nothing further accrues once it is closed.
+      const paid = await paidBy(a.airline.id);
+      await runGroundPayroll(db.db, a.world.id, new Date(epoch.getTime() + 120 * DAY));
+      expect(await paidBy(a.airline.id)).toBe(paid);
+    });
+
+    it('self-heals when the worker was down across a boundary', async () => {
+      // The watermark is behind, so the next tick settles the whole span at once
+      // rather than skipping a payday.
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMR6', 'large');
+      await giveHub(a, icao);
+      const { epoch } = await clockOf(a.world.id);
+      await openSelfHandling(
+        db.db,
+        own(a),
+        icao,
+        { serviceLine: 'ramp_baggage', headcount: 8 },
+        await realTimeAt(a.world.id, epoch),
+      );
+
+      // Nothing ran for four months.
+      const result = await runGroundPayroll(
+        db.db,
+        a.world.id,
+        new Date(epoch.getTime() + 120 * DAY),
+      );
+      expect(result.airlinesBilled).toBe(1);
+
+      const oneMonth =
+        8 *
+        (await loadWorldEconomyConfig(db.db, a.world.id)).ground.selfHandling.salaryPerHeadMinor;
+      // Three whole months at least, since settlement stops at the start of the
+      // current month rather than at today.
+      expect(await paidBy(a.airline.id)).toBeGreaterThan(oneMonth * 2.9);
+    });
+
+    it('charges nothing for a month still being worked', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMR7', 'large');
+      await giveHub(a, icao);
+      const { epoch } = await clockOf(a.world.id);
+      await openSelfHandling(
+        db.db,
+        own(a),
+        icao,
+        { serviceLine: 'ramp_baggage', headcount: 8 },
+        await realTimeAt(a.world.id, epoch),
+      );
+
+      // Half way through the opening month: nothing has closed yet.
+      const result = await runGroundPayroll(
+        db.db,
+        a.world.id,
+        new Date(epoch.getTime() + 10 * DAY),
+      );
+      expect(result).toEqual({ airlinesBilled: 0, totalMinor: 0, headcount: 0 });
+      expect(await paidBy(a.airline.id)).toBe(0);
     });
 
     it('bills nothing in a world where nobody handles anything themselves', async () => {
@@ -842,7 +984,7 @@ describeDb('what ground handling costs', () => {
     it('is scoped to one world', async () => {
       const a = await fixtures.create();
       const b = await fixtures.create();
-      const icao = await makeAirport('GMR4', 'large');
+      const icao = await makeAirport('GMR8', 'large');
       await giveHub(b, icao);
       await openSelfHandling(db.db, own(b), icao, { serviceLine: 'ramp_baggage', headcount: 9 });
 
