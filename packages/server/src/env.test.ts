@@ -228,3 +228,46 @@ describe('loadEnv — auth', () => {
     expect(loadEnv().publicOrigin).toBe('https://tailfinsim.com');
   });
 });
+
+describe('loadEnv — CORS (SEC-HARD-08)', () => {
+  /**
+   * The boot refusal, exercised where a boot actually happens.
+   *
+   * `security/cors.test.ts` proves the policy; this proves it is wired to
+   * `loadEnv`, which is the difference between a correct function and a correct
+   * server. Production is the label that matters: the same build runs
+   * everywhere, so a value added "just for dev" is one variable from the live
+   * host, and the live host has to be the one that will not start.
+   */
+  function production(value: string): () => unknown {
+    vi.stubEnv('DATABASE_URL', VALID_URL);
+    vi.stubEnv('ENVIRONMENT_LABEL', 'production');
+    vi.stubEnv('PUBLIC_ORIGIN', 'https://tailfinsim.com');
+    vi.stubEnv('CORS_ALLOWED_ORIGINS', value);
+    return () => loadEnv();
+  }
+
+  it('trusts nothing cross-origin when the variable is unset', () => {
+    expect(production('')()).toMatchObject({ corsAllowedOrigins: [] });
+  });
+
+  it('refuses to boot production with a wildcard origin', () => {
+    expect(production('*')).toThrow(/wildcard/i);
+  });
+
+  it('refuses to boot production with a localhost origin', () => {
+    expect(production('http://localhost:5173')).toThrow(/may not trust/i);
+  });
+
+  it('refuses to boot production with a lookalike domain', () => {
+    // `https://tailfinsim.com.evil.example` ends in our domain and is not ours.
+    expect(production('https://tailfinsim.com.evil.example')).toThrow(/may not trust/i);
+  });
+
+  it('refuses even its own origin, because nothing would consume it', () => {
+    // Permitted by the table and still refused: this build registers no CORS
+    // plugin, and a variable that silently does nothing is worse than one that
+    // stops the server and says what to do instead.
+    expect(production('https://tailfinsim.com')).toThrow(/registers no CORS plugin/i);
+  });
+});

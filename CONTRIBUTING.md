@@ -164,8 +164,14 @@ Two consequences for a new route:
   page on the internet. Every registered `GET` is classified in that test; adding one fails
   until you say which it is.
 - **Do not install `@fastify/cors`**, or add an `Access-Control-*` header in a handler or in
-  `deploy/Caddyfile`, without amending ADR-0025 in the same change. Both halves are asserted —
-  the application's in the test above, the edge's by `pnpm security:headers`.
+  `deploy/Caddyfile`, without amending ADR-0025 in the same change. Three things assert it:
+  `security/csrf.test.ts` for the responses, `security/cors.test.ts` for the manifests and the
+  lockfile, and `pnpm security:headers` for the edge. If cross-origin access is genuinely
+  needed, `packages/server/src/security/cors.ts` holds the exact-match allowlist of what each
+  environment may trust and is the only sanctioned way to build the list; `origin: true`
+  reflects the requesting origin and is never acceptable with credentials. For local
+  development against the Vite dev server, use its `/api` proxy so the browser sees one
+  origin.
 
 SEC-07 extends that rule to every position. Add the endpoint to `RESOURCE_ID_SURFACES` in
 `packages/server/src/test-fixtures/resource-id.ts`, and build its tests from `resourceIdCases`:

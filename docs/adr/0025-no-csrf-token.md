@@ -122,9 +122,16 @@ Any one of these makes this ADR wrong. Reopen it; do not work around it.
 
 ### Relationship to other work
 
-- **SEC-HARD-08 (CORS)** owns fact 2 going forward. The two decisions must stay consistent: if
-  CORS is ever configured, it must be an allowlist of exact origins, and this ADR must be
-  amended in the same change.
+- **SEC-HARD-08 (CORS)** owns fact 2 going forward, and has since built the guard rather than
+  leaving it to review. `packages/server/src/security/cors.ts` holds an exact-match allowlist
+  of what each environment could ever have a reason to trust — production its own origin and
+  nothing else — and `CORS_ALLOWED_ORIGINS` is validated against it at boot. Every value is
+  refused today, because nothing would consume it; a wildcard, a localhost entry on production
+  and a lookalike domain each get their own message. `security/cors.test.ts` additionally
+  fails if `@fastify/cors` enters any manifest or the lockfile, which is the one-line change
+  that would otherwise make all of this irrelevant. If CORS is ever configured, that allowlist
+  is the only sanctioned way to build the list, and this ADR must be amended in the same
+  change.
 - **ADR-0012** records the threat; this is the control that answers it.
 - **ADR-0003** chose the single-origin deployment that fact 3 depends on.
 
