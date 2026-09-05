@@ -446,6 +446,15 @@ class CapacityExhausted extends Error {
  *
  * The key is the line rather than the vendor slot, because exclusivity spans two
  * tables and this is the only key both writers can agree on. See the module note.
+ *
+ * **Every writer of `ground_contract` takes it, including the expiry sweep**, and
+ * every one of them takes it *before* touching a row. Two things follow, and the
+ * second is why the sweep joins in: the lock alone serialises player against
+ * player, and it also serialises player against worker — without which a
+ * termination and a lapse could both decide they owed the same contract's
+ * shortfall, reach AIR-06 with the same reference and different amounts, and
+ * throw. A single ordering (advisory lock, then rows) is also what keeps these
+ * paths free of deadlock.
  */
 async function lockLine(
   tx: Database,
@@ -469,6 +478,13 @@ async function lockLine(
  * Two movements rather than one, for §14.1's reason: *"why did I pay 31,400"* has
  * two answers — the term you walked away from and the flights you never flew —
  * and one line would fuse them into a figure nobody can argue with.
+ *
+ * **Returns null when there was nothing to break.** The status update is what
+ * decides that, and checking it is not defensive tidiness: billing a contract
+ * somebody else already closed reaches AIR-06 with the same `(cause, reference)`
+ * and a *different* amount and instant, which makes `assertSameCause` throw. A
+ * player double-clicking terminate, or terminating a contract the expiry sweep
+ * had just lapsed, turned a 404 into a 500 that way.
  */
 async function breakContract(
   tx: Database,
@@ -477,11 +493,14 @@ async function breakContract(
   icao: string,
   gameNow: Date,
   economy: PinnedEconomyConfig,
-): Promise<{ penaltyMinor: number; shortfallMinor: number }> {
-  await tx
+): Promise<{ penaltyMinor: number; shortfallMinor: number } | null> {
+  const closed = await tx
     .update(groundContract)
     .set({ status: 'terminated' })
-    .where(and(eq(groundContract.id, row.id), eq(groundContract.status, 'active')));
+    .where(and(eq(groundContract.id, row.id), eq(groundContract.status, 'active')))
+    .returning({ id: groundContract.id });
+  // Somebody else closed it. Their transaction owns whatever it owes.
+  if (closed.length === 0) return null;
 
   const penalty = penaltyNowMinor(row, gameNow);
   const short = await shortfall(tx, row, airlineId, icao, gameNow, economy);
@@ -554,6 +573,9 @@ export async function signContract(
         (r) => r.airlineId === own.id && r.serviceLine === request.serviceLine,
       );
       if (incumbent) {
+        // A null means it was closed between the read and here, which the line
+        // lock makes impossible today — but the signature says it can happen, and
+        // signing on top of it is the right answer either way.
         await breakContract(tx, incumbent, own.id, icao, gameNow, ctx.economy);
       }
       await tx
@@ -663,6 +685,8 @@ export async function openSelfHandling(
         (r) => r.airlineId === own.id && r.serviceLine === request.serviceLine,
       );
       if (incumbent) {
+        // Null when it was closed between the read and here; taking the line over
+        // is still the right outcome, and there is nothing left to charge for.
         await breakContract(tx, incumbent, own.id, icao, gameNow, ctx.economy);
       }
 
@@ -806,31 +830,46 @@ export async function terminateContract(
 
   return db
     .transaction(async (tx) => {
-      const [row] = await tx
-        .select({
-          id: groundContract.id,
-          airlineId: groundContract.airlineId,
-          icao: groundContract.airportIcao,
-          serviceLine: groundContract.serviceLine,
-          grade: groundContract.grade,
-          termStart: groundContract.termStart,
-          termEnd: groundContract.termEnd,
-          volumeCommitment: groundContract.volumeCommitment,
-          penaltyMinor: groundContract.penaltyMinor,
-        })
-        .from(groundContract)
-        .where(
-          and(
-            eq(groundContract.id, contractId),
-            eq(groundContract.airlineId, own.id),
-            eq(groundContract.status, 'active'),
-          ),
-        )
-        .limit(1);
+      const columns = {
+        id: groundContract.id,
+        airlineId: groundContract.airlineId,
+        icao: groundContract.airportIcao,
+        serviceLine: groundContract.serviceLine,
+        grade: groundContract.grade,
+        termStart: groundContract.termStart,
+        termEnd: groundContract.termEnd,
+        volumeCommitment: groundContract.volumeCommitment,
+        penaltyMinor: groundContract.penaltyMinor,
+      };
+      const mine = and(
+        eq(groundContract.id, contractId),
+        eq(groundContract.airlineId, own.id),
+        eq(groundContract.status, 'active'),
+      );
+
+      /*
+       * Two reads, and the first exists only to learn the lock key.
+       *
+       * The line lock has to be taken before the row this transaction is going to
+       * bill for is decided, or the decision is made against a state another
+       * writer is still changing — which is how terminating a contract the expiry
+       * sweep had just lapsed came to bill a shortfall twice and throw. But the
+       * key is `(world, airport, service line)` and only the row knows it, so the
+       * first read finds the key and the second, under the lock, is the one that
+       * counts.
+       */
+      const [keyRow] = await tx.select(columns).from(groundContract).where(mine).limit(1);
+      if (!keyRow) return { ok: false as const, code: 'not_found' as const };
+
+      await lockLine(tx, own.worldId, keyRow.icao, keyRow.serviceLine);
+
+      const [row] = await tx.select(columns).from(groundContract).where(mine).limit(1);
+      // Closed while this transaction waited for the lock. That is an ordinary
+      // "no such contract", not an error.
       if (!row) return { ok: false as const, code: 'not_found' as const };
 
-      await lockLine(tx, own.worldId, row.icao, row.serviceLine);
       const charged = await breakContract(tx, row, own.id, row.icao, gameNow, economy);
+      if (charged === null) return { ok: false as const, code: 'not_found' as const };
       return {
         ok: true as const,
         icao: row.icao,
@@ -918,12 +957,22 @@ export async function expireGroundContracts(
 
   for (const row of due) {
     const billed = await db.transaction(async (tx) => {
+      /*
+       * The same line lock every other writer takes, in the same order (lock,
+       * then rows). Without it a player's termination and this lapse could both
+       * decide they owed the contract's shortfall, reach AIR-06 with the same
+       * reference and different amounts, and throw — which surfaced as a 500 on
+       * the player's request rather than as anything the worker noticed.
+       */
+      await lockLine(tx, worldId, row.icao, row.serviceLine);
+
       const lapsed = await tx
         .update(groundContract)
         .set({ status: 'expired' })
         .where(and(eq(groundContract.id, row.id), eq(groundContract.status, 'active')))
         .returning({ id: groundContract.id });
-      // Another worker got here first. Its transaction owns the bill.
+      // Another writer got here first — a second worker, or a player terminating
+      // it a moment before its term ran out. Their transaction owns the bill.
       if (lapsed.length === 0) return null;
 
       // Measured to the term's own end rather than to now: a sweep that ran late
