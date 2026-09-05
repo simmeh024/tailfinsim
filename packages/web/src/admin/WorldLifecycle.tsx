@@ -5,6 +5,7 @@ import { WORLD_TRANSITIONS, type AdminWorldSummary, type WorldStatus } from '@ta
 import { Button } from '../ui/Button';
 
 import { changeWorldStatus, type FieldErrors, resetWorld } from './api';
+import { adminAt } from './format';
 
 import type { ReactNode } from 'react';
 
@@ -48,11 +49,6 @@ const VERB: Record<WorldStatus, string> = {
   locked: 'Lock',
   archived: 'Archive',
 };
-
-/** `2024-10-23 00:00` — UTC, as everywhere else. */
-function formatAt(iso: string): string {
-  return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
-}
 
 function count(n: number, one: string, many: string): string {
   return `${String(n)} ${n === 1 ? one : many}`;
@@ -223,7 +219,7 @@ function WorldReset({
     setDone(
       `“${world.name}” was reset. Destroyed ${count(result.reset.destroyed.airlines, 'airline', 'airlines')} and ` +
         `${count(result.reset.destroyed.events, 'scheduled event', 'scheduled events')}. ` +
-        `The in-game date is back to ${formatAt(result.reset.inGameDate)}.`,
+        `The in-game date is back to ${adminAt(result.reset.inGameDate)}.`,
     );
     setOpen(false);
     setTypedName('');
@@ -275,8 +271,8 @@ function WorldReset({
                 : `${count(world.pendingEvents, 'scheduled event', 'scheduled events')} will be deleted. They are scheduled against a timeline that will no longer exist, so rescheduling them would be guessing.`}
             </li>
             <li>
-              The clock returns to the epoch, {formatAt(world.epoch)}. It is{' '}
-              {formatAt(world.inGameDate)} in there now.
+              The clock returns to the epoch, {adminAt(world.epoch)}. It is{' '}
+              {adminAt(world.inGameDate)} in there now.
             </li>
             <li>
               The world goes back to <strong>staging</strong>, so nobody can join until it is opened

@@ -5,6 +5,7 @@ import type { AdminAuditEntry } from '@tailfin/shared';
 import { StateBlock } from '../ui/StateBlock';
 
 import { fetchAdminAudit } from './api';
+import { adminAtSeconds } from './format';
 
 import type { ReactNode } from 'react';
 
@@ -23,14 +24,11 @@ import type { ReactNode } from 'react';
 type Load<T> = { state: 'loading' } | { state: 'ready'; value: T } | { state: 'failed' };
 
 /** `2026-08-18 14:07:03` — UTC, matching the build badge and every log line. */
-function formatAt(iso: string): string {
-  return `${iso.slice(0, 10)} ${iso.slice(11, 19)}`;
-}
 
 function AuditRow({ entry }: { entry: AdminAuditEntry }): ReactNode {
   return (
     <tr>
-      <td className="figure">{formatAt(entry.at)}</td>
+      <td className="figure">{adminAtSeconds(entry.at)}</td>
       <td>{entry.actorLabel}</td>
       <td>
         <code className="admin__action">{entry.action}</code>

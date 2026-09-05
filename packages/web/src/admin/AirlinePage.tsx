@@ -12,6 +12,7 @@ import { Button } from '../ui/Button';
 import { StateBlock } from '../ui/StateBlock';
 
 import { fetchAdminAirline } from './api';
+import { adminAt, adminMoney, adminMovement } from './format';
 
 import type { ReactNode } from 'react';
 
@@ -47,27 +48,11 @@ const CAUSE_LABEL: Record<AdminCashMovementCause, string> = {
 };
 
 /** `2026-08-18 14:07` — UTC, as everywhere else in the console. */
-function formatAt(iso: string): string {
-  return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
-}
-
-/** Integer minor units; the actual currency remains M8-02's decision. */
-function formatCash(minor: number): string {
-  return (minor / 100).toLocaleString('en-GB', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
-function formatMovement(minor: number): string {
-  const sign = minor > 0 ? '+' : '';
-  return `${sign}${formatCash(minor)}`;
-}
 
 function formatFares(fares: FareTable): string {
   const entries = Object.entries(fares);
   if (entries.length === 0) return 'none recorded';
-  return entries.map(([cabin, amount]) => `${cabin} ${formatCash(amount)}`).join(', ');
+  return entries.map(([cabin, amount]) => `${cabin} ${adminMoney(amount)}`).join(', ');
 }
 
 function RouteRows({ routes }: { routes: AdminAirlineRoute[] }): ReactNode {
@@ -96,7 +81,7 @@ function RouteRows({ routes }: { routes: AdminAirlineRoute[] }): ReactNode {
             </td>
             <td className="figure">{route.greatCircleNm.toFixed(0)} nm</td>
             <td>{formatFares(route.fares)}</td>
-            <td className="figure">{formatAt(route.createdAt)}</td>
+            <td className="figure">{adminAt(route.createdAt)}</td>
           </tr>
         ))}
       </tbody>
@@ -199,26 +184,28 @@ export function AdminAirlinePage(): ReactNode {
               <th scope="row">State</th>
               <td>{airline.status}</td>
               <th scope="row">State since</th>
-              <td className="figure">{formatAt(airline.statusChangedAt)}</td>
+              <td className="figure">{adminAt(airline.statusChangedAt)}</td>
             </tr>
             <tr>
               <th scope="row">Cash</th>
-              <td className="figure">{formatCash(airline.cashMinor)}</td>
+              <td className="figure">{adminMoney(airline.cashMinor)}</td>
               <th scope="row">Reputation</th>
               <td className="figure">{airline.reputation.toFixed(2)}</td>
             </tr>
             <tr>
               <th scope="row">Founded</th>
-              <td className="figure">{formatAt(airline.createdAt)}</td>
+              <td className="figure">{adminAt(airline.createdAt)}</td>
               <th scope="row">Ceased</th>
               <td className="figure">
-                {airline.ceasedAt === null ? '—' : formatAt(airline.ceasedAt)}
+                {airline.ceasedAt === null ? '—' : adminAt(airline.ceasedAt)}
               </td>
             </tr>
           </tbody>
         </table>
         <p className="admin__hint">
-          Cash is shown without a currency symbol until M8-02 defines one.
+          Every figure is USD, the currency AIR-06's ledger stores. A player's display currency is a
+          preference applied when the game renders for them; this page shows what is actually in the
+          row, so a balance here and the movements below it can be reconciled.
         </p>
         {airline.ledger.reconciles ? (
           <p className="admin__hint">
@@ -232,8 +219,8 @@ export function AdminAirlinePage(): ReactNode {
             <div className="alert__body">
               <span className="alert__message">This balance does not match its ledger.</span>
               <span className="alert__detail">
-                The movements sum to {formatCash(airline.ledger.movementTotalMinor)} against a
-                balance of {formatCash(airline.ledger.balanceMinor)}. AIR-06 holds that the two are
+                The movements sum to {adminMoney(airline.ledger.movementTotalMinor)} against a
+                balance of {adminMoney(airline.ledger.balanceMinor)}. AIR-06 holds that the two are
                 the same thing and every ordinary write is checked against it, so a difference means
                 money moved without a movement — a restore, a migration, or a manual change. Nothing
                 on this page can repair it, and nothing should.
@@ -268,12 +255,12 @@ export function AdminAirlinePage(): ReactNode {
             <tbody>
               {cashMovements.entries.map((entry) => (
                 <tr key={entry.id}>
-                  <td className="figure">{formatAt(entry.occurredAt)}</td>
+                  <td className="figure">{adminAt(entry.occurredAt)}</td>
                   <td>{CAUSE_LABEL[entry.cause]}</td>
                   <td className="figure">{entry.reference}</td>
-                  <td className="figure">{formatMovement(entry.amountMinor)}</td>
-                  <td className="figure">{formatCash(entry.balanceAfterMinor)}</td>
-                  <td className="figure">{formatAt(entry.recordedAt)}</td>
+                  <td className="figure">{adminMovement(entry.amountMinor)}</td>
+                  <td className="figure">{adminMoney(entry.balanceAfterMinor)}</td>
+                  <td className="figure">{adminAt(entry.recordedAt)}</td>
                 </tr>
               ))}
             </tbody>

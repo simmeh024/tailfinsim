@@ -215,7 +215,9 @@ describe('the players section', () => {
 
     expect(await screen.findByRole('link', { name: 'Amelia Hart' })).toBeInTheDocument();
     const table = screen.getByRole('table');
-    expect(within(table).getByText('2026-08-18 20:00')).toBeInTheDocument();
+    // UTC is on the wire now (UX-02) — this console can reset a world, so an
+    // instant that reads as local time is a hazard rather than a nicety.
+    expect(within(table).getByText('2026-08-18 20:00 UTC')).toBeInTheDocument();
     // An account that has never signed in says so rather than showing a blank.
     expect(within(table).getByText('never')).toBeInTheDocument();
     expect(within(table).getByRole('link', { name: 'Hart Air' })).toHaveAttribute(
@@ -293,7 +295,7 @@ describe('one player in detail', () => {
     expect(screen.getByText('Flagship')).toBeInTheDocument();
     // Cash is integer minor units on the wire; the console is where it becomes
     // money a person can read.
-    expect(screen.getByText('500,000')).toBeInTheDocument();
+    expect(screen.getByText('$500,000.00')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Hart Air' })).toHaveAttribute(
       'href',
       '/admin/airlines/eeeeeeee-1111-2222-3333-444444444444',

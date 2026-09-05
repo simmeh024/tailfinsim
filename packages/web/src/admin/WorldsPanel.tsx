@@ -6,6 +6,7 @@ import { Button } from '../ui/Button';
 import { StateBlock } from '../ui/StateBlock';
 
 import { createWorld, fetchWorlds, type FieldErrors } from './api';
+import { adminAt } from './format';
 import { WorldLifecycle } from './WorldLifecycle';
 import { WorldSpeed } from './WorldSpeed';
 
@@ -49,11 +50,6 @@ const BLANK: Draft = {
   economyConfigVersion: 'v1',
   playerCap: '',
 };
-
-/** `2026-08-18 14:07` — UTC, matching the badge and every log line. */
-function formatAt(iso: string): string {
-  return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
-}
 
 /**
  * One labelled input, with its hint and any reasons it was refused.
@@ -216,8 +212,8 @@ export function WorldsPanel(): ReactNode {
                     <td>{entry.name}</td>
                     <td>{entry.status}</td>
                     <td className="figure">{entry.speedMultiplier.toFixed(2)}×</td>
-                    <td className="figure">{formatAt(entry.inGameDate)}</td>
-                    <td className="figure">{formatAt(entry.epoch)}</td>
+                    <td className="figure">{adminAt(entry.inGameDate)}</td>
+                    <td className="figure">{adminAt(entry.epoch)}</td>
                     <td className="figure">{entry.pendingEvents}</td>
                     <td className="figure">{entry.airlines}</td>
                     <td>

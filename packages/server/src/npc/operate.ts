@@ -1,6 +1,12 @@
 import { and, eq, inArray } from 'drizzle-orm';
 
-import { CABIN_ORDER, type CabinClass, FareTable, type NpcArchetype } from '@tailfin/shared';
+import {
+  CABIN_ORDER,
+  FareTable,
+  formatMinorUnitsUsd,
+  type CabinClass,
+  type NpcArchetype,
+} from '@tailfin/shared';
 import {
   cabinsFor,
   decideEntry,
@@ -307,7 +313,11 @@ export async function reviewNpcCarriers(
           variableCostPerSeatMinor: Math.round(market.variableCostPerSeatMinor),
           marketFareMinor: market.incumbents > 0 ? target_ : undefined,
         },
-        reason: `Economy fare moved from ${String(current)} to ${String(move.fareMinor)} minor units, against a floor of ${String(market.floorMinor)}.`,
+        // Formatted, not `String(minor)` (UX-01). An admin reads this sentence
+        // on the Carriers page beside a cash column the client formats, and
+        // "moved from 12000 to 11400 minor units" is not a sentence anybody
+        // can weigh against "$500,000.00" in the next cell.
+        reason: `Economy fare moved from ${formatMinorUnitsUsd(current)} to ${formatMinorUnitsUsd(move.fareMinor)}, against a floor of ${formatMinorUnitsUsd(market.floorMinor)}.`,
         economyConfigVersion: economy.version,
       });
     }

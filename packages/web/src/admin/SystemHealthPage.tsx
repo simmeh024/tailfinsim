@@ -4,6 +4,7 @@ import { Button } from '../ui/Button';
 import { StateBlock } from '../ui/StateBlock';
 
 import { fetchSystemHealth } from './api';
+import { adminDate } from './format';
 import { usePolledData } from './polling';
 
 import type { ReactNode } from 'react';
@@ -257,7 +258,7 @@ export function SystemHealthPage(): ReactNode {
                   <td>{group.worldName}</td>
                   <td className="figure">{group.type}</td>
                   <td className="figure">{group.count}</td>
-                  <td className="figure">{group.oldestFireAt.slice(0, 10)}</td>
+                  <td className="figure">{adminDate(group.oldestFireAt)}</td>
                 </tr>
               ))}
             </tbody>

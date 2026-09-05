@@ -17,6 +17,7 @@ import {
   fetchWorlds,
   type EconomyRead,
 } from './api';
+import { adminAt } from './format';
 import { WorldEconomyPin } from './WorldEconomyPin';
 
 import type { ReactNode } from 'react';
@@ -60,11 +61,6 @@ import type { ReactNode } from 'react';
  * gap — the server is the boundary either way, and a hidden button would only
  * change *when* an admin learns what they lack.
  */
-
-/** `2026-09-05 14:03` — UTC, matching the audit log and every other admin surface. */
-function formatAt(iso: string): string {
-  return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
-}
 
 /**
  * A checksum, shortened for a table.
@@ -494,7 +490,7 @@ export function EconomyPage(): ReactNode {
                   <td className="figure">{v.version}</td>
                   <td className="figure">{v.worldsPinned}</td>
                   <td className="figure">{v.parentVersion ?? '—'}</td>
-                  <td className="figure">{formatAt(v.createdAt)}</td>
+                  <td className="figure">{adminAt(v.createdAt)}</td>
                   <td>{v.createdByLabel}</td>
                   <td className="figure">{shortChecksum(v.checksum)}</td>
                   <td>{v.notes ?? '—'}</td>

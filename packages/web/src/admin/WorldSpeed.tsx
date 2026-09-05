@@ -9,6 +9,7 @@ import {
 import { Button } from '../ui/Button';
 
 import { changeWorldSpeed, type FieldErrors } from './api';
+import { adminAt } from './format';
 
 import type { ReactNode } from 'react';
 
@@ -36,11 +37,6 @@ import type { ReactNode } from 'react';
  * the world rather than about the form, and §21 puts them on the server, which
  * answers with the reason and the field it belongs against.
  */
-
-/** `2024-10-23 00:00` — UTC, matching the badge and every log line. */
-function formatAt(iso: string): string {
-  return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
-}
 
 /**
  * A real-world wait, in whatever unit reads plainly.
@@ -113,7 +109,7 @@ export function WorldSpeed({
       <h2 className="admin__heading">Speed</h2>
       <p className="admin__note">
         “{world.name}” runs at <strong>{world.speedMultiplier.toFixed(2)}×</strong>. The in-game
-        date is {formatAt(world.inGameDate)}.
+        date is {adminAt(world.inGameDate)}.
       </p>
 
       <div className="admin__field">
@@ -171,7 +167,7 @@ export function WorldSpeed({
           </p>
           <ul className="admin__consequences">
             <li>
-              The in-game date does not jump. It is {formatAt(world.inGameDate)} and carries on from
+              The in-game date does not jump. It is {adminAt(world.inGameDate)} and carries on from
               wherever it has reached when you confirm — the world’s launch date is re-anchored so
               that stays true.
             </li>
@@ -211,7 +207,7 @@ export function WorldSpeed({
       {done !== null && (
         <p className="admin__ok" role="status">
           “{world.name}” now runs at {done.after.speedMultiplier.toFixed(2)}×. The in-game date did
-          not move: {formatAt(done.after.inGameDate)}.
+          not move: {adminAt(done.after.inGameDate)}.
           {done.driftMs !== 0 &&
             ` (${String(Math.abs(done.driftMs))} ms lost to rounding, which cannot make an event fire early.)`}
         </p>
