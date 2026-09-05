@@ -213,6 +213,14 @@ export interface ServerEnv {
    */
   devQuarantineA320neoRecoveryGlb?: string;
 
+  /**
+   * Operator-provisioned semantic authoring derivative of the quarantined
+   * candidate. This is separately gated from the untouched source-PBR review:
+   * it may show whole-surface material colours in dev, but has no registry,
+   * fleet, or publication binding.
+   */
+  devQuarantineA320neoLiveryAuthoringGlb?: string;
+
   /** Absolute origin this instance is reached on. The OAuth redirect URI is derived from it. */
   publicOrigin: string;
 
@@ -316,6 +324,14 @@ export function loadEnv(): ServerEnv {
       'DEV_QUARANTINE_A320NEO_RECOVERY_GLB may only be configured when ENVIRONMENT_LABEL=dev.',
     );
   }
+  const devQuarantineA320neoLiveryAuthoringGlb = optionalUndefined(
+    'DEV_QUARANTINE_A320NEO_LIVERY_AUTHORING_GLB',
+  );
+  if (devQuarantineA320neoLiveryAuthoringGlb !== undefined && environmentLabel !== 'dev') {
+    throw new Error(
+      'DEV_QUARANTINE_A320NEO_LIVERY_AUTHORING_GLB may only be configured when ENVIRONMENT_LABEL=dev.',
+    );
+  }
 
   const googleClientId = optionalUndefined('GOOGLE_CLIENT_ID');
   const googleClientSecret = optionalUndefined('GOOGLE_CLIENT_SECRET');
@@ -359,6 +375,7 @@ export function loadEnv(): ServerEnv {
     environmentLabel: environmentLabel as EnvironmentLabel,
     corsAllowedOrigins,
     devQuarantineA320neoRecoveryGlb,
+    devQuarantineA320neoLiveryAuthoringGlb,
     publicOrigin,
     googleClientId,
     googleClientSecret,

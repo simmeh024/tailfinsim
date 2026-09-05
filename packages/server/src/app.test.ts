@@ -296,6 +296,46 @@ describe('GET /api/version', () => {
     }
   });
 
+  it('serves a provisioned semantic authoring export only from its explicit dev route', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tailfin-quarantine-authoring-'));
+    const authoringPath = join(directory, 'a320neo-authoring.glb');
+    const authoring = Buffer.from('glTF-test-authoring');
+    writeFileSync(authoringPath, authoring);
+    const reviewApp = await buildApp({
+      env: {
+        ...testEnv,
+        environmentLabel: 'dev',
+        devQuarantineA320neoLiveryAuthoringGlb: authoringPath,
+      },
+      db: databaseAlarm,
+    });
+    await reviewApp.ready();
+    try {
+      const response = await reviewApp.inject({
+        method: 'GET',
+        url: '/api/dev/assets/aircraft/quarantine-a320neo-livery-authoring.glb',
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toBe(authoring.toString());
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(response.headers['x-content-type-options']).toBe('nosniff');
+
+      const unavailable = await devApp.inject({
+        method: 'GET',
+        url: '/api/dev/assets/aircraft/quarantine-a320neo-livery-authoring.glb',
+      });
+      expect(unavailable.statusCode).toBe(404);
+      const production = await productionApp.inject({
+        method: 'GET',
+        url: '/api/dev/assets/aircraft/quarantine-a320neo-livery-authoring.glb',
+      });
+      expect(production.statusCode).toBe(404);
+    } finally {
+      await reviewApp.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('reports the same start time across requests', async () => {
     // It is process start, not request time — a value that changed every call
     // would say nothing about whether the box restarted.
