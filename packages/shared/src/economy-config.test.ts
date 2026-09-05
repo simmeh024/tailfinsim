@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  FuelCurveBalance,
   canonicalEconomyJson,
   diffEconomyConfig,
   ECONOMY_CONFIG_V1,
@@ -261,5 +262,49 @@ describe('the canonical form', () => {
       ECONOMY_CONFIG_V1.demand.schedFit.curve.business,
     );
     expect(parsed.demand.bookingCurve.bands.map((b) => b.fromDaysOut)).toEqual([14, 7, 2]);
+  });
+});
+
+describe('the fuel curve clamp (BUG-05)', () => {
+  /**
+   * `minFactor` and `maxFactor` were each validated as positive and never
+   * against each other. Transposing them is a plausible slip in a hand-written
+   * retune and it fails silently rather than loudly: `min(max, max(min, f))`
+   * with the pair the wrong way round returns `maxFactor` for every instant, so
+   * §11's curve stops moving and the world's fuel price freezes. Nothing refused
+   * the write and no counter showed it.
+   */
+  const curve = ECONOMY_CONFIG_V1.fuel.curve;
+
+  it('accepts an ordered pair', () => {
+    expect(FuelCurveBalance.safeParse({ ...curve, minFactor: 0.5, maxFactor: 2 }).success).toBe(
+      true,
+    );
+  });
+
+  it('accepts a degenerate pair, which is a legitimate flat clamp', () => {
+    expect(FuelCurveBalance.safeParse({ ...curve, minFactor: 1, maxFactor: 1 }).success).toBe(true);
+  });
+
+  it('refuses a transposed pair, naming what is wrong', () => {
+    const result = FuelCurveBalance.safeParse({ ...curve, minFactor: 1.2, maxFactor: 0.9 });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues[0]?.message).toMatch(/ordered/);
+  });
+
+  it('refuses it through the whole payload too, not only the section', () => {
+    // The section is reached through `EconomyConfig`, and a refinement that only
+    // fires when the schema is used directly would never fire in production.
+    const payload = JSON.parse(JSON.stringify(ECONOMY_CONFIG_V1)) as {
+      fuel: { curve: { minFactor: number; maxFactor: number } };
+    };
+    payload.fuel.curve.minFactor = 1.2;
+    payload.fuel.curve.maxFactor = 0.9;
+    expect(EconomyConfig.safeParse(payload).success).toBe(false);
+  });
+
+  it('leaves the shipped payload parseable', () => {
+    expect(EconomyConfig.safeParse(ECONOMY_CONFIG_V1).success).toBe(true);
   });
 });

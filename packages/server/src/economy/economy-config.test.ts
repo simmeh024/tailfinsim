@@ -259,6 +259,26 @@ describeDb('the economy in the database', () => {
       expect(validated.fields.payloadJson?.[0]).toMatch(/demand\.logit\.beta\.leisure\.price/);
     });
 
+    it('refuses a transposed fuel curve clamp as a field error, not a 500 (BUG-05)', () => {
+      // The admin path is the whole reason the schema has to catch this: §22.3
+      // makes the curve retunable without a deploy, so an unusable config has to
+      // be refused where it is written rather than discovered as a world whose
+      // fuel price has quietly stopped moving.
+      const validated = validateCreateRequest({
+        version: versionName('transposed-clamp'),
+        parentVersion: ECONOMY_CONFIG_V1_VERSION,
+        notes: 'min and max the wrong way round.',
+        payloadJson: retunedPayload((draft) => {
+          draft.fuel.curve.minFactor = 1.2;
+          draft.fuel.curve.maxFactor = 0.9;
+        }),
+      });
+
+      if (validated.ok) throw new Error('expected a refusal');
+      expect(validated.code).toBe('invalid_payload');
+      expect(validated.fields.payloadJson?.[0]).toMatch(/ordered/);
+    });
+
     it('refuses a name that is already taken, because a version is never edited', () => {
       const validated = validateCreateRequest({
         version: ECONOMY_CONFIG_V1_VERSION,
