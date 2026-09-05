@@ -259,18 +259,6 @@ body {
   pointer-events: auto;
 }
 
-/* The route mini-panel, opened by clicking an airport the player flies to (M7).
-   Placed by the dock, so it no longer needs a corner of its own. */
-.world-renderer__route-panel {
-  width: 100%;
-  padding: var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--bg-panel);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 8px 24px var(--bg-scrim);
-}
-
 /* The route/encoding legend (M7-03), bottom-left so it clears the dock. */
 .world-renderer__legend {
   grid-area: legend;
@@ -341,26 +329,12 @@ body {
   color: var(--text-muted);
 }
 
-.world-renderer__route-head {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
 .world-renderer__route-eyebrow {
   margin: 0;
   font-size: var(--text-xs);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
-}
-
-.world-renderer__route-title {
-  margin: 2px 0 0;
-  font-size: var(--text-base);
-  font-weight: 600;
-  color: var(--text-primary);
 }
 
 .world-renderer__route-close {
@@ -373,6 +347,18 @@ body {
   line-height: 1;
   cursor: pointer;
   padding: 0 var(--space-1);
+}
+
+/*
+ * The world's selection detail, inside the shell's context panel (WORLD-07).
+ *
+ * It used to be a floating panel with its own border, background, blur and
+ * corner. The panel supplies all of that — and the heading, the subtitle and the
+ * dismissal — so what is left is the spacing between the parts.
+ */
+.world-selection {
+  display: grid;
+  gap: var(--space-3);
 }
 
 .world-renderer__route-list {

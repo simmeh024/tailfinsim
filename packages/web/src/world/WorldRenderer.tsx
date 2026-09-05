@@ -8,16 +8,17 @@ import {
 import { IconLayer, PathLayer } from '@deck.gl/layers';
 import DeckGL, { type DeckGLRef } from '@deck.gl/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 
 import { fetchFleetAirframes, fetchFleetCatalogue } from '../fleet/api';
+import { useContextSelection } from '../shell/context-selection';
 import { useTheme } from '../theme/ThemeProvider';
 
 import { fetchWorldAirports } from './airports-api';
 import { clampViewState, focusViewState } from './camera';
 import { flightPath, greatCirclePath, planesForRoutes, routeSeed, type WorldPlane } from './flight';
 import { frameOf, networkPoints } from './frame';
-import { airportCodes, airportLabel, flightLabel, tipPlacement, type HoverLabel } from './hover';
+import { airportLabel, flightLabel, tipPlacement, type HoverLabel } from './hover';
 import { COARSE_WORLD, LAND_DETAIL_ZOOM, loadDetailedWorld, type WorldGeometry } from './land';
 import {
   airportLevelForZoom,
@@ -35,7 +36,8 @@ import { parseHexColor, readWorldPalette, type RgbaColor, type WorldPalette } fr
 import { SustainedFrameRateMonitor, type FrameRateSample } from './performance';
 import { persistProjection, readInitialProjection, type WorldProjection } from './projection';
 import { bundleCorridors, corridorGridForZoom, type Corridor } from './route-corridors';
-import { bestHub, fleetMaxRangeNm, reachableAirportIcaos } from './route-create';
+import { fleetMaxRangeNm, reachableAirportIcaos } from './route-create';
+import { AirportDetail, airportSubtitle, FlightDetail } from './SelectionDetail';
 import { createDarknessField, type LngLat } from './terminator';
 import { useWorldOverlay } from './use-world-overlay';
 import { useWorldClock } from './useWorldClock';
@@ -159,6 +161,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     () => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
   );
   const navigate = useNavigate();
+  const { select, clear } = useContextSelection();
   const transitionTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const frameRateMonitor = useRef(new SustainedFrameRateMonitor());
   const deckRef = useRef<DeckGLRef<MapView | GlobeView> | null>(null);
@@ -888,6 +891,69 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     return () => globalThis.clearTimeout(timer);
   }, [viewState, visibility, showRivals, showLegend, searchParams, setSearchParams]);
 
+  /*
+   * Publish the selection to the shell's context panel (WORLD-07).
+   *
+   * Which is where every other page's selection goes — crew, the aircraft
+   * marketplace, the livery studio, the route planner — and where H.4 asks for
+   * it: a context panel *"that never covers the world"*. These two used to be
+   * `role="dialog"` blocks floating over the map, which is both an odd one out
+   * and the reason the bottom-right corner had four occupants.
+   */
+  useEffect(() => {
+    if (selectedAirport !== null) {
+      const isHub = hubIcaos.has(selectedAirport.icao);
+      select({
+        kind: 'world-airport',
+        id: selectedAirport.icao,
+        title: selectedAirport.name,
+        subtitle: airportSubtitle(selectedAirport, isHub),
+        body: (
+          <AirportDetail
+            airport={selectedAirport}
+            hubs={map.hubs}
+            routes={routesThrough(selectedAirport.icao)}
+            isHub={isHub}
+            maxRangeNm={maxRangeNm}
+            onPlanRoute={planRoute}
+          />
+        ),
+        onClear: () => setSelectedAirport(null),
+      });
+      return;
+    }
+    if (selectedRoute !== null) {
+      select({
+        kind: 'world-flight',
+        id: selectedRoute.id,
+        title: selectedRoute.own ? 'Your flight' : selectedRoute.airlineName,
+        subtitle: `${selectedRoute.originIcao} → ${selectedRoute.destinationIcao}`,
+        body: <FlightDetail route={selectedRoute} />,
+        onClear: () => setSelectedRoute(null),
+      });
+      return;
+    }
+    clear();
+  }, [
+    selectedAirport,
+    selectedRoute,
+    hubIcaos,
+    map.hubs,
+    routesThrough,
+    maxRangeNm,
+    planRoute,
+    select,
+    clear,
+  ]);
+
+  /*
+   * A selection outlives the route that made it unless somebody clears it, and
+   * an airport shown while the player is looking at their fleet is worse than an
+   * empty panel. `context-selection.tsx` asks for this and the Crew page is the
+   * reference.
+   */
+  useEffect(() => () => clear(), [clear]);
+
   const chooseProjection = useCallback(
     (next: WorldProjection) => {
       if (projection === next) return;
@@ -1152,139 +1218,6 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
 
         {/* The corner: whatever is transient, stacked rather than piled. */}
         <div className="world-renderer__dock">
-          {selectedAirport !== null &&
-            (() => {
-              const airport = selectedAirport;
-              const isHub = hubIcaos.has(airport.icao);
-              const existing = routesThrough(airport.icao);
-              const reach = isHub ? null : bestHub(airport.position, map.hubs, maxRangeNm);
-              const alreadyFromHub =
-                reach !== null &&
-                existing.some(
-                  (r) => r.originIcao === reach.hub.icao && r.destinationIcao === airport.icao,
-                );
-              const distance = (nm: number): string => Math.round(nm).toLocaleString();
-              return (
-                <div
-                  className="world-renderer__route-panel"
-                  role="dialog"
-                  aria-label={`Routes at ${airport.name}`}
-                >
-                  <div className="world-renderer__route-head">
-                    <div>
-                      <p className="world-renderer__route-eyebrow">
-                        {isHub ? 'Your hub' : 'Route planner'}
-                      </p>
-                      <p className="world-renderer__route-title">{airport.name}</p>
-                      <p className="world-renderer__route-code">{airportCodes(airport)}</p>
-                    </div>
-                    <button
-                      type="button"
-                      className="world-renderer__route-close"
-                      aria-label="Close"
-                      onClick={() => setSelectedAirport(null)}
-                    >
-                      ×
-                    </button>
-                  </div>
-
-                  <div className="world-renderer__route-create">
-                    {isHub ? (
-                      <p className="world-renderer__route-muted">One of your hubs.</p>
-                    ) : map.hubs.length === 0 ? (
-                      <p className="world-renderer__route-muted">
-                        Found an airline and a hub to open routes.
-                      </p>
-                    ) : maxRangeNm <= 0 ? (
-                      <p className="world-renderer__route-muted">
-                        No aircraft yet — acquire one to open routes from here.
-                      </p>
-                    ) : reach === null ? null : alreadyFromHub ? (
-                      <p className="world-renderer__route-muted">
-                        Already flying from {reach.hub.name}.
-                      </p>
-                    ) : reach.reachable ? (
-                      <button
-                        type="button"
-                        className="world-renderer__route-cta"
-                        onClick={() => {
-                          planRoute(reach.hub.icao, airport.icao);
-                        }}
-                      >
-                        Open route from {reach.hub.name} · {distance(reach.distanceNm)} nm
-                      </button>
-                    ) : (
-                      <p className="world-renderer__route-muted">
-                        Out of range — {distance(reach.distanceNm)} nm from {reach.hub.name}, but
-                        your aircraft reach {distance(maxRangeNm)} nm.
-                      </p>
-                    )}
-                  </div>
-
-                  {existing.length > 0 && (
-                    <ul className="world-renderer__route-list">
-                      {existing.map((r) => {
-                        const outbound = r.originIcao === airport.icao;
-                        const other = outbound ? r.destinationName : r.originName;
-                        const otherIcao = outbound ? r.destinationIcao : r.originIcao;
-                        return (
-                          <li key={r.id} className="world-renderer__route-item">
-                            <span className="world-renderer__route-dir" aria-hidden="true">
-                              {outbound ? '→' : '←'}
-                            </span>
-                            <span className="world-renderer__route-name">{other}</span>
-                            <span className="world-renderer__route-code">{otherIcao}</span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-
-                  {/* A router link, not a bare anchor: this is inside a single-page app,
-                  and an `<a href>` here reloaded the whole bundle and threw away
-                  every fetch the session had made. */}
-                  <Link to={`/network?to=${airport.icao}`} className="world-renderer__route-link">
-                    Open route planner
-                  </Link>
-                </div>
-              );
-            })()}
-
-          {selectedRoute !== null && (
-            <div
-              className="world-renderer__route-panel"
-              role="dialog"
-              aria-label={`Flight ${selectedRoute.originIcao} to ${selectedRoute.destinationIcao}`}
-            >
-              <div className="world-renderer__route-head">
-                <div>
-                  <p className="world-renderer__route-eyebrow">
-                    {selectedRoute.own ? 'Your flight' : selectedRoute.airlineName}
-                  </p>
-                  <p className="world-renderer__route-title">
-                    {selectedRoute.originName} → {selectedRoute.destinationName}
-                  </p>
-                  <p className="world-renderer__route-code">
-                    {selectedRoute.originIcao} → {selectedRoute.destinationIcao}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className="world-renderer__route-close"
-                  aria-label="Close"
-                  onClick={() => setSelectedRoute(null)}
-                >
-                  ×
-                </button>
-              </div>
-              <p className="world-renderer__route-muted">
-                {selectedRoute.own
-                  ? 'One of your routes.'
-                  : `Flown by ${selectedRoute.airlineName}.`}
-              </p>
-            </div>
-          )}
-
           {performanceOffer && (
             <div className="world-renderer__performance" role="status">
               <p>The globe is running below the smooth-frame budget. Reduced detail is active.</p>
