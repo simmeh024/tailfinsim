@@ -25,8 +25,14 @@ export const A320NEO_QUARANTINE_RECOVERY_STAGES = [
   { level: 0, url: '/api/dev/assets/aircraft/quarantine-a320neo-recovery.glb' },
 ] as const;
 
+export const A320NEO_QUARANTINE_LIVERY_AUTHORING_STAGES = [
+  { level: 0, url: '/api/dev/assets/aircraft/quarantine-a320neo-livery-authoring.glb' },
+] as const;
+
 type DevelopmentModelStage =
-  (typeof A320NEO_DEV_MODEL_STAGES)[number] | (typeof A320NEO_QUARANTINE_RECOVERY_STAGES)[number];
+  | (typeof A320NEO_DEV_MODEL_STAGES)[number]
+  | (typeof A320NEO_QUARANTINE_RECOVERY_STAGES)[number]
+  | (typeof A320NEO_QUARANTINE_LIVERY_AUTHORING_STAGES)[number];
 type DevelopmentLod = DevelopmentModelStage['level'];
 
 const MATERIAL_ZONE = Object.freeze({
@@ -210,16 +216,19 @@ export function DevelopmentAircraftPreview({
 }: {
   layers: readonly LiveryLayer[];
   fallback: ReactNode;
-  /** A recovered export is shown untouched for quarantine visual review only. */
-  source?: 'salvaged-candidate' | 'quarantine-recovery';
+  /** A recovered source or semantic authoring derivative for quarantine review only. */
+  source?: 'salvaged-candidate' | 'quarantine-recovery' | 'quarantine-authoring';
 }): ReactNode {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const runtimeRef = useRef<PreviewRuntime | null>(null);
   const isQuarantineRecovery = source === 'quarantine-recovery';
+  const isQuarantineAuthoring = source === 'quarantine-authoring';
   const stages = isQuarantineRecovery
     ? A320NEO_QUARANTINE_RECOVERY_STAGES
-    : A320NEO_DEV_MODEL_STAGES;
+    : isQuarantineAuthoring
+      ? A320NEO_QUARANTINE_LIVERY_AUTHORING_STAGES
+      : A320NEO_DEV_MODEL_STAGES;
   const colors = useMemo(
     () => (isQuarantineRecovery ? {} : a320neoDevelopmentMaterialColors(layers)),
     [isQuarantineRecovery, layers],
@@ -453,7 +462,9 @@ export function DevelopmentAircraftPreview({
       aria-label={
         isQuarantineRecovery
           ? 'A320neo quarantined source PBR review model'
-          : 'A320neo interactive true 3D livery preview'
+          : isQuarantineAuthoring
+            ? 'A320neo quarantined semantic livery authoring review model'
+            : 'A320neo interactive true 3D livery preview'
       }
       data-state={state}
       data-lod={lodLevel ?? 'fallback'}
@@ -466,16 +477,29 @@ export function DevelopmentAircraftPreview({
       <canvas ref={canvasRef} aria-hidden="true" data-visible={state === 'ready'} />
       {state === 'loading' && (
         <p className="livery-true-preview__loading" role="status">
-          Loading {isQuarantineRecovery ? 'quarantine source PBR' : 'true 3D A320neo'}
+          Loading{' '}
+          {isQuarantineRecovery
+            ? 'quarantine source PBR'
+            : isQuarantineAuthoring
+              ? 'quarantine semantic authoring model'
+              : 'true 3D A320neo'}
           {progress === null ? '…' : ` · ${String(progress)}%`}
         </p>
       )}
       <div className="livery-true-preview__badges" aria-hidden="true">
-        <span>{isQuarantineRecovery ? 'Source PBR review' : 'True 3D'}</span>
+        <span>
+          {isQuarantineRecovery
+            ? 'Source PBR review'
+            : isQuarantineAuthoring
+              ? 'Semantic base-coat review'
+              : 'True 3D'}
+        </span>
         <span>
           {isQuarantineRecovery
             ? 'Quarantine · not fleet eligible'
-            : 'Dev review · licence pending'}
+            : isQuarantineAuthoring
+              ? 'Quarantine · livery binding not admitted'
+              : 'Dev review · licence pending'}
         </span>
       </div>
       <button
@@ -489,7 +513,9 @@ export function DevelopmentAircraftPreview({
       <p className="livery-true-preview__hint">
         {isQuarantineRecovery
           ? 'Untouched recovered PBR · quarantine only · drag to orbit · scroll to zoom'
-          : 'Drag to orbit · scroll to zoom'}
+          : isQuarantineAuthoring
+            ? 'Whole-surface base-coat review · paint map remains canonical · drag to orbit · scroll to zoom'
+            : 'Drag to orbit · scroll to zoom'}
       </p>
     </div>
   );

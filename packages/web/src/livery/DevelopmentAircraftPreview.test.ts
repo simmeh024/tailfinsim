@@ -5,6 +5,7 @@ import { LiveryColor, LiveryDocument, type LiveryLayer } from '@tailfin/shared';
 
 import {
   A320NEO_DEV_MODEL_STAGES,
+  A320NEO_QUARANTINE_LIVERY_AUTHORING_STAGES,
   A320NEO_QUARANTINE_RECOVERY_STAGES,
   a320neoDevelopmentMaterialColors,
   configureA320neoDevelopmentExteriorMaterial,
@@ -49,6 +50,12 @@ describe('A320neo dev material preview', () => {
   it('uses one explicit, quarantine-only endpoint for recovered-source review', () => {
     expect(A320NEO_QUARANTINE_RECOVERY_STAGES).toEqual([
       { level: 0, url: '/api/dev/assets/aircraft/quarantine-a320neo-recovery.glb' },
+    ]);
+  });
+
+  it('uses a separate explicit endpoint for semantic authoring review', () => {
+    expect(A320NEO_QUARANTINE_LIVERY_AUTHORING_STAGES).toEqual([
+      { level: 0, url: '/api/dev/assets/aircraft/quarantine-a320neo-livery-authoring.glb' },
     ]);
   });
 

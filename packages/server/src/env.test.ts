@@ -121,6 +121,16 @@ describe('loadEnv', () => {
     expect(() => loadEnv()).toThrow(/may only be configured when ENVIRONMENT_LABEL=dev/);
   });
 
+  it('permits the semantic authoring export only on the explicitly labelled dev environment', () => {
+    vi.stubEnv('DATABASE_URL', VALID_URL);
+    vi.stubEnv('ENVIRONMENT_LABEL', 'dev');
+    vi.stubEnv('DEV_QUARANTINE_A320NEO_LIVERY_AUTHORING_GLB', '/private/a320neo-authoring.glb');
+    expect(loadEnv().devQuarantineA320neoLiveryAuthoringGlb).toBe('/private/a320neo-authoring.glb');
+
+    vi.stubEnv('ENVIRONMENT_LABEL', 'production');
+    expect(() => loadEnv()).toThrow(/may only be configured when ENVIRONMENT_LABEL=dev/);
+  });
+
   it('rejects an unrecognised environment label', () => {
     vi.stubEnv('DATABASE_URL', VALID_URL);
     vi.stubEnv('ENVIRONMENT_LABEL', 'staging');

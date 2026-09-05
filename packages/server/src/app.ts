@@ -81,7 +81,7 @@ function readDevA320neoCandidates(
   return devA320neoCandidateCache;
 }
 
-function readDevQuarantineA320neoRecovery(
+function readDevQuarantineAircraftArtifact(
   environment: ServerEnv['environmentLabel'],
   filePath: string | undefined,
 ): Buffer | null {
@@ -315,9 +315,13 @@ export async function buildApp({
   const deployInfo = readDeployInfo();
   const startedAtIso = new Date().toISOString();
   const devA320neoCandidates = readDevA320neoCandidates(env.environmentLabel);
-  const devQuarantineA320neoRecovery = readDevQuarantineA320neoRecovery(
+  const devQuarantineA320neoRecovery = readDevQuarantineAircraftArtifact(
     env.environmentLabel,
     env.devQuarantineA320neoRecoveryGlb,
+  );
+  const devQuarantineA320neoLiveryAuthoring = readDevQuarantineAircraftArtifact(
+    env.environmentLabel,
+    env.devQuarantineA320neoLiveryAuthoringGlb,
   );
 
   app.get(
@@ -377,6 +381,22 @@ export async function buildApp({
             // This single immutable path exists only for operator-approved dev
             // visual review while its provenance and licensing gates remain open.
             .send(devQuarantineA320neoRecovery),
+      );
+    }
+    if (devQuarantineA320neoLiveryAuthoring !== null) {
+      app.get(
+        '/api/dev/assets/aircraft/quarantine-a320neo-livery-authoring.glb',
+        { logLevel: 'warn' },
+        async (_request, reply) =>
+          reply
+            .code(200)
+            .type('model/gltf-binary')
+            .header('cache-control', 'private, no-store')
+            .header('content-length', String(devQuarantineA320neoLiveryAuthoring.byteLength))
+            .header('x-content-type-options', 'nosniff')
+            // This explicit endpoint is a dev-only visual-review bridge. It
+            // cannot be discovered through the aircraft registry or fleet APIs.
+            .send(devQuarantineA320neoLiveryAuthoring),
       );
     }
   }
