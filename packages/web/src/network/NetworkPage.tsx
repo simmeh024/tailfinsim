@@ -6,7 +6,7 @@ import { fetchFleetAirframes } from '../fleet/api';
 import { useContextSelection } from '../shell/context-selection';
 import { StateBlock } from '../ui/StateBlock';
 
-import { closeRoute, fetchRoutes, setRouteActive, type RouteSummary } from './api';
+import { closeRoute, fetchRoutes, fetchSchedules, setRouteActive, type RouteSummary } from './api';
 import { AirportSlotsView } from './planner/AirportSlotsView';
 import { liveEconomics } from './planner/analysis';
 import { CompetitionTab } from './planner/CompetitionTab';
@@ -18,6 +18,7 @@ import { buildRoutePlan, plannerAircraft } from './planner/mock';
 import { OpenRouteForm } from './planner/OpenRouteForm';
 import { OverviewTab } from './planner/OverviewTab';
 import { PerformanceTab } from './planner/PerformanceTab';
+import { restoreFromSchedules } from './planner/persistence';
 import { PricingTab } from './planner/PricingTab';
 import { RotationPublisher } from './planner/RotationPublisher';
 import { ScheduleTab } from './planner/ScheduleTab';
@@ -37,9 +38,16 @@ import './network.css';
  * whatever is selected — a route, a flight, an aircraft or a slot. A second view
  * switches the middle to the whole-airline Fleet Schedule.
  *
- * Real data: routes and fares (the endpoints that exist). Mock data, structured to
- * mirror the future endpoints (`planner/mock.ts`): the schedule, slots, competition
- * and performance surfaces — there is no M2-03 schedule API yet.
+ * Real data: routes and fares, the fleet, and — since IMPROVE-04 — **the
+ * schedule**. The Schedule tab's Publish saves through `POST`/`PUT
+ * /api/schedules`, and this page restores what the server holds on load, so a
+ * reload shows the player's own rotations rather than a regenerated draft.
+ *
+ * Still mock, structured to mirror the endpoints that will replace it
+ * (`planner/mock.ts`): slots, competition and performance, plus the *first
+ * draft* a route with no saved rotation opens with. That draft is a proposal to
+ * edit, not a saved result, and nothing presents it as one — the button says
+ * "Publish" until the server has taken it.
  */
 
 type Tab = 'overview' | 'schedule' | 'pricing' | 'competition' | 'performance';
@@ -118,6 +126,43 @@ export function NetworkPage(): ReactNode {
 
   const aircraft = useMemo(() => plannerAircraft(fleet), [fleet]);
   const editor = useScheduleEditor(routes ?? [], aircraft);
+
+  /*
+   * Lay what the server already holds on the timeline (IMPROVE-04).
+   *
+   * Before this, a reload regenerated the mock draft and the player's published
+   * rotations were invisible on the tab that authored them — so "Published" was
+   * followed by a page that had forgotten. Fetched once, then restored per
+   * route; the editor's own seeding leaves a restored route alone because it is
+   * no longer empty.
+   *
+   * A route with no saved rotation keeps the generated first draft, which is
+   * still the right starting point: the planner's job is to propose something
+   * to edit, and an empty timeline proposes nothing.
+   *
+   * Failures are silent on purpose. An unauthenticated visitor and a player with
+   * no schedules are indistinguishable here and neither is a problem worth an
+   * alert on a page that otherwise works — a *save* that fails is loud, which is
+   * the direction that matters.
+   */
+  useEffect(() => {
+    let live = true;
+    void fetchSchedules()
+      .then((schedules) => {
+        if (!live) return;
+        for (const [routeId, restored] of restoreFromSchedules(schedules)) {
+          editor.restore(routeId, restored.flights, restored.frequency, restored.scheduleIds);
+        }
+      })
+      .catch(() => {
+        /* no schedules yet, or not signed in — the generated draft stands. */
+      });
+    return () => {
+      live = false;
+    };
+    // Once, on mount. `editor.restore` is stable, and the fetch must not re-run
+    // when a draft changes — restoring over a live edit would discard it.
+  }, []);
 
   // Base plans hold the stable mock (demand, slots, competitors, unit economics); the
   // live layer overlays the editor's current flights/frequency and recomputes the

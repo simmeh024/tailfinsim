@@ -21,6 +21,15 @@ import type {
  * the competition/performance reads that do not exist yet; the shapes it returns
  * (`planner/types.ts`) mirror what those endpoints would send, so swapping this for
  * `fetch` later is a data-source change, not a component rewrite.
+ *
+ * ## What this is no longer for (IMPROVE-04)
+ *
+ * `buildRoutePlan` used to be where a route's schedule lived, because there was
+ * nothing to save it to. It is now only the **first draft** a route with no
+ * saved rotation opens with — a proposal to edit. Anything the player publishes
+ * comes back from `GET /api/schedules` through `persistence.ts`, and the
+ * generated plan is not offered for a route that has one.
+ *
  */
 
 function hash(id: string): number {
