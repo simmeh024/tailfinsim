@@ -52,6 +52,7 @@ export const AIRPORT_CODE_NAMESPACES = {
   'demand/generate': 'A',
   'flight/ferry': 'B',
   'flight/settle': 'C',
+  'flight/settle-aircraft': 'M',
   'flight/settle-fuel': 'D',
   'network/connections-db': 'E',
   'network/performance-db': 'F',

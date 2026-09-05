@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { airline, airport, flight, flightResult, worldEvent } from '../db/schema';
+import { fixtureAirframe } from '../test-fixtures/airframe';
 import { createAirportIdentities } from '../test-fixtures/airport-codes';
 import {
   createFoundedAirlineFixtureHarness,
@@ -42,6 +43,27 @@ const describeDb = url ? describe : describe.skip;
 const DEPARTS = new Date('2026-08-17T06:00:00.000Z');
 const ARRIVES = new Date('2026-08-17T07:15:00.000Z');
 const ATR72_CRUISE_KT = 275;
+
+/**
+ * Settle against a fixed aeroplane.
+ *
+ * This suite's subject is the settlement, not the fleet: production resolves the
+ * flight's real airframe from `airframe.effective_spec` (IMPROVE-02), and
+ * `flight/settle-aircraft.test.ts` is where that path is proved. Substituting it
+ * on the line rather than relying on a default is what keeps the difference
+ * visible.
+ */
+function settle(
+  tx: Parameters<typeof settleArrivedFlight>[0],
+  flightId: string,
+  arrivedAt: Date,
+  deps: Parameters<typeof settleArrivedFlight>[3] = {},
+): ReturnType<typeof settleArrivedFlight> {
+  return settleArrivedFlight(tx, flightId, arrivedAt, {
+    resolveAirframe: fixtureAirframe,
+    ...deps,
+  });
+}
 
 describeDb('positioning and ferries', () => {
   let db: DatabaseHandle;
@@ -263,7 +285,7 @@ describeDb('positioning and ferries', () => {
       });
       if (outcome.status !== 'created') throw new Error('not created');
 
-      await db.db.transaction((tx) => settleArrivedFlight(tx, outcome.flightId, ARRIVES));
+      await db.db.transaction((tx) => settle(tx, outcome.flightId, ARRIVES));
 
       expect(await locateAirframe(db.db, f.airframeId, f.ams)).toEqual({
         known: true,
@@ -286,7 +308,7 @@ describeDb('positioning and ferries', () => {
       });
       if (outcome.status !== 'created') throw new Error('not created');
 
-      await db.db.transaction((tx) => settleArrivedFlight(tx, outcome.flightId, ARRIVES));
+      await db.db.transaction((tx) => settle(tx, outcome.flightId, ARRIVES));
 
       const [result] = await db.db
         .select()

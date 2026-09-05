@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { airlineHub, airport, flight, flightResult } from '../db/schema';
 import { openSelfHandling, signContract } from '../ground/contracts';
+import { fixtureAirframe } from '../test-fixtures/airframe';
 import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixture,
@@ -57,6 +58,27 @@ const ALWAYS_GO = () =>
 
 /** No ground disruption, so the roll cannot turn a departure into a delay. */
 const NEVER_DISRUPTED = () => Promise.resolve(null);
+
+/**
+ * Settle against a fixed aeroplane.
+ *
+ * This suite's subject is the settlement, not the fleet: production resolves the
+ * flight's real airframe from `airframe.effective_spec` (IMPROVE-02), and
+ * `flight/settle-aircraft.test.ts` is where that path is proved. Substituting it
+ * on the line rather than relying on a default is what keeps the difference
+ * visible.
+ */
+function settle(
+  tx: Parameters<typeof settleArrivedFlight>[0],
+  flightId: string,
+  arrivedAt: Date,
+  deps: Parameters<typeof settleArrivedFlight>[3] = {},
+): ReturnType<typeof settleArrivedFlight> {
+  return settleArrivedFlight(tx, flightId, arrivedAt, {
+    resolveAirframe: fixtureAirframe,
+    ...deps,
+  });
+}
 
 describeDb('the handling a flight is billed for', () => {
   let db: DatabaseHandle;
@@ -204,7 +226,7 @@ describeDb('the handling a flight is billed for', () => {
     await giveHub(a, origin);
     await openSelfHandling(db.db, own(a), origin, { serviceLine: 'ramp_baggage', headcount: 28 });
 
-    await db.db.transaction((tx) => settleArrivedFlight(tx, id, ARRIVES));
+    await db.db.transaction((tx) => settle(tx, id, ARRIVES));
 
     // The bill is the premium turn the aeroplane actually had.
     const premiumOnly = await fixtures.create();
@@ -215,7 +237,7 @@ describeDb('the handling a flight is billed for', () => {
     });
     const reference = await makeFlight(premiumOnly, cleanOrigin, destination);
     await depart(reference);
-    await db.db.transaction((tx) => settleArrivedFlight(tx, reference, ARRIVES));
+    await db.db.transaction((tx) => settle(tx, reference, ARRIVES));
 
     expect(await handlingOf(id)).toBe(await handlingOf(reference));
   });
@@ -234,7 +256,7 @@ describeDb('the handling a flight is billed for', () => {
     expect(atDeparture).toBeGreaterThan(1);
 
     await signContract(db.db, own(a), origin, { serviceLine: 'ramp_baggage', grade: 'budget' });
-    await db.db.transaction((tx) => settleArrivedFlight(tx, id, ARRIVES));
+    await db.db.transaction((tx) => settle(tx, id, ARRIVES));
 
     expect(await snapshotOf(id)).toBe(atDeparture);
   });
@@ -256,7 +278,7 @@ describeDb('the handling a flight is billed for', () => {
       .where(eq(flight.id, id));
     expect(await snapshotOf(id)).toBeNull();
 
-    const outcome = await db.db.transaction((tx) => settleArrivedFlight(tx, id, ARRIVES));
+    const outcome = await db.db.transaction((tx) => settle(tx, id, ARRIVES));
     expect(outcome.status).toBe('settled');
     expect(await handlingOf(id)).toBeGreaterThan(0);
   });

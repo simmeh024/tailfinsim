@@ -263,11 +263,17 @@ export interface SettlementInputs {
    * design doc does not have.
    *
    * Supplied by the caller rather than derived here, because deriving it needs
-   * the flight's aircraft *type*, and a flight does not yet carry one:
-   * `flight.airframe_id` has no catalogue behind it until M4-04 builds
-   * ordering. The cost line exists, is charged, and is tested; wiring it to a
-   * real airframe is one call in `settleArrivedFlight` when there is an
-   * airframe to ask.
+   * the flight's aircraft *type* and its era dates, and `packages/sim` is not
+   * where a catalogue is read.
+   *
+   * **Still zero in production, and now for a different reason.** Since
+   * IMPROVE-02 `settleArrivedFlight` does resolve the real airframe, so the
+   * type is finally in reach — what is not wired is the join to
+   * `aircraft_type.era_dates` and `restrictionCost`. Deliberately left: every
+   * type in the shipped catalogue carries an empty restriction list, so the
+   * charge would be zero on every flight and a path that bills nothing is a
+   * path nothing can test. It wants a restricted-type fixture alongside it,
+   * which is the second half of IMPROVE-02.
    */
   restrictionSurchargeMinor?: number;
   /**
