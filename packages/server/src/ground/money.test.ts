@@ -348,6 +348,59 @@ describeDb('what ground handling costs', () => {
       expect(await movementsOf(a.airline.id, 'ground_contract_penalty')).toHaveLength(0);
     });
 
+    it('answers 404 rather than throwing when two terminations race', async () => {
+      /*
+       * BUG-04. `breakContract` did not check that its status update matched a
+       * row, so the loser of the race went on to bill anyway — reaching AIR-06
+       * with the same `(cause, reference)` and a different amount and instant,
+       * which makes `assertSameCause` throw. A double-clicked terminate produced
+       * a 500 where the player should have seen an ordinary 404.
+       */
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMP6', 'flagship');
+      const signed = await signStandard(a, icao);
+
+      const [first, second] = await Promise.all([
+        terminateContract(db.db, own(a), signed.id),
+        terminateContract(db.db, own(a), signed.id),
+      ]);
+
+      // Exactly one wins; the other is refused the way any missing contract is.
+      const outcomes = [first, second];
+      expect(outcomes.filter((o) => o.ok)).toHaveLength(1);
+      expect(outcomes.filter((o) => !o.ok)).toEqual([{ ok: false, code: 'not_found' }]);
+
+      // And the penalty was charged once, not twice.
+      expect(await movementsOf(a.airline.id, 'ground_contract_penalty')).toHaveLength(1);
+    });
+
+    it('answers 404 rather than throwing when a termination races the expiry sweep', async () => {
+      // The same defect reached from the worker's side, which is the likelier of
+      // the two: the sweep lapses a contract and bills its shortfall, and the
+      // player's terminate — which read the row as active a moment earlier — used
+      // to bill the same reference again with a different figure.
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMP7', 'flagship');
+      const signed = await signStandard(a, icao);
+      const afterTerm = new Date(signed.termEnd.getTime() + DAY);
+
+      const [sweep, terminated] = await Promise.all([
+        expireGroundContracts(db.db, a.world.id, afterTerm),
+        terminateContract(db.db, own(a), signed.id, await realTimeAt(a.world.id, afterTerm)),
+      ]);
+
+      // Whichever ordering the database chose, the contract is closed exactly
+      // once and the shortfall billed exactly once.
+      expect(sweep.expired + (terminated.ok ? 1 : 0)).toBe(1);
+      expect(await movementsOf(a.airline.id, 'ground_volume_shortfall')).toHaveLength(1);
+
+      const [row] = await db.db
+        .select({ status: groundContract.status })
+        .from(groundContract)
+        .where(eq(groundContract.id, signed.id));
+      expect(['terminated', 'expired']).toContain(row?.status);
+    });
+
     it('will not break another airline’s contract', async () => {
       const a = await fixtures.create();
       const b = await fixtures.create({ worldId: a.world.id });
