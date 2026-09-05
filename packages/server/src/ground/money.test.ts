@@ -560,6 +560,83 @@ describeDb('what ground handling costs', () => {
       expect(alert?.earlyTerminationPenaltyMinor).toBeGreaterThan(0);
     });
 
+    it('counts each contract’s own departures when several are listed (BUG-07)', async () => {
+      /*
+       * The alert used to run one `count` per contract. Batching them is a single
+       * query joined against a `values` list of windows, and the thing that can
+       * go wrong is the join: every contract has its own station *and* its own
+       * term start, so a shared window would credit the wrong flights to the
+       * wrong contract.
+       *
+       * Three contracts, three stations, three different departure counts, and
+       * one of them signed later than the others.
+       */
+      const a = await fixtures.create();
+      const busy = await makeAirport('GMB1', 'flagship');
+      const quiet = await makeAirport('GMB2', 'flagship');
+      const idle = await makeAirport('GMB3', 'flagship');
+
+      const signedBusy = await signStandard(a, busy);
+      const signedQuiet = await signStandard(a, quiet);
+
+      const start = signedBusy.termEnd.getTime() - 90 * DAY;
+      for (let i = 0; i < 7; i += 1) await flew(a, busy, new Date(start + (i + 1) * 3_600_000));
+      for (let i = 0; i < 2; i += 1) await flew(a, quiet, new Date(start + (i + 1) * 3_600_000));
+
+      // Signed a fortnight later, so the flights above are outside its term and
+      // must not be credited to it.
+      const lateAt = await realTimeAt(a.world.id, new Date(start + 14 * DAY));
+      const signedIdle = await signContract(
+        db.db,
+        own(a),
+        idle,
+        { serviceLine: 'ramp_baggage', grade: 'standard' },
+        lateAt,
+      );
+      expect(signedIdle.ok).toBe(true);
+      await flew(a, idle, new Date(start + 15 * DAY));
+      // ...and one at `idle` *before* its term started, which must not count.
+      await flew(a, idle, new Date(start + 1 * DAY));
+
+      const listed = await listAirlineContracts(
+        db.db,
+        own(a),
+        await realTimeAt(a.world.id, new Date(start + 30 * DAY)),
+      );
+      const at = (icao: string) => listed.contracts.find((c) => c.icao === icao);
+
+      expect(at(busy)?.departuresFlown).toBe(7);
+      expect(at(quiet)?.departuresFlown).toBe(2);
+      expect(at(idle)?.departuresFlown).toBe(1);
+      expect(signedQuiet.committed).toBeGreaterThan(0);
+    });
+
+    it('gives the same figures listed together as one at a time (BUG-07)', async () => {
+      // The batch replaced a per-contract query, so it has to agree with what
+      // the single-contract path — still used by the expiry sweep and by an
+      // early exit — computes for the same window.
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMB4', 'flagship');
+      const signed = await signStandard(a, icao);
+      const start = signed.termEnd.getTime() - 90 * DAY;
+      for (let i = 0; i < 5; i += 1) await flew(a, icao, new Date(start + (i + 1) * 3_600_000));
+
+      const at = new Date(start + 45 * DAY);
+      const listed = await listAirlineContracts(db.db, own(a), await realTimeAt(a.world.id, at));
+      const alert = listed.contracts.find((c) => c.icao === icao);
+
+      // Terminating measures the same window to the same instant.
+      const terminated = await terminateContract(
+        db.db,
+        own(a),
+        signed.id,
+        await realTimeAt(a.world.id, at),
+      );
+      expect(terminated.ok).toBe(true);
+      if (!terminated.ok) return;
+      expect(alert?.shortfallFeeMinor).toBe(terminated.shortfallMinor);
+    });
+
     it('never bills a contract signed before terms were priced', async () => {
       // `term_start`, `volume_commitment` and `penalty_minor` are all null on such
       // a row, and null means nobody agreed anything. It still lapses.
