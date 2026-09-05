@@ -50,6 +50,10 @@ const ROUTE: RouteRow = {
 function economics(over: Partial<RouteEconomics> = {}): RouteEconomics {
   return {
     aircraft: REFERENCE_AIRFRAME,
+    // One aeroplane, so the floor's fold over the fleet is the identity —
+    // these tests are about A.10's arithmetic, not about a mixed fleet.
+    fleet: [REFERENCE_AIRFRAME],
+    basis: { kind: 'single' as const, label: 'A320neo' },
     market: DEFAULT_FUEL_MARKET,
     originStation: REFERENCE_STATION,
     handlingPriceFactor: REFERENCE_HANDLING_PRICE_FACTOR,
@@ -258,5 +262,50 @@ describe('the fare table on the wire', () => {
   it('accepts a partial table', () => {
     const partial: FareTable = { economy: 12_000 };
     expect(violationsFor(partial, economics(), ROUTE.greatCircleNm)).toEqual([]);
+  });
+});
+
+describe('the floor over a mixed fleet (IMPROVE-02)', () => {
+  /**
+   * A turboprop with a handful of seats beside the reference narrowbody.
+   *
+   * Per *seat* a small aeroplane is dear: the landing fee and the handling are
+   * spread over seventy seats rather than a hundred and seventy-four. So a floor
+   * drawn on the busiest type alone is the hole — put one cheap-per-seat
+   * aeroplane on a route and every departure could be priced below the cost of
+   * the dearest one.
+   */
+  const TURBOPROP = {
+    cruiseSpeedKt: 275,
+    cruiseBurnTPerNm: 0.00274,
+    maxTakeoffWeightT: 23,
+    seatsByCabin: { business: 5, economy: 65 },
+  };
+
+  it('quotes the dearest aeroplane on the route, not the commonest', () => {
+    const single = floorFor(economics({ fleet: [REFERENCE_AIRFRAME] }), 700);
+    const alone = floorFor(economics({ aircraft: TURBOPROP, fleet: [TURBOPROP] }), 700);
+    expect(alone.floorMinor).toBeGreaterThan(single.floorMinor);
+
+    // Busiest type is the narrowbody; the turboprop flies it too.
+    const mixed = floorFor(economics({ fleet: [REFERENCE_AIRFRAME, TURBOPROP] }), 700);
+    expect(mixed.floorMinor).toBe(alone.floorMinor);
+  });
+
+  it('carries the cost of the aeroplane that set the floor', () => {
+    // Not a maximum of loose numbers: the refusal message quotes the per-seat
+    // cost too, and pairing the highest floor with somebody else's cost would
+    // explain the refusal with an aeroplane that did not cause it.
+    const mixed = floorFor(economics({ fleet: [REFERENCE_AIRFRAME, TURBOPROP] }), 700);
+    const alone = floorFor(economics({ aircraft: TURBOPROP, fleet: [TURBOPROP] }), 700);
+    expect(mixed.variableCostPerSeatMinor).toBe(alone.variableCostPerSeatMinor);
+  });
+
+  it('is unchanged for a route with one aeroplane', () => {
+    // The fold is the identity over one element, so nothing that was correct
+    // before this change moves.
+    expect(floorFor(economics({ fleet: [REFERENCE_AIRFRAME] }), 700)).toEqual(
+      floorFor(economics({ fleet: [] }), 700),
+    );
   });
 });

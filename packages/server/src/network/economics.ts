@@ -36,6 +36,7 @@ import { handlingArrangementFor, handlingPriceBalanceOf } from '../ground/contra
 import { activeSocialMediaEffects } from '../office/specialists';
 
 import { competitorsFor } from './competitors';
+import { loadOperatingBasis } from './operating-fleet';
 
 import type { RouteEconomics, RouteRow } from './fares';
 import type { Database } from '../db/client';
@@ -43,11 +44,18 @@ import type { PinnedEconomyConfig } from '../economy/config';
 import type { AirportFuelRow, WorldFuelContext } from '../economy/fuel';
 
 /**
- * A representative narrowbody, until M4's catalogue can answer.
+ * A representative narrowbody, for a route with no aeroplane on it.
  *
- * Roughly an A320-family aircraft in a two-class layout — the aeroplane most
- * short-haul routes in this game will be flown by. Named as a placeholder in
- * the type and in the docs so nobody mistakes it for a fleet lookup.
+ * **No longer the production answer for a route the airline flies.** Since
+ * IMPROVE-02 the floor and the preview are drawn from the types actually
+ * scheduled over the pair (`operating-fleet.ts`), so this is what remains: the
+ * stated assumption behind a *hypothetical*. A player pricing a route before
+ * assigning an aircraft is asking what it would cost, and the basis that comes
+ * back with the answer says `unassigned` and names this.
+ *
+ * Roughly an A320-family aircraft in a two-class layout. Kept exactly as it was
+ * so that the change is visible as one thing: routes with a fleet move, routes
+ * without one do not.
  */
 export const REFERENCE_AIRFRAME: FareFloorAircraft = {
   cruiseSpeedKt: 447,
@@ -185,8 +193,11 @@ export async function poolsFor(
 /**
  * The economics provider the server registers with.
  *
- * Real demand, real money, reference aircraft — see the module note on why that
- * split is stated rather than papered over.
+ * Real demand, real money, and — since IMPROVE-02 — the **real aeroplane**: the
+ * floor and the projection are drawn from the types this airline schedules over
+ * the pair, so a player flying ATRs is no longer quoted an A320's costs. What is
+ * still a stand-in is airport charges, and the basis on the response says which
+ * aircraft the figures are for.
  *
  * The money became real in M3-11: the fuel price, the cost table and A.10's
  * floor ratio are read from the route's own world through its pinned economy
@@ -241,6 +252,48 @@ export async function primeEconomicsScope(
   return { economy, effects, activeRoutes, fuelCtx, airportRows };
 }
 
+/**
+ * The aeroplane a route's estimate is drawn for, and what to call the basis.
+ *
+ * Folds the three cases into what `RouteEconomics` needs. An `unassigned` route
+ * is the only one that still sees {@link REFERENCE_AIRFRAME}, and it arrives
+ * labelled rather than silent — which is the issue's *"do not silently present
+ * an arbitrary reference aircraft as the player's aircraft"*.
+ */
+async function operatingAircraftFor(
+  db: Database,
+  row: RouteRow,
+): Promise<{
+  kind: 'single' | 'mixed' | 'unassigned';
+  label: string;
+  aircraft: FareFloorAircraft;
+  fleet: readonly FareFloorAircraft[];
+}> {
+  const basis = await loadOperatingBasis(db, {
+    worldId: row.worldId,
+    airlineId: row.airlineId,
+    originIcao: row.originIcao,
+    destinationIcao: row.destinationIcao,
+  });
+
+  const busiest = basis.types[0];
+  if (busiest === undefined) {
+    return {
+      kind: 'unassigned',
+      label: `${basis.label} — costs shown for a representative narrowbody`,
+      aircraft: REFERENCE_AIRFRAME,
+      fleet: [REFERENCE_AIRFRAME],
+    };
+  }
+
+  return {
+    kind: basis.kind,
+    label: basis.label,
+    aircraft: busiest.aircraft,
+    fleet: basis.types.map((type) => type.aircraft),
+  };
+}
+
 export function createEconomicsProvider(
   db: Database,
   market?: FuelMarket,
@@ -256,6 +309,15 @@ export function createEconomicsProvider(
       poolsFor(db, row),
     ]);
     const { economy, effects, activeRoutes, fuelCtx, airportRows: originRows } = shared;
+
+    /*
+     * What this airline actually flies over this pair (IMPROVE-02).
+     *
+     * Not part of `primeEconomicsScope`, deliberately: the scope holds what
+     * every leg of a rotation shares, and the operating fleet is a property of
+     * the *pair*. Two legs of one schedule have different answers.
+     */
+    const basis = await operatingAircraftFor(db, row);
 
     /*
      * §9.1's attractiveness specialist. The bonus applies only once the airline
@@ -291,14 +353,23 @@ export function createEconomicsProvider(
       destinationIcao: row.destinationIcao,
       excludeAirlineId: row.airlineId,
       economy,
-      // A rival player is assumed to fly what this player is assumed to fly,
-      // which is the only symmetric answer available before M4 gives anyone a
-      // real fleet.
-      playerSeatsByCabin: REFERENCE_AIRFRAME.seatsByCabin,
+      /*
+       * A rival player is assumed to offer what *this* player offers.
+       *
+       * Still an assumption, and now a better-grounded one: since IMPROVE-02 it
+       * is the seat count of the aeroplane this airline actually schedules here,
+       * rather than a fixed 174 for everybody. Reading a competitor's own fleet
+       * is a different question — it needs their schedules, which are theirs —
+       * and symmetry is the honest stand-in until §15 gives rivals a fleet the
+       * market can see.
+       */
+      playerSeatsByCabin: basis.aircraft.seatsByCabin,
     });
 
     return {
-      aircraft: REFERENCE_AIRFRAME,
+      aircraft: basis.aircraft,
+      fleet: basis.fleet,
+      basis: { kind: basis.kind, label: basis.label },
       /*
        * The fuel half became real in M5-07: the world curve is sampled at the
        * world's own reading of now, and the station is the *origin's* — its

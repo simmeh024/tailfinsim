@@ -25,7 +25,13 @@ import {
  * The costing here is **the player's costing**. `routeVariableCostPerSeatMinor`
  * and `fareFloor` are the same functions the route editor calls to tell a player
  * their fare is too low, run against the same `REFERENCE_AIRFRAME` a player's
- * own economics are drawn against until M4 lands a real fleet.
+ * own economics are drawn against.
+ *
+ * **Still the reference for an NPC, deliberately.** IMPROVE-02 moved *players*
+ * onto their own fleet, and an NPC has none — it is an airline row with an
+ * archetype and no airframes, so there is nothing to read. Keeping the reference
+ * here also keeps the comparison symmetric: an NPC judged on a player's fleet
+ * would be measured against an aeroplane it does not fly.
  *
  * That equality is not a convenience — it is M3-12's fourth acceptance
  * criterion, *"NPCs never receive resources or modifiers unavailable to

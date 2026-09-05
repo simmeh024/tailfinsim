@@ -47,6 +47,7 @@ const PREVIEW: FarePreviewResponse = {
     },
   ],
   projectedPassengers: 88,
+  basis: { kind: 'single' as const, label: 'A320neo' },
   currentPassengers: 74,
 };
 

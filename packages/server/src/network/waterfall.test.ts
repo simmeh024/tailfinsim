@@ -74,6 +74,8 @@ const ROUTE: RouteRow = {
 function economics(over: Partial<RouteEconomics> = {}): RouteEconomics {
   return {
     aircraft: A8_AIRCRAFT,
+    fleet: [A8_AIRCRAFT],
+    basis: { kind: 'single' as const, label: 'A.8 worked example' },
     market: DEFAULT_FUEL_MARKET,
     originStation: REFERENCE_STATION,
     handlingPriceFactor: REFERENCE_HANDLING_PRICE_FACTOR,
