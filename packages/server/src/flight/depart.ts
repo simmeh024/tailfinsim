@@ -1,8 +1,10 @@
 import { eq } from 'drizzle-orm';
 
+import type { FlightDisruption } from '@tailfin/shared';
 import { handlingPriceFactor } from '@tailfin/sim';
 import type { DisruptionRoll } from '@tailfin/sim';
 
+import { lockDispatchAvailability, type DispatchAvailability } from '../aircraft/maintenance';
 import { resolveDisruptionResponse } from '../automation/response';
 import { readSetting } from '../automation/store';
 import { raiseOperationsTask } from '../automation/tasks';
@@ -41,6 +43,28 @@ import type { Database } from '../db/client';
  * computed on read, and the phases between `scheduled` and `cruise` are
  * interpolation, not rows.
  *
+ * ## The availability gate (IMPROVE-03)
+ *
+ * The first thing it asks, and the reason is a timing gap. `schedule/store.ts`
+ * checks whether an aeroplane can fly when a rotation is **authored**, which is
+ * the only moment it could — and a departure happens later. In between, the
+ * maintenance sweep can ground the airframe or the player can book it into a
+ * check, and nothing enforced the change: the queued `FLIGHT_DEPART` released
+ * the flight, opened a duty period and scheduled an arrival, in an aircraft
+ * sitting in a hangar.
+ *
+ * So the gate reads the airframe **under `FOR UPDATE`**, before the disruption
+ * roll and long before dispatch. The lock is what makes it a gate rather than a
+ * suggestion: `bookCheck` takes the same lock before it writes a status, so a
+ * booking racing a dispatch waits instead of interleaving.
+ *
+ * Ahead of the roll as well as of dispatch, because an aeroplane that cannot fly
+ * should not be rolled for a technical fault it will never get the chance to
+ * suffer — and the roll commits a delay of its own, which would decide the
+ * flight's fate before anything had asked whether it had one.
+ *
+ * `applyUnavailableAircraft` has the two outcomes and why they differ.
+ *
  * ## The ground disruption roll (M5-05)
  *
  * M5-05 wires `rollDisruption` in for the ground half: before the crew are
@@ -77,6 +101,14 @@ export interface DepartureDeps {
   dispatch?: typeof dispatchCrew;
   /** Overridable so the tests can force, or silence, the ground disruption roll. */
   disruption?: typeof rollGroundDisruption;
+  /**
+   * Whether the aeroplane may push back (IMPROVE-03).
+   *
+   * Overridable so a test can pose a grounding without a fleet, and so the
+   * concurrency test can interleave a booking deliberately. Production always
+   * uses {@link lockDispatchAvailability}, which is the locking read.
+   */
+  availability?: typeof lockDispatchAvailability;
 }
 
 /**
@@ -115,6 +147,35 @@ export async function departFlight(
   if (!row) return { status: 'not-found' };
   if (row.actualDeparture !== null || row.disruption === 'cancelled' || row.phase !== 'scheduled') {
     return { status: 'already-handled' };
+  }
+
+  /*
+   * Can this aeroplane actually go? (IMPROVE-03)
+   *
+   * First, and before anything is committed. `schedule/store.ts` checks
+   * availability when a rotation is *authored*, which is the only moment it
+   * could check — and a departure happens later, by which time the maintenance
+   * sweep may have grounded the aeroplane or the player may have booked it into
+   * a check. Nothing enforced the change, so a queued flight could leave in an
+   * aircraft that was in a hangar.
+   *
+   * Ahead of the disruption roll as well as of dispatch. An aeroplane that
+   * cannot fly should not be rolled for a technical fault it will never get the
+   * chance to suffer, and the roll commits a delay of its own — so rolling first
+   * would decide the flight's fate before asking whether it had one.
+   *
+   * The read takes `FOR UPDATE` on the airframe, which is what makes this a gate
+   * rather than a suggestion: `bookCheck` locks the same row before it changes
+   * the status, so a booking racing a dispatch waits for it instead of
+   * interleaving with it.
+   */
+  const availability = await (deps.availability ?? lockDispatchAvailability)(
+    db,
+    row.worldId,
+    row.airframeId,
+  );
+  if (!availability.available) {
+    return applyUnavailableAircraft(db, row, at, availability);
   }
 
   /*
@@ -261,6 +322,99 @@ async function applyDecision(
     .where(eq(flight.id, row.id));
 
   return { status: 'cancelled', reason: decision.reason };
+}
+
+/**
+ * What happens to a flight whose aeroplane cannot fly (IMPROVE-03).
+ *
+ * Two shapes, because the two states mean different things about the future.
+ *
+ * **A check that ends at a known instant is worth waiting for.** The flight is
+ * delayed to `checkCompletesAt` and a second `FLIGHT_DEPART` is scheduled for
+ * then — the same retry mechanism a crew delay uses, keyed by the instant so it
+ * is a distinct event. The worker's own maintenance sweep releases the airframe
+ * at that time, so the retry finds it in service.
+ *
+ * **A grounding is not.** It has no end date: an airframe is grounded because it
+ * is unairworthy, and it leaves that state only when the player books the check
+ * that fixes it. Delaying to an instant that does not exist is how a flight gets
+ * silently stranded, so this cancels.
+ *
+ * ## Why the retry cancels rather than delaying again
+ *
+ * A flight arriving here with a disruption already on it has been delayed once.
+ * Delaying it again would reschedule to the same instant, which
+ * `scheduleEvent`'s idempotency key refuses — leaving the flight `delayed` with
+ * nothing queued to look at it, which is exactly the stranding the criterion
+ * forbids. And production has no worker (OPS-12), so a check there never
+ * completes at all: one delay, then a decision, is the only bounded shape.
+ *
+ * The cause is `technical` in every case, which is the existing vocabulary for
+ * "the aeroplane", and the task kind is `disruption_review` — the one the
+ * automation ladder already raises when a delay wants a human to look at it.
+ * Inventing a third spelling for the same idea would leave the disruption
+ * system with a vocabulary nobody can enumerate. The `detail` carries what is
+ * specific: which state the aircraft is in, and until when.
+ */
+async function applyUnavailableAircraft(
+  db: Database,
+  row: FlightRow & { airframeId: string; disruption: FlightDisruption | null },
+  at: Date,
+  availability: Extract<DispatchAvailability, { available: false }>,
+): Promise<DepartureOutcome> {
+  const state = availability.status === 'in_check' ? 'in a maintenance check' : 'grounded';
+  const firstAttempt = row.disruption === null;
+  const waitUntil =
+    availability.status === 'in_check' &&
+    availability.checkCompletesAt !== null &&
+    availability.checkCompletesAt.getTime() > at.getTime()
+      ? availability.checkCompletesAt
+      : null;
+
+  if (firstAttempt && waitUntil !== null) {
+    await db
+      .update(flight)
+      .set({ disruption: 'delayed', disruptionCause: 'technical' })
+      .where(eq(flight.id, row.id));
+
+    await scheduleEvent(db, {
+      worldId: row.worldId,
+      type: 'FLIGHT_DEPART',
+      fireAt: waitUntil,
+      payload: { flightId: row.id },
+      idempotencyKey: `flight:${row.id}:depart:${waitUntil.toISOString()}`,
+    });
+
+    await raiseOperationsTask(db, {
+      worldId: row.worldId,
+      airlineId: row.airlineId,
+      system: 'disruption',
+      kind: 'disruption_review',
+      subjectId: row.id,
+      detail: `Held: the aircraft is ${state} until ${waitUntil.toISOString()}.`,
+    });
+
+    return {
+      status: 'delayed',
+      untilAt: waitUntil,
+      reason: `The aircraft is ${state}; the departure waits for it to be released.`,
+    };
+  }
+
+  await cancelFlight(db, row.id, 'technical');
+  await raiseOperationsTask(db, {
+    worldId: row.worldId,
+    airlineId: row.airlineId,
+    system: 'disruption',
+    kind: 'disruption_review',
+    subjectId: row.id,
+    detail: `Cancelled: the aircraft is ${state} and could not be released in time.`,
+  });
+
+  return {
+    status: 'cancelled',
+    reason: `The aircraft is ${state}, so the flight could not depart.`,
+  };
 }
 
 /**

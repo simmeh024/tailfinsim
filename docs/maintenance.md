@@ -87,6 +87,44 @@ with an aeroplane they could neither fly nor fix.
 The philosophy is §7.2b's, applied to maintenance: _"your beloved fleet becomes uneconomic
 before it becomes illegal."_ Risk rises long before anything stops.
 
+### And again at departure, because authoring is not the last word (IMPROVE-03)
+
+`createSchedule` can only ask whether the aeroplane can fly **now**. A flight departs later,
+and between the two the sweep can ground the airframe or the player can book it into a check.
+Nothing enforced that until IMPROVE-03: the queued `FLIGHT_DEPART` released the flight, opened
+a crew duty period and scheduled an arrival, in an aircraft that was in a hangar.
+
+`departFlight` now reads the airframe under `FOR UPDATE` before anything is committed —
+`lockDispatchAvailability`. The lock is the load-bearing part: `bookCheck` takes the same one
+before it writes a status, so a booking racing a dispatch waits for it rather than
+interleaving with it. Without the lock the departure reads `in_service`, the booking commits
+`in_check`, and the flight leaves anyway.
+
+Two outcomes, because the two states say different things about the future:
+
+| Aircraft state                                       | Outcome                                           | Why                                                                                                                                               |
+| ---------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `in_check`, ending at a known instant, first attempt | **Delayed** to `check_completes_at`, retry queued | A check ends. Cancelling a flight over a scheduled check that finishes in an hour would be worse than holding it.                                 |
+| `grounded`                                           | **Cancelled**                                     | A grounding has no end date — it clears when the player books the work. Delaying to an instant that does not exist is how a flight gets stranded. |
+| Still unavailable on the retry                       | **Cancelled**                                     | See below.                                                                                                                                        |
+
+Both record `disruption_cause = 'technical'` and raise a `disruption_review` operations task
+whose detail names the state and, for a hold, the instant it waits for. The player reads it in
+the same task list the automation ladder writes to; no new vocabulary was invented for it.
+
+**The retry cancels rather than delaying again, and that is deliberate.** `scheduleEvent` is
+idempotent by key and the retry key is the instant, so a second delay to the same
+`check_completes_at` would queue _nothing_ — leaving the flight `delayed` for ever with nothing
+due to look at it. And **production has no worker** ([OPS-12](https://github.com/simmeh024/tailfinsim/issues/191)),
+so a check booked there never completes at all: one hold, then a decision, is the only bounded
+shape. A flight is never silently stranded.
+
+**An unknown airframe id is available, not refused.** `flight.airframe_id` has no foreign key
+until the M4/HIST boundary (#508) and M2's suites materialise flights against placeholder ids,
+so a missing row means _"nothing here says it cannot fly"_ — the same reading
+`airframeUnavailability` documents for the scheduler. Turning it into a refusal would enforce
+an integrity rule the column does not have.
+
 ### Why it is a rotation conflict, and the type split behind it
 
 `createSchedule` refuses with `airframe_unavailable`, in the same channel as

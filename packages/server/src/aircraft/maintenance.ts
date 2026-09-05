@@ -523,6 +523,70 @@ function urgency(view: MaintenanceAirframeView): number {
 }
 
 /**
+ * Whether this airframe may push back, decided under a row lock (IMPROVE-03).
+ *
+ * The same question {@link airframeUnavailability} answers for the *scheduler*,
+ * asked at the moment of departure and for a different reason. A schedule is
+ * authored once; a departure happens later, and an aeroplane that was in service
+ * when the rotation was saved may have been booked into a check or grounded by
+ * the maintenance sweep since.
+ *
+ * ## Why it locks
+ *
+ * `bookCheck` takes `FOR UPDATE` on this row before it changes the status, so
+ * taking it here too is what makes the gate authoritative rather than advisory.
+ * Without the lock the two interleave: the departure reads `in_service`, the
+ * booking commits `in_check`, and the flight leaves in an aeroplane that is in
+ * a hangar. With it, whichever transaction arrives second waits and then sees
+ * the first one's decision.
+ *
+ * The lock is on the airframe rather than the flight because the airframe is
+ * what both sides contend for — the flight row is only ever touched by the
+ * departure.
+ *
+ * ## Why an unknown id is available
+ *
+ * `null` from a missing row, exactly as `airframeUnavailability` documents:
+ * `flight.airframe_id` has no foreign key until the M4/HIST boundary (#508),
+ * and M2's own tests materialise flights against placeholder ids. An unknown id
+ * means *"nothing here says it cannot fly"* rather than *"refuse"* — inventing
+ * a refusal would enforce an integrity rule the column does not have, and would
+ * strand every flight in those suites.
+ *
+ * `checkCompletesAt` comes back with the status because the departure gate
+ * treats a check that ends at a known instant differently from an indefinite
+ * grounding: one is worth waiting for and the other is not.
+ */
+export type DispatchAvailability =
+  | { available: true }
+  | {
+      available: false;
+      status: 'in_check' | 'grounded';
+      /** Game time the running check ends. Null when nothing is scheduled to end. */
+      checkCompletesAt: Date | null;
+    };
+
+export async function lockDispatchAvailability(
+  db: Database,
+  worldId: string,
+  airframeId: string,
+): Promise<DispatchAvailability> {
+  const rows = await db
+    .select({ status: airframe.status, checkCompletesAt: airframe.checkCompletesAt })
+    .from(airframe)
+    .where(and(eq(airframe.worldId, worldId), eq(airframe.id, airframeId)))
+    .limit(1)
+    .for('update');
+
+  const row = rows[0];
+  if (!row) return { available: true };
+  if (row.status === 'in_check' || row.status === 'grounded') {
+    return { available: false, status: row.status, checkCompletesAt: row.checkCompletesAt };
+  }
+  return { available: true };
+}
+
+/**
  * Why this airframe cannot be scheduled, or `null` if it can.
  *
  * `null` for an airframe with no row at all, deliberately. `schedule.airframe_id`
