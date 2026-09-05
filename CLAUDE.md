@@ -481,6 +481,20 @@ The admin console's health page infers liveness from the queue for exactly that 
 worker's own `/healthz` answers **503 while its process is alive** if the engine is not
 ticking — the failure `systemctl is-active` cannot see.
 
+**A failed event leaves nothing behind, and no longer takes the tick with it.** IMPROVE-01:
+the handler runs in a `SAVEPOINT` inside the claim's transaction, so a rollback discards its
+writes while the claim and the failure record still commit. Two things used to go wrong and
+they had different shapes. A handler that wrote and _then_ threw a JavaScript error had its
+writes **committed** alongside `status = 'failed'` — a half-settled flight, recorded as not
+having happened, which is worse than either clean outcome because nothing downstream can
+detect it. And a handler that caused a _statement_ error aborted the whole transaction, so the
+`UPDATE ... 'failed'` failed too and took the claim with it: the event returned to `pending`,
+was reclaimed every tick for ever, and the rejection escaped `drainDueEvents` — killing every
+sweep after the drain and every world after that one, until somebody deleted the row by hand.
+So a stuck queue plus a tick that dies at the same point every time is that shape, and the
+fix is in place rather than pending. `last_error` now records PostgreSQL's own words first;
+Drizzle's `Failed query: …` wrapper would otherwise spend the whole column on SQL.
+
 **An event type nobody handles is now paused, not destroyed.** Only `FLIGHT_ARRIVE` has a
 handler; `FLIGHT_DEPART` is scheduled by `schedule/store.ts` and `TURNAROUND_COMPLETE` by
 nothing yet. Since SCALE-05 `drainDueEvents` marks an event of an unhandled type

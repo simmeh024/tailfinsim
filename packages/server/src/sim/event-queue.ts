@@ -28,6 +28,21 @@ import { worldEvent, type WorldEventRow } from '../db/schema';
  *      is the direction you want to fail in — an event handled twice is a bug, an
  *      event handled late is a Tuesday.
  *
+ * ## The handler's own writes are a savepoint inside that transaction
+ *
+ * One transaction is right for the *claim* and wrong for the handler, and
+ * IMPROVE-01 is the difference. A handler that wrote and then threw used to have
+ * its writes committed next to `status = 'failed'`, and a handler that caused a
+ * statement error used to abort the transaction that was trying to record the
+ * failure — losing the claim, so the event came back `pending` and failed again
+ * on every tick for ever.
+ *
+ * So `handler` runs in a nested transaction (`SAVEPOINT`). On failure the
+ * savepoint is rolled back, which discards the handler's writes and leaves the
+ * outer transaction usable, and the failure record commits with the claim still
+ * held. On success nothing is committed early: a released savepoint is not a
+ * commit, so the handler's work and the event's completion still land together.
+ *
  * ## Game time, not real time
  *
  * `fire_at` is a game-time instant. That is what lets an event survive a speed
@@ -81,6 +96,33 @@ export async function scheduleEvent(db: Database, event: ScheduledEvent): Promis
     .returning({ id: worldEvent.id });
 
   return inserted.length > 0;
+}
+
+/**
+ * What actually went wrong, bounded to what the column will hold.
+ *
+ * Drizzle wraps driver errors, so the outer message is always
+ * `Failed query: ...` followed by the whole failing statement — asserting on it
+ * passes for any failure at all, and storing it fills 500 characters with SQL
+ * before reaching the reason. The trap is recorded in CLAUDE.md; here it also
+ * decides what a human reads on the System health page.
+ *
+ * So the chain is walked and the messages joined **innermost first**: PostgreSQL
+ * said `duplicate key value violates unique constraint "..."`, and that is the
+ * sentence worth the first 500 characters.
+ */
+export function errorDetail(error: unknown, limit = 500): string {
+  if (!(error instanceof Error)) return String(error).slice(0, limit);
+
+  const messages: string[] = [];
+  let current: unknown = error;
+  while (current instanceof Error) {
+    if (current.message !== '') messages.push(current.message);
+    current = current.cause;
+  }
+
+  // Innermost first: the cause is the diagnosis, the wrapper is the context.
+  return messages.reverse().join(' | ').slice(0, limit);
 }
 
 export interface DrainResult {
@@ -205,7 +247,43 @@ export async function drainDueEvents(
       }
 
       try {
-        await handler(event, { payload, tx: tx });
+        /*
+         * The handler runs in a savepoint, and that is the whole of IMPROVE-01.
+         *
+         * `tx.transaction()` issues `SAVEPOINT`, and on a rejection issues
+         * `ROLLBACK TO SAVEPOINT` **before** rethrowing. Two failures used to be
+         * possible without it, and they had different shapes:
+         *
+         *   - **A handler that wrote and then threw a JavaScript error** had its
+         *     writes committed alongside `status = 'failed'`. A half-settled
+         *     flight, recorded as not having happened — the worst of the three
+         *     outcomes, because rolled-back is recoverable and marked-done is at
+         *     least consistent, while this is a lie no later drain can detect.
+         *
+         *   - **A handler that caused a statement error** aborted the whole
+         *     PostgreSQL transaction, so the `UPDATE ... 'failed'` in the catch
+         *     failed too and took the claim with it. The event returned to
+         *     `pending`, was reclaimed on the next tick, and failed again for
+         *     ever; and the rejection escaped this function, so the tick died
+         *     with it — every sweep after the drain, and every world after this
+         *     one, stopped running until somebody deleted the row by hand.
+         *
+         * Rolling back to the savepoint fixes both: the handler's writes are
+         * discarded, and the outer transaction is usable again, so the failure
+         * record commits with the claim still held.
+         *
+         * Three things it deliberately does not change. The claim's `FOR UPDATE`
+         * lock was taken *before* the savepoint, so rolling back does not
+         * release it. AIR-06's constraint triggers are `DEFERRABLE INITIALLY
+         * DEFERRED` and fire at commit, and a subtransaction rollback discards
+         * the trigger events queued inside it — so a rolled-back cash movement
+         * takes its reconciliation check with it. And success is unaffected: a
+         * released savepoint commits nothing on its own, so the handler's writes
+         * and the event's completion still commit together or not at all.
+         */
+        await tx.transaction(async (handlerTx) => {
+          await handler(event, { payload, tx: handlerTx });
+        });
 
         await tx
           .update(worldEvent)
@@ -217,7 +295,7 @@ export async function drainDueEvents(
           .where(eq(worldEvent.id, event.id));
         processed += 1;
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorDetail(error);
         // Marked failed in its own right rather than left pending: a permanently
         // broken event would otherwise be reclaimed on every tick forever and
         // starve everything behind it.
@@ -227,7 +305,7 @@ export async function drainDueEvents(
             status: 'failed',
             processedAt: sql`now()`,
             attempts: sql`${worldEvent.attempts} + 1`,
-            lastError: message.slice(0, 500),
+            lastError: message,
           })
           .where(eq(worldEvent.id, event.id));
         failed += 1;
