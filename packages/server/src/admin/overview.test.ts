@@ -145,3 +145,64 @@ describe('readBackupStatus', () => {
     expect(await readBackupStatus(path)).toBeNull();
   });
 });
+
+describe('the ledger alert (M11-36)', () => {
+  /**
+   * AIR-06's promise, surfaced. Two constraint triggers make drift impossible
+   * for anything that commits, so this alert is silent almost always — which is
+   * exactly what earns it a place in a list the module note calls "deliberately
+   * few".
+   */
+  const clean: OverviewCounts = {
+    ...HEALTHY,
+  };
+
+  it('is absent when nothing drifts', () => {
+    expect(alertsFor(clean, OK_BACKUP, NOW, [])).not.toContainEqual(
+      expect.objectContaining({ code: 'ledger.drift' }),
+    );
+  });
+
+  it('names the airline when one drifts', () => {
+    const alerts = alertsFor(clean, OK_BACKUP, NOW, [
+      {
+        airlineId: '11111111-1111-4111-8111-111111111111',
+        airlineName: 'Sundial Air',
+        worldId: '22222222-2222-4222-8222-222222222222',
+        balanceMinor: 50_500_000,
+        movementTotalMinor: 50_000_000,
+        differenceMinor: 500_000,
+      },
+    ]);
+    const drift = alerts.find((alert) => alert.code === 'ledger.drift');
+    expect(drift?.severity).toBe('error');
+    expect(drift?.message).toContain('Sundial Air');
+    expect(drift?.detail).toContain('+5,000.00');
+  });
+
+  it('counts them and names the largest when several drift', () => {
+    const alerts = alertsFor(clean, OK_BACKUP, NOW, [
+      {
+        airlineId: '11111111-1111-4111-8111-111111111111',
+        airlineName: 'Small Drift',
+        worldId: '22222222-2222-4222-8222-222222222222',
+        balanceMinor: 1,
+        movementTotalMinor: 0,
+        differenceMinor: 1,
+      },
+      {
+        airlineId: '33333333-3333-4333-8333-333333333333',
+        airlineName: 'Large Drift',
+        worldId: '22222222-2222-4222-8222-222222222222',
+        balanceMinor: 0,
+        movementTotalMinor: 900_000,
+        differenceMinor: -900_000,
+      },
+    ]);
+    const drift = alerts.find((alert) => alert.code === 'ledger.drift');
+    expect(drift?.message).toContain('2 airlines');
+    // The largest by magnitude, sign kept so the direction reads.
+    expect(drift?.detail).toContain('Large Drift');
+    expect(drift?.detail).toContain('-9,000.00');
+  });
+});

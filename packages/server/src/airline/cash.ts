@@ -254,6 +254,75 @@ export interface CashReconciliation {
   reconciles: boolean;
 }
 
+/** One airline whose ledger and balance disagree, and by how much. */
+export interface CashDrift {
+  airlineId: string;
+  airlineName: string;
+  worldId: string;
+  balanceMinor: number;
+  movementTotalMinor: number;
+  /** Balance minus the ledger. Positive means the airline holds money nothing explains. */
+  differenceMinor: number;
+}
+
+/**
+ * Every airline whose balance and movement log disagree (M11-36).
+ *
+ * AIR-06's promise is that `airline.cash_minor` **is** the sum of that airline's
+ * movements, and a deferred constraint trigger enforces it on every write. What
+ * the trigger cannot catch is drift that arrives from outside a write: a restore
+ * from backup, a data migration, a manual `UPDATE` during an incident. Any of
+ * those leaves an airline permanently out of step, and nothing would say so —
+ * `reconcileAirlineCash` existed for years with no caller but a test.
+ *
+ * **One grouped query, not one per airline.** The airline count is unbounded and
+ * a per-row check is the shape CLAUDE.md records as the one that goes wrong; the
+ * comparison happens in SQL so only the disagreements cross the wire.
+ *
+ * Read-only, and deliberately. There is no repair path here and there should not
+ * be one: money moves through AIR-06 or it does not move, which is why the
+ * airline support record has no cash adjustment either.
+ */
+export async function findCashDrift(db: Database): Promise<CashDrift[]> {
+  const rows = await db.execute<{
+    airline_id: string;
+    airline_name: string;
+    world_id: string;
+    balance_minor: string;
+    movement_total_minor: string;
+  }>(sql`
+    select
+      a.id             as airline_id,
+      a.name           as airline_name,
+      a.world_id       as world_id,
+      a.cash_minor::text as balance_minor,
+      coalesce(sum(m.amount_minor), 0)::text as movement_total_minor
+    from ${airline} a
+    left join ${cashMovement} m on m.airline_id = a.id
+    group by a.id, a.name, a.world_id, a.cash_minor
+    having a.cash_minor <> coalesce(sum(m.amount_minor), 0)
+    order by a.name
+  `);
+
+  return rows.rows.map((row) => {
+    // `bigint` and raw aggregates both come back as strings — the trap CLAUDE.md
+    // records — so both sides are parsed here rather than trusted.
+    const balanceMinor = Number(row.balance_minor);
+    const movementTotalMinor = Number(row.movement_total_minor);
+    if (!Number.isSafeInteger(balanceMinor) || !Number.isSafeInteger(movementTotalMinor)) {
+      throw new RangeError(`Cash figures for airline ${row.airline_id} are outside safe integers`);
+    }
+    return {
+      airlineId: row.airline_id,
+      airlineName: row.airline_name,
+      worldId: row.world_id,
+      balanceMinor,
+      movementTotalMinor,
+      differenceMinor: balanceMinor - movementTotalMinor,
+    };
+  });
+}
+
 /** Fold the movement log and compare it with the materialised current balance. */
 export async function reconcileAirlineCash(
   db: Database,

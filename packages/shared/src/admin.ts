@@ -619,6 +619,22 @@ export const AdminAirlineDetail = z.object({
   ceasedAt: Timestamp.nullable(),
   createdAt: Timestamp,
   routes: z.array(AdminAirlineRoute),
+  /**
+   * Whether this airline's balance is the sum of its movements (M11-36).
+   *
+   * AIR-06's promise, checked rather than assumed. `reconciles` is false only
+   * when money arrived from outside a movement — a restore, a migration, a
+   * manual change during an incident — because every ordinary write is enforced
+   * by a deferred constraint trigger.
+   *
+   * Stated on the record rather than left to the Overview alert: an admin
+   * looking at one airline should not have to infer its state from a count.
+   */
+  ledger: z.object({
+    balanceMinor: MinorUnits,
+    movementTotalMinor: MinorUnits,
+    reconciles: z.boolean(),
+  }),
 });
 export type AdminAirlineDetail = z.infer<typeof AdminAirlineDetail>;
 

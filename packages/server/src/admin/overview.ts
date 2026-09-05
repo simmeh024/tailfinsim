@@ -8,6 +8,7 @@ import {
   type AdminOverviewResponse,
 } from '@tailfin/shared';
 
+import { findCashDrift, type CashDrift } from '../airline/cash';
 import { type Database } from '../db/client';
 
 /**
@@ -137,12 +138,49 @@ export async function countEverything(db: Database): Promise<OverviewCounts> {
  * reads, so each of these is something a person would actually want to act on,
  * and silence means silence.
  */
+/** Minor units as a signed major-unit figure, for an alert a person reads. */
+function money(minor: number): string {
+  const sign = minor < 0 ? '-' : '+';
+  return `${sign}${(Math.abs(minor) / 100).toLocaleString('en-GB', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
 export function alertsFor(
   counts: OverviewCounts,
   backup: AdminBackupStatus | null,
   now: Date,
+  drift: readonly CashDrift[] = [],
 ): AdminAlert[] {
   const alerts: AdminAlert[] = [];
+
+  /*
+   * The ledger (M11-36). AIR-06's promise is that an airline's cash *is* the sum
+   * of its movements, and a deferred trigger enforces it on every write — so this
+   * is silent unless something arrived from outside a write: a restore, a data
+   * migration, an `UPDATE` during an incident. Rare, serious, and not
+   * self-correcting, which is what earns a place in a list this short.
+   */
+  if (drift.length > 0) {
+    const worst = drift.reduce((a, b) =>
+      Math.abs(b.differenceMinor) > Math.abs(a.differenceMinor) ? b : a,
+    );
+    alerts.push({
+      code: 'ledger.drift',
+      severity: 'error',
+      message:
+        drift.length === 1
+          ? `${worst.airlineName}'s balance does not match its ledger.`
+          : `${String(drift.length)} airlines have a balance that does not match their ledger.`,
+      detail:
+        "AIR-06 holds that an airline's cash is the sum of its movements, and every write is " +
+        'checked against that. A difference means money moved without a movement — a restore, a ' +
+        'migration or a manual change. Nothing here can repair it, and nothing should: money ' +
+        `moves through AIR-06 or it does not move. Largest difference: ${money(worst.differenceMinor)} ` +
+        `on ${worst.airlineName}.`,
+    });
+  }
 
   // --- backups -------------------------------------------------------------
   if (backup === null) {
@@ -259,10 +297,11 @@ export async function buildOverview(
   db: Database,
   now: Date = new Date(),
 ): Promise<AdminOverviewResponse> {
-  const [counts, engine, backup] = await Promise.all([
+  const [counts, engine, backup, drift] = await Promise.all([
     countEverything(db),
     engineStatus(db),
     readBackupStatus(),
+    findCashDrift(db),
   ]);
 
   return {
@@ -270,6 +309,6 @@ export async function buildOverview(
     trend: { newPlayers7d: counts.newPlayers7d, auditEntries24h: counts.auditEntries24h },
     engine,
     backup,
-    alerts: alertsFor(counts, backup, now),
+    alerts: alertsFor(counts, backup, now, drift),
   };
 }

@@ -318,6 +318,7 @@ describe('admin airline support record', () => {
       statusChangedAt: '2026-08-17T12:00:00.000Z',
       ceasedAt: null,
       createdAt: '2026-08-17T12:00:00.000Z',
+      ledger: { balanceMinor: 50_000_000, movementTotalMinor: 50_000_000, reconciles: true },
       routes: [
         {
           id: '8d4f2a6c-1b3e-4d7f-9a5c-2e8b6d4f1a3c',

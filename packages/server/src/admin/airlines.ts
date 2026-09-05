@@ -2,6 +2,7 @@ import { asc, count, desc, eq, inArray } from 'drizzle-orm';
 
 import { type AdminAirlineDetailResponse } from '@tailfin/shared';
 
+import { reconcileAirlineCash } from '../airline/cash';
 import { type Database } from '../db/client';
 import { airline, airport, cashMovement, player, route, world } from '../db/schema';
 import { parseFares } from '../network/fares';
@@ -145,6 +146,8 @@ export async function readAirline(
         .offset(movementOffset);
 
       const owner = ownerRows[0] ?? null;
+      // AIR-06's own check, on the record that shows the ledger (M11-36).
+      const ledger = await reconcileAirlineCash(tx, row.id);
       return {
         airline: {
           id: row.id,
@@ -176,6 +179,14 @@ export async function readAirline(
             createdAt: entry.createdAt.toISOString(),
             updatedAt: entry.updatedAt.toISOString(),
           })),
+          ledger: {
+            balanceMinor: ledger?.balanceMinor ?? row.cashMinor,
+            movementTotalMinor: ledger?.movementTotalMinor ?? row.cashMinor,
+            // A null reconciliation means the airline vanished between two reads
+            // inside this transaction, which cannot happen — say it reconciles
+            // rather than raising a false alarm on an airline that is not there.
+            reconciles: ledger?.reconciles ?? true,
+          },
         },
         cashMovements: {
           entries: movementRows.map((entry) => ({

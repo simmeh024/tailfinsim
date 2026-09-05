@@ -220,6 +220,27 @@ export function AdminAirlinePage(): ReactNode {
         <p className="admin__hint">
           Cash is shown without a currency symbol until M8-02 defines one.
         </p>
+        {airline.ledger.reconciles ? (
+          <p className="admin__hint">
+            The balance is the sum of every movement below it, checked on this read.
+          </p>
+        ) : (
+          <div className="alert alert--error" role="alert">
+            <span className="alert__glyph" aria-hidden="true">
+              ✕
+            </span>
+            <div className="alert__body">
+              <span className="alert__message">This balance does not match its ledger.</span>
+              <span className="alert__detail">
+                The movements sum to {formatCash(airline.ledger.movementTotalMinor)} against a
+                balance of {formatCash(airline.ledger.balanceMinor)}. AIR-06 holds that the two are
+                the same thing and every ordinary write is checked against it, so a difference means
+                money moved without a movement — a restore, a migration, or a manual change. Nothing
+                on this page can repair it, and nothing should.
+              </span>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="admin__section">
