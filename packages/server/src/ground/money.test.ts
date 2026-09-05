@@ -22,6 +22,7 @@ import {
 } from '../db/schema';
 import { loadWorldEconomyConfig } from '../economy/loader';
 import { settleArrivedFlight } from '../flight/settle';
+import { fixtureAirframe } from '../test-fixtures/airframe';
 import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixture,
@@ -74,6 +75,27 @@ const describeDb = url ? describe : describe.skip;
 
 function own(fixture: FoundedAirlineFixture): ResolvedPlayerAirline {
   return { id: fixture.airline.id, worldId: fixture.world.id, status: 'active' };
+}
+
+/**
+ * Settle against a fixed aeroplane.
+ *
+ * This suite's subject is the settlement, not the fleet: production resolves the
+ * flight's real airframe from `airframe.effective_spec` (IMPROVE-02), and
+ * `flight/settle-aircraft.test.ts` is where that path is proved. Substituting it
+ * on the line rather than relying on a default is what keeps the difference
+ * visible.
+ */
+function settle(
+  tx: Parameters<typeof settleArrivedFlight>[0],
+  flightId: string,
+  arrivedAt: Date,
+  deps: Parameters<typeof settleArrivedFlight>[3] = {},
+): ReturnType<typeof settleArrivedFlight> {
+  return settleArrivedFlight(tx, flightId, arrivedAt, {
+    resolveAirframe: fixtureAirframe,
+    ...deps,
+  });
 }
 
 describeDb('what ground handling costs', () => {
@@ -1327,7 +1349,7 @@ describeDb('what ground handling costs', () => {
       if (!f) throw new Error('no flight');
 
       const outcome = await db.db.transaction((tx) =>
-        settleArrivedFlight(tx, f.id, new Date(departs.getTime() + 75 * 60_000)),
+        settle(tx, f.id, new Date(departs.getTime() + 75 * 60_000)),
       );
       expect(outcome.status).toBe('settled');
 

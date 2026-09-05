@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { reconcileAirlineCash } from '../airline/cash';
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { airline, airport, cashMovement, flight, flightResult } from '../db/schema';
+import { fixtureAirframe } from '../test-fixtures/airframe';
 import { createAirportIdentities } from '../test-fixtures/airport-codes';
 import {
   createFoundedAirlineFixtureHarness,
@@ -77,6 +78,27 @@ async function expectConstraint(promise: Promise<unknown>, constraint: string): 
   expect(reported, `Postgres reported ${reported.join(', ') || 'no constraint'}`).toContain(
     constraint,
   );
+}
+
+/**
+ * Settle against a fixed aeroplane.
+ *
+ * This suite's subject is the settlement, not the fleet: production resolves the
+ * flight's real airframe from `airframe.effective_spec` (IMPROVE-02), and
+ * `flight/settle-aircraft.test.ts` is where that path is proved. Substituting it
+ * on the line rather than relying on a default is what keeps the difference
+ * visible.
+ */
+function settle(
+  tx: Parameters<typeof settleArrivedFlight>[0],
+  flightId: string,
+  arrivedAt: Date,
+  deps: Parameters<typeof settleArrivedFlight>[3] = {},
+): ReturnType<typeof settleArrivedFlight> {
+  return settleArrivedFlight(tx, flightId, arrivedAt, {
+    resolveAirframe: fixtureAirframe,
+    ...deps,
+  });
 }
 
 describeDb('settling an arrived flight', () => {
@@ -173,7 +195,7 @@ describeDb('settling an arrived flight', () => {
   it('writes a result traceable to its inputs, and moves cash by exactly the net', async () => {
     const { flightId, airlineId, openingCashMinor } = await makeFlight();
 
-    const outcome = await db.db.transaction((tx) => settleArrivedFlight(tx, flightId, ARRIVES));
+    const outcome = await db.db.transaction((tx) => settle(tx, flightId, ARRIVES));
     expect(outcome.status).toBe('settled');
     if (outcome.status !== 'settled') return;
 
@@ -235,7 +257,7 @@ describeDb('settling an arrived flight', () => {
   it('marks the flight arrived, in the same commit', async () => {
     const { flightId } = await makeFlight();
 
-    await db.db.transaction((tx) => settleArrivedFlight(tx, flightId, ARRIVES));
+    await db.db.transaction((tx) => settle(tx, flightId, ARRIVES));
 
     const [row] = await db.db.select().from(flight).where(eq(flight.id, flightId));
     expect(row?.phase).toBe('turnaround');
@@ -246,7 +268,7 @@ describeDb('settling an arrived flight', () => {
     const { flightId, airlineId } = await makeFlight();
     const late = new Date(ARRIVES.getTime() + 23 * 60_000);
 
-    await db.db.transaction((tx) => settleArrivedFlight(tx, flightId, late));
+    await db.db.transaction((tx) => settle(tx, flightId, late));
 
     const [row] = await db.db
       .select()
@@ -266,10 +288,10 @@ describeDb('settling an arrived flight', () => {
     it('is a no-op: one result row, and the cash moves once', async () => {
       const { flightId, airlineId } = await makeFlight();
 
-      const first = await db.db.transaction((tx) => settleArrivedFlight(tx, flightId, ARRIVES));
+      const first = await db.db.transaction((tx) => settle(tx, flightId, ARRIVES));
       const cashAfterFirst = await cashOf(airlineId);
 
-      const second = await db.db.transaction((tx) => settleArrivedFlight(tx, flightId, ARRIVES));
+      const second = await db.db.transaction((tx) => settle(tx, flightId, ARRIVES));
 
       expect(first.status).toBe('settled');
       expect(second.status).toBe('already-settled');
@@ -291,7 +313,7 @@ describeDb('settling an arrived flight', () => {
       // The guard is a select; the guarantee is the constraint. Proven by
       // inserting a second result directly, the way a bug or a race would.
       const { flightId, worldId, airlineId } = await makeFlight();
-      await db.db.transaction((tx) => settleArrivedFlight(tx, flightId, ARRIVES));
+      await db.db.transaction((tx) => settle(tx, flightId, ARRIVES));
 
       await expectConstraint(
         db.db.insert(flightResult).values({
@@ -341,7 +363,7 @@ describeDb('settling an arrived flight', () => {
     // §8.4: a diversion costs what it cost, not what was planned. The alternate
     // is far enough away that the distance, and so the fuel, must differ.
     const straight = await makeFlight();
-    await db.db.transaction((tx) => settleArrivedFlight(tx, straight.flightId, ARRIVES));
+    await db.db.transaction((tx) => settle(tx, straight.flightId, ARRIVES));
 
     const diverted = await makeFlight();
     const alternate = await makeAirport(48.8566, 2.3522);
@@ -349,7 +371,7 @@ describeDb('settling an arrived flight', () => {
       .update(flight)
       .set({ diversionIcao: alternate, disruption: 'diverted' })
       .where(eq(flight.id, diverted.flightId));
-    await db.db.transaction((tx) => settleArrivedFlight(tx, diverted.flightId, ARRIVES));
+    await db.db.transaction((tx) => settle(tx, diverted.flightId, ARRIVES));
 
     const distanceOf = async (flightId: string): Promise<number> => {
       const [row] = await db.db
@@ -373,7 +395,7 @@ describeDb('settling an arrived flight', () => {
       .set({ disruption: 'delayed', actualDeparture: late })
       .where(eq(flight.id, flightId));
 
-    await db.db.transaction((tx) => settleArrivedFlight(tx, flightId, ARRIVES));
+    await db.db.transaction((tx) => settle(tx, flightId, ARRIVES));
 
     const movements = await db.db
       .select({
@@ -393,7 +415,7 @@ describeDb('settling an arrived flight', () => {
 
   it('bills no disruption cost for an on-time arrival', async () => {
     const { flightId, airlineId } = await makeFlight();
-    await db.db.transaction((tx) => settleArrivedFlight(tx, flightId, ARRIVES));
+    await db.db.transaction((tx) => settle(tx, flightId, ARRIVES));
 
     const movements = await db.db
       .select({ cause: cashMovement.cause })
@@ -403,9 +425,7 @@ describeDb('settling an arrived flight', () => {
   });
 
   it('reports a flight that does not exist rather than inventing one', async () => {
-    const outcome = await db.db.transaction((tx) =>
-      settleArrivedFlight(tx, crypto.randomUUID(), ARRIVES),
-    );
+    const outcome = await db.db.transaction((tx) => settle(tx, crypto.randomUUID(), ARRIVES));
 
     expect(outcome.status).toBe('not-found');
   });
@@ -413,9 +433,7 @@ describeDb('settling an arrived flight', () => {
   it('refuses a malformed load rather than settling a plausible wrong number', async () => {
     const { flightId } = await makeFlight({ load: '{"economy":{"seats":"lots"}}' });
 
-    await expect(
-      db.db.transaction((tx) => settleArrivedFlight(tx, flightId, ARRIVES)),
-    ).rejects.toThrow();
+    await expect(db.db.transaction((tx) => settle(tx, flightId, ARRIVES))).rejects.toThrow();
 
     const rows = await db.db.select().from(flightResult).where(eq(flightResult.flightId, flightId));
     expect(rows).toHaveLength(0);
@@ -432,7 +450,7 @@ describeDb('settling an arrived flight', () => {
         }),
       });
 
-      await db.db.transaction((tx) => settleArrivedFlight(tx, flightId, ARRIVES));
+      await db.db.transaction((tx) => settle(tx, flightId, ARRIVES));
 
       const [row] = await db.db
         .select({
@@ -452,7 +470,7 @@ describeDb('settling an arrived flight', () => {
       // `LOAD` has no `spilled`, which is every load written before M3-05.
       const { flightId } = await makeFlight({});
 
-      await db.db.transaction((tx) => settleArrivedFlight(tx, flightId, ARRIVES));
+      await db.db.transaction((tx) => settle(tx, flightId, ARRIVES));
 
       const [row] = await db.db
         .select({ spilled: flightResult.spilledPassengers })
@@ -494,8 +512,8 @@ describeDb('settling an arrived flight', () => {
     const empty = await makeFlight({ cargoKg: 0 });
     const laden = await makeFlight({ cargoKg: 2_000 });
 
-    await db.db.transaction((tx) => settleArrivedFlight(tx, empty.flightId, ARRIVES));
-    await db.db.transaction((tx) => settleArrivedFlight(tx, laden.flightId, ARRIVES));
+    await db.db.transaction((tx) => settle(tx, empty.flightId, ARRIVES));
+    await db.db.transaction((tx) => settle(tx, laden.flightId, ARRIVES));
 
     const revenueOf = async (flightId: string): Promise<number> => {
       const [row] = await db.db
@@ -509,7 +527,10 @@ describeDb('settling an arrived flight', () => {
   });
 
   describe('the FLIGHT_ARRIVE handler', () => {
-    const handler = createFlightArriveHandler();
+    // The wiring, not the fleet: `settle-aircraft.test.ts` runs this handler
+    // with no deps at all against an aircraft acquired through the catalogue,
+    // which is what proves the production resolver.
+    const handler = createFlightArriveHandler({ resolveAirframe: fixtureAirframe });
 
     function event(fireAt: Date) {
       return { id: 'evt', fireAt } as Parameters<typeof handler>[0];

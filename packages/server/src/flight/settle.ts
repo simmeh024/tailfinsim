@@ -20,6 +20,11 @@ import {
 } from '@tailfin/sim';
 
 import { accrueFlightHours } from '../aircraft/maintenance';
+import {
+  loadFlightAirframe,
+  UnknownAirframeError,
+  type FlightAirframeBasis,
+} from '../aircraft/performance';
 import { moveAirlineCash } from '../airline/cash';
 import { airport, flight, flightResult, route } from '../db/schema';
 import { type PinnedEconomyConfig } from '../economy/config';
@@ -61,39 +66,35 @@ import type { EventHandler } from '../sim/event-queue';
  *
  * ## What it has to be told, and why
  *
- * Distance comes from the airports' own coordinates, so that much is real. The
- * rest — what the airframe weighs and burns, what each station charges for fuel
- * and handling — has nowhere to come from yet: there is no aircraft catalogue
- * (M4) and the `airport` table has no `fees` columns, though App. B.2 specifies
- * them and `packages/shared` already has the shape.
+ * Three of the four inputs are now real. Distance comes from the airports' own
+ * coordinates; fuel is priced at the origin's own station under the world's own
+ * curve (M5-07); and since IMPROVE-02 the **aeroplane is the one that flew** —
+ * read from `airframe.effective_spec` for the id the flight carries, so block
+ * time, fuel burn and the landing fee are all that aircraft's, with any fitted
+ * option already folded in.
  *
- * So those arrive as **resolver functions** with defaults, rather than as stubs
- * inside the settlement. When M4 lands, one function is replaced and nothing else
- * here changes. It is the same boundary M2-04 and M2-05 drew, moved up a layer.
+ * That last one was the expensive gap. Every flight in the game was costed as a
+ * 23-tonne turboprop whatever it was, so the fleet page's whole purpose —
+ * choosing an aircraft — never reached anybody's balance sheet.
+ *
+ * What is still a stand-in is **airport charges**: the `airport` table has no
+ * `fees` columns, though App. B.2 specifies them and `packages/shared` already
+ * has the shape, so every station charges the world's default schedule. M7-04
+ * owns that.
+ *
+ * All four arrive as **resolver functions** with defaults rather than as stubs
+ * inside the settlement, which is what let the aircraft become real without
+ * anything else here changing. Same boundary M2-04 and M2-05 drew, moved up a
+ * layer.
+ *
+ * ## A flight it cannot cost is not settled
+ *
+ * If the airframe will not resolve, this throws rather than substituting
+ * anything — see `UnknownAirframeError` for why an unsettled arrival is
+ * recoverable and a wrongly billed one is not.
  */
 
-/** What the settlement needs to know about the airframe that flew. */
-export interface SettlementAirframe {
-  maxTakeoffWeightT: number;
-  cruiseSpeedKt: number;
-  /** Tonnes per nautical mile, range-calibrated — App. C.6's `effective_spec`. */
-  cruiseBurnTPerNm: number;
-}
-
-/**
- * A placeholder ATR 72-600, until there is a catalogue to look one up in.
- *
- * The same fixture the sim tests calibrate against, and it is here rather than
- * hidden in a default parameter so that a reader can see immediately that every
- * flight is currently being costed as a turboprop regardless of what it is. That
- * is wrong, it is temporary, and it is M4's to fix — but it is visibly wrong,
- * which a silently-averaged "typical narrowbody" would not be.
- */
-export const PLACEHOLDER_AIRFRAME: SettlementAirframe = {
-  maxTakeoffWeightT: 23,
-  cruiseSpeedKt: 275,
-  cruiseBurnTPerNm: 2.5 / 825,
-};
+export type { SettlementAirframe } from '../aircraft/performance';
 
 export interface SettlementDeps {
   /**
@@ -106,8 +107,20 @@ export interface SettlementDeps {
    */
   economy?: PinnedEconomyConfig;
 
-  /** Airframe id to its performance. M4 replaces the default. */
-  resolveAirframe?: (airframeId: string) => SettlementAirframe;
+  /**
+   * The aeroplane that flew, and which one it was (IMPROVE-02).
+   *
+   * Left out in production, where it is read from `airframe.effective_spec` for
+   * the id the flight itself carries — so the aircraft a player bought, with the
+   * options they fitted, is the aircraft they are billed for. Supplied by tests
+   * whose subject is the settlement rather than the fleet, and by nothing else.
+   *
+   * Returning `null` refuses the settlement rather than substituting anything;
+   * see {@link UnknownAirframeError}.
+   */
+  resolveAirframe?: (
+    airframeId: string,
+  ) => Promise<FlightAirframeBasis | null> | FlightAirframeBasis | null;
   /** Per-station charges. App. B.2 specifies them; no column holds them yet. */
   resolveFees?: (icao: string) => AirportFees;
   /**
@@ -170,7 +183,6 @@ export async function settleArrivedFlight(
   arrivedAt: Date,
   deps: SettlementDeps = {},
 ): Promise<SettleOutcome> {
-  const resolveAirframe = deps.resolveAirframe ?? (() => PLACEHOLDER_AIRFRAME);
   // Aircraft performance rather than economy: taxi and climb times are physics
   // and the §22.5 catalogue, versioned separately from the money (M3-11).
   const profile = deps.profile ?? DEFAULT_FLIGHT_PROFILE;
@@ -223,7 +235,26 @@ export async function settleArrivedFlight(
   }
 
   const distanceNm = haversineNm(origin.lat, origin.lon, arrival.lat, arrival.lon);
-  const airframe = resolveAirframe(row.airframeId);
+
+  /*
+   * The aeroplane that actually flew (IMPROVE-02).
+   *
+   * Every flight used to be costed as a 23-tonne turboprop regardless of what it
+   * was, which meant the fleet page's whole purpose — choosing an aircraft —
+   * never reached the balance sheet. Read from the id the flight carries, so
+   * block time, fuel and the landing fee are all the real aeroplane's, and a
+   * fitted option arrives folded into the stored spec.
+   *
+   * Refused rather than defaulted when it cannot be resolved. See
+   * `UnknownAirframeError` for why an unsettled flight is recoverable and a
+   * wrongly settled one is not.
+   */
+  const basis =
+    (await (deps.resolveAirframe ?? ((id: string) => loadFlightAirframe(tx, row.worldId, id)))(
+      row.airframeId,
+    )) ?? null;
+  if (basis === null) throw new UnknownAirframeError(row.airframeId, 'missing');
+  const airframe = basis.performance;
 
   /*
    * Fuel is bought at the origin, before the aeroplane leaves (M5-07, §9.3) —
@@ -354,6 +385,28 @@ export async function settleArrivedFlight(
         distanceNm,
         fuelTonnes: burn.tonnes,
         loadFactor: settlement.loadFactor,
+        /*
+         * Which aeroplane, and under which catalogue (IMPROVE-02).
+         *
+         * The three performance numbers are recorded alongside the identity
+         * rather than left to be looked up, because an airframe is mutable — it
+         * can be reconfigured, and its options can change — while this row is
+         * not. Without them, "why was this flight billed that much?" is only
+         * answerable for an aircraft nobody has touched since.
+         *
+         * `catalogueVersion` is §22.5's pin and is deliberately not
+         * `settlementVersion`, which is §22.3's economy. Two versioned things,
+         * and a settlement needs both to be explicable.
+         */
+        aircraft: {
+          airframeId: basis.airframeId,
+          catalogueVersion: basis.catalogueVersion,
+          typeDesignation: basis.typeDesignation,
+          buildOptionIds: basis.buildOptionIds,
+          cruiseSpeedKt: airframe.cruiseSpeedKt,
+          maxTakeoffWeightT: airframe.maxTakeoffWeightT,
+          cruiseBurnTPerNm: airframe.cruiseBurnTPerNm,
+        },
       }),
       // The world's own economy version, not a constant from the code. This is
       // the column that makes an old settlement explicable after a retune
