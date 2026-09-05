@@ -149,6 +149,24 @@ missing id, the same player's other-world resource 404, and a refused write show
 row **unchanged**. The last one is the assertion that separates a real guard from one that answers
 404 after acting.
 
+### The HTTP method is a security control (SEC-HARD-07)
+
+Tailfin has **no CSRF token**, and does not need one, because four properties hold together:
+session cookies are `SameSite=Lax`, the client and API share one origin, no CORS is configured
+anywhere, and every state-changing route is `POST`, `PUT`, `PATCH` or `DELETE`.
+[ADR-0025](docs/adr/0025-no-csrf-token.md) records why, and
+`packages/server/src/security/csrf.test.ts` fails when one of the four stops being true.
+
+Two consequences for a new route:
+
+- **A `GET` must change nothing.** `SameSite=Lax` withholds the cookie on a cross-site `POST`
+  but sends it on a top-level cross-site `GET`, so a `GET` that writes is reachable from any
+  page on the internet. Every registered `GET` is classified in that test; adding one fails
+  until you say which it is.
+- **Do not install `@fastify/cors`**, or add an `Access-Control-*` header in a handler or in
+  `deploy/Caddyfile`, without amending ADR-0025 in the same change. Both halves are asserted —
+  the application's in the test above, the edge's by `pnpm security:headers`.
+
 SEC-07 extends that rule to every position. Add the endpoint to `RESOURCE_ID_SURFACES` in
 `packages/server/src/test-fixtures/resource-id.ts`, and build its tests from `resourceIdCases`:
 own, another player, a well-formed absent UUID and a UUID for the wrong entity kind. Exercise body,

@@ -632,6 +632,16 @@ than being discovered the next time somebody needs the command.
 explaining a choice twice, write it down once instead. ADR-0003 (deployment) and ADR-0005
 (world epoch and reset) are the two that constrain operations.
 
+**There is no CSRF token, and four things keep that safe.** Session cookies are
+`SameSite=Lax`, the client and API are one origin, no CORS is configured anywhere, and every
+state-changing route is `POST`/`PUT`/`PATCH`/`DELETE`. [ADR-0025](docs/adr/0025-no-csrf-token.md)
+says why a token would be worse, and `security/csrf.test.ts` fails when any of the four stops
+being true. The two that get removed by accident: **a `GET` that changes something** is
+reachable from any page on the internet, because Lax withholds the cookie on a cross-site POST
+but sends it on a top-level cross-site GET; and **installing `@fastify/cors`** the way it is
+usually installed removes the second fact in one line. The two `GET` routes that do change
+state are the OAuth pair, and they are listed by name with the control that replaces SameSite.
+
 **Security work starts from [ADR-0012](docs/adr/0012-tailfin-threat-model.md).** Name the
 asset and attacker or failure mode a control addresses. A new public port, provider,
 privileged role, secret or personal-data class, or deployment node changes the threat model;
