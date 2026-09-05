@@ -42,6 +42,25 @@ describes and the line the disruption roll already reads. The other five service
 contracted and modelled and have no priced consumer yet — the same state `quality` is in, and
 stated here rather than hidden.
 
+### Speed reaches the plan, not the settlement
+
+`turnaroundResolver` prices each station a rotation lands at when the schedule is authored, so
+§9.3's _"cheap ramp handlers = slower turns"_ shows up as a longer
+`schedule_leg.turnaround_minutes` and pushes every later departure in the rotation out. The turn
+happens where the aeroplane **lands**, so it is the destination's handler that decides it.
+
+It is fixed at authoring time, which is what that column already is: the plan crew legality is
+checked against and the plan the player is reading. Signing a better handler does not
+retroactively shorten a rotation written before it — re-saving does. Resolving it at
+materialisation instead would make a saved rotation's timings move underneath the player
+without them touching it, which is a larger decision than this.
+
+The other inputs `computeTurnaround` takes are still stand-ins, and deliberately: a contact
+stand (there is no gate allocation to ask), no congestion (§3.3 is unmodelled), no §10.4 boosts,
+and a **zero seat term** — `DEFAULT_TURNAROUND_MINUTES` is quoted at no published reference
+cabin, so comparing a real seat count against it would be inventing a balance number rather
+than wiring one. §7.1's per-type turnaround baseline is where that changes.
+
 ### Where the numbers live
 
 Split by CONTRIBUTING invariant 3, and the split is the same one `ground/vendor.ts` has stated

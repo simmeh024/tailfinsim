@@ -15,7 +15,9 @@ import {
   type AircraftCapability,
   computeBlockTime,
   DEFAULT_FLIGHT_PROFILE,
+  computeTurnaround,
   DEFAULT_TURNAROUND_MINUTES,
+  handlingProfile,
   gameTime,
   horizonFrom,
   MINUTES_PER_DAY,
@@ -25,6 +27,8 @@ import {
 } from '@tailfin/sim';
 
 import { airframe, route, schedule, world } from '../db/schema';
+import { loadWorldEconomyConfig } from '../economy/loader';
+import { handlingArrangementFor } from '../ground/contracts';
 import { absoluteFromLocal, loadAirportOffsets } from '../network/airport-time';
 import { openRoute } from '../network/open-route';
 import { resolveLegSlots } from '../network/slots';
@@ -304,6 +308,7 @@ export function placeLegs(
   legs: readonly ResolvedLeg[],
   cruiseSpeedKt: number,
   offsets: ReadonlyMap<string, number> = new Map(),
+  turnaroundFor: (icao: string) => number = () => DEFAULT_TURNAROUND_MINUTES,
 ): LegInput[] {
   const placed: LegInput[] = [];
   let earliest = 0;
@@ -314,7 +319,14 @@ export function placeLegs(
     const blockMinutes = Math.round(
       computeBlockTime(leg.greatCircleNm, cruiseSpeedKt, DEFAULT_FLIGHT_PROFILE).blockMinutes,
     );
-    const turnaroundMinutes = DEFAULT_TURNAROUND_MINUTES;
+    /*
+     * The turn happens where the aeroplane lands, so it is the **destination's**
+     * handler that decides how long it takes (M5-06, §9.3). Resolved by the
+     * caller, because this function is pure and the arrangement is a database
+     * fact; unresolved, it falls back to the type's unimproved baseline, which is
+     * what every leg used before a handler could reach it.
+     */
+    const turnaroundMinutes = turnaroundFor(leg.destinationIcao);
 
     let departureMinute: number;
     if (leg.departureMinuteLocal === null) {
@@ -339,6 +351,80 @@ export function placeLegs(
     earliest = departureMinute + blockMinutes + turnaroundMinutes;
   }
   return placed;
+}
+
+/**
+ * How long a turn takes at each station a rotation lands at (M5-06, §9.3).
+ *
+ * §9.3's *"cheap ramp handlers = slower turns"*, wired. Until this existed the
+ * grade changed a turn's **cost** and its **reliability** and not its duration:
+ * `speedFactor` was modelled, published on every vendor offer and read by
+ * nothing, because `placeLegs` used the type's flat baseline for every leg.
+ *
+ * ## What is live here, and what is not
+ *
+ * The handler is the only input that varies. Everything else `computeTurnaround`
+ * takes stays the stand-in it already was, and deliberately:
+ *
+ *   - **the stand is `contact`**, because there is no gate allocation to ask
+ *     (App. B.6's remote-stand penalty has nothing to trigger it yet);
+ *   - **congestion is 1**, because §3.3's airport busyness is not modelled;
+ *   - **no boosts**, because §10.4's ladder has nothing wired to a schedule;
+ *   - **the seat term is zero** — `seats` is passed equal to `referenceSeats`.
+ *     `DEFAULT_TURNAROUND_MINUTES` is quoted at no published reference cabin, so
+ *     comparing an airframe's real seat count against it would be inventing a
+ *     balance number rather than wiring one. When the catalogue carries §7.1's
+ *     per-type turnaround baseline, that is where this changes.
+ *
+ * ## It is fixed when the schedule is written
+ *
+ * `schedule_leg.turnaround_minutes` is a stored plan, so signing a better
+ * handler does not shorten the turns of a rotation authored before it — the
+ * player re-saves, and the editor shows the new figure. That matches what the
+ * column already is: the plan crew legality is checked against and the plan the
+ * player is looking at, rather than a live reading. Resolving it at
+ * materialisation instead would make a saved rotation's timings move underneath
+ * the player without them touching it, which is a bigger change than this defect
+ * warrants and is worth its own decision.
+ *
+ * Exported because it is the seam where this reads the database, and the pure
+ * half (`placeLegs`) cannot cover it — see `turnaround-db.test.ts`.
+ */
+export async function turnaroundResolver(
+  db: Database,
+  own: ResolvedPlayerAirline,
+  legs: readonly ResolvedLeg[],
+): Promise<(icao: string) => number> {
+  const stations = [...new Set(legs.map((leg) => leg.destinationIcao))];
+  if (stations.length === 0) return () => DEFAULT_TURNAROUND_MINUTES;
+
+  const economy = await loadWorldEconomyConfig(db, own.worldId);
+  const minutes = new Map<string, number>();
+
+  for (const icao of stations) {
+    const arrangement = await handlingArrangementFor(db, own.id, icao, 'ramp_baggage', economy);
+    const turn = computeTurnaround(
+      {
+        baseTurnaroundMinutes: DEFAULT_TURNAROUND_MINUTES,
+        // Equal, so the seat term contributes nothing — see the note above.
+        seats: 1,
+        referenceSeats: 1,
+      },
+      {
+        stand: 'contact',
+        vendor: { speedFactor: handlingProfile(arrangement).speedFactor },
+        cabinOptionMinutes: 0,
+        serviceMinutes: 0,
+        congestionFactor: 1,
+        boosts: [],
+      },
+    );
+    // Whole minutes: `schedule_leg.turnaround_minutes` is an integer column, and
+    // a leg is a plan rather than a settlement.
+    minutes.set(icao, Math.round(turn.minutes));
+  }
+
+  return (icao) => minutes.get(icao) ?? DEFAULT_TURNAROUND_MINUTES;
 }
 
 /** The variable cost and distance of each leg, surfaced for the player (§14). */
@@ -437,7 +523,12 @@ export async function authorSchedule(
     db,
     prepared.legs.map((leg) => leg.originIcao),
   );
-  const placed = placeLegs(prepared.legs, spec.cruiseSpeedKt, offsets);
+  const placed = placeLegs(
+    prepared.legs,
+    spec.cruiseSpeedKt,
+    offsets,
+    await turnaroundResolver(db, own, prepared.legs),
+  );
   const result = await createSchedule(
     db,
     {
@@ -535,7 +626,12 @@ export async function editSchedule(
     db,
     prepared.legs.map((leg) => leg.originIcao),
   );
-  const placed = placeLegs(prepared.legs, spec.cruiseSpeedKt, offsets);
+  const placed = placeLegs(
+    prepared.legs,
+    spec.cruiseSpeedKt,
+    offsets,
+    await turnaroundResolver(db, own, prepared.legs),
+  );
   const outcome = await replaceScheduleLegs(
     db,
     scheduleId,

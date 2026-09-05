@@ -7,6 +7,7 @@ import {
   DEFAULT_SETTLEMENT,
   DEFAULT_TURNAROUND_MINUTES,
   DEFAULT_FUEL_MARKET,
+  handlingProfile,
 } from '@tailfin/sim';
 
 import {
@@ -161,6 +162,72 @@ describe('placeLegs', () => {
     expect(ret.departureMinute).toBe(
       first.departureMinute + first.blockMinutes + first.turnaroundMinutes,
     );
+  });
+
+  describe('the handler decides how long a turn takes (BUG-06)', () => {
+    /**
+     * §9.3's *"cheap ramp handlers = slower turns"*. Until this was wired, a
+     * grade changed a turn's **cost** and its **reliability** and not its
+     * duration: `speedFactor` was modelled, published on every vendor offer and
+     * read by nothing, because `placeLegs` used the type's flat baseline for every
+     * leg of every rotation.
+     *
+     * `placeLegs` is pure, so the resolver is the seam — these drive it directly.
+     * The database half (that the resolver reads the *destination's* arrangement,
+     * for the airline that owns the schedule) is covered in `schedule-db.test.ts`.
+     */
+    it('uses the baseline when nothing resolves a handler', () => {
+      const [leg] = placeLegs([resolved('EGLL', 'LEBL', 620, 480)], CRUISE_KT);
+      expect(leg?.turnaroundMinutes).toBe(DEFAULT_TURNAROUND_MINUTES);
+    });
+
+    it('takes longer with a slow handler and less with a fast one', () => {
+      const budget = handlingProfile({ kind: 'vendor', grade: 'budget' }).speedFactor;
+      const premium = handlingProfile({ kind: 'vendor', grade: 'premium' }).speedFactor;
+      expect(budget).toBeGreaterThan(1);
+      expect(premium).toBeLessThan(1);
+
+      const slow = placeLegs([resolved('EGLL', 'LEBL', 620, 480)], CRUISE_KT, new Map(), () =>
+        Math.round(DEFAULT_TURNAROUND_MINUTES * budget),
+      );
+      const quick = placeLegs([resolved('EGLL', 'LEBL', 620, 480)], CRUISE_KT, new Map(), () =>
+        Math.round(DEFAULT_TURNAROUND_MINUTES * premium),
+      );
+
+      expect(slow[0]?.turnaroundMinutes).toBeGreaterThan(DEFAULT_TURNAROUND_MINUTES);
+      expect(quick[0]?.turnaroundMinutes).toBeLessThan(DEFAULT_TURNAROUND_MINUTES);
+    });
+
+    it('resolves per station, and by the station the aeroplane lands at', () => {
+      // The turn happens where the leg *ends*, so it is the destination's handler
+      // that decides it — asking the origin would price the previous turn.
+      const legs = placeLegs(
+        [resolved('EGLL', 'LEBL', 620, 480), resolved('LEBL', 'EGLL', 620, null)],
+        CRUISE_KT,
+        new Map(),
+        (icao) => (icao === 'LEBL' ? 90 : 20),
+      );
+      expect(legs[0]?.turnaroundMinutes).toBe(90);
+      expect(legs[1]?.turnaroundMinutes).toBe(20);
+    });
+
+    it('pushes the next departure out by the extra ground time', () => {
+      // The consequence a player actually feels: a slow handler at the turn station
+      // delays everything after it in the rotation.
+      const quick = placeLegs(
+        [resolved('EGLL', 'LEBL', 620, 480), resolved('LEBL', 'EGLL', 620, null)],
+        CRUISE_KT,
+        new Map(),
+        () => 20,
+      );
+      const slow = placeLegs(
+        [resolved('EGLL', 'LEBL', 620, 480), resolved('LEBL', 'EGLL', 620, null)],
+        CRUISE_KT,
+        new Map(),
+        () => 80,
+      );
+      expect((slow[1]?.departureMinute ?? 0) - (quick[1]?.departureMinute ?? 0)).toBe(60);
+    });
   });
 });
 
