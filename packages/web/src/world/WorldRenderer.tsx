@@ -8,7 +8,7 @@ import {
 import { IconLayer, PathLayer } from '@deck.gl/layers';
 import DeckGL, { type DeckGLRef } from '@deck.gl/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 
 import { fetchFleetAirframes, fetchFleetCatalogue } from '../fleet/api';
 import { useTheme } from '../theme/ThemeProvider';
@@ -43,6 +43,15 @@ import { bundleCorridors, corridorGridForZoom, type Corridor } from './route-cor
 import { bestHub, fleetMaxRangeNm, reachableAirportIcaos } from './route-create';
 import { createDarknessField, type LngLat } from './terminator';
 import { useWorldClock } from './useWorldClock';
+import {
+  cameraFromSearch,
+  cameraOf,
+  cameraSearch,
+  icaoFromSearch,
+  persistView,
+  readStoredView,
+  sameCamera,
+} from './view-state';
 import { WorldClockDisplay } from './WorldClockDisplay';
 
 import type { ReactNode } from 'react';
@@ -113,8 +122,25 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   const initial = useMemo(() => readInitialProjection(), []);
   const [projection, setProjection] = useState<WorldProjection>(initial.projection);
   const [quality, setQuality] = useState<RendererQuality>(initial.lowPower ? 'reduced' : 'full');
-  const [viewState, setViewState] = useState<MapViewState>(INITIAL_VIEW_STATE);
-  const [visibility, setVisibility] = useState<WorldLayerVisibility>(DEFAULT_VISIBILITY);
+  /*
+   * What the map opens as: a link, then a memory, then WORLD-04's fit, then the
+   * whole world. That order is the only one under which a shared link works —
+   * somebody who sends you a view of Heathrow means for you to arrive at
+   * Heathrow rather than wherever you last left the camera.
+   */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linked = useMemo(() => cameraFromSearch(searchParams), [searchParams]);
+  const remembered = useMemo(() => readStoredView(DEFAULT_VISIBILITY), []);
+  const openingCamera = linked ?? (remembered.zoom !== undefined ? remembered : null);
+
+  const [viewState, setViewState] = useState<MapViewState>(() =>
+    openingCamera === null
+      ? INITIAL_VIEW_STATE
+      : clampViewState({ ...INITIAL_VIEW_STATE, ...openingCamera }),
+  );
+  const [visibility, setVisibility] = useState<WorldLayerVisibility>(
+    remembered.visibility ?? DEFAULT_VISIBILITY,
+  );
   const [now, setNow] = useState(() => new Date());
   const [transitioning, setTransitioning] = useState(false);
   const [performanceOffer, setPerformanceOffer] = useState(false);
@@ -130,8 +156,8 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   /** What the pointer is over, and where — see `hover.ts`. */
   const [hover, setHover] = useState<{ label: HoverLabel; at: HoverPoint } | null>(null);
   const [selectedRoute, setSelectedRoute] = useState<WorldMapTrafficRoute | null>(null);
-  const [showRivals, setShowRivals] = useState(false);
-  const [showLegend, setShowLegend] = useState(false);
+  const [showRivals, setShowRivals] = useState(remembered.rivals ?? false);
+  const [showLegend, setShowLegend] = useState(remembered.legend ?? false);
   const [reducedMotion, setReducedMotion] = useState(
     () => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
   );
@@ -140,6 +166,38 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   const frameRateMonitor = useRef(new SustainedFrameRateMonitor());
   const deckRef = useRef<DeckGLRef<MapView | GlobeView> | null>(null);
   const lastTouch = useRef<{ at: number; x: number; y: number } | null>(null);
+  /** Whether a `?at=` link has been resolved; it happens once, like the frame. */
+  const addressed = useRef(false);
+
+  /*
+   * `/world?at=EGLL` — the hand-written link.
+   *
+   * It cannot be honoured until the airport list arrives, which is why it is an
+   * effect rather than an initial state. An explicit `lng`/`lat`/`z` wins: it
+   * says exactly where the camera goes, and a code only says which city.
+   *
+   * A zoom floor rather than a fixed zoom, so following a link from a close-up
+   * view does not throw away the zoom the reader already had.
+   */
+  useEffect(() => {
+    if (addressed.current || linked !== null || airports.length === 0) return;
+    const code = icaoFromSearch(searchParams);
+    if (code === null) return;
+    const airport = airports.find((entry) => entry.icao === code || entry.iata === code);
+    if (airport === undefined) return;
+    addressed.current = true;
+    framed.current = true;
+    setSelectedAirport(airport);
+    setViewState((current) =>
+      clampViewState({
+        ...current,
+        longitude: airport.position[0],
+        latitude: airport.position[1],
+        zoom: Math.max(current.zoom, 6),
+      }),
+    );
+  }, [airports, linked, searchParams]);
+
   /**
    * The canvas, as deck.gl measures it — or nothing, which `frame.ts` handles.
    *
@@ -164,7 +222,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
    * Once, and never again: re-framing when the overlay refreshes would drag the
    * camera out from under a player who had gone somewhere to look at something.
    */
-  const framed = useRef(false);
+  const framed = useRef(openingCamera !== null);
 
   useEffect(() => {
     const timer = globalThis.setInterval(() => setNow(new Date()), 60_000);
@@ -810,6 +868,40 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       ),
     );
   }, [networkFrame, reducedMotion]);
+
+  /*
+   * Remember the view, and keep the address bar describing it.
+   *
+   * Debounced, because both halves run on a value that changes on every frame
+   * of a drag: `localStorage` is synchronous and the router re-renders. Half a
+   * second after the camera settles is soon enough for something only read on
+   * the next visit.
+   *
+   * The URL is *replaced* rather than pushed. A history entry per pan would make
+   * the back button walk the camera backwards through a drag instead of leaving
+   * the page, which is the behaviour every map on the web gets wrong once.
+   */
+  useEffect(() => {
+    const timer = globalThis.setTimeout(() => {
+      persistView({
+        ...cameraOf(viewState),
+        visibility,
+        rivals: showRivals,
+        legend: showLegend,
+      });
+
+      const current = cameraFromSearch(searchParams);
+      const camera = cameraOf(viewState);
+      if (current !== null && sameCamera(current, camera)) return;
+      const next = new URLSearchParams(searchParams);
+      // `at` is the hand-written form and has been resolved by now; leaving it
+      // would make the link disagree with the camera beside it.
+      next.delete('at');
+      for (const [key, value] of Object.entries(cameraSearch(camera))) next.set(key, value);
+      setSearchParams(next, { replace: true });
+    }, 500);
+    return () => globalThis.clearTimeout(timer);
+  }, [viewState, visibility, showRivals, showLegend, searchParams, setSearchParams]);
 
   const chooseProjection = useCallback(
     (next: WorldProjection) => {
