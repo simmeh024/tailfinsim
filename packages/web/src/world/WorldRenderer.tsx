@@ -1,4 +1,10 @@
-import { MapView, _GlobeView as GlobeView, type Layer, type MapViewState } from '@deck.gl/core';
+import {
+  FlyToInterpolator,
+  MapView,
+  _GlobeView as GlobeView,
+  type Layer,
+  type MapViewState,
+} from '@deck.gl/core';
 import { IconLayer, PathLayer } from '@deck.gl/layers';
 import DeckGL, { type DeckGLRef } from '@deck.gl/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -10,6 +16,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { fetchWorldAirports } from './airports-api';
 import { clampViewState, focusViewState } from './camera';
 import { flightPath, greatCirclePath, planesForRoutes, routeSeed, type WorldPlane } from './flight';
+import { frameOf, networkPoints } from './frame';
 import { airportCodes, airportLabel, flightLabel, tipPlacement, type HoverLabel } from './hover';
 import { COARSE_WORLD, LAND_DETAIL_ZOOM, loadDetailedWorld, type WorldGeometry } from './land';
 import {
@@ -133,6 +140,31 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   const frameRateMonitor = useRef(new SustainedFrameRateMonitor());
   const deckRef = useRef<DeckGLRef<MapView | GlobeView> | null>(null);
   const lastTouch = useRef<{ at: number; x: number; y: number } | null>(null);
+  /**
+   * The canvas, as deck.gl measures it — or nothing, which `frame.ts` handles.
+   *
+   * `getViewports()` **throws** on a deck that has not initialised, rather than
+   * returning an empty array: in jsdom, and in any browser where the hardware
+   * renderer failed to start, this is the difference between a fallback frame
+   * and an exception thrown out of an effect that takes the whole page down
+   * with it. Found by the app-level tests, which mount the real deck.gl.
+   */
+  const canvasSize = useCallback((): { width: number; height: number } | undefined => {
+    try {
+      const viewport = deckRef.current?.deck?.getViewports()[0];
+      return viewport ? { width: viewport.width, height: viewport.height } : undefined;
+    } catch {
+      return undefined;
+    }
+  }, []);
+
+  /**
+   * Whether the opening frame has been chosen.
+   *
+   * Once, and never again: re-framing when the overlay refreshes would drag the
+   * camera out from under a player who had gone somewhere to look at something.
+   */
+  const framed = useRef(false);
 
   useEffect(() => {
     const timer = globalThis.setInterval(() => setNow(new Date()), 60_000);
@@ -731,6 +763,54 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     [projection, quality],
   );
 
+  /**
+   * The camera that frames this player's own network, at the size the canvas
+   * actually is.
+   *
+   * deck.gl owns the viewport, so it is read from deck rather than assumed —
+   * `frame.ts` falls back to a desktop-shaped reference when it has not been
+   * measured yet, which is right for a first paint and wrong by a little
+   * afterwards.
+   */
+  const networkFrame = useCallback((): MapViewState | null => {
+    return frameOf(networkPoints(map.hubs, map.routes), canvasSize());
+  }, [canvasSize, map.hubs, map.routes]);
+
+  /*
+   * Open on the player's own network.
+   *
+   * `INITIAL_VIEW_STATE` is the western Sahara at a whole-globe zoom, and it was
+   * where every session began regardless of where the airline flies. It stays
+   * the answer for a player who has not founded anything — a new player should
+   * still meet the whole world — so a null frame leaves the camera alone.
+   */
+  useEffect(() => {
+    if (framed.current) return;
+    const frame = networkFrame();
+    if (frame === null) return;
+    framed.current = true;
+    setViewState(clampViewState(frame));
+  }, [networkFrame]);
+
+  /**
+   * Back to the network, because the point of a map is that you can wander off it.
+   *
+   * Animated, so it reads as the camera travelling rather than as the map being
+   * replaced — except for a reader who has asked for less motion, who gets the
+   * same destination immediately.
+   */
+  const recentre = useCallback(() => {
+    const frame = networkFrame() ?? INITIAL_VIEW_STATE;
+    framed.current = true;
+    setViewState(
+      clampViewState(
+        reducedMotion
+          ? frame
+          : { ...frame, transitionDuration: 700, transitionInterpolator: new FlyToInterpolator() },
+      ),
+    );
+  }, [networkFrame, reducedMotion]);
+
   const chooseProjection = useCallback(
     (next: WorldProjection) => {
       if (projection === next) return;
@@ -887,6 +967,12 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
               onClick={() => chooseProjection('flat')}
             >
               Flat
+            </button>
+          </div>
+
+          <div className="world-renderer__control-group" role="group" aria-label="View">
+            <button type="button" onClick={recentre}>
+              Recentre
             </button>
           </div>
 
