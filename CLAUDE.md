@@ -383,10 +383,13 @@ and is wall clock, and pro-rating a penalty across a term with one end on each c
 
 **Self-handling payroll is the sharpest worker story of the lot (M5-06).** §9.3's alternative
 to a vendor is the airline's own people, and the whole trade is **fixed cost against per-turn
-cost** — a vendor bills a turn, your own staff bill a month, so self-handling wins at a hub
-with volume and loses at an outstation. `runGroundPayroll` is what bills them, monthly on the
-world's game clock and idempotent by `ground_self_handling_payroll:<airline>:<YYYY-MM>` like
-crew and office payroll. **Production has no worker, so there those heads are free** — and an
+cost** — a vendor bills a turn, your own staff bill by the day, so self-handling wins at a hub
+with volume and loses at an outstation. `runGroundPayroll` closes the **accrual** each world
+month, and `ground_self_handling.billed_through_at` is the watermark. An accrual rather than a
+monthly headcount snapshot because staffing is free and instant to change: billing a closed
+month against whoever is on the books when the sweep runs let a player run forty heads and drop
+to one on the last day, repeatably. Restaffing and closing settle the accrual too, which is what
+makes a reduction pay for the period it worked. **Production has no worker, so there those heads are free** — and an
 unbilled ground operation is not a degraded mechanic, it is strictly better than every vendor
 at every station, which turns a trade into a dominant strategy. `groundPayrollBilled` is the
 counter. The early-termination penalty, by contrast, is charged in the request that breaks the

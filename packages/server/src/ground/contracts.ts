@@ -37,6 +37,8 @@ import {
 } from '../db/schema';
 import { loadWorldEconomyConfig } from '../economy/loader';
 
+import { settleSelfHandlingAccrual } from './payroll';
+
 import type { ResolvedPlayerAirline } from '../airline/context';
 import type { Database } from '../db/client';
 import type { PinnedEconomyConfig } from '../economy/config';
@@ -688,6 +690,14 @@ export async function openSelfHandling(
         .limit(1);
 
       if (existing) {
+        /*
+         * Settle what the *current* staffing has already earned before changing
+         * it. This is what stops the monthly bill being avoidable: without it,
+         * dropping to one head on the last day of the month billed one head for
+         * the whole month, and restaffing afterwards cost nothing.
+         */
+        await settleSelfHandlingAccrual(tx, existing.id, gameNow, ctx.economy);
+
         // Restaffing keeps `opened_at`: it is the same operation, and moving its
         // start would rewrite when the airline took the station on.
         await tx
@@ -703,6 +713,9 @@ export async function openSelfHandling(
           headcount: request.headcount,
           status: 'active',
           openedAt: gameNow,
+          // Paid up to the moment it opened, so the first settlement charges from
+          // here rather than from the world's epoch.
+          billedThroughAt: gameNow,
         });
       }
 
@@ -738,18 +751,34 @@ export async function closeSelfHandling(
 ): Promise<string | null> {
   const clock = await loadWorldClock(db, own.worldId);
   const gameNow = clock === null ? now : gameTime(clock, now);
-  const [row] = await db
-    .update(groundSelfHandling)
-    .set({ status: 'closed', closedAt: gameNow })
-    .where(
-      and(
-        eq(groundSelfHandling.id, id),
-        eq(groundSelfHandling.airlineId, own.id),
-        eq(groundSelfHandling.status, 'active'),
-      ),
-    )
-    .returning({ icao: groundSelfHandling.airportIcao });
-  return row?.icao ?? null;
+  const economy = await loadWorldEconomyConfig(db, own.worldId);
+
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(groundSelfHandling)
+      .set({ status: 'closed', closedAt: gameNow })
+      .where(
+        and(
+          eq(groundSelfHandling.id, id),
+          eq(groundSelfHandling.airlineId, own.id),
+          eq(groundSelfHandling.status, 'active'),
+        ),
+      )
+      .returning({ icao: groundSelfHandling.airportIcao });
+    if (!row) return null;
+
+    /*
+     * Pay for the part of the month that was worked. Closing is otherwise the
+     * other half of the payroll dodge: a station used for three weeks and closed
+     * before the month-end sweep would have cost nothing at all.
+     *
+     * After the status flip, so a concurrent sweep cannot pick the row up again —
+     * and the settlement reads the row by id rather than by status, so closing it
+     * first does not hide the accrual from this call.
+     */
+    await settleSelfHandlingAccrual(tx, id, gameNow, economy);
+    return row.icao;
+  });
 }
 
 export type TerminateOutcome =

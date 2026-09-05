@@ -3778,6 +3778,28 @@ export const groundSelfHandling = pgTable(
     /** Game time, so a reset moves it with everything else (ADR-0005). */
     openedAt: timestamp('opened_at', { withTimezone: true }).notNull(),
     closedAt: timestamp('closed_at', { withTimezone: true }),
+
+    /**
+     * Game time this operation's payroll has been settled up to.
+     *
+     * Payroll is an **accrual**, not a monthly snapshot of the headcount: the
+     * first version billed the previous month against whoever was on the books
+     * when the sweep ran, and staffing is free and instant to change, so running
+     * 40 heads and dropping to 1 on the last day of the month billed 1. This is
+     * the watermark that makes the reduction itself pay for the period the larger
+     * staff worked.
+     *
+     * **Null means never settled**, and the accrual then starts at `opened_at` —
+     * not at the epoch, which would bill an operation for every day of the world
+     * before it existed.
+     *
+     * A "last billed" column is exactly what ADR-0005 warns about, but the
+     * objection is to one that outlives a world reset. This lives on the
+     * operation's own row, which is world-scoped and cascade-deleted, so a reset
+     * takes the row and its watermark together.
+     */
+    billedThroughAt: timestamp('billed_through_at', { withTimezone: true }),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
