@@ -10,11 +10,19 @@ import { airline, airport, demandPool, npcDecision, route, world } from '../db/s
 import { loadEconomyConfig } from '../economy/loader';
 import { competitorsFor } from '../network/competitors';
 import { REFERENCE_AIRFRAME } from '../network/economics';
+import { createAirportIdentities } from '../test-fixtures/airport-codes';
 import { createWorld } from '../world/lifecycle';
 
 import { readNpcDecisions } from './decisions';
 import { reviewDue, reviewNpcCarriers } from './operate';
 import { seedNpcCarriers } from './seed';
+
+/**
+ * A serial rather than a draw: `airport` has three unique columns and random
+ * codes collide (BUG-11). The namespace keeps this suite clear of every
+ * other one, which matters because vitest runs them together.
+ */
+const nextAirport = createAirportIdentities('npc/npc');
 
 /**
  * NPC carriers, against a real database (M3-12, §24).
@@ -53,13 +61,6 @@ function uniqueName(prefix: string): string {
  * for a reason that had nothing to do with the test; a serial cannot, and CI
  * starts from a fresh database each run.
  */
-const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-let tagSerial = 0;
-function nextTag(): string {
-  const n = tagSerial++;
-  return `${LETTERS[Math.floor(n / 26) % 26]!}${LETTERS[n % 26]!}`;
-}
-
 describeDb('NPC carriers', () => {
   let db: DatabaseHandle;
   const madeWorlds: string[] = [];
@@ -97,20 +98,27 @@ describeDb('NPC carriers', () => {
    * or fail on whether another suite had imported it.
    */
   async function makeMarket(worldId: string, dailyPassengers = 1_400): Promise<[string, string]> {
-    // Four uppercase letters, because `airport_icao_code_format` demands
-    // exactly that. A uuid slice looks unique and is not a legal ICAO code — it
-    // carries digits, and CI refused every one of them.
-    const tag = nextTag();
-    const a = `ZA${tag}`;
-    const b = `ZB${tag}`;
+    /*
+     * Two hubs, from the shared serial allocator (BUG-11). This suite already
+     * used a serial rather than a draw, for the reason written above it — but it
+     * minted its own, in the `Z` space, which is China and Korea: a test airport
+     * and an imported real one were one collision apart. The allocator mints in
+     * `Q`, which no real ICAO indicator uses, and namespaces this suite away from
+     * every other one.
+     */
+    const alpha = nextAirport();
+    const bravo = nextAirport();
+    const a = alpha.icaoCode;
+    const b = bravo.icaoCode;
 
-    for (const [icao, name, lat] of [
-      [a, `Alpha ${tag}`, 52],
-      [b, `Bravo ${tag}`, 41],
+    for (const [identity, name, lat] of [
+      [alpha, `Alpha ${a}`, 52],
+      [bravo, `Bravo ${b}`, 41],
     ] as const) {
+      const icao = identity.icaoCode;
       await db.db.insert(airport).values({
-        sourceId: Math.floor(Math.random() * 1_000_000_000),
-        ident: icao,
+        sourceId: identity.sourceId,
+        ident: identity.ident,
         icaoCode: icao,
         name,
         municipality: name,

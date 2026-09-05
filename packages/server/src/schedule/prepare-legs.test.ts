@@ -6,6 +6,7 @@ import type { AircraftCapability } from '@tailfin/sim';
 
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { airport, officeHire, route, runway } from '../db/schema';
+import { createAirportIdentities } from '../test-fixtures/airport-codes';
 import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixture,
@@ -15,6 +16,13 @@ import {
 import { prepareLegs } from './authoring';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
+
+/**
+ * A serial rather than a draw: `airport` has three unique columns and random
+ * codes collide (BUG-11). The namespace keeps this suite clear of every
+ * other one, which matters because vitest runs them together.
+ */
+const nextAirport = createAirportIdentities('schedule/prepare-legs');
 
 /**
  * Resolving and opening a rotation's legs (M2-03, §8.2, App. B.4).
@@ -62,13 +70,10 @@ describeDb('prepareLegs', () => {
     await db.close();
   });
 
-  function code(): string {
-    return `Q${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
-  }
-
   /** An airport near London with a long, open runway, so a leg is reachable. */
   async function makeAirport(lat = 51.5, lon = -0.1): Promise<string> {
-    const icao = code();
+    const identity = nextAirport();
+    const icao = identity.icaoCode;
     const n = seq++;
     const [row] = await db.db
       .insert(airport)

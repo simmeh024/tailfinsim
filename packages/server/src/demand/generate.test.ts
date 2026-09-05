@@ -5,9 +5,17 @@ import { FLAGSHIP_CONFIG, type WorldConfig } from '@tailfin/shared';
 
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { airport, demandPool, world } from '../db/schema';
+import { createAirportIdentities } from '../test-fixtures/airport-codes';
 import { createWorld } from '../world/lifecycle';
 
 import { clearDemandPools, generateDemandPools } from './generate';
+
+/**
+ * A serial rather than a draw: `airport` has three unique columns and random
+ * codes collide (BUG-11). The namespace keeps this suite clear of every
+ * other one, which matters because vitest runs them together.
+ */
+const nextAirport = createAirportIdentities('demand/generate');
 
 /**
  * Generating a world's demand pools, against a real Postgres (M3-01).
@@ -28,15 +36,6 @@ import { clearDemandPools, generateDemandPools } from './generate';
 const url = process.env.DATABASE_URL;
 if (!url) console.warn('\n  [demand/generate.test] DATABASE_URL not set — skipping.\n');
 const describeDb = url ? describe : describe.skip;
-
-function code(): string {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  let out = '';
-  for (let i = 0; i < 4; i += 1) {
-    out += alphabet[Math.floor(Math.random() * alphabet.length)] ?? 'A';
-  }
-  return out;
-}
 
 describeDb('generating demand pools', () => {
   let db: DatabaseHandle;
@@ -71,10 +70,11 @@ describeDb('generating demand pools', () => {
   }
 
   async function makeAirport(place: Place): Promise<string> {
-    const icao = code();
+    const identity = nextAirport();
+    const icao = identity.icaoCode;
     await db.db.insert(airport).values({
-      sourceId: Math.floor(Math.random() * 2_000_000_000),
-      ident: `TEST-${icao}-${Math.random().toString(36).slice(2, 8)}`,
+      sourceId: identity.sourceId,
+      ident: identity.ident,
       icaoCode: icao,
       name: `Test Field ${icao}`,
       isoCountry: place.country ?? 'NL',

@@ -7,6 +7,7 @@ import { gameTime, horizonFrom, type WorldClock } from '@tailfin/sim';
 
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { airport, flight } from '../db/schema';
+import { createAirportIdentities } from '../test-fixtures/airport-codes';
 import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixture,
@@ -18,6 +19,13 @@ import { listSchedules } from './read';
 import { createSchedule, materialiseSchedule } from './store';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
+
+/**
+ * A serial rather than a draw: `airport` has three unique columns and random
+ * codes collide (BUG-11). The namespace keeps this suite clear of every
+ * other one, which matters because vitest runs them together.
+ */
+const nextAirport = createAirportIdentities('schedule/lifecycle');
 
 /**
  * The schedule lifecycle: pause and delete (M2-03 lifecycle).
@@ -55,14 +63,11 @@ describeDb('schedule lifecycle', () => {
     await db.close();
   });
 
-  function code(): string {
-    return `Z${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
-  }
-
   async function makeAirport(): Promise<string> {
-    const icao = code();
+    const identity = nextAirport();
+    const icao = identity.icaoCode;
     await db.db.insert(airport).values({
-      sourceId: Math.floor(Math.random() * 2_000_000_000),
+      sourceId: identity.sourceId,
       ident: `TEST-${icao}`,
       icaoCode: icao,
       name: `Test Field ${icao}`,

@@ -4,12 +4,20 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { reconcileAirlineCash } from '../airline/cash';
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { airline, airport, cashMovement, flight, flightResult } from '../db/schema';
+import { createAirportIdentities } from '../test-fixtures/airport-codes';
 import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixtureHarness,
 } from '../test-fixtures/founded-airline';
 
 import { arrivalKey, createFlightArriveHandler, settleArrivedFlight } from './settle';
+
+/**
+ * A serial rather than a draw: `airport` has three unique columns and random
+ * codes collide (BUG-11). The namespace keeps this suite clear of every
+ * other one, which matters because vitest runs them together.
+ */
+const nextAirport = createAirportIdentities('flight/settle');
 
 /**
  * Settling an arrived flight, against a real Postgres (M2-06).
@@ -35,15 +43,6 @@ const describeDb = url ? describe : describe.skip;
 
 const DEPARTS = new Date('2026-08-17T06:00:00.000Z');
 const ARRIVES = new Date('2026-08-17T07:15:00.000Z');
-
-function code(): string {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  let out = '';
-  for (let i = 0; i < 4; i += 1) {
-    out += alphabet[Math.floor(Math.random() * alphabet.length)] ?? 'A';
-  }
-  return out;
-}
 
 /** A 70-seat cabin at 47 passengers — §13.4's airline, near enough. */
 const LOAD = JSON.stringify({ economy: { seats: 70, passengers: 47, revenue: 47 * 7_500 } });
@@ -103,10 +102,11 @@ describeDb('settling an arrived flight', () => {
 
   /** Amsterdam and London, near enough — a real 200 nm sector. */
   async function makeAirport(latitude: number, longitude: number): Promise<string> {
-    const icao = code();
+    const identity = nextAirport();
+    const icao = identity.icaoCode;
     await db.db.insert(airport).values({
-      sourceId: Math.floor(Math.random() * 2_000_000_000),
-      ident: `TEST-${icao}-${Math.random().toString(36).slice(2, 8)}`,
+      sourceId: identity.sourceId,
+      ident: identity.ident,
       icaoCode: icao,
       name: `Test Field ${icao}`,
       isoCountry: 'NL',

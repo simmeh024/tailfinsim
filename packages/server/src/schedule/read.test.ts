@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { airport, route } from '../db/schema';
+import { createAirportIdentities } from '../test-fixtures/airport-codes';
 import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixture,
@@ -15,6 +16,13 @@ import { listSchedules } from './read';
 import { createSchedule } from './store';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
+
+/**
+ * A serial rather than a draw: `airport` has three unique columns and random
+ * codes collide (BUG-11). The namespace keeps this suite clear of every
+ * other one, which matters because vitest runs them together.
+ */
+const nextAirport = createAirportIdentities('schedule/read');
 
 /**
  * Reading schedules back (M2-03, §8.2).
@@ -53,14 +61,11 @@ describeDb('listSchedules', () => {
     await db.close();
   });
 
-  function code(): string {
-    return `Z${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
-  }
-
   async function makeAirport(utcOffsetMinutes: number | null = null): Promise<string> {
-    const icao = code();
+    const identity = nextAirport();
+    const icao = identity.icaoCode;
     await db.db.insert(airport).values({
-      sourceId: Math.floor(Math.random() * 2_000_000_000),
+      sourceId: identity.sourceId,
       ident: `TEST-${icao}`,
       icaoCode: icao,
       name: `Test Field ${icao}`,

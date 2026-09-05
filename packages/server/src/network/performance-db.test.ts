@@ -7,6 +7,7 @@ import { gameTime, type WorldClock } from '@tailfin/sim';
 
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { airport, flight, flightResult, route, world } from '../db/schema';
+import { createAirportIdentities } from '../test-fixtures/airport-codes';
 import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixture,
@@ -16,6 +17,13 @@ import {
 import { routePerformance } from './performance';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
+
+/**
+ * A serial rather than a draw: `airport` has three unique columns and random
+ * codes collide (BUG-11). The namespace keeps this suite clear of every
+ * other one, which matters because vitest runs them together.
+ */
+const nextAirport = createAirportIdentities('network/performance-db');
 
 /**
  * Rolling a route's real flights up over HTTP-shaped state (M2-06, §14.4).
@@ -56,14 +64,11 @@ describeDb('routePerformance', () => {
     await db.close();
   });
 
-  function code(): string {
-    return `Z${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
-  }
-
   async function makeAirport(): Promise<string> {
-    const icao = code();
+    const identity = nextAirport();
+    const icao = identity.icaoCode;
     await db.db.insert(airport).values({
-      sourceId: Math.floor(Math.random() * 2_000_000_000),
+      sourceId: identity.sourceId,
       ident: `TEST-${icao}`,
       icaoCode: icao,
       name: `Test Field ${icao}`,
