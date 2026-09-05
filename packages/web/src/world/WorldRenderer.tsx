@@ -2,7 +2,7 @@ import { MapView, _GlobeView as GlobeView, type Layer, type MapViewState } from 
 import { IconLayer, PathLayer } from '@deck.gl/layers';
 import DeckGL, { type DeckGLRef } from '@deck.gl/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 
 import { fetchFleetAirframes, fetchFleetCatalogue } from '../fleet/api';
 import { useTheme } from '../theme/ThemeProvider';
@@ -577,7 +577,10 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   // the phase is frozen under prefers-reduced-motion, so this layer simply is not
   // built then (M7-03's accessibility criterion).
   const shimmerLayer = useMemo(() => {
-    if (reducedMotion || ownPaths.length === 0) return false;
+    // Off with the routes it travels along. The lines are gated on the same flag
+    // (`layers.ts`), so without this the trails kept sliding along tracks that
+    // were no longer drawn — bright dashes moving across an empty ocean.
+    if (reducedMotion || !visibility.routes || ownPaths.length === 0) return false;
     const windowLen = Math.max(2, Math.round(shimmerSegments * 0.1));
     const trails = ownPaths.map(({ id, full }) => {
       const start = Math.min(full.length - windowLen, Math.floor(phase * (full.length - 1)));
@@ -606,7 +609,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       parameters: { cullMode: 'none' },
       getPolygonOffset: () => [0, -70000],
     });
-  }, [reducedMotion, ownPaths, shimmerSegments, phase, palette.route]);
+  }, [reducedMotion, visibility.routes, ownPaths, shimmerSegments, phase, palette.route]);
 
   const allLayers = useMemo<(Layer | false)[]>(
     () => [
@@ -761,268 +764,301 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
 
       <div className="world-renderer__atmosphere" aria-hidden="true" />
 
-      {selectedAirport !== null &&
-        (() => {
-          const airport = selectedAirport;
-          const isHub = hubIcaos.has(airport.icao);
-          const existing = routesThrough(airport.icao);
-          const reach = isHub ? null : bestHub(airport.position, map.hubs, maxRangeNm);
-          const alreadyFromHub =
-            reach !== null &&
-            existing.some(
-              (r) => r.originIcao === reach.hub.icao && r.destinationIcao === airport.icao,
-            );
-          const distance = (nm: number): string => Math.round(nm).toLocaleString();
-          return (
+      {/*
+       * Everything drawn over the map, in one grid.
+       *
+       * These used to be six independently absolutely-positioned boxes, and four
+       * of them were anchored to the same bottom-right corner: the selection
+       * panel (z 5), the performance offer, the renderer-failure alert, and
+       * at the mobile breakpoint — the world clock. So a performance offer
+       * arriving while a panel was open landed underneath it, and on a phone
+       * tapping an airport covered the world time.
+       *
+       * A grid cannot express that overlap. Each surface owns a named area, the
+       * transient ones stack inside `__dock`, and the whole layer is
+       * `pointer-events: none` so the map underneath is still draggable through
+       * the gaps.
+       */}
+      <div className="world-renderer__hud">
+        <WorldClockDisplay inGameTime={inGameTime} speedMultiplier={speedMultiplier} />
+
+        <div className="world-renderer__controls">
+          <div className="world-renderer__control-group" role="group" aria-label="Projection">
+            <button
+              type="button"
+              aria-pressed={projection === 'globe'}
+              onClick={() => chooseProjection('globe')}
+            >
+              Globe
+            </button>
+            <button
+              type="button"
+              aria-pressed={projection === 'flat'}
+              onClick={() => chooseProjection('flat')}
+            >
+              Flat
+            </button>
+          </div>
+
+          <div className="world-renderer__control-group" role="group" aria-label="Map layers">
+            <button
+              type="button"
+              aria-pressed={visibility.terminator}
+              onClick={() => toggleLayer('terminator')}
+            >
+              Day/night
+            </button>
+            <button
+              type="button"
+              aria-pressed={visibility.routes}
+              onClick={() => toggleLayer('routes')}
+            >
+              My routes
+            </button>
+            <button
+              type="button"
+              aria-pressed={showRivals}
+              onClick={() => setShowRivals((v) => !v)}
+            >
+              Rivals
+            </button>
+            <button
+              type="button"
+              aria-pressed={visibility.airports}
+              onClick={() => toggleLayer('airports')}
+            >
+              Airports
+            </button>
+            <button
+              type="button"
+              aria-pressed={visibility.terrain}
+              onClick={() => toggleLayer('terrain')}
+            >
+              Terrain
+            </button>
+            <button
+              type="button"
+              aria-pressed={visibility.borders}
+              onClick={() => toggleLayer('borders')}
+            >
+              Borders
+            </button>
+            <button
+              type="button"
+              aria-pressed={visibility.graticule}
+              onClick={() => toggleLayer('graticule')}
+            >
+              Grid
+            </button>
+            <button
+              type="button"
+              aria-pressed={showLegend}
+              onClick={() => setShowLegend((v) => !v)}
+            >
+              Legend
+            </button>
+          </div>
+        </div>
+
+        {showLegend && (
+          <div className="world-renderer__legend" role="dialog" aria-label="Map legend">
+            <div className="world-renderer__legend-head">
+              <p className="world-renderer__route-eyebrow">Legend</p>
+              <button
+                type="button"
+                className="world-renderer__route-close"
+                aria-label="Close"
+                onClick={() => setShowLegend(false)}
+              >
+                ×
+              </button>
+            </div>
+            <ul className="world-renderer__legend-list">
+              <li>
+                <span className="world-renderer__legend-line world-renderer__legend-line--own" />
+                Your routes — your brand colour
+              </li>
+              <li>
+                <span className="world-renderer__legend-line world-renderer__legend-line--rival" />
+                Rivals — the competition’s routes (toggle “Rivals”)
+              </li>
+              <li>
+                <span className="world-renderer__legend-line world-renderer__legend-line--corridor" />
+                Bundled corridor — thicker carries more routes; zoom in to split it
+              </li>
+              <li>
+                <span className="world-renderer__legend-dot" />
+                Aircraft — the carrier’s colour; a mark far out, a plane up close
+              </li>
+            </ul>
+            <p className="world-renderer__legend-note">
+              Motion (planes, the route shimmer) respects your reduced-motion setting.
+            </p>
+          </div>
+        )}
+
+        {/* The corner: whatever is transient, stacked rather than piled. */}
+        <div className="world-renderer__dock">
+          {selectedAirport !== null &&
+            (() => {
+              const airport = selectedAirport;
+              const isHub = hubIcaos.has(airport.icao);
+              const existing = routesThrough(airport.icao);
+              const reach = isHub ? null : bestHub(airport.position, map.hubs, maxRangeNm);
+              const alreadyFromHub =
+                reach !== null &&
+                existing.some(
+                  (r) => r.originIcao === reach.hub.icao && r.destinationIcao === airport.icao,
+                );
+              const distance = (nm: number): string => Math.round(nm).toLocaleString();
+              return (
+                <div
+                  className="world-renderer__route-panel"
+                  role="dialog"
+                  aria-label={`Routes at ${airport.name}`}
+                >
+                  <div className="world-renderer__route-head">
+                    <div>
+                      <p className="world-renderer__route-eyebrow">
+                        {isHub ? 'Your hub' : 'Route planner'}
+                      </p>
+                      <p className="world-renderer__route-title">{airport.name}</p>
+                      <p className="world-renderer__route-code">{airport.icao}</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="world-renderer__route-close"
+                      aria-label="Close"
+                      onClick={() => setSelectedAirport(null)}
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div className="world-renderer__route-create">
+                    {isHub ? (
+                      <p className="world-renderer__route-muted">One of your hubs.</p>
+                    ) : map.hubs.length === 0 ? (
+                      <p className="world-renderer__route-muted">
+                        Found an airline and a hub to open routes.
+                      </p>
+                    ) : maxRangeNm <= 0 ? (
+                      <p className="world-renderer__route-muted">
+                        No aircraft yet — acquire one to open routes from here.
+                      </p>
+                    ) : reach === null ? null : alreadyFromHub ? (
+                      <p className="world-renderer__route-muted">
+                        Already flying from {reach.hub.name}.
+                      </p>
+                    ) : reach.reachable ? (
+                      <button
+                        type="button"
+                        className="world-renderer__route-cta"
+                        onClick={() => {
+                          planRoute(reach.hub.icao, airport.icao);
+                        }}
+                      >
+                        Open route from {reach.hub.name} · {distance(reach.distanceNm)} nm
+                      </button>
+                    ) : (
+                      <p className="world-renderer__route-muted">
+                        Out of range — {distance(reach.distanceNm)} nm from {reach.hub.name}, but
+                        your aircraft reach {distance(maxRangeNm)} nm.
+                      </p>
+                    )}
+                  </div>
+
+                  {existing.length > 0 && (
+                    <ul className="world-renderer__route-list">
+                      {existing.map((r) => {
+                        const outbound = r.originIcao === airport.icao;
+                        const other = outbound ? r.destinationName : r.originName;
+                        const otherIcao = outbound ? r.destinationIcao : r.originIcao;
+                        return (
+                          <li key={r.id} className="world-renderer__route-item">
+                            <span className="world-renderer__route-dir" aria-hidden="true">
+                              {outbound ? '→' : '←'}
+                            </span>
+                            <span className="world-renderer__route-name">{other}</span>
+                            <span className="world-renderer__route-code">{otherIcao}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+
+                  {/* A router link, not a bare anchor: this is inside a single-page app,
+                  and an `<a href>` here reloaded the whole bundle and threw away
+                  every fetch the session had made. */}
+                  <Link to={`/network?to=${airport.icao}`} className="world-renderer__route-link">
+                    Open route planner
+                  </Link>
+                </div>
+              );
+            })()}
+
+          {selectedRoute !== null && (
             <div
               className="world-renderer__route-panel"
               role="dialog"
-              aria-label={`Routes at ${airport.name}`}
+              aria-label={`Flight ${selectedRoute.originIcao} to ${selectedRoute.destinationIcao}`}
             >
               <div className="world-renderer__route-head">
                 <div>
                   <p className="world-renderer__route-eyebrow">
-                    {isHub ? 'Your hub' : 'Route planner'}
+                    {selectedRoute.own ? 'Your flight' : selectedRoute.airlineName}
                   </p>
-                  <p className="world-renderer__route-title">{airport.name}</p>
-                  <p className="world-renderer__route-code">{airport.icao}</p>
+                  <p className="world-renderer__route-title">
+                    {selectedRoute.originName} → {selectedRoute.destinationName}
+                  </p>
+                  <p className="world-renderer__route-code">
+                    {selectedRoute.originIcao} → {selectedRoute.destinationIcao}
+                  </p>
                 </div>
                 <button
                   type="button"
                   className="world-renderer__route-close"
                   aria-label="Close"
-                  onClick={() => setSelectedAirport(null)}
+                  onClick={() => setSelectedRoute(null)}
                 >
                   ×
                 </button>
               </div>
+              <p className="world-renderer__route-muted">
+                {selectedRoute.own
+                  ? 'One of your routes.'
+                  : `Flown by ${selectedRoute.airlineName}.`}
+              </p>
+            </div>
+          )}
 
-              <div className="world-renderer__route-create">
-                {isHub ? (
-                  <p className="world-renderer__route-muted">One of your hubs.</p>
-                ) : map.hubs.length === 0 ? (
-                  <p className="world-renderer__route-muted">
-                    Found an airline and a hub to open routes.
-                  </p>
-                ) : maxRangeNm <= 0 ? (
-                  <p className="world-renderer__route-muted">
-                    No aircraft yet — acquire one to open routes from here.
-                  </p>
-                ) : reach === null ? null : alreadyFromHub ? (
-                  <p className="world-renderer__route-muted">
-                    Already flying from {reach.hub.name}.
-                  </p>
-                ) : reach.reachable ? (
-                  <button
-                    type="button"
-                    className="world-renderer__route-cta"
-                    onClick={() => {
-                      planRoute(reach.hub.icao, airport.icao);
-                    }}
-                  >
-                    Open route from {reach.hub.name} · {distance(reach.distanceNm)} nm
-                  </button>
-                ) : (
-                  <p className="world-renderer__route-muted">
-                    Out of range — {distance(reach.distanceNm)} nm from {reach.hub.name}, but your
-                    aircraft reach {distance(maxRangeNm)} nm.
-                  </p>
-                )}
+          {performanceOffer && (
+            <div className="world-renderer__performance" role="status">
+              <p>The globe is running below the smooth-frame budget. Reduced detail is active.</p>
+              <div>
+                <button type="button" onClick={() => chooseProjection('flat')}>
+                  Switch to flat
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPerformanceOffer(false);
+                    setPerformanceOfferDismissed(true);
+                  }}
+                >
+                  Keep globe
+                </button>
               </div>
-
-              {existing.length > 0 && (
-                <ul className="world-renderer__route-list">
-                  {existing.map((r) => {
-                    const outbound = r.originIcao === airport.icao;
-                    const other = outbound ? r.destinationName : r.originName;
-                    const otherIcao = outbound ? r.destinationIcao : r.originIcao;
-                    return (
-                      <li key={r.id} className="world-renderer__route-item">
-                        <span className="world-renderer__route-dir" aria-hidden="true">
-                          {outbound ? '→' : '←'}
-                        </span>
-                        <span className="world-renderer__route-name">{other}</span>
-                        <span className="world-renderer__route-code">{otherIcao}</span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-
-              <a href={`/network?to=${airport.icao}`} className="world-renderer__route-link">
-                Open route planner
-              </a>
             </div>
-          );
-        })()}
+          )}
 
-      {selectedRoute !== null && (
-        <div
-          className="world-renderer__route-panel"
-          role="dialog"
-          aria-label={`Flight ${selectedRoute.originIcao} to ${selectedRoute.destinationIcao}`}
-        >
-          <div className="world-renderer__route-head">
-            <div>
-              <p className="world-renderer__route-eyebrow">
-                {selectedRoute.own ? 'Your flight' : selectedRoute.airlineName}
-              </p>
-              <p className="world-renderer__route-title">
-                {selectedRoute.originName} → {selectedRoute.destinationName}
-              </p>
-              <p className="world-renderer__route-code">
-                {selectedRoute.originIcao} → {selectedRoute.destinationIcao}
-              </p>
-            </div>
-            <button
-              type="button"
-              className="world-renderer__route-close"
-              aria-label="Close"
-              onClick={() => setSelectedRoute(null)}
-            >
-              ×
-            </button>
-          </div>
-          <p className="world-renderer__route-muted">
-            {selectedRoute.own ? 'One of your routes.' : `Flown by ${selectedRoute.airlineName}.`}
-          </p>
-        </div>
-      )}
-
-      <WorldClockDisplay inGameTime={inGameTime} speedMultiplier={speedMultiplier} />
-
-      <div className="world-renderer__controls">
-        <div className="world-renderer__control-group" role="group" aria-label="Projection">
-          <button
-            type="button"
-            aria-pressed={projection === 'globe'}
-            onClick={() => chooseProjection('globe')}
-          >
-            Globe
-          </button>
-          <button
-            type="button"
-            aria-pressed={projection === 'flat'}
-            onClick={() => chooseProjection('flat')}
-          >
-            Flat
-          </button>
-        </div>
-
-        <div className="world-renderer__control-group" role="group" aria-label="Map layers">
-          <button
-            type="button"
-            aria-pressed={visibility.terminator}
-            onClick={() => toggleLayer('terminator')}
-          >
-            Day/night
-          </button>
-          <button
-            type="button"
-            aria-pressed={visibility.routes}
-            onClick={() => toggleLayer('routes')}
-          >
-            My routes
-          </button>
-          <button type="button" aria-pressed={showRivals} onClick={() => setShowRivals((v) => !v)}>
-            Rivals
-          </button>
-          <button
-            type="button"
-            aria-pressed={visibility.airports}
-            onClick={() => toggleLayer('airports')}
-          >
-            Airports
-          </button>
-          <button
-            type="button"
-            aria-pressed={visibility.terrain}
-            onClick={() => toggleLayer('terrain')}
-          >
-            Terrain
-          </button>
-          <button
-            type="button"
-            aria-pressed={visibility.borders}
-            onClick={() => toggleLayer('borders')}
-          >
-            Borders
-          </button>
-          <button
-            type="button"
-            aria-pressed={visibility.graticule}
-            onClick={() => toggleLayer('graticule')}
-          >
-            Grid
-          </button>
-          <button type="button" aria-pressed={showLegend} onClick={() => setShowLegend((v) => !v)}>
-            Legend
-          </button>
+          {rendererFailed && (
+            <p className="world-renderer__failure" role="alert">
+              The hardware renderer could not start. The rest of Tailfin remains available.
+            </p>
+          )}
         </div>
       </div>
-
-      {showLegend && (
-        <div className="world-renderer__legend" role="dialog" aria-label="Map legend">
-          <div className="world-renderer__legend-head">
-            <p className="world-renderer__route-eyebrow">Legend</p>
-            <button
-              type="button"
-              className="world-renderer__route-close"
-              aria-label="Close"
-              onClick={() => setShowLegend(false)}
-            >
-              ×
-            </button>
-          </div>
-          <ul className="world-renderer__legend-list">
-            <li>
-              <span className="world-renderer__legend-line world-renderer__legend-line--own" />
-              Your routes — your brand colour
-            </li>
-            <li>
-              <span className="world-renderer__legend-line world-renderer__legend-line--rival" />
-              Rivals — the competition’s routes (toggle “Rivals”)
-            </li>
-            <li>
-              <span className="world-renderer__legend-line world-renderer__legend-line--corridor" />
-              Bundled corridor — thicker carries more routes; zoom in to split it
-            </li>
-            <li>
-              <span className="world-renderer__legend-dot" />
-              Aircraft — the carrier’s colour; a mark far out, a plane up close
-            </li>
-          </ul>
-          <p className="world-renderer__legend-note">
-            Motion (planes, the route shimmer) respects your reduced-motion setting.
-          </p>
-        </div>
-      )}
-
-      {performanceOffer && (
-        <div className="world-renderer__performance" role="status">
-          <p>The globe is running below the smooth-frame budget. Reduced detail is active.</p>
-          <div>
-            <button type="button" onClick={() => chooseProjection('flat')}>
-              Switch to flat
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setPerformanceOffer(false);
-                setPerformanceOfferDismissed(true);
-              }}
-            >
-              Keep globe
-            </button>
-          </div>
-        </div>
-      )}
-
-      {rendererFailed && (
-        <p className="world-renderer__failure" role="alert">
-          The hardware renderer could not start. The rest of Tailfin remains available.
-        </p>
-      )}
     </section>
   );
 }
