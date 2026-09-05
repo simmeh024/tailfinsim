@@ -405,6 +405,67 @@ function routeArc(id: string, source: LngLat, target: LngLat): CachedArc {
   return entry;
 }
 
+/** An aeroplane that has departed and not yet arrived (WORLD-10). */
+export interface AirborneLike {
+  id: string;
+  source: LngLat;
+  target: LngLat;
+  /** Game time, as the server sent it. */
+  departedAt: string;
+  arrivesAt: string;
+}
+
+/**
+ * How far along its leg a flight is, from 0 at the gate to 1 on arrival.
+ *
+ * Clamped at both ends, and for two different reasons. Below zero would mean a
+ * flight the client thinks has not left, which happens for a second either side
+ * of a clock resync; above one means an aeroplane that is *late* — the estimate
+ * has passed and it has not landed — and the honest place to draw that is at its
+ * destination rather than somewhere out beyond it.
+ *
+ * A leg with no duration (a corrupt row, or two identical instants) is complete
+ * rather than dividing by zero.
+ */
+export function flightProgress(flight: AirborneLike, now: Date): number {
+  const from = Date.parse(flight.departedAt);
+  const to = Date.parse(flight.arrivesAt);
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return 1;
+  return Math.min(1, Math.max(0, (now.getTime() - from) / (to - from)));
+}
+
+/**
+ * A plane for each flight, at its own real progress (WORLD-10).
+ *
+ * This replaces the shared animation phase, and the difference is the whole
+ * point of the issue: an aeroplane is where it actually is, on the leg it is
+ * actually flying, moving at the speed the world runs.
+ *
+ * `seedOf` decides which track it rides. Passing the *route's* id when the map
+ * knows it keeps the aeroplane on the line the map already drew for that route —
+ * the line has its own seeded wander, and a plane on a clean great circle would
+ * visibly float beside it. Anything else falls back to the leg itself, which is
+ * stable for the same pair of airports.
+ */
+export function planesForFlights(
+  flights: readonly AirborneLike[],
+  now: Date,
+  seedOf: (flight: AirborneLike) => string,
+): WorldPlane[] {
+  return flights.map((entry) => {
+    const { arc } = routeArc(seedOf(entry), entry.source, entry.target);
+    const t = flightProgress(entry, now);
+    return {
+      routeId: entry.id,
+      sourceId: entry.id,
+      position: toLngLat(arcVec(arc, t)),
+      // deck.gl rotates the icon counter-clockwise; a north-up plane faces a
+      // clockwise bearing when rotated by its negative.
+      angle: -arcHeading(arc, t),
+    };
+  });
+}
+
 /**
  * A plane for every route at the given animation phase (0→1, looping). More than
  * one plane per route staggers them along the line so a busy route looks busy.

@@ -85,8 +85,28 @@ vi.mock('./map-api', () => ({
         },
       ],
       traffic: [RIVAL],
+      flights: [AIRBORNE],
     }),
 }));
+
+const AIRBORNE = {
+  id: 'flight-1',
+  source: [8.5622, 50.0379] as [number, number],
+  target: [-0.4614, 51.4775] as [number, number],
+  originIcao: 'EDDF',
+  destinationIcao: 'EGLL',
+  originName: 'Frankfurt',
+  destinationName: 'London Heathrow',
+  airlineId: 'npc',
+  airlineName: 'Rival Air',
+  own: false,
+  colour: '#3366cc',
+  registration: 'D-AIRV',
+  typeDesignation: 'A320',
+  scheduledDeparture: '2024-10-01T08:00:00.000Z',
+  departedAt: '2024-10-01T08:05:00.000Z',
+  arrivesAt: '2024-10-01T10:00:00.000Z',
+};
 
 const OWN_ROUTE: WorldRoute = {
   id: 'own-1',
@@ -195,7 +215,7 @@ describe('dismissing from the panel', () => {
 });
 
 describe('selecting a flight', () => {
-  it('names the carrier and the leg', async () => {
+  it('names the carrier, the leg and the aeroplane', async () => {
     await renderWorld();
     fireEvent.click(screen.getByRole('button', { name: 'Rivals' }));
 
@@ -203,11 +223,14 @@ describe('selecting a flight', () => {
     expect(planes, 'the plane layer is not on the map').toBeDefined();
     const onClick = planes?.props.onClick as (info: { object: unknown }) => void;
     act(() => {
-      onClick({ object: { sourceId: 'npc-1' } });
+      onClick({ object: { sourceId: 'flight-1' } });
     });
 
     expect(screen.getByTestId('panel-title')).toHaveTextContent('Rival Air');
     expect(screen.getByTestId('panel-subtitle')).toHaveTextContent('EDDF → EGLL');
+    // The old card said "Flown by Rival Air." and stopped, because the plane
+    // behind it was decoration. A real flight has an aeroplane (WORLD-10).
+    expect(screen.getByTestId('panel-body')).toHaveTextContent('D-AIRV');
   });
 });
 

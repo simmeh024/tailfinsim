@@ -31,6 +31,14 @@ export interface PlacesPanelProps {
   truncated: boolean;
   /** What a query matches, over every served airport rather than what is in view. */
   onSearch: (query: string) => PlaceRow[];
+  /**
+   * Why there are no aeroplanes, when there are none and there are routes.
+   *
+   * An empty sky over a drawn network reads as a broken map rather than as a
+   * world where nothing happens to be flying — and on a node with no worker
+   * that is the *permanent* state. `null` when there is nothing to explain.
+   */
+  airborneNote: string | null;
   onSelect: (row: PlaceRow) => void;
   onClose: () => void;
 }
@@ -40,6 +48,7 @@ export function PlacesPanel({
   flights,
   truncated,
   onSearch,
+  airborneNote,
   onSelect,
   onClose,
 }: PlacesPanelProps): ReactNode {
@@ -191,6 +200,12 @@ export function PlacesPanel({
             </ul>
           )}
         </div>
+      )}
+
+      {/* Outside the list, because it explains an *absence* — and when there is
+          nothing in view at all the list is not rendered to hold it. */}
+      {!searching && flights.length === 0 && airborneNote !== null && (
+        <p className="world-renderer__route-muted">{airborneNote}</p>
       )}
 
       {!searching && truncated && (

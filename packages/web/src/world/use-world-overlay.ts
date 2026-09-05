@@ -60,7 +60,7 @@ function hidden(): boolean {
  * from it would then start with `undefined` and crash on the first render. The
  * two zeroes are independent, not one shared constant.
  */
-const NOTHING_YET: WorldMapData = { hubs: [], routes: [], traffic: [] };
+const NOTHING_YET: WorldMapData = { hubs: [], routes: [], traffic: [], flights: [] };
 
 export function useWorldOverlay(): WorldMapData {
   const [map, setMap] = useState<WorldMapData>(NOTHING_YET);

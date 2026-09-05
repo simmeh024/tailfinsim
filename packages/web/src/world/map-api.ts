@@ -38,13 +38,34 @@ export interface WorldMapTrafficRoute extends WorldMapRoute {
   colour: string;
 }
 
+/**
+ * One aeroplane actually in the air (WORLD-10).
+ *
+ * The server sends the two game-time instants rather than a position, because
+ * the overlay refreshes once a minute and the browser already runs the world's
+ * clock: a position would freeze the whole fleet between refreshes, while two
+ * instants let it fly.
+ */
+export interface WorldMapFlight extends WorldMapRoute {
+  airlineId: string;
+  airlineName: string;
+  own: boolean;
+  colour: string;
+  registration: string | null;
+  typeDesignation: string | null;
+  scheduledDeparture: string;
+  departedAt: string;
+  arrivesAt: string;
+}
+
 export interface WorldMapData {
   hubs: WorldHub[];
   routes: WorldMapRoute[];
   traffic: WorldMapTrafficRoute[];
+  flights: WorldMapFlight[];
 }
 
-export const EMPTY_WORLD_MAP: WorldMapData = { hubs: [], routes: [], traffic: [] };
+export const EMPTY_WORLD_MAP: WorldMapData = { hubs: [], routes: [], traffic: [], flights: [] };
 
 /**
  * Read the player's overlay.
@@ -83,5 +104,8 @@ export async function fetchWorldMap(): Promise<WorldMapData | null> {
     hubs: Array.isArray(data.hubs) ? data.hubs : [],
     routes: Array.isArray(data.routes) ? data.routes : [],
     traffic: Array.isArray(data.traffic) ? data.traffic : [],
+    // Defaulted, so a client ahead of its server draws a map with no aeroplanes
+    // rather than throwing on the first render.
+    flights: Array.isArray(data.flights) ? data.flights : [],
   };
 }

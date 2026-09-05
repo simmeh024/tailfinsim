@@ -416,6 +416,16 @@ process — the same trap as "ticks: 0, errors: 0", and the first thing to rule 
 believing the fleet API is wrong. `docs/fleet-management.md` has the boundary, including the
 two things M4-07 deliberately did not build.
 
+**And since WORLD-10 the world map draws those flights rather than decoration.**
+The aeroplanes on `/world` used to be one per _active route_, riding a looping animation
+phase in the browser — they moved whether or not anything had ever flown that leg.
+`GET /api/world/map` now returns the rows of `flight` that have **departed and not yet
+arrived**, and the client places each one by its own progress against the world clock. So
+on a node with no worker the map draws the network with an **empty sky**, permanently,
+which is the same trap as everything above it. The Places list says so in words rather
+than leaving it as silence, and the route lines still draw — the network is worth seeing
+whether or not anything is on it.
+
 **Schedules only become flights on the worker (M2-03).** `POST /api/schedules` writes a
 rotation, and `@tailfin/sim` has always known how to walk one into dated flights, but nothing
 called `materialiseWorld` until now — so a saved schedule produced nothing at all. The worker
