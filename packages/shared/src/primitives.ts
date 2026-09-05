@@ -86,6 +86,58 @@ export const MinorUnits = z
   .max(Number.MAX_SAFE_INTEGER);
 export type MinorUnits = z.infer<typeof MinorUnits>;
 
+/**
+ * `$1,234.50` — a stored money figure, in the currency it is stored in (UX-01).
+ *
+ * Here rather than in `packages/web` because **the server writes money into
+ * prose**: the NPC decision log records sentences like *"Economy fare moved from
+ * 12000 to 11400 minor units"*, and those are read by an admin on the Carriers
+ * page beside a cash column the client formats. Two formatters produced two
+ * shapes for one quantity on one screen, and the client's comment about it was
+ * the reason its cash column printed raw integers for a year.
+ *
+ * **Not the player's display currency.** M8-02's conversion is a presentation
+ * step that happens at the game client's render boundary and nowhere else
+ * (`web/src/currency/display.ts`); this is the *stored* USD figure, which is what
+ * a ledger, an audit entry and a server-written sentence all mean. Converting
+ * here would put a rate that refreshes daily inside an immutable record.
+ *
+ * Locale pinned to `en-US` so grouping is deterministic across browsers, in CI,
+ * and — since this also runs on the server — across Node builds. A figure whose
+ * shape depends on the reader's locale is one where two people comparing
+ * screenshots disagree about the number.
+ */
+export function formatMinorUnitsUsd(
+  minor: number,
+  options?: { fractionDigits?: number; compact?: boolean },
+): string {
+  const major = minor / 100;
+  const digits = options?.fractionDigits ?? 2;
+
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      currencyDisplay: 'narrowSymbol',
+      ...(options?.compact === true
+        ? { notation: 'compact' as const, maximumFractionDigits: 1 }
+        : { minimumFractionDigits: digits, maximumFractionDigits: digits }),
+    }).format(major);
+  } catch {
+    // A runtime without `narrowSymbol`. A figure with no symbol is still
+    // readable; an exception here would blank whichever surface asked.
+    return `$${major.toLocaleString('en-US', {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    })}`;
+  }
+}
+
+/** The same figure with its sign always shown — for a ledger column. */
+export function formatMinorUnitsUsdSigned(minor: number): string {
+  return `${minor > 0 ? '+' : ''}${formatMinorUnitsUsd(minor)}`;
+}
+
 export const Latitude = z.number().min(-90).max(90);
 export type Latitude = z.infer<typeof Latitude>;
 

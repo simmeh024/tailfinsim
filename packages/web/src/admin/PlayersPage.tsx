@@ -7,6 +7,7 @@ import { Button } from '../ui/Button';
 import { StateBlock } from '../ui/StateBlock';
 
 import { fetchPlayer, fetchPlayers, revokePlayerSessions } from './api';
+import { adminAt, adminMoney } from './format';
 
 import type { ReactNode } from 'react';
 
@@ -34,14 +35,6 @@ import type { ReactNode } from 'react';
  */
 
 /** `2026-08-18 14:07` — UTC, as everywhere else in the console. */
-function formatAt(iso: string): string {
-  return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
-}
-
-/** Integer minor units to something readable. Which currency is M8-02's problem. */
-function formatCash(minor: number): string {
-  return (minor / 100).toLocaleString('en-GB', { maximumFractionDigits: 2 });
-}
 
 type Load<T> = { state: 'loading' } | { state: 'ready'; value: T } | { state: 'failed' };
 
@@ -148,9 +141,9 @@ function PlayerList(): ReactNode {
                       <td>
                         <Link to={`/admin/players/${entry.id}`}>{entry.displayName}</Link>
                       </td>
-                      <td className="figure">{formatAt(entry.createdAt)}</td>
+                      <td className="figure">{adminAt(entry.createdAt)}</td>
                       <td className="figure">
-                        {entry.lastSeenAt === null ? 'never' : formatAt(entry.lastSeenAt)}
+                        {entry.lastSeenAt === null ? 'never' : adminAt(entry.lastSeenAt)}
                       </td>
                       <td>
                         {entry.airlineLinks.length === 0
@@ -233,8 +226,8 @@ function PlayerDetail({ playerId }: { playerId: string }): ReactNode {
         </Link>
         <h2 className="admin__heading">{player.displayName}</h2>
         <p className="admin__note">
-          Signed up {formatAt(player.createdAt)}.
-          {player.anonymizedAt && ` Anonymized ${formatAt(player.anonymizedAt)}.`}
+          Signed up {adminAt(player.createdAt)}.
+          {player.anonymizedAt && ` Anonymized ${adminAt(player.anonymizedAt)}.`}
           {player.isAdmin && ' Holds an admin grant.'} This view is recorded in the audit log.
         </p>
       </section>
@@ -259,7 +252,7 @@ function PlayerDetail({ playerId }: { playerId: string }): ReactNode {
                   <td>{identity.provider}</td>
                   <td className="figure">{identity.subject}</td>
                   <td>{identity.email ?? '—'}</td>
-                  <td className="figure">{formatAt(identity.createdAt)}</td>
+                  <td className="figure">{adminAt(identity.createdAt)}</td>
                 </tr>
               ))}
             </tbody>
@@ -288,9 +281,9 @@ function PlayerDetail({ playerId }: { playerId: string }): ReactNode {
             <tbody>
               {player.sessions.map((entry) => (
                 <tr key={entry.id}>
-                  <td className="figure">{formatAt(entry.createdAt)}</td>
-                  <td className="figure">{formatAt(entry.lastSeenAt)}</td>
-                  <td className="figure">{formatAt(entry.expiresAt)}</td>
+                  <td className="figure">{adminAt(entry.createdAt)}</td>
+                  <td className="figure">{adminAt(entry.lastSeenAt)}</td>
+                  <td className="figure">{adminAt(entry.expiresAt)}</td>
                   <td>{entry.expired ? 'expired' : 'live'}</td>
                 </tr>
               ))}
@@ -359,7 +352,7 @@ function PlayerDetail({ playerId }: { playerId: string }): ReactNode {
                   <td className="figure">{entry.icaoCode}</td>
                   <td className="figure">{entry.callsign}</td>
                   <td>{entry.status}</td>
-                  <td className="figure">{formatCash(entry.cashMinor)}</td>
+                  <td className="figure">{adminMoney(entry.cashMinor)}</td>
                   <td className="figure">{entry.reputation.toFixed(2)}</td>
                 </tr>
               ))}

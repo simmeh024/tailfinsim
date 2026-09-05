@@ -150,7 +150,7 @@ describe('the world list', () => {
 
     expect(await screen.findByText('Flagship')).toBeInTheDocument();
     // The date an admin actually wants: what day it is in there.
-    expect(screen.getByText('2024-10-23 00:00')).toBeInTheDocument();
+    expect(screen.getByText('2024-10-23 00:00 UTC')).toBeInTheDocument();
     expect(screen.getByText('2.00×')).toBeInTheDocument();
   });
 });

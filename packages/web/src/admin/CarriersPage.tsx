@@ -13,6 +13,7 @@ import { Button } from '../ui/Button';
 import { StateBlock } from '../ui/StateBlock';
 
 import { fetchNpcCarriers, fetchWorlds } from './api';
+import { adminDate, adminMoney } from './format';
 import { usePolledData } from './polling';
 
 import type { ReactNode } from 'react';
@@ -40,13 +41,6 @@ const DECISION_LABEL: Record<NpcDecisionKind, string> = {
   fare_changed: 'Repriced',
   entry_declined: 'Declined',
 };
-
-function money(minor: number): string {
-  // Plain, not `toLocaleString`: the server writes its reason sentences with
-  // `String(n)`, and a separator here would render the same figure two ways on
-  // one row with the locale deciding which.
-  return String(minor);
-}
 
 function CarrierCard({ carrier }: { carrier: AdminNpcCarrier }): ReactNode {
   return (
@@ -76,7 +70,7 @@ function CarrierCard({ carrier }: { carrier: AdminNpcCarrier }): ReactNode {
         </div>
         <div>
           <dt>Cash</dt>
-          <dd className="figure">{money(carrier.cashMinor)}</dd>
+          <dd className="figure">{adminMoney(carrier.cashMinor)}</dd>
         </div>
       </dl>
     </article>
@@ -91,7 +85,7 @@ function DecisionRow({ decision }: { decision: AdminNpcDecision }): ReactNode {
 
   return (
     <tr>
-      <td className="figure">{new Date(decision.decidedAt).toISOString().slice(0, 10)}</td>
+      <td className="figure">{adminDate(decision.decidedAt)}</td>
       <td>
         {decision.airlineIataCode} {decision.airlineName}
       </td>

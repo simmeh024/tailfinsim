@@ -6,6 +6,7 @@ import type { AdminAlert, AdminGrantSummary, AdminOverviewResponse } from '@tail
 import { StateBlock } from '../ui/StateBlock';
 
 import { fetchAdmins, fetchOverview } from './api';
+import { adminAt } from './format';
 import { Ago, usePolledData } from './polling';
 
 import type { ReactNode } from 'react';
@@ -110,7 +111,7 @@ function backupRow(backup: AdminOverviewResponse['backup'], now: number): ReactN
               ? 'Completed under an hour ago'
               : `Completed ${String(Math.floor(age))}h ago`
       }
-      detail={`${formatAt(backup.finishedAt)} UTC · ${String(backup.uploaded)} uploaded off-box · ${backup.databases}`}
+      detail={`${adminAt(backup.finishedAt)} UTC · ${String(backup.uploaded)} uploaded off-box · ${backup.databases}`}
     />
   );
 }
@@ -251,11 +252,6 @@ function Alert({ alert }: { alert: AdminAlert }): ReactNode {
       </div>
     </li>
   );
-}
-
-/** `2026-08-18 14:07` — UTC, matching the badge and every log line. */
-function formatAt(iso: string): string {
-  return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
 }
 
 /**
@@ -416,7 +412,7 @@ export function OverviewPage(): ReactNode {
                       {admins.value.map((entry) => (
                         <tr key={entry.playerId}>
                           <td>{entry.displayName}</td>
-                          <td className="figure">{formatAt(entry.grantedAt)}</td>
+                          <td className="figure">{adminAt(entry.grantedAt)}</td>
                           <td>{entry.grantedByLabel ?? 'bootstrap'}</td>
                         </tr>
                       ))}

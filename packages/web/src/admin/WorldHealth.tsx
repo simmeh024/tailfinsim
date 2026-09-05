@@ -5,6 +5,7 @@ import type { AdminTickState, AdminWorldHealth } from '@tailfin/shared';
 import { StateBlock } from '../ui/StateBlock';
 
 import { fetchWorldHealth } from './api';
+import { adminAtSeconds, adminDate } from './format';
 import { usePolledData } from './polling';
 
 import type { ReactNode } from 'react';
@@ -49,11 +50,6 @@ const TICK_TONE: Record<AdminTickState, 'ok' | 'warn' | 'bad' | 'quiet'> = {
   behind: 'warn',
   stalled: 'bad',
 };
-
-/** `2024-10-23 14:07:03` — UTC, seconds included because this one is ticking. */
-function formatClock(iso: string): string {
-  return `${iso.slice(0, 10)} ${iso.slice(11, 19)}`;
-}
 
 function formatDuration(ms: number): string {
   const seconds = Math.floor(ms / 1000);
@@ -124,7 +120,7 @@ function Row({ world, series }: { world: AdminWorldHealth; series: number[] }): 
       <dl className="health__facts">
         <div>
           <dt>In-game</dt>
-          <dd className="figure">{formatClock(world.inGameDate)}</dd>
+          <dd className="figure">{adminAtSeconds(world.inGameDate)}</dd>
         </div>
         <div>
           <dt>Speed</dt>
@@ -268,7 +264,7 @@ export function WorldHealth(): ReactNode {
                 <tr key={entry.dataset}>
                   <td>{entry.dataset}</td>
                   <td className="figure">{entry.version}</td>
-                  <td className="figure">{entry.importedAt.slice(0, 10)}</td>
+                  <td className="figure">{adminDate(entry.importedAt)}</td>
                 </tr>
               ))}
             </tbody>

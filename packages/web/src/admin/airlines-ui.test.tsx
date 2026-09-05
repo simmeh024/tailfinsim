@@ -157,13 +157,15 @@ describe('the airline support record', () => {
 
     expect(await screen.findByRole('heading', { name: 'Hart Air' })).toBeInTheDocument();
     expect(screen.getByText(/HA · XHA · HARTAIR/)).toBeInTheDocument();
-    expect(screen.getAllByText('499,875.00')).toHaveLength(2);
+    // Formatted with its currency now (UX-01): the console reads AIR-06's USD
+    // ledger, and a balance beside a movement has to be comparable.
+    expect(screen.getAllByText('$499,875.00')).toHaveLength(2);
     expect(screen.getByText('EHAM').closest('td')).toHaveTextContent('Amsterdam Airport Schiphol');
     expect(screen.getByText('EGLL').closest('td')).toHaveTextContent('London Heathrow Airport');
     expect(screen.getByText('closed')).toBeInTheDocument();
     expect(screen.getByText('Flight settlement')).toBeInTheDocument();
     expect(screen.getByText('flight-123')).toBeInTheDocument();
-    expect(screen.getByText('-125.00')).toBeInTheDocument();
+    expect(screen.getByText('-$125.00')).toBeInTheDocument();
   });
 
   it('links back to the owning player and has no balance mutation control', async () => {
