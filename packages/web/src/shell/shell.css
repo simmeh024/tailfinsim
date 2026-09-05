@@ -162,6 +162,44 @@ body {
 }
 
 /*
+ * The hover label (WORLD-03).
+ *
+ * Not in the HUD grid: it is pinned to the pointer rather than to a corner, and
+ * it is the one surface here whose position is data. It sits above the canvas
+ * and below the HUD, so an open panel is never covered by a label about
+ * something behind it, and it never takes a pointer event — a tooltip that ate
+ * the click would stop the dot underneath from being selectable.
+ *
+ * `hover.ts` decides which edges are set, so the label grows away from the
+ * pointer into the space that exists rather than off the edge of the map.
+ */
+.world-renderer__tip {
+  position: absolute;
+  z-index: 3;
+  max-width: 16rem;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 12px var(--bg-scrim);
+  pointer-events: none;
+}
+
+.world-renderer__tip-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.world-renderer__tip-detail {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
  * Everything over the map, in one grid.
  *
  * Six absolutely-positioned boxes used to share this space, four of them
