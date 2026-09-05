@@ -30,6 +30,20 @@ export interface WorldRoute {
   target: LngLat;
 }
 
+/**
+ * Where the pointer is, in canvas pixels, and how big the canvas is.
+ *
+ * The size comes along because a label placed at the pointer runs off the right
+ * edge of the map for anything in the eastern half of it — so the page needs to
+ * know which side it is on before it decides where to draw.
+ */
+export interface HoverPoint {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 /** One airport/city a player could serve, as a dot on the world map. */
 export interface WorldAirport {
   /** `[longitude, latitude]`. */
@@ -37,6 +51,16 @@ export interface WorldAirport {
   name: string;
   /** ICAO ident — the key a click uses to find a route through this airport. */
   icao: string;
+  /**
+   * IATA code, where the airport has one.
+   *
+   * The server has always sent this (`server/src/world/airports.ts`); the client
+   * dropped it on the floor, so the map said `EGLL` to a player thinking `LHR`.
+   *
+   * Optional rather than required-and-nullable so a fixture can leave it out —
+   * a great many of them do, and none of them is about the code.
+   */
+  iata?: string | null;
   /** App. B.3 tier — flagship, large, medium, small, regional — sets the dot's size. */
   tier: string;
 }
@@ -133,6 +157,14 @@ export interface CreateWorldLayersOptions {
   reachableIcaos?: ReadonlySet<string>;
   /** Called when a served airport is clicked, so the page can open its route panel. */
   onAirportClick?: (airport: WorldAirport) => void;
+  /**
+   * Called as the pointer enters and leaves an airport, with `null` on the way
+   * out, so the page can label what is under the cursor.
+   *
+   * There are around four thousand dots on this map and, until WORLD-03, no way
+   * to learn what any of them was without clicking it and opening a whole panel.
+   */
+  onAirportHover?: (airport: WorldAirport | null, at: HoverPoint) => void;
   darkness: DarknessField;
   /**
    * The coastline outline to draw.
@@ -478,6 +510,7 @@ export function createWorldLayers({
   hubs,
   reachableIcaos,
   onAirportClick,
+  onAirportHover,
   visibility,
 }: CreateWorldLayersOptions): (Layer | false)[] {
   const bounds = worldBounds(projection, quality);
@@ -752,12 +785,25 @@ export function createWorldLayers({
         lineWidthMaxPixels: 2.5,
         // Clickable so the page can open a route panel; a fatter pick radius makes
         // the small dots easy to hit without changing how they look.
-        pickable: onAirportClick !== undefined,
+        pickable: onAirportClick !== undefined || onAirportHover !== undefined,
         radiusScale: 1,
         onClick: onAirportClick
           ? (info) => {
               if (info.object) onAirportClick(info.object as WorldAirport);
               return true;
+            }
+          : undefined,
+        // deck.gl fires this with no object as the pointer leaves, which is what
+        // clears the label; the coordinates are already in canvas pixels.
+        onHover: onAirportHover
+          ? (info) => {
+              onAirportHover((info.object as WorldAirport | null) ?? null, {
+                x: info.x,
+                y: info.y,
+                width: info.viewport?.width ?? 0,
+                height: info.viewport?.height ?? 0,
+              });
+              return false;
             }
           : undefined,
         parameters: { cullMode: 'none' },

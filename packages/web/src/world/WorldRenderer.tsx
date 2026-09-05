@@ -10,12 +10,14 @@ import { useTheme } from '../theme/ThemeProvider';
 import { fetchWorldAirports } from './airports-api';
 import { clampViewState, focusViewState } from './camera';
 import { flightPath, greatCirclePath, planesForRoutes, routeSeed, type WorldPlane } from './flight';
+import { airportCodes, airportLabel, flightLabel, tipPlacement, type HoverLabel } from './hover';
 import { COARSE_WORLD, LAND_DETAIL_ZOOM, loadDetailedWorld, type WorldGeometry } from './land';
 import {
   airportLevelForZoom,
   createWorldLayers,
   planeSpriteSize,
   visibleAirportsAtLevel,
+  type HoverPoint,
   type RendererQuality,
   type WorldAirport,
   type WorldLayerVisibility,
@@ -118,6 +120,8 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   const [maxRangeNm, setMaxRangeNm] = useState(0);
   const [phase, setPhase] = useState(0);
   const [selectedAirport, setSelectedAirport] = useState<WorldAirport | null>(null);
+  /** What the pointer is over, and where — see `hover.ts`. */
+  const [hover, setHover] = useState<{ label: HoverLabel; at: HoverPoint } | null>(null);
   const [selectedRoute, setSelectedRoute] = useState<WorldMapTrafficRoute | null>(null);
   const [showRivals, setShowRivals] = useState(false);
   const [showLegend, setShowLegend] = useState(false);
@@ -318,6 +322,16 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     setSelectedRoute(null);
   }, []);
 
+  /*
+   * Name what the pointer is over.
+   *
+   * deck.gl fires the same handler with no object as the pointer leaves, which
+   * is what clears the label — so there is no separate "leave" path to forget.
+   */
+  const onAirportHover = useCallback((airport: WorldAirport | null, at: HoverPoint) => {
+    setHover(airport === null ? null : { label: airportLabel(airport), at });
+  }, []);
+
   // The map is for discovery; opening a route happens in the route planner. Hand it
   // the origin and destination so the "Open a route" form arrives pre-filled.
   const planRoute = useCallback(
@@ -338,6 +352,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
         hubs: map.hubs,
         reachableIcaos,
         onAirportClick,
+        onAirportHover,
         darkness,
         land: geometry.land,
         borders: geometry.borders,
@@ -352,6 +367,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       map.hubs,
       reachableIcaos,
       onAirportClick,
+      onAirportHover,
       darkness,
       geometry,
       visibility,
@@ -378,6 +394,39 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   useEffect(() => {
     if (selectedRoute !== null && !trafficById.has(selectedRoute.id)) setSelectedRoute(null);
   }, [selectedRoute, trafficById]);
+
+  /*
+   * The same for an aeroplane, resolved through the route it is flying: the icon
+   * carries only a route id, and the carrier behind it is the interesting half.
+   */
+  const onTrafficHover = useCallback(
+    (info: {
+      object?: unknown;
+      x: number;
+      y: number;
+      viewport?: { width: number; height: number };
+    }): boolean => {
+      const routeId =
+        (info.object as WorldPlane | undefined)?.sourceId ??
+        (info.object as WorldMapTrafficRoute | undefined)?.id;
+      const carrierRoute = routeId === undefined ? undefined : trafficById.get(routeId);
+      setHover(
+        carrierRoute === undefined
+          ? null
+          : {
+              label: flightLabel(carrierRoute),
+              at: {
+                x: info.x,
+                y: info.y,
+                width: info.viewport?.width ?? 0,
+                height: info.viewport?.height ?? 0,
+              },
+            },
+      );
+      return false;
+    },
+    [trafficById],
+  );
 
   const onPlaneClick = useCallback(
     (info: { object?: unknown }): boolean => {
@@ -457,13 +506,14 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       // radius (set on DeckGL) makes the small icons easy to hit.
       pickable: true,
       onClick: onPlaneClick,
+      onHover: onTrafficHover,
       billboard: true,
       // Lift the plane off the surface like the routes and airports, so it is not
       // depth-rejected by the terrain at the whole-globe zoom.
       getPolygonOffset: () => [0, -61000],
       parameters: { cullMode: 'none' },
     });
-  }, [planes, spriteSize, colourFor, colourById, onPlaneClick]);
+  }, [planes, spriteSize, colourFor, colourById, onPlaneClick, onTrafficHover]);
 
   // The clicked plane's route, drawn on demand: an NPC's line does not otherwise
   // appear, and this is what "show their route" puts on the map. Coloured its
@@ -511,10 +561,11 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       jointRounded: true,
       pickable: true,
       onClick: onPlaneClick,
+      onHover: onTrafficHover,
       parameters: { cullMode: 'none' },
       getPolygonOffset: () => [0, -60000],
     });
-  }, [showRivals, corridorGrid, rivals, neutral, quality, onPlaneClick]);
+  }, [showRivals, corridorGrid, rivals, neutral, quality, onPlaneClick, onTrafficHover]);
 
   const corridorLayer = useMemo(() => {
     if (!showRivals || corridorGrid === 0 || rivals.length === 0) return false;
@@ -780,6 +831,27 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
         />
       </div>
 
+      {/*
+       * The hover label.
+       *
+       * `aria-hidden`, and deliberately: it says the same thing the selection
+       * panel says, it is driven by a pointer a screen-reader user does not
+       * have, and a live region that fired on every dot crossed would be
+       * unusable. Naming things for a keyboard is WORLD-08's job, and it is a
+       * different mechanism rather than this one wired to focus.
+       */}
+      {hover !== null && (
+        <div
+          className="world-renderer__tip"
+          style={tipPlacement(hover.at)}
+          aria-hidden="true"
+          data-testid="world-tip"
+        >
+          <p className="world-renderer__tip-title">{hover.label.title}</p>
+          <p className="world-renderer__tip-detail">{hover.label.detail}</p>
+        </div>
+      )}
+
       <div className="world-renderer__atmosphere" aria-hidden="true" />
 
       {/*
@@ -941,7 +1013,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
                         {isHub ? 'Your hub' : 'Route planner'}
                       </p>
                       <p className="world-renderer__route-title">{airport.name}</p>
-                      <p className="world-renderer__route-code">{airport.icao}</p>
+                      <p className="world-renderer__route-code">{airportCodes(airport)}</p>
                     </div>
                     <button
                       type="button"
