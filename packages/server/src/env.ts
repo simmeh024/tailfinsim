@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
  */
 
 import { resolveCorsOrigins } from './security/cors';
+import { RATE_LIMIT_CLASSES, type RateLimitClass } from './security/rate-limit';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = resolve(packageRoot, '..', '..');
@@ -161,6 +162,14 @@ export interface ServerEnv {
   rateLimitMax?: number;
   /** The window `rateLimitMax` is counted over, in milliseconds. */
   rateLimitWindowMs?: number;
+  /**
+   * Per-class rate-limit overrides (SEC-HARD-09).
+   *
+   * Absent means the shipped defaults in `security/rate-limit.ts`. A class named
+   * here overrides only what it names, so raising one budget on one box does not
+   * silently reset the others.
+   */
+  rateLimits?: Partial<Record<RateLimitClass, { max?: number; windowMs?: number }>>;
 
   /**
    * Which public surface this instance serves at `/`.
@@ -278,6 +287,29 @@ export function loadEnv(): ServerEnv {
     environmentLabel as EnvironmentLabel,
   );
 
+  /*
+   * `RATE_LIMIT_<CLASS>_MAX` / `_WINDOW_MS`, per endpoint class (SEC-HARD-09).
+   *
+   * Read here rather than in `rate-limit.ts` so that a typo in a class name is a
+   * boot failure naming the classes, not a variable that silently does nothing —
+   * the same reason `CORS_ALLOWED_ORIGINS` refuses rather than being ignored.
+   */
+  const rateLimits: Partial<Record<RateLimitClass, { max?: number; windowMs?: number }>> = {};
+  for (const key of Object.keys(process.env)) {
+    const match = /^RATE_LIMIT_([A-Z]+)_(MAX|WINDOW_MS)$/.exec(key);
+    if (!match) continue;
+    const name = match[1]!.toLowerCase();
+    if (!RATE_LIMIT_CLASSES.includes(name as RateLimitClass)) {
+      throw new Error(
+        `${key} names no rate-limit class. Classes are: ${RATE_LIMIT_CLASSES.join(', ')}. ` +
+          'See docs/deploy.md and SEC-HARD-09.',
+      );
+    }
+    const budget = (rateLimits[name as RateLimitClass] ??= {});
+    if (match[2] === 'MAX') budget.max = optionalInt(key, 0);
+    else budget.windowMs = optionalInt(key, 0);
+  }
+
   const devQuarantineA320neoRecoveryGlb = optionalUndefined('DEV_QUARANTINE_A320NEO_RECOVERY_GLB');
   if (devQuarantineA320neoRecoveryGlb !== undefined && environmentLabel !== 'dev') {
     throw new Error(
@@ -337,5 +369,6 @@ export function loadEnv(): ServerEnv {
     allowRegistration: optionalBool('ALLOW_REGISTRATION', false),
     rateLimitMax: optionalInt('RATE_LIMIT_MAX', 1200),
     rateLimitWindowMs: optionalInt('RATE_LIMIT_WINDOW_MS', 60_000),
+    rateLimits,
   };
 }

@@ -271,3 +271,35 @@ describe('loadEnv — CORS (SEC-HARD-08)', () => {
     expect(production('https://tailfinsim.com')).toThrow(/registers no CORS plugin/i);
   });
 });
+
+describe('loadEnv — rate limits (SEC-HARD-09)', () => {
+  it('reads a per-class budget', () => {
+    vi.stubEnv('DATABASE_URL', VALID_URL);
+    vi.stubEnv('RATE_LIMIT_WRITE_MAX', '30');
+    vi.stubEnv('RATE_LIMIT_WRITE_WINDOW_MS', '10000');
+    expect(loadEnv().rateLimits).toMatchObject({ write: { max: 30, windowMs: 10_000 } });
+  });
+
+  it('refuses to boot on a class name that does not exist', () => {
+    // A variable that silently does nothing is the shape of every long-running
+    // configuration mystery — and here it would mean somebody believed they had
+    // tightened a limit that was never touched.
+    vi.stubEnv('DATABASE_URL', VALID_URL);
+    vi.stubEnv('RATE_LIMIT_ORDERS_MAX', '10');
+    expect(() => loadEnv()).toThrow(/names no rate-limit class/);
+    // And it says what the classes are, rather than leaving a guess.
+    expect(() => loadEnv()).toThrow(/read, write/);
+  });
+
+  it('does not mistake the single-ceiling variables for a class', () => {
+    // `RATE_LIMIT_MAX` and `RATE_LIMIT_WINDOW_MS` are the older spelling and
+    // still mean the read budget; parsing them as a class named MAX would
+    // refuse to boot on a box that has been running for months.
+    vi.stubEnv('DATABASE_URL', VALID_URL);
+    vi.stubEnv('RATE_LIMIT_MAX', '900');
+    vi.stubEnv('RATE_LIMIT_WINDOW_MS', '30000');
+    const env = loadEnv();
+    expect(env.rateLimits).toEqual({});
+    expect(env.rateLimitMax).toBe(900);
+  });
+});

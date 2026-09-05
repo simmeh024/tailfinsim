@@ -193,6 +193,13 @@ function NodeCard({ node }: { node: AdminNodeHealth }): ReactNode {
   );
 }
 
+/** `minute` · `15 minutes` — a window, read as a person would say it. */
+function formatWindow(ms: number): string {
+  const minutes = Math.round(ms / 60_000);
+  if (minutes <= 1) return 'minute';
+  return `${String(minutes)} minutes`;
+}
+
 export function SystemHealthPage(): ReactNode {
   const { value, loading, failed, refresh } = usePolledData<AdminSystemHealthResponse>(
     fetchSystemHealth,
@@ -276,6 +283,38 @@ export function SystemHealthPage(): ReactNode {
               <NodeCard key={node.node} node={node} />
             ))}
           </div>
+        )}
+
+        {value.rateLimits.length > 0 && (
+          <table>
+            <caption>
+              Rate limits on <strong>this</strong> node, and how often each has refused a request
+              since the process started. Counters live in the answering process&rsquo;s memory, so
+              with more than one web node this is that node&rsquo;s share rather than the total
+              (OPS-11).
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Class</th>
+                <th scope="col">Budget</th>
+                <th scope="col">Refused</th>
+              </tr>
+            </thead>
+            <tbody>
+              {value.rateLimits.map((limit) => (
+                <tr key={limit.class}>
+                  <td className="figure">{limit.class}</td>
+                  <td className="figure">
+                    {limit.max} / {formatWindow(limit.windowMs)}
+                  </td>
+                  {/* Zero is the ordinary state and reads as such. A number here
+                      is not necessarily abuse — it is as likely to be a budget
+                      set too low, which is the failure that hurts real players. */}
+                  <td className="figure">{limit.exceeded}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
 
         <p className="admin__hint">

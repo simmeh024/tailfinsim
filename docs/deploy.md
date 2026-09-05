@@ -162,26 +162,28 @@ refused at boot, because a half-configured sign-in looks like a working one and 
 the callback, after the player has been sent to Google. Production also refuses a plain-HTTP
 `PUBLIC_ORIGIN`; otherwise its session cookies would silently lose the `Secure` attribute.
 
-| Variable                      | Example                                       | Required | Notes                                                  |
-| ----------------------------- | --------------------------------------------- | -------- | ------------------------------------------------------ |
-| `NODE_ENV`                    | `production`                                  | no       | `development` \| `test` \| `production`                |
-| `PORT`                        | `3000`                                        | no       | Caddy proxies to this. Defaults to 3000                |
-| `HOST`                        | `127.0.0.1`                                   | no       | Web bind address. Keep loopback behind local Caddy     |
-| `DATABASE_URL`                | `postgres://tailfin:…@localhost:5432/tailfin` | yes      | M0-05. Never hardcoded, never committed                |
-| `DATABASE_POOL_MAX`           | `10`                                          | no       | Defaults to 10                                         |
-| `DATABASE_CONNECT_TIMEOUT_MS` | `5000`                                        | no       | Defaults to 5000. `pg`'s own default waits forever     |
-| `LOG_LEVEL`                   | `info`                                        | no       | Pino level; defaults to `info` in prod, `debug` in dev |
-| `WEB_SURFACE`                 | `app`                                         | no       | `holding` (default) or `app`. What `/` serves          |
-| `ENVIRONMENT_LABEL`           | `dev`                                         | no       | `local` (default), `dev`, `production`. Build badge    |
-| `PUBLIC_ORIGIN`               | `https://tailfinsim.com`                      | no       | OAuth base; HTTPS is mandatory on production           |
-| `GOOGLE_CLIENT_ID`            | `….apps.googleusercontent.com`                | no       | M0-11. All three auth vars together, or none           |
-| `GOOGLE_CLIENT_SECRET`        | `GOCSPX-…`                                    | no       | Never logged, never echoed                             |
-| `SESSION_SECRET`              | _(32+ random bytes, base64)_                  | no       | Signs the temporary OAuth state/PKCE cookie            |
-| `SESSION_TTL_HOURS`           | `720`                                         | no       | Player TTL: 30 days for a persistent-world account     |
-| `ADMIN_SESSION_TTL_HOURS`     | `12`                                          | no       | Admin TTL: one shift; must be shorter than player TTL  |
-| `ALLOW_REGISTRATION`          | `false`                                       | no       | **Defaults to false.** Closed unless explicitly opened |
-| `CORS_ALLOWED_ORIGINS`        | _(unset)_                                     | no       | **Leave unset.** Any value refuses to boot — see below |
-| `BACKUP_STATUS_FILE`          | `/var/lib/tailfin/backup-status.json`         | no       | Written by `backup.sh`, read by the admin overview     |
+| Variable                       | Example                                       | Required | Notes                                                  |
+| ------------------------------ | --------------------------------------------- | -------- | ------------------------------------------------------ |
+| `NODE_ENV`                     | `production`                                  | no       | `development` \| `test` \| `production`                |
+| `PORT`                         | `3000`                                        | no       | Caddy proxies to this. Defaults to 3000                |
+| `HOST`                         | `127.0.0.1`                                   | no       | Web bind address. Keep loopback behind local Caddy     |
+| `DATABASE_URL`                 | `postgres://tailfin:…@localhost:5432/tailfin` | yes      | M0-05. Never hardcoded, never committed                |
+| `DATABASE_POOL_MAX`            | `10`                                          | no       | Defaults to 10                                         |
+| `DATABASE_CONNECT_TIMEOUT_MS`  | `5000`                                        | no       | Defaults to 5000. `pg`'s own default waits forever     |
+| `LOG_LEVEL`                    | `info`                                        | no       | Pino level; defaults to `info` in prod, `debug` in dev |
+| `WEB_SURFACE`                  | `app`                                         | no       | `holding` (default) or `app`. What `/` serves          |
+| `ENVIRONMENT_LABEL`            | `dev`                                         | no       | `local` (default), `dev`, `production`. Build badge    |
+| `PUBLIC_ORIGIN`                | `https://tailfinsim.com`                      | no       | OAuth base; HTTPS is mandatory on production           |
+| `GOOGLE_CLIENT_ID`             | `….apps.googleusercontent.com`                | no       | M0-11. All three auth vars together, or none           |
+| `GOOGLE_CLIENT_SECRET`         | `GOCSPX-…`                                    | no       | Never logged, never echoed                             |
+| `SESSION_SECRET`               | _(32+ random bytes, base64)_                  | no       | Signs the temporary OAuth state/PKCE cookie            |
+| `SESSION_TTL_HOURS`            | `720`                                         | no       | Player TTL: 30 days for a persistent-world account     |
+| `ADMIN_SESSION_TTL_HOURS`      | `12`                                          | no       | Admin TTL: one shift; must be shorter than player TTL  |
+| `ALLOW_REGISTRATION`           | `false`                                       | no       | **Defaults to false.** Closed unless explicitly opened |
+| `CORS_ALLOWED_ORIGINS`         | _(unset)_                                     | no       | **Leave unset.** Any value refuses to boot — see below |
+| `RATE_LIMIT_<CLASS>_MAX`       | `RATE_LIMIT_WRITE_MAX=240`                    | no       | Per endpoint class. See below                          |
+| `RATE_LIMIT_<CLASS>_WINDOW_MS` | `RATE_LIMIT_WRITE_WINDOW_MS=60000`            | no       | The window that class is counted over                  |
+| `BACKUP_STATUS_FILE`           | `/var/lib/tailfin/backup-status.json`         | no       | Written by `backup.sh`, read by the admin overview     |
 
 ##### `CORS_ALLOWED_ORIGINS` refuses every value, on purpose (SEC-HARD-08)
 
@@ -202,6 +204,39 @@ For local development against the Vite dev server, use its `/api` proxy
 (`packages/web/vite.config.ts`) so the browser sees one origin and no cross-origin request is
 made. If cross-origin access ever becomes genuinely necessary, that allowlist is the only
 sanctioned way to build the list, and ADR-0025 has to be amended in the same change.
+
+##### Rate limits are per endpoint class (SEC-HARD-09)
+
+Five budgets, each its own bucket, keyed on the **player** where a request is authenticated
+and on the address otherwise — so two players behind one NAT cannot exhaust each other's
+allowance. The classes and their shipped defaults live in
+`packages/server/src/security/rate-limit.ts`:
+
+| Class    | Covers                                             | Default     |
+| -------- | -------------------------------------------------- | ----------- |
+| `auth`   | `/api/auth/*`                                      | 20 / 15 min |
+| `read`   | every other `GET`                                  | 1200 / min  |
+| `write`  | every other `POST`, `PUT`, `PATCH`, `DELETE`       | 240 / min   |
+| `report` | the handful of reads that aggregate across a world | 60 / min    |
+| `admin`  | `/api/admin/*`, reads and writes alike             | 600 / min   |
+
+`/healthz` and `/` are never counted — `deploy.sh` polls the first, and a rate-limited health
+check turns unrelated traffic into a failed deploy. Loopback is exempt, which covers the
+worker, local development and the test suite.
+
+Override one class with `RATE_LIMIT_WRITE_MAX=120`; naming a class that does not exist refuses
+to boot and lists the real ones. `RATE_LIMIT_MAX` and `RATE_LIMIT_WINDOW_MS` are the older
+single-ceiling spelling and now mean the **read** budget, so a box already setting them keeps
+the behaviour it had.
+
+A refusal answers **429** with `Retry-After` and `{ "code": "rate_limited", … }`, and is logged
+at `warn` with the class and route — a deliberate refusal is not an unhandled error. The
+admin console's **System health** page shows each class's budget and how often it has fired.
+
+**Counters are per process.** With more than one web node each would enforce its own copy of
+every limit, multiplying the effective ceiling by the node count, and the console would show
+one node's share. The fix is a shared store and it needs the second node to exist first —
+tracked on [OPS-11](https://github.com/simmeh024/tailfinsim/issues/190).
 
 #### Worker process
 

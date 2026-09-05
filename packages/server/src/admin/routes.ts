@@ -46,7 +46,9 @@ import {
   validateCreateRequest,
   validatePinRequest,
 } from '../economy/versions';
+import { type ServerEnv } from '../env';
 import { parseRequestBody } from '../http/request-body';
+import { rateLimitCounters } from '../security/rate-limit';
 
 import { readAirline } from './airlines';
 import { parseAuditJson, readAudit } from './audit';
@@ -93,6 +95,13 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 export interface AdminRoutesOptions {
   db: DatabaseHandle;
+  /**
+   * Needed only for the rate-limit budgets on the System health page.
+   *
+   * The counters live in this process's memory, so the console reads them from
+   * the node it happens to be talking to (SEC-HARD-09). The page says so.
+   */
+  env: ServerEnv;
 }
 
 /**
@@ -111,7 +120,7 @@ function actorOf(request: FastifyRequest): Actor {
   };
 }
 
-export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOptions): void {
+export function registerAdminRoutes(app: FastifyInstance, { db, env }: AdminRoutesOptions): void {
   app.get(
     '/api/admin/overview',
     {
@@ -338,6 +347,9 @@ export function registerAdminRoutes(app: FastifyInstance, { db }: AdminRoutesOpt
         offlineAfterMs: NODE_OFFLINE_AFTER_MS,
         alerts: report.alerts,
         unsupportedEvents: report.unsupportedEvents,
+        // From this process, not from the database: a rate limit is a property
+        // of the node that refused the request (SEC-HARD-09).
+        rateLimits: rateLimitCounters(env),
       });
     },
   );

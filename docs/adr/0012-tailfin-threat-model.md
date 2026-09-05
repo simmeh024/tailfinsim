@@ -210,10 +210,17 @@ API calls made at machine speed; it is not limited to malformed traffic.
 - Dev data is disposable; production data is not. Sharing a host is recorded as risk, not
   treated as isolation.
 - Bounded work and honest failure defend the 2-vCPU host against the abusive-traffic
-  attacker. A per-client-IP rate limit at the application edge (`@fastify/rate-limit`, keyed
-  on the `trustProxy`-resolved caller behind Caddy) caps request floods before they reach a
-  handler; loopback is exempt so the worker and local tooling are never throttled. This is the
-  first tranche of SEC-HARD-09 and does not, by itself, absorb a volumetric flood (see below).
+  attacker, and shared-economy fairness against the scripted one. Rate limits are applied per
+  **endpoint class** — `auth`, `read`, `write`, `report`, `admin` — each its own budget, keyed
+  on the player where a request is authenticated and on the `trustProxy`-resolved address
+  otherwise, so two players behind one NAT cannot exhaust each other's allowance and a script
+  cannot buy a fresh budget by changing address. Loopback and `/healthz` are exempt, so the
+  worker, local tooling and the deploy's own health poll are never throttled. Refusals answer
+  429 with `Retry-After` and are counted per class on the admin console's System health page,
+  because the failure that matters is the false positive: a budget set too low refuses real
+  players and looks like a broken game. Counters are per process, so a second web node would
+  multiply every effective ceiling — a shared store is OPS-11's, not something to build for a
+  single node. This does not, by itself, absorb a volumetric flood (see below).
 - Security automation must prove a property and stay readable. A noisy or silently skipped
   control creates false confidence.
 - Every SEC-HARD issue names the asset and attacker/failure mode it addresses. A proposed
