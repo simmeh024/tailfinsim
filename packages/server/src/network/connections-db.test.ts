@@ -7,6 +7,7 @@ import { gameTime, type WorldClock } from '@tailfin/sim';
 
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { airport, flight, world } from '../db/schema';
+import { createAirportIdentities } from '../test-fixtures/airport-codes';
 import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixture,
@@ -16,6 +17,13 @@ import {
 import { hubConnections } from './connections';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
+
+/**
+ * A serial rather than a draw: `airport` has three unique columns and random
+ * codes collide (BUG-11). The namespace keeps this suite clear of every
+ * other one, which matters because vitest runs them together.
+ */
+const nextAirport = createAirportIdentities('network/connections-db');
 
 /**
  * The hub connection analysis over HTTP-shaped state (§7.4).
@@ -56,16 +64,13 @@ describeDb('hubConnections', () => {
     await db.close();
   });
 
-  function code(): string {
-    return `Z${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
-  }
-
   /** An airport with a real ICAO, so it can be a founder hub and a flight endpoint. */
   async function makeAirport(): Promise<{ icao: string; ident: string }> {
-    const icao = code();
+    const identity = nextAirport();
+    const icao = identity.icaoCode;
     const ident = `TEST-${icao}`;
     await db.db.insert(airport).values({
-      sourceId: Math.floor(Math.random() * 2_000_000_000),
+      sourceId: identity.sourceId,
       ident,
       icaoCode: icao,
       name: `Test Field ${icao}`,

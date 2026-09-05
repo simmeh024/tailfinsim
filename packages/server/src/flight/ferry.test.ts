@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { airline, airport, flight, flightResult, worldEvent } from '../db/schema';
+import { createAirportIdentities } from '../test-fixtures/airport-codes';
 import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixtureHarness,
@@ -10,6 +11,13 @@ import {
 
 import { createFerryFlight, ferryForRotation, locateAirframe } from './ferry';
 import { arrivalKey, settleArrivedFlight } from './settle';
+
+/**
+ * A serial rather than a draw: `airport` has three unique columns and random
+ * codes collide (BUG-11). The namespace keeps this suite clear of every
+ * other one, which matters because vitest runs them together.
+ */
+const nextAirport = createAirportIdentities('flight/ferry');
 
 /**
  * Positioning and ferry flights, against a real Postgres (M2-07).
@@ -35,15 +43,6 @@ const DEPARTS = new Date('2026-08-17T06:00:00.000Z');
 const ARRIVES = new Date('2026-08-17T07:15:00.000Z');
 const ATR72_CRUISE_KT = 275;
 
-function code(): string {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  let out = '';
-  for (let i = 0; i < 4; i += 1) {
-    out += alphabet[Math.floor(Math.random() * alphabet.length)] ?? 'A';
-  }
-  return out;
-}
-
 describeDb('positioning and ferries', () => {
   let db: DatabaseHandle;
   let fixtures: FoundedAirlineFixtureHarness;
@@ -66,10 +65,11 @@ describeDb('positioning and ferries', () => {
   });
 
   async function makeAirport(latitude: number, longitude: number): Promise<string> {
-    const icao = code();
+    const identity = nextAirport();
+    const icao = identity.icaoCode;
     await db.db.insert(airport).values({
-      sourceId: Math.floor(Math.random() * 2_000_000_000),
-      ident: `TEST-${icao}-${Math.random().toString(36).slice(2, 8)}`,
+      sourceId: identity.sourceId,
+      ident: identity.ident,
       icaoCode: icao,
       name: `Test Field ${icao}`,
       isoCountry: 'NL',

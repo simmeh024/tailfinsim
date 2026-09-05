@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { airport } from '../db/schema';
+import { createAirportIdentities } from '../test-fixtures/airport-codes';
 import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixture,
@@ -12,6 +13,13 @@ import {
 import { claimSlot, readAirportSlots, releaseSlot, resolveLegSlots } from './slots';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
+
+/**
+ * A serial rather than a draw: `airport` has three unique columns and random
+ * codes collide (BUG-11). The namespace keeps this suite clear of every
+ * other one, which matters because vitest runs them together.
+ */
+const nextAirport = createAirportIdentities('network/slots-db');
 
 /**
  * Holding and resolving airport slots over HTTP-shaped state (M7-05).
@@ -53,18 +61,15 @@ describeDb('airport slots', () => {
     await db.close();
   });
 
-  function code(): string {
-    return `S${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
-  }
-
   async function makeAirport(
     slotLevel: number | null,
     tier: string | null,
     utcOffsetMinutes: number | null = null,
   ): Promise<string> {
-    const icao = code();
+    const identity = nextAirport();
+    const icao = identity.icaoCode;
     await db.db.insert(airport).values({
-      sourceId: Math.floor(Math.random() * 2_000_000_000),
+      sourceId: identity.sourceId,
       ident: `SLOT-${icao}`,
       icaoCode: icao,
       name: `Slot Field ${icao}`,
