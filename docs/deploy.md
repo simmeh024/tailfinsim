@@ -180,7 +180,28 @@ the callback, after the player has been sent to Google. Production also refuses 
 | `SESSION_TTL_HOURS`           | `720`                                         | no       | Player TTL: 30 days for a persistent-world account     |
 | `ADMIN_SESSION_TTL_HOURS`     | `12`                                          | no       | Admin TTL: one shift; must be shorter than player TTL  |
 | `ALLOW_REGISTRATION`          | `false`                                       | no       | **Defaults to false.** Closed unless explicitly opened |
+| `CORS_ALLOWED_ORIGINS`        | _(unset)_                                     | no       | **Leave unset.** Any value refuses to boot — see below |
 | `BACKUP_STATUS_FILE`          | `/var/lib/tailfin/backup-status.json`         | no       | Written by `backup.sh`, read by the admin overview     |
+
+##### `CORS_ALLOWED_ORIGINS` refuses every value, on purpose (SEC-HARD-08)
+
+This build registers no CORS plugin, and the absence is load-bearing:
+[ADR-0025](adr/0025-no-csrf-token.md) counts it as one of the four facts that make a CSRF
+token unnecessary. So the variable exists only to fail loudly rather than to be ignored, and
+which failure you get depends on the value:
+
+- a wildcard or a reflecting value (`*`, `true`, `null`) is refused as a wildcard, naming the
+  consequence;
+- an origin the environment may not trust — a localhost entry on production, a lookalike such
+  as `https://tailfinsim.com.evil.example`, or dev's origin on the live host — is refused
+  against an **exact-match** allowlist held in `packages/server/src/security/cors.ts`;
+- an origin that environment _is_ permitted to trust is still refused, because nothing would
+  consume it, and the message says what to do instead.
+
+For local development against the Vite dev server, use its `/api` proxy
+(`packages/web/vite.config.ts`) so the browser sees one origin and no cross-origin request is
+made. If cross-origin access ever becomes genuinely necessary, that allowlist is the only
+sanctioned way to build the list, and ADR-0025 has to be amended in the same change.
 
 #### Worker process
 

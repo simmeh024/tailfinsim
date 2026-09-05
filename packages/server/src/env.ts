@@ -13,6 +13,8 @@ import { fileURLToPath } from 'node:url';
  * The full documented set lives in `docs/deploy.md`.
  */
 
+import { resolveCorsOrigins } from './security/cors';
+
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = resolve(packageRoot, '..', '..');
 
@@ -182,6 +184,17 @@ export interface ServerEnv {
    * visible rather than inferred.
    */
   environmentLabel: EnvironmentLabel;
+  /**
+   * Exact origins this server may answer cross-origin for (SEC-HARD-08).
+   *
+   * Absent or empty is the shipped state and means **no CORS at all**: nothing
+   * is registered and no `Access-Control-*` header is ever sent. ADR-0025
+   * depends on that, so a change here is a change there.
+   *
+   * Optional like the rate-limit knobs, so the many hand-written `ServerEnv`
+   * fixtures keep describing the default rather than having to restate it.
+   */
+  corsAllowedOrigins?: readonly string[];
 
   /**
    * An operator-provisioned, immutable recovery export for a dev-only visual
@@ -251,6 +264,20 @@ export function loadEnv(): ServerEnv {
     );
   }
 
+  /*
+   * Refused at boot rather than at the first cross-origin request.
+   *
+   * `resolveCorsOrigins` accepts only origins the *named environment* could
+   * have a reason to trust, so production cannot be configured to answer for
+   * anything but its own origin — a wildcard, a localhost entry and a lookalike
+   * domain are all equally impossible there. Unset means no CORS, which is what
+   * both hosts run.
+   */
+  const corsAllowedOrigins = resolveCorsOrigins(
+    optionalUndefined('CORS_ALLOWED_ORIGINS'),
+    environmentLabel as EnvironmentLabel,
+  );
+
   const devQuarantineA320neoRecoveryGlb = optionalUndefined('DEV_QUARANTINE_A320NEO_RECOVERY_GLB');
   if (devQuarantineA320neoRecoveryGlb !== undefined && environmentLabel !== 'dev') {
     throw new Error(
@@ -298,6 +325,7 @@ export function loadEnv(): ServerEnv {
     logLevel: optional('LOG_LEVEL', nodeEnv === 'production' ? 'info' : 'debug'),
     webSurface: webSurface as WebSurface,
     environmentLabel: environmentLabel as EnvironmentLabel,
+    corsAllowedOrigins,
     devQuarantineA320neoRecoveryGlb,
     publicOrigin,
     googleClientId,
