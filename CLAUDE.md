@@ -339,6 +339,8 @@ airframes ground on the worker's tick, so on a production world a booked check w
 finish and nothing would ever be grounded — an aeroplane put into a C-check there stays in it
 for ever. `checksCompleted`, `airframesGrounded` and `maintenanceErrors` are the counters.
 
+Since IMPROVE-03 that edge cuts further: a departure now **refuses** an aeroplane that is grounded or in a check, reading the airframe under `FOR UPDATE` before it commits crew. On a world with a worker, a check that ends at a known instant holds the flight and retries when it is released. On production, where the check never completes, the flight is held once and then **cancelled** — deliberate rather than stranded, and the reason lands in the operations task list as `disruption_review` with `technical` as the cause. So a production world that books a check has not lost the aeroplane silently; it has cancelled that aeroplane's flights and said why. `docs/maintenance.md` has the table.
+
 **Crew type conversions are the same story again (M5-01).** A conversion completes on the
 worker's tick, against the world's game clock, so on a production world crew sent to convert
 onto a new family would sit in `unavailable` for ever — visible on the Crew page, counted
