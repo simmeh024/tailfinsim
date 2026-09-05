@@ -161,23 +161,70 @@ body {
   opacity: 0.08;
 }
 
-.world-renderer__controls {
+/*
+ * Everything over the map, in one grid.
+ *
+ * Six absolutely-positioned boxes used to share this space, four of them
+ * anchored to the same bottom-right corner — so a performance offer arriving
+ * while a selection panel was open landed underneath it, and at the mobile
+ * breakpoint the panel covered the world clock. A grid cannot express that
+ * overlap: each surface owns a named area, and the transient ones stack in the
+ * dock.
+ *
+ * `pointer-events: none` on the layer and `auto` on what it holds, so the gaps
+ * between the surfaces still belong to the map and it stays draggable.
+ */
+.world-renderer__hud {
   position: absolute;
-  top: var(--space-3);
-  left: var(--space-3);
+  inset: 0;
   z-index: 4;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'controls clock'
+    '. .'
+    'legend dock';
+  gap: var(--space-3);
+  padding: var(--space-3);
+  pointer-events: none;
+}
+
+.world-renderer__hud > * {
+  pointer-events: auto;
+}
+
+.world-renderer__controls {
+  grid-area: controls;
+  justify-self: start;
+  align-self: start;
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
 }
 
-/* The route mini-panel, opened by clicking an airport the player flies to (M7). */
+/*
+ * The corner. A column, so two transient surfaces stack instead of covering one
+ * another, and `pointer-events: none` here too — an empty dock is just map.
+ */
+.world-renderer__dock {
+  grid-area: dock;
+  justify-self: end;
+  align-self: end;
+  display: grid;
+  gap: var(--space-2);
+  width: min(24rem, 100%);
+  pointer-events: none;
+}
+
+.world-renderer__dock > * {
+  pointer-events: auto;
+}
+
+/* The route mini-panel, opened by clicking an airport the player flies to (M7).
+   Placed by the dock, so it no longer needs a corner of its own. */
 .world-renderer__route-panel {
-  position: absolute;
-  right: var(--space-3);
-  bottom: var(--space-3);
-  z-index: 5;
-  width: min(20rem, calc(100% - 2 * var(--space-3)));
+  width: 100%;
   padding: var(--space-3);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
@@ -186,13 +233,12 @@ body {
   box-shadow: 0 8px 24px var(--bg-scrim);
 }
 
-/* The route/encoding legend (M7-03), bottom-left so it clears the route panel. */
+/* The route/encoding legend (M7-03), bottom-left so it clears the dock. */
 .world-renderer__legend {
-  position: absolute;
-  left: var(--space-3);
-  bottom: var(--space-3);
-  z-index: 5;
-  width: min(22rem, calc(100% - 2 * var(--space-3)));
+  grid-area: legend;
+  justify-self: start;
+  align-self: end;
+  width: min(22rem, 100%);
   padding: var(--space-3);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
@@ -388,10 +434,9 @@ body {
  * allowed to wrap across the full width and the clock goes back above them.
  */
 .world-clock {
-  position: absolute;
-  top: var(--space-3);
-  right: var(--space-3);
-  z-index: 4;
+  grid-area: clock;
+  justify-self: end;
+  align-self: start;
   display: grid;
   grid-template-columns: auto auto;
   gap: 0 var(--space-2);
@@ -471,11 +516,7 @@ body {
 
 .world-renderer__performance,
 .world-renderer__failure {
-  position: absolute;
-  right: var(--space-3);
-  bottom: var(--space-3);
-  z-index: 4;
-  width: min(24rem, calc(100% - 2 * var(--space-3)));
+  width: 100%;
   margin: 0;
   padding: var(--space-3);
   border: 1px solid var(--border-strong);
@@ -2157,21 +2198,31 @@ body {
       'rail';
   }
 
-  .world-renderer__controls {
-    right: var(--space-2);
-    top: var(--space-2);
-    left: var(--space-2);
+  /*
+   * One column. The controls wrap across the full width here, so their height is
+   * not knowable and nothing may be anchored under them — which is precisely
+   * what a grid row does for free. The clock sits under them rather than in the
+   * corner it used to share with the selection panel.
+   */
+  .world-renderer__hud {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'controls'
+      'clock'
+      '.'
+      'legend'
+      'dock';
+    gap: var(--space-2);
+    padding: var(--space-2);
   }
 
-  /*
-   * The controls span the full width here and are allowed to wrap, so their
-   * height is not knowable — anything anchored under them would collide on some
-   * viewport. The clock goes to the bottom instead, where nothing else sits.
-   */
   .world-clock {
-    top: auto;
-    right: var(--space-2);
-    bottom: var(--space-2);
+    justify-self: end;
+  }
+
+  .world-renderer__dock,
+  .world-renderer__legend {
+    width: 100%;
   }
 
   .world-renderer__control-group button,
@@ -5612,7 +5663,7 @@ body {
 }
 
 /* The tone the card already carries, so the corner agrees with the border
-   rather than arguing with it. Never the only signal -- the detail line under
+   rather than arguing with it. Never the only signal — the detail line under
    every figure says the same thing in words (App. H.7). */
 .crew-kpi[data-tone='alert'] .crew-kpi__glyph {
   color: var(--status-loss);
@@ -5724,7 +5775,7 @@ body {
 }
 
 /* A family name is a control wherever it appears. Styled as the heading it sits
-   in, because it is the heading -- not a link bolted beside one. */
+   in, because it is the heading — not a link bolted beside one. */
 .crew__familybutton {
   padding: 0;
   border: none;
@@ -5850,7 +5901,7 @@ body {
 }
 
 /* Commonality: CSS-width bars over a shared scale, the technique
-   `SegmentWaterfall` already uses. No library, no axis -- and every bar carries
+   `SegmentWaterfall` already uses. No library, no axis — and every bar carries
    its number as text, so the bar aids comparison and is never the only reading. */
 .crew-commonality__figure {
   display: flex;
@@ -6295,7 +6346,7 @@ body {
 }
 
 /* Short ranks are marked in the row, and the sentence under the table says the
-   same thing in words -- the tint is a scan aid, never the only signal. */
+   same thing in words — the tint is a scan aid, never the only signal. */
 .crew-context__table tr[data-cover='short'] th[scope='row'] {
   color: var(--status-loss);
 }
@@ -6374,7 +6425,7 @@ body {
 
 /* The v2 banners are 2048 x 409 for all nine ranks, so this is the artwork's own
    ratio and nothing is letterboxed. `CREW_BANNER_ASPECT` is where that pair is
-   written down, and a test asserts this rule agrees with it -- artwork and box
+   written down, and a test asserts this rule agrees with it — artwork and box
    drifting apart is exactly the kind of thing nobody notices until a rotation
    looks wrong. */
 
@@ -6395,7 +6446,7 @@ body {
   width: 100%;
   height: 100%;
   /* Never `cover`. The headline is set into the pixels, so any crop eats the
-     text -- this rendered "ommand the aircraft" before it was understood. */
+     text — this rendered "ommand the aircraft" before it was understood. */
   object-fit: contain;
   object-position: center;
   animation: crew-banner-in var(--crew-banner-fade, 600ms) ease-out;
