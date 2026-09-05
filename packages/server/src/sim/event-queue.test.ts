@@ -3,11 +3,12 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { type WorldClock } from '@tailfin/sim';
 
-import { createDatabase, type DatabaseHandle } from '../db/client';
+import { type Database, createDatabase, type DatabaseHandle } from '../db/client';
 import { world, worldEvent } from '../db/schema';
 
 import {
   drainDueEvents,
+  errorDetail,
   queueDepth,
   scheduleEvent,
   type HandlerRegistry,
@@ -41,6 +42,46 @@ function realAtGameMinutes(minutes: number): Date {
 function gameMinutes(minutes: number): Date {
   return new Date(EPOCH.getTime() + minutes * 60_000);
 }
+
+/**
+ * What a failed event says it went wrong with.
+ *
+ * A unit test, so it runs without a database: this is the half of the failure
+ * record that decides whether an operator can act on it, and it would otherwise
+ * only be exercised where `DATABASE_URL` happens to be set.
+ */
+describe('errorDetail', () => {
+  it('puts the cause before the wrapper', () => {
+    // Drizzle prefixes every driver error with `Failed query:` and the whole
+    // failing statement. Keeping that order would spend the column on SQL and
+    // never reach the reason — the trap CLAUDE.md records.
+    const cause = new Error('duplicate key value violates unique constraint "world_event_key"');
+    const wrapped = new Error('Failed query: insert into "world_event" ...', { cause });
+
+    expect(errorDetail(wrapped)).toBe(
+      'duplicate key value violates unique constraint "world_event_key" | ' +
+        'Failed query: insert into "world_event" ...',
+    );
+  });
+
+  it('bounds the result to what the column holds', () => {
+    const long = new Error('x'.repeat(900));
+    expect(errorDetail(long)).toHaveLength(500);
+    expect(errorDetail(long, 10)).toHaveLength(10);
+  });
+
+  it('survives something thrown that is not an Error', () => {
+    // A handler is arbitrary code; `throw 'nope'` is legal JavaScript, and the
+    // failure record still has to say something.
+    expect(errorDetail('nope')).toBe('nope');
+    expect(errorDetail(undefined)).toBe('undefined');
+  });
+
+  it('skips an empty message rather than emitting a stray separator', () => {
+    const cause = new Error('the real reason');
+    expect(errorDetail(new Error('', { cause }))).toBe('the real reason');
+  });
+});
 
 describeDb('event queue', () => {
   let db: DatabaseHandle;
@@ -281,6 +322,211 @@ describeDb('event queue', () => {
       expect(result.failed).toBe(1);
       expect(result.processed).toBe(1);
       expect(fired).toEqual(['good']);
+    });
+
+    /**
+     * A handler's own writes, so a rollback has something to undo.
+     *
+     * `world_event` is the table, which keeps the fixture to one already-cleaned
+     * table rather than founding an airline to observe a rollback. What matters
+     * is that the write is real, made by the same transaction as the claim, and
+     * visible afterwards if it survives.
+     */
+    function sideEffectHandler(
+      key: string,
+      then: (tx: Database) => Promise<void>,
+    ): HandlerRegistry {
+      return {
+        FLIGHT_DEPART: async (_event, { tx }) => {
+          await tx.insert(worldEvent).values({
+            worldId,
+            type: 'FLIGHT_ARRIVE',
+            fireAt: gameMinutes(9_999),
+            payload: '{}',
+            idempotencyKey: key,
+          });
+          await then(tx);
+        },
+      };
+    }
+
+    /** Inserting `key` a second time violates `(world_id, idempotency_key)`. */
+    function collide(key: string): (tx: Database) => Promise<void> {
+      return async (tx) => {
+        await tx.insert(worldEvent).values({
+          worldId,
+          type: 'FLIGHT_ARRIVE',
+          fireAt: gameMinutes(9_999),
+          payload: '{}',
+          idempotencyKey: key,
+        });
+      };
+    }
+
+    async function keysInWorld(): Promise<string[]> {
+      const rows = await db.db
+        .select({ key: worldEvent.idempotencyKey })
+        .from(worldEvent)
+        .where(eq(worldEvent.worldId, worldId));
+      return rows.map((row) => row.key).sort();
+    }
+
+    it('rolls back what the handler wrote before it threw', async () => {
+      /*
+       * IMPROVE-01. The handler and the failure record used to share one
+       * transaction, so a handler that wrote and *then* threw had its writes
+       * committed alongside `status = 'failed'` — a half-finished flight
+       * settlement, recorded as not having happened.
+       *
+       * Which is the worst of the three possible outcomes. Rolled back is
+       * recoverable; committed and marked done is at least consistent; committed
+       * and marked failed is a lie no later drain can detect.
+       */
+      await schedule('writer', 10);
+
+      const result = await drainDueEvents(
+        db.db,
+        worldId,
+        clock,
+        realAtGameMinutes(60),
+        sideEffectHandler('test:side-effect', () =>
+          Promise.reject(new Error('exploded after writing')),
+        ),
+      );
+
+      expect(result.failed).toBe(1);
+      // The claim and the failure survive; the handler's write does not.
+      expect(await keysInWorld()).toEqual(['test:writer']);
+
+      const rows = await db.db.select().from(worldEvent).where(eq(worldEvent.worldId, worldId));
+      expect(rows[0]?.status).toBe('failed');
+      expect(rows[0]?.lastError).toContain('exploded after writing');
+      expect(rows[0]?.attempts).toBe(1);
+    });
+
+    it('records a SQL error as failed instead of losing the claim to it', async () => {
+      /*
+       * The second half of IMPROVE-01, and the more damaging one.
+       *
+       * A statement error aborts the whole PostgreSQL transaction, so the
+       * `UPDATE ... status = 'failed'` in the catch failed too, taking the claim
+       * with it. The event returned to `pending` and was reclaimed on the next
+       * tick, for ever. Worse, the rejection escaped `drainDueEvents`, so the
+       * tick died with it: every sweep after the drain, and every world after
+       * this one, stopped running until somebody deleted the row by hand.
+       *
+       * A duplicate idempotency key is the cheapest real statement error, and
+       * the unique index is the queue's own — a failure a handler could
+       * genuinely produce by rescheduling badly.
+       */
+      await schedule('poison', 10);
+
+      const result = await drainDueEvents(
+        db.db,
+        worldId,
+        clock,
+        realAtGameMinutes(60),
+        sideEffectHandler('test:collide', collide('test:collide')),
+      );
+
+      expect(result.failed).toBe(1);
+      expect(await keysInWorld()).toEqual(['test:poison']);
+
+      const rows = await db.db.select().from(worldEvent).where(eq(worldEvent.worldId, worldId));
+      // `pending` here would mean the claim was rolled back, and this event
+      // would be reclaimed on every tick for ever.
+      expect(rows[0]?.status).toBe('failed');
+      expect(rows[0]?.attempts).toBe(1);
+      // PostgreSQL's own words, not Drizzle's wrapper. Drizzle prefixes every
+      // driver error with `Failed query:` and the whole failing statement, which
+      // would fill the column with SQL before reaching the reason — the trap
+      // CLAUDE.md records, here deciding what a human reads on System health.
+      expect(rows[0]?.lastError).toMatch(/duplicate key value violates unique constraint/i);
+      // Bounded, because that statement is long.
+      expect((rows[0]?.lastError ?? '').length).toBeLessThanOrEqual(500);
+    });
+
+    it('keeps draining after a SQL failure, in the same pass', async () => {
+      // The acceptance criterion the old code could not meet at all: the
+      // rejection escaped the drain, so nothing behind the poisonous event ran.
+      await schedule('poison', 10);
+      await schedule('good', 20, 'FLIGHT_ARRIVE');
+
+      const fired: string[] = [];
+      const handlers: HandlerRegistry = {
+        ...sideEffectHandler('test:collide', collide('test:collide')),
+        FLIGHT_ARRIVE: (_event, { payload }) => {
+          fired.push(String(payload.tag));
+          return Promise.resolve();
+        },
+      };
+
+      const result = await drainDueEvents(db.db, worldId, clock, realAtGameMinutes(60), handlers);
+
+      expect(result.failed).toBe(1);
+      expect(result.processed).toBe(1);
+      expect(fired).toEqual(['good']);
+    });
+
+    it('applies a successful side effect once when two drains race', async () => {
+      /*
+       * The savepoint must not weaken exactly-once. Two drains run against the
+       * same due event; `FOR UPDATE SKIP LOCKED` means one claims it and the
+       * other skips, so the handler's write must appear exactly once — not twice,
+       * and not zero times because the loser rolled the winner back.
+       *
+       * The unique index would refuse a second insert anyway, which is why the
+       * assertion counts rows *and* checks the drains agree on who did the work.
+       */
+      await schedule('raced', 10);
+      const handlers = sideEffectHandler('test:side-effect', () => Promise.resolve());
+
+      const [first, second] = await Promise.all([
+        drainDueEvents(db.db, worldId, clock, realAtGameMinutes(60), handlers),
+        drainDueEvents(db.db, worldId, clock, realAtGameMinutes(60), handlers),
+      ]);
+
+      expect(first.processed + second.processed).toBe(1);
+      expect(first.failed + second.failed).toBe(0);
+      expect(await keysInWorld()).toEqual(['test:raced', 'test:side-effect']);
+    });
+
+    it('does not re-apply a side effect when the event is drained again', async () => {
+      // Replay, as distinct from concurrency. The event is `done`, so a second
+      // drain must not reach the handler at all.
+      await schedule('once', 10);
+      const handlers = sideEffectHandler('test:side-effect', () => Promise.resolve());
+
+      await drainDueEvents(db.db, worldId, clock, realAtGameMinutes(60), handlers);
+      const again = await drainDueEvents(db.db, worldId, clock, realAtGameMinutes(60), handlers);
+
+      expect(again.processed).toBe(0);
+      expect(again.failed).toBe(0);
+      expect(await keysInWorld()).toEqual(['test:once', 'test:side-effect']);
+    });
+
+    it('still commits a handler’s writes when it succeeds', async () => {
+      // The other direction, and the one a savepoint could plausibly break:
+      // isolating the handler must not stop its work being committed together
+      // with the event's completion.
+      await schedule('writer', 10);
+
+      const result = await drainDueEvents(
+        db.db,
+        worldId,
+        clock,
+        realAtGameMinutes(60),
+        sideEffectHandler('test:side-effect', () => Promise.resolve()),
+      );
+
+      expect(result.processed).toBe(1);
+      expect(await keysInWorld()).toEqual(['test:side-effect', 'test:writer']);
+
+      const claimed = await db.db
+        .select()
+        .from(worldEvent)
+        .where(eq(worldEvent.idempotencyKey, 'test:writer'));
+      expect(claimed[0]?.status).toBe('done');
     });
 
     it('pauses an event whose type has no handler, rather than failing or discarding it', async () => {
