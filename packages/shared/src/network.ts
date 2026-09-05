@@ -448,6 +448,31 @@ export type CabinMarketPosition = z.infer<typeof CabinMarketPosition>;
  * preview that agreed with resolution by construction is the only kind
  * available, which is exactly what M3-09 asks for.
  */
+/**
+ * Which aeroplane a fare estimate was drawn for (IMPROVE-02).
+ *
+ * On the wire because the alternative is a number with a hidden assumption
+ * behind it. Every floor and every projection in the game used to be computed
+ * for a fixed "representative narrowbody" whatever the airline owned, and
+ * nothing said so — a player flying ATRs read an A320's costs as their own.
+ *
+ * They are now drawn from the types the airline actually schedules over the
+ * pair, and the three cases have to be distinguishable by the client because
+ * they mean different things to the player:
+ *
+ *   - `single` — one type flies this route. `label` names it.
+ *   - `mixed` — several. The seats and the projection are the busiest type's;
+ *     the floor is the dearest type's, because a floor is a guard.
+ *   - `unassigned` — no rotation touches this route, so the figures are a
+ *     hypothetical against a representative narrowbody. `label` says so.
+ */
+export const FareEstimateBasis = z.object({
+  kind: z.enum(['single', 'mixed', 'unassigned']),
+  /** One phrase to render — a type designation, or what stood in for one. */
+  label: z.string().min(1),
+});
+export type FareEstimateBasis = z.infer<typeof FareEstimateBasis>;
+
 export const FarePreviewResponse = z.object({
   routeId: Uuid,
   positions: z.array(CabinMarketPosition),
@@ -455,6 +480,13 @@ export const FarePreviewResponse = z.object({
   projectedPassengers: z.number().nonnegative(),
   /** And at the fares currently saved, so the panel can show the delta. */
   currentPassengers: z.number().nonnegative(),
+  /**
+   * The aeroplane these figures are for (IMPROVE-02).
+   *
+   * Defaulted so a client built against the older contract still parses, and so
+   * this could ship without a coordinated release.
+   */
+  basis: FareEstimateBasis.default({ kind: 'unassigned', label: 'not stated' }),
 });
 export type FarePreviewResponse = z.infer<typeof FarePreviewResponse>;
 

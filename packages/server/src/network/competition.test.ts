@@ -55,6 +55,15 @@ const ECONOMICS: RouteEconomics = {
     maxTakeoffWeightT: 79,
     seatsByCabin: { economy: 5_000 },
   },
+  fleet: [
+    {
+      cruiseSpeedKt: 447,
+      cruiseBurnTPerNm: 0.0062,
+      maxTakeoffWeightT: 79,
+      seatsByCabin: { economy: 5_000 },
+    },
+  ],
+  basis: { kind: 'single' as const, label: 'test aircraft' },
   market: DEFAULT_FUEL_MARKET,
   originStation: REFERENCE_STATION,
   handlingPriceFactor: REFERENCE_HANDLING_PRICE_FACTOR,

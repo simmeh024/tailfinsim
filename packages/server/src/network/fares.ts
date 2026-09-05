@@ -71,7 +71,29 @@ import type { Database } from '../db/client';
  * its result.
  */
 export interface RouteEconomics {
+  /**
+   * The aeroplane the estimate is drawn for — the busiest type on the route.
+   *
+   * Its `seatsByCabin` is what the allocation offers per departure, so it has to
+   * be one coherent aircraft rather than an average of several. See
+   * {@link fleet} for the reason the *floor* is not drawn from this alone.
+   */
   aircraft: FareFloorAircraft;
+  /**
+   * Every type operating the route, busiest first (IMPROVE-02).
+   *
+   * The floor is the **highest** per-seat floor across them, not the busiest
+   * type's. A floor is a hard guard — `PUT /api/routes/:id/fares` refuses below
+   * it — so drawing it on the commonest aeroplane would let a player add one
+   * cheap-per-seat type to a route and price every departure below the cost of
+   * the dearest one.
+   *
+   * Empty means there is no operating fleet to ask, and `aircraft` is the stated
+   * reference. `basis` says which case this is.
+   */
+  fleet: readonly FareFloorAircraft[];
+  /** What the estimate is based on, in one phrase for the player. */
+  basis: { kind: 'single' | 'mixed' | 'unassigned'; label: string };
   market: FuelMarket;
   originStation: FuelStation;
   /**
@@ -142,21 +164,46 @@ export function parseFares(raw: string): FareTable {
  * Charging a premium cabin a higher floor would be inventing a rule the design
  * doc does not have.
  */
+/**
+ * The floor, over every aeroplane that operates the route (IMPROVE-02).
+ *
+ * `Math.max` per cabin across the fleet rather than one floor from the busiest
+ * type. The floor is a guard with a refusal behind it, and a guard that holds
+ * only for the commonest departure is one an airline can walk around by putting
+ * a single cheap-per-seat aeroplane on the route.
+ *
+ * A single-type route and an unassigned one both fold to exactly what they did
+ * before, because the fold is over one aircraft.
+ */
 export function floorFor(economics: RouteEconomics, greatCircleNm: number) {
-  return fareFloor(
-    routeVariableCostPerSeatMinor(
-      {
-        distanceNm: greatCircleNm,
-        aircraft: economics.aircraft,
-        market: economics.market,
-        originStation: economics.originStation,
-        originFees: economics.originFees,
-        destinationFees: economics.destinationFees,
-        handlingPriceFactor: economics.handlingPriceFactor,
-      },
-      economics.settlement,
-    ),
-    economics.fareFloorRatio,
+  // The busiest type when there is no fleet to fold over: an unassigned route
+  // has `aircraft` set to the stated reference, and this must still quote it.
+  const fleet = economics.fleet.length > 0 ? economics.fleet : [economics.aircraft];
+
+  return (
+    fleet
+      .map((aircraft) =>
+        fareFloor(
+          routeVariableCostPerSeatMinor(
+            {
+              distanceNm: greatCircleNm,
+              aircraft,
+              market: economics.market,
+              originStation: economics.originStation,
+              originFees: economics.originFees,
+              destinationFees: economics.destinationFees,
+              handlingPriceFactor: economics.handlingPriceFactor,
+            },
+            economics.settlement,
+          ),
+          economics.fareFloorRatio,
+        ),
+      )
+      // The whole `FareFloor` of the dearest aeroplane, not a maximum of loose
+      // numbers: the message quotes `variableCostPerSeatMinor` too, and pairing
+      // the highest floor with somebody else's cost would explain the refusal
+      // with an aeroplane that did not cause it.
+      .reduce((dearest, floor) => (floor.floorMinor > dearest.floorMinor ? floor : dearest))
   );
 }
 
@@ -337,6 +384,9 @@ export function previewFares(
 
   return {
     routeId: row.id,
+    // Which aeroplane the figures above are for. A preview whose basis is not
+    // stated is a number with a hidden assumption behind it (IMPROVE-02).
+    basis: economics.basis,
     positions,
     projectedPassengers: passengersFor(projected, you),
     currentPassengers: passengersFor(current, you),

@@ -257,6 +257,8 @@ describe('estimateCost', () => {
 
   const economics: RouteEconomics = {
     aircraft: REFERENCE_AIRFRAME,
+    fleet: [REFERENCE_AIRFRAME],
+    basis: { kind: 'single' as const, label: 'A320neo' },
     market: DEFAULT_FUEL_MARKET,
     originStation: REFERENCE_STATION,
     handlingPriceFactor: REFERENCE_HANDLING_PRICE_FACTOR,

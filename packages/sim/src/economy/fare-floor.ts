@@ -62,7 +62,15 @@ import { DEFAULT_SETTLEMENT, type SettlementConfig, settleFlight } from './settl
 /** A.10's threshold: a fare may not fall below this share of variable cost. */
 export const FARE_FLOOR_RATIO = ECONOMY_CONFIG_V1.pricing.fareFloorRatio;
 
-/** What the aircraft on this route costs to fly, until M4 can say. */
+/**
+ * What the aircraft on this route costs to fly.
+ *
+ * The server fills this from the airline's own fleet since IMPROVE-02 —
+ * `network/operating-fleet.ts` reads the types scheduled over the pair and
+ * derives these three numbers from the same stored `effective_spec` the
+ * settlement bills on. A route with nothing scheduled gets a stated reference
+ * and the response says so.
+ */
 export interface FareFloorAircraft {
   cruiseSpeedKt: number;
   cruiseBurnTPerNm: number;
