@@ -187,25 +187,6 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     return () => query.removeEventListener('change', onChange);
   }, []);
 
-  // Simulated flights: advance the animation phase each frame while there are routes
-  // to fly and the reader has not asked for reduced motion. requestAnimationFrame
-  // pauses itself when the tab is hidden, and only the plane and shimmer layers depend
-  // on `phase`, so the land, sea and day/night bitmaps are not rebuilt as it ticks.
-  const hasRoutes = map.traffic.length > 0;
-  useEffect(() => {
-    if (!hasRoutes || reducedMotion) return;
-    let raf = 0;
-    let last = performance.now();
-    const step = (now: number): void => {
-      const dt = Math.min(0.1, (now - last) / 1000);
-      last = now;
-      setPhase((p) => (p + dt * PLANE_SPEED_PER_SECOND) % 1);
-      raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [hasRoutes, reducedMotion]);
-
   const { inGameTime, speedMultiplier } = useWorldClock();
 
   useEffect(() => {
@@ -576,6 +557,43 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   // brightened window sliding from origin to destination. Purely `phase`-driven, and
   // the phase is frozen under prefers-reduced-motion, so this layer simply is not
   // built then (M7-03's accessibility criterion).
+  /*
+   * Whether anything on screen is actually moving.
+   *
+   * This used to be `map.traffic.length > 0` — *the world* having any active
+   * route, including every NPC's. But the phase drives two layers and both are
+   * narrower than that: the planes are filtered to what the ownership toggles
+   * show, and the shimmer needs the player's own routes to be drawn. The default
+   * view is your own fleet with `Rivals` off, so a player who has founded an
+   * airline and not yet opened a route sat in a world full of NPC carriers
+   * running a sixty-times-a-second state update that produced no planes and no
+   * trails — on exactly the machines this page already offers to degrade for.
+   */
+  const animating =
+    !reducedMotion && (visiblePlaneRoutes.length > 0 || (visibility.routes && ownPaths.length > 0));
+
+  /*
+   * Advance the phase each frame. `requestAnimationFrame` pauses itself when the
+   * tab is hidden, and only the plane and shimmer layers depend on `phase`, so
+   * the land, sea and day/night bitmaps are not rebuilt as it ticks.
+   *
+   * Stopping leaves `phase` where it was rather than resetting it, so turning a
+   * layer back on resumes the aeroplanes rather than teleporting them home.
+   */
+  useEffect(() => {
+    if (!animating) return;
+    let raf = 0;
+    let last = performance.now();
+    const step = (now: number): void => {
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      setPhase((p) => (p + dt * PLANE_SPEED_PER_SECOND) % 1);
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [animating]);
+
   const shimmerLayer = useMemo(() => {
     // Off with the routes it travels along. The lines are gated on the same flag
     // (`layers.ts`), so without this the trails kept sliding along tracks that
