@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ContextPanelProbe } from '../shell/test-context-panel';
 import { ThemeProvider } from '../theme/ThemeProvider';
 
 import { WORLD_PROJECTION_STORAGE_KEY } from './projection';
@@ -174,10 +175,12 @@ async function renderWorld(entry = '/world'): Promise<void> {
   render(
     <MemoryRouter initialEntries={[entry]}>
       <ThemeProvider>
-        <Address />
-        <Routes>
-          <Route path="/world" element={<WorldRenderer />} />
-        </Routes>
+        <ContextPanelProbe>
+          <Address />
+          <Routes>
+            <Route path="/world" element={<WorldRenderer />} />
+          </Routes>
+        </ContextPanelProbe>
       </ThemeProvider>
     </MemoryRouter>,
   );
@@ -264,7 +267,7 @@ describe('opening the map', () => {
 
     expect(deckCapture.props?.viewState.longitude).toBeCloseTo(-0.4614, 3);
     expect(deckCapture.props?.viewState.zoom).toBeGreaterThanOrEqual(6);
-    expect(screen.getByRole('dialog', { name: 'Routes at London Heathrow' })).toBeInTheDocument();
+    expect(screen.getByTestId('panel-title')).toHaveTextContent('London Heathrow');
   });
 });
 

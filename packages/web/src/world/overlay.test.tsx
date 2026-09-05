@@ -6,6 +6,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ContextPanelProbe } from '../shell/test-context-panel';
 import { ThemeProvider } from '../theme/ThemeProvider';
 
 import { WORLD_PROJECTION_STORAGE_KEY } from './projection';
@@ -78,12 +79,15 @@ async function renderWorld(): Promise<void> {
   render(
     <MemoryRouter initialEntries={['/world']}>
       <ThemeProvider>
-        <Routes>
-          <Route path="/world" element={<WorldRenderer routes={[OWN_ROUTE]} />} />
-          {/* Not the words "Route planner": the panel's own eyebrow says that, and
-              a query matching it would pass whether or not anything navigated. */}
-          <Route path="/network" element={<p>The network page</p>} />
-        </Routes>
+        <ContextPanelProbe>
+          <Routes>
+            <Route path="/world" element={<WorldRenderer routes={[OWN_ROUTE]} />} />
+            {/* Not the words "Route planner": the panel's own subtitle carries the
+                airport, and a query matching it would pass whether or not
+                anything navigated. */}
+            <Route path="/network" element={<p>The network page</p>} />
+          </Routes>
+        </ContextPanelProbe>
       </ThemeProvider>
     </MemoryRouter>,
   );
@@ -153,35 +157,43 @@ describe('leaving for the route planner', () => {
 });
 
 describe('the surfaces over the map', () => {
-  it('puts the selection and the performance offer in one stack', async () => {
+  it('stacks the transient surfaces rather than piling them up', async () => {
     // The offer is only made on the globe, and the globe is not the default
     // everywhere: `chooseInitialProjection` picks flat on a narrow, coarse or
     // few-core device, which is what CI's runner reports. A stored choice always
     // wins, so this pins the projection rather than hoping for it.
     localStorage.setItem(WORLD_PROJECTION_STORAGE_KEY, 'globe');
     await renderWorld();
-    clickAirport();
     act(() => {
       for (let sample = 0; sample < 4; sample += 1) {
         deckCapture.props?._onMetrics({ fps: 40, framesRedrawn: 60 });
       }
     });
+    act(() => deckCapture.props?.onError());
 
     const dock = document.querySelector('.world-renderer__dock');
     expect(dock).not.toBeNull();
 
-    // Both in the dock, so the grid gives them a row each. While they were
-    // separately anchored to `bottom right`, the offer landed underneath the
-    // panel and the player could not read it.
-    const panel = screen.getByRole('dialog', { name: 'Routes at London Heathrow' });
+    // A row each, from the grid. While they were separately anchored to
+    // `bottom right`, one landed underneath the other and could not be read.
     const offer = screen.getByText(/Reduced detail is active/).closest('div');
-    expect(dock?.contains(panel)).toBe(true);
+    const failure = screen.getByRole('alert');
     expect(dock?.contains(offer as Node)).toBe(true);
+    expect(dock?.contains(failure)).toBe(true);
   });
 
-  it('keeps the clock out of the corner the panels use', async () => {
+  it('no longer floats a selection over the map at all', async () => {
     await renderWorld();
     clickAirport();
+
+    // WORLD-07: the detail belongs to the shell's context panel, which is the
+    // one thing H.4 asks never to cover the world.
+    expect(document.querySelector('.world-renderer__route-panel')).toBeNull();
+    expect(screen.getByTestId('panel-title')).toHaveTextContent('London Heathrow');
+  });
+
+  it('keeps the clock out of the corner the transient surfaces use', async () => {
+    await renderWorld();
 
     const hud = document.querySelector('.world-renderer__hud');
     const dock = document.querySelector('.world-renderer__dock');
@@ -229,7 +241,7 @@ describe('the surfaces over the map', () => {
       '.world-clock',
       '.world-renderer__controls',
       '.world-renderer__legend',
-      '.world-renderer__route-panel',
+      '.world-renderer__dock',
     ]) {
       expect(block(selector), selector).not.toContain('position: absolute');
     }
