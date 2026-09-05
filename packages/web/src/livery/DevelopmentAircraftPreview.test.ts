@@ -7,6 +7,7 @@ import {
   A320NEO_DEV_MODEL_STAGES,
   A320NEO_QUARANTINE_LIVERY_AUTHORING_STAGES,
   A320NEO_QUARANTINE_RECOVERY_STAGES,
+  a320neoAuthoringBakedLayerIds,
   a320neoDevelopmentMaterialColors,
   configureA320neoDevelopmentExteriorMaterial,
 } from './DevelopmentAircraftPreview';
@@ -84,6 +85,40 @@ describe('A320neo dev material preview', () => {
     expect(colors['mat-fuselage']).toBe('#808080');
     expect(colors['mat-cockpit-glass']).toBeUndefined();
     expect(colors['mat-cabin-windows']).toBeUndefined();
+  });
+
+  it('limits authoring texture bakes to visible whole-surface fills and gradients', () => {
+    const gradient = LiveryDocument.shape.layers.element.parse({
+      ...createBaseFillLayer(
+        crypto.randomUUID(),
+        'Tail gradient',
+        'tail_fin',
+        'solid',
+        '#FFFFFFFF',
+        '#FFFFFFFF',
+      ),
+      type: 'gradient',
+      gradient: {
+        kind: 'linear',
+        from: { x: 0, y: 0 },
+        to: { x: 1, y: 1 },
+        stops: [
+          { offset: 0, color: '#001122FF' },
+          { offset: 1, color: '#DDEEFFFF' },
+        ],
+      },
+    });
+    const fuselage = fill();
+    const hidden = fill({ id: crypto.randomUUID(), visible: false });
+    const partial = fill({ id: crypto.randomUUID(), zone: 'belly' });
+
+    expect(
+      a320neoAuthoringBakedLayerIds('mat-fuselage', [fuselage, gradient, hidden, partial]),
+    ).toEqual([fuselage.id]);
+    expect(a320neoAuthoringBakedLayerIds('mat-fin', [fuselage, gradient, hidden, partial])).toEqual(
+      [gradient.id],
+    );
+    expect(a320neoAuthoringBakedLayerIds('mat-cockpit-glass', [fuselage])).toEqual([]);
   });
 
   it('makes all salvaged surfaces double-sided and seals exterior paint and windows', () => {

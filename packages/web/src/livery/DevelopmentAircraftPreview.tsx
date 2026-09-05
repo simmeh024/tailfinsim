@@ -29,6 +29,9 @@ export const A320NEO_QUARANTINE_LIVERY_AUTHORING_STAGES = [
   { level: 0, url: '/api/dev/assets/aircraft/quarantine-a320neo-livery-authoring.glb' },
 ] as const;
 
+/** Kept deliberately small for dev review; canonical runtime atlases remain a separate gate. */
+export const A320NEO_DEV_LIVERY_TEXTURE_SIZE = 512;
+
 type DevelopmentModelStage =
   | (typeof A320NEO_DEV_MODEL_STAGES)[number]
   | (typeof A320NEO_QUARANTINE_RECOVERY_STAGES)[number]
@@ -45,6 +48,108 @@ const MATERIAL_ZONE = Object.freeze({
 } satisfies Readonly<Record<string, LiveryZone>>);
 
 const WINDOW_MATERIALS = new Set(['mat-cockpit-glass', 'mat-cabin-windows']);
+
+function materialZoneLayers(
+  materialName: string,
+  layers: readonly LiveryLayer[],
+): readonly LiveryLayer[] {
+  const zone = MATERIAL_ZONE[materialName as keyof typeof MATERIAL_ZONE];
+  if (zone === undefined) return [];
+  // The authoring derivative has independent UV islands per semantic material.
+  // Until #794 publishes canonical partial-surface masks, only layers that own
+  // the complete semantic surface can be baked onto it safely.
+  return layers.filter(
+    (layer) =>
+      layer.visible &&
+      layer.opacity > 0 &&
+      layer.zone === zone &&
+      (layer.type === 'fill' || layer.type === 'gradient'),
+  );
+}
+
+/** The layer subset that can safely be represented on an entire semantic atlas. */
+export function a320neoAuthoringBakedLayerIds(
+  materialName: string,
+  layers: readonly LiveryLayer[],
+): readonly string[] {
+  return materialZoneLayers(materialName, layers).map((layer) => layer.id);
+}
+
+function canvasCompositeMode(mode: LiveryLayer['blendMode']): GlobalCompositeOperation {
+  if (mode === 'normal') return 'source-over';
+  return mode;
+}
+
+function paintGradient(
+  context: CanvasRenderingContext2D,
+  gradient: {
+    readonly kind: 'linear' | 'radial';
+    readonly stops: readonly { readonly offset: number; readonly color: string }[];
+    readonly from?: { readonly x: number; readonly y: number };
+    readonly to?: { readonly x: number; readonly y: number };
+    readonly focal?: { readonly x: number; readonly y: number };
+    readonly center?: { readonly x: number; readonly y: number };
+    readonly radius?: number;
+  },
+  size: number,
+): CanvasGradient {
+  const canvasGradient =
+    gradient.kind === 'linear'
+      ? context.createLinearGradient(
+          (gradient.from?.x ?? 0) * size,
+          (gradient.from?.y ?? 0) * size,
+          (gradient.to?.x ?? 1) * size,
+          (gradient.to?.y ?? 1) * size,
+        )
+      : context.createRadialGradient(
+          (gradient.focal?.x ?? 0.5) * size,
+          (gradient.focal?.y ?? 0.5) * size,
+          0,
+          (gradient.center?.x ?? 0.5) * size,
+          (gradient.center?.y ?? 0.5) * size,
+          (gradient.radius ?? 0.5) * size,
+        );
+  for (const stop of gradient.stops) canvasGradient.addColorStop(stop.offset, stop.color);
+  return canvasGradient;
+}
+
+/**
+ * Bake whole-semantic-surface fills and gradients into a transient CanvasTexture
+ * source. It uses the authoring GLB's `TEXCOORD_1`; it never bakes source PBR
+ * colours or paints a protected material. Partial masks, artwork and decals
+ * stay canonical-paint-map-only until their resource binding is admitted.
+ */
+export function bakeA320neoAuthoringMaterialCanvas(
+  materialName: string,
+  layers: readonly LiveryLayer[],
+  size = A320NEO_DEV_LIVERY_TEXTURE_SIZE,
+): HTMLCanvasElement | null {
+  const paint = materialZoneLayers(materialName, layers);
+  if (paint.length === 0 || typeof document === 'undefined') return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext('2d');
+  if (context === null) return null;
+  context.fillStyle = 'white';
+  context.fillRect(0, 0, size, size);
+  for (const layer of paint) {
+    context.save();
+    context.globalAlpha = layer.opacity;
+    context.globalCompositeOperation = canvasCompositeMode(layer.blendMode);
+    if (layer.type === 'fill') {
+      context.fillStyle = layer.style.fill ?? 'white';
+    } else {
+      // Zod's inferred discriminated union includes an open extension branch,
+      // so TypeScript cannot retain the preceding `gradient` filter here.
+      const gradientLayer = layer as unknown as { gradient: Parameters<typeof paintGradient>[1] };
+      context.fillStyle = paintGradient(context, gradientLayer.gradient, size);
+    }
+    context.fillRect(0, 0, size, size);
+    context.restore();
+  }
+  return canvas;
+}
 
 /**
  * The salvaged candidate contains a small number of exterior triangles whose
@@ -143,10 +248,10 @@ function toHex(rgb: Rgb): string {
 /**
  * Approximate the current base-fill stack on semantic 3D materials.
  *
- * M6-03 does not yet bake a livery texture, so partial fuselage zones (nose,
- * belly, registration and cheatline) remain paint-map-only. Whole-surface zones
- * are composited accurately enough for the dev material review without claiming
- * that this temporary preview is the canonical renderer.
+ * This remains the fallback for the staged salvaged candidate. The semantic
+ * authoring derivative now bakes whole-surface fills and gradients into its
+ * second UV set. Partial fuselage zones (nose, belly, registration and
+ * cheatline) remain paint-map-only until canonical masks are admitted.
  */
 export function a320neoDevelopmentMaterialColors(
   layers: readonly LiveryLayer[],
@@ -177,6 +282,7 @@ export function a320neoDevelopmentMaterialColors(
 }
 
 interface PreviewRuntime {
+  applyAuthoringPaint: (layers: readonly LiveryLayer[]) => void;
   readonly camera: PerspectiveCamera;
   readonly controls: OrbitControlsType;
   model: Object3D;
@@ -230,18 +336,25 @@ export function DevelopmentAircraftPreview({
       ? A320NEO_QUARANTINE_LIVERY_AUTHORING_STAGES
       : A320NEO_DEV_MODEL_STAGES;
   const colors = useMemo(
-    () => (isQuarantineRecovery ? {} : a320neoDevelopmentMaterialColors(layers)),
-    [isQuarantineRecovery, layers],
+    () =>
+      isQuarantineRecovery || isQuarantineAuthoring ? {} : a320neoDevelopmentMaterialColors(layers),
+    [isQuarantineAuthoring, isQuarantineRecovery, layers],
   );
   const colorsRef = useRef(colors);
+  const layersRef = useRef(layers);
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [lodLevel, setLodLevel] = useState<DevelopmentLod | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
 
   useEffect(() => {
     colorsRef.current = colors;
+    layersRef.current = layers;
     const runtime = runtimeRef.current;
     if (runtime === null) return;
+    if (isQuarantineAuthoring) {
+      runtime.applyAuthoringPaint(layers);
+      return;
+    }
     runtime.model.traverse((object) => {
       const material = (object as Object3D & { material?: MeshStandardMaterial }).material;
       if (!material?.isMeshStandardMaterial) return;
@@ -252,7 +365,7 @@ export function DevelopmentAircraftPreview({
       const color = colors[material.name];
       if (color !== undefined) material.color.set(color);
     });
-  }, [colors]);
+  }, [colors, isQuarantineAuthoring, layers]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -300,6 +413,37 @@ export function DevelopmentAircraftPreview({
 
         const loader = new GLTFLoader();
         loader.setMeshoptDecoder(MeshoptDecoder);
+        const applyAuthoringPaint = (
+          model: Object3D,
+          layersToBake: readonly LiveryLayer[],
+        ): void => {
+          const painted = new Set<MeshStandardMaterial>();
+          model.traverse((object) => {
+            const material = (object as Object3D & { material?: MeshStandardMaterial }).material;
+            if (!material?.isMeshStandardMaterial || !Object.hasOwn(MATERIAL_ZONE, material.name))
+              return;
+            if (painted.has(material)) return;
+            painted.add(material);
+            const source = bakeA320neoAuthoringMaterialCanvas(material.name, layersToBake);
+            const previous = material.map;
+            if (source === null) {
+              material.map = null;
+              material.color.set(0xffffff);
+              previous?.dispose();
+              return;
+            }
+            const texture = new THREE.CanvasTexture(source);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            // `livery_uv` is exported as TEXCOORD_1 / geometry.uv1. Source
+            // PBR colours never participate in this transient paint bake.
+            texture.channel = 1;
+            texture.generateMipmaps = true;
+            texture.needsUpdate = true;
+            material.map = texture;
+            material.color.set(0xffffff);
+            previous?.dispose();
+          });
+        };
         const loadStage = async (
           stage: DevelopmentModelStage,
         ): Promise<Awaited<ReturnType<typeof loader.loadAsync>>> =>
@@ -325,11 +469,14 @@ export function DevelopmentAircraftPreview({
             }
             material.envMapIntensity = 0.65;
             if (!isQuarantineRecovery) {
-              const color = colorsRef.current[material.name];
-              if (color !== undefined) material.color.set(color);
               configureA320neoDevelopmentExteriorMaterial(material, THREE.DoubleSide);
+              if (!isQuarantineAuthoring) {
+                const color = colorsRef.current[material.name];
+                if (color !== undefined) material.color.set(color);
+              }
             }
           });
+          if (isQuarantineAuthoring) applyAuthoringPaint(model, layersRef.current);
           return originalMaterialColors;
         };
 
@@ -378,6 +525,7 @@ export function DevelopmentAircraftPreview({
           renderer.render(scene, camera);
         });
         runtimeRef.current = {
+          applyAuthoringPaint: (layersToBake) => applyAuthoringPaint(model, layersToBake),
           camera,
           controls,
           model,
@@ -411,6 +559,8 @@ export function DevelopmentAircraftPreview({
             disposeModel(runtime.model);
             runtime.model = nextModel;
             runtime.originalMaterialColors = nextOriginalMaterialColors;
+            runtime.applyAuthoringPaint = (layersToBake) =>
+              applyAuthoringPaint(nextModel, layersToBake);
             runtime.scene.add(nextModel);
             setLodLevel(stage.level);
           } catch {
@@ -491,7 +641,7 @@ export function DevelopmentAircraftPreview({
           {isQuarantineRecovery
             ? 'Source PBR review'
             : isQuarantineAuthoring
-              ? 'Semantic base-coat review'
+              ? 'Semantic paint-texture review'
               : 'True 3D'}
         </span>
         <span>
@@ -514,7 +664,7 @@ export function DevelopmentAircraftPreview({
         {isQuarantineRecovery
           ? 'Untouched recovered PBR · quarantine only · drag to orbit · scroll to zoom'
           : isQuarantineAuthoring
-            ? 'Whole-surface base-coat review · paint map remains canonical · drag to orbit · scroll to zoom'
+            ? 'Whole-surface fills and gradients are live · paint map remains canonical · drag to orbit · scroll to zoom'
             : 'Drag to orbit · scroll to zoom'}
       </p>
     </div>
