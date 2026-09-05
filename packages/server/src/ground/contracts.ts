@@ -396,13 +396,84 @@ async function departuresFlown(
 }
 
 /**
- * What a term's unflown commitment costs, and how short it is.
+ * The same count, for many contracts at once.
+ *
+ * `listAirlineContracts` needs one window per contract and they do not share
+ * bounds — every term starts when it was signed — so a single grouped `count`
+ * over the widest span would over-count the later ones. Joining the flights
+ * against a `values` list of windows keeps it exact and keeps it to **one**
+ * query: the alternative was one round trip per contract, which for four service
+ * lines across twenty stations was eighty sequential counts on the endpoint a
+ * client polls for its alerts.
+ *
+ * Raw SQL because a per-row window is not something the query builder expresses,
+ * and a correlated subquery is the shape CLAUDE.md records as having come back
+ * empty against real Postgres. Every value is a bound parameter; the casts are on
+ * the literals so the `values` list has types before the join reads them.
+ */
+async function departuresFlownBatch(
+  db: Database,
+  airlineId: string,
+  windows: readonly { key: string; icao: string; from: Date; to: Date }[],
+): Promise<Map<string, number>> {
+  if (windows.length === 0) return new Map();
+
+  const rows = sql.join(
+    windows.map(
+      (w) =>
+        sql`(${w.key}::text, ${w.icao}::text, ${w.from.toISOString()}::timestamptz, ${w.to.toISOString()}::timestamptz)`,
+    ),
+    sql`, `,
+  );
+
+  const result = await db.execute<{ key: string; flown: number }>(sql`
+    select v.key as key, count(f.id)::int as flown
+    from (values ${rows}) as v(key, icao, term_start, term_end)
+    left join "flight" f
+      on f.airline_id = ${airlineId}::uuid
+     and f.origin_icao = v.icao
+     and f.actual_departure is not null
+     and f.actual_departure >= v.term_start
+     and f.actual_departure < v.term_end
+    group by v.key
+  `);
+
+  return new Map(result.rows.map((row) => [row.key, row.flown]));
+}
+
+/**
+ * What a term's unflown commitment costs, and how short it is, given the count.
+ *
+ * Pure, so the caller decides how the departures were counted — one query for one
+ * contract, or one query for all of them.
  *
  * `upTo` is where the measurement stops: the term's end at expiry, or *now* on an
  * early exit — and on an early exit the commitment is pro-rated to the part of
  * the term served, so leaving early neither forgives a shortfall already run up
  * nor invents one for months the airline never had.
  */
+function shortfallFrom(
+  row: ActiveRow,
+  flown: number,
+  upTo: Date,
+  economy: PinnedEconomyConfig,
+): { committed: number; flown: number; feeMinor: number } {
+  if (row.termStart === null || row.termEnd === null || row.volumeCommitment === null) {
+    return { committed: 0, flown: 0, feeMinor: 0 };
+  }
+  const served = elapsedTermFraction(row.termStart, row.termEnd, upTo);
+  const committed = Math.round(row.volumeCommitment * served);
+  if (committed <= 0) return { committed: 0, flown, feeMinor: 0 };
+
+  const short = Math.max(0, committed - flown);
+  return {
+    committed,
+    flown,
+    feeMinor: Math.round(short * economy.ground.contract.shortfallFeePerDepartureMinor),
+  };
+}
+
+/** {@link shortfallFrom} for one contract, counting its departures itself. */
 async function shortfall(
   db: Database,
   row: ActiveRow,
@@ -414,17 +485,8 @@ async function shortfall(
   if (row.termStart === null || row.termEnd === null || row.volumeCommitment === null) {
     return { committed: 0, flown: 0, feeMinor: 0 };
   }
-  const served = elapsedTermFraction(row.termStart, row.termEnd, upTo);
-  const committed = Math.round(row.volumeCommitment * served);
-  if (committed <= 0) return { committed: 0, flown: 0, feeMinor: 0 };
-
   const flown = await departuresFlown(db, airlineId, icao, row.termStart, upTo);
-  const short = Math.max(0, committed - flown);
-  return {
-    committed,
-    flown,
-    feeMinor: Math.round(short * economy.ground.contract.shortfallFeePerDepartureMinor),
-  };
+  return shortfallFrom(row, flown, upTo, economy);
 }
 
 /** Thrown to roll a write back when the airline cannot pay for it. */
@@ -1058,10 +1120,27 @@ export async function listAirlineContracts(
 
   const contracts: GroundContractAlert[] = [];
 
+  /*
+   * Every contract's departures in one query rather than one each. Measured to
+   * *now*, so the figure falls as the airline flies — which is the whole point of
+   * surfacing it before the term closes.
+   */
+  const flownBy = await departuresFlownBatch(
+    db,
+    own.id,
+    rows
+      .filter((row) => row.termStart !== null)
+      .map((row) => ({
+        key: row.id,
+        icao: row.icao,
+        // Non-null by the filter above; a term with no start has nothing to count.
+        from: row.termStart!,
+        to: gameNow,
+      })),
+  );
+
   for (const row of rows) {
-    // Measured to *now*, so the figure falls as the airline flies — which is the
-    // whole point of surfacing it before the term closes.
-    const short = await shortfall(db, row, own.id, row.icao, gameNow, economy);
+    const short = shortfallFrom(row, flownBy.get(row.id) ?? 0, gameNow, economy);
     contracts.push({
       id: row.id,
       icao: row.icao,
