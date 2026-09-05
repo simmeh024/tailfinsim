@@ -34,7 +34,15 @@ import {
 import { type WorldMapRoute, type WorldMapTrafficRoute } from './map-api';
 import { parseHexColor, readWorldPalette, type RgbaColor, type WorldPalette } from './palette';
 import { SustainedFrameRateMonitor, type FrameRateSample } from './performance';
-import { airportRows, flightRows, PLACE_LIMIT, type Bounds, type PlaceRow } from './places';
+import {
+  airportRows,
+  flightRows,
+  PLACE_LIMIT,
+  searchAirports,
+  within,
+  type Bounds,
+  type PlaceRow,
+} from './places';
 import { PlacesPanel } from './PlacesPanel';
 import { persistProjection, readInitialProjection, type WorldProjection } from './projection';
 import { bundleCorridors, corridorGridForZoom, type Corridor } from './route-corridors';
@@ -989,18 +997,57 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   );
   const placeFlights = useMemo(() => flightRows(visiblePlaneRoutes), [visiblePlaneRoutes]);
 
-  const selectPlace = useCallback((row: PlaceRow) => {
-    if (row.airport) {
-      setSelectedRoute(null);
-      setSelectedAirport(row.airport);
-    } else if (row.flight) {
-      setSelectedAirport(null);
-      setSelectedRoute(row.flight);
-    }
-    // Said out loud, because a highlighted dot on a canvas is invisible to a
-    // screen reader and the panel it opens is somewhere else on the page.
-    setAnnouncement(`${row.label} selected. ${row.detail}.`);
-  }, []);
+  /**
+   * Every served airport a query matches (WORLD-09).
+   *
+   * Over the whole list rather than over what is drawn: the map hides most of
+   * its content until the camera is already in the right place, and offered no
+   * way to get the camera there. Searching is how you get there.
+   */
+  const findAirports = useCallback(
+    (query: string): PlaceRow[] => searchAirports(airports, query),
+    [airports],
+  );
+
+  const selectPlace = useCallback(
+    (row: PlaceRow) => {
+      if (row.airport) {
+        const airport = row.airport;
+        setSelectedRoute(null);
+        setSelectedAirport(airport);
+        /*
+         * Fly there, but only if it is not already on screen.
+         *
+         * A search result is somewhere else by definition, and selecting one
+         * without moving would highlight a dot nobody can see. A row from the
+         * in-view list is a different matter: yanking the camera because
+         * somebody picked something they were already looking at is the kind of
+         * motion that makes a map feel like it is fighting you.
+         */
+        if (bounds === null || !within(airport.position, bounds)) {
+          framed.current = true;
+          setViewState((current) =>
+            clampViewState({
+              ...current,
+              longitude: airport.position[0],
+              latitude: airport.position[1],
+              zoom: Math.max(current.zoom, 6),
+              ...(reducedMotion
+                ? {}
+                : { transitionDuration: 700, transitionInterpolator: new FlyToInterpolator() }),
+            }),
+          );
+        }
+      } else if (row.flight) {
+        setSelectedAirport(null);
+        setSelectedRoute(row.flight);
+      }
+      // Said out loud, because a highlighted dot on a canvas is invisible to a
+      // screen reader and the panel it opens is somewhere else on the page.
+      setAnnouncement(`${row.label} selected. ${row.detail}.`);
+    },
+    [bounds, reducedMotion],
+  );
 
   const closePlaces = useCallback(() => {
     setShowPlaces(false);
@@ -1319,6 +1366,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
             airports={placeAirports}
             flights={placeFlights}
             truncated={placeAirports.length >= PLACE_LIMIT}
+            onSearch={findAirports}
             onSelect={selectPlace}
             onClose={closePlaces}
           />
