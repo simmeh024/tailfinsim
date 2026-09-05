@@ -48,7 +48,7 @@ describeDb('the aeroplanes on the world map', () => {
     await db.close();
   });
 
-  async function makeAirport(name: string): Promise<{ icao: string }> {
+  async function makeAirport(name: string): Promise<{ icao: string; ident: string }> {
     const identity = identities();
     const [created] = await db.db
       .insert(airport)
@@ -69,7 +69,7 @@ describeDb('the aeroplanes on the world map', () => {
       .returning({ id: airport.id });
     if (!created) throw new Error('airport was not created');
     madeAirports.push(created.id);
-    return { icao: identity.icaoCode };
+    return { icao: identity.icaoCode, ident: identity.ident };
   }
 
   /**
@@ -124,7 +124,9 @@ describeDb('the aeroplanes on the world map', () => {
     expect(map.flights.map((f) => f.id)).toEqual([id]);
     const [airborne] = map.flights;
     expect(airborne?.own).toBe(true);
-    expect(airborne?.originIcao).toBe(from.icao);
+    // Joined on `icao_code` — the column the foreign key names — and answered in
+    // `ident`, which is what the client calls an airport's code everywhere else.
+    expect(airborne?.originIcao).toBe(from.ident);
     expect(airborne?.departedAt).toBe(departed.toISOString());
     // The times are sent rather than a position, so the browser can fly the
     // aeroplane between overlay refreshes a minute apart.
@@ -200,6 +202,10 @@ describeDb('the aeroplanes on the world map', () => {
     const map = await readWorldMap(db.db, fixture.airline.id, fixture.world.id);
 
     expect(map.traffic).toHaveLength(1);
+    // A test airport's `ident` and `icao_code` deliberately differ, which is how
+    // this caught the join reading the wrong one: a route stored against
+    // `icao_code` was matched against `ident` and silently vanished.
+    expect(map.traffic[0]?.originIcao).toBe(from.ident);
     expect(map.flights).toHaveLength(0);
   });
 });

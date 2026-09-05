@@ -11,11 +11,26 @@ import type { Database } from '../db/client';
  * The player's own overlay on the world map (M7): their hubs and their routes,
  * positioned so the client can draw them straight onto the globe.
  *
- * World state, not reference data, so it is scoped to one airline. Routes carry
- * ICAO codes rather than airport ids, so origin and destination are each joined to
- * `airport` (by `ident`) to resolve a position; a route whose endpoint no longer
+ * World state, not reference data, so it is scoped to one airline. Routes and
+ * flights carry ICAO codes rather than airport ids, so origin and destination are
+ * each joined to `airport` to resolve a position; a route whose endpoint no longer
  * resolves is left out rather than drawn to nowhere. Positions are `[lon, lat]`,
  * ready for deck.gl.
+ *
+ * ## Joined on `icao_code`, answered in `ident`
+ *
+ * Those are two different columns and the difference bit. `route.origin_icao` and
+ * `flight.origin_icao` both have foreign keys to **`airport.icao_code`**, so that
+ * is the only column they can be joined on — this used to join routes on `ident`,
+ * which matches only where the two happen to be equal, and silently dropped every
+ * route through an airport where they are not. A database test now holds that
+ * line.
+ *
+ * The *answer* carries `ident`, because that is what `readWorldAirports` sends
+ * the client as an airport's code and what `airline_hub` resolves to here. One
+ * vocabulary in the payload, so the map can match a route to the dot it is drawn
+ * through; `icao_code` is nullable and `ident` is not, which settles which of the
+ * two the client should be speaking.
  *
  * `traffic` widens that to the whole world: every *active* route flown by any
  * carrier in the same world — the player's own and the NPCs' — so the map can draw
@@ -136,8 +151,8 @@ export async function readWorldMap(
     db
       .select({
         id: route.id,
-        originIcao: route.originIcao,
-        destinationIcao: route.destinationIcao,
+        originIdent: origin.ident,
+        destinationIdent: destination.ident,
         originName: origin.name,
         originLon: origin.longitude,
         originLat: origin.latitude,
@@ -146,8 +161,8 @@ export async function readWorldMap(
         destinationLat: destination.latitude,
       })
       .from(route)
-      .innerJoin(origin, eq(origin.ident, route.originIcao))
-      .innerJoin(destination, eq(destination.ident, route.destinationIcao))
+      .innerJoin(origin, eq(origin.icaoCode, route.originIcao))
+      .innerJoin(destination, eq(destination.icaoCode, route.destinationIcao))
       .where(eq(route.airlineId, airlineId)),
     // Every live route in the world, whoever flies it — the traffic the map
     // animates. Scoped to the world (not the airline) and to active routes only, so
@@ -159,8 +174,8 @@ export async function readWorldMap(
         airlineName: airline.name,
         airlineIcao: airline.icaoCode,
         airlineLogo: airline.logo,
-        originIcao: route.originIcao,
-        destinationIcao: route.destinationIcao,
+        originIdent: origin.ident,
+        destinationIdent: destination.ident,
         originName: origin.name,
         originLon: origin.longitude,
         originLat: origin.latitude,
@@ -170,8 +185,8 @@ export async function readWorldMap(
       })
       .from(route)
       .innerJoin(airline, eq(airline.id, route.airlineId))
-      .innerJoin(origin, eq(origin.ident, route.originIcao))
-      .innerJoin(destination, eq(destination.ident, route.destinationIcao))
+      .innerJoin(origin, eq(origin.icaoCode, route.originIcao))
+      .innerJoin(destination, eq(destination.icaoCode, route.destinationIcao))
       .where(and(eq(route.worldId, worldId), eq(route.active, true))),
     /*
      * The aeroplanes that are actually flying.
@@ -189,8 +204,8 @@ export async function readWorldMap(
         airlineName: airline.name,
         airlineIcao: airline.icaoCode,
         airlineLogo: airline.logo,
-        originIcao: flight.originIcao,
-        destinationIcao: flight.destinationIcao,
+        originIdent: origin.ident,
+        destinationIdent: destination.ident,
         originName: origin.name,
         originLon: origin.longitude,
         originLat: origin.latitude,
@@ -229,8 +244,8 @@ export async function readWorldMap(
       id: row.id,
       source: [row.originLon, row.originLat],
       target: [row.destinationLon, row.destinationLat],
-      originIcao: row.originIcao ?? '',
-      destinationIcao: row.destinationIcao ?? '',
+      originIcao: row.originIdent,
+      destinationIcao: row.destinationIdent,
       originName: row.originName,
       destinationName: row.destinationName,
     })),
@@ -238,8 +253,8 @@ export async function readWorldMap(
       id: row.id,
       source: [row.originLon, row.originLat],
       target: [row.destinationLon, row.destinationLat],
-      originIcao: row.originIcao ?? '',
-      destinationIcao: row.destinationIcao ?? '',
+      originIcao: row.originIdent,
+      destinationIcao: row.destinationIdent,
       originName: row.originName,
       destinationName: row.destinationName,
       airlineId: row.airlineId,
@@ -261,8 +276,8 @@ export async function readWorldMap(
           id: row.id,
           source: [row.originLon, row.originLat] as [number, number],
           target: [row.destinationLon, row.destinationLat] as [number, number],
-          originIcao: row.originIcao,
-          destinationIcao: row.destinationIcao,
+          originIcao: row.originIdent,
+          destinationIcao: row.destinationIdent,
           originName: row.originName,
           destinationName: row.destinationName,
           airlineId: row.airlineId,
