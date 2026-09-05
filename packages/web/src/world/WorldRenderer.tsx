@@ -30,18 +30,14 @@ import {
   type WorldLayerVisibility,
   type WorldRoute,
 } from './layers';
-import {
-  fetchWorldMap,
-  type WorldMapData,
-  type WorldMapRoute,
-  type WorldMapTrafficRoute,
-} from './map-api';
+import { type WorldMapRoute, type WorldMapTrafficRoute } from './map-api';
 import { parseHexColor, readWorldPalette, type RgbaColor, type WorldPalette } from './palette';
 import { SustainedFrameRateMonitor, type FrameRateSample } from './performance';
 import { persistProjection, readInitialProjection, type WorldProjection } from './projection';
 import { bundleCorridors, corridorGridForZoom, type Corridor } from './route-corridors';
 import { bestHub, fleetMaxRangeNm, reachableAirportIcaos } from './route-create';
 import { createDarknessField, type LngLat } from './terminator';
+import { useWorldOverlay } from './use-world-overlay';
 import { useWorldClock } from './useWorldClock';
 import {
   cameraFromSearch,
@@ -149,7 +145,8 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   const [palette, setPalette] = useState<WorldPalette>(() => readWorldPalette());
   const [geometry, setGeometry] = useState<WorldGeometry>(COARSE_WORLD);
   const [airports, setAirports] = useState<readonly WorldAirport[]>([]);
-  const [map, setMap] = useState<WorldMapData>({ hubs: [], routes: [], traffic: [] });
+  // The player's overlay, refreshed while the page is open (WORLD-06).
+  const map = useWorldOverlay();
   const [maxRangeNm, setMaxRangeNm] = useState(0);
   const [phase, setPhase] = useState(0);
   const [selectedAirport, setSelectedAirport] = useState<WorldAirport | null>(null);
@@ -235,18 +232,6 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     let live = true;
     void fetchWorldAirports().then((list) => {
       if (live) setAirports(list);
-    });
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  // The player's own overlay — hubs and routes. Also resilient: no airline yet is a
-  // 409, which resolves to an empty overlay, so the map draws without it.
-  useEffect(() => {
-    let live = true;
-    void fetchWorldMap().then((data) => {
-      if (live) setMap(data);
     });
     return () => {
       live = false;
