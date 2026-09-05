@@ -637,6 +637,77 @@ describeDb('what ground handling costs', () => {
       expect(alert?.shortfallFeeMinor).toBe(terminated.shortfallMinor);
     });
 
+    it('reports the real departure count for a contract that owes no volume (BUG-09)', async () => {
+      // A budget handler asks for no volume, so the pro-rated commitment is zero
+      // and `shortfall` used to return before counting anything — publishing a
+      // fabricated `departuresFlown: 0` for a station the airline had flown out
+      // of hundreds of times. The field is nullable precisely so it can say "not
+      // measured" instead.
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMF1', 'flagship');
+      const signed = await signContract(db.db, own(a), icao, {
+        serviceLine: 'ramp_baggage',
+        grade: 'budget',
+      });
+      expect(signed.ok).toBe(true);
+      if (!signed.ok) return;
+
+      const line = signed.station.lines.find((l) => l.serviceLine === 'ramp_baggage');
+      const termEnd = line?.contracted?.termEnd;
+      if (!termEnd) throw new Error('expected a term');
+      const start = new Date(termEnd).getTime() - 90 * DAY;
+      for (let i = 0; i < 6; i += 1) await flew(a, icao, new Date(start + (i + 1) * 3_600_000));
+
+      const listed = await listAirlineContracts(
+        db.db,
+        own(a),
+        await realTimeAt(a.world.id, new Date(start + 30 * DAY)),
+      );
+      const alert = listed.contracts.find((c) => c.icao === icao);
+      expect(alert?.committedDepartures).toBe(0);
+      expect(alert?.departuresFlown).toBe(6);
+      expect(alert?.shortfallFeeMinor).toBe(0);
+    });
+
+    it('reports the real count inside the term’s first days too (BUG-09)', async () => {
+      // The same early return fires whenever `round(commitment × served)` is
+      // still zero, which is every contract for its first day or so.
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMF2', 'flagship');
+      const signed = await signStandard(a, icao);
+      // An hour into the term, where `round(commitment x served)` is still zero.
+      const termStart = new Date(signed.termEnd.getTime() - 90 * DAY);
+      await flew(a, icao, new Date(termStart.getTime() + 3_600_000));
+
+      // Two hours in: `round(63 x 2h/90d)` is still zero, so the old early
+      // return fired — and the departure an hour ago plainly happened.
+      const listed = await listAirlineContracts(
+        db.db,
+        own(a),
+        await realTimeAt(a.world.id, new Date(termStart.getTime() + 2 * 3_600_000)),
+      );
+      const alert = listed.contracts.find((c) => c.icao === icao);
+      expect(alert?.committedDepartures).toBeGreaterThan(0);
+      expect(alert?.departuresFlown).toBe(1);
+    });
+
+    it('reports null, not zero, when there is no term to count from (BUG-09)', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMF3', 'flagship');
+      await db.db.insert(groundContract).values({
+        worldId: a.world.id,
+        airlineId: a.airline.id,
+        airportIcao: icao,
+        serviceLine: 'ramp_baggage',
+        grade: 'premium',
+        status: 'active',
+      });
+
+      const listed = await listAirlineContracts(db.db, own(a));
+      const alert = listed.contracts.find((c) => c.icao === icao);
+      expect(alert?.departuresFlown).toBeNull();
+    });
+
     it('never bills a contract signed before terms were priced', async () => {
       // `term_start`, `volume_commitment` and `penalty_minor` are all null on such
       // a row, and null means nobody agreed anything. It still lapses.
