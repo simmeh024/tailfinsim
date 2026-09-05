@@ -52,6 +52,7 @@ const DETAIL: AdminAirlineDetailResponse = {
     statusChangedAt: '2026-08-17T10:00:00.000Z',
     ceasedAt: null,
     createdAt: '2026-08-17T10:00:00.000Z',
+    ledger: { balanceMinor: 50_000_000, movementTotalMinor: 50_000_000, reconciles: true },
     routes: [
       {
         id: 'dddddddd-1111-4222-8333-444444444444',
