@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import type { LiveryMask } from '@tailfin/shared';
+
 import {
   DEFAULT_PRIMARY_COLOR,
   DEFAULT_SECONDARY_COLOR,
@@ -21,6 +23,25 @@ function render(state: LiveryEditorHistory) {
   const template = aircraftLiveryTemplate(state.present.family, 'side');
   if (template === null) throw new Error('missing test template');
   return parse(renderLiverySvg(template.source, state.present.document));
+}
+
+function withLayerMask(
+  state: LiveryEditorHistory,
+  id: string,
+  mask: LiveryMask,
+): LiveryEditorHistory {
+  return {
+    ...state,
+    present: {
+      ...state.present,
+      document: {
+        ...state.present.document,
+        layers: state.present.document.layers.map((layer) =>
+          layer.id === id ? { ...layer, mask } : layer,
+        ),
+      },
+    },
+  };
 }
 
 describe('M6-03 side-profile livery renderer', () => {
@@ -84,6 +105,56 @@ describe('M6-03 side-profile livery renderer', () => {
     expect(svg.querySelector('[data-painted-layer="base-belly"]')).toBeNull();
     expect(svg.querySelector('[data-livery-zone="belly"]')).not.toBeNull();
     expect(svg.getAttribute('data-rendered-layers')).toBe('2');
+  });
+
+  it('clips paint to a canonical zone mask and records the binding', () => {
+    const state = withLayerMask(createEditorHistory(), 'base-fuselage', {
+      kind: 'zone',
+      zone: 'belly',
+    });
+    const svg = render(state);
+    const layer = svg.querySelector('[data-painted-layer="base-fuselage"]');
+
+    expect(layer?.getAttribute('data-livery-mask')).toBe('zone:belly');
+    expect(layer?.getAttribute('clip-path')).toMatch(/^url\(#paint-mask-zone-base-fuselage\)$/);
+    expect(svg.querySelector('#paint-mask-zone-base-fuselage')?.childElementCount).toBeGreaterThan(
+      0,
+    );
+  });
+
+  it('uses a preceding paint layer for alpha and inverse-alpha masks', () => {
+    let state = withLayerMask(createEditorHistory(), 'base-belly', {
+      kind: 'layer',
+      layerId: 'base-fuselage',
+      mode: 'alpha',
+    });
+    state = withLayerMask(state, 'base-tail', {
+      kind: 'layer',
+      layerId: 'base-belly',
+      mode: 'inverse_alpha',
+    });
+    const svg = render(state);
+
+    expect(
+      svg.querySelector('[data-painted-layer="base-belly"]')?.getAttribute('data-livery-mask'),
+    ).toBe('layer:alpha:base-fuselage');
+    expect(svg.querySelector('#paint-mask-layer-base-belly rect')?.getAttribute('fill')).toBe(
+      'black',
+    );
+    expect(svg.querySelector('#paint-mask-layer-base-tail rect')?.getAttribute('fill')).toBe(
+      'white',
+    );
+  });
+
+  it('fails closed when a layer mask references hidden or later paint', () => {
+    const state = withLayerMask(createEditorHistory(), 'base-fuselage', {
+      kind: 'layer',
+      layerId: 'base-tail',
+      mode: 'alpha',
+    });
+    const svg = render(state);
+
+    expect(svg.querySelector('[data-painted-layer="base-fuselage"]')).toBeNull();
   });
 
   it('projects the same document over every launch-family side template', () => {
