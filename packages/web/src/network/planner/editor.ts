@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useReducer } from 'react';
 
+import { publishSchedule, updateSchedule } from '../api';
+
 import { blockMinutes, buildRoutePlan } from './mock';
+import { toDrafts } from './persistence';
 
 import type { RouteSummary } from '../api';
 import type { Frequency, PlannedFlight, PlannerAircraft } from './types';
@@ -12,8 +15,28 @@ import type { Frequency, PlannedFlight, PlannerAircraft } from './types';
  * add a rotation on a slot, drag a flight to retime or reassign it, cut one, change
  * the frequency, apply a template, accept a suggestion. Every edit is undoable, and
  * a route stays a **draft** until it is published — so experimenting is free and the
- * "unsaved" state is explicit. There is no schedule endpoint yet (M2-03), so publish
- * is local; the shape is the one a real save would take.
+ * "unsaved" state is explicit.
+ *
+ * ## Publish saves (IMPROVE-04)
+ *
+ * It used to mark the reducer's own copy of the draft as clean and nothing else,
+ * so the button read "Published" while no schedule existed and a reload lost the
+ * work. It now goes through `POST`/`PUT /api/schedules`, and "Published" appears
+ * only after the server has said so.
+ *
+ * Three things follow from that, and each is a state this reducer has to carry:
+ *
+ *   - **A rotation per aircraft.** The timeline is per route with several
+ *     aircraft on it; a server schedule is one airframe and an ordered cycle. So
+ *     one Publish is several requests, and `persistence.ts` does the translation.
+ *   - **Identity.** `scheduleIds` remembers which schedule holds which aircraft
+ *     on which route, so the second publish is an edit rather than a duplicate.
+ *   - **In flight, and refused.** `saving` and `problems` exist so the button can
+ *     say which it is, and so a repeated click cannot start a second save.
+ *
+ * The draft itself is untouched by a failure. A refusal keeps the edits, which is
+ * the whole point of having a draft: the player fixes the leg the server named
+ * and publishes again.
  */
 
 interface Snapshot {
@@ -27,6 +50,25 @@ interface EditorState {
   future: Snapshot[];
   /** Serialised published state per route, to tell a dirty draft from a clean one. */
   published: Record<string, string>;
+  /**
+   * `routeId` → `aircraftId` → the schedule the server holds it in.
+   *
+   * What turns the second publish into an edit. Without it every save would
+   * create another rotation for the same aeroplane, which the player would find
+   * as duplicate flights rather than as an error.
+   */
+  scheduleIds: Record<string, Record<string, string>>;
+  /** Routes with a save in flight. A second click while saving is ignored. */
+  saving: Record<string, true>;
+  /** The last refusal per route, kept until the next attempt. */
+  problems: Record<string, PublishProblem>;
+}
+
+/** Why a publish did not happen, in words the player can act on. */
+export interface PublishProblem {
+  /** The server's `problem` code, or `network` when it never got there. */
+  problem: string;
+  detail: string;
 }
 
 function serialiseRoute(snapshot: Snapshot, routeId: string): string {
@@ -48,7 +90,16 @@ type Action =
   | { type: 'set-flights'; routeId: string; flights: PlannedFlight[] }
   | { type: 'set-frequency'; routeId: string; frequency: Frequency }
   | { type: 'reset'; routeId: string; flights: PlannedFlight[]; frequency: Frequency }
-  | { type: 'publish'; routeId: string }
+  | { type: 'publish'; routeId: string; scheduleIds: Record<string, string> }
+  | { type: 'saving'; routeId: string }
+  | { type: 'refused'; routeId: string; problem: PublishProblem }
+  | {
+      type: 'restore';
+      routeId: string;
+      flights: PlannedFlight[];
+      frequency: Frequency;
+      scheduleIds: Record<string, string>;
+    }
   | { type: 'undo' }
   | { type: 'redo' };
 
@@ -56,10 +107,10 @@ const HISTORY_LIMIT = 50;
 
 function withHistory(state: EditorState, next: Snapshot): EditorState {
   return {
+    ...state,
     present: next,
     past: [...state.past, state.present].slice(-HISTORY_LIMIT),
     future: [],
-    published: state.published,
   };
 }
 
@@ -96,14 +147,65 @@ function reducer(state: EditorState, action: Action): EditorState {
         flights: { ...state.present.flights, [action.routeId]: action.flights },
         frequencies: { ...state.present.frequencies, [action.routeId]: action.frequency },
       });
+    case 'saving':
+      return {
+        ...state,
+        saving: { ...state.saving, [action.routeId]: true },
+        // The previous refusal goes as soon as a new attempt starts: leaving it
+        // up while a save is in flight tells the player about a problem that may
+        // already be fixed.
+        problems: without(state.problems, action.routeId),
+      };
+    case 'refused':
+      return {
+        ...state,
+        saving: without(state.saving, action.routeId),
+        problems: { ...state.problems, [action.routeId]: action.problem },
+      };
     case 'publish':
+      /*
+       * Only reached after the server has accepted every rotation on the route.
+       *
+       * `published` is serialised from the draft *as it is now*, which is the
+       * dirty comparison the button reads. An edit made while the save was in
+       * flight therefore shows as dirty again immediately — correct, because the
+       * server does not have that edit.
+       */
       return {
         ...state,
         published: {
           ...state.published,
           [action.routeId]: serialiseRoute(state.present, action.routeId),
         },
+        scheduleIds: {
+          ...state.scheduleIds,
+          [action.routeId]: { ...state.scheduleIds[action.routeId], ...action.scheduleIds },
+        },
+        saving: without(state.saving, action.routeId),
+        problems: without(state.problems, action.routeId),
       };
+    case 'restore': {
+      /*
+       * What the server holds, laid on the timeline (IMPROVE-04).
+       *
+       * No history entry and no dirty flag: this *is* the saved state, so the
+       * route arrives clean. Undo deliberately cannot reach back past it — there
+       * is nothing before a reload to go back to.
+       */
+      const present: Snapshot = {
+        flights: { ...state.present.flights, [action.routeId]: action.flights },
+        frequencies: { ...state.present.frequencies, [action.routeId]: action.frequency },
+      };
+      return {
+        ...state,
+        present,
+        published: {
+          ...state.published,
+          [action.routeId]: serialiseRoute(present, action.routeId),
+        },
+        scheduleIds: { ...state.scheduleIds, [action.routeId]: action.scheduleIds },
+      };
+    }
     case 'undo': {
       const previous = state.past[state.past.length - 1];
       if (previous === undefined) return state;
@@ -132,7 +234,18 @@ const EMPTY: EditorState = {
   past: [],
   future: [],
   published: {},
+  scheduleIds: {},
+  saving: {},
+  problems: {},
 };
+
+/** A record without one key, so a cleared state is a new object rather than a delete. */
+function without<T>(record: Record<string, T>, key: string): Record<string, T> {
+  if (!(key in record)) return record;
+  const next = { ...record };
+  delete next[key];
+  return next;
+}
 
 let sequence = 0;
 function nextId(routeId: string): string {
@@ -194,7 +307,26 @@ export interface ScheduleEditor {
     aircraftId?: string,
   ) => void;
   resetRoute: (route: RouteSummary, aircraft: readonly PlannerAircraft[]) => void;
-  publish: (routeId: string) => void;
+  /**
+   * Save the route's timeline as real rotations (IMPROVE-04).
+   *
+   * Resolves when the server has answered. A refusal is reported through
+   * `problemFor` rather than thrown, because a leg the aircraft cannot fly is an
+   * answer the player has to read — App. B.4's whole point — and the draft has
+   * to survive it.
+   */
+  publish: (routeId: string, aircraft: readonly PlannerAircraft[]) => Promise<void>;
+  /** True while a save for this route is in flight. */
+  isSaving: (routeId: string) => boolean;
+  /** The last refusal for this route, or null. */
+  problemFor: (routeId: string) => PublishProblem | null;
+  /** Lay what the server holds on the timeline, clean and undirty. */
+  restore: (
+    routeId: string,
+    flights: PlannedFlight[],
+    frequency: Frequency,
+    scheduleIds: Record<string, string>,
+  ) => void;
   undo: () => void;
   redo: () => void;
 }
@@ -311,9 +443,111 @@ export function useScheduleEditor(
       frequency: plan.frequency,
     });
   }, []);
-  const publish = useCallback((routeId: string) => {
-    dispatch({ type: 'publish', routeId });
-  }, []);
+  /**
+   * One request per aircraft on the route, then one dispatch if all of them took.
+   *
+   * All-or-nothing on the *dirty flag*, not on the server: there is no
+   * cross-schedule transaction, so a rotation the server accepted stays
+   * accepted. What the flag says is whether the timeline as drawn is now what the
+   * server holds, and after a partial failure it is not — so the route stays
+   * dirty and the ids of whatever did save are kept, which makes the retry an
+   * edit of those and a create of the rest.
+   *
+   * A second click while one is in flight is dropped rather than queued. Two
+   * concurrent creates for the same aeroplane would both succeed and leave a
+   * duplicate rotation, which is the criterion about repeated clicks.
+   */
+  const publish = useCallback(
+    async (routeId: string, frames: readonly PlannerAircraft[]) => {
+      if (state.saving[routeId] === true) return;
+
+      const { drafts, skippedPool } = toDrafts(
+        state.present.flights[routeId] ?? [],
+        state.present.frequencies[routeId] ?? { kind: 'daily' },
+        frames,
+      );
+
+      if (drafts.length === 0) {
+        dispatch({
+          type: 'refused',
+          routeId,
+          problem: {
+            problem: 'no_aircraft',
+            detail:
+              skippedPool > 0
+                ? 'Every flight on this route is laid against the fleet pool. Assign a real aircraft before publishing.'
+                : 'There is nothing to publish on this route yet.',
+          },
+        });
+        return;
+      }
+
+      dispatch({ type: 'saving', routeId });
+      const known = state.scheduleIds[routeId] ?? {};
+      const saved: Record<string, string> = {};
+
+      for (const { aircraftId, draft } of drafts) {
+        const existing = known[aircraftId];
+        let outcome;
+        try {
+          outcome =
+            existing === undefined
+              ? await publishSchedule(draft)
+              : await updateSchedule(existing, {
+                  legs: draft.legs,
+                  autoReturn: draft.autoReturn,
+                  repeat: draft.repeat,
+                });
+        } catch {
+          // A dead server or a 500. The draft is untouched and the player is
+          // told it did not reach anywhere, which is a different problem from a
+          // rotation being refused.
+          dispatch({
+            type: 'refused',
+            routeId,
+            problem: {
+              problem: 'network',
+              detail: 'The schedule could not be saved. Your draft is still here — try again.',
+            },
+          });
+          return;
+        }
+
+        if (!outcome.ok) {
+          // Narrowed to the two fields, not spread: the outcome also carries
+          // `ok`, and a `PublishProblem` with an `ok: false` on it would leak
+          // the client's own result shape into the state the UI renders.
+          dispatch({
+            type: 'refused',
+            routeId,
+            problem: { problem: outcome.problem, detail: outcome.detail },
+          });
+          return;
+        }
+        saved[aircraftId] = outcome.response.schedule.id;
+      }
+
+      dispatch({ type: 'publish', routeId, scheduleIds: saved });
+    },
+    [state.present.flights, state.present.frequencies, state.saving, state.scheduleIds],
+  );
+
+  const isSaving = useCallback((routeId: string) => state.saving[routeId] === true, [state.saving]);
+  const problemFor = useCallback(
+    (routeId: string) => state.problems[routeId] ?? null,
+    [state.problems],
+  );
+  const restore = useCallback(
+    (
+      routeId: string,
+      flights: PlannedFlight[],
+      frequency: Frequency,
+      scheduleIds: Record<string, string>,
+    ) => {
+      dispatch({ type: 'restore', routeId, flights, frequency, scheduleIds });
+    },
+    [],
+  );
   const undo = useCallback(() => {
     dispatch({ type: 'undo' });
   }, []);
@@ -336,6 +570,9 @@ export function useScheduleEditor(
       moveFlight,
       resetRoute,
       publish,
+      isSaving,
+      problemFor,
+      restore,
       undo,
       redo,
     }),
@@ -353,6 +590,9 @@ export function useScheduleEditor(
       moveFlight,
       resetRoute,
       publish,
+      isSaving,
+      problemFor,
+      restore,
       undo,
       redo,
     ],

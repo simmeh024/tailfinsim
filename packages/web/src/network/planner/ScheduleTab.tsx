@@ -222,6 +222,10 @@ export function ScheduleTab({
 
   const dirty = editor.isDirty(route.id);
 
+  const saving = editor.isSaving(route.id);
+
+  const problem = editor.problemFor(route.id);
+
   return (
     <div className="net-schedule">
       {/* Toolbar: frequency, templates, suggest, draft controls */}
@@ -276,18 +280,38 @@ export function ScheduleTab({
           >
             Reset
           </Button>
+          {/*
+            "Published" only after the server has said so (IMPROVE-04). It used
+            to appear the instant the button was clicked, while nothing had been
+            saved — the state a reload exposed as a lie.
+          */}
           <Button
             variant="primary"
-            disabled={!dirty}
+            disabled={!dirty || saving}
             onClick={() => {
-              editor.publish(route.id);
+              void editor.publish(route.id, aircraft);
             }}
           >
-            {dirty ? 'Publish' : 'Published'}
+            {saving ? 'Publishing…' : dirty ? 'Publish' : 'Published'}
           </Button>
-          {dirty && <Chip tone="warn">Unsaved</Chip>}
+          {dirty && !saving && <Chip tone="warn">Unsaved</Chip>}
         </div>
       </div>
+
+      {/*
+        What the server refused, and why (IMPROVE-04).
+
+        Beside the client-side warnings rather than instead of them: those are
+        advice about a draft, this is an answer about a save. App. B.4 requires
+        the player to be told *which* leg cannot be flown, so the detail is the
+        server's own sentence rather than a summary of it.
+      */}
+      {problem !== null && (
+        <p className="net-warnings" role="alert">
+          <span className="net-warnings__count">⚠ Not published</span>
+          <span>{problem.detail}</span>
+        </p>
+      )}
 
       {/* Live warnings (idea 2) */}
       {issues.length > 0 && (
