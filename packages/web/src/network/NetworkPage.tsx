@@ -5,6 +5,7 @@ import type { FleetAirframeView } from '@tailfin/shared';
 import { fetchFleetAirframes } from '../fleet/api';
 import { useContextSelection } from '../shell/context-selection';
 import { StateBlock } from '../ui/StateBlock';
+import { useUnsavedGuard } from '../ui/unsaved';
 
 import { closeRoute, fetchRoutes, fetchSchedules, setRouteActive, type RouteSummary } from './api';
 import { AirportSlotsView } from './planner/AirportSlotsView';
@@ -259,11 +260,51 @@ export function NetworkPage(): ReactNode {
 
   useEffect(() => () => clear(), [clear]);
 
-  const selectRoute = useCallback((id: string) => {
-    setView('route');
-    setSelectedRouteId(id);
-    setConfirmClose(false);
-  }, []);
+  /**
+   * Ask before throwing away an unpublished draft (UX-05).
+   *
+   * The editor has tracked a per-route dirty flag since it was built and shown
+   * an "Unsaved" chip from it, and that was all it did — clicking another route
+   * discarded the edits with no warning. Since IMPROVE-04 made Publish actually
+   * persist, a player reasonably believes a draft is saveable, which makes
+   * silently discarding one a bigger betrayal than it was when nothing saved.
+   *
+   * Scoped to the route being edited rather than to "any route is dirty": a
+   * player switching *away* from a clean route should not be asked about edits
+   * they are not leaving.
+   */
+  const dirtyHere = selectedRouteId !== null && editor.isDirty(selectedRouteId);
+  const guard = useUnsavedGuard(
+    dirtyHere,
+    'This route has unpublished changes. Leave without publishing them?',
+  );
+
+  const selectRoute = useCallback(
+    (id: string) => {
+      if (id === selectedRouteId) return;
+      if (!guard.confirmLeave()) return;
+      setView('route');
+      setSelectedRouteId(id);
+      setConfirmClose(false);
+    },
+    [guard, selectedRouteId],
+  );
+
+  /**
+   * The tab switch, guarded too.
+   *
+   * The case a router blocker would not catch, and the one a player hits most
+   * often: the Schedule tab's draft is lost by clicking "Pricing", which does
+   * not change the URL at all.
+   */
+  const selectTab = useCallback(
+    (next: Tab) => {
+      if (next === tab) return;
+      if (tab === 'schedule' && !guard.confirmLeave()) return;
+      setTab(next);
+    },
+    [guard, tab],
+  );
 
   const onCloseRoute = useCallback(async () => {
     if (selectedRouteId === null) return;
@@ -505,7 +546,7 @@ export function NetworkPage(): ReactNode {
                 </div>
               </div>
 
-              <Segmented label="Route tabs" value={tab} onChange={setTab} options={TABS} />
+              <Segmented label="Route tabs" value={tab} onChange={selectTab} options={TABS} />
 
               <div className="net-tabpanel">
                 {tab === 'overview' && <OverviewTab plan={currentPlan} />}
