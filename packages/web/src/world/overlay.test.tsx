@@ -8,8 +8,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ThemeProvider } from '../theme/ThemeProvider';
 
+import { WORLD_PROJECTION_STORAGE_KEY } from './projection';
 import { WorldRenderer } from './WorldRenderer';
 
+import type { WorldRoute } from './layers';
 import type { Layer, MapViewState } from '@deck.gl/core';
 
 /**
@@ -65,7 +67,11 @@ vi.mock('./map-api', () => ({
     }),
 }));
 
-const OWN_ROUTE = { id: 'own-1', source: [8.5622, 50.0379], target: [-0.4614, 51.4775] } as const;
+const OWN_ROUTE: WorldRoute = {
+  id: 'own-1',
+  source: [8.5622, 50.0379],
+  target: [-0.4614, 51.4775],
+};
 
 /** Render the world at `/world`, with somewhere for a route link to go. */
 async function renderWorld(): Promise<void> {
@@ -87,17 +93,17 @@ async function renderWorld(): Promise<void> {
   });
 }
 
+function drawnLayers(): Layer[] {
+  return (deckCapture.props?.layers ?? []).filter((layer): layer is Layer => layer !== false);
+}
+
 function layerIds(): string[] {
-  return (deckCapture.props?.layers ?? [])
-    .filter((layer): layer is Layer => Boolean(layer))
-    .map((layer) => layer.id);
+  return drawnLayers().map((layer) => layer.id);
 }
 
 /** Open the airport panel the way a click does — through the layer's own handler. */
 function clickAirport(): void {
-  const airports = (deckCapture.props?.layers ?? []).find(
-    (layer): layer is Layer => Boolean(layer) && layer.id === 'world-airports',
-  );
+  const airports = drawnLayers().find((layer) => layer.id === 'world-airports');
   expect(airports).toBeDefined();
   const onClick = airports?.props.onClick as (info: { object: unknown }) => void;
   act(() => {
@@ -148,6 +154,11 @@ describe('leaving for the route planner', () => {
 
 describe('the surfaces over the map', () => {
   it('puts the selection and the performance offer in one stack', async () => {
+    // The offer is only made on the globe, and the globe is not the default
+    // everywhere: `chooseInitialProjection` picks flat on a narrow, coarse or
+    // few-core device, which is what CI's runner reports. A stored choice always
+    // wins, so this pins the projection rather than hoping for it.
+    localStorage.setItem(WORLD_PROJECTION_STORAGE_KEY, 'globe');
     await renderWorld();
     clickAirport();
     act(() => {
