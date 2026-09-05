@@ -85,9 +85,10 @@ function readDevQuarantineA320neoRecovery(
   filePath: string | undefined,
 ): Buffer | null {
   if (environment !== 'dev' || filePath === undefined) return null;
-  if (!existsSync(filePath)) {
-    throw new Error('The configured dev quarantine A320neo recovery export does not exist.');
-  }
+  // This is a dev-only review aid, never a service dependency. A stale
+  // operator-provisioned path must remove the review endpoint rather than
+  // stopping the Design Studio for everyone on dev.
+  if (!existsSync(filePath)) return null;
   return readFileSync(filePath);
 }
 

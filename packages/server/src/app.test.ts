@@ -273,6 +273,29 @@ describe('GET /api/version', () => {
     }
   });
 
+  it('keeps dev available when a provisioned recovery export is removed', async () => {
+    const reviewApp = await buildApp({
+      env: {
+        ...testEnv,
+        environmentLabel: 'dev',
+        devQuarantineA320neoRecoveryGlb: join(tmpdir(), 'tailfin-missing-recovery.glb'),
+      },
+      db: databaseAlarm,
+    });
+    await reviewApp.ready();
+    try {
+      const version = await reviewApp.inject({ method: 'GET', url: '/api/version' });
+      expect(version.statusCode).toBe(200);
+      const recovery = await reviewApp.inject({
+        method: 'GET',
+        url: '/api/dev/assets/aircraft/quarantine-a320neo-recovery.glb',
+      });
+      expect(recovery.statusCode).toBe(404);
+    } finally {
+      await reviewApp.close();
+    }
+  });
+
   it('reports the same start time across requests', async () => {
     // It is process start, not request time — a value that changed every call
     // would say nothing about whether the box restarted.
