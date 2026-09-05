@@ -36,6 +36,44 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/*
+ * The skip link (UX-04).
+ *
+ * Off-screen until focused rather than `display: none`, which would take it out
+ * of the tab order and defeat the point. On focus it comes back to the top-left
+ * corner, above everything, so the first `Tab` on any page offers to skip the
+ * rail.
+ */
+.shell__skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 0.5rem 0.9rem;
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: 0 0 4px 0;
+  text-decoration: none;
+}
+
+.shell__skip:focus,
+.shell__skip:focus-visible {
+  left: 0;
+}
+
+/*
+ * The stage takes focus on navigation and must not draw a ring for it.
+ *
+ * `:focus-visible` below gives every interactive thing a visible ring, which is
+ * right — but the stage is not something a user chose to focus, it is where the
+ * router put them. A ring around the whole page on every navigation reads as a
+ * rendering fault.
+ */
+.stage:focus {
+  outline: none;
+}
+
 /* H.7: visible focus everywhere, never removed. */
 :focus-visible {
   outline: 2px solid var(--focus-ring);

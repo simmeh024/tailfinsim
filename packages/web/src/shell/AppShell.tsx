@@ -22,6 +22,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { BuildBadge } from '../version/BuildBadge';
 
 import { ContextSelectionProvider, useContextSelection } from './context-selection';
+import { STAGE_ID, useRouteIdentity } from './route-identity';
 
 import type { ReactNode } from 'react';
 
@@ -110,9 +111,23 @@ function LeftRail({ ownAirline }: { ownAirline: OwnAirlineResponse | null }): Re
   );
 }
 
-/** The route's own area. Named `stage` because it is no longer only the world. */
+/**
+ * The route's own area. Named `stage` because it is no longer only the world.
+ *
+ * `tabIndex={-1}` so the shell can move focus here when the route changes
+ * (UX-04) — a single-page navigation moves nothing by itself, so a screen-reader
+ * user activated a rail link and heard silence. `-1` makes it focusable
+ * programmatically without adding it to the tab order, which is the difference
+ * between a focus target and an extra stop on every `Tab`.
+ *
+ * It is also where the skip link lands.
+ */
 function Stage({ children }: { children: ReactNode }): ReactNode {
-  return <main className="stage">{children}</main>;
+  return (
+    <main className="stage" id={STAGE_ID} tabIndex={-1}>
+      {children}
+    </main>
+  );
 }
 
 /**
@@ -288,6 +303,8 @@ function StatusStrip({ ownAirline }: { ownAirline: OwnAirlineResponse | null }):
 }
 
 export function AppShell(): ReactNode {
+  // The title, and focus on navigation. See `route-identity.ts`.
+  useRouteIdentity();
   const [panelOpen, setPanelOpen] = useState(true);
   const [ownAirline, setOwnAirline] = useState<OwnAirlineResponse | null>(null);
   const [ownAirlineLoading, setOwnAirlineLoading] = useState(true);
@@ -389,6 +406,14 @@ export function AppShell(): ReactNode {
   return (
     <ContextSelectionProvider>
       <div className="shell">
+        {/*
+          First in the DOM and visible only on focus (UX-04). Without it a
+          keyboard user tabs the whole rail before reaching page content, on
+          every page.
+        */}
+        <a className="shell__skip" href={`#${STAGE_ID}`}>
+          Skip to content
+        </a>
         <LeftRail ownAirline={ownAirline} />
         <Stage>
           <Outlet context={outletContext} />
