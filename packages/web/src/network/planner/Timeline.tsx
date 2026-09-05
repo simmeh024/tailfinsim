@@ -2,6 +2,7 @@ import { createContext, useContext } from 'react';
 
 import type { Tone } from './ui';
 import type {
+  KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
   ReactNode,
@@ -148,6 +149,8 @@ export function TimelineBlock({
   title,
   onClick,
   onPointerDown,
+  onKeyDown,
+  ariaLabel,
 }: {
   startMinute: number;
   durationMinutes: number;
@@ -158,6 +161,24 @@ export function TimelineBlock({
   title?: string;
   onClick?: () => void;
   onPointerDown?: (event: ReactPointerEvent) => void;
+  /**
+   * Retime and reassign from the keyboard (UX-03).
+   *
+   * The block has always been a real `<button>`, so it took focus and its click
+   * selected — and then a keyboard user could go no further, because moving it
+   * was `onPointerDown` and nothing else. The whole point of the Schedule tab is
+   * moving flights around.
+   */
+  onKeyDown?: (event: ReactKeyboardEvent) => void;
+  /**
+   * What a screen reader is told this block is.
+   *
+   * The visible label is `→ LEBL`, which is right on a dense timeline and says
+   * nothing on its own. The accessible name has to carry the departure time,
+   * because that is the value the arrow keys change and a nudge nobody can hear
+   * is a nudge nobody can use.
+   */
+  ariaLabel?: string;
 }): ReactNode {
   const scale = useContext(ScaleContext);
   const left = pct(startMinute, scale);
@@ -172,8 +193,10 @@ export function TimelineBlock({
           onPointerDown ? ' net-block--draggable' : ''
         }`}
         style={{ left: `${left}%`, width: `${Math.max(width, 1.2)}%` }}
+        aria-label={ariaLabel}
         onClick={onClick}
         onPointerDown={onPointerDown}
+        onKeyDown={onKeyDown}
       >
         <span className="net-block__label">{label}</span>
       </button>

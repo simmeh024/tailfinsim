@@ -24,6 +24,7 @@ import type {
 } from './types';
 import type { Tone } from './ui';
 import type {
+  KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
   ReactNode,
@@ -99,6 +100,16 @@ export function ScheduleTab({
   const weekly = flights.length * (frequency.kind === 'daily' ? 7 : frequency.days.length);
   const flyers = aircraft.filter((a) => !a.isPool);
 
+  /**
+   * What was just done, for a screen reader (UX-03).
+   *
+   * A keyboard nudge moves a block a few pixels and changes nothing in the
+   * accessibility tree, so without this the keys appear not to work. Held as
+   * state rather than written to the DOM directly, so React owns the update and
+   * the region is re-announced on every change even when the text repeats.
+   */
+  const [announcement, setAnnouncement] = useState('');
+
   const toggleDay = (day: Weekday) => {
     if (frequency.kind !== 'weekdays') {
       editor.setFrequency(route.id, { kind: 'weekdays', days: [day] });
@@ -160,6 +171,67 @@ export function ScheduleTab({
       onSelect({ kind: 'flight', id: flight.id });
     },
     [onSelect],
+  );
+
+  // --- Retime and reassign from the keyboard (UX-03) ------------------------
+
+  /**
+   * The same two edits the drag does, from the arrow keys.
+   *
+   * The block has always been a real `<button>`, so it took focus and its click
+   * selected — and then a keyboard user could go no further, because moving a
+   * flight was `onPointerDown` and nothing else. Retiming and reassigning are
+   * what the Schedule tab is *for*, so that was the whole tab, unusable.
+   *
+   * `moveFlight` already does both and clamps the bounds, and every edit already
+   * goes through the same undo history — so this needed a route to it and a way
+   * to hear the result, not a second model.
+   *
+   * ## The step sizes
+   *
+   * Five minutes plain, matching `snap` so a nudged flight lands where a dragged
+   * one would; thirty with shift, because retiming a departure by half an hour
+   * is a thing people actually do and six presses to get there is not. Both are
+   * more precise than a drag, which is the reason this ends up being the input
+   * power users prefer rather than only the accessible one.
+   *
+   * ## Why it announces
+   *
+   * A nudge moves a block a few pixels. Nothing about that reaches the
+   * accessibility tree, so the new time is written to a live region — otherwise
+   * the keys work and the user cannot tell.
+   */
+  const onBlockKeyDown = useCallback(
+    (event: ReactKeyboardEvent, flight: PlannedFlight) => {
+      const step = event.shiftKey ? 30 : 5;
+
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        const delta = event.key === 'ArrowLeft' ? -step : step;
+        const next = snap(flight.departureMinute + delta);
+        editor.moveFlight(route.id, flight.id, next);
+        setAnnouncement(
+          `${flight.originIcao} to ${flight.destinationIcao} now departs ${minuteLabel(next)}.`,
+        );
+        return;
+      }
+
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        // Between aircraft rows. `flyers` rather than `aircraft`, because the
+        // fleet pool is not somewhere a flight can be *assigned* — the publish
+        // path refuses it, so offering it here would be offering a dead end.
+        const index = flyers.findIndex((frame) => frame.id === flight.aircraftId);
+        if (index < 0) return;
+        event.preventDefault();
+        const target = flyers[index + (event.key === 'ArrowUp' ? -1 : 1)];
+        if (!target) return;
+        editor.moveFlight(route.id, flight.id, flight.departureMinute, target.id);
+        setAnnouncement(
+          `${flight.originIcao} to ${flight.destinationIcao} moved to ${target.registration}.`,
+        );
+      }
+    },
+    [editor, route, flyers],
   );
 
   // --- Click an empty spot on a row to add a rotation there (idea 1, easier add) ---
@@ -327,6 +399,14 @@ export function ScheduleTab({
         </div>
       )}
 
+      {/*
+        What a keyboard edit just did (UX-03). Visually hidden — the change is
+        already on screen for anybody who can see the block move.
+      */}
+      <p className="visually-hidden" role="status" aria-live="polite">
+        {announcement}
+      </p>
+
       <Timeline hourStart={HOUR_START} hourEnd={HOUR_END}>
         <TimelineRow label="Departure slots" sub="cost · quality">
           {plan.slots
@@ -413,6 +493,13 @@ export function ScheduleTab({
                     onPointerDown={(event) => {
                       onBlockPointerDown(event, flight);
                     }}
+                    onKeyDown={(event) => {
+                      onBlockKeyDown(event, flight);
+                    }}
+                    // The visible label is `→ LEBL`, which says nothing on its
+                    // own. The accessible name carries the time, because that is
+                    // the value the arrow keys change.
+                    ariaLabel={`${flight.originIcao} to ${flight.destinationIcao}, departs ${minuteLabel(startMinute)}, on ${frame.isPool ? 'the fleet pool' : frame.registration}. Arrow keys retime; up and down change aircraft.`}
                     onClick={() => {
                       onSelect({ kind: 'flight', id: flight.id });
                     }}
