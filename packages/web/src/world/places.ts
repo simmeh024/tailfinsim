@@ -118,6 +118,66 @@ export function flightRows(
 }
 
 /**
+ * Airports matching what somebody typed (WORLD-09).
+ *
+ * ## Why searching is not the same as listing
+ *
+ * The list is bounded by the camera on purpose. Search is the opposite: the
+ * whole point of typing "Heathrow" is that you are *not* looking at it. So this
+ * runs over every served airport, and the camera moves to whatever is chosen.
+ *
+ * ## The ranking, and why it is not just `includes`
+ *
+ * Somebody typing `LHR` means Heathrow, not the eleven airports with "lhr"
+ * somewhere in their name. An exact code beats a code that starts with it,
+ * which beats a name that starts with it, which beats a name that merely
+ * contains it — and ties break the way the list does, biggest airport first.
+ *
+ * Two characters minimum: one letter matches most of the world and the result
+ * is a list that changes wildly as you type rather than one that narrows.
+ */
+export const SEARCH_MINIMUM = 2;
+
+function score(airport: WorldAirport, query: string): number {
+  const code = query.toUpperCase();
+  const name = airport.name.toLowerCase();
+  const text = query.toLowerCase();
+
+  if (airport.icao === code || airport.iata === code) return 0;
+  if (airport.icao.startsWith(code) || (airport.iata ?? '').startsWith(code)) return 1;
+  if (name.startsWith(text)) return 2;
+  if (name.includes(text)) return 3;
+  return Number.POSITIVE_INFINITY;
+}
+
+export function searchAirports(
+  airports: readonly WorldAirport[],
+  query: string,
+  limit = PLACE_LIMIT,
+): PlaceRow[] {
+  const trimmed = query.trim();
+  if (trimmed.length < SEARCH_MINIMUM) return [];
+
+  return airports
+    .map((airport) => ({ airport, rank: score(airport, trimmed) }))
+    .filter((entry) => Number.isFinite(entry.rank))
+    .sort(
+      (a, b) =>
+        a.rank - b.rank ||
+        tierRank(a.airport.tier) - tierRank(b.airport.tier) ||
+        a.airport.name.localeCompare(b.airport.name),
+    )
+    .slice(0, limit)
+    .map(({ airport }) => ({
+      id: `airport:${airport.icao}`,
+      kind: 'airport' as const,
+      label: airport.name,
+      detail: airportCodes(airport),
+      airport,
+    }));
+}
+
+/**
  * The next row an arrow key should land on.
  *
  * Clamped rather than wrapped, for the reason UX-03 gave the timeline: wrapping
