@@ -62,9 +62,34 @@ function expectedCspHeader(mode) {
   return mode === 'report-only' ? 'content-security-policy-report-only' : 'content-security-policy';
 }
 
+/**
+ * The edge half of ADR-0025's second fact: no CORS, anywhere.
+ *
+ * The application asserts its own half in `security/csrf.test.ts`, but Caddy
+ * owns browser-side policy for static assets, API responses and error responses
+ * alike, and a `header Access-Control-Allow-Origin *` added here would be
+ * invisible to every test in `packages/`. Sent with a hostile `Origin` because
+ * a permissive rule that echoes the request is the one worth catching.
+ */
+async function verifyNoCors(url, failures) {
+  const response = await fetch(url, {
+    redirect: 'manual',
+    headers: { origin: 'https://tailfinsim.com.evil.example' },
+  });
+  for (const [name] of response.headers) {
+    if (name.toLowerCase().startsWith('access-control-')) {
+      failures.push(
+        `${name}: expected absent — ADR-0025 treats the absence of CORS as one of the four ` +
+          'facts that replace a CSRF token. Amend the ADR in the same change (see SEC-HARD-08).',
+      );
+    }
+  }
+}
+
 async function verifyUrl(url, { mode, dev = false }) {
   const response = await fetch(url, { redirect: 'manual' });
   const failures = [];
+  await verifyNoCors(url, failures);
 
   for (const [name, expected] of COMMON_HEADERS) {
     const actual = response.headers.get(name);
