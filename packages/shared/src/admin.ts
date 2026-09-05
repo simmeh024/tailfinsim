@@ -968,6 +968,27 @@ export const AdminEconomyConfigDetailResponse = z.object({
 export type AdminEconomyConfigDetailResponse = z.infer<typeof AdminEconomyConfigDetailResponse>;
 
 /**
+ * `GET /api/admin/economy-config/:version/diff?against=` — two versions compared.
+ *
+ * The detail route diffs a version against its parent. This answers the question
+ * a promotion actually asks — what differs between the version a world is
+ * running and the one about to be pinned — and those are usually not parent and
+ * child.
+ *
+ * Named here rather than left inline on the route, because every wire type in
+ * this codebase is a schema in `@tailfin/shared` and a client that hand-writes
+ * the shape is a second definition waiting to drift.
+ */
+export const AdminEconomyConfigCompareResponse = z.object({
+  /** The version compared *from*, which is the `against` query parameter. */
+  from: EconomyConfigVersion,
+  to: EconomyConfigVersion,
+  /** Empty when the two are identical. */
+  changes: z.array(AdminEconomyConfigChange),
+});
+export type AdminEconomyConfigCompareResponse = z.infer<typeof AdminEconomyConfigCompareResponse>;
+
+/**
  * `POST /api/admin/economy-config` — create a version.
  *
  * A retune is an insert, never an edit: `economy_config` rows are immutable, so

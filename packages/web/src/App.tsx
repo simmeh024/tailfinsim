@@ -5,6 +5,7 @@ import { AdminLayout } from './admin/AdminLayout';
 import { AdminAirlinePage } from './admin/AirlinePage';
 import { AuditPage } from './admin/AuditPage';
 import { CarriersPage } from './admin/CarriersPage';
+import { EconomyPage } from './admin/EconomyPage';
 import { OverviewPage } from './admin/OverviewPage';
 import { PlayersPage } from './admin/PlayersPage';
 import { SystemHealthPage } from './admin/SystemHealthPage';
@@ -157,6 +158,9 @@ export function App(): ReactNode {
                   <Route path="audit" element={<AuditPage />} />
                   {/* The competition, and why it did what it did (M3-12). */}
                   <Route path="carriers" element={<CarriersPage />} />
+                  {/* Which numbers a world is running, and what moves if that
+                      changes (M11-37). */}
+                  <Route path="economy" element={<EconomyPage />} />
                   {/* The machines, rather than the worlds (OPS-15). */}
                   <Route path="system" element={<SystemHealthPage />} />
                 </Route>

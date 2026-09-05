@@ -4,6 +4,7 @@ import {
   AdminAuditResponse,
   AdminCreateEconomyConfigResponse,
   AdminCreateWorldResponse,
+  AdminEconomyConfigCompareResponse,
   AdminEconomyConfigDetailResponse,
   AdminEconomyConfigListResponse,
   AdminListResponse,
@@ -121,6 +122,9 @@ export const adminEconomyConfigListResponseJsonSchema = z.toJSONSchema(
 );
 export const adminEconomyConfigDetailResponseJsonSchema = z.toJSONSchema(
   AdminEconomyConfigDetailResponse,
+);
+export const adminEconomyConfigCompareResponseJsonSchema = z.toJSONSchema(
+  AdminEconomyConfigCompareResponse,
 );
 export const adminCreateEconomyConfigResponseJsonSchema = z.toJSONSchema(
   AdminCreateEconomyConfigResponse,
