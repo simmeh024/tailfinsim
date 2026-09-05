@@ -593,7 +593,7 @@ retains `repairComplete: false`: formal outward-normal/self-intersection review,
 official glTF conformance, protected-material behavior and visual/runtime-performance approval
 remain independent gates.
 
-### Quarantined livery authoring export v1
+### Quarantined livery authoring export v3
 
 The same Blender source can also emit a separate livery-authoring GLB. This does **not** replace
 the narrow repair-intake derivative, enter the runtime registry or make the candidate publishable.
@@ -603,19 +603,22 @@ including the door-overlay meshes, receives both `source_pbr_uv` (`TEXCOORD_0`) 
 named canonical `livery_uv` (`TEXCOORD_1`); protected meshes intentionally receive neither paint
 coordinate. Port and starboard mesh regions are independently packed inside their shared material
 atlas, with a minimum 8-pixel-at-4K internal margin and no implicit mirroring.
+Before export, its construction coordinates are baked into Tailfin's canonical `+X=right`,
+`+Y=up`, `-Z=forward` frame for both meshes and named anchors; no hidden root transform is
+required by a runtime renderer.
 
 ```powershell
 & 'C:\Program Files\Blender Foundation\Blender 5.2\blender.exe' `
   --background --factory-startup `
   --python packages\assets\blender\a320neo_semantic_repair_v1.py -- `
-  --output-glb path\to\a320neo-semantic-repair-v2.glb `
-  --output-livery-glb path\to\a320neo-semantic-repair-livery-v1.glb `
-  --output-livery-resources path\to\a320neo-livery-resources-v1.json `
-  --output-blend path\to\a320neo-semantic-repair-livery-v1.blend
+  --output-glb path\to\a320neo-semantic-repair-v3.glb `
+  --output-livery-glb path\to\a320neo-semantic-repair-livery-v3.glb `
+  --output-livery-resources path\to\a320neo-livery-resources-v3.json `
+  --output-blend path\to\a320neo-semantic-repair-livery-v3.blend
 ```
 
 Two clean runs produced the same livery-authoring GLB SHA-256:
-`374359aaf968e9dbe5717d851e39bd00a867f75dbdff365631b5aa9cbb8023a8`.
+`4a987160a9d2edb68fbf2f6ad2c7d338b83c4532642c83f99de0e7fe8fc2a01b`.
 Khronos glTF Validator 2.0.0-dev.3.10 reported zero errors and warnings. Its informational
 unreferenced-UV notices are expected until a later PBR/livery compositor binds textures; they are
 not a substitute for canonical masks, anchors, 4K PBR textures, LOD generation or asset admission.
@@ -628,7 +631,7 @@ concrete A320neo resource file is committed or admitted until its private source
 PBR inputs and review evidence have passed the remaining #794 gates.
 
 The optional resource export emits those three schemas together for the private candidate identity
-`aircraft/a320neo-candidate-1@quarantine-v1`: twelve paintable islands, ten explicit material
+`aircraft/a320neo-candidate-1@quarantine-v3`: twelve paintable islands, ten explicit material
 policies and named port/starboard registration and tail-logo safe-area anchors. It requires the
 livery GLB export in the same run, adds the matching named anchor nodes to that authoring GLB, and
 does not write `assets/aircraft/`, a manifest, a registry entry or a fleet binding.

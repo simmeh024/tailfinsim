@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 import bpy
+from mathutils import Matrix
 
 
 LENGTH = 37.57
@@ -448,6 +449,32 @@ def livery_authoring_export(path):
         anchor.location = position
         bpy.context.collection.objects.link(anchor)
 
+    # The construction space is X=span, Y=up, Z=longitudinal. Blender's
+    # glTF exporter converts that to X=span, Y=longitudinal, Z=-up. Rotate the
+    # authoring derivative before export so the delivered review artifact uses
+    # Tailfin's canonical runtime convention +X=right, +Y=up, -Z=forward, without
+    # a hidden root transform. This applies to anchors too, so their named
+    # placement remains meaningful to a future decal renderer.
+    construction_to_runtime = Matrix(
+        (
+            (1.0, 0.0, 0.0, 0.0),
+            (0.0, 0.0, -1.0, 0.0),
+            (0.0, 1.0, 0.0, 0.0),
+            (0.0, 0.0, 0.0, 1.0),
+        )
+    )
+    meshes = [obj for obj in bpy.context.scene.objects if obj.type == "MESH"]
+    for obj in meshes:
+        obj.matrix_world = construction_to_runtime @ obj.matrix_world
+    bpy.ops.object.select_all(action="DESELECT")
+    for obj in meshes:
+        obj.select_set(True)
+    bpy.context.view_layer.objects.active = meshes[0]
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    for obj in bpy.context.scene.objects:
+        if obj.type == "EMPTY":
+            obj.location = construction_to_runtime @ obj.location
+
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.export_scene.gltf(
@@ -464,8 +491,8 @@ def livery_authoring_export(path):
 
 def write_livery_resources(path):
     """Write a parsed-by-@tailfin/shared resource bundle, never a registry entry."""
-    asset = {"id": "aircraft/a320neo-candidate-1", "version": "quarantine-v1"}
-    resource_version = "quarantine-v1"
+    asset = {"id": "aircraft/a320neo-candidate-1", "version": "quarantine-v3"}
+    resource_version = "quarantine-v3"
     regions = [
         ("fuselage", "mat-fuselage", "fuselage", "both", "fuselage", (0.015, 0.015, 0.755, 0.970)),
         ("doors-port", "mat-fuselage", "fuselage", "port", "door_surrounds", (0.785, 0.015, 0.090, 0.970)),
