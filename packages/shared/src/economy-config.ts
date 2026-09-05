@@ -372,7 +372,17 @@ export const FuelCurveBalance = z
     minFactor: z.number().positive(),
     maxFactor: z.number().positive(),
   })
-  .strict();
+  .strict()
+  /*
+   * Transposing the two is a plausible slip in a hand-written retune, and it does
+   * not fail loudly: `min(max, max(min, factor))` with the pair the wrong way
+   * round returns `maxFactor` for every instant, so the world's fuel price
+   * freezes and §11's curve silently stops moving. Refused here instead, the way
+   * every other ordered pair in this file is.
+   */
+  .refine((v) => v.minFactor <= v.maxFactor, {
+    message: 'fuel curve clamp bounds must be ordered',
+  });
 export type FuelCurveBalance = z.infer<typeof FuelCurveBalance>;
 
 /** §22.3's *"fuel price curve and volatility"*. */
