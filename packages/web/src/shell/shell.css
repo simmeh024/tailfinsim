@@ -221,7 +221,7 @@ body {
   grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-areas:
     'controls clock'
-    '. .'
+    'places .'
     'legend dock';
   gap: var(--space-3);
   padding: var(--space-3);
@@ -257,6 +257,80 @@ body {
 
 .world-renderer__dock > * {
   pointer-events: auto;
+}
+
+/*
+ * The places list (WORLD-08): the map, as something a keyboard can operate.
+ *
+ * Its own row on the left, between the controls and the legend, so it can be
+ * open at the same time as either without either moving. It scrolls inside that
+ * row rather than growing past it — the row is `minmax(0, 1fr)`, which is what
+ * makes `max-height: 100%` mean the space that is actually there.
+ */
+.world-places {
+  grid-area: places;
+  justify-self: start;
+  align-self: start;
+  display: grid;
+  gap: var(--space-2);
+  width: min(20rem, 100%);
+  max-height: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px var(--bg-scrim);
+}
+
+.world-places__head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.world-places__list {
+  overflow-y: auto;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.world-places__list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.world-places__list button {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.world-places__list button:hover,
+.world-places__list button:focus-visible {
+  background: var(--accent-quiet);
+  color: var(--text-primary);
+}
+
+.world-places__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The route/encoding legend (M7-03), bottom-left so it clears the dock. */
@@ -2233,7 +2307,7 @@ body {
     grid-template-areas:
       'controls'
       'clock'
-      '.'
+      'places'
       'legend'
       'dock';
     gap: var(--space-2);
