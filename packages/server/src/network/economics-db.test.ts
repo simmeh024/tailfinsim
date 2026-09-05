@@ -12,7 +12,7 @@ import {
   type FoundedAirlineFixtureHarness,
 } from '../test-fixtures/founded-airline';
 
-import { createEconomicsProvider } from './economics';
+import { createEconomicsProvider, primeEconomicsScope } from './economics';
 import { floorFor } from './fares';
 
 import type { RouteRow } from './fares';
@@ -184,5 +184,87 @@ describeDb('the economics provider', () => {
 
     expect(forA.handlingPriceFactor).toBeGreaterThan(1);
     expect(forB.handlingPriceFactor).toBeLessThan(1);
+  });
+
+  describe('what a rotation costs to price (BUG-08)', () => {
+    /**
+     * The provider is asked once per leg, and four of the reads behind it do not
+     * vary between legs: the world's fuel context and its pinned economy belong
+     * to the world, the social media effects and the active route count to the
+     * airline. An eight-leg rotation made thirty-two round trips for four
+     * answers.
+     *
+     * Counted on the pool rather than timed, for the reason
+     * `ground/alert-query-count.test.ts` gives: a wall-clock budget on this
+     * machine measures its neighbours.
+     */
+    async function countQueries(run: () => Promise<unknown>): Promise<number> {
+      const pool = db.pool as unknown as { query: (...args: unknown[]) => unknown };
+      const original = pool.query.bind(pool);
+      let count = 0;
+      pool.query = (...args: unknown[]) => {
+        count += 1;
+        return original(...args);
+      };
+      try {
+        await run();
+      } finally {
+        pool.query = original;
+      }
+      return count;
+    }
+
+    it('reads the shared lookups once, not once per leg', async () => {
+      const a = await fixtures.create();
+      const stations = await Promise.all(
+        ['EQE1', 'EQE2', 'EQE3', 'EQE4'].map((icao) => makeAirport(icao)),
+      );
+      const economicsFor = createEconomicsProvider(db.db);
+      const rows = stations.map((origin, i) =>
+        routeRow(a, origin, stations[(i + 1) % stations.length] ?? origin),
+      );
+
+      const unscoped = await countQueries(async () => {
+        for (const row of rows) await economicsFor(row);
+      });
+
+      const scoped = await countQueries(async () => {
+        const scope = await primeEconomicsScope(db.db, {
+          worldId: a.world.id,
+          airlineId: a.airline.id,
+          originIcaos: rows.map((r) => r.originIcao),
+        });
+        for (const row of rows) await economicsFor(row, scope);
+      });
+
+      // Four legs: the shared reads happen once instead of four times.
+      expect(scoped).toBeLessThan(unscoped);
+      // And the saving grows with the leg count rather than being a constant.
+      expect(unscoped - scoped).toBeGreaterThanOrEqual(rows.length);
+    });
+
+    it('produces the same economics with a scope as without one', async () => {
+      // A cache that changed an answer would be worse than the round trips.
+      const a = await fixtures.create();
+      const origin = await makeAirport('EQF1');
+      const dest = await makeAirport('EQF2');
+      await signContract(db.db, own(a), origin, { serviceLine: 'ramp_baggage', grade: 'budget' });
+
+      const economicsFor = createEconomicsProvider(db.db);
+      const row = routeRow(a, origin, dest);
+      const scope = await primeEconomicsScope(db.db, {
+        worldId: a.world.id,
+        airlineId: a.airline.id,
+        originIcaos: [origin],
+      });
+
+      const withScope = await economicsFor(row, scope);
+      const without = await economicsFor(row);
+
+      expect(withScope.handlingPriceFactor).toBe(without.handlingPriceFactor);
+      expect(withScope.originStation).toEqual(without.originStation);
+      expect(withScope.settlement).toEqual(without.settlement);
+      expect(withScope.fareFloorRatio).toBe(without.fareFloorRatio);
+    });
   });
 });

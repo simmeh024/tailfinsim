@@ -39,6 +39,8 @@ import { competitorsFor } from './competitors';
 
 import type { RouteEconomics, RouteRow } from './fares';
 import type { Database } from '../db/client';
+import type { PinnedEconomyConfig } from '../economy/config';
+import type { AirportFuelRow, WorldFuelContext } from '../economy/fuel';
 
 /**
  * A representative narrowbody, until M4's catalogue can answer.
@@ -191,19 +193,69 @@ export async function poolsFor(
  * version, so a retune moves every fare floor in that world on the next request
  * and only in that world. The `market` override stays for tests.
  */
+/**
+ * The lookups that are the same for every route in one request.
+ *
+ * A caller costing a whole rotation asks the provider once per leg, and four of
+ * the reads behind it do not vary between legs: the world's fuel context and its
+ * pinned economy are properties of the world, and the social media effects and
+ * the active route count are properties of the airline. An eight-leg schedule was
+ * making thirty-two round trips for four answers.
+ *
+ * Primed per request rather than cached in the provider closure, and that is the
+ * point: `createEconomicsProvider` is built once at startup, and a world's seed
+ * and epoch **change** when it is reset (ADR-0005). A process-lifetime cache of
+ * those would keep serving a reset world its old calendar. A scope lives for one
+ * request and cannot go stale within it.
+ *
+ * The airport rows are batched rather than merely deduplicated, because the legs
+ * of a rotation usually have different origins — deduplication alone would save
+ * nothing.
+ */
+export interface RouteEconomicsScope {
+  fuelCtx: WorldFuelContext | null;
+  economy: PinnedEconomyConfig;
+  airportRows: Map<string, AirportFuelRow>;
+  effects: Awaited<ReturnType<typeof activeSocialMediaEffects>>;
+  activeRoutes: number;
+}
+
+/**
+ * Read everything a set of legs shares, once.
+ *
+ * `worldId` and `airlineId` are the caller's own — every leg of a rotation
+ * belongs to the same airline in the same world, which is the assumption that
+ * makes this sound.
+ */
+export async function primeEconomicsScope(
+  db: Database,
+  input: { worldId: string; airlineId: string; originIcaos: readonly string[] },
+): Promise<RouteEconomicsScope> {
+  const [economy, effects, activeRoutes, fuelCtx, airportRows] = await Promise.all([
+    loadWorldEconomyConfig(db, input.worldId),
+    activeSocialMediaEffects(db, input.airlineId),
+    countActiveRoutes(db, input.airlineId),
+    loadWorldFuelContext(db, input.worldId),
+    loadAirportFuelRows(db, input.originIcaos),
+  ]);
+  return { economy, effects, activeRoutes, fuelCtx, airportRows };
+}
+
 export function createEconomicsProvider(
   db: Database,
   market?: FuelMarket,
-): (row: RouteRow) => Promise<RouteEconomics> {
-  return async (row) => {
-    const [economy, segmentPools, effects, activeRoutes, fuelCtx, originRows] = await Promise.all([
-      loadWorldEconomyConfig(db, row.worldId),
+): (row: RouteRow, scope?: RouteEconomicsScope) => Promise<RouteEconomics> {
+  return async (row, scope) => {
+    const [shared, segmentPools] = await Promise.all([
+      scope ??
+        primeEconomicsScope(db, {
+          worldId: row.worldId,
+          airlineId: row.airlineId,
+          originIcaos: [row.originIcao],
+        }),
       poolsFor(db, row),
-      activeSocialMediaEffects(db, row.airlineId),
-      countActiveRoutes(db, row.airlineId),
-      loadWorldFuelContext(db, row.worldId),
-      loadAirportFuelRows(db, [row.originIcao]),
     ]);
+    const { economy, effects, activeRoutes, fuelCtx, airportRows: originRows } = shared;
 
     /*
      * §9.1's attractiveness specialist. The bonus applies only once the airline

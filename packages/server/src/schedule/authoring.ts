@@ -30,6 +30,7 @@ import { airframe, route, schedule, world } from '../db/schema';
 import { loadWorldEconomyConfig } from '../economy/loader';
 import { handlingArrangementFor } from '../ground/contracts';
 import { absoluteFromLocal, loadAirportOffsets } from '../network/airport-time';
+import { primeEconomicsScope, type RouteEconomicsScope } from '../network/economics';
 import { openRoute } from '../network/open-route';
 import { resolveLegSlots } from '../network/slots';
 
@@ -64,7 +65,15 @@ import type { RouteEconomics, RouteRow } from '../network/fares';
  */
 
 /** How the economics of one leg's route are resolved — the network provider. */
-export type RouteEconomicsProvider = (row: RouteRow) => Promise<RouteEconomics>;
+export type RouteEconomicsProvider = (
+  row: RouteRow,
+  /**
+   * The lookups every leg of one request shares (BUG-08). Optional: a provider
+   * handed none reads them for itself, which is what every caller did before a
+   * rotation's legs were costed in a loop.
+   */
+  scope?: RouteEconomicsScope,
+) => Promise<RouteEconomics>;
 
 /** The airframe capability the reachability and range checks run against. */
 export function airframeCapability(spec: AircraftSpec): AircraftCapability {
@@ -432,6 +441,15 @@ export async function estimateCost(
   own: ResolvedPlayerAirline,
   legs: readonly ResolvedLeg[],
   economicsFor: RouteEconomicsProvider,
+  /**
+   * The lookups every leg of this rotation shares, read once (BUG-08).
+   *
+   * Passed in rather than primed here because this function has no `db` — it
+   * takes its economics as a parameter, which is the seam that lets the pure
+   * tests drive it. Omitting it is correct and costs what it used to: each leg
+   * reads the world and the airline again for itself.
+   */
+  scope?: RouteEconomicsScope,
 ): Promise<ScheduleCostEstimate> {
   const legCosts: ScheduleLegCost[] = [];
   let totalDistanceNm = 0;
@@ -439,15 +457,18 @@ export async function estimateCost(
   let routesOpened = 0;
 
   for (const leg of legs) {
-    const economics = await economicsFor({
-      id: leg.routeId,
-      worldId: own.worldId,
-      airlineId: own.id,
-      originIcao: leg.originIcao,
-      destinationIcao: leg.destinationIcao,
-      greatCircleNm: leg.greatCircleNm,
-      fares: {},
-    });
+    const economics = await economicsFor(
+      {
+        id: leg.routeId,
+        worldId: own.worldId,
+        airlineId: own.id,
+        originIcao: leg.originIcao,
+        destinationIcao: leg.destinationIcao,
+        greatCircleNm: leg.greatCircleNm,
+        fares: {},
+      },
+      scope,
+    );
     const variableCostMinor = Math.round(
       routeVariableCostPerSeatMinor(
         {
@@ -555,7 +576,16 @@ export async function authorSchedule(
     status: 'created',
     schedule: view,
     warning: result.warning?.detail ?? null,
-    cost: await estimateCost(own, prepared.legs, economicsFor),
+    cost: await estimateCost(
+      own,
+      prepared.legs,
+      economicsFor,
+      await primeEconomicsScope(db, {
+        worldId: own.worldId,
+        airlineId: own.id,
+        originIcaos: prepared.legs.map((leg) => leg.originIcao),
+      }),
+    ),
   };
 }
 
@@ -649,7 +679,16 @@ export async function editSchedule(
   return {
     status: 'updated',
     schedule: view,
-    cost: await estimateCost(own, prepared.legs, economicsFor),
+    cost: await estimateCost(
+      own,
+      prepared.legs,
+      economicsFor,
+      await primeEconomicsScope(db, {
+        worldId: own.worldId,
+        airlineId: own.id,
+        originIcaos: prepared.legs.map((leg) => leg.originIcao),
+      }),
+    ),
   };
 }
 
