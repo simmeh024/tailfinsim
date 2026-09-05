@@ -458,11 +458,16 @@ function shortfallFrom(
   upTo: Date,
   economy: PinnedEconomyConfig,
 ): { committed: number; flown: number; feeMinor: number } {
+  // A row with no term owes nothing, but it did fly whatever it flew: reporting
+  // a count of zero here would be a fabricated figure rather than an absent one.
   if (row.termStart === null || row.termEnd === null || row.volumeCommitment === null) {
-    return { committed: 0, flown: 0, feeMinor: 0 };
+    return { committed: 0, flown, feeMinor: 0 };
   }
   const served = elapsedTermFraction(row.termStart, row.termEnd, upTo);
   const committed = Math.round(row.volumeCommitment * served);
+  // A commitment of nothing is owed nothing — a budget handler asks for no
+  // volume, and the first days of any term round to zero. The departures still
+  // happened, and `flown` still says how many.
   if (committed <= 0) return { committed: 0, flown, feeMinor: 0 };
 
   const short = Math.max(0, committed - flown);
@@ -482,9 +487,9 @@ async function shortfall(
   upTo: Date,
   economy: PinnedEconomyConfig,
 ): Promise<{ committed: number; flown: number; feeMinor: number }> {
-  if (row.termStart === null || row.termEnd === null || row.volumeCommitment === null) {
-    return { committed: 0, flown: 0, feeMinor: 0 };
-  }
+  // No term start is the one case with nothing to count *from*. Everything else
+  // is counted, including a contract that owes no volume — see `shortfallFrom`.
+  if (row.termStart === null) return { committed: 0, flown: 0, feeMinor: 0 };
   const flown = await departuresFlown(db, airlineId, icao, row.termStart, upTo);
   return shortfallFrom(row, flown, upTo, economy);
 }

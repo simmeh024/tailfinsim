@@ -178,7 +178,15 @@ export const GroundContractAlert = z.object({
   expiring: z.boolean(),
   /** Departures the term commits to. Null for self-handling. */
   committedDepartures: z.number().int().nonnegative().nullable(),
-  /** Departures actually flown out of this station inside the term so far. */
+  /**
+   * Departures actually flown out of this station inside the term so far.
+   *
+   * **Null means not measured**, which is only true of a contract signed before
+   * terms were priced — there is no term to count from. A contract that owes no
+   * volume (a budget handler asks for none, and the first days of any term round
+   * to zero) still reports its real count rather than a zero: the distinction
+   * between *none flown* and *not measured* is the reason this is nullable.
+   */
   departuresFlown: z.number().int().nonnegative().nullable(),
   /**
    * What the shortfall would cost if the term ended now, in minor units.
