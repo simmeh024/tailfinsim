@@ -118,7 +118,9 @@ describe('WorldRenderer', () => {
       }
     });
 
-    expect(screen.getByRole('status')).toHaveTextContent('Reduced detail is active');
+    // By its words rather than by `role="status"`: WORLD-08 added a second one,
+    // the selection announcer, and the role alone no longer names this.
+    expect(screen.getByText(/Reduced detail is active/)).toBeInTheDocument();
     expect(screen.getByLabelText('Interactive world renderer')).toHaveAttribute(
       'data-quality',
       'reduced',

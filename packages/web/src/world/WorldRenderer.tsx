@@ -34,6 +34,8 @@ import {
 import { type WorldMapRoute, type WorldMapTrafficRoute } from './map-api';
 import { parseHexColor, readWorldPalette, type RgbaColor, type WorldPalette } from './palette';
 import { SustainedFrameRateMonitor, type FrameRateSample } from './performance';
+import { airportRows, flightRows, PLACE_LIMIT, type Bounds, type PlaceRow } from './places';
+import { PlacesPanel } from './PlacesPanel';
 import { persistProjection, readInitialProjection, type WorldProjection } from './projection';
 import { bundleCorridors, corridorGridForZoom, type Corridor } from './route-corridors';
 import { fleetMaxRangeNm, reachableAirportIcaos } from './route-create';
@@ -157,6 +159,9 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   const [selectedRoute, setSelectedRoute] = useState<WorldMapTrafficRoute | null>(null);
   const [showRivals, setShowRivals] = useState(remembered.rivals ?? false);
   const [showLegend, setShowLegend] = useState(remembered.legend ?? false);
+  const [showPlaces, setShowPlaces] = useState(false);
+  /** What was last selected, for the reader who cannot see the map change. */
+  const [announcement, setAnnouncement] = useState('');
   const [reducedMotion, setReducedMotion] = useState(
     () => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
   );
@@ -223,6 +228,8 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
    * camera out from under a player who had gone somewhere to look at something.
    */
   const framed = useRef(openingCamera !== null);
+  /** The control that opened the places list, so Escape can hand focus back. */
+  const placesButton = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     const timer = globalThis.setInterval(() => setNow(new Date()), 60_000);
@@ -954,6 +961,72 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
    */
   useEffect(() => () => clear(), [clear]);
 
+  /*
+   * What the camera can actually see.
+   *
+   * The zoom declutter already narrows four thousand airports to the ones drawn;
+   * the bounds narrow that again to the ones on screen, which is what makes the
+   * list "what is on the map" rather than "what this zoom would draw somewhere".
+   * deck.gl is the only thing that knows, and it throws before it has
+   * initialised — so this is read the same guarded way as the canvas size, and a
+   * null simply means "no narrowing".
+   */
+  const bounds = useMemo<Bounds | null>(() => {
+    try {
+      const viewport = deckRef.current?.deck?.getViewports()[0];
+      const box = viewport?.getBounds();
+      return box ?? null;
+    } catch {
+      return null;
+    }
+    // `viewState` is the dependency that matters: the bounds change when the
+    // camera does, and deck's viewport is read fresh each time.
+  }, [viewState]);
+
+  const placeAirports = useMemo(
+    () => airportRows(visibleAirports, bounds),
+    [visibleAirports, bounds],
+  );
+  const placeFlights = useMemo(() => flightRows(visiblePlaneRoutes), [visiblePlaneRoutes]);
+
+  const selectPlace = useCallback((row: PlaceRow) => {
+    if (row.airport) {
+      setSelectedRoute(null);
+      setSelectedAirport(row.airport);
+    } else if (row.flight) {
+      setSelectedAirport(null);
+      setSelectedRoute(row.flight);
+    }
+    // Said out loud, because a highlighted dot on a canvas is invisible to a
+    // screen reader and the panel it opens is somewhere else on the page.
+    setAnnouncement(`${row.label} selected. ${row.detail}.`);
+  }, []);
+
+  const closePlaces = useCallback(() => {
+    setShowPlaces(false);
+    // Focus goes back to what opened the list; leaving it on a removed element
+    // drops it to the top of the document.
+    placesButton.current?.focus();
+  }, []);
+
+  /*
+   * Escape clears the selection.
+   *
+   * On the section rather than on the document: this is the map's key, and a
+   * global listener would fight every other surface that wants Escape.
+   */
+  const onSectionKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLElement>) => {
+      if (event.key !== 'Escape') return;
+      if (selectedAirport === null && selectedRoute === null) return;
+      event.preventDefault();
+      setSelectedAirport(null);
+      setSelectedRoute(null);
+      setAnnouncement('Selection cleared.');
+    },
+    [selectedAirport, selectedRoute],
+  );
+
   const chooseProjection = useCallback(
     (next: WorldProjection) => {
       if (projection === next) return;
@@ -1024,6 +1097,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
 
   return (
     <section
+      onKeyDown={onSectionKeyDown}
       className="world-renderer"
       data-projection={projection}
       data-quality={quality}
@@ -1034,7 +1108,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       <div
         className="world-renderer__canvas"
         role="application"
-        aria-label={`${projection === 'globe' ? 'Globe' : 'Flat'} world map. Drag to move, scroll or pinch to zoom, and double tap to focus.`}
+        aria-label={`${projection === 'globe' ? 'Globe' : 'Flat'} world map. Drag to move, scroll or pinch to zoom, and double tap to focus. Arrow keys pan; the Places list selects what is on the map.`}
         onDoubleClick={focusAtPointer}
         onPointerUp={focusAtDoubleTap}
       >
@@ -1092,6 +1166,22 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
        * `pointer-events: none` so the map underneath is still draggable through
        * the gaps.
        */}
+      {/*
+       * What just happened, for a reader who cannot see it.
+       *
+       * `polite`, so it waits for a gap rather than interrupting — and it says
+       * only what the reader asked for, unlike the hover label, which fires on
+       * every dot a pointer crosses and is `aria-hidden` for that reason.
+       */}
+      <p
+        className="visually-hidden"
+        role="status"
+        aria-live="polite"
+        data-testid="world-announcement"
+      >
+        {announcement}
+      </p>
+
       <div className="world-renderer__hud">
         <WorldClockDisplay inGameTime={inGameTime} speedMultiplier={speedMultiplier} />
 
@@ -1116,6 +1206,14 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
           <div className="world-renderer__control-group" role="group" aria-label="View">
             <button type="button" onClick={recentre}>
               Recentre
+            </button>
+            <button
+              type="button"
+              ref={placesButton}
+              aria-pressed={showPlaces}
+              onClick={() => setShowPlaces((open) => !open)}
+            >
+              Places
             </button>
           </div>
 
@@ -1214,6 +1312,16 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
               Motion (planes, the route shimmer) respects your reduced-motion setting.
             </p>
           </div>
+        )}
+
+        {showPlaces && (
+          <PlacesPanel
+            airports={placeAirports}
+            flights={placeFlights}
+            truncated={placeAirports.length >= PLACE_LIMIT}
+            onSelect={selectPlace}
+            onClose={closePlaces}
+          />
         )}
 
         {/* The corner: whatever is transient, stacked rather than piled. */}
