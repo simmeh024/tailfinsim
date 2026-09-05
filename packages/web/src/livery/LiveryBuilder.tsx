@@ -992,7 +992,7 @@ export function LiveryBuilder({
           <p className="livery-canvas__caption">
             {previewMode === 'fleet'
               ? developmentPreview && snapshot.family === 'A320neo'
-                ? 'Semantic authoring model · whole-surface base-coat review live · quarantine only; paint map remains canonical'
+                ? 'Semantic authoring model · whole-surface fills and gradients live · quarantine only; paint map remains canonical'
                 : 'Fleet render · illustrative material preview · paint map remains canonical'
               : 'Exact zone clipping · canonical side-profile authoring'}
           </p>
