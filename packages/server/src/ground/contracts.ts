@@ -236,6 +236,26 @@ async function selfHandlingAt(db: Database, airlineId: string, icao: string): Pr
 }
 
 /**
+ * The instant a term stops accruing obligations.
+ *
+ * Never past `term_end`: after it the vendor has stopped working, so departures
+ * made later are not its departures and a shortfall measured through them would
+ * be forgiven by flights it had nothing to do with.
+ *
+ * Both money paths need this and they used to disagree. `expireGroundContracts`
+ * clamped, with a comment saying why; `breakContract` measured to *now*, so
+ * terminating a contract whose term had already run out — which is what happens
+ * whenever a worker is down over a boundary, and always on a world that has no
+ * worker at all — credited every departure since the term ended and wiped out a
+ * shortfall the airline had genuinely incurred. One helper, so the two cannot
+ * drift apart again.
+ */
+function obligationsEndAt(row: ActiveRow, gameNow: Date): Date {
+  if (row.termEnd === null) return gameNow;
+  return row.termEnd.getTime() < gameNow.getTime() ? row.termEnd : gameNow;
+}
+
+/**
  * What walking away from a contract costs right now.
  *
  * The stored full-term figure, pro-rated to the part of the term **not served**.
@@ -570,7 +590,8 @@ async function breakContract(
   if (closed.length === 0) return null;
 
   const penalty = penaltyNowMinor(row, gameNow);
-  const short = await shortfall(tx, row, airlineId, icao, gameNow, economy);
+  // Clamped to the term's end, not measured to now — see `obligationsEndAt`.
+  const short = await shortfall(tx, row, airlineId, icao, obligationsEndAt(row, gameNow), economy);
 
   for (const [amount, cause] of [
     [penalty, 'ground_contract_penalty'],
@@ -1049,7 +1070,7 @@ export async function expireGroundContracts(
         row,
         row.airlineId,
         row.icao,
-        row.termEnd ?? gameNow,
+        obligationsEndAt(row, gameNow),
         economy,
       );
       if (short.feeMinor <= 0) return 0;

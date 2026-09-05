@@ -529,6 +529,99 @@ describeDb('what ground handling costs', () => {
       );
     });
 
+    it('does not credit departures made after the term ended (BUG-10)', async () => {
+      /*
+       * The break path measured the shortfall to *now* while the expiry sweep
+       * clamped to `term_end`. So terminating a contract whose term had already
+       * run out — which happens whenever a worker is down over a boundary, and
+       * always on a world with no worker at all — counted every departure since
+       * the term ended and wiped out a shortfall genuinely incurred.
+       */
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMX1', 'flagship');
+      const signed = await signStandard(a, icao);
+      const termStart = signed.termEnd.getTime() - 90 * DAY;
+
+      // Nothing flown inside the term...
+      // ...and the whole commitment flown after it ended.
+      for (let i = 0; i < signed.committed + 5; i += 1) {
+        await flew(a, icao, new Date(signed.termEnd.getTime() + (i + 1) * 3_600_000));
+      }
+      expect(termStart).toBeLessThan(signed.termEnd.getTime());
+
+      const economy = await loadWorldEconomyConfig(db.db, a.world.id);
+      const wellAfter = new Date(signed.termEnd.getTime() + 30 * DAY);
+      const result = await terminateContract(
+        db.db,
+        own(a),
+        signed.id,
+        await realTimeAt(a.world.id, wellAfter),
+      );
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // The full commitment is owed: those flights belong to nobody's contract.
+      expect(result.shortfallMinor).toBe(
+        signed.committed * economy.ground.contract.shortfallFeePerDepartureMinor,
+      );
+    });
+
+    it('bills an overdue termination the same as the sweep would have (BUG-10)', async () => {
+      // The two paths have to agree, which is the reason they now share a helper.
+      // Separate worlds: a sweep is world-scoped, so one world would lapse both
+      // contracts before the second could be terminated.
+      const viaSweep = await fixtures.create();
+      const viaExit = await fixtures.create();
+      const sweepIcao = await makeAirport('GMX2', 'flagship');
+      const exitIcao = await makeAirport('GMX3', 'flagship');
+
+      const swept = await signStandard(viaSweep, sweepIcao);
+      const exited = await signStandard(viaExit, exitIcao);
+
+      // Both fly nothing in the term and a handful after it.
+      for (let i = 0; i < 4; i += 1) {
+        await flew(viaSweep, sweepIcao, new Date(swept.termEnd.getTime() + (i + 1) * 3_600_000));
+        await flew(viaExit, exitIcao, new Date(exited.termEnd.getTime() + (i + 1) * 3_600_000));
+      }
+
+      const sweepResult = await expireGroundContracts(
+        db.db,
+        viaSweep.world.id,
+        new Date(swept.termEnd.getTime() + 10 * DAY),
+      );
+      const exitResult = await terminateContract(
+        db.db,
+        own(viaExit),
+        exited.id,
+        await realTimeAt(viaExit.world.id, new Date(exited.termEnd.getTime() + 10 * DAY)),
+      );
+
+      expect(sweepResult.expired).toBe(1);
+      expect(exitResult.ok).toBe(true);
+      if (!exitResult.ok) return;
+      expect(exitResult.shortfallMinor).toBe(sweepResult.shortfallMinor);
+    });
+
+    it('is unchanged for a termination inside the term (BUG-10)', async () => {
+      const a = await fixtures.create();
+      const icao = await makeAirport('GMX4', 'flagship');
+      const signed = await signStandard(a, icao);
+      const start = signed.termEnd.getTime() - 90 * DAY;
+      for (let i = 0; i < 10; i += 1) await flew(a, icao, new Date(start + (i + 1) * 3_600_000));
+
+      const halfway = new Date(signed.termEnd.getTime() - 45 * DAY);
+      const result = await terminateContract(
+        db.db,
+        own(a),
+        signed.id,
+        await realTimeAt(a.world.id, halfway),
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // Half the commitment owed, ten flown: a real but partial shortfall.
+      expect(result.shortfallMinor).toBeGreaterThan(0);
+    });
+
     it('bills each term once, however many times the sweep runs', async () => {
       const a = await fixtures.create();
       const icao = await makeAirport('GMV7', 'flagship');
