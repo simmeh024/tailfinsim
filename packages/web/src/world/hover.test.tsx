@@ -67,8 +67,28 @@ vi.mock('./airports-api', () => ({
   fetchWorldAirports: () => Promise.resolve([HEATHROW, LUKLA]),
 }));
 
+const AIRBORNE = {
+  id: 'flight-1',
+  source: [8.5622, 50.0379] as [number, number],
+  target: [-0.4614, 51.4775] as [number, number],
+  originIcao: 'EDDF',
+  destinationIcao: 'EGLL',
+  originName: 'Frankfurt',
+  destinationName: 'London Heathrow',
+  airlineId: 'npc',
+  airlineName: 'Rival Air',
+  own: false,
+  colour: '#3366cc',
+  registration: 'D-AIRV',
+  typeDesignation: 'A320',
+  scheduledDeparture: '2024-10-01T08:00:00.000Z',
+  departedAt: '2024-10-01T08:05:00.000Z',
+  arrivesAt: '2024-10-01T10:00:00.000Z',
+};
+
 vi.mock('./map-api', () => ({
-  fetchWorldMap: () => Promise.resolve({ hubs: [], routes: [], traffic: [RIVAL] }),
+  fetchWorldMap: () =>
+    Promise.resolve({ hubs: [], routes: [], traffic: [RIVAL], flights: [AIRBORNE] }),
 }));
 
 describe('what a label says', () => {
@@ -173,9 +193,9 @@ describe('hovering the map', () => {
     // Rivals are off by default, so their aeroplanes are not drawn at all.
     fireEvent.click(screen.getByRole('button', { name: 'Rivals' }));
 
-    // A plane icon carries only the id of the route it is flying; the carrier
-    // behind it — the interesting half — is resolved through the world's traffic.
-    hover('world-planes', { sourceId: 'npc-1' });
+    // Since WORLD-10 a plane icon carries the id of a *flight*; the carrier
+    // behind it — the interesting half — is resolved from the airborne list.
+    hover('world-planes', { sourceId: 'flight-1' });
 
     const tip = screen.getByTestId('world-tip');
     expect(tip).toHaveTextContent('Rival Air');

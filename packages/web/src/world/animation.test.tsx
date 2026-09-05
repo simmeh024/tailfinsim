@@ -40,7 +40,7 @@ const RIVAL = {
 };
 
 vi.mock('./map-api', () => ({
-  fetchWorldMap: () => Promise.resolve({ hubs: [], routes: [], traffic: [RIVAL] }),
+  fetchWorldMap: () => Promise.resolve({ hubs: [], routes: [], traffic: [RIVAL], flights: [] }),
 }));
 
 const OWN_ROUTE: WorldRoute = {
@@ -86,7 +86,7 @@ async function renderWorld(routes: WorldRoute[]): Promise<void> {
   });
 }
 
-describe('a world with traffic the player cannot see', () => {
+describe('a world with traffic and nothing of the player’s own', () => {
   it('does not animate at all', async () => {
     // The world has an active route. The player has none, and `Rivals` is off,
     // so nothing on this screen moves — and nothing should be asked to.
@@ -94,15 +94,17 @@ describe('a world with traffic the player cannot see', () => {
     expect(frames).not.toHaveBeenCalled();
   });
 
-  it('starts as soon as the rivals are shown', async () => {
+  it('is not started by showing them either', async () => {
     await renderWorld([]);
     frames.mockClear();
 
     fireEvent.click(screen.getByRole('button', { name: 'Rivals' }));
 
-    // Measured across the click. A gate that was already running would request
-    // no *new* frame here, which is exactly the state this is distinguishing.
-    expect(frames).toHaveBeenCalled();
+    // Since WORLD-10 the aeroplanes are real flights positioned against the
+    // world's clock, not a shared animation phase — so revealing a rival's
+    // *route* starts nothing. The frame loop belongs to the route shimmer alone,
+    // which is what WORLD-02 asked of it: follow what is actually moving.
+    expect(frames).not.toHaveBeenCalled();
   });
 });
 

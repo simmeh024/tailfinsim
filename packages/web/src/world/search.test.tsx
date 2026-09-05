@@ -125,7 +125,7 @@ vi.mock('./airports-api', () => ({
 }));
 
 vi.mock('./map-api', () => ({
-  fetchWorldMap: () => Promise.resolve({ hubs: [], routes: [], traffic: [] }),
+  fetchWorldMap: () => Promise.resolve({ hubs: [], routes: [], traffic: [], flights: [] }),
 }));
 
 async function renderWorld(): Promise<void> {

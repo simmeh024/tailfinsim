@@ -16,7 +16,13 @@ import { useTheme } from '../theme/ThemeProvider';
 
 import { fetchWorldAirports } from './airports-api';
 import { clampViewState, focusViewState } from './camera';
-import { flightPath, greatCirclePath, planesForRoutes, routeSeed, type WorldPlane } from './flight';
+import {
+  flightPath,
+  greatCirclePath,
+  planesForFlights,
+  routeSeed,
+  type WorldPlane,
+} from './flight';
 import { frameOf, networkPoints } from './frame';
 import { airportLabel, flightLabel, tipPlacement, type HoverLabel } from './hover';
 import { COARSE_WORLD, LAND_DETAIL_ZOOM, loadDetailedWorld, type WorldGeometry } from './land';
@@ -31,7 +37,7 @@ import {
   type WorldLayerVisibility,
   type WorldRoute,
 } from './layers';
-import { type WorldMapRoute, type WorldMapTrafficRoute } from './map-api';
+import { type WorldMapFlight, type WorldMapRoute, type WorldMapTrafficRoute } from './map-api';
 import { parseHexColor, readWorldPalette, type RgbaColor, type WorldPalette } from './palette';
 import { SustainedFrameRateMonitor, type FrameRateSample } from './performance';
 import {
@@ -47,7 +53,13 @@ import { PlacesPanel } from './PlacesPanel';
 import { persistProjection, readInitialProjection, type WorldProjection } from './projection';
 import { bundleCorridors, corridorGridForZoom, type Corridor } from './route-corridors';
 import { fleetMaxRangeNm, reachableAirportIcaos } from './route-create';
-import { AirportDetail, airportSubtitle, FlightDetail } from './SelectionDetail';
+import {
+  AirborneDetail,
+  airborneSubtitle,
+  AirportDetail,
+  airportSubtitle,
+  FlightDetail,
+} from './SelectionDetail';
 import { createDarknessField, type LngLat } from './terminator';
 import { useWorldOverlay } from './use-world-overlay';
 import { useWorldClock } from './useWorldClock';
@@ -165,6 +177,8 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   /** What the pointer is over, and where — see `hover.ts`. */
   const [hover, setHover] = useState<{ label: HoverLabel; at: HoverPoint } | null>(null);
   const [selectedRoute, setSelectedRoute] = useState<WorldMapTrafficRoute | null>(null);
+  /** An aeroplane in the air, as opposed to a route somebody flies (WORLD-10). */
+  const [selectedFlight, setSelectedFlight] = useState<WorldMapFlight | null>(null);
   const [showRivals, setShowRivals] = useState(remembered.rivals ?? false);
   const [showLegend, setShowLegend] = useState(remembered.legend ?? false);
   const [showPlaces, setShowPlaces] = useState(false);
@@ -472,6 +486,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   // plane back into the carrier behind it; a colour lookup carries each carrier's
   // brand hue (M7-02) onto its plane, mark and route line.
   const trafficById = useMemo(() => new Map(map.traffic.map((r) => [r.id, r])), [map.traffic]);
+  const flightById = useMemo(() => new Map(map.flights.map((f) => [f.id, f])), [map.flights]);
   const colourById = useMemo(
     () => new Map(map.traffic.map((r) => [r.id, parseHexColor(r.colour, palette.route)])),
     [map.traffic, palette.route],
@@ -489,6 +504,17 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   }, [selectedRoute, trafficById]);
 
   /*
+   * A selected flight that has landed is cleared on the next refresh.
+   *
+   * It is not a stale-data guard so much as the arrival itself: the aeroplane is
+   * down, so there is nothing on the map to keep selected. `map.flights` is only
+   * ever the airborne ones.
+   */
+  useEffect(() => {
+    if (selectedFlight !== null && !flightById.has(selectedFlight.id)) setSelectedFlight(null);
+  }, [selectedFlight, flightById]);
+
+  /*
    * The same for an aeroplane, resolved through the route it is flying: the icon
    * carries only a route id, and the carrier behind it is the interesting half.
    */
@@ -499,15 +525,16 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       y: number;
       viewport?: { width: number; height: number };
     }): boolean => {
-      const routeId =
+      const id =
         (info.object as WorldPlane | undefined)?.sourceId ??
         (info.object as WorldMapTrafficRoute | undefined)?.id;
-      const carrierRoute = routeId === undefined ? undefined : trafficById.get(routeId);
+      // A plane's id is a flight now; a route line's is still a route.
+      const subject = id === undefined ? undefined : (flightById.get(id) ?? trafficById.get(id));
       setHover(
-        carrierRoute === undefined
+        subject === undefined
           ? null
           : {
-              label: flightLabel(carrierRoute),
+              label: flightLabel(subject),
               at: {
                 x: info.x,
                 y: info.y,
@@ -518,38 +545,81 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       );
       return false;
     },
-    [trafficById],
+    [flightById, trafficById],
   );
 
   const onPlaneClick = useCallback(
     (info: { object?: unknown }): boolean => {
       const plane = info.object as WorldPlane | undefined;
       if (!plane) return false;
+      const airborne = flightById.get(plane.sourceId);
+      if (airborne) {
+        setSelectedFlight(airborne);
+        setSelectedRoute(null);
+        setSelectedAirport(null);
+        return true;
+      }
       const carrierRoute = trafficById.get(plane.sourceId);
       if (carrierRoute) {
         setSelectedRoute(carrierRoute);
+        setSelectedFlight(null);
         setSelectedAirport(null);
       }
       return true;
     },
-    [trafficById],
+    [flightById, trafficById],
   );
 
-  // The animated aircraft, shared by both level-of-detail layers below. Kept out of
-  // `layers` on purpose: it changes every frame with `phase`, and folding it into the
-  // land/sea/day-night memo would rebuild those world-sized bitmaps sixty times a
-  // second. One plane per live route, at the current animation phase.
-  // Planes follow the same ownership toggles as the route lines: your own aircraft
-  // with "My routes", the competition's with "Rivals". Drawing every carrier's plane
-  // regardless of the toggles piled the whole world's traffic into one clump — so the
-  // default view is your own fleet, and all-traffic is opt-in via Rivals.
-  const visiblePlaneRoutes = useMemo(
-    () => map.traffic.filter((r) => (r.own ? visibility.routes : showRivals)),
-    [map.traffic, visibility.routes, showRivals],
+  // The aircraft, kept out of `layers` on purpose: they move, and folding them into
+  // the land/sea/day-night memo would rebuild those world-sized bitmaps every time
+  // one did. They follow the same ownership toggles as the route lines — your own
+  // with "My routes", the competition's with "Rivals" — because drawing every
+  // carrier's aeroplane regardless piled the whole world into one clump.
+  /*
+   * The aeroplanes actually in the air (WORLD-10).
+   *
+   * Filtered by the same ownership toggles the route lines use, so `My routes`
+   * and `Rivals` mean the same thing for an aeroplane as for a line.
+   */
+  const visibleFlights = useMemo(
+    () => map.flights.filter((f) => (f.own ? visibility.routes : showRivals)),
+    [map.flights, visibility.routes, showRivals],
   );
+
+  /*
+   * Which track each flight rides.
+   *
+   * The map draws a route's line with a seeded wander, so a plane on a clean
+   * great circle would visibly float beside its own line. When the flight is on
+   * a route the map knows, the plane borrows that route's seed and sits exactly
+   * on it; otherwise the airport pair is a stable fallback.
+   */
+  const routeIdByLeg = useMemo(() => {
+    const byLeg = new Map<string, string>();
+    for (const r of map.traffic) {
+      byLeg.set(`${r.airlineId}:${r.originIcao}:${r.destinationIcao}`, r.id);
+    }
+    return byLeg;
+  }, [map.traffic]);
+
+  /*
+   * Positioned against the world's own clock, not a wall clock and not an
+   * animation phase. `useWorldClock` re-renders once a second, which is what
+   * moves them; `now` is the fallback before the first sync, and a flight list
+   * that arrives before the clock does is a second of stillness rather than a
+   * blank sky.
+   */
+  const flightTime = inGameTime ?? now;
   const planes = useMemo(
-    () => planesForRoutes(visiblePlaneRoutes, phase, 1),
-    [visiblePlaneRoutes, phase],
+    () =>
+      planesForFlights(visibleFlights, flightTime, (entry) => {
+        const flight = entry as WorldMapFlight;
+        return (
+          routeIdByLeg.get(`${flight.airlineId}:${flight.originIcao}:${flight.destinationIcao}`) ??
+          `${flight.originIcao}-${flight.destinationIcao}`
+        );
+      }),
+    [visibleFlights, flightTime, routeIdByLeg],
   );
   const spriteSize = planeSpriteSize(viewState.zoom);
 
@@ -713,8 +783,15 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
    * running a sixty-times-a-second state update that produced no planes and no
    * trails — on exactly the machines this page already offers to degrade for.
    */
-  const animating =
-    !reducedMotion && (visiblePlaneRoutes.length > 0 || (visibility.routes && ownPaths.length > 0));
+  /*
+   * Only the shimmer is phase-driven now.
+   *
+   * The aeroplanes used to be: one per active route, riding this loop. Since
+   * WORLD-10 they ride the world's clock instead, so the frame loop exists for
+   * the route shimmer alone — which is exactly what WORLD-02 asked of it, that
+   * it follow what is actually moving.
+   */
+  const animating = !reducedMotion && visibility.routes && ownPaths.length > 0;
 
   /*
    * Advance the phase each frame. `requestAnimationFrame` pauses itself when the
@@ -937,6 +1014,17 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       });
       return;
     }
+    if (selectedFlight !== null) {
+      select({
+        kind: 'world-airborne',
+        id: selectedFlight.id,
+        title: selectedFlight.own ? 'Your flight' : selectedFlight.airlineName,
+        subtitle: airborneSubtitle(selectedFlight),
+        body: <AirborneDetail flight={selectedFlight} now={flightTime} />,
+        onClear: () => setSelectedFlight(null),
+      });
+      return;
+    }
     if (selectedRoute !== null) {
       select({
         kind: 'world-flight',
@@ -952,6 +1040,8 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   }, [
     selectedAirport,
     selectedRoute,
+    selectedFlight,
+    flightTime,
     hubIcaos,
     map.hubs,
     routesThrough,
@@ -995,7 +1085,23 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     () => airportRows(visibleAirports, bounds),
     [visibleAirports, bounds],
   );
-  const placeFlights = useMemo(() => flightRows(visiblePlaneRoutes), [visiblePlaneRoutes]);
+  const placeFlights = useMemo(() => flightRows(visibleFlights), [visibleFlights]);
+
+  /*
+   * Why the sky is empty (WORLD-10).
+   *
+   * A world with routes and no aeroplanes is a real state — nothing happens to
+   * be in the air — and it is also what a node with **no worker** looks like
+   * permanently: schedules are never materialised, nothing ever departs, and the
+   * map shows a drawn network with nothing on it. That reads as a broken map
+   * rather than as a missing process, which is the trap CLAUDE.md documents for
+   * the used market, maintenance, crew and the fleet page. So it is said out
+   * loud rather than left as silence.
+   */
+  const airborneNote =
+    map.flights.length === 0 && map.traffic.length > 0
+      ? 'No aircraft airborne. The network is still drawn; aeroplanes appear once the world flies it.'
+      : null;
 
   /**
    * Every served airport a query matches (WORLD-09).
@@ -1040,13 +1146,14 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
         }
       } else if (row.flight) {
         setSelectedAirport(null);
-        setSelectedRoute(row.flight);
+        setSelectedRoute(null);
+        setSelectedFlight(flightById.get(row.flight.id) ?? null);
       }
       // Said out loud, because a highlighted dot on a canvas is invisible to a
       // screen reader and the panel it opens is somewhere else on the page.
       setAnnouncement(`${row.label} selected. ${row.detail}.`);
     },
-    [bounds, reducedMotion],
+    [bounds, reducedMotion, flightById],
   );
 
   const closePlaces = useCallback(() => {
@@ -1065,13 +1172,14 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   const onSectionKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLElement>) => {
       if (event.key !== 'Escape') return;
-      if (selectedAirport === null && selectedRoute === null) return;
+      if (selectedAirport === null && selectedRoute === null && selectedFlight === null) return;
       event.preventDefault();
       setSelectedAirport(null);
       setSelectedRoute(null);
+      setSelectedFlight(null);
       setAnnouncement('Selection cleared.');
     },
-    [selectedAirport, selectedRoute],
+    [selectedAirport, selectedRoute, selectedFlight],
   );
 
   const chooseProjection = useCallback(
@@ -1352,7 +1460,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
               </li>
               <li>
                 <span className="world-renderer__legend-dot" />
-                Aircraft — the carrier’s colour; a mark far out, a plane up close
+                Aircraft — a flight actually in the air, at its own real progress
               </li>
             </ul>
             <p className="world-renderer__legend-note">
@@ -1367,6 +1475,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
             flights={placeFlights}
             truncated={placeAirports.length >= PLACE_LIMIT}
             onSearch={findAirports}
+            airborneNote={airborneNote}
             onSelect={selectPlace}
             onClose={closePlaces}
           />

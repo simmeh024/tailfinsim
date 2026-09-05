@@ -25,6 +25,7 @@ function overlay(hubIcao: string): WorldMapData {
     hubs: [{ position: [8.5622, 50.0379], icao: hubIcao, name: 'Frankfurt' }],
     routes: [],
     traffic: [],
+    flights: [],
   };
 }
 
@@ -99,7 +100,7 @@ describe('a refresh that fails', () => {
     // draw, and `fetchWorldMap` says so with an empty overlay rather than null.
     read
       .mockResolvedValueOnce(overlay('EDDF'))
-      .mockResolvedValueOnce({ hubs: [], routes: [], traffic: [] });
+      .mockResolvedValueOnce({ hubs: [], routes: [], traffic: [], flights: [] });
     const { result } = renderHook(() => useWorldOverlay());
     await settle();
 

@@ -163,6 +163,7 @@ vi.mock('./map-api', () => ({
       hubs: [{ position: [8.5622, 50.0379], icao: 'EDDF', name: 'Frankfurt' }],
       routes: [],
       traffic: [],
+      flights: [],
     }),
 }));
 

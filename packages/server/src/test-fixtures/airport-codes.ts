@@ -64,6 +64,7 @@ export const AIRPORT_CODE_NAMESPACES = {
   'schedule/prepare-legs': 'J',
   'schedule/read': 'K',
   'schedule/store': 'L',
+  'world/map': 'P',
 } as const;
 
 export type AirportCodeNamespace = keyof typeof AIRPORT_CODE_NAMESPACES;

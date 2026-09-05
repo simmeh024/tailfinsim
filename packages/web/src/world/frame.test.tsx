@@ -126,6 +126,7 @@ const network = vi.hoisted(() => ({
     },
   ],
   traffic: [],
+  flights: [],
 }));
 
 vi.mock('./map-api', () => ({
