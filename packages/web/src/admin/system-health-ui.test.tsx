@@ -99,6 +99,11 @@ const HEALTHY: AdminSystemHealthResponse = {
   offlineAfterMs: 120_000,
   alerts: [],
   unsupportedEvents: [],
+  rateLimits: [
+    { class: 'read', max: 1200, windowMs: 60_000, exceeded: 0 },
+    { class: 'write', max: 240, windowMs: 60_000, exceeded: 3 },
+    { class: 'auth', max: 20, windowMs: 900_000, exceeded: 0 },
+  ],
 };
 
 function stubApi(health: AdminSystemHealthResponse = HEALTHY) {
@@ -219,5 +224,25 @@ describe('the system health page', () => {
     // Worth stating on the page: an admin who assumes this polls the worker will
     // misread a stale node as a network problem at their end.
     expect(await screen.findByText(/cannot reach them, deliberately/i)).toBeInTheDocument();
+  });
+
+  it('shows this node’s rate-limit budgets and how often each has fired', async () => {
+    // The false positive is the failure that hurts: a budget set slightly too
+    // low refuses real players and looks, from outside, like a broken game. A
+    // limit nobody can see firing cannot be tuned (SEC-HARD-09).
+    stubApi();
+    await openSystemHealth();
+
+    const table = await screen.findByRole('table', { name: /Rate limits on/ });
+    const write = within(table).getByText('write').closest('tr');
+    expect(within(write!).getByText('240 / minute')).toBeInTheDocument();
+    expect(within(write!).getByText('3')).toBeInTheDocument();
+
+    // A quarter-hour window is read as one, not as 900000.
+    const auth = within(table).getByText('auth').closest('tr');
+    expect(within(auth!).getByText('20 / 15 minutes')).toBeInTheDocument();
+
+    // The multi-node caveat is on the page, not only in an issue.
+    expect(within(table).getByText(/OPS-11/)).toBeInTheDocument();
   });
 });

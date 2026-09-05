@@ -32,6 +32,7 @@ import { registerNetworkRoutes } from './network/routes';
 import { registerSlotRoutes } from './network/slot-routes';
 import { registerOfficeRoutes } from './office/routes';
 import { registerScheduleRoutes } from './schedule/routes';
+import { rateLimitOptions } from './security/rate-limit';
 import { registerWorldRoutes } from './world/routes';
 
 /**
@@ -208,30 +209,25 @@ export async function buildApp({
   /**
    * A denial-of-service guard on every route (SEC-HARD-09, ADR-0012, §16).
    *
-   * Registered before the routes so `global: true` reaches all of them, and
-   * keyed on the client IP — which `trustProxy` above resolves to the real caller
-   * behind Caddy, not to the proxy, so one abusive client is throttled without
-   * taking every user sharing the edge down with it. That resolves the
-   * "trusted-proxy semantics" half of the finding ADR-0013 deferred here.
+   * Registered before the routes so `global: true` reaches all of them. The
+   * policy itself lives in `security/rate-limit.ts`: six endpoint classes, each
+   * with its own budget, keyed on the **player** where there is one and on the
+   * address otherwise. One number for everything caps a flood and nothing else,
+   * and Tailfin's more interesting abuse is a scripted action loop in a shared
+   * economy — read that module for why the shape is what it is.
    *
-   * **Loopback is exempt.** The worker, local development and the in-process test
-   * suite all reach the app from `127.0.0.1` with no forwarded IP, so exempting
-   * loopback keeps them unthrottled while a real client hammering the public host
-   * (whose forwarded IP is never loopback) is limited. The ceiling is deliberately
-   * generous — a player loading the SPA and polling stays far under it — because
-   * the job is to cap abuse, not to shape ordinary traffic; `RATE_LIMIT_MAX` tunes
-   * it without a code change.
+   * **Loopback is exempt**, so the worker, local development and the in-process
+   * test suite are never throttled; a real client behind Caddy never resolves to
+   * loopback. `trustProxy` above is what makes `request.ip` the real caller
+   * rather than the proxy, which resolves the "trusted-proxy semantics" half of
+   * the finding ADR-0013 deferred here.
    *
    * **Awaited, and before the routes.** The plugin attaches itself by adding an
    * `onRoute` hook, which only wraps routes registered *after* it has loaded — so
    * loading it here, ahead of every `register*Routes` call below, is what makes
    * the guard actually cover them. This is why `buildApp` is async.
    */
-  await app.register(fastifyRateLimit, {
-    max: env.rateLimitMax ?? 1200,
-    timeWindow: env.rateLimitWindowMs ?? 60_000,
-    allowList: ['127.0.0.1', '::1'],
-  });
+  await app.register(fastifyRateLimit, rateLimitOptions(env));
 
   app.register(fastifyCookie, env.sessionSecret ? { secret: env.sessionSecret } : {});
   registerAuthRoutes(app, { env, db, googleAuth });
@@ -241,7 +237,7 @@ export async function buildApp({
   registerPlayerAirlineContext(app, { db });
   // After the auth routes, which is where `requireAdmin` is decorated. Fastify
   // resolves decorators at registration time, so the order is not cosmetic.
-  registerAdminRoutes(app, { db });
+  registerAdminRoutes(app, { db, env });
 
   // Founding is the first player operation and the precondition for the
   // network routes registered below it (AIR-01).
@@ -454,11 +450,36 @@ export async function buildApp({
   });
 
   app.setErrorHandler(async (error: FastifyError, request, reply) => {
-    request.log.error({ err: error }, 'unhandled error');
     const status = error.statusCode ?? 500;
+
+    /*
+     * A deliberate refusal is not an unhandled error (SEC-HARD-09).
+     *
+     * Everything used to be logged at `error`, which meant every rate limit and
+     * every rejected body arrived in the journal looking like a fault. That
+     * buries the real ones, and it made the one signal a rate limit produces
+     * indistinguishable from a crash. 4xx is the server working.
+     */
+    if (status >= 500) request.log.error({ err: error }, 'unhandled error');
+    else request.log.warn({ err: error, statusCode: status }, 'request refused');
+
+    /*
+     * A refusal may name itself.
+     *
+     * Everything else in the API answers with its own `code`, and collapsing
+     * every 4xx to `bad_request` means a client cannot tell "you sent nonsense"
+     * from "you are going too fast" — which are different things to do about.
+     * Only snake_case codes pass through: Fastify's own are `FST_ERR_…`, and
+     * leaking those would put an implementation detail in a public contract.
+     */
+    const declared =
+      typeof error.code === 'string' && /^[a-z][a-z0-9_]*$/.test(error.code)
+        ? error.code
+        : undefined;
+
     // Never surface an internal message; the request id is how it gets traced.
     return reply.code(status).send({
-      code: status >= 500 ? 'internal_error' : 'bad_request',
+      code: status >= 500 ? 'internal_error' : (declared ?? 'bad_request'),
       message: status >= 500 ? 'Something went wrong' : error.message,
     });
   });

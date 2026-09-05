@@ -865,6 +865,24 @@ export const AdminUnsupportedEvents = z.object({
 });
 export type AdminUnsupportedEvents = z.infer<typeof AdminUnsupportedEvents>;
 
+/**
+ * One endpoint class's rate-limit budget, and how often it has fired (SEC-HARD-09).
+ *
+ * On this page rather than in a log, because the failure that matters is the
+ * false positive: a budget set slightly too low refuses real players and looks,
+ * from outside, exactly like the game being broken. A limit nobody can see
+ * firing cannot be tuned.
+ */
+export const AdminRateLimitClass = z.object({
+  /** `auth`, `read`, `write`, `report`, `admin`. `exempt` has no budget to report. */
+  class: z.string().min(1),
+  max: z.number().int().positive(),
+  windowMs: z.number().int().positive(),
+  /** Requests refused since this process started. Zero is the ordinary state. */
+  exceeded: z.number().int().nonnegative(),
+});
+export type AdminRateLimitClass = z.infer<typeof AdminRateLimitClass>;
+
 export const AdminSystemHealthResponse = z.object({
   nodes: z.array(AdminNodeHealth),
   serverTime: Timestamp,
@@ -881,6 +899,15 @@ export const AdminSystemHealthResponse = z.object({
    * has just booted has drained nothing and would report zero.
    */
   unsupportedEvents: z.array(AdminUnsupportedEvents).default([]),
+  /**
+   * Rate-limit budgets and refusals, **for the node answering this request**.
+   *
+   * Counters are in that process's memory, so with several web nodes this is one
+   * node's share rather than the total — the same limitation that makes the
+   * limits themselves per node until OPS-11 gives them a shared store. Defaulted
+   * so an older stored payload still parses.
+   */
+  rateLimits: z.array(AdminRateLimitClass).default([]),
 });
 export type AdminSystemHealthResponse = z.infer<typeof AdminSystemHealthResponse>;
 
