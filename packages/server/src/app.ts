@@ -25,6 +25,7 @@ import { registerCurrencyRoutes } from './currency/routes';
 import { type DatabaseHandle } from './db/client';
 import { readDeployInfo } from './deploy-info';
 import { type ServerEnv } from './env';
+import { registerCreditRoutes } from './finance/credit-routes';
 import { registerFinanceRoutes } from './finance/routes';
 import { registerGroundRoutes } from './ground/routes';
 import { createEconomicsProvider } from './network/economics';
@@ -260,6 +261,7 @@ export async function buildApp({
   registerAutomationRoutes(app, { db });
   registerGroundRoutes(app, { db });
   registerServiceRoutes(app, { db });
+  registerCreditRoutes(app, { db });
   registerFinanceRoutes(app, { db });
   registerCurrencyRoutes(app, { db });
 

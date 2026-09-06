@@ -10,6 +10,7 @@ import {
   DEFAULT_AIRPORT_FEES,
   DEFAULT_BOOKING_CURVE,
   DEFAULT_CLASS_MIX,
+  DEFAULT_CREDIT,
   DEFAULT_CREW,
   DEFAULT_DISRUPTION_COST,
   DEFAULT_GRAVITY,
@@ -125,6 +126,7 @@ const BALANCE_EXPORTS = [
   ],
   ['DEFAULT_NPC', DEFAULT_NPC, ECONOMY_CONFIG_V1.npc, 'npc/carrier.ts'],
   ['DEFAULT_SERVICE', DEFAULT_SERVICE, ECONOMY_CONFIG_V1.service, 'service/bands.ts'],
+  ['DEFAULT_CREDIT', DEFAULT_CREDIT, ECONOMY_CONFIG_V1.credit, 'finance/credit.ts'],
 ] as const;
 
 describe('where the balance numbers come from', () => {

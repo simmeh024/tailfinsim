@@ -69,6 +69,7 @@ const READ_ONLY_GET_ROUTES = [
   '/api/airlines/me',
   '/api/airports/:icao/slots',
   '/api/automation',
+  '/api/credit',
   '/api/crew',
   '/api/currencies',
   '/api/finance/pnl',

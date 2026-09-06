@@ -42,6 +42,7 @@ import {
 import { ApiError, HealthResponse } from './api';
 import { LogoutResponse, MeResponse, RevokeSessionsResponse } from './auth';
 import { AutomationStateResponse } from './automation';
+import { CreditStandingResponse } from './credit';
 import { CrewResponse } from './crew';
 import { ExecutiveFloorState } from './executive';
 import { FinancePnlResponse } from './finance';
@@ -172,6 +173,7 @@ export const routeGroupsResponseJsonSchema = z.toJSONSchema(RouteGroupsResponse)
 export const servicePackageSummaryJsonSchema = z.toJSONSchema(ServicePackageSummary);
 export const routeGroupSummaryJsonSchema = z.toJSONSchema(RouteGroupSummary);
 export const servicePaybackResponseJsonSchema = z.toJSONSchema(ServicePaybackResponse);
+export const creditStandingResponseJsonSchema = z.toJSONSchema(CreditStandingResponse);
 export const officeStateResponseJsonSchema = z.toJSONSchema(OfficeStateResponse);
 export const executiveFloorStateJsonSchema = z.toJSONSchema(ExecutiveFloorState);
 export const financePnlResponseJsonSchema = z.toJSONSchema(FinancePnlResponse);

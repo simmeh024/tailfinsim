@@ -55,3 +55,5 @@ export * from './crew';
 export * from './ground';
 
 export * from './service';
+
+export * from './finance';

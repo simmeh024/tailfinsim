@@ -501,6 +501,28 @@ product rather than an assembled one. The morale lever goes through M5-03's own
 `serviceExecution` curve, never raw — that curve is 0.7→1.0 on purpose, so
 morale alone cannot drive a package to its band floor.
 
+**Lending is not a worker story either (M8-06), and it has a rule worth knowing
+before you touch it.** §13's _"loans support, they never carry"_ is enforced by
+arithmetic alone — `MaxTotalDebt = min(tierCap, 3.0 × trailing operating profit,
+0.60 × tangible assets)` — so there is deliberately **no "is this airline in
+trouble?" check anywhere in the subsystem**. Do not add one; a second place the
+rule lived would eventually disagree with the first about an airline sitting on
+the line.
+
+The credit rating needs history for §13.2's hysteresis, so `credit_standing`
+persists it, and a **review runs at most once per game month, driven by whoever
+reads the standing** rather than by a sweep. Production has no worker, and a
+rating frozen there would make lending behave differently between nodes.
+
+Two things that were nearly wrong and are load-bearing. A rating that has left
+`startup` **can never return to it** — the founder facility is exempt from the
+profit test, so falling back into it would hand a failing airline $250K of exempt
+credit; a database test caught that, and the floor for a traded airline is `D`.
+And `debt_draw` is the one ledger category `readProfitAndLoss` counts in
+**neither** revenue nor cost: a draw booked as a cost shows a profitable airline
+a month of enormous losses for having borrowed. `docs/loans-and-credit.md` has
+the boundary, including why sale-leaseback is in §13.3's table and not built.
+
 **And one thing not to "fix".** `airframe.maintenance_state` is nullable, and a null means
 _every tier was last completed at the hours this airframe has now_ — not _at hour zero_. It
 looks like a missing default and it is load-bearing: the other reading would make every

@@ -28,6 +28,7 @@ import {
   SetCrewReserveInput,
   SetCurrencyRequest,
   SetFaresRequest,
+  DrawLoanRequest,
   ServicePaybackRequest,
   SetScheduleActiveRequest,
   UpdateRouteGroupRequest,
@@ -151,6 +152,11 @@ const STRICT_WRITE_CONTRACTS = [
     endpoint: 'POST /api/ground/:icao/self-handling',
     schema: OpenSelfHandlingRequest,
     payload: { serviceLine: 'ramp_baggage', headcount: 12 },
+  },
+  {
+    endpoint: 'POST /api/credit/loans',
+    schema: DrawLoanRequest,
+    payload: { instrument: 'working_capital', principalMinor: 100_000 },
   },
   {
     endpoint: 'POST /api/service/payback',
@@ -306,6 +312,7 @@ const COVERED_WRITE_ENDPOINTS = [
   'PUT /api/crew/policies',
   'PUT /api/crew/reserves',
   'PUT /api/routes/:routeId/fares',
+  'POST /api/credit/loans',
   'POST /api/service/payback',
   'POST /api/service/packages',
   'PUT /api/service/packages/:id',

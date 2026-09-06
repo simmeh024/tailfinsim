@@ -557,6 +557,8 @@ export const AdminCashMovementCause = z.enum([
   'flight_settlement',
   'disruption_cost',
   'migration_opening_balance',
+  /** §13.3's loan draw (M8-06). */
+  'loan_draw',
 ]);
 export type AdminCashMovementCause = z.infer<typeof AdminCashMovementCause>;
 

@@ -393,6 +393,13 @@
       "when": 1788710534333,
       "tag": "0055_lovely_ares",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1788728095903,
+      "tag": "0056_freezing_night_thrasher",
+      "breakpoints": true
     }
   ]
 }
