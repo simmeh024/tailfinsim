@@ -549,6 +549,29 @@ and the tangible assets a lender advances against, and is `grounded` as well so
 the dispatch gate refuses it even if a query forgets. `docs/loans-and-credit.md`
 has the ladder and what each rung actually does.
 
+**§13.6's cash runway is not a worker story, but it reads one (M8-08).** The
+projection walks game days from today's cash, applying the trailing operating
+rate and each committed bill on the day it falls due — deliberately not
+`cash / burn`, which is the misleading number §13.6 exists to replace. It is
+computed on demand and behaves identically on every node. What it _measures_ is
+mostly `flight_settlement`, and **production has no worker**, so there nothing
+ever settles: the rate is zero, no commitment is ever paid, and every airline
+reads _"365+ days"_ for ever. Same trap as an empty used market — it reads as a
+healthy airline rather than as a missing process.
+
+Two things there worth not undoing. **Every `cash_movement` cause is classified
+by an exhaustive `switch` with no `default`**, into `rate`, `projected` (a
+commitment already covers it exactly, and counting both bills it twice) or
+`one_off` — so a new cause stops the build until somebody decides. A $390M
+aeroplane inside the thirty-day window is a burn of $13M a game day and would
+report an airline that has just bought a fleet as having days to live. And **the
+projection must equal the charge**: crew shares `foldCrewBills` with
+`runCrewPayroll` so there is one implementation, and a database test projects the
+office bill then runs the real payroll and asserts the cash matches.
+`docs/cash-runway.md` has the buckets, and why lease rentals are deliberately
+excluded — nothing in the game charges them yet, so projecting them would predict
+an outflow that never arrives.
+
 **And one thing not to "fix".** `airframe.maintenance_state` is nullable, and a null means
 _every tier was last completed at the hours this airframe has now_ — not _at hour zero_. It
 looks like a missing default and it is load-bearing: the other reading would make every

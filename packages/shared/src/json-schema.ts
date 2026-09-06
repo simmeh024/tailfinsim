@@ -45,7 +45,7 @@ import { AutomationStateResponse } from './automation';
 import { CreditStandingResponse } from './credit';
 import { CrewResponse } from './crew';
 import { ExecutiveFloorState } from './executive';
-import { FinancePnlResponse } from './finance';
+import { CashRunwayResponse, FinancePnlResponse } from './finance';
 import { AirframeDetailResponse, FleetAirframesResponse } from './fleet';
 import { GroundContractsResponse, GroundStationResponse } from './ground';
 import { LiveryDocument } from './livery';
@@ -177,3 +177,4 @@ export const creditStandingResponseJsonSchema = z.toJSONSchema(CreditStandingRes
 export const officeStateResponseJsonSchema = z.toJSONSchema(OfficeStateResponse);
 export const executiveFloorStateJsonSchema = z.toJSONSchema(ExecutiveFloorState);
 export const financePnlResponseJsonSchema = z.toJSONSchema(FinancePnlResponse);
+export const cashRunwayResponseJsonSchema = z.toJSONSchema(CashRunwayResponse);
