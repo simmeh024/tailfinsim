@@ -34,6 +34,7 @@ import { loadWorldFuelContext, marketNow, stationFor, loadAirportFuelRows } from
 import { loadWorldEconomyConfig } from '../economy/loader';
 import { handlingArrangementFor, handlingPriceBalanceOf } from '../ground/contracts';
 import { activeSocialMediaEffects } from '../office/specialists';
+import { resolveProductScore } from '../service/product-score';
 
 import { competitorsFor } from './competitors';
 import { loadOperatingBasis } from './operating-fleet';
@@ -117,7 +118,18 @@ export const REFERENCE_STATION: FuelStation = {
  */
 export const REFERENCE_HANDLING_PRICE_FACTOR = 1;
 
-/** What an airline is assumed to be, until M6 and §15 can say. */
+/**
+ * What an airline is assumed to be, until §15 can say.
+ *
+ * `productScore` is no longer one of those assumptions in the live path: since
+ * M8-04 `createEconomicsProvider` resolves a real one through
+ * `service/product-score.ts`, from the route's service package and App. D.1's
+ * execution levers. The figure here survives as the **fixture** the pure
+ * fare-floor and waterfall tests price against, where there is no database to
+ * resolve anything from — the same role `REFERENCE_STATION` plays for fuel.
+ *
+ * `reputation` is still a genuine assumption; §15 owns replacing it.
+ */
 export const REFERENCE_SELF = { reputation: 0.35, productScore: 0.6, frequency: 2 };
 
 /**
@@ -320,6 +332,21 @@ export function createEconomicsProvider(
     const basis = await operatingAircraftFor(db, row);
 
     /*
+     * App. A.3's `ProductScore`, assembled for real (M8-04).
+     *
+     * After `basis`, because the blend across cabins is weighted by the seats
+     * this airline actually flies over this pair — a 12-seat business cabin must
+     * not count equally with 150 of economy.
+     */
+    const product = await resolveProductScore(db, {
+      airlineId: row.airlineId,
+      routeId: row.id,
+      originIcao: row.originIcao,
+      economy,
+      seatsByCabin: basis.aircraft.seatsByCabin,
+    });
+
+    /*
      * §9.1's attractiveness specialist. The bonus applies only once the airline
      * flies more than one route: a single-route carrier has no network for a
      * marketer to work with, and the second route is the first thing the
@@ -395,7 +422,12 @@ export function createEconomicsProvider(
       destinationFees: REFERENCE_FEES,
       segmentPools,
       competitors,
-      self: { ...REFERENCE_SELF, attractiveness },
+      self: {
+        ...REFERENCE_SELF,
+        attractiveness,
+        productScore: product.overall,
+        productScoreByCabin: product.byCabin,
+      },
       settlement: economy.costs.settlement,
       fareFloorRatio: economy.pricing.fareFloorRatio,
     };

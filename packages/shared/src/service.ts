@@ -177,6 +177,50 @@ export function serviceTier(
   return SERVICE_LADDERS[category][tier];
 }
 
+/* ---- App. D.6's four ProductScore terms (M8-04) --------------------------- */
+
+/**
+ * The four terms of App. D.6's composite.
+ *
+ * ```
+ * ProductScore = w_seat·seat + w_service·band_position + w_ife·ife + w_ground·ground
+ * ```
+ *
+ * `seat` is §6.4's, not App. D's — the cabin builder decides what the seat *is*,
+ * and this appendix decides what happens in it. Its score comes from
+ * [M6-09](https://github.com/simmeh024/tailfinsim/issues/65) and until that
+ * exists the term has no source; `productScore` renormalises around it rather
+ * than scoring it zero.
+ */
+export const ProductScoreTerm = z.enum(['seat', 'service', 'ife', 'ground']);
+export type ProductScoreTerm = z.infer<typeof ProductScoreTerm>;
+
+export const PRODUCT_SCORE_TERMS: readonly ProductScoreTerm[] = ProductScoreTerm.options;
+
+/**
+ * Which term each catalogue category feeds.
+ *
+ * Identity, not balance: that in-flight entertainment is the `ife` term is not a
+ * number anyone tunes, and putting it in the economy payload would make it
+ * retunable in a way that has no meaning. The **weights** on the terms are
+ * balance, and they live in `EconomyConfig.service.productScoreWeights`.
+ *
+ * Five categories share `service`. App. D.6 writes one service term and M8-03
+ * built seven categories; the four the appendix does not name individually —
+ * baggage policy, amenities, onboard retail and atmosphere — are all *what
+ * happens in the cabin*, which is what the service term means. `productScore`
+ * averages them so the term stays on the same 0–1 scale as the other three.
+ */
+export const PRODUCT_SCORE_TERM_OF_CATEGORY: Readonly<Record<ServiceCategory, ProductScoreTerm>> = {
+  catering: 'service',
+  baggage_seating: 'service',
+  amenities: 'service',
+  onboard_retail: 'service',
+  atmosphere: 'service',
+  ife_connectivity: 'ife',
+  ground_services: 'ground',
+};
+
 /**
  * One cabin's selection: the tier chosen in each category.
  *

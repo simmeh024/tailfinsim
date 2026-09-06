@@ -121,7 +121,23 @@ export interface RouteEconomics {
    */
   self: {
     reputation: number;
+    /**
+     * App. A.3's `ProductScore`, seat-weighted across the cabins on offer.
+     *
+     * Assembled by `service/product-score.ts` since M8-04 — one place, which is
+     * that issue's second acceptance criterion. It used to be a flat `0.6` in
+     * `REFERENCE_SELF`, an honest placeholder for a system that did not exist.
+     */
     productScore: number;
+    /**
+     * Each cabin's own score, where they differ.
+     *
+     * App. D.6's weights differ by cabin, so a business cabin and an economy
+     * cabin on the same aeroplane do not score the same even under one package.
+     * `CabinOffer.productScore` is the seam the allocator already had for this;
+     * absent, every cabin falls back to the blended figure above.
+     */
+    productScoreByCabin?: Partial<Record<CabinClass, number>>;
     frequency: number;
     attractiveness?: number;
   };
@@ -300,7 +316,13 @@ export function selfAsOperator(
     const seats = economics.aircraft.seatsByCabin[cabin] ?? 0;
     const fareMinor = fares[cabin];
     if (seats > 0 && fareMinor !== undefined && fareMinor > 0) {
-      cabins[cabin] = { seats, fareMinor };
+      cabins[cabin] = {
+        seats,
+        fareMinor,
+        // Per cabin where the assembly produced one; the allocator falls back
+        // to the operator's blended score when it did not.
+        productScore: economics.self.productScoreByCabin?.[cabin],
+      };
     }
   }
 

@@ -222,10 +222,13 @@ export function attritionRate(
 /**
  * What this base's morale does to service execution (App. D.1, §6.4).
  *
- * **Exposed, not consumed.** M8-04 assembles the product score, and D.1's rule
- * that *"the weakest input dominates"* is a decision about four inputs together.
- * Nothing in `packages/sim` multiplies this into anything today, and a caller
- * that starts doing so before M8-04 lands has made M8-04's decision for it.
+ * **Consumed by M8-04**, which is what this was waiting for. It used to say
+ * "exposed, not consumed" and warn that a caller multiplying it into something
+ * would be making M8-04's decision early; that decision is now made, in
+ * `service/execution.ts`. This function is the *translation* — morale onto a
+ * service contribution — and the weakest-link rule that combines it with the
+ * other three App. D.1 levers lives there. Do not add a second caller that
+ * blends it differently; feed `serviceExecutionMultiplier` instead.
  */
 export function serviceExecution(
   morale: number,

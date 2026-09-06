@@ -482,11 +482,24 @@ on demand and reaches a flight by query — `route`'s unique
 into a route, and the route's group holds the package. So a production world
 configures service exactly as dev does. What production still cannot do is
 _fly_, so the configuration has nothing to apply to — that is the missing worker,
-not this subsystem. Nothing is charged for service yet in any case: settlement
-and `ProductScore` are M8-04. `docs/service-catalogue.md` has the boundary,
-including the two decisions App. D leaves open — what a route group _is_, and
-why the catalogue is not a third pinned version beside the economy and the
-aircraft.
+not this subsystem. M8-04 has since wired App. D.1's execution and assembled
+App. A.3's `ProductScore` from it, so service now moves **demand**; what still
+reaches no ledger line is the per-passenger cost and revenue, which settlement
+owns. `docs/service-catalogue.md` has the boundary, including the two decisions
+App. D leaves open — what a route group _is_, and why the catalogue is not a
+third pinned version beside the economy and the aircraft.
+
+**And `ProductScore` now has exactly one source, which it did not before (M8-04).**
+Two modules used to conjure a flat `0.6` — `REFERENCE_SELF` and the competitor
+`PLAYER_ASSUMPTION` — each a reasonable local decision at the time, which is how
+there came to be two. `sim/service/product-score.ts` assembles it and
+`server/src/service/product-score.ts` feeds it real state;
+`product-score-source.test.ts` fails the build if a third appears, and lists the
+four places entitled to a literal with the reason for each. An NPC archetype is
+one of them: a synthetic competitor with no cabin and no crew has a _declared_
+product rather than an assembled one. The morale lever goes through M5-03's own
+`serviceExecution` curve, never raw — that curve is 0.7→1.0 on purpose, so
+morale alone cannot drive a package to its band floor.
 
 **And one thing not to "fix".** `airframe.maintenance_state` is nullable, and a null means
 _every tier was last completed at the hours this airframe has now_ — not _at hour zero_. It
