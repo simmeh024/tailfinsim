@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router';
 
 import type {
+  CashRunwayResponse,
   ExecutiveFloorState,
   OfficeSeatId,
   OfficeStateResponse,
@@ -10,6 +11,8 @@ import type {
 
 import { fetchOwnAirline, formatMinorUnits } from '../airline/api';
 import { AccountBadge } from '../auth/AccountBadge';
+import { fetchCashRunway } from '../finance/runway-api';
+import { RunwayIndicator } from '../finance/RunwayIndicator';
 import {
   expandOffice,
   fetchExecutiveFloor,
@@ -271,24 +274,36 @@ function ContextPanel({
 /**
  * Bottom status strip: cash, cash runway, aircraft airborne, alerts (H.4).
  *
- * Values are placeholders. The markup is not: figures carry `.figure` for
- * tabular numerals so they will not jitter as they tick, and status uses the
- * `.status--*` classes, which pair colour with a glyph so meaning survives
- * without hue (H.4, H.7).
+ * Airborne and Alerts are still placeholders. Cash and the runway are real:
+ * figures carry `.figure` for tabular numerals so they will not jitter as they
+ * tick, and status uses the `.status--*` classes, which pair colour with a glyph
+ * so meaning survives without hue (H.4, H.7).
+ *
+ * **The runway moves to the front when it is critical**, and that is §13.6's
+ * requirement rather than a flourish: *"the single most prominent number when it
+ * drops below 30"*. Prominence in a row of six identical small figures is
+ * position and size, not colour — so the item leads the strip, takes an alert
+ * ground and jumps to display size. The server decides `critical`; the strip
+ * only obeys it.
  */
-function StatusStrip({ ownAirline }: { ownAirline: OwnAirlineResponse | null }): ReactNode {
+function StatusStrip({
+  ownAirline,
+  runway,
+}: {
+  ownAirline: OwnAirlineResponse | null;
+  runway: CashRunwayResponse | null;
+}): ReactNode {
+  const runwayItem = <RunwayIndicator runway={runway} />;
   return (
     <div className="strip" aria-label="Status">
+      {runway?.critical === true ? runwayItem : null}
       <div className="strip__item">
         <span className="strip__label">Cash</span>
         <span className="strip__value figure">
           {ownAirline?.airline ? formatMinorUnits(ownAirline.airline.cash) : '—'}
         </span>
       </div>
-      <div className="strip__item">
-        <span className="strip__label">Runway</span>
-        <span className="strip__value figure">— days</span>
-      </div>
+      {runway?.critical === true ? null : runwayItem}
       <div className="strip__item">
         <span className="strip__label">Airborne</span>
         <span className="strip__value figure">0</span>
@@ -305,11 +320,27 @@ function StatusStrip({ ownAirline }: { ownAirline: OwnAirlineResponse | null }):
   );
 }
 
+/**
+ * How often the strip re-reads the runway, in real milliseconds.
+ *
+ * Sixty seconds. The projection is a world-clock quantity and nothing the player
+ * does moves it directly, so this is the only thing that keeps §13.6's *"at all
+ * times"* honest on a page left open.
+ */
+const RUNWAY_POLL_MS = 60_000;
+
 export function AppShell(): ReactNode {
   // The title, and focus on navigation. See `route-identity.ts`.
   useRouteIdentity();
   const [panelOpen, setPanelOpen] = useState(true);
   const [ownAirline, setOwnAirline] = useState<OwnAirlineResponse | null>(null);
+  /*
+   * §13.6's runway (M8-08). Owned by the shell rather than by a page, because the
+   * strip is on every page and the number has to be there "at all times". Null
+   * until the first read, and null again for a player with no airline — the
+   * endpoint answers 409 then, and an unknown runway is the honest render.
+   */
+  const [runway, setRunway] = useState<CashRunwayResponse | null>(null);
   const [ownAirlineLoading, setOwnAirlineLoading] = useState(true);
   const [ownAirlineError, setOwnAirlineError] = useState(false);
   // The office state behind the always-on context panel. `fetchOffice` answers
@@ -339,6 +370,10 @@ export function AppShell(): ReactNode {
     } finally {
       setOwnAirlineLoading(false);
     }
+  }, []);
+
+  const loadRunway = useCallback(async () => {
+    setRunway(await fetchCashRunway());
   }, []);
 
   const loadOffice = useCallback(async () => {
@@ -388,6 +423,26 @@ export function AppShell(): ReactNode {
     void loadExecFloor();
   }, [loadOwnAirline, loadOffice, loadExecFloor]);
 
+  /*
+   * The runway on a slow poll of its own.
+   *
+   * It moves on the world's clock rather than on anything the player does, so
+   * unlike the office state there is no mutation to hang a refresh off — and a
+   * number that only updated on a page change would be stale on the dashboard
+   * a player leaves open. A minute is frequent enough to catch the crossing into
+   * §13.6's thirty days and rare enough to be invisible.
+   *
+   * Gated on there being an airline: a player who has not founded one has no
+   * runway, and the endpoint would answer 409 once a minute for ever.
+   */
+  const hasAirline = ownAirline?.airline != null;
+  useEffect(() => {
+    if (!hasAirline) return;
+    void loadRunway();
+    const timer = setInterval(() => void loadRunway(), RUNWAY_POLL_MS);
+    return () => clearInterval(timer);
+  }, [hasAirline, loadRunway]);
+
   const outletContext: OwnAirlineShellContext = {
     ownAirline,
     ownAirlineLoading,
@@ -434,7 +489,7 @@ export function AppShell(): ReactNode {
           selectedExecOffice={selectedExecOffice}
           onSelectExecOffice={setSelectedExecOffice}
         />
-        <StatusStrip ownAirline={ownAirline} />
+        <StatusStrip ownAirline={ownAirline} runway={runway} />
       </div>
     </ContextSelectionProvider>
   );

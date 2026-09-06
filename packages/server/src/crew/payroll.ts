@@ -7,6 +7,7 @@ import { cashMovement, crewBase, crewPool } from '../db/schema';
 import { loadWorldEconomyConfig } from '../economy/loader';
 
 import type { Database } from '../db/client';
+import type { PinnedEconomyConfig } from '../economy/config';
 
 /**
  * What crew cost every month (M5-02, §9.2).
@@ -80,35 +81,39 @@ export interface PayrollResult {
  * `gameNow` is the world's clock. The period billed is the *previous* calendar
  * month in that clock, so nothing is charged for a month still being worked.
  */
-export async function runCrewPayroll(
-  db: Database,
-  worldId: string,
-  gameNow: Date,
-): Promise<PayrollResult> {
-  const period = previousMonth(gameNow);
-  /*
-   * Midnight on the first of the following month: the instant the billed month
-   * closed. Fixed for the period, so a retry replays identical facts.
-   */
-  const occurredAt = new Date(`${monthAfter(period)}-01T00:00:00.000Z`);
-  const economy = await loadWorldEconomyConfig(db, worldId);
+/** One `crew_base` × `crew_pool` line, as the payroll fold reads it. */
+export interface CrewPayrollLine {
+  airlineId: string;
+  crewBaseId: string;
+  payBand: keyof CrewBalance['morale']['payBands'];
+  rank: string | null;
+  headcount: number | null;
+}
 
-  const rows = await db
-    .select({
-      airlineId: crewBase.airlineId,
-      crewBaseId: crewBase.id,
-      payBand: crewBase.payBand,
-      rank: crewPool.rank,
-      headcount: crewPool.headcount,
-    })
-    .from(crewBase)
-    .leftJoin(crewPool, eq(crewPool.crewBaseId, crewBase.id))
-    .where(and(eq(crewBase.worldId, worldId), eq(crewBase.status, 'open')));
+/** What one airline owes for a month of crew, split the way it is billed. */
+export interface CrewBill {
+  salaryMinor: number;
+  overheadMinor: number;
+  bases: Set<string>;
+}
 
-  const bills = new Map<
-    string,
-    { salaryMinor: number; overheadMinor: number; bases: Set<string> }
-  >();
+/**
+ * Fold open bases into what each airline owes for a month.
+ *
+ * Exported so that M8-08's cash runway can project the **same** bill the sweep
+ * will charge. A projection with its own copy of this arithmetic would be a
+ * second answer to *"what does crew cost me next month?"*, and the two would
+ * drift the first time a pay band changed — which is exactly the failure §14.1
+ * exists to prevent, one screen away from the number it is warning about.
+ *
+ * `crew-payroll-agrees.test.ts` proves the two agree against real Postgres
+ * rather than trusting that they share this function for ever.
+ */
+export function foldCrewBills(
+  rows: readonly CrewPayrollLine[],
+  economy: PinnedEconomyConfig,
+): Map<string, CrewBill> {
+  const bills = new Map<string, CrewBill>();
   for (const row of rows) {
     let bill = bills.get(row.airlineId);
     if (!bill) {
@@ -133,6 +138,50 @@ export async function runCrewPayroll(
   for (const bill of bills.values()) {
     bill.overheadMinor = economy.crew.base.monthlyOverheadMinor * bill.bases.size;
   }
+  return bills;
+}
+
+/** The open bases and pools a month of payroll is folded from. */
+export function crewPayrollLines(
+  db: Database,
+  worldId: string,
+  airlineId?: string,
+): Promise<CrewPayrollLine[]> {
+  return db
+    .select({
+      airlineId: crewBase.airlineId,
+      crewBaseId: crewBase.id,
+      payBand: crewBase.payBand,
+      rank: crewPool.rank,
+      headcount: crewPool.headcount,
+    })
+    .from(crewBase)
+    .leftJoin(crewPool, eq(crewPool.crewBaseId, crewBase.id))
+    .where(
+      and(
+        eq(crewBase.worldId, worldId),
+        eq(crewBase.status, 'open'),
+        airlineId === undefined ? undefined : eq(crewBase.airlineId, airlineId),
+      ),
+    );
+}
+
+export async function runCrewPayroll(
+  db: Database,
+  worldId: string,
+  gameNow: Date,
+): Promise<PayrollResult> {
+  const period = previousMonth(gameNow);
+  /*
+   * Midnight on the first of the following month: the instant the billed month
+   * closed. Fixed for the period, so a retry replays identical facts.
+   */
+  const occurredAt = new Date(`${monthAfter(period)}-01T00:00:00.000Z`);
+  const economy = await loadWorldEconomyConfig(db, worldId);
+
+  const rows = await crewPayrollLines(db, worldId);
+
+  const bills = foldCrewBills(rows, economy);
 
   /*
    * What has already been billed for this period. One indexed lookup for the

@@ -1,8 +1,14 @@
-import { financePnlResponseJsonSchema, Timestamp, Uuid } from '@tailfin/shared';
+import {
+  cashRunwayResponseJsonSchema,
+  financePnlResponseJsonSchema,
+  Timestamp,
+  Uuid,
+} from '@tailfin/shared';
 
 import { resolvedAirlineOf } from '../airline/context';
 
 import { readProfitAndLoss, type LedgerQuery } from './ledger';
+import { readCashRunway } from './runway';
 
 import type { DatabaseHandle } from '../db/client';
 import type { FastifyInstance } from 'fastify';
@@ -22,6 +28,25 @@ function optionalUuid(value: string | undefined): string | undefined | null {
 }
 
 export function registerFinanceRoutes(app: FastifyInstance, { db }: { db: DatabaseHandle }): void {
+  /**
+   * §13.6's cash runway (M8-08).
+   *
+   * No query string at all, deliberately. The trailing window, the horizon and
+   * the "below 30 days" threshold are all the server's, so there is nothing here
+   * for a client to disagree about — and the status strip that reads this on
+   * every page is the last place that should be able to ask a different question
+   * from the dashboard beside it.
+   */
+  app.get(
+    '/api/finance/runway',
+    {
+      onRequest: app.requireAirline,
+      schema: { response: { 200: cashRunwayResponseJsonSchema } },
+    },
+    async (request, reply) =>
+      reply.code(200).send(await readCashRunway(db.db, resolvedAirlineOf(request))),
+  );
+
   app.get<{
     Querystring: {
       from?: string;

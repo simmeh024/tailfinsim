@@ -73,6 +73,7 @@ const READ_ONLY_GET_ROUTES = [
   '/api/crew',
   '/api/currencies',
   '/api/finance/pnl',
+  '/api/finance/runway',
   '/api/fleet/airframes',
   '/api/fleet/airframes/:airframeId',
   '/api/fleet/catalogue',

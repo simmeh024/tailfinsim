@@ -971,6 +971,36 @@ body {
 }
 
 /*
+ * §13.6's cash runway, once it drops below thirty in-game days (M8-08).
+ *
+ * > …and it is the single most prominent number when it drops below 30.
+ *
+ * Prominence in a row of six identical small figures is **position and size**,
+ * not colour: the shell moves this item to the head of the strip and it takes a
+ * display-sized figure on an alert ground. The colour and the `.status--*`
+ * glyph on the value are the third and fourth signals, never the only ones
+ * (H.4, H.7).
+ */
+.strip__item--critical {
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  margin: var(--space-1) 0;
+  border: 1px solid var(--status-cancelled);
+  border-radius: var(--radius-sm);
+  background: var(--status-cancelled-quiet);
+}
+
+.strip__item--critical .strip__label {
+  color: var(--status-cancelled);
+}
+
+.strip__item--critical .strip__value {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+/*
  * Status is never carried by hue alone (H.4, H.7). Each modifier pairs its
  * colour with a glyph rendered from ::before, so the meaning survives
  * greyscale, colour blindness and a monochrome print.
