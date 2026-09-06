@@ -17,6 +17,11 @@ interface CompiledTemplate {
   zones: ReadonlyMap<string, CompiledZone>;
 }
 
+interface RenderedPaintLayer {
+  readonly geometry: string;
+  readonly opacity: number;
+}
+
 const templateCache = new Map<string, CompiledTemplate>();
 
 function readZoneBox(zone: Element): ZoneBox | null {
@@ -78,6 +83,47 @@ function gradientMarkup(
   return `<radialGradient id="${id}" gradientUnits="userSpaceOnUse" cx="${coordinate(box.x, box.width, layer.gradient.center.x)}" cy="${coordinate(box.y, box.height, layer.gradient.center.y)}" fx="${coordinate(box.x, box.width, layer.gradient.focal.x)}" fy="${coordinate(box.y, box.height, layer.gradient.focal.y)}" r="${String(Math.max(box.width, box.height) * layer.gradient.radius)}">${stops(layer.gradient)}</radialGradient>`;
 }
 
+function zoneClipMarkup(id: string, geometry: string): string {
+  return `<clipPath id="${id}">${geometry}</clipPath>`;
+}
+
+function layerAlphaMaskMarkup(id: string, source: RenderedPaintLayer, inverse: boolean): string {
+  const background = inverse ? 'white' : 'black';
+  const foreground = inverse ? 'black' : 'white';
+  return `<mask id="${id}" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse"><rect width="100%" height="100%" fill="${background}"/><g fill="${foreground}" opacity="${String(source.opacity)}">${source.geometry}</g></mask>`;
+}
+
+function maskAttributes(
+  layer: LiveryLayer,
+  template: CompiledTemplate,
+  rendered: ReadonlyMap<string, RenderedPaintLayer>,
+  definitions: string[],
+): { readonly markup: string; readonly data: string } | null {
+  if (layer.mask === null) return { markup: '', data: '' };
+  if (layer.mask.kind === 'zone') {
+    const maskZone = template.zones.get(layer.mask.zone);
+    if (maskZone === undefined) return null;
+    const id = `paint-mask-zone-${layer.id}`;
+    definitions.push(zoneClipMarkup(id, maskZone.geometry));
+    return {
+      markup: ` clip-path="url(#${id})"`,
+      data: ` data-livery-mask="zone:${layer.mask.zone}"`,
+    };
+  }
+
+  // Layer masks deliberately resolve only against preceding, rendered paint.
+  // This matches the document contract and prevents a cyclic or invisible mask
+  // from producing an accidental unmasked layer.
+  const source = rendered.get(layer.mask.layerId);
+  if (source === undefined) return null;
+  const id = `paint-mask-layer-${layer.id}`;
+  definitions.push(layerAlphaMaskMarkup(id, source, layer.mask.mode === 'inverse_alpha'));
+  return {
+    markup: ` mask="url(#${id})"`,
+    data: ` data-livery-mask="layer:${layer.mask.mode}:${layer.mask.layerId}"`,
+  };
+}
+
 /**
  * Projects M6-03's base-fill layers onto one trusted M6-02 template source.
  *
@@ -94,11 +140,14 @@ export function renderLiverySvg(templateSource: string, livery: LiveryDocument):
   const template = compileTemplate(templateSource);
   const definitions: string[] = [];
   const paint: string[] = [];
+  const rendered = new Map<string, RenderedPaintLayer>();
 
   for (const layer of livery.layers) {
     if (!layer.visible || (layer.type !== 'fill' && layer.type !== 'gradient')) continue;
     const zone = template.zones.get(layer.zone);
     if (zone === undefined) continue;
+    const mask = maskAttributes(layer, template, rendered, definitions);
+    if (mask === null) continue;
 
     let fill: string;
     if (layer.type === 'fill') {
@@ -110,8 +159,9 @@ export function renderLiverySvg(templateSource: string, livery: LiveryDocument):
       fill = `url(#${gradientId})`;
     }
     paint.push(
-      `<g data-painted-layer="${layer.id}" data-painted-zone="${layer.zone}" opacity="${String(layer.opacity)}" style="mix-blend-mode:${layer.blendMode}" pointer-events="none" fill="${fill}">${zone.geometry}</g>`,
+      `<g data-painted-layer="${layer.id}" data-painted-zone="${layer.zone}"${mask.data}${mask.markup} opacity="${String(layer.opacity)}" style="mix-blend-mode:${layer.blendMode}" pointer-events="none" fill="${fill}">${zone.geometry}</g>`,
     );
+    rendered.set(layer.id, { geometry: zone.geometry, opacity: layer.opacity });
   }
 
   const decoration = `${definitions.length === 0 ? '' : `<defs>${definitions.join('')}</defs>`}<g data-livery-paint="true">${paint.join('')}</g>`;
