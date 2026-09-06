@@ -3813,3 +3813,114 @@ export const groundSelfHandling = pgTable(
 );
 
 export type GroundSelfHandlingRow = typeof groundSelfHandling.$inferSelect;
+
+/* ---- Service packages and route groups (M8-03, App. D) -------------------- */
+
+/**
+ * A named service package: what the airline serves, per cabin (App. D.6).
+ *
+ * `content` is a `ServicePackageContent` — the per-cabin tier selection and the
+ * one commercial-intensity dial. JSON rather than a row per selected item for
+ * the same reason `route.fares` is JSON: it is read and written whole, always by
+ * its owner, and never joined against or aggregated. A `service_package_item`
+ * table would add twenty-eight rows per package and a join to every read,
+ * to support a query nothing asks.
+ *
+ * Mutable, deliberately, and unlike `economy_config` or `aircraft_type`. A
+ * package is the player's own working document, not a versioned balance
+ * artefact — and what a flight was actually served will be recorded on the
+ * flight when M8-04 settles one, which is where an immutable record belongs.
+ */
+export const servicePackage = pgTable(
+  'service_package',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    /** A `@tailfin/shared` `ServicePackageContent`. */
+    content: jsonb('content').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One name per airline: the name is how a player picks a package out of a
+    // list, so two of them is a list that cannot be used.
+    unique('service_package_airline_name_key').on(t.airlineId, t.name),
+    index('service_package_airline_id_idx').on(t.airlineId),
+    index('service_package_world_id_idx').on(t.worldId),
+  ],
+);
+
+export type ServicePackageRow = typeof servicePackage.$inferSelect;
+
+/**
+ * A named set of routes sharing one package (App. D.5).
+ *
+ * App. D.5 says packages are assigned *"per route group, not per aircraft"* and
+ * never says what a route group is; `shared/service.ts` records the definition
+ * chosen and why. Here it is a name, an owner, and an optional package.
+ *
+ * `service_package_id` is `set null` rather than `restrict`. The API refuses to
+ * delete a package while a group holds it — a 409 that names the groups, which
+ * is a better answer than a foreign-key violation — but the *database* must not
+ * refuse, because deleting an airline cascades into both tables at once and a
+ * restrict would turn an ordinary airline deletion into a constraint error.
+ */
+export const routeGroup = pgTable(
+  'route_group',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    servicePackageId: uuid('service_package_id').references(() => servicePackage.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('route_group_airline_name_key').on(t.airlineId, t.name),
+    index('route_group_airline_id_idx').on(t.airlineId),
+    index('route_group_world_id_idx').on(t.worldId),
+  ],
+);
+
+export type RouteGroupRow = typeof routeGroup.$inferSelect;
+
+/**
+ * Which routes are in which group.
+ *
+ * `route_id` is **unique across the table**, not merely unique within a group:
+ * a route belongs to at most one group. That is what makes "which package does
+ * this flight fly under?" a question with one answer, and it is enforced here
+ * rather than in the writer, because the alternative is a flight whose service
+ * depends on which row a query happened to return first.
+ */
+export const routeGroupMember = pgTable(
+  'route_group_member',
+  {
+    routeGroupId: uuid('route_group_id')
+      .notNull()
+      .references(() => routeGroup.id, { onDelete: 'cascade' }),
+    routeId: uuid('route_id')
+      .notNull()
+      .references(() => route.id, { onDelete: 'cascade' }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.routeGroupId, t.routeId] }),
+    unique('route_group_member_route_key').on(t.routeId),
+    index('route_group_member_group_idx').on(t.routeGroupId),
+  ],
+);
+
+export type RouteGroupMemberRow = typeof routeGroupMember.$inferSelect;

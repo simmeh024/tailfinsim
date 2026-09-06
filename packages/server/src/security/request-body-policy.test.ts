@@ -15,6 +15,7 @@ import {
   AirlineCodeAvailabilityInput,
   BookCheckInput,
   CreateAirlineInput,
+  CreateRouteGroupRequest,
   CreateScheduleRequest,
   EditScheduleRequest,
   FLAGSHIP_CONFIG,
@@ -28,6 +29,8 @@ import {
   SetCurrencyRequest,
   SetFaresRequest,
   SetScheduleActiveRequest,
+  UpdateRouteGroupRequest,
+  WriteServicePackageRequest,
   OpenSelfHandlingRequest,
   SignContractRequest,
   StartCrewConversionInput,
@@ -147,6 +150,32 @@ const STRICT_WRITE_CONTRACTS = [
     endpoint: 'POST /api/ground/:icao/self-handling',
     schema: OpenSelfHandlingRequest,
     payload: { serviceLine: 'ramp_baggage', headcount: 12 },
+  },
+  {
+    endpoint: 'POST /api/service/packages',
+    schema: WriteServicePackageRequest,
+    payload: {
+      name: 'Secure Package',
+      content: { perClass: { economy: { catering: 2 } }, commercialIntensity: 0 },
+    },
+  },
+  {
+    endpoint: 'PUT /api/service/packages/:id',
+    schema: WriteServicePackageRequest,
+    payload: {
+      name: 'Secure Package',
+      content: { perClass: { economy: { catering: 2 } }, commercialIntensity: 0 },
+    },
+  },
+  {
+    endpoint: 'POST /api/service/route-groups',
+    schema: CreateRouteGroupRequest,
+    payload: { name: 'Secure Group' },
+  },
+  {
+    endpoint: 'PUT /api/service/route-groups/:id',
+    schema: UpdateRouteGroupRequest,
+    payload: { name: 'Secure Group' },
   },
   {
     endpoint: 'POST /api/routes',
@@ -271,6 +300,13 @@ const COVERED_WRITE_ENDPOINTS = [
   'PUT /api/crew/policies',
   'PUT /api/crew/reserves',
   'PUT /api/routes/:routeId/fares',
+  'POST /api/service/packages',
+  'PUT /api/service/packages/:id',
+  // The id is in the path, so the delete reads no body (M8-03).
+  'DELETE /api/service/packages/:id',
+  'POST /api/service/route-groups',
+  'PUT /api/service/route-groups/:id',
+  'DELETE /api/service/route-groups/:id',
 ] as const;
 
 describe('SEC-06 request-body policy', () => {

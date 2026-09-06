@@ -327,3 +327,96 @@ export const RouteGroupSummary = z
   })
   .strict();
 export type RouteGroupSummary = z.infer<typeof RouteGroupSummary>;
+
+/* ---- The wire ------------------------------------------------------------ */
+
+/** `GET /api/service/catalogue` — the ladders and their prices for this world. */
+export const ServiceCatalogueResponse = z
+  .object({
+    categories: z.array(
+      z
+        .object({
+          category: ServiceCategory,
+          tiers: z.array(
+            z
+              .object({
+                tier: z.number().int().nonnegative(),
+                name: z.string(),
+                requires: z.array(
+                  z.object({ category: ServiceCategory, minTier: z.number().int() }).strict(),
+                ),
+                costPerPaxMinor: z.number().int().nonnegative(),
+                revenuePerPaxMinor: z.number().int().nonnegative(),
+                scoreBand: z.object({ min: z.number(), max: z.number() }).strict(),
+                turnaroundDeltaMinutes: z.number(),
+              })
+              .strict(),
+          ),
+        })
+        .strict(),
+    ),
+    commercialIntensity: z
+      .object({
+        revenueMultiplierAtMax: z.number(),
+        satisfactionPenaltyAtMax: z.number(),
+        reputationRiskAbove: z.number(),
+      })
+      .strict(),
+  })
+  .strict();
+export type ServiceCatalogueResponse = z.infer<typeof ServiceCatalogueResponse>;
+
+/** `POST`/`PUT /api/service/packages` — write a package. */
+export const WriteServicePackageRequest = z
+  .object({
+    name: z.string().trim().min(1).max(60),
+    content: ServicePackageContent,
+  })
+  .strict();
+export type WriteServicePackageRequest = z.infer<typeof WriteServicePackageRequest>;
+
+/** `GET /api/service/packages` */
+export const ServicePackagesResponse = z
+  .object({ packages: z.array(ServicePackageSummary) })
+  .strict();
+export type ServicePackagesResponse = z.infer<typeof ServicePackagesResponse>;
+
+/** `POST /api/service/route-groups` — a name, and optionally the routes to start with. */
+export const CreateRouteGroupRequest = z
+  .object({
+    name: RouteGroupName,
+    routeIds: z.array(z.uuid()).max(500).optional(),
+  })
+  .strict();
+export type CreateRouteGroupRequest = z.infer<typeof CreateRouteGroupRequest>;
+
+/**
+ * `PUT /api/service/route-groups/:id` — the group's whole membership and package.
+ *
+ * A replacement rather than an add/remove pair, for the same reason
+ * `PUT /api/schedules/:id` replaces its legs: a route belongs to at most one
+ * group, so an add is always also a removal from somewhere else, and expressing
+ * that as two calls invites a client to leave the pair half-applied.
+ */
+export const UpdateRouteGroupRequest = z
+  .object({
+    name: RouteGroupName.optional(),
+    /** Absent leaves membership alone; present replaces it entirely. */
+    routeIds: z.array(z.uuid()).max(500).optional(),
+    /** Absent leaves the package alone; null clears it. */
+    servicePackageId: z.uuid().nullable().optional(),
+  })
+  .strict();
+export type UpdateRouteGroupRequest = z.infer<typeof UpdateRouteGroupRequest>;
+
+/** `GET /api/service/route-groups` */
+export const RouteGroupsResponse = z
+  .object({
+    groups: z.array(RouteGroupSummary),
+    /** The airline's routes that sit in no group — they fly the baseline product. */
+    ungrouped: z.array(
+      z.object({ routeId: z.uuid(), originIcao: z.string(), destinationIcao: z.string() }).strict(),
+    ),
+  })
+  .strict();
+export type RouteGroupsResponse = z.infer<typeof RouteGroupsResponse>;
