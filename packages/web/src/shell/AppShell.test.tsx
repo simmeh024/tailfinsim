@@ -162,7 +162,8 @@ describe('layout', () => {
   it('has a rail link for each destination', async () => {
     await renderAt('/world');
     const rail = screen.getByRole('navigation', { name: 'Main' });
-    expect(NAV_ITEMS).toHaveLength(8);
+    // Eight from App. H.4 and M5-04, plus M8-05's Service configurator.
+    expect(NAV_ITEMS).toHaveLength(9);
     for (const item of NAV_ITEMS) {
       expect(within(rail).getByRole('link', { name: new RegExp(item.label, 'i') })).toHaveAttribute(
         'href',
@@ -210,6 +211,7 @@ describe('routing', () => {
     ['/finance', 'Finance'],
     ['/crew', 'Crew'],
     ['/headquarters', 'Headquarters'],
+    ['/service', 'Service'],
     ['/design', 'Shell Air'],
     ['/board', 'Board'],
   ])('%s renders its page', async (path, title) => {

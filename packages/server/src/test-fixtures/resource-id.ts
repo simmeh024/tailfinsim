@@ -167,6 +167,12 @@ export const RESOURCE_ID_SURFACES = [
   // Both are the caller's own resources named in a body, and both are checked
   // against the resolved owner before anything is written.
   {
+    endpoint: 'POST /api/service/payback routeGroupId',
+    position: 'body',
+    field: 'routeGroupId',
+    semantics: 'owner-scoped-resource',
+  },
+  {
     endpoint: 'POST /api/service/route-groups routeIds',
     position: 'body',
     field: 'routeIds',

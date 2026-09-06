@@ -243,15 +243,65 @@ _execution_ stays the configured reference, because reading every competitor's
 crew base and contracts on every route view is a query per rival per lever for a
 number the viewer sees as an estimate.
 
+## Does it pay back? (M8-05)
+
+App. D.4's table, on `/service`, live as options are toggled:
+
+```
+utilityGain(s)  = β_product(s) · Δ ProductScore
+farePremium(s)  = utilityGain(s) · averageFare / β_price(s)
+net(s)          = farePremium(s) + revenue − cost
+```
+
+The second line is the whole idea: a fare rise costs utility through `PriceRel`,
+so the premium a better product _supports_ is the one that gives exactly the
+gained utility back. Charge less and the product bought share; charge more and it
+bought nothing.
+
+The answer differs violently by segment because App. A.3's coefficients point
+opposite ways — business weights product 2.2 and price 1.1, leisure weights
+product 0.8 and price 3.0 — so the same package supports a premium **seven and a
+half times larger** in business. That is the appendix's point: "budget or
+luxury?" has a correct answer _per route_.
+
+**The table is computed on the server, and has to be.** `packages/web` does not
+depend on `@tailfin/sim`, so a browser-side payback would be a second
+implementation of App. A.3's utility — exactly what M8-05's "uses the same sim
+code as demand resolution" forbids. Each toggle posts the draft package to
+`POST /api/service/payback`; requests are debounced, and a slow reply for an
+older draft is discarded rather than allowed to overwrite a newer one.
+
+**Priced against the airline's own routes** — a route group's if one is chosen,
+the whole network otherwise — with the real segment mix from `demand_pool`,
+weighted by each pair's daily passengers. The **average fare** is the airline's
+own mean economy fare across those routes: `PriceRel` divides by the _market_
+average and the two coincide only for a carrier priced at market, but the market
+average needs every competitor's fares on every pair. The response names how many
+routes the figure came from, so it is inspectable rather than mysterious.
+
+### A note on App. D.4's €101
+
+The appendix states the example route's average fare as €101, and its table does
+not quite follow from that — business comes to €23.96 against the stated €24.08.
+At **€101⅓** all three rows reproduce to the cent, and two of them exactly. So
+the prose rounded its _input_; the formula is right. `payback.test.ts` asserts
+both, because the other reading — that the arithmetic is slightly wrong — is what
+somebody will reach for the next time these numbers are checked.
+
+### Saved, then put to work
+
+Pricing a draft changes nothing; **saving** writes it under a name; **assigning**
+it to a route group is what makes it reach a flight. Three steps, kept apart on
+purpose — a player editing "Budget short-haul" to try something must not thereby
+change what every leisure route serves the moment they hit save.
+
 ## What is still not built
 
-- **The payback table.** App. D.4's cost-per-pax against supported fare premium,
-  live as you toggle options, is **M8-05**.
 - **Settlement.** A flight is still not _charged_ for its service. `ProductScore`
   now feeds demand, but `packageEconomics`' cost and revenue per passenger reach
   no ledger line yet.
 - **Seat comfort** (M6-09) and **crew service skill** (§10.2), as above.
-- **A web configurator.** The API is complete; no page consumes it yet.
+- **Settlement.** A flight is still not _charged_ for its service.
 
 ---
 
