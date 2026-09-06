@@ -42,9 +42,8 @@ import { checkReachability, haversineNm } from '@tailfin/sim';
 import type { AircraftCapability, AirportCapability, Reachability } from '@tailfin/sim';
 
 import { airline, airport, route, runway } from '../db/schema';
-import { hasExtendedAuthority, requiresExtendedAuthority } from '../office/authority';
-
 import { isAirlineRestricted } from '../finance/default';
+import { hasExtendedAuthority, requiresExtendedAuthority } from '../office/authority';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
 import type { Database } from '../db/client';
