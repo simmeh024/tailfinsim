@@ -746,6 +746,32 @@ describe('the Headquarters page', () => {
     expect(screen.getByText(/A higher band asks a higher salary/)).toBeInTheDocument();
   });
 
+  it('keeps every band with its own swatch, and the sentence off their line', () => {
+    const { container } = render(
+      <MemoryRouter initialEntries={['/headquarters']}>
+        <HeadquartersPage />
+      </MemoryRouter>,
+    );
+    // Scoped to the legend: the three band names are also every card's tier, so
+    // a page-wide text query finds twenty-five of them.
+    const keys = container.querySelectorAll<HTMLElement>('.hq-page__legend-key');
+    expect([...keys].map((key) => key.textContent)).toEqual([
+      'Supervisor',
+      'Manager',
+      'Senior Manager',
+    ]);
+    expect(
+      [...keys].map(
+        (key) => key.querySelector<HTMLElement>('.hq-page__legend-swatch')?.dataset.metal,
+      ),
+    ).toEqual(['bronze', 'silver', 'gold']);
+    // The sentence is a sibling block, so a band name can never be read as its
+    // opening words — which is what the flat wrapping row did to "Senior Manager".
+    const note = container.querySelector('.hq-page__legend-note');
+    expect(note?.textContent).toMatch(/^A higher band asks a higher salary/);
+    expect(note?.querySelector('.hq-page__legend-swatch')).toBeNull();
+  });
+
   it('marks the strongest boost on offer, and draws the rest against it', async () => {
     renderPage();
     const seat = screen.getByRole('region', { name: 'Route Planner' });

@@ -6631,15 +6631,20 @@ body {
 }
 
 /*
- * The tier legend. Three swatches inline with the sentence that says what the
- * bands buy, so the metal on a card's border stops being a decoration nobody
- * can decode.
+ * The tier legend, so the metal on a card's border stops being a decoration
+ * nobody can decode.
+ *
+ * The keys are a wrapping row of three *items*, not six wrapping siblings. Flat,
+ * the wrap point fell between the gold swatch and the words "Senior Manager" —
+ * leaving an unlabelled colour at the end of one line and a band name opening
+ * the next, where it read as the first two words of the sentence after it. Each
+ * item keeps its swatch and its band together, and the sentence is its own
+ * block, so it always starts a line of its own.
  */
 .hq-page__legend {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-2);
+  flex-direction: column;
+  gap: var(--space-1);
   margin: var(--space-3) 0 0;
   max-width: 62ch;
   color: var(--text-muted);
@@ -6647,22 +6652,44 @@ body {
   line-height: 1.5;
 }
 
+.hq-page__legend-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .hq-page__legend-key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  /* A band never separates from the colour it names, even mid-wrap. */
+  white-space: nowrap;
+}
+
+.hq-page__legend-note {
+  margin: 0;
+}
+
+.hq-page__legend-swatch {
   width: 0.9rem;
   height: 0.55rem;
+  flex: none;
   border-radius: var(--radius-sm);
   background: var(--metal, var(--border-strong));
 }
 
-.hq-page__legend-key[data-metal='bronze'] {
+.hq-page__legend-swatch[data-metal='bronze'] {
   --metal: var(--hq-metal-bronze);
 }
 
-.hq-page__legend-key[data-metal='silver'] {
+.hq-page__legend-swatch[data-metal='silver'] {
   --metal: var(--hq-metal-silver);
 }
 
-.hq-page__legend-key[data-metal='gold'] {
+.hq-page__legend-swatch[data-metal='gold'] {
   --metal: var(--hq-metal-gold);
 }
 
@@ -7247,6 +7274,46 @@ body {
   font-size: var(--text-xs);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The C-Suite card's action.
+ *
+ * This lived in the headquarters block until the Headquarters page moved its
+ * cards onto `ui/Button`; `ExecutiveSuitePage` still renders a plain `<button>`
+ * with this class, so the rule belongs to that page now and is declared beside
+ * its other card rules. Deleting it with the page that stopped needing it left
+ * the C-Suite's Hire and Let go buttons as browser defaults, which is the shape
+ * of mistake to expect from these two pages sharing a class namespace: check
+ * `ExecutiveSuitePage` and `StaffExecDrawer` before removing any `hq-` rule.
+ *
+ * It is not `.btn`: promoting the C-Suite's controls to the shared hierarchy is
+ * that page's own pass, and doing it here would change a surface this change has
+ * not looked at.
+ */
+.hq-card__action {
+  margin-top: auto;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) ease,
+    border-color var(--motion-fast) ease;
+}
+
+.hq-card__action:hover {
+  border-color: var(--accent);
+  background: var(--accent-quiet);
+}
+
+.hq-card__action[aria-pressed='true'] {
+  border-color: var(--border-subtle);
+  color: var(--text-muted);
 }
 
 /*
