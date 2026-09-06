@@ -176,19 +176,81 @@ future flight on those routes serves, which is what App. D.5 asks for.
 
 ---
 
-## What M8-03 deliberately did not build
+## Execution — where inside the band you land (M8-04)
 
-- **Execution.** `Execution = f(crew service skill, crew morale, catering vendor
-quality, crew-to-pax ratio)`, weakest-link weighted, is **M8-04**. Everything
-  here takes execution as a 0–1 input, which is also what lets the band rule be
-  proven at both extremes whatever that formula turns out to be.
-- **`ProductScore` assembly.** The composite and its per-cabin weights are
-  **M8-04**, whose acceptance criteria require that nothing else computes one
-  separately. `packageScores` returns per-category scores and stops.
+```
+Execution = f( crew service skill (§10.2) · crew morale (§9.2)
+             · catering vendor quality (§9.3) · crew-to-passenger ratio )
+```
+
+> **The weakest input dominates.**
+
+`sim/service/execution.ts` blends toward the minimum: `w·min + (1−w)·mean`, with
+`w` in the economy config and shipped at 0.65. Not a pure minimum, because that
+makes every other lever worthless once one is low — an airline with one weak link
+would then have no reason to fix anything else.
+
+**A lever with no source is absent, not zero.** Two of the four have none today,
+and the distinction is the whole airline: counting a missing training academy as
+0 would peg every carrier in the game at its band floor for a system nobody can
+use yet.
+
+| Lever                   | Source                                                          | Today                 |
+| ----------------------- | --------------------------------------------------------------- | --------------------- |
+| crew morale             | `crew_base.morale` at the origin, **through M5-03's own curve** | read                  |
+| catering vendor quality | the origin's catering contract grade                            | read                  |
+| crew service skill      | §10.2's training academy                                        | absent (M10)          |
+| crew-to-passenger ratio | a flight's carried load against its rostered crew               | absent above a flight |
+
+**Morale arrives already translated.** M5-03 built `crew/morale.ts`'s
+`serviceExecution(morale)` and deliberately left it unconsumed, warning that a
+caller who multiplied it into something would be making M8-04's decision early.
+That curve runs **0.7 → 1.0** — "even a mutinous crew delivers most of what was
+paid for" — which is why morale _alone_ cannot reach a band floor. App. D.1's
+sentence has two halves, and it takes an exhausted **and understaffed** crew.
+
+Feeding raw morale into the weakest link instead would silently use a second,
+untuned curve.
+
+## ProductScore — one composite, assembled once (M8-04)
+
+```
+ProductScore = w_seat·seat + w_service·band_position + w_ife·ife + w_ground·ground
+```
+
+Weights are **per cabin class and live in the economy config**, and each cabin's
+four must sum to 1 (a schema refinement, so a retune cannot ship scores above
+one). `PRODUCT_SCORE_TERM_OF_CATEGORY` maps the seven catalogue categories onto
+the four terms; that mapping is identity, not balance.
+
+**`seat` has no source yet** —
+[M6-09](https://github.com/simmeh024/tailfinsim/issues/65) owns §6.4's comfort
+score. Its weight is **redistributed across the terms that do have one** rather
+than multiplied by zero. Zeroing it would cap every business-class product at
+`1 − 0.5` uniformly, for a reason no player could act on.
+
+**Nothing else computes one.** `product-score-source.test.ts` scans `sim`,
+`server` and `shared` for a module assigning a product-score literal and allows
+only four places, each with a stated reason. It caught two on the way in:
+`REFERENCE_SELF.productScore` and `PLAYER_ASSUMPTION.productScore`, both a flat
+`0.6`, both reasonable local decisions when they were made.
+
+`server/src/service/product-score.ts` is the one resolver that feeds real state
+in, and `createEconomicsProvider` calls it once per route. A **rival's** package
+is resolved for real too — a competitor's product is not private to the
+simulation, since App. A.3 cannot allocate passengers without it — but their
+_execution_ stays the configured reference, because reading every competitor's
+crew base and contracts on every route view is a query per rival per lever for a
+number the viewer sees as an estimate.
+
+## What is still not built
+
 - **The payback table.** App. D.4's cost-per-pax against supported fare premium,
   live as you toggle options, is **M8-05**.
-- **Settlement.** No flight is yet charged for its service, and no `ProductScore`
-  yet reads a package. Until M8-04 the catalogue is configurable and inert.
+- **Settlement.** A flight is still not _charged_ for its service. `ProductScore`
+  now feeds demand, but `packageEconomics`' cost and revenue per passenger reach
+  no ledger line yet.
+- **Seat comfort** (M6-09) and **crew service skill** (§10.2), as above.
 - **A web configurator.** The API is complete; no page consumes it yet.
 
 ---
