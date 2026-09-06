@@ -2449,6 +2449,66 @@ export const CommercialIntensityBalance = z
   .strict();
 export type CommercialIntensityBalance = z.infer<typeof CommercialIntensityBalance>;
 
+/**
+ * How the four App. D.1 levers become one execution value (M8-04).
+ *
+ * The appendix's rule is that *"the weakest input dominates"*, and
+ * `weakestLinkWeight` is how hard. At 1 the execution is simply the worst lever
+ * and nothing else matters, which kills the incentive to fix anything once one
+ * thing is bad; at 0 it is a plain average, which lets a superb crew paper over
+ * a budget caterer and is exactly the outcome the appendix rules out. The
+ * shipped value sits well above the middle, and moving it is the main lever on
+ * how punishing a single weak link is.
+ */
+export const ServiceExecutionBalance = z
+  .object({
+    /** How much of the result is the worst lever rather than the average, 0–1. */
+    weakestLinkWeight: z.number().min(0).max(1),
+    /**
+     * The execution used when **no** lever has a source at all.
+     *
+     * A named reference, in the sense `REFERENCE_SELF` already is: a system that
+     * does not exist arrives as a reference rather than a stub. Middling on
+     * purpose — an airline nobody can measure should be neither flattered nor
+     * punished for it.
+     */
+    fallback: z.number().min(0).max(1),
+  })
+  .strict();
+export type ServiceExecutionBalance = z.infer<typeof ServiceExecutionBalance>;
+
+/**
+ * App. D.6's per-term weights, per cabin class — M8-04's *"weights per class are
+ * config, not code"*, stated as a place rather than promised in a comment.
+ *
+ * Each cabin's four weights must sum to 1, which is what puts `ProductScore` on
+ * 0–1 without a division and what makes renormalising around an absent term
+ * meaningful. The refinement enforces it, so a retune cannot ship a cabin whose
+ * weights sum to 1.3 and quietly produce scores above one.
+ */
+const CabinProductScoreWeights = z
+  .object({
+    seat: z.number().min(0).max(1),
+    service: z.number().min(0).max(1),
+    ife: z.number().min(0).max(1),
+    ground: z.number().min(0).max(1),
+  })
+  .strict()
+  .refine(
+    (weights) => Math.abs(weights.seat + weights.service + weights.ife + weights.ground - 1) < 1e-9,
+    { message: "a cabin's ProductScore weights must sum to 1" },
+  );
+
+export const ProductScoreWeightBalance = z
+  .object({
+    economy: CabinProductScoreWeights,
+    premium_economy: CabinProductScoreWeights,
+    business: CabinProductScoreWeights,
+    first: CabinProductScoreWeights,
+  })
+  .strict();
+export type ProductScoreWeightBalance = z.infer<typeof ProductScoreWeightBalance>;
+
 export const ServiceBalance = z
   .object({
     categories: z
@@ -2463,6 +2523,8 @@ export const ServiceBalance = z
       })
       .strict(),
     commercialIntensity: CommercialIntensityBalance,
+    execution: ServiceExecutionBalance,
+    productScoreWeights: ProductScoreWeightBalance,
   })
   .strict();
 export type ServiceBalance = z.infer<typeof ServiceBalance>;
@@ -2773,6 +2835,34 @@ export const SHIPPED_SERVICE_BALANCE = {
     // Past three-quarters of the dial it stops being characterful. §15's
     // reputation consequence hangs off this; M8-03 only publishes the threshold.
     reputationRiskAbove: 0.75,
+  },
+  execution: {
+    // 0.65: the worst lever is most of the answer, but the others still pay.
+    // App. D.1's worked case is the test of it — chef-designed catering at Tier 5
+    // served by an exhausted crew has to land "at the bottom of Tier 5", and a
+    // weight much below this leaves such an airline comfortably mid-band.
+    weakestLinkWeight: 0.65,
+    // Middling, and reached only when nothing at all can be measured.
+    fallback: 0.5,
+  },
+  productScoreWeights: {
+    /*
+     * App. D.6: *"seat product dominates in business and first, service and
+     * price dominate in economy."* Price is App. A.3's own term, so within
+     * `ProductScore` that sentence sets the seat/service split and the two
+     * smaller terms follow it.
+     *
+     * Economy carries the largest `ground` weight of the four on purpose: a
+     * lounge is worth little to someone who cannot use one, but fast-track and
+     * a dedicated desk are most of what a full-service economy ticket visibly
+     * buys over a budget one.
+     */
+    economy: { seat: 0.3, service: 0.45, ife: 0.15, ground: 0.1 },
+    premium_economy: { seat: 0.4, service: 0.35, ife: 0.15, ground: 0.1 },
+    business: { seat: 0.5, service: 0.28, ife: 0.1, ground: 0.12 },
+    // The seat *is* the product at the front, and the ground experience — the
+    // chauffeur, the arrivals lounge — is a larger part of it than the screen.
+    first: { seat: 0.55, service: 0.25, ife: 0.06, ground: 0.14 },
   },
 } as const satisfies z.input<typeof ServiceBalance>;
 

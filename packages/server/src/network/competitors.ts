@@ -1,11 +1,17 @@
 import { and, eq, ne, or, sql } from 'drizzle-orm';
 
-import { CABIN_ORDER, type CabinClass, FareTable } from '@tailfin/shared';
-import { asOperator, type ClassOperator, frequencyFor } from '@tailfin/sim';
+import {
+  CABIN_ORDER,
+  type CabinClass,
+  FareTable,
+  type ServicePackageContent,
+} from '@tailfin/shared';
+import { asOperator, type ClassOperator, frequencyFor, productScoreForPackage } from '@tailfin/sim';
 
 import { type Database } from '../db/client';
 import { airline, route } from '../db/schema';
 import { type PinnedEconomyConfig } from '../economy/config';
+import { servicePackageForRoutes } from '../service/store';
 
 import { canonicalPair } from './economics';
 
@@ -34,12 +40,23 @@ import { canonicalPair } from './economics';
 /**
  * What a player's competing route is assumed to offer.
  *
- * A player has no fleet (M4) and no schedule attached to a route yet, so their
- * offer is reconstructed the same way `REFERENCE_SELF` reconstructs the
- * viewer's own: reference seats, an assumed frequency, a middling product. When
- * M4 lands, this reads the fleet and so does the viewer's own side.
+ * A player has no schedule attached to a route yet, so their frequency is
+ * reconstructed the same way `REFERENCE_SELF` reconstructs the viewer's own.
+ *
+ * **`productScore` is no longer among the assumptions.** Since M8-04 a rival's
+ * product is assembled from their *actual* service package, through the same
+ * `sim/service/product-score.ts` that scores the viewer's own — because a
+ * competitor's product is not private to the simulation. Passengers experience
+ * it, and App. A.3 cannot allocate them without it.
+ *
+ * What is still a reference for a rival is their **execution**: App. D.1's
+ * levers are that airline's crew morale and their caterer's grade, and reading
+ * every competitor's crew base and contracts on every route view would be a
+ * query per rival per lever for a number the viewer sees as an estimate. So a
+ * rival's package is real and their execution is the configured reference,
+ * which is stated here rather than hidden in a middling constant.
  */
-const PLAYER_ASSUMPTION = { productScore: 0.6, frequency: 2 };
+const PLAYER_ASSUMPTION = { frequency: 2 };
 
 export interface CompetitorQuery {
   worldId: string;
@@ -60,7 +77,9 @@ export async function competitorsFor(
 
   const rows = await db
     .select({
+      routeId: route.id,
       airlineId: route.airlineId,
+      originIcao: route.originIcao,
       fares: route.fares,
       kind: airline.kind,
       archetype: airline.archetype,
@@ -82,6 +101,28 @@ export async function competitorsFor(
       ),
     );
 
+  /*
+   * Every rival's service package, in one query rather than one per rival.
+   * `servicePackageForRoutes` is scoped by airline, so this asks per airline —
+   * grouped so a market with four rivals costs four statements at worst rather
+   * than four per cabin.
+   */
+  const packages = new Map<string, ServicePackageContent>();
+  const routesByAirline = new Map<string, string[]>();
+  for (const row of rows) {
+    if (row.kind === 'npc') continue;
+    routesByAirline.set(row.airlineId, [
+      ...(routesByAirline.get(row.airlineId) ?? []),
+      row.routeId,
+    ]);
+  }
+  await Promise.all(
+    [...routesByAirline].map(async ([airlineId, routeIds]) => {
+      const resolved = await servicePackageForRoutes(db, airlineId, routeIds);
+      for (const [routeId, entry] of resolved) packages.set(routeId, entry.content);
+    }),
+  );
+
   const operators: ClassOperator[] = [];
 
   for (const row of rows) {
@@ -94,7 +135,13 @@ export async function competitorsFor(
     const operator =
       row.kind === 'npc' && row.archetype !== null
         ? npcOperator(row.airlineId, parsed.data, query.economy, row.archetype)
-        : playerOperator(row.airlineId, parsed.data, query.playerSeatsByCabin, row.reputation);
+        : playerOperator(
+            row.airlineId,
+            parsed.data,
+            query.playerSeatsByCabin,
+            row.reputation,
+            rivalProduct(row.routeId, packages, query.economy, query.playerSeatsByCabin),
+          );
 
     if (operator !== null) operators.push(operator);
   }
@@ -142,19 +189,69 @@ function npcOperator(
   );
 }
 
+/**
+ * A rival's product: their real package, at the reference execution.
+ *
+ * The same assembly the viewer's own score uses — that is M8-04's second
+ * acceptance criterion — with the execution left at the configured reference for
+ * the reason `PLAYER_ASSUMPTION` gives.
+ */
+function rivalProduct(
+  routeId: string,
+  packages: Map<string, ServicePackageContent>,
+  economy: PinnedEconomyConfig,
+  seatsByCabin: Partial<Record<CabinClass, number>>,
+): { overall: number; byCabin: Partial<Record<CabinClass, number>> } {
+  const content = packages.get(routeId) ?? { perClass: {}, commercialIntensity: 0 };
+  const execution = economy.service.execution.fallback;
+
+  const byCabin: Partial<Record<CabinClass, number>> = {};
+  let weighted = 0;
+  let seats = 0;
+  for (const cabin of CABIN_ORDER) {
+    const cabinSeats = seatsByCabin[cabin] ?? 0;
+    if (cabinSeats <= 0) continue;
+    const score = productScoreForPackage(economy.service, {
+      content,
+      cabin,
+      execution,
+      seat: null,
+    }).score;
+    byCabin[cabin] = score;
+    weighted += score * cabinSeats;
+    seats += cabinSeats;
+  }
+
+  return {
+    overall:
+      seats > 0
+        ? weighted / seats
+        : productScoreForPackage(economy.service, {
+            content,
+            cabin: 'economy',
+            execution,
+            seat: null,
+          }).score,
+    byCabin,
+  };
+}
+
 function playerOperator(
   airlineId: string,
   fares: FareTable,
   seatsByCabin: Partial<Record<CabinClass, number>>,
   reputation: string,
+  product: { overall: number; byCabin: Partial<Record<CabinClass, number>> },
 ): ClassOperator | null {
-  const cabins: Partial<Record<CabinClass, { seats: number; fareMinor: number }>> = {};
+  const cabins: Partial<
+    Record<CabinClass, { seats: number; fareMinor: number; productScore?: number }>
+  > = {};
 
   for (const cabin of CABIN_ORDER) {
     const seats = seatsByCabin[cabin] ?? 0;
     const fareMinor = fares[cabin];
     if (seats > 0 && fareMinor !== undefined && fareMinor > 0) {
-      cabins[cabin] = { seats, fareMinor };
+      cabins[cabin] = { seats, fareMinor, productScore: product.byCabin[cabin] };
     }
   }
   if (Object.keys(cabins).length === 0) return null;
@@ -162,7 +259,7 @@ function playerOperator(
   return {
     id: airlineId,
     frequency: PLAYER_ASSUMPTION.frequency,
-    productScore: PLAYER_ASSUMPTION.productScore,
+    productScore: product.overall,
     // `numeric(3,2)` is a string at the driver boundary — the trap CLAUDE.md
     // records — so it is parsed rather than trusted.
     reputation: Number(reputation),
