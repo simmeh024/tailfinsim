@@ -1,7 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+
+import { Button } from '../ui/Button';
+import { StateBlock } from '../ui/StateBlock';
 
 import { formatSalary, type HqCandidate } from './hq-roster';
 
+import type { SeatFailure } from './HeadquartersPage';
 import type { ReactNode } from 'react';
 
 /**
@@ -19,6 +23,14 @@ import type { ReactNode } from 'react';
  * names it, because they carry a standing edge a generic hire does not. A role
  * seat passes a null `specialistId`, so no badge appears where it would not mean
  * anything.
+ *
+ * ## What the UX pass changed here
+ *
+ * Three things, all of them matching the page behind it. The drawer showed each
+ * candidate's salary but never what the office would cost once they were in it,
+ * so a hire was priced and never budgeted — `payrollAfter` supplies that. A
+ * refused hire painted its message on the page *behind* the open drawer, where
+ * nobody could see it. And "Remove from Office" ended a contract on one click.
  */
 
 interface StaffOfficeDrawerProps {
@@ -34,6 +46,12 @@ interface StaffOfficeDrawerProps {
   specialistId: string | null;
   /** An assignment or removal is in flight — controls disable. */
   busy: boolean;
+  /** The office's monthly salary bill as it stands. */
+  payrollMinor: number;
+  /** What that bill becomes with this candidate in this office — a replacement nets off. */
+  payrollAfter: (candidate: HqCandidate) => number;
+  /** A refusal or a transport failure from this office's own last action. */
+  failure: SeatFailure | null;
   onAssign: (candidate: HqCandidate) => void;
   onRemove: () => void;
   onClose: () => void;
@@ -46,11 +64,15 @@ export function StaffOfficeDrawer({
   candidates,
   specialistId,
   busy,
+  payrollMinor,
+  payrollAfter,
+  failure,
   onAssign,
   onRemove,
   onClose,
 }: StaffOfficeDrawerProps): ReactNode {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
 
   useEffect(() => {
     dialogRef.current?.focus();
@@ -90,23 +112,62 @@ export function StaffOfficeDrawer({
         </header>
 
         <div className="modal__body">
+          {payrollMinor > 0 && (
+            <p className="hq-staff__payroll">
+              <span className="hq-staff__payroll-label">Head office payroll</span>
+              <strong>{formatSalary(payrollMinor)}/mo</strong>
+            </p>
+          )}
+
+          {/* The failure belongs where the action was taken, not on the page behind. */}
+          {failure !== null && (
+            <StateBlock kind={failure.kind} className="hq-staff__failure">
+              {failure.message}
+            </StateBlock>
+          )}
+
           {occupant !== null && (
             <section className="hq-staff__current" aria-label="Current occupant">
               <p className="hq-staff__current-who">
                 <span className="hq-staff__current-label">In this office</span>
                 <strong>{occupant.candidateName}</strong>
               </p>
-              <button type="button" className="hq-staff__remove" disabled={busy} onClick={onRemove}>
-                Remove from Office
-              </button>
+              {confirmingRemove ? (
+                <div className="hq-staff__confirm">
+                  <p className="hq-staff__confirm-note">
+                    Ends {occupant.candidateName}&rsquo;s contract and empties the office.
+                  </p>
+                  <div className="hq-staff__confirm-actions">
+                    <Button variant="danger" size="sm" disabled={busy} onClick={onRemove}>
+                      Confirm — remove
+                    </Button>
+                    <Button
+                      variant="tertiary"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => setConfirmingRemove(false)}
+                    >
+                      Keep
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  className="hq-staff__remove-cta"
+                  disabled={busy}
+                  onClick={() => setConfirmingRemove(true)}
+                >
+                  Remove from Office
+                </Button>
+              )}
             </section>
           )}
 
           {candidates.length === 0 ? (
-            <p className="hq-staff__empty">
+            <StateBlock kind="empty" className="hq-staff__none">
               Every candidate is already employed. Remove someone from another office to free them
               up.
-            </p>
+            </StateBlock>
           ) : (
             <ul className="hq-staff__list">
               {candidates.map((candidate) => {
@@ -131,20 +192,22 @@ export function StaffOfficeDrawer({
                       </p>
                       <p className="hq-staff__meta">
                         {candidate.tier} · {formatSalary(candidate.salaryPerMonthMinor)}/mo
+                        <span className="hq-staff__after">
+                          payroll {formatSalary(payrollAfter(candidate))}/mo
+                        </span>
                       </p>
                       <p className="hq-staff__trait">
                         <strong>{candidate.boost.label}.</strong>{' '}
                         {candidate.trait?.detail ?? candidate.boost.description}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      className="hq-staff__assign"
+                    <Button
+                      className="hq-staff__assign-cta"
                       disabled={busy}
                       onClick={() => onAssign(candidate)}
                     >
                       {occupant !== null ? `Replace with ${given}` : 'Hire & Assign'}
-                    </button>
+                    </Button>
                   </li>
                 );
               })}

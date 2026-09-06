@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useEffect, useState } from 'react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,9 +13,15 @@ import {
 
 import { fetchExecutiveFloor, unlockExecutiveFloor, unlockExecutiveOffice } from './api';
 import { CSUITE_CANDIDATES } from './csuite-roster';
-import { rosterDayIndex, rotatingExecutiveRoster, rotatingRoster } from './csuite-rotation';
+import {
+  nextRefreshAt,
+  rosterDayIndex,
+  rotatingExecutiveRoster,
+  rotatingRoster,
+} from './csuite-rotation';
 import { HeadquartersPage } from './HeadquartersPage';
 import {
+  candidateById,
   candidatesForRole,
   HQ_CANDIDATES,
   HQ_ROLES,
@@ -48,7 +54,14 @@ import type { ReactNode } from 'react';
  * player does. The page still feeds `office` back through `replaceOffice`, so the
  * plan the harness renders is the office the page fetched.
  */
-function ShellHarness({ onExpand }: { onExpand?: () => Promise<ExpandResult> }): ReactNode {
+function ShellHarness({
+  onExpand,
+  cash,
+}: {
+  onExpand?: () => Promise<ExpandResult>;
+  /** The airline's cash, when the test is exercising the affordability reading. */
+  cash?: number;
+}): ReactNode {
   const [office, setOffice] = useState<OfficeStateResponse | null>(null);
   const [selectedOffice, setSelectedOffice] = useState<OfficeSeatId | null>(null);
   // The shell owns the executive floor; the harness mirrors that so the panel's
@@ -75,7 +88,12 @@ function ShellHarness({ onExpand }: { onExpand?: () => Promise<ExpandResult> }):
     return { ok: false, message: outcome.failure.message };
   };
   const ctx: OwnAirlineShellContext = {
-    ownAirline: null,
+    // The page reads exactly one field off this, so a test that cares about cash
+    // supplies that field rather than a fabricated fifteen-field airline.
+    ownAirline:
+      cash === undefined
+        ? null
+        : ({ airline: { cash }, rebrand: null } as unknown as OwnAirlineShellContext['ownAirline']),
     ownAirlineLoading: false,
     ownAirlineError: false,
     replaceOwnAirline: () => undefined,
@@ -111,11 +129,12 @@ function ShellHarness({ onExpand }: { onExpand?: () => Promise<ExpandResult> }):
 
 function renderHq(
   onExpand: () => Promise<ExpandResult> = vi.fn().mockResolvedValue({ ok: true }),
+  cash?: number,
 ): ReturnType<typeof render> {
   return render(
     <MemoryRouter initialEntries={['/headquarters']}>
       <Routes>
-        <Route element={<ShellHarness onExpand={onExpand} />}>
+        <Route element={<ShellHarness onExpand={onExpand} cash={cash} />}>
           <Route path="headquarters" element={<HeadquartersPage />} />
         </Route>
       </Routes>
@@ -215,6 +234,12 @@ describe('the Headquarters page', () => {
   let hires: { seat: string; candidateId: string; candidateName: string }[] = [];
   let neutralSeats = 0;
   let offeredSpecialist = 'social-media-reputation';
+  /**
+   * What `POST /api/office/hires` should do instead of succeeding: an HTTP
+   * answer, or `'unreachable'` for a request that never completes. Null is the
+   * normal path.
+   */
+  let hireOutcome: { status: number; body: unknown } | 'unreachable' | null = null;
   let automation: { settings: unknown[]; tasks: unknown[] } = { settings: [], tasks: [] };
   // The panel fetches the executive floor on mount; a closed floor with no
   // revenue is the default so the pager appears and the gate reads locked.
@@ -263,6 +288,7 @@ describe('the Headquarters page', () => {
       hires: [],
     };
     offeredSpecialist = 'social-media-reputation';
+    hireOutcome = null;
     automation = { settings: [], tasks: [] };
     vi.stubGlobal(
       'fetch',
@@ -327,6 +353,13 @@ describe('the Headquarters page', () => {
         }
         if (url === '/api/office' && method === 'GET') return ok();
         if (url === '/api/office/hires' && method === 'POST') {
+          if (hireOutcome === 'unreachable')
+            return Promise.reject(new TypeError('Failed to fetch'));
+          if (hireOutcome !== null) {
+            return Promise.resolve(
+              new Response(JSON.stringify(hireOutcome.body), { status: hireOutcome.status }),
+            );
+          }
           const raw = typeof init?.body === 'string' ? init.body : '{}';
           const body = JSON.parse(raw) as {
             seat: string;
@@ -518,9 +551,28 @@ describe('the Headquarters page', () => {
     );
     const dialog = await screen.findByRole('dialog', { name: /Manage Office 07/i });
     expect(within(dialog).getByText('Tom Bakker')).toBeInTheDocument();
+    // Removal is two steps now: the first names what it ends, the second does it.
     fireEvent.click(within(dialog).getByRole('button', { name: /Remove from Office/i }));
+    expect(within(dialog).getByText(/Ends Tom Bakker/)).toBeInTheDocument();
+    expect(hires.find((h) => h.seat === 'neutral-1')).toBeDefined();
+    fireEvent.click(within(dialog).getByRole('button', { name: /Confirm — remove/i }));
 
     await waitFor(() => expect(hires.find((h) => h.seat === 'neutral-1')).toBeUndefined());
+  });
+
+  it('backs out of a removal without touching the office', async () => {
+    hires = [{ seat: 'neutral-1', candidateId: 'route-planner-tom', candidateName: 'Tom Bakker' }];
+    neutralSeats = 2;
+    renderHq();
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Office 07, Neutral office, Staffed/i }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: /Manage Office 07/i });
+    fireEvent.click(within(dialog).getByRole('button', { name: /Remove from Office/i }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Keep' }));
+
+    expect(within(dialog).getByRole('button', { name: /Remove from Office/i })).toBeInTheDocument();
+    expect(hires.find((h) => h.seat === 'neutral-1')).toBeDefined();
   });
 
   it('offers expansion on the plan when no neutral office is unlocked', async () => {
@@ -637,6 +689,250 @@ describe('the Headquarters page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Policies' }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByRole('radio', { name: /Delegated/i })).toBeEnabled();
+  });
+
+  /* ---- What the UX pass added to the page ------------------------------- */
+
+  it('says what the office costs a month, from the server’s own billing figure', async () => {
+    hires = [{ seat: 'route-planner', candidateId: 'route-planner-tom', candidateName: 'Tom' }];
+    renderPage();
+    // The stub bills $10,000/mo for every hire, so one hire is the whole payroll.
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('$10,000/mo payroll'));
+    expect(screen.getByRole('status')).toHaveTextContent('1 of 6 seats filled');
+  });
+
+  it('says nothing about payroll while the office is empty', async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('0 of 6 seats'));
+    expect(screen.getByRole('status')).not.toHaveTextContent('payroll');
+  });
+
+  it('does not claim a seat is vacant before the server has answered', () => {
+    renderPage();
+    const seat = screen.getByRole('region', { name: 'Route Planner' });
+    // The office is still in flight: "Seat vacant" would be an answer the page
+    // does not have yet, and the grey portraits would read as that answer.
+    expect(within(seat).getByText('Reading the office…')).toBeInTheDocument();
+    expect(within(seat).queryByText('Seat vacant')).toBeNull();
+    const portrait = seat.querySelector<HTMLElement>('.hq-card__portrait');
+    expect(portrait?.dataset.pending).toBe('true');
+  });
+
+  it('reads a vacancy as what the airline goes without, once it knows there is one', async () => {
+    renderPage();
+    const seat = screen.getByRole('region', { name: 'Route Planner' });
+    await within(seat).findByText('Seat vacant');
+    expect(
+      within(seat).getByText(HQ_ROLES.find((role) => role.id === 'route-planner')!.vacant),
+    ).toBeInTheDocument();
+    const portrait = seat.querySelector<HTMLElement>('.hq-card__portrait');
+    expect(portrait?.dataset.pending).toBe('false');
+  });
+
+  it('states what a filled seat is being billed', async () => {
+    // The status line names the person from the catalogue, not the string the
+    // wire happened to carry, so the test asks the catalogue too.
+    const sten = candidateById('chief-pilot-sten')!;
+    hires = [{ seat: 'chief-pilot', candidateId: sten.id, candidateName: sten.name }];
+    renderPage();
+    const seat = screen.getByRole('region', { name: 'Chief Pilot' });
+    await within(seat).findByText(`Seat filled by ${sten.name}`);
+    expect(within(seat).getByText('$10,000/mo')).toBeInTheDocument();
+    expect(within(seat).queryByText(/goes without|stays unranked/)).toBeNull();
+  });
+
+  it('explains what the tier bands buy', () => {
+    renderPage();
+    expect(screen.getByText(/A higher band asks a higher salary/)).toBeInTheDocument();
+  });
+
+  it('marks the strongest boost on offer, and draws the rest against it', async () => {
+    renderPage();
+    const seat = screen.getByRole('region', { name: 'Route Planner' });
+    await within(seat).findByText('Seat vacant');
+    const shown = candidatesForRole('route-planner').filter((c) =>
+      routePlannerShortlist.some((s) => s.id === c.id),
+    );
+    const best = shown.reduce((top, c) =>
+      Math.abs(c.boost.magnitude) > Math.abs(top.boost.magnitude) ? c : top,
+    );
+    const bestCard = within(seat).getByText(best.name).closest<HTMLElement>('.hq-card');
+    expect(within(bestCard!).getByText(/Strongest of the/)).toBeInTheDocument();
+    expect(bestCard?.querySelector<HTMLElement>('.hq-card__strength-fill')?.style.inlineSize).toBe(
+      '100%',
+    );
+    // The badge still carries the figure, so the bar is decoration only.
+    expect(bestCard?.querySelector('.hq-card__strength')?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('warns when a hire would cost more than the airline has, without blocking it', async () => {
+    // A month's salary for one hire is $10,000; $5,000 of cash cannot carry it.
+    renderHq(undefined, 500_000);
+    const seat = await screen.findByRole('region', { name: 'Route Planner' });
+    const first = routePlannerShortlist[0]!;
+    const card = within(seat).getByText(first.name).closest<HTMLElement>('.hq-card');
+    await waitFor(() =>
+      expect(within(card!).getByText(/would exceed your cash/)).toBeInTheDocument(),
+    );
+    // A warning, never a gate: the control is still live.
+    expect(
+      within(card!).getByRole('button', {
+        name: new RegExp(`^Hire ${first.name.split(' ')[0]!}$`),
+      }),
+    ).toBeEnabled();
+  });
+
+  it('says nothing about affordability when it cannot see the cash', async () => {
+    renderPage();
+    const seat = screen.getByRole('region', { name: 'Route Planner' });
+    await within(seat).findByText('Seat vacant');
+    expect(within(seat).queryByText(/exceed your cash|three months/)).toBeNull();
+  });
+
+  it('takes two steps to let someone go, and the first one changes nothing', async () => {
+    renderPage();
+    const seat = screen.getByRole('region', { name: 'Route Planner' });
+    const first = routePlannerShortlist[0]!;
+    const given = first.name.split(' ')[0]!;
+    const hire = within(seat).getByRole('button', { name: new RegExp(`^Hire ${given}$`) });
+    await waitFor(() => expect(hire).toBeEnabled());
+    fireEvent.click(hire);
+    await within(seat).findByText(`Seat filled by ${first.name}`);
+
+    fireEvent.click(within(seat).getByRole('button', { name: 'Let go' }));
+    expect(within(seat).getByText(/Ends .*’s contract and stops the salary/)).toBeInTheDocument();
+    expect(hires.find((h) => h.seat === 'route-planner')).toBeDefined();
+
+    fireEvent.click(within(seat).getByRole('button', { name: `Confirm — let ${given} go` }));
+    await waitFor(() => expect(hires.find((h) => h.seat === 'route-planner')).toBeUndefined());
+  });
+
+  it('backs out of a dismissal and leaves the hire standing', async () => {
+    hires = [
+      { seat: 'route-planner', candidateId: routePlannerShortlist[0]!.id, candidateName: 'X' },
+    ];
+    renderPage();
+    const seat = screen.getByRole('region', { name: 'Route Planner' });
+    await within(seat).findByText(/Seat filled by/);
+    fireEvent.click(within(seat).getByRole('button', { name: 'Let go' }));
+    fireEvent.click(within(seat).getByRole('button', { name: 'Keep' }));
+
+    expect(within(seat).getByRole('button', { name: 'Let go' })).toBeInTheDocument();
+    expect(hires.find((h) => h.seat === 'route-planner')).toBeDefined();
+  });
+
+  it('names the authority a dismissal from the gate seat would revoke', async () => {
+    hires = [
+      {
+        seat: 'safety-compliance',
+        candidateId: candidatesForRole('safety-compliance')[0]!.id,
+        candidateName: 'Claire',
+      },
+    ];
+    renderPage();
+    const seat = screen.getByRole('region', { name: 'Safety & Compliance' });
+    await within(seat).findByText(/Seat filled by/);
+    fireEvent.click(within(seat).getByRole('button', { name: 'Let go' }));
+    expect(
+      within(seat).getByText(/revokes long-haul, ETOPS and international authority/),
+    ).toBeInTheDocument();
+  });
+
+  it('shows a refused hire in the seat that refused it, as a refusal', async () => {
+    hireOutcome = { status: 409, body: { code: 'seat_taken', message: 'That seat is taken.' } };
+    renderPage();
+    const seat = screen.getByRole('region', { name: 'Route Planner' });
+    const given = routePlannerShortlist[0]!.name.split(' ')[0]!;
+    const hire = within(seat).getByRole('button', { name: new RegExp(`^Hire ${given}$`) });
+    await waitFor(() => expect(hire).toBeEnabled());
+    fireEvent.click(hire);
+
+    const block = await within(seat).findByText('That seat is taken.');
+    expect(block.closest<HTMLElement>('.state')?.dataset.state).toBe('refused');
+    // And nowhere else: the other five seats say nothing about it.
+    expect(
+      within(screen.getByRole('region', { name: 'Chief Pilot' })).queryByText(/seat is taken/),
+    ).toBeNull();
+  });
+
+  it('keeps a server that never answered apart from a server that said no', async () => {
+    hireOutcome = 'unreachable';
+    renderPage();
+    const seat = screen.getByRole('region', { name: 'Route Planner' });
+    const given = routePlannerShortlist[0]!.name.split(' ')[0]!;
+    const hire = within(seat).getByRole('button', { name: new RegExp(`^Hire ${given}$`) });
+    await waitFor(() => expect(hire).toBeEnabled());
+    fireEvent.click(hire);
+
+    const block = await within(seat).findByText(/could not be reached/i);
+    expect(block.closest<HTMLElement>('.state')?.dataset.state).toBe('broken');
+    // The control comes back rather than staying disabled on a dropped request.
+    expect(hire).toBeEnabled();
+  });
+
+  it('offers the new shortlist at the turnover instead of swapping it under you', () => {
+    vi.useFakeTimers();
+    try {
+      renderPage();
+      const seat = screen.getByRole('region', { name: 'Route Planner' });
+      const before = within(seat)
+        .getAllByRole('listitem')
+        .map((item) => item.querySelector('.hq-card__name')?.textContent);
+
+      vi.spyOn(Date, 'now').mockReturnValue(nextRefreshAt(FIXED_NOW) + 1000);
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+
+      // The shortlist has not moved, and the page says a new one exists.
+      expect(
+        within(seat)
+          .getAllByRole('listitem')
+          .map((item) => item.querySelector('.hq-card__name')?.textContent),
+      ).toEqual(before);
+      const take = screen.getByRole('button', { name: /Show today’s shortlist/ });
+
+      act(() => {
+        fireEvent.click(take);
+      });
+      const after = within(screen.getByRole('region', { name: 'Route Planner' }))
+        .getAllByRole('listitem')
+        .map((item) => item.querySelector('.hq-card__name')?.textContent);
+      expect(after).not.toEqual(before);
+      expect(screen.queryByRole('button', { name: /Show today’s shortlist/ })).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('puts no information in a tooltip alone', () => {
+    const { container } = render(
+      <MemoryRouter initialEntries={['/headquarters']}>
+        <HeadquartersPage />
+      </MemoryRouter>,
+    );
+    // Both `title`s the page used to carry were duplicates of visible text, and
+    // one of them sat on an `aria-hidden` span where nothing could reach it.
+    expect(container.querySelectorAll('.hq-page [title]')).toHaveLength(0);
+    const gate = screen.getByRole('region', { name: 'Safety & Compliance' });
+    expect(within(gate).getByText(/unreachable until this seat is filled/)).toBeInTheDocument();
+  });
+
+  it('dresses its controls from the shared button hierarchy', async () => {
+    renderPage();
+    const seat = screen.getByRole('region', { name: 'Route Planner' });
+    const given = routePlannerShortlist[0]!.name.split(' ')[0]!;
+    const hire = within(seat).getByRole('button', { name: new RegExp(`^Hire ${given}$`) });
+    // A hire is one of four peers on the seat, so it is secondary rather than
+    // dominant; the confirmed dismissal is the destructive variant.
+    expect(hire.className).toContain('btn--secondary');
+    await waitFor(() => expect(hire).toBeEnabled());
+    fireEvent.click(hire);
+    await within(seat).findByText(/Seat filled by/);
+    fireEvent.click(within(seat).getByRole('button', { name: 'Let go' }));
+    expect(
+      within(seat).getByRole('button', { name: `Confirm — let ${given} go` }).className,
+    ).toContain('btn--danger');
   });
 
   it('saves a disruption policy from the modal', async () => {

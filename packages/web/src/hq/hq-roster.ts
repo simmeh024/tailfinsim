@@ -82,6 +82,16 @@ export interface HqRole {
   role: string;
   /** The concrete §9.1 capability filling the seat unlocks. Never a percentage. */
   unlock: string;
+  /**
+   * The same capability read as what the airline goes without today.
+   *
+   * `unlock` is written from the seat's side and reads as an offer; a player
+   * looking at six vacant seats needs the other side of it — what is *not*
+   * happening while nobody sits here. It is the same fact, and deliberately so:
+   * a vacancy line that claimed a penalty the simulation does not apply would
+   * be a balance number smuggled into a string.
+   */
+  vacant: string;
   /** Set only on a seat that gates a capability nothing else can grant. */
   gates?: string;
 }
@@ -118,28 +128,33 @@ export const HQ_ROLES: readonly HqRole[] = [
     id: 'route-planner',
     role: 'Route Planner',
     unlock: 'Surfaces ranked route opportunities with demand and competition analysis.',
+    vacant: 'Route opportunities stay unranked — you find them by hand.',
   },
   {
     id: 'revenue-manager',
     role: 'Revenue Manager',
     unlock: 'Unlocks automated fare rules — set a policy and they run it per flight.',
+    vacant: 'Every fare is set by hand, and stays where you left it.',
   },
   {
     id: 'ops-controller',
     role: 'Ops Controller',
     unlock:
       'Runs disruption by your standing policy while you are offline — swap, delay or cancel to the rules you set.',
+    vacant: 'A disruption waits for you; nothing is handled while you are away.',
   },
   {
     id: 'chief-pilot',
     role: 'Chief Pilot',
     unlock:
       'Unlocks training programmes and type-rating conversions, and raises the fatigue safety margin.',
+    vacant: 'No training programmes and no type conversions — crews fly what they already hold.',
   },
   {
     id: 'ground-ops',
     role: 'Head of Ground Ops',
     unlock: 'Unlocks self-handling and improves the turnaround baseline across your network.',
+    vacant: 'Handling stays with the vendors, at the walk-up turnaround baseline.',
   },
   {
     id: 'safety-compliance',
@@ -147,6 +162,7 @@ export const HQ_ROLES: readonly HqRole[] = [
     unlock: 'Required for long-haul and ETOPS authority and international rights.',
     gates:
       'Long-haul, ETOPS and international authority are unreachable until this seat is filled.',
+    vacant: 'Long-haul, ETOPS and international routes cannot be flown at all.',
   },
 ];
 
@@ -353,4 +369,27 @@ export function tierMetal(tier: string): 'bronze' | 'silver' | 'gold' {
       // Manager, VP — the middle band.
       return 'silver';
   }
+}
+
+/**
+ * How strong a candidate's boost is against the strongest on offer beside them,
+ * as a 0–1 fraction — the comparison the card's bar draws (idea #4).
+ *
+ * Every candidate for one seat carries the *same* lever (`SEAT_BOOST_LEVER` in
+ * the shared catalogue decides it), so their magnitudes are directly comparable
+ * and the bar is measuring one quantity rather than four different ones. The
+ * sign is dropped: a cost lever's boost is negative because the cost goes down,
+ * and "further from zero" is what the reader is being shown either way.
+ *
+ * Comparing against `among` rather than against the whole role pool is
+ * deliberate — the player is choosing between the four in front of them today,
+ * so a full bar means "the best of these", not "the best in the world".
+ */
+export function boostStrength(candidate: HqCandidate, among: readonly HqCandidate[]): number {
+  const strongest = among.reduce(
+    (best, other) => Math.max(best, Math.abs(other.boost.magnitude)),
+    0,
+  );
+  if (strongest === 0) return 0;
+  return Math.abs(candidate.boost.magnitude) / strongest;
 }
