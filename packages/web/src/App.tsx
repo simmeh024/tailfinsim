@@ -25,6 +25,7 @@ import { HeadquartersPage } from './hq/HeadquartersPage';
 import { LiveryBuilderPage } from './livery/LiveryBuilder';
 import { NetworkPage } from './network/NetworkPage';
 import { BoardPage, FinancePage } from './routes/Placeholder';
+import { ServicePage } from './service/ServicePage';
 import { SettingsPage } from './settings/SettingsPage';
 import { AppShell } from './shell/AppShell';
 import { ThemeProvider } from './theme/ThemeProvider';
@@ -132,6 +133,7 @@ export function App(): ReactNode {
                 <Route path="network" element={<NetworkPage />} />
                 <Route path="finance" element={<FinancePage />} />
                 <Route path="crew" element={<CrewPage />} />
+                <Route path="service" element={<ServicePage />} />
                 <Route path="headquarters" element={<HeadquartersPage />} />
                 <Route path="c-suite" element={<ExecutiveSuitePage />} />
                 <Route path="design" element={<LiveryBuilderPage />} />

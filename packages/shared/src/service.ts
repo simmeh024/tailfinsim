@@ -464,3 +464,84 @@ export const RouteGroupsResponse = z
   })
   .strict();
 export type RouteGroupsResponse = z.infer<typeof RouteGroupsResponse>;
+
+/* ---- The payback preview (M8-05, App. D.4) ------------------------------- */
+
+/**
+ * `POST /api/service/payback` — price a draft package before saving it.
+ *
+ * A *draft*, deliberately: App. D.4 wants the table live *"as you toggle
+ * options"*, which means the package being priced is the one on screen and not
+ * yet in the database. The client sends what it has.
+ */
+export const ServicePaybackRequest = z
+  .object({
+    content: ServicePackageContent,
+    /**
+     * Price it against this route group's actual routes. Omitted, the whole of
+     * the airline's network answers — which is the right default for a package
+     * that has not been assigned anywhere yet.
+     */
+    routeGroupId: z.uuid().optional(),
+    /** The cabin whose table is returned. Economy unless the caller says otherwise. */
+    cabin: CabinClass.optional(),
+  })
+  .strict();
+export type ServicePaybackRequest = z.infer<typeof ServicePaybackRequest>;
+
+/** One segment's row of App. D.4's table. */
+export const ServicePaybackSegment = z
+  .object({
+    segment: z.enum(['business', 'leisure', 'vfr']),
+    utilityGain: z.number(),
+    farePremiumSupportedMinor: z.number().int(),
+    netPerPaxMinor: z.number().int(),
+    /** This segment's share of the routes priced — the weighting, shown. */
+    share: z.number(),
+  })
+  .strict();
+export type ServicePaybackSegment = z.infer<typeof ServicePaybackSegment>;
+
+export const ServicePaybackResponse = z
+  .object({
+    /** What the table was computed against, so the player can see it is real. */
+    context: z
+      .object({
+        /** How many of the airline's routes were priced. Zero means nothing to price. */
+        routes: z.number().int().nonnegative(),
+        /** The average fare `PriceRel` divides by, minor units. */
+        averageFareMinor: z.number().int().nonnegative(),
+        routeGroupName: z.string().nullable(),
+      })
+      .strict(),
+    /** Cost, revenue and turnaround, per cabin the package describes. */
+    cabins: z.array(
+      z
+        .object({
+          cabin: CabinClass,
+          costPerPaxMinor: z.number().int(),
+          revenuePerPaxMinor: z.number().int(),
+          netPerPaxMinor: z.number().int(),
+          turnaroundDeltaMinutes: z.number(),
+          /** What the package scores, and how much of that it added. */
+          productScore: z.number(),
+          productDelta: z.number(),
+        })
+        .strict(),
+    ),
+    /** App. D.4's table, for the requested cabin. */
+    segments: z.array(ServicePaybackSegment),
+    /** The mix-weighted net — the one number that answers "does this pay?". */
+    weightedNetPerPaxMinor: z.number().int(),
+    /** App. D.1's execution behind the score, and which lever is holding it down. */
+    execution: z
+      .object({
+        value: z.number(),
+        weakest: z.array(z.string()),
+        absent: z.array(z.string()),
+        fromFallback: z.boolean(),
+      })
+      .strict(),
+  })
+  .strict();
+export type ServicePaybackResponse = z.infer<typeof ServicePaybackResponse>;

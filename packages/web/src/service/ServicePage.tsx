@@ -1,0 +1,346 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+import {
+  CABIN_ORDER,
+  type CabinClass,
+  type ServicePackageContent,
+  type ServiceSelection,
+  type RouteGroupsResponse,
+  type ServiceCatalogueResponse,
+  type ServicePaybackResponse,
+} from '@tailfin/shared';
+
+import { formatUsdMinor } from '../currency/display';
+import { StateBlock } from '../ui/StateBlock';
+
+import { fetchCatalogue, fetchPayback, fetchRouteGroups } from './api';
+
+import type { ReactNode } from 'react';
+
+/**
+ * The service configurator and its payback table (M8-05, App. D.2 and D.4).
+ *
+ * > The service configurator shows this table live as you toggle options,
+ * > computed against the actual segment mix of the routes the aircraft flies.
+ * > It turns service design from a vibe into a decision — and it makes "budget
+ * > or luxury?" a question with a *correct answer per route*, rather than a
+ * > personality test.
+ *
+ * That sentence is the whole page. Toggling a tier changes what the package
+ * costs, what it scores, and what fare premium each segment will bear for it,
+ * and all three are on screen at once.
+ *
+ * ## The table comes from the server, and has to
+ *
+ * `packages/web` does not depend on `@tailfin/sim`, so the browser cannot run
+ * App. A.3's utility function — and should not, because a second copy of it
+ * would eventually disagree with the allocator that actually seats passengers.
+ * Every change posts the draft package to `/api/service/payback` and renders
+ * what comes back.
+ *
+ * Requests are **debounced and ordered**: a fast series of toggles sends one
+ * request, and a slow reply for an older package is discarded rather than
+ * allowed to overwrite a newer one. Without the second rule the table settles on
+ * whichever request happened to finish last, which on a slow connection is
+ * reliably the wrong one.
+ *
+ * ## Money is USD minor units until it is rendered
+ *
+ * M8-02's rule: every figure here is integer minor units on the wire and passes
+ * through `formatUsdMinor` at the boundary, so the player's display currency
+ * applies without anything upstream knowing about it.
+ */
+
+/** How long a toggle waits for its neighbours before the table is re-priced. */
+const DEBOUNCE_MS = 250;
+
+const EMPTY: ServicePackageContent = { perClass: {}, commercialIntensity: 0 };
+
+const SEGMENT_LABEL: Record<string, string> = {
+  business: 'Business',
+  leisure: 'Leisure',
+  vfr: 'VFR',
+};
+
+const CABIN_LABEL: Record<CabinClass, string> = {
+  economy: 'Economy',
+  premium_economy: 'Premium economy',
+  business: 'Business',
+  first: 'First',
+};
+
+const money = (minor: number): string => formatUsdMinor(minor, { fractionDigits: 2 });
+
+export function ServicePage(): ReactNode {
+  const [catalogue, setCatalogue] = useState<ServiceCatalogueResponse | null>(null);
+  const [groups, setGroups] = useState<RouteGroupsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [cabin, setCabin] = useState<CabinClass>('economy');
+  const [groupId, setGroupId] = useState<string>('');
+  const [content, setContent] = useState<ServicePackageContent>(EMPTY);
+  const [payback, setPayback] = useState<ServicePaybackResponse | null>(null);
+  const [pricing, setPricing] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    void Promise.all([fetchCatalogue(), fetchRouteGroups()]).then(([cat, grp]) => {
+      if (!live) return;
+      setCatalogue(cat);
+      setGroups(grp);
+      setLoading(false);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // Monotonic request id. A reply whose id is not the newest is dropped, so a
+  // slow answer for an older package cannot overwrite a newer one.
+  const issued = useRef(0);
+
+  const price = useCallback((draft: ServicePackageContent, group: string) => {
+    const id = ++issued.current;
+    setPricing(true);
+    void fetchPayback(draft, group === '' ? undefined : group).then((result) => {
+      if (id !== issued.current) return;
+      setPricing(false);
+      // A failed price keeps the last good table rather than blanking it — one
+      // network blip should not erase the number the player is reading.
+      if (result !== null) setPayback(result);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (loading) return undefined;
+    const timer = setTimeout(() => price(content, groupId), DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [content, groupId, loading, price]);
+
+  const setTier = (category: string, tier: number): void => {
+    setContent((current) => ({
+      ...current,
+      perClass: {
+        ...current.perClass,
+        [cabin]: { ...(current.perClass[cabin] ?? {}), [category]: tier },
+      },
+    }));
+  };
+
+  const selectedTier = (category: string): number =>
+    content.perClass[cabin]?.[category as keyof ServiceSelection] ?? 0;
+
+  const cabinLine = payback?.cabins.find((entry) => entry.cabin === cabin) ?? null;
+
+  return (
+    <section className="page service-page" aria-label="Service">
+      <header className="service-page__heading">
+        <div>
+          <p className="airline-page__eyebrow">Cabin &amp; ancillary</p>
+          {/* The h1 matches the rail label, as every other page's does. */}
+          <h1 className="page__title">Service</h1>
+          <p className="page__note">
+            Tier sets the ceiling; how well your crew and caterer execute decides where inside it
+            you land. The table on the right prices the package against the routes you actually fly
+            — the same demand model that seats the passengers.
+          </p>
+        </div>
+        <div className="service-page__scope">
+          <label className="service-page__field">
+            <span>Cabin</span>
+            <select value={cabin} onChange={(event) => setCabin(event.target.value as CabinClass)}>
+              {CABIN_ORDER.map((entry) => (
+                <option key={entry} value={entry}>
+                  {CABIN_LABEL[entry]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="service-page__field">
+            <span>Priced against</span>
+            <select value={groupId} onChange={(event) => setGroupId(event.target.value)}>
+              <option value="">My whole network</option>
+              {(groups?.groups ?? []).map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </header>
+
+      {loading ? (
+        <StateBlock kind="loading">Reading the catalogue…</StateBlock>
+      ) : catalogue === null ? (
+        <StateBlock kind="broken">
+          The service catalogue could not be read, so nothing can be priced.
+        </StateBlock>
+      ) : (
+        <div className="service-page__body">
+          <div className="service-ladders">
+            {catalogue.categories.map((category) => (
+              <fieldset key={category.category} className="service-ladder">
+                <legend>{category.category.replaceAll('_', ' ')}</legend>
+                {category.tiers.map((tier) => (
+                  <label key={tier.tier} className="service-ladder__rung">
+                    <input
+                      type="radio"
+                      name={`${cabin}-${category.category}`}
+                      checked={selectedTier(category.category) === tier.tier}
+                      onChange={() => setTier(category.category, tier.tier)}
+                    />
+                    <span className="service-ladder__name">{tier.name}</span>
+                    <span className="service-ladder__price">
+                      {tier.revenuePerPaxMinor > tier.costPerPaxMinor
+                        ? `+${money(tier.revenuePerPaxMinor - tier.costPerPaxMinor)}`
+                        : money(tier.costPerPaxMinor - tier.revenuePerPaxMinor)}
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
+            ))}
+
+            <label className="service-page__field service-page__intensity">
+              <span>Commercial intensity</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={Math.round(content.commercialIntensity * 100)}
+                onChange={(event) =>
+                  setContent((current) => ({
+                    ...current,
+                    commercialIntensity: Number(event.target.value) / 100,
+                  }))
+                }
+              />
+              <output>{Math.round(content.commercialIntensity * 100)}%</output>
+            </label>
+          </div>
+
+          <aside className="service-payback" aria-label="Payback" aria-busy={pricing}>
+            <h2 className="service-payback__title">Does it pay back?</h2>
+
+            {payback === null ? (
+              <StateBlock kind="loading">Pricing the package…</StateBlock>
+            ) : payback.context.routes === 0 ? (
+              <StateBlock kind="empty">
+                You fly no routes yet, so there is no segment mix to price this against. Open a
+                route and the table fills in.
+              </StateBlock>
+            ) : (
+              <>
+                <p className="service-payback__context">
+                  Against <strong>{payback.context.routes}</strong>{' '}
+                  {payback.context.routeGroupName ?? 'route'}
+                  {payback.context.routeGroupName === null && payback.context.routes !== 1
+                    ? 's'
+                    : ''}
+                  , average fare {money(payback.context.averageFareMinor)}.
+                </p>
+
+                {cabinLine !== null && (
+                  <dl className="service-payback__totals">
+                    <div>
+                      <dt>Cost / pax</dt>
+                      <dd>{money(cabinLine.costPerPaxMinor)}</dd>
+                    </div>
+                    <div>
+                      <dt>Earns / pax</dt>
+                      <dd>{money(cabinLine.revenuePerPaxMinor)}</dd>
+                    </div>
+                    <div>
+                      <dt>Product</dt>
+                      <dd>
+                        {cabinLine.productScore.toFixed(2)}{' '}
+                        <span className="service-payback__delta">
+                          ({cabinLine.productDelta >= 0 ? '+' : ''}
+                          {cabinLine.productDelta.toFixed(2)})
+                        </span>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Turnaround</dt>
+                      <dd>
+                        {cabinLine.turnaroundDeltaMinutes >= 0 ? '+' : ''}
+                        {cabinLine.turnaroundDeltaMinutes} min
+                      </dd>
+                    </div>
+                  </dl>
+                )}
+
+                <table className="service-payback__table">
+                  <caption className="service-payback__caption">
+                    The identical package is worth a different amount to each segment — not because
+                    the service differs, but because of who is in the seat.
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Segment</th>
+                      <th scope="col">Mix</th>
+                      <th scope="col">Utility</th>
+                      <th scope="col">Fare premium</th>
+                      <th scope="col">Net / pax</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payback.segments.map((row) => (
+                      <tr key={row.segment}>
+                        <th scope="row">{SEGMENT_LABEL[row.segment] ?? row.segment}</th>
+                        <td>{Math.round(row.share * 100)}%</td>
+                        <td>
+                          {row.utilityGain >= 0 ? '+' : ''}
+                          {row.utilityGain.toFixed(3)}
+                        </td>
+                        <td>{money(row.farePremiumSupportedMinor)}</td>
+                        <td
+                          className="service-payback__net"
+                          data-positive={row.netPerPaxMinor >= 0}
+                        >
+                          {row.netPerPaxMinor >= 0 ? '+' : ''}
+                          {money(row.netPerPaxMinor)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <p
+                  className="service-payback__verdict"
+                  data-positive={payback.weightedNetPerPaxMinor >= 0}
+                  role="status"
+                >
+                  <span>Weighted by your own mix</span>
+                  <strong>
+                    {payback.weightedNetPerPaxMinor >= 0 ? '+' : ''}
+                    {money(payback.weightedNetPerPaxMinor)} per passenger
+                  </strong>
+                </p>
+
+                {/*
+                  App. D.1's point, made where it is actionable: a high tier run
+                  badly is the most expensive mistake in the catalogue, and the
+                  lever holding it down is nameable.
+                */}
+                <p className="service-payback__execution">
+                  Execution {(payback.execution.value * 100).toFixed(0)}%
+                  {payback.execution.weakest.length > 0 && (
+                    <>
+                      {' — held down by '}
+                      {payback.execution.weakest
+                        .join(', ')
+                        .replaceAll(/([A-Z])/g, ' $1')
+                        .toLowerCase()}
+                    </>
+                  )}
+                  {payback.execution.fromFallback &&
+                    ' — nothing measurable yet, so a reference is used'}
+                </p>
+              </>
+            )}
+          </aside>
+        </div>
+      )}
+    </section>
+  );
+}

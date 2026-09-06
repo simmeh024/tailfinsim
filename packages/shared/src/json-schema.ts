@@ -57,6 +57,7 @@ import {
   ServiceCatalogueResponse,
   ServicePackagesResponse,
   ServicePackageSummary,
+  ServicePaybackResponse,
 } from './service';
 import { UsedMarketResponse } from './used-market';
 import { VersionResponse } from './version';
@@ -170,6 +171,7 @@ export const servicePackagesResponseJsonSchema = z.toJSONSchema(ServicePackagesR
 export const routeGroupsResponseJsonSchema = z.toJSONSchema(RouteGroupsResponse);
 export const servicePackageSummaryJsonSchema = z.toJSONSchema(ServicePackageSummary);
 export const routeGroupSummaryJsonSchema = z.toJSONSchema(RouteGroupSummary);
+export const servicePaybackResponseJsonSchema = z.toJSONSchema(ServicePaybackResponse);
 export const officeStateResponseJsonSchema = z.toJSONSchema(OfficeStateResponse);
 export const executiveFloorStateJsonSchema = z.toJSONSchema(ExecutiveFloorState);
 export const financePnlResponseJsonSchema = z.toJSONSchema(FinancePnlResponse);

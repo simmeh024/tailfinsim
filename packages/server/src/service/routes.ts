@@ -2,6 +2,8 @@ import {
   apiErrorJsonSchema,
   CreateRouteGroupRequest,
   routeGroupsResponseJsonSchema,
+  ServicePaybackRequest,
+  servicePaybackResponseJsonSchema,
   routeGroupSummaryJsonSchema,
   serviceCatalogueResponseJsonSchema,
   servicePackagesResponseJsonSchema,
@@ -14,6 +16,7 @@ import {
 import { resolvedAirlineOf } from '../airline/context';
 import { parseRequestBody } from '../http/request-body';
 
+import { previewPayback } from './payback';
 import {
   createPackage,
   createRouteGroup,
@@ -190,6 +193,36 @@ export function registerServiceRoutes(app: FastifyInstance, { db }: { db: Databa
       const own = resolvedAirlineOf(request);
       const outcome = await deletePackage(db.db, own, request.params.id);
       return outcome.ok ? reply.code(204).send() : sendFailure(reply, outcome.failure);
+    },
+  );
+
+  /*
+   * App. D.4's payback table for a **draft** package — the one on screen, not
+   * one saved. A POST because the body is the package being priced, and it
+   * changes nothing: no row is written, and the response is a calculation.
+   *
+   * The client cannot compute this itself. `packages/web` does not depend on
+   * `@tailfin/sim` and must not start, so a browser-side payback would be a
+   * second implementation of App. A.3's utility — which is exactly what M8-05's
+   * "uses the same sim code as demand resolution" rules out.
+   */
+  app.post(
+    '/api/service/payback',
+    {
+      onRequest: app.requireAirline,
+      schema: {
+        response: { 200: servicePaybackResponseJsonSchema, 400: apiErrorJsonSchema },
+      },
+    },
+    async (request, reply) => {
+      const parsed = parseRequestBody(request, ServicePaybackRequest);
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send({ code: 'invalid_input', message: 'Expected a package to price' });
+      }
+      const own = resolvedAirlineOf(request);
+      return reply.code(200).send(await previewPayback(db.db, own, parsed.data));
     },
   );
 

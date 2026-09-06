@@ -28,6 +28,7 @@ import {
   SetCrewReserveInput,
   SetCurrencyRequest,
   SetFaresRequest,
+  ServicePaybackRequest,
   SetScheduleActiveRequest,
   UpdateRouteGroupRequest,
   WriteServicePackageRequest,
@@ -150,6 +151,11 @@ const STRICT_WRITE_CONTRACTS = [
     endpoint: 'POST /api/ground/:icao/self-handling',
     schema: OpenSelfHandlingRequest,
     payload: { serviceLine: 'ramp_baggage', headcount: 12 },
+  },
+  {
+    endpoint: 'POST /api/service/payback',
+    schema: ServicePaybackRequest,
+    payload: { content: { perClass: { economy: { catering: 2 } }, commercialIntensity: 0 } },
   },
   {
     endpoint: 'POST /api/service/packages',
@@ -300,6 +306,7 @@ const COVERED_WRITE_ENDPOINTS = [
   'PUT /api/crew/policies',
   'PUT /api/crew/reserves',
   'PUT /api/routes/:routeId/fares',
+  'POST /api/service/payback',
   'POST /api/service/packages',
   'PUT /api/service/packages/:id',
   // The id is in the path, so the delete reads no body (M8-03).

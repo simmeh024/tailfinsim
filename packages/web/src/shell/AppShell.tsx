@@ -59,7 +59,9 @@ interface NavItem {
 
 /**
  * The console's destinations, in the doc's order. App. H.4 named seven; M5-04's
- * Headquarters sits between Crew and Design as the eighth, the office-hires page.
+ * Headquarters sits between Crew and Design as the eighth, the office-hires
+ * page, and M8-05's Service configurator is the ninth beside it — what happens
+ * *in* the cabin, next to who runs the airline.
  */
 export const NAV_ITEMS: readonly NavItem[] = [
   { to: '/world', label: 'World', glyph: '◎' },
@@ -68,6 +70,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { to: '/finance', label: 'Finance', glyph: '§' },
   { to: '/crew', label: 'Crew', glyph: '☰' },
   { to: '/headquarters', label: 'Headquarters', glyph: '⌂' },
+  { to: '/service', label: 'Service', glyph: '☕' },
   { to: '/design', label: 'Design', glyph: '◆' },
   { to: '/board', label: 'Board', glyph: '▤' },
 ];
