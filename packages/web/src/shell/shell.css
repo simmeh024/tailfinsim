@@ -8918,3 +8918,54 @@ body {
     flex-wrap: wrap;
   }
 }
+
+/*
+ * The package bench (M8-05 follow-up): naming, saving, and putting a package
+ * into service. Three steps kept visibly separate, because editing a package a
+ * route group already flies must not change what that group serves until the
+ * player says so.
+ */
+.service-bench {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+}
+
+.service-bench__name {
+  flex: 1 1 14rem;
+}
+
+.service-bench__name input {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.service-bench__saved {
+  margin: 0;
+  color: var(--status-profit);
+  font-size: var(--text-xs);
+}
+
+.service-bench__hint,
+.service-bench__failure {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.service-bench__hint {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}

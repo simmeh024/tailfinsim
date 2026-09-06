@@ -288,15 +288,20 @@ the prose rounded its _input_; the formula is right. `payback.test.ts` asserts
 both, because the other reading — that the arithmetic is slightly wrong — is what
 somebody will reach for the next time these numbers are checked.
 
+### Saved, then put to work
+
+Pricing a draft changes nothing; **saving** writes it under a name; **assigning**
+it to a route group is what makes it reach a flight. Three steps, kept apart on
+purpose — a player editing "Budget short-haul" to try something must not thereby
+change what every leisure route serves the moment they hit save.
+
 ## What is still not built
 
 - **Settlement.** A flight is still not _charged_ for its service. `ProductScore`
   now feeds demand, but `packageEconomics`' cost and revenue per passenger reach
   no ledger line yet.
 - **Seat comfort** (M6-09) and **crew service skill** (§10.2), as above.
-- **Saving a package from the configurator.** `/service` prices a draft and does
-  not yet `POST` it to `/api/service/packages`; the authoring API is complete and
-  unwired. Assigning it to a route group is the same gap.
+- **Settlement.** A flight is still not _charged_ for its service.
 
 ---
 

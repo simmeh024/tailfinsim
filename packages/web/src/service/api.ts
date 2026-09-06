@@ -2,6 +2,7 @@ import type {
   RouteGroupsResponse,
   ServiceCatalogueResponse,
   ServicePackageContent,
+  ServicePackagesResponse,
   ServicePaybackResponse,
 } from '@tailfin/shared';
 
@@ -88,4 +89,79 @@ export async function fetchPayback(
       Array.isArray(candidate.cabins) &&
       typeof candidate.context === 'object',
   );
+}
+
+/* ---- Saving, and putting a package to work ------------------------------ */
+
+/** What a write came back with, or why it did not. */
+export type ServiceWrite =
+  { ok: true } | { ok: false; status: number; code: string; message: string };
+
+async function write(path: string, method: string, body: unknown): Promise<ServiceWrite> {
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method,
+      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(body),
+    });
+  } catch {
+    // Status 0 is "never reached a server", which is a different answer from any
+    // refusal the server could give — the same distinction `officeFailureKind`
+    // draws for the office.
+    return {
+      ok: false,
+      status: 0,
+      code: 'unreachable',
+      message: 'The server could not be reached.',
+    };
+  }
+  if (response.status === 200 || response.status === 201 || response.status === 204) {
+    return { ok: true };
+  }
+  const payload = (await response.json().catch(() => ({}))) as {
+    code?: string;
+    message?: string;
+  };
+  return {
+    ok: false,
+    status: response.status,
+    code: payload.code ?? 'unknown',
+    message: payload.message ?? `The package could not be saved (${String(response.status)}).`,
+  };
+}
+
+/** The airline's saved packages. */
+export async function fetchPackages(): Promise<ServicePackagesResponse | null> {
+  const body = await readJson<unknown>('/api/service/packages');
+  return shaped<ServicePackagesResponse>(body, (candidate) => Array.isArray(candidate.packages));
+}
+
+/** Save a new package under this name. */
+export function createPackage(name: string, content: ServicePackageContent): Promise<ServiceWrite> {
+  return write('/api/service/packages', 'POST', { name, content });
+}
+
+/** Replace an existing package — the same shape, by id. */
+export function updatePackage(
+  id: string,
+  name: string,
+  content: ServicePackageContent,
+): Promise<ServiceWrite> {
+  return write(`/api/service/packages/${id}`, 'PUT', { name, content });
+}
+
+/**
+ * Put a package to work, or take it off.
+ *
+ * The route group is what App. D.5 assigns to, so this is the step that makes a
+ * saved package actually reach a flight. `null` clears the assignment and drops
+ * the group's routes back to the baseline product.
+ */
+export function assignPackage(
+  routeGroupId: string,
+  servicePackageId: string | null,
+): Promise<ServiceWrite> {
+  return write(`/api/service/route-groups/${routeGroupId}`, 'PUT', { servicePackageId });
 }

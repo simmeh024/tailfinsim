@@ -7,13 +7,24 @@ import {
   type ServiceSelection,
   type RouteGroupsResponse,
   type ServiceCatalogueResponse,
+  type ServicePackageSummary,
   type ServicePaybackResponse,
 } from '@tailfin/shared';
 
 import { formatUsdMinor } from '../currency/display';
+import { Button } from '../ui/Button';
 import { StateBlock } from '../ui/StateBlock';
 
-import { fetchCatalogue, fetchPayback, fetchRouteGroups } from './api';
+import {
+  assignPackage,
+  createPackage,
+  fetchCatalogue,
+  fetchPackages,
+  fetchPayback,
+  fetchRouteGroups,
+  updatePackage,
+  type ServiceWrite,
+} from './api';
 
 import type { ReactNode } from 'react';
 
@@ -43,6 +54,18 @@ import type { ReactNode } from 'react';
  * allowed to overwrite a newer one. Without the second rule the table settles on
  * whichever request happened to finish last, which on a slow connection is
  * reliably the wrong one.
+ *
+ * ## Priced, then saved, then put to work
+ *
+ * Three separate steps, and keeping them separate is the point. Pricing a draft
+ * changes nothing. **Saving** writes the package under a name. **Assigning** it
+ * to a route group is what makes it reach a flight — App. D.5's rule that
+ * packages attach per route group and not per aircraft, so one airframe can fly
+ * a leisure config in the morning and a business one in the evening.
+ *
+ * A saved package is not automatically in service. That is deliberate: a player
+ * editing "Budget short-haul" to try something should not thereby change what
+ * every leisure route serves the moment they hit save.
  *
  * ## Money is USD minor units until it is rendered
  *
@@ -80,15 +103,25 @@ export function ServicePage(): ReactNode {
   const [content, setContent] = useState<ServicePackageContent>(EMPTY);
   const [payback, setPayback] = useState<ServicePaybackResponse | null>(null);
   const [pricing, setPricing] = useState(false);
+  const [packages, setPackages] = useState<ServicePackageSummary[]>([]);
+  // The saved package being edited, or '' for a new one.
+  const [editing, setEditing] = useState<string>('');
+  const [name, setName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [failure, setFailure] = useState<(ServiceWrite & { ok: false }) | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
-    void Promise.all([fetchCatalogue(), fetchRouteGroups()]).then(([cat, grp]) => {
-      if (!live) return;
-      setCatalogue(cat);
-      setGroups(grp);
-      setLoading(false);
-    });
+    void Promise.all([fetchCatalogue(), fetchRouteGroups(), fetchPackages()]).then(
+      ([cat, grp, pkgs]) => {
+        if (!live) return;
+        setCatalogue(cat);
+        setGroups(grp);
+        setPackages(pkgs?.packages ?? []);
+        setLoading(false);
+      },
+    );
     return () => {
       live = false;
     };
@@ -130,6 +163,71 @@ export function ServicePage(): ReactNode {
     content.perClass[cabin]?.[category as keyof ServiceSelection] ?? 0;
 
   const cabinLine = payback?.cabins.find((entry) => entry.cabin === cabin) ?? null;
+
+  /** Pull a saved package onto the bench, or start a blank one. */
+  const load = (id: string): void => {
+    setEditing(id);
+    setFailure(null);
+    setSaved(null);
+    const found = packages.find((entry) => entry.id === id);
+    if (found === undefined) {
+      setName('');
+      setContent(EMPTY);
+      return;
+    }
+    setName(found.name);
+    setContent(found.content);
+  };
+
+  const refreshSaved = async (): Promise<readonly ServicePackageSummary[]> => {
+    const listed = await fetchPackages();
+    const next = listed?.packages ?? [];
+    setPackages(next);
+    return next;
+  };
+
+  const save = async (): Promise<void> => {
+    const trimmed = name.trim();
+    if (trimmed === '') {
+      setFailure({
+        ok: false,
+        status: 0,
+        code: 'no_name',
+        message: 'Give the package a name first.',
+      });
+      return;
+    }
+    setSaving(true);
+    setFailure(null);
+    setSaved(null);
+    const outcome =
+      editing === ''
+        ? await createPackage(trimmed, content)
+        : await updatePackage(editing, trimmed, content);
+    setSaving(false);
+    if (!outcome.ok) {
+      setFailure(outcome);
+      return;
+    }
+    const next = await refreshSaved();
+    // A create comes back without an id, so the saved package is found by the
+    // name it was just written under — which is unique per airline.
+    setEditing(next.find((entry) => entry.name === trimmed)?.id ?? editing);
+    setSaved(trimmed);
+  };
+
+  const assign = async (routeGroupId: string, packageId: string): Promise<void> => {
+    setSaving(true);
+    setFailure(null);
+    const outcome = await assignPackage(routeGroupId, packageId === '' ? null : packageId);
+    setSaving(false);
+    if (!outcome.ok) {
+      setFailure(outcome);
+      return;
+    }
+    setGroups(await fetchRouteGroups());
+    await refreshSaved();
+  };
 
   return (
     <section className="page service-page" aria-label="Service">
@@ -178,6 +276,82 @@ export function ServicePage(): ReactNode {
       ) : (
         <div className="service-page__body">
           <div className="service-ladders">
+            {/*
+              Saving and assigning are separate steps on purpose: editing a
+              package a route group already flies must not change what that
+              group serves until the player says so.
+            */}
+            <section className="service-bench" aria-label="Package">
+              <label className="service-page__field">
+                <span>Editing</span>
+                <select value={editing} onChange={(event) => load(event.target.value)}>
+                  <option value="">New package</option>
+                  {packages.map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {entry.name}
+                      {entry.assignedGroups > 0 ? ` (in service)` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="service-page__field service-bench__name">
+                <span>Name</span>
+                <input
+                  type="text"
+                  value={name}
+                  maxLength={60}
+                  placeholder="Budget short-haul"
+                  onChange={(event) => setName(event.target.value)}
+                />
+              </label>
+              <Button
+                variant="primary"
+                className="service-bench__save"
+                disabled={saving}
+                onClick={() => void save()}
+              >
+                {editing === '' ? 'Save package' : 'Save changes'}
+              </Button>
+              {saved !== null && (
+                <p className="service-bench__saved" role="status">
+                  Saved “{saved}”.
+                </p>
+              )}
+              {failure !== null && (
+                <StateBlock
+                  kind={failure.status === 0 || failure.status >= 500 ? 'broken' : 'refused'}
+                  className="service-bench__failure"
+                >
+                  {failure.message}
+                </StateBlock>
+              )}
+            </section>
+
+            {(groups?.groups ?? []).length > 0 && (
+              <section className="service-bench" aria-label="In service">
+                <p className="service-bench__hint">
+                  A saved package only reaches a flight once a route group flies it.
+                </p>
+                {(groups?.groups ?? []).map((group) => (
+                  <label key={group.id} className="service-page__field">
+                    <span>{group.name}</span>
+                    <select
+                      value={group.servicePackageId ?? ''}
+                      disabled={saving}
+                      onChange={(event) => void assign(group.id, event.target.value)}
+                    >
+                      <option value="">Baseline service</option>
+                      {packages.map((entry) => (
+                        <option key={entry.id} value={entry.id}>
+                          {entry.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </section>
+            )}
+
             {catalogue.categories.map((category) => (
               <fieldset key={category.category} className="service-ladder">
                 <legend>{category.category.replaceAll('_', ' ')}</legend>

@@ -59,6 +59,9 @@ const CATALOGUE = {
   },
 };
 
+/** What the one saved package in these tests contains. */
+const EXISTING_CONTENT = { perClass: { economy: { catering: 3 } }, commercialIntensity: 0 };
+
 const GROUPS = {
   groups: [
     {
@@ -127,18 +130,79 @@ describe('the service configurator', () => {
   /** Bodies queued for `/api/service/payback`, so a test can control ordering. */
   let paybackQueue: (() => Promise<Response>)[];
   let paybackCalls: unknown[];
+  /** The airline's saved packages, as the stub server holds them. */
+  let saved: {
+    id: string;
+    name: string;
+    content: unknown;
+    assignedGroups: number;
+    createdAt: string;
+    updatedAt: string;
+  }[];
+  let writes: { url: string; method: string; body: unknown }[];
+  /** A status the next write should refuse with, instead of succeeding. */
+  let refuseWith: { status: number; body: unknown } | null;
 
   beforeEach(() => {
     vi.useFakeTimers();
     paybackQueue = [];
     paybackCalls = [];
+    saved = [];
+    writes = [];
+    refuseWith = null;
     vi.stubGlobal(
       'fetch',
       vi.fn((url: string, init?: RequestInit): Promise<Response> => {
         if (url === '/api/service/catalogue') {
           return Promise.resolve(new Response(JSON.stringify(CATALOGUE), { status: 200 }));
         }
-        if (url === '/api/service/route-groups') {
+        if (url === '/api/service/route-groups' && (init?.method ?? 'GET') === 'GET') {
+          return Promise.resolve(new Response(JSON.stringify(GROUPS), { status: 200 }));
+        }
+        if (url === '/api/service/packages' && (init?.method ?? 'GET') === 'GET') {
+          return Promise.resolve(
+            new Response(JSON.stringify({ packages: saved }), { status: 200 }),
+          );
+        }
+        if (
+          (url === '/api/service/packages' || url.startsWith('/api/service/packages/')) &&
+          init?.method !== undefined &&
+          init.method !== 'GET'
+        ) {
+          const body = JSON.parse(typeof init.body === 'string' ? init.body : '{}') as {
+            name: string;
+            content: unknown;
+          };
+          writes.push({ url, method: init.method, body });
+          if (refuseWith !== null) {
+            const refusal = refuseWith;
+            refuseWith = null;
+            return Promise.resolve(
+              new Response(JSON.stringify(refusal.body), { status: refusal.status }),
+            );
+          }
+          const existing = saved.find((entry) => url.endsWith(entry.id));
+          if (existing) {
+            existing.name = body.name;
+            existing.content = body.content;
+            return Promise.resolve(new Response(null, { status: 200 }));
+          }
+          saved.push({
+            id: 'pkg-1',
+            name: body.name,
+            content: body.content,
+            assignedGroups: 0,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          });
+          return Promise.resolve(new Response(null, { status: 201 }));
+        }
+        if (url.startsWith('/api/service/route-groups/') && init?.method === 'PUT') {
+          writes.push({
+            url,
+            method: 'PUT',
+            body: JSON.parse(typeof init.body === 'string' ? init.body : '{}'),
+          });
           return Promise.resolve(new Response(JSON.stringify(GROUPS), { status: 200 }));
         }
         if (url === '/api/service/payback') {
@@ -307,5 +371,116 @@ describe('the service configurator', () => {
     await settle();
     await settle();
     expect(screen.getByText(/could not be read/)).toBeInTheDocument();
+  });
+
+  describe('saving and putting a package to work', () => {
+    /** One saved package the stub already holds. */
+    function existing(name = 'Existing', content: unknown = EXISTING_CONTENT) {
+      return [
+        {
+          id: 'pkg-1',
+          name,
+          content,
+          assignedGroups: 0,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ];
+    }
+
+    it('refuses to save a package with no name, before asking the server', async () => {
+      await open();
+      fireEvent.click(screen.getByRole('button', { name: 'Save package' }));
+      await settle(0);
+      expect(screen.getByText(/Give the package a name/)).toBeInTheDocument();
+      expect(writes).toEqual([]);
+    });
+
+    it('saves the package on the bench under its name', async () => {
+      await open();
+      fireEvent.click(screen.getByLabelText(/Hot meal service/));
+      fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Premium short-haul' } });
+      await settle();
+      fireEvent.click(screen.getByRole('button', { name: 'Save package' }));
+      await settle();
+
+      expect(writes[0]).toMatchObject({
+        url: '/api/service/packages',
+        method: 'POST',
+        body: { name: 'Premium short-haul', content: { perClass: { economy: { catering: 3 } } } },
+      });
+      expect(screen.getByText(/Saved/)).toHaveTextContent('Premium short-haul');
+    });
+
+    it('edits a saved package in place rather than making a second one', async () => {
+      await open();
+      fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Budget' } });
+      await settle();
+      fireEvent.click(screen.getByRole('button', { name: 'Save package' }));
+      await settle();
+
+      // The bench now edits what it just saved, so the next save is a PUT.
+      fireEvent.click(screen.getByLabelText(/Buy-on-board only/));
+      await settle();
+      fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+      await settle();
+
+      expect(writes.map((entry) => entry.method)).toEqual(['POST', 'PUT']);
+      expect(writes[1]?.url).toBe('/api/service/packages/pkg-1');
+      expect(saved).toHaveLength(1);
+    });
+
+    it('loads a saved package back onto the bench', async () => {
+      saved = existing();
+      await open();
+      fireEvent.change(screen.getByLabelText('Editing'), { target: { value: 'pkg-1' } });
+      await settle();
+
+      expect(screen.getByLabelText('Name')).toHaveValue('Existing');
+      expect(screen.getByLabelText(/Hot meal service/)).toBeChecked();
+    });
+
+    it('assigns a package to a route group, which is what puts it in service', async () => {
+      saved = existing('Budget', { perClass: {}, commercialIntensity: 0 });
+      await open();
+      const panel = screen.getByRole('region', { name: 'In service' });
+      fireEvent.change(within(panel).getByLabelText('Leisure'), { target: { value: 'pkg-1' } });
+      await settle();
+
+      expect(writes[0]).toMatchObject({
+        url: '/api/service/route-groups/11111111-1111-4111-8111-111111111111',
+        method: 'PUT',
+        body: { servicePackageId: 'pkg-1' },
+      });
+    });
+
+    it('takes a group back to baseline service by clearing its package', async () => {
+      saved = existing('Budget', { perClass: {}, commercialIntensity: 0 });
+      await open();
+      const panel = screen.getByRole('region', { name: 'In service' });
+      fireEvent.change(within(panel).getByLabelText('Leisure'), { target: { value: '' } });
+      await settle();
+      expect(writes[0]).toMatchObject({ body: { servicePackageId: null } });
+    });
+
+    it('shows a refused save as refused, and a dropped one as broken', async () => {
+      await open();
+      fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Clash' } });
+      await settle();
+
+      refuseWith = { status: 409, body: { code: 'duplicate_name', message: 'Name already used.' } };
+      fireEvent.click(screen.getByRole('button', { name: 'Save package' }));
+      await settle();
+      expect(
+        screen.getByText('Name already used.').closest<HTMLElement>('.state')?.dataset.state,
+      ).toBe('refused');
+
+      refuseWith = { status: 500, body: { code: 'oops', message: 'Something broke.' } };
+      fireEvent.click(screen.getByRole('button', { name: 'Save package' }));
+      await settle();
+      expect(
+        screen.getByText('Something broke.').closest<HTMLElement>('.state')?.dataset.state,
+      ).toBe('broken');
+    });
   });
 });
