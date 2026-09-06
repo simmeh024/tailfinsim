@@ -38,6 +38,17 @@ import type { ReactNode } from 'react';
 const SEAT_MARKET_SIZE = 4;
 
 /**
+ * The three head-office bands and the metal each wears, low to high — the
+ * heading's legend. `tierMetal` maps a candidate's band to the same three, so
+ * this is that mapping read in the other direction.
+ */
+const TIER_LEGEND: readonly { band: string; metal: ReturnType<typeof tierMetal> }[] = [
+  { band: 'Supervisor', metal: 'bronze' },
+  { band: 'Manager', metal: 'silver' },
+  { band: 'Senior Manager', metal: 'gold' },
+];
+
+/**
  * Today's shortlist for a seat — a rotating {@link SEAT_MARKET_SIZE} of the role's
  * candidates — with the currently hired candidate always kept in view even when
  * they rotate out, so a standing hire can always be managed.
@@ -336,16 +347,30 @@ export function HeadquartersPage(): ReactNode {
             The tier legend. The metal on a card's border and the band under its
             name were two encodings of one thing, and neither said what the thing
             bought — so a player had no reason to pay more (idea #3).
+
+            Each swatch and its band are one item rather than six siblings in a
+            wrapping row: flat, the wrap fell between the gold swatch and "Senior
+            Manager", which read as an unlabelled colour followed by a sentence
+            starting with a band name.
           */}
-          <p className="hq-page__legend">
-            <span className="hq-page__legend-key" data-metal="bronze" aria-hidden="true" />
-            Supervisor
-            <span className="hq-page__legend-key" data-metal="silver" aria-hidden="true" />
-            Manager
-            <span className="hq-page__legend-key" data-metal="gold" aria-hidden="true" />
-            Senior Manager. A higher band asks a higher salary and brings a bigger boost on the
-            seat&rsquo;s own lever.
-          </p>
+          <div className="hq-page__legend">
+            <ul className="hq-page__legend-keys">
+              {TIER_LEGEND.map((tier) => (
+                <li key={tier.metal} className="hq-page__legend-key">
+                  <span
+                    className="hq-page__legend-swatch"
+                    data-metal={tier.metal}
+                    aria-hidden="true"
+                  />
+                  {tier.band}
+                </li>
+              ))}
+            </ul>
+            <p className="hq-page__legend-note">
+              A higher band asks a higher salary and brings a bigger boost on the seat&rsquo;s own
+              lever.
+            </p>
+          </div>
         </div>
         <div className="hq-page__aside">
           <div className="hq-page__actions">
