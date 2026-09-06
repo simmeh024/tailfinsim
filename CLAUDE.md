@@ -474,6 +474,20 @@ bought at the origin before the aeroplane left — not at the arrival that is se
 `docs/fuel-pricing.md` has the model, and the reason the country is consulted before the
 continent.
 
+**The service catalogue is not a worker story either (M8-03), and it is worth
+saying so because almost everything around it is.** App. D's tiers, packages and
+route groups have no sweep, no queue and no heartbeat counter: a package is read
+on demand and reaches a flight by query — `route`'s unique
+`(airline_id, origin_icao, destination_icao)` turns a flight's airport pair back
+into a route, and the route's group holds the package. So a production world
+configures service exactly as dev does. What production still cannot do is
+_fly_, so the configuration has nothing to apply to — that is the missing worker,
+not this subsystem. Nothing is charged for service yet in any case: settlement
+and `ProductScore` are M8-04. `docs/service-catalogue.md` has the boundary,
+including the two decisions App. D leaves open — what a route group _is_, and
+why the catalogue is not a third pinned version beside the economy and the
+aircraft.
+
 **And one thing not to "fix".** `airframe.maintenance_state` is nullable, and a null means
 _every tier was last completed at the hours this airframe has now_ — not _at hour zero_. It
 looks like a missing default and it is load-bearing: the other reading would make every

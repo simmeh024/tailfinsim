@@ -2324,6 +2324,458 @@ export const SHIPPED_GROUND_BALANCE = {
   },
 } as const satisfies z.input<typeof GroundBalance>;
 
+/**
+ * The service and ancillary catalogue's money and bands (M8-03, App. D).
+ *
+ * App. D.1 states the rule this section exists to make enforceable:
+ *
+ * > **Tier sets the ceiling. Execution decides where you land inside it.**
+ *
+ * Every tier owns a **score band**, and the bands of one ladder must not
+ * overlap: a perfectly executed Tier 2 must never reach a badly executed Tier 3.
+ * That is checked by {@link ServiceCategoryBalance}'s refinement rather than left
+ * to a reviewer, so an economy version whose ladder overlaps cannot be stored,
+ * pinned, or read back. It is the only balance section in this file that refuses
+ * its own numbers, and it is refused because the roadmap's line for this work is
+ * *"tune the service tier bands so no two bands overlap"* — a rule that has to
+ * survive the retune, not just the first write.
+ *
+ * ## Why the bands are here and the names are not
+ *
+ * `shared/service.ts` holds what a tier *is* — "Hot meal service", which
+ * category it belongs to, what it needs selected alongside it. This holds what a
+ * tier *costs, earns and scores*. The split is the standing rule: `packages/sim`
+ * holds no balance literal, and anything a designer would tune lives in the
+ * payload that can be retuned and pinned per world.
+ */
+export const ServiceScoreBand = z
+  .object({
+    min: z.number().min(0).max(1),
+    max: z.number().min(0).max(1),
+  })
+  .strict()
+  .refine((band) => band.min <= band.max, {
+    message: 'a score band cannot end below where it starts',
+  });
+
+/**
+ * One rung: what it costs, what it earns, where it scores, what it does to the turn.
+ *
+ * Cost and revenue are **separate non-negative figures**, not one signed net.
+ * App. D.1 writes buy-on-board catering as "−€4.20 (net revenue)" and the two
+ * halves genuinely differ: a P&L wants the cost line and the ancillary revenue
+ * line apart, and App. D.4's payback table subtracts one from the other itself.
+ * Collapsing them here would make the itemised statement M8-01 already ships
+ * unable to say where the money went.
+ */
+export const ServiceTierBalance = z
+  .object({
+    /** What the airline pays per passenger carried, minor units. */
+    costPerPaxMinor: MinorUnits.nonnegative(),
+    /** What the airline takes per passenger carried, minor units. */
+    revenuePerPaxMinor: MinorUnits.nonnegative(),
+    /** The band execution positions the tier inside. */
+    scoreBand: ServiceScoreBand,
+    /**
+     * Minutes added to the turnaround. Signed, and negative is legitimate:
+     * charging for cabin bags moves bags out of the hold and off the critical path.
+     */
+    turnaroundDeltaMinutes: z.number().finite(),
+  })
+  .strict();
+export type ServiceTierBalance = z.infer<typeof ServiceTierBalance>;
+
+/**
+ * A category's ladder, tier 0 first.
+ *
+ * The two refinements are the appendix's rule in code. Bands must **ascend and
+ * not touch**: each tier's floor strictly above the one below it's ceiling. And
+ * tier 0 must score from zero, because "nothing at all" is the bottom of every
+ * scale and a ladder that started above it would make the absence of a service
+ * worth something.
+ */
+export const ServiceCategoryBalance = z
+  .object({ tiers: z.array(ServiceTierBalance).min(1) })
+  .strict()
+  .superRefine((category, ctx) => {
+    if ((category.tiers[0]?.scoreBand.min ?? 0) !== 0) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'tier 0 must score from 0 — nothing at all is the bottom of the scale',
+        path: ['tiers', 0, 'scoreBand', 'min'],
+      });
+    }
+    for (let i = 1; i < category.tiers.length; i += 1) {
+      const below = category.tiers[i - 1];
+      const here = category.tiers[i];
+      if (below === undefined || here === undefined) continue;
+      if (here.scoreBand.min <= below.scoreBand.max) {
+        ctx.addIssue({
+          code: 'custom',
+          message:
+            `tier ${String(i)} starts at ${String(here.scoreBand.min)}, at or below tier ` +
+            `${String(i - 1)}'s ceiling of ${String(below.scoreBand.max)} — a perfectly ` +
+            'executed lower tier would match or beat a badly executed higher one',
+          path: ['tiers', i, 'scoreBand', 'min'],
+        });
+      }
+    }
+  });
+export type ServiceCategoryBalance = z.infer<typeof ServiceCategoryBalance>;
+
+/**
+ * The commercial-intensity dial (App. D.2, onboard retail).
+ *
+ * Scratch cards, raffles and onboard auctions, modelled as *"high revenue per
+ * passenger, small satisfaction penalty that scales with how hard you push it,
+ * and a reputation risk if you push it far"*. All three coefficients are linear
+ * in the dial, which is what makes the trade legible: at half intensity you take
+ * half the extra money and half the satisfaction hit.
+ *
+ * The appendix's constraint on these numbers is unusual and worth keeping in
+ * view when they are retuned — the strategy must be *"fully supported without
+ * being optimal"*. A `revenueMultiplierAtMax` large enough to make maximum
+ * intensity the obvious choice has broken the appendix, not tuned it.
+ */
+export const CommercialIntensityBalance = z
+  .object({
+    /** Onboard retail revenue at intensity 1, as a multiple of the tier's figure. */
+    revenueMultiplierAtMax: z.number().finite().min(1),
+    /** Score removed from the retail category at intensity 1, 0–1. */
+    satisfactionPenaltyAtMax: z.number().min(0).max(1),
+    /** Above this dial position the airline carries a §15 reputation risk. */
+    reputationRiskAbove: z.number().min(0).max(1),
+  })
+  .strict();
+export type CommercialIntensityBalance = z.infer<typeof CommercialIntensityBalance>;
+
+export const ServiceBalance = z
+  .object({
+    categories: z
+      .object({
+        catering: ServiceCategoryBalance,
+        baggage_seating: ServiceCategoryBalance,
+        ife_connectivity: ServiceCategoryBalance,
+        amenities: ServiceCategoryBalance,
+        onboard_retail: ServiceCategoryBalance,
+        ground_services: ServiceCategoryBalance,
+        atmosphere: ServiceCategoryBalance,
+      })
+      .strict(),
+    commercialIntensity: CommercialIntensityBalance,
+  })
+  .strict();
+export type ServiceBalance = z.infer<typeof ServiceBalance>;
+
+/**
+ * The catalogue as shipped, named so the schema can default to it.
+ *
+ * Defaulted for the same reason every section since `npc` has been — see
+ * {@link SHIPPED_NPC_BALANCE}. Every `v1` row written before M8-03 reads back
+ * this catalogue rather than failing to parse.
+ *
+ * ## Where these numbers come from
+ *
+ * **Catering is quoted.** App. D.1 writes the whole ladder out — bands and cost
+ * per passenger — and it is the only one the design doc gives. Its figures are
+ * in euros at the appendix's scale; they are stored here in minor units at the
+ * same 100-per-unit scale as every other money field (`€8.40` → `840`), and the
+ * currency stays deliberately unnamed as it does in `openingCashMinor`.
+ *
+ * Tier 1 is the one that needs reading carefully: the appendix writes it as
+ * "**−€4.20** (net revenue)", meaning buy-on-board *earns* €4.20 a head. It is
+ * `costPerPaxMinor: 0, revenuePerPaxMinor: 420`, not a negative cost.
+ *
+ * **Four more numbers are anchored** to App. D.3's two worked configurations,
+ * which price a budget and a premium short-haul package line by line:
+ *
+ * - checked bags €9.50 + seat selection €3.80 = **€13.30**, which D.3 states
+ *   twice — once as budget ancillary revenue and once as the premium package's
+ *   "€13.30 forgone". That is `baggage_seating` tier 0's revenue, falling to
+ *   zero at the top of the ladder where everything is included.
+ * - free Wi-Fi and streaming costs **€2.10** a head — the top of
+ *   `ife_connectivity`.
+ * - scratch cards at *medium* intensity earn **€0.60** — so the retail top tier's
+ *   base is set to make a mid-dial package land there.
+ * - lighting and a welcome drink cost **€0.40** — the `atmosphere` mid-rungs.
+ *
+ * **The rest are invented to fit those anchors**, and are marked where they are.
+ * They keep each ladder monotonic in cost and place its bands so a tier's floor
+ * clears the one below — which the schema then checks rather than trusts. They
+ * are the least-supported numbers in this file and the first ones a balance pass
+ * should revisit; the shape they have to preserve is App. D.2's observation that
+ * atmosphere is *"the highest-efficiency spend in the catalogue"* and that free
+ * Wi-Fi is *"one of the strongest satisfaction-per-euro plays"*.
+ *
+ * D.3's composite scores of 0.22 and 0.52 are deliberately **not** reproduced
+ * here: a composite needs the per-cabin category weights, and those arrive with
+ * M8-04's `ProductScore` assembly. What this section fixes is each category's
+ * own band, which is what M8-04 will weight.
+ */
+export const SHIPPED_SERVICE_BALANCE = {
+  categories: {
+    // Quoted from App. D.1's table in full — the only ladder the doc writes out.
+    catering: {
+      tiers: [
+        {
+          costPerPaxMinor: 0,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0, max: 0.05 },
+          turnaroundDeltaMinutes: 0,
+        },
+        // "−€4.20 (net revenue)": buy-on-board earns, it does not cost.
+        {
+          costPerPaxMinor: 0,
+          revenuePerPaxMinor: 420,
+          scoreBand: { min: 0.1, max: 0.25 },
+          turnaroundDeltaMinutes: 0,
+        },
+        {
+          costPerPaxMinor: 310,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0.28, max: 0.42 },
+          turnaroundDeltaMinutes: 2,
+        },
+        {
+          costPerPaxMinor: 840,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0.45, max: 0.62 },
+          turnaroundDeltaMinutes: 5,
+        },
+        {
+          costPerPaxMinor: 3_100,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0.65, max: 0.82 },
+          turnaroundDeltaMinutes: 9,
+        },
+        {
+          costPerPaxMinor: 7_800,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0.85, max: 1 },
+          turnaroundDeltaMinutes: 14,
+        },
+      ],
+    },
+    // Revenue anchored to D.3: bags €9.50 + seat selection €3.80 = €13.30 charged
+    // at tier 0, given away by degrees up the ladder. The turnaround goes the
+    // other way and is negative at tier 0 on purpose — charging for cabin bags
+    // pushes them into the hold at the gate rather than down the aisle.
+    baggage_seating: {
+      tiers: [
+        {
+          costPerPaxMinor: 0,
+          revenuePerPaxMinor: 1_330,
+          scoreBand: { min: 0, max: 0.08 },
+          turnaroundDeltaMinutes: -1,
+        },
+        // Invented: cabin bag included is roughly the seat-selection half given back.
+        {
+          costPerPaxMinor: 0,
+          revenuePerPaxMinor: 950,
+          scoreBand: { min: 0.14, max: 0.34 },
+          turnaroundDeltaMinutes: 1,
+        },
+        {
+          costPerPaxMinor: 0,
+          revenuePerPaxMinor: 570,
+          scoreBand: { min: 0.4, max: 0.64 },
+          turnaroundDeltaMinutes: 2,
+        },
+        {
+          costPerPaxMinor: 0,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0.7, max: 1 },
+          turnaroundDeltaMinutes: 3,
+        },
+      ],
+    },
+    // The top rung is D.3's "Wi-Fi + streaming free −€2.10". The rungs below it
+    // are invented, ordered by what hardware they need rather than what they
+    // deliver per euro — App. D.2 is explicit that free Wi-Fi outperforms the
+    // seatback spend for business travellers, which is why the top band is wide.
+    ife_connectivity: {
+      tiers: [
+        {
+          costPerPaxMinor: 0,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0, max: 0.06 },
+          turnaroundDeltaMinutes: 0,
+        },
+        {
+          costPerPaxMinor: 20,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0.12, max: 0.3 },
+          turnaroundDeltaMinutes: 0,
+        },
+        {
+          costPerPaxMinor: 90,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0.36, max: 0.55 },
+          turnaroundDeltaMinutes: 0,
+        },
+        {
+          costPerPaxMinor: 150,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0.6, max: 0.78 },
+          turnaroundDeltaMinutes: 0,
+        },
+        {
+          costPerPaxMinor: 210,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0.82, max: 1 },
+          turnaroundDeltaMinutes: 0,
+        },
+      ],
+    },
+    // Invented. Scaled against catering: an amenity kit is a fraction of a hot
+    // meal, and the bedding rung is the one that costs like a meal service and
+    // is gated behind one (`SERVICE_LADDERS`).
+    amenities: {
+      tiers: [
+        {
+          costPerPaxMinor: 0,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0, max: 0.05 },
+          turnaroundDeltaMinutes: 0,
+        },
+        {
+          costPerPaxMinor: 240,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0.12, max: 0.36 },
+          turnaroundDeltaMinutes: 1,
+        },
+        {
+          costPerPaxMinor: 680,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0.42, max: 0.68 },
+          turnaroundDeltaMinutes: 2,
+        },
+        {
+          costPerPaxMinor: 1_950,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0.74, max: 1 },
+          turnaroundDeltaMinutes: 4,
+        },
+      ],
+    },
+    // The only ladder whose revenue climbs with the tier: selling to a captive
+    // cabin earns and mildly annoys. Tier 3's €0.40 base is set against App.
+    // D.3's budget line "scratch cards, medium intensity **+€0.60**", which is
+    // the *total* that line earns rather than an increment over a quieter one —
+    // so €0.40 at a half-open dial, which `revenueMultiplierAtMax` of 2 makes 1.5×.
+    onboard_retail: {
+      tiers: [
+        {
+          costPerPaxMinor: 0,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0, max: 0.2 },
+          turnaroundDeltaMinutes: 0,
+        },
+        {
+          costPerPaxMinor: 0,
+          revenuePerPaxMinor: 15,
+          scoreBand: { min: 0.24, max: 0.5 },
+          turnaroundDeltaMinutes: 0,
+        },
+        {
+          costPerPaxMinor: 0,
+          revenuePerPaxMinor: 25,
+          scoreBand: { min: 0.54, max: 0.76 },
+          turnaroundDeltaMinutes: 1,
+        },
+        {
+          costPerPaxMinor: 0,
+          revenuePerPaxMinor: 40,
+          scoreBand: { min: 0.8, max: 1 },
+          turnaroundDeltaMinutes: 1,
+        },
+      ],
+    },
+    // Invented, and the only ladder whose cost is mostly fixed infrastructure
+    // charged per passenger. A lounge is the step change, which is why tier 3
+    // is where the cost jumps and the band widens.
+    ground_services: {
+      tiers: [
+        {
+          costPerPaxMinor: 0,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0, max: 0.05 },
+          turnaroundDeltaMinutes: 0,
+        },
+        {
+          costPerPaxMinor: 110,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0.1, max: 0.26 },
+          turnaroundDeltaMinutes: -1,
+        },
+        {
+          costPerPaxMinor: 290,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0.32, max: 0.5 },
+          turnaroundDeltaMinutes: -2,
+        },
+        {
+          costPerPaxMinor: 880,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0.56, max: 0.76 },
+          turnaroundDeltaMinutes: -2,
+        },
+        {
+          costPerPaxMinor: 2_400,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0.82, max: 1 },
+          turnaroundDeltaMinutes: -3,
+        },
+      ],
+    },
+    // D.3 prices "lighting, welcome drink" at €0.40 together. App. D.2 calls
+    // atmosphere "the highest-efficiency spend in the catalogue", so these are
+    // the cheapest rungs in the file carrying full-width bands — deliberately,
+    // and the thing to preserve if they are ever retuned.
+    atmosphere: {
+      tiers: [
+        {
+          costPerPaxMinor: 0,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0, max: 0.06 },
+          turnaroundDeltaMinutes: 0,
+        },
+        {
+          costPerPaxMinor: 15,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0.14, max: 0.38 },
+          turnaroundDeltaMinutes: 0,
+        },
+        {
+          costPerPaxMinor: 40,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0.44, max: 0.7 },
+          turnaroundDeltaMinutes: 1,
+        },
+        {
+          costPerPaxMinor: 95,
+          revenuePerPaxMinor: 0,
+          scoreBand: { min: 0.76, max: 1 },
+          turnaroundDeltaMinutes: 2,
+        },
+      ],
+    },
+  },
+  commercialIntensity: {
+    // Double at the dial's limit. Fixed by D.3's anchor rather than chosen: the
+    // budget package's scratch cards earn €0.60 a head at *medium* intensity,
+    // and a half-open dial on a linear multiplier is 1.5× — so the top tier's
+    // €0.40 base and a maximum of 2 are the pair that lands it.
+    revenueMultiplierAtMax: 2,
+    // "small satisfaction penalty" — a fifth of the retail category's score at
+    // full push. Small on purpose: the strategy must stay viable.
+    satisfactionPenaltyAtMax: 0.2,
+    // Past three-quarters of the dial it stops being characterful. §15's
+    // reputation consequence hangs off this; M8-03 only publishes the threshold.
+    reputationRiskAbove: 0.75,
+  },
+} as const satisfies z.input<typeof ServiceBalance>;
+
 export const EconomyConfig = z
   .object({
     version: EconomyConfigVersion,
@@ -2365,6 +2817,10 @@ export const EconomyConfig = z
     // Defaulted for the same reason once more (M5-06): what ground handling
     // costs. Every `v1` row written before it reads back the shipped money.
     ground: GroundBalance.default(SHIPPED_GROUND_BALANCE),
+    // And once more (M8-03): App. D's service catalogue. The one section that
+    // refuses its own numbers — see `ServiceCategoryBalance`, which will not
+    // parse a ladder whose tier bands overlap.
+    service: ServiceBalance.default(SHIPPED_SERVICE_BALANCE),
   })
   .strict();
 export type EconomyConfig = z.infer<typeof EconomyConfig>;

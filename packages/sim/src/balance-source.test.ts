@@ -18,6 +18,7 @@ import {
   DEFAULT_MODULATION,
   DEFAULT_NPC,
   DEFAULT_SCHED_FIT,
+  DEFAULT_SERVICE,
   DEFAULT_SEGMENTS,
   DEFAULT_SETTLEMENT,
   EFFICIENCY_CEILINGS,
@@ -123,6 +124,7 @@ const BALANCE_EXPORTS = [
     'economy/fare-floor.ts',
   ],
   ['DEFAULT_NPC', DEFAULT_NPC, ECONOMY_CONFIG_V1.npc, 'npc/carrier.ts'],
+  ['DEFAULT_SERVICE', DEFAULT_SERVICE, ECONOMY_CONFIG_V1.service, 'service/bands.ts'],
 ] as const;
 
 describe('where the balance numbers come from', () => {

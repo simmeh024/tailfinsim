@@ -51,6 +51,13 @@ import { LiveryDocument } from './livery';
 import { MaintenanceResponse, BookCheckResponse } from './maintenance';
 import { AdminNpcResponse } from './npc';
 import { OfficeStateResponse } from './office';
+import {
+  RouteGroupsResponse,
+  RouteGroupSummary,
+  ServiceCatalogueResponse,
+  ServicePackagesResponse,
+  ServicePackageSummary,
+} from './service';
 import { UsedMarketResponse } from './used-market';
 import { VersionResponse } from './version';
 import { WorldClock } from './world';
@@ -157,6 +164,12 @@ export const crewResponseJsonSchema = z.toJSONSchema(CrewResponse);
 export const automationStateResponseJsonSchema = z.toJSONSchema(AutomationStateResponse);
 export const groundStationResponseJsonSchema = z.toJSONSchema(GroundStationResponse);
 export const groundContractsResponseJsonSchema = z.toJSONSchema(GroundContractsResponse);
+
+export const serviceCatalogueResponseJsonSchema = z.toJSONSchema(ServiceCatalogueResponse);
+export const servicePackagesResponseJsonSchema = z.toJSONSchema(ServicePackagesResponse);
+export const routeGroupsResponseJsonSchema = z.toJSONSchema(RouteGroupsResponse);
+export const servicePackageSummaryJsonSchema = z.toJSONSchema(ServicePackageSummary);
+export const routeGroupSummaryJsonSchema = z.toJSONSchema(RouteGroupSummary);
 export const officeStateResponseJsonSchema = z.toJSONSchema(OfficeStateResponse);
 export const executiveFloorStateJsonSchema = z.toJSONSchema(ExecutiveFloorState);
 export const financePnlResponseJsonSchema = z.toJSONSchema(FinancePnlResponse);

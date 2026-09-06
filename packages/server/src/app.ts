@@ -33,6 +33,7 @@ import { registerSlotRoutes } from './network/slot-routes';
 import { registerOfficeRoutes } from './office/routes';
 import { registerScheduleRoutes } from './schedule/routes';
 import { rateLimitOptions } from './security/rate-limit';
+import { registerServiceRoutes } from './service/routes';
 import { registerWorldRoutes } from './world/routes';
 
 /**
@@ -258,6 +259,7 @@ export async function buildApp({
   registerOfficeRoutes(app, { db });
   registerAutomationRoutes(app, { db });
   registerGroundRoutes(app, { db });
+  registerServiceRoutes(app, { db });
   registerFinanceRoutes(app, { db });
   registerCurrencyRoutes(app, { db });
 

@@ -149,6 +149,41 @@ export const RESOURCE_ID_SURFACES = [
       semantics: 'owner-scoped-resource',
     }),
   ),
+  // Service packages and route groups (M8-03). Owner-scoped in the ordinary way:
+  // the store queries carry the session's airline, so another player's id is not
+  // found rather than found and refused.
+  ...[
+    'PUT /api/service/packages/:id',
+    'DELETE /api/service/packages/:id',
+    'PUT /api/service/route-groups/:id',
+    'DELETE /api/service/route-groups/:id',
+  ].map((endpoint): ResourceIdSurface => ({
+    endpoint,
+    position: 'path',
+    field: 'id',
+    semantics: 'owner-scoped-resource',
+  })),
+  // The routes a group is being given, and the package it is being assigned.
+  // Both are the caller's own resources named in a body, and both are checked
+  // against the resolved owner before anything is written.
+  {
+    endpoint: 'POST /api/service/route-groups routeIds',
+    position: 'body',
+    field: 'routeIds',
+    semantics: 'owner-scoped-resource',
+  },
+  {
+    endpoint: 'PUT /api/service/route-groups/:id routeIds',
+    position: 'body',
+    field: 'routeIds',
+    semantics: 'owner-scoped-resource',
+  },
+  {
+    endpoint: 'PUT /api/service/route-groups/:id servicePackageId',
+    position: 'body',
+    field: 'servicePackageId',
+    semantics: 'owner-scoped-resource',
+  },
   ...['POST /api/airlines/code-availability', 'POST /api/airlines'].map(
     (endpoint): ResourceIdSurface => ({
       endpoint,
