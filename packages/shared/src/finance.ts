@@ -24,6 +24,17 @@ export const LedgerCategory = z.enum([
   'interest',
   'aircraft_purchase',
   'asset_deposit',
+  /**
+   * Principal drawn on a loan (§13.3, M8-06).
+   *
+   * Neither revenue nor cost: the money arrives, and what it *costs* is the
+   * interest that follows, which has its own `interest` category. Classifying a
+   * draw as a cost would show a profitable airline a month of enormous losses
+   * for having borrowed, and as revenue would show it a month of enormous
+   * profit. `readProfitAndLoss` therefore counts it in neither total, and it is
+   * the only category treated that way.
+   */
+  'debt_draw',
   'other',
 ]);
 export type LedgerCategory = z.infer<typeof LedgerCategory>;

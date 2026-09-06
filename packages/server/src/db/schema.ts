@@ -514,6 +514,8 @@ export const cashMovementCause = pgEnum('cash_movement_cause', [
   'flight_settlement',
   'disruption_cost',
   'migration_opening_balance',
+  /** §13.3: cash in, when a loan is drawn. */
+  'loan_draw',
 ]);
 export type CashMovementCause = (typeof cashMovementCause.enumValues)[number];
 
@@ -543,6 +545,8 @@ export const ledgerCategory = pgEnum('ledger_category', [
   'interest',
   'aircraft_purchase',
   'asset_deposit',
+  /** §13.3's loan principal arriving — neither revenue nor cost (M8-06). */
+  'debt_draw',
   'other',
 ]);
 export type LedgerCategory = (typeof ledgerCategory.enumValues)[number];
@@ -3924,3 +3928,100 @@ export const routeGroupMember = pgTable(
 );
 
 export type RouteGroupMemberRow = typeof routeGroupMember.$inferSelect;
+
+/* ---- Loans and credit standing (M8-06, §13) ------------------------------- */
+
+/**
+ * One drawn loan.
+ *
+ * Immutable in its terms and mutable in what is left: `annual_rate_bps`,
+ * `term_months` and `tier_at_draw` are the price the airline was quoted and keep
+ * it for the life of the loan, because a rating that falls must not silently
+ * reprice money already lent. `outstanding_minor` is what M8-07 will amortise.
+ *
+ * `drawn_at` is **game time**, like every other in-world instant since
+ * ADR-0026 — a twelve-month term is twelve months of the world, and a world at
+ * 4× reaches maturity in a quarter of the real time.
+ */
+export const loan = pgTable(
+  'loan',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    /** A `@tailfin/shared` `LoanInstrument`. */
+    instrument: text('instrument').notNull(),
+    principalMinor: bigint('principal_minor', { mode: 'number' }).notNull(),
+    outstandingMinor: bigint('outstanding_minor', { mode: 'number' }).notNull(),
+    annualRateBps: integer('annual_rate_bps').notNull(),
+    termMonths: integer('term_months').notNull(),
+    /** A `@tailfin/shared` `CreditTier` — the rating the loan was written at. */
+    tierAtDraw: text('tier_at_draw').notNull(),
+    /** `'active' | 'repaid' | 'defaulted'`. */
+    status: text('status').notNull().default('active'),
+    /**
+     * The airframe a secured loan can be taken against.
+     *
+     * No foreign key, for the same reason `schedule.airframe_id` has none: an
+     * airframe can leave the fleet, and a loan is a financial record that must
+     * survive the asset it was written against rather than vanishing with it.
+     */
+    securedAirframeId: uuid('secured_airframe_id'),
+    drawnAt: timestamp('drawn_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('loan_airline_id_idx').on(t.airlineId),
+    index('loan_world_id_idx').on(t.worldId),
+    // What is owed is summed on every capacity read, so the active rows are the
+    // ones worth indexing for.
+    index('loan_airline_status_idx').on(t.airlineId, t.status),
+    check('loan_principal_positive', sql`${t.principalMinor} > 0`),
+    check('loan_outstanding_nonnegative', sql`${t.outstandingMinor} >= 0`),
+    check('loan_term_positive', sql`${t.termMonths} > 0`),
+  ],
+);
+
+export type LoanRow = typeof loan.$inferSelect;
+
+/**
+ * An airline's credit rating between reviews.
+ *
+ * The rating needs **state**, which is the whole reason this table exists rather
+ * than the tier being computed on demand: §13.2's *"one bad quarter costs a
+ * tier; recovering it takes two good ones"* is a claim about history, and a pure
+ * function of today's trading could not express it. `good_reviews` is the streak
+ * of consecutive reviews that earned better than the tier held.
+ *
+ * `last_reviewed_at` is **game time**, and null means never reviewed — which,
+ * exactly like `crew_base.morale`, is not the same as reviewed and found
+ * wanting. A brand-new airline holds `startup` because that is where everyone
+ * starts, not because it failed an assessment.
+ */
+export const creditStanding = pgTable(
+  'credit_standing',
+  {
+    airlineId: uuid('airline_id')
+      .primaryKey()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    /** A `@tailfin/shared` `CreditTier`. */
+    tier: text('tier').notNull().default('startup'),
+    goodReviews: integer('good_reviews').notNull().default(0),
+    lastReviewedAt: timestamp('last_reviewed_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('credit_standing_world_id_idx').on(t.worldId),
+    check('credit_standing_good_reviews_nonnegative', sql`${t.goodReviews} >= 0`),
+  ],
+);
+
+export type CreditStandingRow = typeof creditStanding.$inferSelect;

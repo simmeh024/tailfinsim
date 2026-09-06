@@ -2866,6 +2866,186 @@ export const SHIPPED_SERVICE_BALANCE = {
   },
 } as const satisfies z.input<typeof ServiceBalance>;
 
+/**
+ * Loans and credit (M8-06, §13).
+ *
+ * §13.1's formula is three limits and a coverage test, and every number in it is
+ * here rather than in `packages/sim`:
+ *
+ * ```
+ * MaxTotalDebt = min( tierCap, profitMultiple × trailing operating profit,
+ *                     assetAdvanceRate × tangible asset value )
+ * DSCR = trailing EBITDA / annual debt service   >= minimumDscr
+ * ```
+ *
+ * The multiple is what makes *"loans support, they never carry"* mechanical: at
+ * 3.0 a loss-making airline's second limit is zero or negative and the whole
+ * `min` collapses, with no special case anywhere. Lowering it makes borrowing
+ * harder for everyone; raising it past about 5 starts letting a thin operator
+ * lever itself into a position one bad month ends. That is the tuning question
+ * this section exists to allow, and the shipped 3.0 is §13.1's own figure.
+ */
+export const CreditTierTerms = z
+  .object({
+    /** §13.2's "Max debt" column, minor units. */
+    maxDebtMinor: MinorUnits.nonnegative(),
+    /** Annual interest in basis points — 1400 is 14%. */
+    annualRateBps: z.number().int().nonnegative(),
+    termMonths: z.number().int().positive(),
+    /**
+     * Consecutive profitable months this tier asks for. `startup` asks none —
+     * it is the founder facility, and exempt by design.
+     */
+    profitableMonths: z.number().int().nonnegative(),
+    /** Active routes the tier asks for. */
+    routes: z.number().int().nonnegative(),
+    /** Hubs the tier asks for. */
+    hubs: z.number().int().nonnegative(),
+    /** Trailing operating margin the tier asks for, as a fraction. */
+    operatingMargin: z.number(),
+  })
+  .strict();
+export type CreditTierTerms = z.infer<typeof CreditTierTerms>;
+
+export const CreditBalance = z
+  .object({
+    /** §13.1's `3.0 ×` — trailing operating profit, annualised. */
+    profitMultiple: z.number().finite().nonnegative(),
+    /** §13.1's `0.60 ×` — how much of tangible asset value a lender will advance. */
+    assetAdvanceRate: z.number().min(0).max(1),
+    /** §13.1's coverage floor. Below this, no new borrowing. */
+    minimumDscr: z.number().finite().positive(),
+    /**
+     * What each instrument does to the tier rate, in basis points (§13.3).
+     *
+     * Unsecured money is dear and secured money is cheap, and the spread between
+     * them is the whole reason a player would ever finance an aeroplane rather
+     * than draw a line: five points, which on a real balance is a lot.
+     */
+    instrumentRateDeltaBps: z
+      .object({
+        working_capital: z.number().int(),
+        aircraft_finance: z.number().int(),
+        facility: z.number().int(),
+      })
+      .strict(),
+    tiers: z
+      .object({
+        startup: CreditTierTerms,
+        D: CreditTierTerms,
+        C: CreditTierTerms,
+        B: CreditTierTerms,
+        A: CreditTierTerms,
+        AA: CreditTierTerms,
+      })
+      .strict(),
+    /**
+     * §13.2: *"Ratings fall faster than they rise. One bad quarter costs a tier;
+     * recovering it takes two good ones."*
+     *
+     * A fall is immediate and a rise needs `risesAfterGoodReviews` consecutive
+     * reviews that earn it. The asymmetry is the point — a rating that snapped
+     * back the moment one month went well would price nothing.
+     */
+    risesAfterGoodReviews: z.number().int().positive(),
+    /** How many tiers a single review may climb. One, so a rise is a climb. */
+    maxRisePerReview: z.number().int().positive(),
+  })
+  .strict();
+export type CreditBalance = z.infer<typeof CreditBalance>;
+
+/**
+ * §13.2's table, as shipped.
+ *
+ * Defaulted like every section since `npc` — see {@link SHIPPED_NPC_BALANCE} for
+ * why a new section must be. Money is minor units at the usual 100-per-unit
+ * scale, so §13.2's "$250K" is 25,000,000.
+ *
+ * The requirement columns are read from §13.2's prose, which is looser than a
+ * schema: "3 profitable months", "6 profitable months, 4+ routes", "12 months,
+ * 2+ hubs, stable margin", "sustained margin, diverse network", "major carrier,
+ * fortress balance sheet". The first three translate directly. The last two do
+ * not give numbers, so the margins and network sizes there are invented to
+ * continue the curve and are the first thing a balance pass should revisit —
+ * they gate the two tiers no early airline can reach anyway.
+ */
+export const SHIPPED_CREDIT_BALANCE = {
+  // §13.1, verbatim.
+  profitMultiple: 3,
+  assetAdvanceRate: 0.6,
+  minimumDscr: 1.25,
+  instrumentRateDeltaBps: {
+    // §13.3: "Tier rate +3%. Cash flow gaps. Expensive on purpose."
+    working_capital: 300,
+    // "Tier rate -2%. Cheapest money available - the bank can repossess."
+    aircraft_finance: -200,
+    facility: 0,
+  },
+  tiers: {
+    startup: {
+      maxDebtMinor: 25_000_000,
+      annualRateBps: 1_400,
+      termMonths: 12,
+      // The founder facility's whole point: no trading required.
+      profitableMonths: 0,
+      routes: 0,
+      hubs: 0,
+      operatingMargin: -1,
+    },
+    D: {
+      maxDebtMinor: 100_000_000,
+      annualRateBps: 1_200,
+      termMonths: 24,
+      profitableMonths: 3,
+      routes: 0,
+      hubs: 0,
+      operatingMargin: 0,
+    },
+    C: {
+      maxDebtMinor: 500_000_000,
+      annualRateBps: 1_000,
+      termMonths: 36,
+      profitableMonths: 6,
+      routes: 4,
+      hubs: 0,
+      operatingMargin: 0,
+    },
+    B: {
+      maxDebtMinor: 2_500_000_000,
+      annualRateBps: 800,
+      termMonths: 60,
+      profitableMonths: 12,
+      routes: 8,
+      hubs: 2,
+      // "stable margin" - a real one, modestly above break-even.
+      operatingMargin: 0.04,
+    },
+    A: {
+      maxDebtMinor: 10_000_000_000,
+      annualRateBps: 600,
+      termMonths: 84,
+      // "Sustained margin, diverse network". Invented; see the note above.
+      profitableMonths: 24,
+      routes: 20,
+      hubs: 3,
+      operatingMargin: 0.08,
+    },
+    AA: {
+      maxDebtMinor: 50_000_000_000,
+      annualRateBps: 450,
+      termMonths: 120,
+      // "Major carrier, fortress balance sheet". Invented; see the note above.
+      profitableMonths: 36,
+      routes: 50,
+      hubs: 5,
+      operatingMargin: 0.12,
+    },
+  },
+  // "recovering it takes two good ones".
+  risesAfterGoodReviews: 2,
+  maxRisePerReview: 1,
+} as const satisfies z.input<typeof CreditBalance>;
+
 export const EconomyConfig = z
   .object({
     version: EconomyConfigVersion,
@@ -2911,6 +3091,9 @@ export const EconomyConfig = z
     // refuses its own numbers — see `ServiceCategoryBalance`, which will not
     // parse a ladder whose tier bands overlap.
     service: ServiceBalance.default(SHIPPED_SERVICE_BALANCE),
+    // And once more (M8-06): §13's credit tiers and the three limits on what an
+    // airline may borrow.
+    credit: CreditBalance.default(SHIPPED_CREDIT_BALANCE),
   })
   .strict();
 export type EconomyConfig = z.infer<typeof EconomyConfig>;

@@ -123,6 +123,8 @@ function categoryForCause(cause: CashMovementCause): LedgerCategory {
       return 'opening_balance';
     case 'flight_settlement':
       return 'other';
+    case 'loan_draw':
+      return 'debt_draw';
   }
 }
 

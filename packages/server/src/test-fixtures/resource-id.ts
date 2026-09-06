@@ -167,6 +167,12 @@ export const RESOURCE_ID_SURFACES = [
   // Both are the caller's own resources named in a body, and both are checked
   // against the resolved owner before anything is written.
   {
+    endpoint: 'POST /api/credit/loans securedAirframeId',
+    position: 'body',
+    field: 'securedAirframeId',
+    semantics: 'owner-scoped-resource',
+  },
+  {
     endpoint: 'POST /api/service/payback routeGroupId',
     position: 'body',
     field: 'routeGroupId',

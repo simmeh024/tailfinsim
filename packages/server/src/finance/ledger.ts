@@ -175,6 +175,13 @@ export async function readProfitAndLoss(
     const amountMinor = safeInteger(line.amount, `P&L ${line.category}`);
     if (['ticket', 'ancillary', 'cargo', 'charter', 'acmi'].includes(line.category)) {
       revenueMinor += amountMinor;
+    } else if (line.category === 'debt_draw') {
+      // Borrowing is neither. A draw is cash arriving against a liability, and
+      // counting it as a cost would show a month of enormous losses for having
+      // taken a loan — while counting it as revenue would show the opposite. Its
+      // real cost is the `interest` that follows (M8-07). The line is still
+      // listed, so the movement is visible; it is only the two totals it stays
+      // out of.
     } else {
       costMinor += amountMinor;
     }

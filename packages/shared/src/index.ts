@@ -57,6 +57,7 @@ export * from './slots';
 export * from './automation';
 export * from './ground';
 export * from './service';
+export * from './credit';
 export * from './fuel';
 export * from './office';
 export * from './executive';
