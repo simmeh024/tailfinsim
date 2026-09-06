@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 
 import {
   type AircraftAcquisitionKind,
@@ -599,7 +599,15 @@ export async function listFleet(
   const rows = await db
     .select()
     .from(airframe)
-    .where(and(eq(airframe.worldId, own.worldId), eq(airframe.airlineId, own.id)))
+    .where(
+      and(
+        eq(airframe.worldId, own.worldId),
+        eq(airframe.airlineId, own.id),
+        // A seized aeroplane has left the fleet: §13.5's repossession takes the
+        // airframe, and the row survives only so its history and its livery do.
+        isNull(airframe.repossessedAt),
+      ),
+    )
     .orderBy(asc(airframe.registration));
 
   if (rows.length === 0) return { airframes: [] };
@@ -679,6 +687,9 @@ export async function airframeDetail(
         eq(airframe.id, airframeId),
         eq(airframe.worldId, own.worldId),
         eq(airframe.airlineId, own.id),
+        // Concealed by resolution like every other resource the airline does not
+        // hold (ADR-0020): a seized airframe answers the endpoint's own 404.
+        isNull(airframe.repossessedAt),
       ),
     )
     .limit(1);

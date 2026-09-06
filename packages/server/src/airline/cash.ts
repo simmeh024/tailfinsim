@@ -125,6 +125,14 @@ function categoryForCause(cause: CashMovementCause): LedgerCategory {
       return 'other';
     case 'loan_draw':
       return 'debt_draw';
+    /*
+     * §13.4 asks for interest as *its own line*, and `interest` is the category
+     * that makes it one. Arrears settled later carry the same cause and the same
+     * category: paying yesterday's interest today is still interest, and a
+     * separate category would split one drain across two lines of the P&L.
+     */
+    case 'loan_interest':
+      return 'interest';
   }
 }
 

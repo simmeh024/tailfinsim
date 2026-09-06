@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, desc, eq, inArray, lte, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lte, ne, sql } from 'drizzle-orm';
 
 import type {
   CrewBalance,
@@ -232,7 +232,14 @@ async function crewDemand(
     .select({ family: aircraftType.family, effectiveSpec: airframe.effectiveSpec })
     .from(airframe)
     .innerJoin(aircraftType, eq(aircraftType.designation, airframe.typeDesignation))
-    .where(and(eq(airframe.worldId, worldId), eq(airframe.airlineId, airlineId)));
+    .where(
+      and(
+        eq(airframe.worldId, worldId),
+        eq(airframe.airlineId, airlineId),
+        // A seized aeroplane is not the airline's any more (§13.5, M8-07). It needs no crew.
+        isNull(airframe.repossessedAt),
+      ),
+    );
 
   const required = new Map<string, number>();
   const key = (family: string, rank: string) => `${family}\u0000${rank}`;

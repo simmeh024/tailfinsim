@@ -400,6 +400,13 @@
       "when": 1788728095903,
       "tag": "0056_freezing_night_thrasher",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1788731452724,
+      "tag": "0057_groovy_bucky",
+      "breakpoints": true
     }
   ]
 }

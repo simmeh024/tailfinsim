@@ -37,6 +37,7 @@ import {
   type CashMovementCause,
   type UsedAircraftListingRow,
 } from '../db/schema';
+import { isAirlineRestricted } from '../finance/default';
 
 import { loadCatalogueVersion } from './catalogue';
 
@@ -55,6 +56,12 @@ export const LEASE_DEPOSIT_MONTHS = 2;
 const GAME_WEEK_MS = 7 * 24 * 60 * 60 * 1_000;
 
 export type AircraftAcquisitionRefusal =
+  /**
+   * §13.5 rung 2 — *"no new routes, no new aircraft"* (M8-07). Its own kind
+   * rather than `airline-not-active`, because that one is an operator sanction
+   * and this one is a lender restriction the player lifts by paying.
+   */
+  | { ok: false; kind: 'credit-restriction' }
   | { ok: false; kind: 'request-id-conflict' }
   | { ok: false; kind: 'airline-not-active'; status: 'restricted' | 'ceased' }
   | { ok: false; kind: 'type-not-found'; designation: string }
@@ -522,6 +529,11 @@ export async function acquireAircraft(
       }
       if (currentAirline.status !== 'active') {
         return { ok: false, kind: 'airline-not-active', status: currentAirline.status };
+      }
+      // §13.5's restriction, inside the same lock as the status above so an
+      // order cannot slip through between the sweep escalating and the write.
+      if (await isAirlineRestricted(tx, own.id)) {
+        return { ok: false, kind: 'credit-restriction' };
       }
 
       const worlds = await tx

@@ -172,6 +172,14 @@ function refuseOpen(
       };
     case 'airline-not-active':
       return { problem: 'unreachable', detail: `Your airline is ${outcome.status}.` };
+    case 'credit-restriction':
+      // §13.5's restriction reaches authoring because a leg to a pair the
+      // airline does not already fly *opens a route*. An existing pair is
+      // untouched: the restriction is on new routes, not on flying the network.
+      return {
+        problem: 'unreachable',
+        detail: `${leg} would open a new route, and your lender has restricted the airline.`,
+      };
     case 'duplicate':
       // The route was created concurrently; the caller re-reads it. Not reachable
       // on the ordinary path, but mapped so the type is exhaustive.

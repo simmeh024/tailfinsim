@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 
 import { AircraftSpec, type CabinClass } from '@tailfin/shared';
 import { type FareFloorAircraft } from '@tailfin/sim';
@@ -164,6 +164,8 @@ export async function loadOperatingBasis(
       and(
         eq(airframe.worldId, input.worldId),
         inArray(airframe.id, [...departuresByAirframe.keys()]),
+        // A seized aeroplane is not the airline's any more (§13.5, M8-07).
+        isNull(airframe.repossessedAt),
       ),
     );
 
