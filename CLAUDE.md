@@ -523,6 +523,32 @@ And `debt_draw` is the one ledger category `readProfitAndLoss` counts in
 a month of enormous losses for having borrowed. `docs/loans-and-credit.md` has
 the boundary, including why sale-leaseback is in §13.3's table and not built.
 
+**But §13.4's drain and §13.5's ladder are a worker story, and the sharpest one
+in the finance track (M8-07).** Interest is charged **per in-game day**, one
+cash movement per loan per day under the `interest` ledger category, because
+§13.4 asks for it as _"its own line"_ in the daily P&L — folding a catch-up into
+the day the sweep ran would show one day's drain at three times its size and the
+two before it at nothing. **Production has no worker**, so there a loan is drawn
+and then costs nothing at all: not a degraded mechanic but **free money**, and
+§13's _"loans support, they never carry"_ inverted. `interestDaysCharged`,
+`interestPaidMinor`, `arrearsMinor`, `defaultEscalations`, `defaultCures`,
+`airframesRepossessed` and `financeErrors` are the counters.
+
+Three things there that were nearly wrong. **Interest runs before the ladder**,
+and the order is load-bearing: the ladder reads `loan.arrears_minor` and the
+accrual is the only thing that writes it, so reviewing first would give a
+defaulter one free rung of slack per tick. **Arrears are never rolled into the
+principal** — compounding a missed payment would make the ladder accelerate away
+from an airline climbing out of it, and §13.5 is explicit that it must be
+climbable, so clearing the arrears clears the stage _from anywhere, including
+administration_. And **`airframe.repossessed_at` is a marker, not a delete**:
+§13.5 says the player keeps the livery, `livery_id` lives on that row, and every
+`flight` and `schedule` points at an airframe by id with no foreign key to stop
+the delete. A seized airframe is filtered out of the fleet, dispatch, maintenance
+and the tangible assets a lender advances against, and is `grounded` as well so
+the dispatch gate refuses it even if a query forgets. `docs/loans-and-credit.md`
+has the ladder and what each rung actually does.
+
 **And one thing not to "fix".** `airframe.maintenance_state` is nullable, and a null means
 _every tier was last completed at the hours this airframe has now_ — not _at hour zero_. It
 looks like a missing default and it is load-bearing: the other reading would make every

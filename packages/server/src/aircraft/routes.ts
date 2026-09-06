@@ -18,6 +18,7 @@ import {
 
 import { resolvedAirlineOf } from '../airline/context';
 import { type DatabaseHandle } from '../db/client';
+import { RESTRICTED_MESSAGE } from '../finance/default';
 import { parseRequestBody } from '../http/request-body';
 
 import {
@@ -367,6 +368,10 @@ function sendAcquisitionRefusal(reply: FastifyReply, result: AircraftAcquisition
         code: `airline_${result.status}`,
         message: `This airline is ${result.status} and cannot acquire aircraft`,
       };
+      break;
+    case 'credit-restriction':
+      status = 409;
+      error = { code: 'credit_restricted', message: RESTRICTED_MESSAGE };
       break;
     case 'type-not-found':
       status = 404;

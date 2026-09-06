@@ -28,6 +28,7 @@ import { CabinClass, OpenRouteInput, SetFaresRequest, Uuid } from '@tailfin/shar
 
 import { resolvedAirlineOf } from '../airline/context';
 import { route } from '../db/schema';
+import { RESTRICTED_MESSAGE } from '../finance/default';
 import { parseRequestBody } from '../http/request-body';
 
 import { routeCompetition } from './competition';
@@ -178,6 +179,12 @@ export function registerNetworkRoutes(
               ? 'This airline is restricted and cannot open new routes'
               : 'This airline has ceased and its record is read-only',
         });
+      }
+      if (result.kind === 'credit-restriction') {
+        // 409 like the operator sanction above: the request is well-formed and
+        // the airline's *state* refuses it, and the state is one the player can
+        // change. The message names the arrears, because that is the lever.
+        return reply.code(409).send({ code: 'credit_restricted', message: RESTRICTED_MESSAGE });
       }
       if (result.kind === 'duplicate') {
         return reply

@@ -516,6 +516,8 @@ export const cashMovementCause = pgEnum('cash_movement_cause', [
   'migration_opening_balance',
   /** §13.3: cash in, when a loan is drawn. */
   'loan_draw',
+  /** §13.4's per-game-day drain, and the arrears it leaves when cash is short. */
+  'loan_interest',
 ]);
 export type CashMovementCause = (typeof cashMovementCause.enumValues)[number];
 
@@ -2937,6 +2939,26 @@ export const airframe = pgTable(
     checkTier: text('check_tier'),
     /** Game-time instant the running check finishes. The worker sweeps on it. */
     checkCompletesAt: timestamp('check_completes_at', { withTimezone: true }),
+
+    // --- M8-07: §13.5's fourth rung ------------------------------------------
+
+    /**
+     * Game time a lender seized this aeroplane, or null while the airline has it.
+     *
+     * A marker rather than a `DELETE`, and the reason is the same one
+     * `loan.secured_airframe_id` gives for carrying no foreign key: `flight`,
+     * `schedule` and every maintenance row point here by id without one, so a
+     * deleted airframe would leave a settled flight unable to say what flew it.
+     * §13.5's *"you keep the livery, not the airframe"* also needs the row to
+     * survive — `livery_id` lives on it, and the document the player keeps is the
+     * one this column must not take with it.
+     *
+     * A seized airframe is **out of the fleet**: excluded from the fleet list,
+     * from what may be dispatched, from maintenance and from the tangible assets
+     * a lender will advance against. It is also grounded, so the dispatch gate
+     * refuses it even if a query somewhere forgets to filter.
+     */
+    repossessedAt: timestamp('repossessed_at', { withTimezone: true }),
   },
   (t) => [
     unique('airframe_world_registration_key').on(t.worldId, t.registration),
@@ -3972,6 +3994,30 @@ export const loan = pgTable(
      */
     securedAirframeId: uuid('secured_airframe_id'),
     drawnAt: timestamp('drawn_at', { withTimezone: true }).notNull(),
+    /**
+     * The game day interest has been charged up to — the accrual watermark
+     * (M8-07, §13.4).
+     *
+     * **Nullable means never accrued**, not accrued to the epoch: a loan drawn a
+     * moment ago has had no sweep reach it yet, and reading a null as "owes
+     * interest since 1970" would bill a new borrower for decades on the first
+     * tick. The sweep treats a null as `drawn_at`, which is the only reading
+     * that charges for the time the money has actually been held.
+     *
+     * A watermark rather than a remembered "last run", so the sweep is
+     * idempotent: it charges whole game days between the mark and now, and
+     * running twice in one day charges nothing the second time.
+     */
+    interestAccruedThroughAt: timestamp('interest_accrued_through_at', { withTimezone: true }),
+    /**
+     * Interest the airline could not pay, still owed (§13.5's "missed payment").
+     *
+     * Kept apart from `outstanding_minor` on purpose. Arrears are what the
+     * default ladder watches and what curing clears; rolling them into the
+     * principal would compound a missed payment into the debt and quietly make
+     * the ladder unescapable.
+     */
+    arrearsMinor: bigint('arrears_minor', { mode: 'number' }).notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -3984,6 +4030,7 @@ export const loan = pgTable(
     check('loan_principal_positive', sql`${t.principalMinor} > 0`),
     check('loan_outstanding_nonnegative', sql`${t.outstandingMinor} >= 0`),
     check('loan_term_positive', sql`${t.termMonths} > 0`),
+    check('loan_arrears_nonnegative', sql`${t.arrearsMinor} >= 0`),
   ],
 );
 
@@ -4016,6 +4063,20 @@ export const creditStanding = pgTable(
     tier: text('tier').notNull().default('startup'),
     goodReviews: integer('good_reviews').notNull().default(0),
     lastReviewedAt: timestamp('last_reviewed_at', { withTimezone: true }),
+    /**
+     * Where the airline sits on §13.5's ladder — a `@tailfin/shared`
+     * `DefaultStage`, `'none'` for an airline in good standing.
+     */
+    defaultStage: text('default_stage').notNull().default('none'),
+    /** Game time the current stage began. Null while the stage is `none`. */
+    stageEnteredAt: timestamp('stage_entered_at', { withTimezone: true }),
+    /**
+     * Game time by which arrears must be cleared to avoid the next stage.
+     *
+     * §13.5 gives the warning "7 in-game days to cure", and every later stage
+     * gets its own window from the economy config. Null while nothing is owed.
+     */
+    cureByAt: timestamp('cure_by_at', { withTimezone: true }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

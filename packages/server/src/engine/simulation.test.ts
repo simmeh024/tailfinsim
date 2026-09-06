@@ -239,6 +239,68 @@ describe('what the engine reports', () => {
     expect(engine.snapshot().flightsMaterialised).toBe(0);
   });
 
+  it('charges interest before it reviews the ladder, for every tickable world', async () => {
+    const order: string[] = [];
+    const accrueInterest = vi.fn((_db: Database, worldId: string) => {
+      order.push(`accrue:${worldId}`);
+      return Promise.resolve({
+        daysCharged: 2,
+        loansCharged: 1,
+        paidMinor: 500,
+        arrearsAddedMinor: 100,
+        arrearsClearedMinor: 0,
+      });
+    });
+    const reviewDefaults = vi.fn((_db: Database, worldId: string) => {
+      order.push(`ladder:${worldId}`);
+      return Promise.resolve({ escalated: 1, cured: 0, repossessed: 1, routesClosed: 3 });
+    });
+    const engine = createSimulationEngine({
+      db,
+      handlers: {},
+      listWorlds: () => Promise.resolve(worldsFixture('Flagship', 'Second')),
+      drain: () => Promise.resolve(drainResult(0)),
+      accrueInterest,
+      reviewDefaults,
+    });
+
+    const report = await engine.runOnce();
+
+    expect(report.interestDaysCharged).toBe(4);
+    expect(report.defaultEscalations).toBe(2);
+    expect(report.airframesRepossessed).toBe(2);
+    expect(engine.snapshot().interestPaidMinor).toBe(1_000);
+    expect(engine.snapshot().arrearsMinor).toBe(200);
+    expect(engine.snapshot().financeErrors).toBe(0);
+    /*
+     * The order is the point, not a coincidence. The ladder reads
+     * `loan.arrears_minor` and the accrual is the only thing that writes it, so
+     * reviewing first would judge every airline on yesterday's arrears and hand
+     * a defaulter one free rung of slack per tick.
+     */
+    expect(order).toEqual(['accrue:world-0', 'ladder:world-0', 'accrue:world-1', 'ladder:world-1']);
+  });
+
+  it('counts a finance sweep that throws without stopping the tick', async () => {
+    const engine = createSimulationEngine({
+      db,
+      handlers: {},
+      listWorlds: () => Promise.resolve(worldsFixture('Flagship')),
+      drain: () => Promise.resolve(drainResult(2)),
+      accrueInterest: () => Promise.reject(new Error('no economy config')),
+      reviewDefaults: () =>
+        Promise.resolve({ escalated: 0, cured: 0, repossessed: 0, routesClosed: 0 }),
+    });
+
+    const report = await engine.runOnce();
+
+    // The drain still ran, and the days that were not charged are still owed:
+    // the watermark did not move, so the next tick charges them.
+    expect(report.processed).toBe(2);
+    expect(engine.snapshot().financeErrors).toBe(1);
+    expect(engine.snapshot().interestDaysCharged).toBe(0);
+  });
+
   it('names the event types it has no handler for', () => {
     const engine = createSimulationEngine({ db, handlers: {} });
 

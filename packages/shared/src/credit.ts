@@ -92,11 +92,83 @@ export const LOAN_SECURITY: Readonly<Record<LoanInstrument, 'none' | 'airframe' 
 export const LoanStatus = z.enum(['active', 'repaid', 'defaulted']);
 export type LoanStatus = z.infer<typeof LoanStatus>;
 
+/**
+ * §13.5's ladder, in order (M8-07).
+ *
+ * > Missed payment → rating drop → refinancing at worse rates → **covenant
+ * > breach** → lender takes control.
+ *
+ * And the last line of §13.5, which constrains every stage below it:
+ *
+ * > **Recoverable, not run-ending.** Losing your airline outright to a bad loan
+ * > would push players away from the entire system, which defeats the point of
+ * > having it.
+ *
+ * So `administration` is not the end. It is the bottom, and an airline comes out
+ * of it holding its airline with a wrecked rating — which is a punishment a
+ * player can play out of, unlike a deleted save.
+ */
+export const DefaultStage = z.enum([
+  'none',
+  'warning',
+  'restriction',
+  'forced_disposal',
+  'repossession',
+  'administration',
+]);
+export type DefaultStage = z.infer<typeof DefaultStage>;
+
+/** The ladder in order, so a stage can be advanced without a switch. */
+export const DEFAULT_STAGES: readonly DefaultStage[] = DefaultStage.options;
+
+/** How far down the ladder a stage sits. `none` is 0. */
+export function defaultStageRank(stage: DefaultStage): number {
+  return DEFAULT_STAGES.indexOf(stage);
+}
+
+/**
+ * The stages at which §13.5 stops the airline doing things.
+ *
+ * > **Restriction** — no new routes, no new aircraft, no dividends.
+ *
+ * From `restriction` down, and it stays in force through every stage below —
+ * an airline in administration is not less restricted than one merely warned.
+ */
+export function isRestricted(stage: DefaultStage): boolean {
+  return defaultStageRank(stage) >= defaultStageRank('restriction');
+}
+
 /** Which of §13.1's three limits is actually binding — the one worth showing. */
 export const BorrowingConstraint = z.enum(['tier_cap', 'profit_multiple', 'asset_advance']);
 export type BorrowingConstraint = z.infer<typeof BorrowingConstraint>;
 
 /* ---- The wire -------------------------------------------------------------- */
+
+/** §13.5's ladder as the client sees it — the state, and what it costs the airline. */
+export const DefaultStanding = z
+  .object({
+    stage: DefaultStage,
+    /** Game time the current rung began. Null in good standing. */
+    stageEnteredAt: Timestamp.nullable(),
+    /**
+     * Game time the arrears must be cleared by to avoid the next rung.
+     *
+     * Null in good standing, and also null at `administration` — there is no
+     * next rung, so nothing is counting down. A UI must not read that null as
+     * *"cured"*; `stage` is the state, this is only the deadline.
+     */
+    cureByAt: Timestamp.nullable(),
+    /** Interest charged and unpaid across every loan. Zero clears the ladder. */
+    arrearsMinor: MinorUnits.nonnegative(),
+    /** §13.5 rung 2 and below: no new routes, no new aircraft. */
+    restricted: z.boolean(),
+    /** What is happening and what clears it, in plain words. Null in good standing. */
+    message: z.string().nullable(),
+    /** What one game day of interest costs across the whole book (§13.4). */
+    dailyInterestMinor: MinorUnits.nonnegative(),
+  })
+  .strict();
+export type DefaultStanding = z.infer<typeof DefaultStanding>;
 
 /** One outstanding loan, as the client sees it. */
 export const LoanView = z
@@ -104,8 +176,14 @@ export const LoanView = z
     id: Uuid,
     instrument: LoanInstrument,
     principalMinor: MinorUnits.positive(),
-    /** Still owed. Equal to the principal until M8-07 starts amortising. */
+    /** Still owed. The principal; M8-07 charges interest on it but does not amortise it. */
     outstandingMinor: MinorUnits.nonnegative(),
+    /** Interest charged that the airline could not pay — what the ladder watches (§13.5). */
+    arrearsMinor: MinorUnits.nonnegative(),
+    /** Game day interest has been charged up to. Null on a loan no sweep has reached. */
+    interestAccruedThroughAt: Timestamp.nullable(),
+    /** What one more game day of this loan costs at today's balance (§13.4). */
+    dailyInterestMinor: MinorUnits.nonnegative(),
     /** Annual rate in basis points — 1400 is §13.2's 14% startup rate. */
     annualRateBps: z.number().int().nonnegative(),
     termMonths: z.number().int().positive(),
@@ -162,6 +240,9 @@ export const CreditStandingResponse = z
         hubs: z.number().int().nonnegative(),
       })
       .strict(),
+
+    /** §13.5's ladder: where the airline stands, and what it has to do about it. */
+    standing: DefaultStanding,
 
     loans: z.array(LoanView),
   })

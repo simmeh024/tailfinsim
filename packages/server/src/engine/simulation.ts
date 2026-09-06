@@ -12,6 +12,8 @@ import { completeDueConversions } from '../crew/store';
 import { type FxRateSource } from '../currency/fx-source';
 import { type Database } from '../db/client';
 import { world, type WorldRow } from '../db/schema';
+import { reviewWorldDefaults } from '../finance/default';
+import { accrueLoanInterest } from '../finance/interest';
 import { expireGroundContracts } from '../ground/contracts';
 import { runGroundPayroll } from '../ground/payroll';
 import { reviewNpcCarriers } from '../npc/operate';
@@ -118,6 +120,13 @@ export interface TickReport {
   groundVolumeShortfalls: number;
   /** M5-06. Airlines billed this run for a station they handle themselves. */
   groundPayrollBilled: number;
+  /** M8-07. Game days of §13.4 interest charged across every loan this run. */
+  interestDaysCharged: number;
+  /** M8-07. Ladder rungs descended, and airlines that cleared their arrears. */
+  defaultEscalations: number;
+  defaultCures: number;
+  /** M8-07. Aeroplanes seized at §13.5's fourth rung this run. */
+  airframesRepossessed: number;
   /** M2-03. Flights materialised from schedules onto the horizon this run. */
   flightsMaterialised: number;
 }
@@ -185,6 +194,10 @@ export interface SimulationEngineOptions {
   expireGround?: typeof expireGroundContracts;
   /** M5-06. Bills the month's payroll for stations the airline handles itself. */
   payGround?: typeof runGroundPayroll;
+  /** M8-07. Charges §13.4's per-game-day interest on every active loan. */
+  accrueInterest?: typeof accrueLoanInterest;
+  /** M8-07. Moves §13.5's default ladder, and applies the rung it lands on. */
+  reviewDefaults?: typeof reviewWorldDefaults;
   /** M2-03. Rolls each world's active schedules onto the flight horizon. */
   materialise?: typeof materialiseWorld;
   depth?: typeof queueDepth;
@@ -324,6 +337,32 @@ export interface EngineSnapshot {
   groundPayrollBilled: number;
   groundErrors: number;
   /**
+   * M8-07. Game days of §13.4 interest charged since start, and what was paid.
+   *
+   * The same trap as every counter above, with a sharper edge than most:
+   * **production has no worker**, so there a loan is drawn and then costs
+   * nothing at all. Not a degraded mechanic — free money, and §13's entire
+   * *"loans support, they never carry"* rule inverted. `interestPaidMinor` is
+   * what reached the ledger; `arrearsMinor` is what the airlines could not pay
+   * and is therefore the volume §13.5's ladder is acting on.
+   */
+  interestDaysCharged: number;
+  interestPaidMinor: number;
+  arrearsMinor: number;
+  /**
+   * M8-07. Ladder rungs descended and airlines that climbed back off, since
+   * start, plus the aeroplanes seized at §13.5's fourth rung.
+   *
+   * `defaultCures` matters on its own: a world escalating with no cures is one
+   * where nobody is recovering, which is a real and different state from a world
+   * where the ladder is not running. `financeErrors` tells a sweep that threw
+   * from a world where nobody owes anything.
+   */
+  defaultEscalations: number;
+  defaultCures: number;
+  airframesRepossessed: number;
+  financeErrors: number;
+  /**
    * M2-03. Flights materialised from schedules since start, and rolls that threw.
    *
    * A counter for the reason the crew and maintenance ones exist: materialisation
@@ -433,6 +472,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     reviewReputation = reviewSocialMediaReputation,
     expireGround = expireGroundContracts,
     payGround = runGroundPayroll,
+    accrueInterest = accrueLoanInterest,
+    reviewDefaults = reviewWorldDefaults,
     materialise = materialiseWorld,
     fxSource,
     refreshFx = refreshFxRates,
@@ -473,6 +514,13 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let groundVolumeShortfallMinor = 0;
   let groundPayrollBilled = 0;
   let groundErrors = 0;
+  let interestDaysCharged = 0;
+  let interestPaidMinor = 0;
+  let arrearsMinor = 0;
+  let defaultEscalations = 0;
+  let defaultCures = 0;
+  let airframesRepossessed = 0;
+  let financeErrors = 0;
   let flightsMaterialised = 0;
   let scheduleErrors = 0;
   let fxRefreshes = 0;
@@ -494,6 +542,10 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     let tickCrewStoodDown = 0;
     let tickCrewRested = 0;
     let tickCrewPaid = 0;
+    let tickInterestDays = 0;
+    let tickDefaultEscalations = 0;
+    let tickDefaultCures = 0;
+    let tickRepossessed = 0;
     let tickOfficePaid = 0;
     let tickMoraleReviews = 0;
     let tickResignations = 0;
@@ -774,6 +826,57 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       }
 
       /*
+       * §13.4's interest and §13.5's default ladder (M8-07), on the world's game
+       * clock like every sweep above.
+       *
+       * Interest first, and the order is load-bearing rather than tidy: the
+       * ladder reads `loan.arrears_minor`, and the accrual is the only thing
+       * that writes it. Reviewing before charging would judge an airline on
+       * yesterday's arrears and give a defaulter one free rung of slack per
+       * tick.
+       *
+       * A world with no borrowing does no work here — both sweeps return early
+       * on an empty read. Isolated like the sweeps above: a charge that could
+       * not be made this tick is made the next, because the watermark did not
+       * move, and the ladder is a pure function of arrears rather than of how
+       * many times it has run.
+       */
+      try {
+        const worldGameNow = gameTime(entry.clock, now());
+        const accrued = await accrueInterest(db, entry.id, worldGameNow);
+        tickInterestDays += accrued.daysCharged;
+        interestDaysCharged += accrued.daysCharged;
+        interestPaidMinor += accrued.paidMinor;
+        arrearsMinor += accrued.arrearsAddedMinor;
+        if (accrued.daysCharged > 0) {
+          log?.info?.(
+            `[${entry.name}] interest: ${String(accrued.daysCharged)} loan-day(s) on ` +
+              `${String(accrued.loansCharged)} loan(s), ` +
+              `${String(Math.round(accrued.paidMinor / 100))} paid, ` +
+              `${String(Math.round(accrued.arrearsAddedMinor / 100))} into arrears`,
+          );
+        }
+
+        const ladder = await reviewDefaults(db, entry.id, worldGameNow);
+        tickDefaultEscalations += ladder.escalated;
+        tickDefaultCures += ladder.cured;
+        tickRepossessed += ladder.repossessed;
+        defaultEscalations += ladder.escalated;
+        defaultCures += ladder.cured;
+        airframesRepossessed += ladder.repossessed;
+        if (ladder.escalated > 0 || ladder.cured > 0) {
+          log?.info?.(
+            `[${entry.name}] default ladder: ${String(ladder.escalated)} escalation(s), ` +
+              `${String(ladder.cured)} cure(s), ${String(ladder.repossessed)} airframe(s) seized, ` +
+              `${String(ladder.routesClosed)} route(s) closed`,
+          );
+        }
+      } catch (error) {
+        financeErrors += 1;
+        log?.warn?.(`[${entry.name}] finance sweep failed: ${String(error)}`);
+      }
+
+      /*
        * Materialise schedules onto the flight horizon (M2-03, §8.2). This is what
        * turns a saved rotation into dated flights and their `FLIGHT_DEPART`
        * events; nothing else creates them. Run *before* the drain, so a flight
@@ -892,6 +995,10 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       groundContractsExpired: tickGroundExpired,
       groundVolumeShortfalls: tickGroundShortfalls,
       groundPayrollBilled: tickGroundPaid,
+      interestDaysCharged: tickInterestDays,
+      defaultEscalations: tickDefaultEscalations,
+      defaultCures: tickDefaultCures,
+      airframesRepossessed: tickRepossessed,
       flightsMaterialised: tickFlightsMaterialised,
     };
   }
@@ -968,6 +1075,13 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         groundVolumeShortfallMinor,
         groundPayrollBilled,
         groundErrors,
+        interestDaysCharged,
+        interestPaidMinor,
+        arrearsMinor,
+        defaultEscalations,
+        defaultCures,
+        airframesRepossessed,
+        financeErrors,
         flightsMaterialised,
         scheduleErrors,
         fxRefreshes,

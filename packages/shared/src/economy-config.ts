@@ -2950,6 +2950,26 @@ export const CreditBalance = z
     risesAfterGoodReviews: z.number().int().positive(),
     /** How many tiers a single review may climb. One, so a rise is a climb. */
     maxRisePerReview: z.number().int().positive(),
+    /** §13.4–§13.5's accrual and the ladder's patience (M8-07). */
+    defaultLadder: z
+      .object({
+        /**
+         * Game days in a year, for turning an annual rate into a daily charge.
+         *
+         * 360 rather than 365 — the banking convention, and the one that makes a
+         * monthly figure exactly a twelfth of the annual, which is how §13.4's
+         * own table is quoted ("$250K at 14% = $2,917/month").
+         */
+        daysPerYear: z.number().int().positive(),
+        /**
+         * Game days to cure before the ladder drops a rung. §13.5 gives the
+         * warning "7 in-game days to cure", and every later rung gets the same
+         * window — a stage that gave less time than the warning would make the
+         * warning the generous one.
+         */
+        cureDays: z.number().int().positive(),
+      })
+      .strict(),
   })
   .strict();
 export type CreditBalance = z.infer<typeof CreditBalance>;
@@ -3044,6 +3064,11 @@ export const SHIPPED_CREDIT_BALANCE = {
   // "recovering it takes two good ones".
   risesAfterGoodReviews: 2,
   maxRisePerReview: 1,
+  defaultLadder: {
+    daysPerYear: 360,
+    // §13.5, verbatim: "Warning - 7 in-game days to cure".
+    cureDays: 7,
+  },
 } as const satisfies z.input<typeof CreditBalance>;
 
 export const EconomyConfig = z

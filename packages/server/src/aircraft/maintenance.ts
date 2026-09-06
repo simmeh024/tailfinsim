@@ -1,4 +1,4 @@
-import { and, asc, eq, isNotNull, lte } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull, lte } from 'drizzle-orm';
 
 import {
   type MaintenanceProfile,
@@ -213,7 +213,9 @@ async function bookCheckInTransaction(
     if (!row) return { ok: false, kind: 'airframe-not-found' } as const;
     // Ownership is resolved from the session's airline, never accepted from the
     // client — the same boundary the rest of the fleet API uses (ADR-0010).
-    if (row.airlineId !== own.id || row.worldId !== own.worldId) {
+    // A seized airframe is no longer owned either (§13.5), and is concealed the
+    // same way rather than refused with a reason the fleet list does not show.
+    if (row.airlineId !== own.id || row.worldId !== own.worldId || row.repossessedAt !== null) {
       return { ok: false, kind: 'not-owned' } as const;
     }
     if (row.status === 'in_check' && row.checkCompletesAt !== null) {
@@ -424,7 +426,14 @@ export async function fleetMaintenance(
   const rows = await db
     .select()
     .from(airframe)
-    .where(and(eq(airframe.worldId, own.worldId), eq(airframe.airlineId, own.id)));
+    .where(
+      and(
+        eq(airframe.worldId, own.worldId),
+        eq(airframe.airlineId, own.id),
+        // A seized aeroplane is not the airline's any more (§13.5, M8-07). The lender maintains it now.
+        isNull(airframe.repossessedAt),
+      ),
+    );
 
   const catalogues = new Map<string, Awaited<ReturnType<typeof loadCatalogueVersion>>>();
   const airframes: MaintenanceAirframeView[] = [];

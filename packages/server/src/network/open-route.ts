@@ -42,6 +42,7 @@ import { checkReachability, haversineNm } from '@tailfin/sim';
 import type { AircraftCapability, AirportCapability, Reachability } from '@tailfin/sim';
 
 import { airline, airport, route, runway } from '../db/schema';
+import { isAirlineRestricted } from '../finance/default';
 import { hasExtendedAuthority, requiresExtendedAuthority } from '../office/authority';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
@@ -72,6 +73,15 @@ const REFERENCE_LIMITS = {
 export type OpenRouteResult =
   | { ok: true; routeId: string; greatCircleNm: number }
   | { ok: false; kind: 'airline-not-active'; status: 'restricted' | 'ceased' }
+  /**
+   * §13.5 rung 2 — *"no new routes, no new aircraft"* (M8-07).
+   *
+   * Deliberately its own kind rather than reusing `airline-not-active`. That one
+   * is an **operator** sanction on the airline record; this is a **lender**
+   * restriction the player lifts by paying, and a player told "your airline is
+   * restricted" would go looking for an admin rather than for their arrears.
+   */
+  | { ok: false; kind: 'credit-restriction' }
   | { ok: false; kind: 'unknown-airport'; icao: string }
   | { ok: false; kind: 'same-airport' }
   | { ok: false; kind: 'duplicate' }
@@ -237,6 +247,12 @@ export async function openRoute(
         return { ok: false, kind: 'airline-not-active', status };
       }
       throw new Error(`Resolved airline ${own.id} vanished while opening a route`);
+    }
+
+    // §13.5's restriction, read inside the same lock as the status above so a
+    // route cannot slip through between the sweep escalating and the insert.
+    if (await isAirlineRestricted(tx, own.id)) {
+      return { ok: false, kind: 'credit-restriction' };
     }
 
     // The unique constraint decides, not a lookup: two requests racing would

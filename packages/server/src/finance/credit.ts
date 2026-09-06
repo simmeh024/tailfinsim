@@ -1,4 +1,4 @@
-import { and, count, eq, gte, sql } from 'drizzle-orm';
+import { and, count, eq, gte, isNull, sql } from 'drizzle-orm';
 
 import {
   CreditTier,
@@ -12,6 +12,7 @@ import {
   applyRatingReview,
   borrowingCapacity,
   checkDraw,
+  dailyInterestMinor,
   debtServiceCoverage,
   earnedCreditTier,
   instrumentRateBps,
@@ -30,6 +31,8 @@ import {
 } from '../db/schema';
 import { loadWorldEconomyConfig } from '../economy/loader';
 import { worldGameNow } from '../world/game-now';
+
+import { projectStanding } from './default';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
 import type { Database } from '../db/client';
@@ -149,7 +152,15 @@ async function tangibleAssetValue(db: Database, airlineId: string): Promise<numb
     .select({ total: sql<string>`coalesce(sum(${aircraftOrder.chargedMinor}), 0)::text` })
     .from(airframe)
     .innerJoin(aircraftOrder, eq(aircraftOrder.id, airframe.sourceOrderId))
-    .where(and(eq(airframe.airlineId, airlineId), eq(airframe.ownership, 'owned')));
+    .where(
+      and(
+        eq(airframe.airlineId, airlineId),
+        eq(airframe.ownership, 'owned'),
+        // A seized aeroplane is the lender's. Advancing against it would let an
+        // airline borrow again on the security it has already lost (§13.5).
+        isNull(airframe.repossessedAt),
+      ),
+    );
   const total = Number(row?.total ?? 0);
   return Number.isFinite(total) ? Math.max(0, Math.round(total)) : 0;
 }
@@ -253,6 +264,24 @@ export async function readCreditStanding(
       });
   }
 
+  /*
+   * §13.4's drain and §13.5's ladder, read rather than reviewed. The *stage* is
+   * the worker sweep's to move — unlike the rating, which is reviewed here —
+   * because escalating on read would let a page load push an airline a rung
+   * further into default, and dating that rung on whenever the player happened
+   * to look. Reading it costs nothing: the arrears are already in `debt.rows`.
+   */
+  let arrearsMinor = 0;
+  let dailyMinor = 0;
+  for (const row of debt.rows) {
+    arrearsMinor += row.arrearsMinor;
+    dailyMinor += dailyInterestMinor(
+      row.outstandingMinor,
+      row.annualRateBps,
+      economy.credit.defaultLadder.daysPerYear,
+    );
+  }
+
   const capacity = borrowingCapacity(next.tier, standing, economy.credit);
   const dscr = debtServiceCoverage(trade.ebitdaMinor, debt.annualServiceMinor);
   const headroomMinor = Math.max(0, capacity.maxTotalDebtMinor - debt.outstandingMinor);
@@ -293,11 +322,19 @@ export async function readCreditStanding(
       routes: standing.routes,
       hubs: standing.hubs,
     },
+    standing: projectStanding(held, arrearsMinor, dailyMinor),
     loans: debt.rows.map((row) => ({
       id: row.id,
       instrument: row.instrument as LoanInstrument,
       principalMinor: row.principalMinor,
       outstandingMinor: row.outstandingMinor,
+      arrearsMinor: row.arrearsMinor,
+      interestAccruedThroughAt: row.interestAccruedThroughAt?.toISOString() ?? null,
+      dailyInterestMinor: dailyInterestMinor(
+        row.outstandingMinor,
+        row.annualRateBps,
+        economy.credit.defaultLadder.daysPerYear,
+      ),
       annualRateBps: row.annualRateBps,
       termMonths: row.termMonths,
       tierAtDraw: CreditTier.safeParse(row.tierAtDraw).data ?? 'startup',
