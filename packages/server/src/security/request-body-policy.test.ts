@@ -428,7 +428,7 @@ describe('SEC-06 request-body policy', () => {
       adminGrant: ['playerId'],
       world: ['speedMultiplier', 'launchDate', 'epoch', 'status'],
       airline: ['cashMinor', 'reputation', 'playerId', 'worldId'],
-      playerIdentity: ['email', 'subject', 'playerId'],
+      playerIdentity: ['email', 'subject', 'playerId', 'lastUsedAt', 'updatedAt'],
       session: ['tokenHash', 'playerId'],
     });
     expect(VIRTUAL_PRIVILEGE_FIELDS).toEqual(['isAdmin', 'adminGrant']);
@@ -464,6 +464,11 @@ describe('SEC-06 request-body policy', () => {
         'tokenHash',
         'isAdmin',
         'adminGrant',
+        // AUTH-01. Server-computed identity timestamps: a client able to post
+        // `lastUsedAt` could make a stale identity look fresh, or an unused one
+        // look like the only way into an account.
+        'lastUsedAt',
+        'updatedAt',
       ]),
     );
   });
