@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 import { buildApp } from '../app';
 
+import { makeAuthedTestEnv } from './env';
+
 import type { DatabaseHandle } from '../db/client';
 import type { ServerEnv } from '../env';
 
@@ -70,27 +72,13 @@ const DERIVED_METHODS = new Set(['HEAD', 'OPTIONS']);
  * explicit API route registration — the matrix records both in its own section,
  * outside the compared markers, for exactly that reason.
  */
-const ENUMERATION_ENV: ServerEnv = {
-  nodeEnv: 'test',
+const ENUMERATION_ENV: ServerEnv = makeAuthedTestEnv({
+  // Named so an accidental connection attempt says which fixture made it:
+  // enumerating the routes builds an app and never queries through it.
   databaseUrl: 'postgres://route-inventory-unused',
   databasePoolMax: 1,
   databaseConnectTimeoutMs: 1_000,
-  logLevel: 'silent',
-  webSurface: 'holding',
-  environmentLabel: 'local',
-  publicOrigin: 'http://localhost:3000',
-  googleClientId: 'route-inventory.apps.googleusercontent.com',
-  googleClientSecret: 'route-inventory-secret',
-  sessionSecret: 'r'.repeat(48),
-  discordClientId: undefined,
-  discordClientSecret: undefined,
-  googleEnabled: true,
-  discordEnabled: false,
-  authEnabled: true,
-  sessionTtlHours: 24,
-  adminSessionTtlHours: 12,
-  allowRegistration: false,
-};
+});
 
 /**
  * Every route the app registers, from Fastify itself.

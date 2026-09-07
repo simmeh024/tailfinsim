@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { buildApp } from '../app';
 import { type DatabaseHandle } from '../db/client';
 import { type EnvironmentLabel, type ServerEnv } from '../env';
+import { makeAuthedTestEnv } from '../test-fixtures/env';
 
 import { CORS_PERMITTED_ORIGINS, resolveCorsOrigins } from './cors';
 
@@ -36,27 +37,13 @@ import { CORS_PERMITTED_ORIGINS, resolveCorsOrigins } from './cors';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 
-const baseEnv: ServerEnv = {
-  nodeEnv: 'test',
+const baseEnv: ServerEnv = makeAuthedTestEnv({
+  // Named so an accidental connection attempt says which suite made it:
+  // the CORS policy is a pure header question and touches no pool.
   databaseUrl: 'postgres://cors-policy-unused',
   databasePoolMax: 1,
   databaseConnectTimeoutMs: 1_000,
-  logLevel: 'silent',
-  webSurface: 'holding',
-  environmentLabel: 'local',
-  publicOrigin: 'http://localhost:3000',
-  googleClientId: 'cors.apps.googleusercontent.com',
-  googleClientSecret: 'cors-secret',
-  sessionSecret: 'k'.repeat(48),
-  discordClientId: undefined,
-  discordClientSecret: undefined,
-  googleEnabled: true,
-  discordEnabled: false,
-  authEnabled: true,
-  sessionTtlHours: 24,
-  adminSessionTtlHours: 12,
-  allowRegistration: false,
-};
+});
 
 /** A domain that ends in ours and is not ours. The whole reason matching is exact. */
 const LOOKALIKE = 'https://tailfinsim.com.evil.example';

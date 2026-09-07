@@ -8,6 +8,7 @@ import { createSession, SESSION_COOKIE } from '../auth/session';
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { adminGrant, player, session } from '../db/schema';
 import { type ServerEnv } from '../env';
+import { makeAuthedTestEnv } from '../test-fixtures/env';
 
 import { type AdminRole } from './capabilities';
 import { BOOTSTRAP_ACTOR, grantAdmin } from './grants';
@@ -26,27 +27,7 @@ const url = process.env.DATABASE_URL;
 if (!url) console.warn('\n  [admin/role-enforcement.test] DATABASE_URL not set — skipping.\n');
 const describeDb = url ? describe : describe.skip;
 
-const env: ServerEnv = {
-  nodeEnv: 'test',
-  databaseUrl: url ?? 'postgres://unused',
-  databasePoolMax: 2,
-  databaseConnectTimeoutMs: 5_000,
-  logLevel: 'silent',
-  webSurface: 'holding',
-  environmentLabel: 'local',
-  publicOrigin: 'http://localhost:3000',
-  googleClientId: 'test-client-id.apps.googleusercontent.com',
-  googleClientSecret: 'test-client-secret',
-  sessionSecret: 's'.repeat(48),
-  discordClientId: undefined,
-  discordClientSecret: undefined,
-  googleEnabled: true,
-  discordEnabled: false,
-  authEnabled: true,
-  sessionTtlHours: 24,
-  adminSessionTtlHours: 12,
-  allowRegistration: false,
-};
+const env: ServerEnv = makeAuthedTestEnv();
 
 /** A well-formed id that names nothing, so a permitted route still changes nothing. */
 const ABSENT = '00000000-0000-4000-8000-0000000000ff';

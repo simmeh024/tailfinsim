@@ -18,6 +18,7 @@ import {
   createAuthorizationTestSuite,
   type AuthorizationTestSuite,
 } from '../test-fixtures/authorization';
+import { makeAuthedTestEnv } from '../test-fixtures/env';
 
 import { BOOTSTRAP_ACTOR } from './grants';
 
@@ -49,27 +50,7 @@ if (!url) console.warn('\n  [admin/economy-diff.test] DATABASE_URL not set — s
 const describeDb = url ? describe : describe.skip;
 
 /** The same shape the authorization sweep uses; auth on, logging off. */
-const env: ServerEnv = {
-  nodeEnv: 'test',
-  databaseUrl: url ?? 'postgres://unused',
-  databasePoolMax: 2,
-  databaseConnectTimeoutMs: 5_000,
-  logLevel: 'silent',
-  webSurface: 'holding',
-  environmentLabel: 'local',
-  publicOrigin: 'http://localhost:3000',
-  googleClientId: 'test-client-id.apps.googleusercontent.com',
-  googleClientSecret: 'test-client-secret',
-  sessionSecret: 's'.repeat(48),
-  discordClientId: undefined,
-  discordClientSecret: undefined,
-  googleEnabled: true,
-  discordEnabled: false,
-  authEnabled: true,
-  sessionTtlHours: 24,
-  adminSessionTtlHours: 12,
-  allowRegistration: false,
-};
+const env: ServerEnv = makeAuthedTestEnv();
 
 describeDb('the economy diff route', () => {
   let db: DatabaseHandle;

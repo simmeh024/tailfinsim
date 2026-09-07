@@ -14,6 +14,7 @@ import {
   createAuthorizationTestSuite,
   type AuthorizationTestSuite,
 } from '../test-fixtures/authorization';
+import { makeAuthedTestEnv } from '../test-fixtures/env';
 import { createWorld } from '../world/lifecycle';
 
 import { readAudit } from './audit';
@@ -41,27 +42,7 @@ const url = process.env.DATABASE_URL;
 if (!url) console.warn('\n  [speed.test] DATABASE_URL not set — skipping speed tests.\n');
 const describeDb = url ? describe : describe.skip;
 
-const env: ServerEnv = {
-  nodeEnv: 'test',
-  databaseUrl: url ?? 'postgres://unused',
-  databasePoolMax: 2,
-  databaseConnectTimeoutMs: 5000,
-  logLevel: 'silent',
-  webSurface: 'holding',
-  environmentLabel: 'local',
-  publicOrigin: 'http://localhost:3000',
-  googleClientId: 'test-client-id.apps.googleusercontent.com',
-  googleClientSecret: 'test-client-secret',
-  sessionSecret: 'a'.repeat(48),
-  discordClientId: undefined,
-  discordClientSecret: undefined,
-  googleEnabled: true,
-  discordEnabled: false,
-  authEnabled: true,
-  sessionTtlHours: 24,
-  adminSessionTtlHours: 12,
-  allowRegistration: false,
-};
+const env: ServerEnv = makeAuthedTestEnv();
 
 describe('validateSpeedRequest', () => {
   const good = { speedMultiplier: 3, expectedSpeedMultiplier: 2 };

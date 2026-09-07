@@ -10,6 +10,7 @@ import {
   createAuthorizationTestSuite,
   type AuthorizationTestSuite,
 } from '../test-fixtures/authorization';
+import { makeAuthedTestEnv } from '../test-fixtures/env';
 import { collectRegisteredRoutes } from '../test-fixtures/route-inventory';
 
 /**
@@ -246,29 +247,12 @@ const url = process.env.DATABASE_URL;
 if (!url) console.warn('\n  [security/csrf.test] DATABASE_URL not set — skipping.\n');
 const describeDb = url ? describe : describe.skip;
 
-const baseEnv: ServerEnv = {
-  nodeEnv: 'test',
-  databaseUrl: url ?? 'postgres://unused',
-  databasePoolMax: 2,
-  databaseConnectTimeoutMs: 5_000,
-  logLevel: 'silent',
-  webSurface: 'holding',
-  environmentLabel: 'local',
-  // http, so `Secure` is off and the cookie travels under inject(). The https
-  // case is asserted separately, because that is the one production runs.
-  publicOrigin: 'http://localhost:3000',
-  googleClientId: 'test-client-id.apps.googleusercontent.com',
-  googleClientSecret: 'test-client-secret',
-  sessionSecret: 'c'.repeat(48),
-  discordClientId: undefined,
-  discordClientSecret: undefined,
-  googleEnabled: true,
-  discordEnabled: false,
-  authEnabled: true,
-  sessionTtlHours: 24,
-  adminSessionTtlHours: 12,
-  allowRegistration: false,
-};
+/**
+ * The fixture's `publicOrigin` is http, so `Secure` is off and the cookie
+ * travels under `inject()`. The https case — the one production runs — is
+ * asserted separately, against an origin overridden at the call site.
+ */
+const baseEnv: ServerEnv = makeAuthedTestEnv();
 
 /** A page that is not us. Nothing here should ever treat it as one. */
 const HOSTILE_ORIGIN = 'https://tailfinsim.com.evil.example';

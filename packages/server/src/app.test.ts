@@ -9,6 +9,7 @@ import { HealthResponse, VersionResponse } from '@tailfin/shared';
 import { buildApp } from './app';
 import { createDatabase, type DatabaseHandle } from './db/client';
 import { type ServerEnv } from './env';
+import { makeTestEnv } from './test-fixtures/env';
 
 /**
  * HTTP-surface tests driven through `app.inject()` — no port, no network.
@@ -20,31 +21,16 @@ import { type ServerEnv } from './env';
 
 const url = process.env.DATABASE_URL;
 
-const testEnv: ServerEnv = {
-  nodeEnv: 'test',
-  databaseUrl: url ?? 'postgres://unused',
-  databasePoolMax: 2,
+/**
+ * Auth is off here, which is the fixture's default and is also deliberate:
+ * it is what production runs until its own OAuth client exists. The auth
+ * surface itself is covered by `auth/session-cookie.test.ts`.
+ */
+const testEnv: ServerEnv = makeTestEnv({
+  // Short, because one case deliberately provokes a 503 from an
+  // unreachable database and the suite should not wait five seconds for it.
   databaseConnectTimeoutMs: 500,
-  // Quiet: these tests deliberately provoke errors and a 503.
-  logLevel: 'silent',
-  // The default surface, and the one production runs.
-  webSurface: 'holding',
-  environmentLabel: 'local',
-  publicOrigin: 'http://localhost:3000',
-  // Auth off, matching production until its own OAuth client exists. The auth
-  // surface itself is covered by auth/session-cookie.test.ts.
-  googleClientId: undefined,
-  googleClientSecret: undefined,
-  sessionSecret: undefined,
-  discordClientId: undefined,
-  discordClientSecret: undefined,
-  googleEnabled: false,
-  discordEnabled: false,
-  authEnabled: false,
-  sessionTtlHours: 24,
-  adminSessionTtlHours: 12,
-  allowRegistration: false,
-};
+});
 
 const describeDb = url ? describe : describe.skip;
 

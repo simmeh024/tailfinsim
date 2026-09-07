@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { airport, route } from '../db/schema';
 import { type ServerEnv } from '../env';
+import { makeAuthedTestEnv } from '../test-fixtures/env';
 import { createOwnershipTestSuite, type OwnershipTestSuite } from '../test-fixtures/ownership';
 import {
   ABSENT_RESOURCE_UUID,
@@ -46,27 +47,7 @@ const url = process.env.DATABASE_URL;
 if (!url) console.warn('\n  [cross-owner-routes.test] DATABASE_URL not set — skipping.\n');
 const describeDb = url ? describe : describe.skip;
 
-const env: ServerEnv = {
-  nodeEnv: 'test',
-  databaseUrl: url ?? 'postgres://unused',
-  databasePoolMax: 2,
-  databaseConnectTimeoutMs: 5_000,
-  logLevel: 'silent',
-  webSurface: 'holding',
-  environmentLabel: 'local',
-  publicOrigin: 'http://localhost:3000',
-  googleClientId: 'test-client-id.apps.googleusercontent.com',
-  googleClientSecret: 'test-client-secret',
-  sessionSecret: 's'.repeat(48),
-  discordClientId: undefined,
-  discordClientSecret: undefined,
-  googleEnabled: true,
-  discordEnabled: false,
-  authEnabled: true,
-  sessionTtlHours: 24,
-  adminSessionTtlHours: 12,
-  allowRegistration: false,
-};
+const env: ServerEnv = makeAuthedTestEnv();
 
 const STORED_FARES = JSON.stringify({ economy: 12_000 });
 

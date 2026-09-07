@@ -23,6 +23,7 @@ import {
 } from '../db/schema';
 import { ECONOMY_CONFIG_V1 } from '../economy/config';
 import { type ServerEnv } from '../env';
+import { makeAuthedTestEnv } from '../test-fixtures/env';
 import { createWorld } from '../world/lifecycle';
 
 import { reconcileAirlineCash } from './cash';
@@ -33,27 +34,7 @@ const url = process.env.DATABASE_URL;
 if (!url) console.warn('\n  [own.test] DATABASE_URL not set — skipping own-airline tests.\n');
 const describeDb = url ? describe : describe.skip;
 
-const env: ServerEnv = {
-  nodeEnv: 'test',
-  databaseUrl: url ?? 'postgres://unused',
-  databasePoolMax: 2,
-  databaseConnectTimeoutMs: 5_000,
-  logLevel: 'silent',
-  webSurface: 'holding',
-  environmentLabel: 'local',
-  publicOrigin: 'http://localhost:3000',
-  googleClientId: 'test-client-id.apps.googleusercontent.com',
-  googleClientSecret: 'test-client-secret',
-  sessionSecret: 'a'.repeat(48),
-  discordClientId: undefined,
-  discordClientSecret: undefined,
-  googleEnabled: true,
-  discordEnabled: false,
-  authEnabled: true,
-  sessionTtlHours: 24,
-  adminSessionTtlHours: 12,
-  allowRegistration: false,
-};
+const env: ServerEnv = makeAuthedTestEnv();
 
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
