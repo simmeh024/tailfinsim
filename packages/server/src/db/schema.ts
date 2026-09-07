@@ -236,7 +236,23 @@ export const session = pgTable(
   ],
 );
 
-export const authProvider = pgEnum('auth_provider', ['google']);
+/**
+ * How a player can prove they own their account (AUTH-01).
+ *
+ * All four values ship at once even though only `google` and `discord` have
+ * code behind them, because extending a Postgres enum is a migration and four
+ * one-value migrations would be three more chances to get an `ALTER TYPE`
+ * wrong on a live database. An enum value nothing writes is inert; a missing
+ * one blocks a deploy.
+ *
+ * `email` is the magic-link identity (AUTH-10) and `passkey` the WebAuthn one
+ * (AUTH-15). Both are placeholders here on purpose: the `player_identity` row
+ * is the *link*, so `passkey` needs a companion table for the credentials
+ * themselves, and that table's shape belongs with the WebAuthn library that
+ * will read it rather than guessed at now.
+ */
+export const authProvider = pgEnum('auth_provider', ['google', 'discord', 'email', 'passkey']);
+export type AuthProviderName = (typeof authProvider.enumValues)[number];
 
 /**
  * External identities that map onto a player.
@@ -247,9 +263,11 @@ export const authProvider = pgEnum('auth_provider', ['google']);
  * second provider is not a migration over live accounts. One extra table now
  * instead of that later.
  *
- * The key is the provider's stable subject claim — Google's `sub` — and never
- * the email address. People change email addresses, and matching accounts on
- * email is how account-takeover bugs happen.
+ * The key is the provider's stable subject claim — Google's `sub`, Discord's
+ * `id` — and never the email address. People change email addresses, and
+ * matching accounts on email is how account-takeover bugs happen. AUTH-04 makes
+ * that a rule rather than a habit: a provider reporting an address another
+ * account already uses changes nothing at all.
  */
 export const playerIdentity = pgTable(
   'player_identity',
@@ -263,6 +281,24 @@ export const playerIdentity = pgTable(
     /** Informational only. Never used to match an identity to a player. */
     email: text('email'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * When this identity last completed an authentication (AUTH-01).
+     *
+     * **Nullable, and null means never used** — not "used at the epoch". An
+     * identity a player linked and has not signed in with yet has honestly
+     * never been used, and that is exactly what the account page (AUTH-18) and
+     * the last-method guard (AUTH-03) need to be able to say. A `defaultNow()`
+     * here would have every identity claim it was used the moment it was
+     * created, which is the same class of lie as a zeroed
+     * `airframe.maintenance_state`.
+     */
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    /**
+     * Set on every write to the row, unlike `lastUsedAt` which tracks
+     * *authentications*. The two diverge: renaming a passkey touches this and
+     * not that, and signing in touches both.
+     */
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     unique('player_identity_provider_subject_key').on(t.provider, t.subject),
@@ -1335,6 +1371,11 @@ export const SENSITIVE_REQUEST_FIELDS = {
     'email',
     'subject',
     'playerId',
+    // Server-computed, and load-bearing for AUTH-03's last-method guard: a
+    // client that could post `lastUsedAt` could make a stale identity look
+    // fresh, or an unused one look like the only way in.
+    'lastUsedAt',
+    'updatedAt',
   ] satisfies readonly (keyof typeof playerIdentity.$inferInsert)[],
   session: ['tokenHash', 'playerId'] satisfies readonly (keyof typeof session.$inferInsert)[],
 } as const;
