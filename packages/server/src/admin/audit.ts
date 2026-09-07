@@ -75,6 +75,11 @@ export const ADMIN_AUDIT_ACTION_POLICY = {
   'economy.version_created': { subjectType: 'economy_config', evidence: 'change' },
   'world.economy_pinned': { subjectType: 'world', evidence: 'change' },
   'events.requeued': { subjectType: 'world_event', evidence: 'change' },
+  // AUTH-09. The subject is the player whose account changed, and the snapshots
+  // are the set of providers that account could be entered by, before and after
+  // — which is the question an audit log is actually being asked here.
+  'identity.linked': { subjectType: 'player', evidence: 'change' },
+  'identity.unlinked': { subjectType: 'player', evidence: 'change' },
 } as const satisfies Record<AdminAction, AuditActionPolicy>;
 
 export function auditPolicyFor(action: AdminAction): AuditActionPolicy {

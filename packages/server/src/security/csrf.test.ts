@@ -110,6 +110,7 @@ const READ_ONLY_GET_ROUTES = [
   '/api/world/airports',
   '/api/world/clock',
   '/api/world/map',
+  '/api/me/sign-in-methods',
   '/healthz',
 ] as const;
 
@@ -152,6 +153,20 @@ const STATE_CHANGING_GET_ROUTES: { url: string; instead: string }[] = [
       '`tailfin_oauth` cookie. The cookie also names the provider it was minted for, so a ' +
       'state issued for Google is refused here rather than spending the credential.',
   },
+  {
+    url: '/api/auth/google/connect',
+    instead:
+      'Writes the signed `tailfin_oauth` state cookie with intent `link`, and carries ' +
+      '`requireAuth`. Forging it starts a connect the attacker cannot finish: the callback ' +
+      'requires a session AND requires it to be the same player the cookie was minted for, ' +
+      'so the worst a forged start achieves is sending the victim to a consent screen.',
+  },
+  {
+    url: '/api/auth/discord/connect',
+    instead:
+      'As the Google connect route, with the same signed-cookie intent and the same ' +
+      'session-identity match at the callback.',
+  },
 ];
 
 describe('no state-changing endpoint is reachable by GET (ADR-0027, fact 4)', () => {
@@ -184,7 +199,7 @@ describe('no state-changing endpoint is reachable by GET (ADR-0027, fact 4)', ()
     ).toEqual([]);
   });
 
-  it('keeps the state-changing GET exceptions down to the sign-in flow', async () => {
+  it('keeps the state-changing GET exceptions down to the OAuth flows', async () => {
     // Not merely "the list is short": the two entries are named, so moving a
     // game action into this list fails rather than passing as a longer list.
     expect(STATE_CHANGING_GET_ROUTES.map((route) => route.url)).toEqual([
@@ -192,6 +207,8 @@ describe('no state-changing endpoint is reachable by GET (ADR-0027, fact 4)', ()
       '/api/auth/google/callback',
       '/api/auth/discord',
       '/api/auth/discord/callback',
+      '/api/auth/google/connect',
+      '/api/auth/discord/connect',
     ]);
 
     // And the exception has to still exist, or the list is stale prose.

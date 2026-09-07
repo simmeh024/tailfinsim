@@ -1,10 +1,14 @@
 import {
+  disconnectMethodResponseJsonSchema,
   logoutResponseJsonSchema,
   meResponseJsonSchema,
   revokeSessionsResponseJsonSchema,
+  signInMethodsResponseJsonSchema,
   type AuthFailureCode,
+  type SignInProvider,
 } from '@tailfin/shared';
 
+import { writeAudit } from '../admin/audit';
 import { type AdminCapability, type AdminRole, roleHasCapability } from '../admin/capabilities';
 import { adminRoleOf, isAdmin } from '../admin/grants';
 import { type DatabaseHandle } from '../db/client';
@@ -25,7 +29,14 @@ import {
   redirectUriFor as googleRedirectUriFor,
   type GoogleProfile,
 } from './google';
-import { signInWithIdentity, type IdentityFailure, type ProvenIdentity } from './identity';
+import {
+  linkIdentity,
+  listIdentities,
+  signInWithIdentity,
+  unlinkIdentity,
+  type IdentityFailure,
+  type ProvenIdentity,
+} from './identity';
 import { createPkcePair, createState } from './pkce';
 import { revokePlayerSessions } from './revocation';
 import {
@@ -83,7 +94,30 @@ function signInFailureCode(failure: IdentityFailure): AuthFailureCode {
   }
 }
 
-/** Holds the OAuth `state` and PKCE verifier between the two legs of the flow. */
+/**
+ * The same, for a *link* rather than a sign-in (AUTH-09).
+ *
+ * A separate mapping because the outcomes genuinely differ. `registration_closed`
+ * cannot arise — linking creates no account — and `already_signed_in` is the
+ * normal precondition here rather than a refusal, so mapping either onto the
+ * link flow's vocabulary would be inventing a case that cannot happen.
+ */
+function linkFailureCode(failure: IdentityFailure): AuthFailureCode {
+  switch (failure.code) {
+    case 'identity_already_linked':
+      return 'identity_already_linked';
+    case 'registration_closed':
+    case 'already_signed_in':
+    case 'last_method':
+    case 'not_found':
+      // Unreachable from `linkIdentity`, which neither creates accounts nor
+      // removes methods. Mapped rather than thrown so an unexpected refusal
+      // still returns the player to a page with something to read.
+      return 'exchange_failed';
+  }
+}
+
+/** Holds the OAuth `state`, PKCE verifier and intent between the two legs of the flow. */
 const OAUTH_COOKIE = 'tailfin_oauth';
 const OAUTH_COOKIE_TTL_SECONDS = 600;
 
@@ -332,6 +366,55 @@ export function registerAuthRoutes(
         .code(503)
         .send({ code: 'auth_not_configured', message: `${label} sign-in is not configured` });
 
+    /**
+     * Begins a flow, for either intent.
+     *
+     * The intent rides in the **signed** cookie and never in a query parameter.
+     * That is the load-bearing detail of AUTH-09: "turn this sign-in into a link
+     * onto my account" is precisely the attack, and a query parameter is
+     * attacker-supplied. The player id rides along too, and the callback
+     * requires it to match the session it finds — so a session that changes
+     * between the redirect out and the callback back cannot silently connect
+     * the identity to whoever is there now.
+     */
+    const begin = (
+      request: FastifyRequest,
+      reply: FastifyReply,
+      intent: 'sign_in' | 'link',
+    ): FastifyReply => {
+      const clientId = config.clientId();
+      if (!config.enabled() || !clientId) return notConfigured(reply);
+
+      const state = createState();
+      const { verifier, challenge } = createPkcePair();
+
+      void reply.setCookie(
+        OAUTH_COOKIE,
+        JSON.stringify({
+          provider: name,
+          state,
+          verifier,
+          intent,
+          playerId: intent === 'link' ? (request.player?.id ?? null) : null,
+        }),
+        { ...sessionCookieOptions, signed: true, maxAge: OAUTH_COOKIE_TTL_SECONDS },
+      );
+
+      return reply.redirect(
+        config.buildAuthorizeUrl({
+          clientId,
+          redirectUri: config.redirectUriFor(env.publicOrigin),
+          state,
+          codeChallenge: challenge,
+        }),
+      );
+    };
+
+    /** Connect this provider to the account already signed in (AUTH-09). */
+    app.get(`/api/auth/${name}/connect`, { onRequest: app.requireAuth }, async (request, reply) =>
+      begin(request, reply, 'link'),
+    );
+
     app.get(`/api/auth/${name}`, async (_request, reply) => {
       // This provider's own flag, never `authEnabled`: with more than one
       // provider, "auth works here" no longer implies "this provider works
@@ -392,7 +475,13 @@ export function registerAuthRoutes(
         const unsigned = raw ? reply.unsignCookie(raw) : null;
         if (!unsigned?.valid || !unsigned.value) return fail('state_mismatch');
 
-        let stored: { provider?: unknown; state?: unknown; verifier?: unknown };
+        let stored: {
+          provider?: unknown;
+          state?: unknown;
+          verifier?: unknown;
+          intent?: unknown;
+          playerId?: unknown;
+        };
         try {
           stored = JSON.parse(unsigned.value) as typeof stored;
         } catch {
@@ -426,6 +515,70 @@ export function registerAuthRoutes(
           return fail('exchange_failed');
         }
 
+        // ------------------------------------------------------------ linking
+        if (stored.intent === 'link') {
+          const linkFail = (code: string): FastifyReply => {
+            void reply.clearCookie(OAUTH_COOKIE, { path: '/' });
+            // Back to the account page rather than the login wall: the player is
+            // (or was) signed in, and sending them to a door they are already
+            // through would be its own kind of confusing.
+            return reply.redirect(`/settings?link_error=${code}`);
+          };
+
+          // The session is the entire authority for this operation, so its
+          // absence is a refusal and never a fallback to signing in — that would
+          // hand them a different account than the one they were connecting to.
+          const current = request.player;
+          if (!current) return linkFail('link_requires_session');
+
+          // And it must be the *same* session that started the flow.
+          if (typeof stored.playerId !== 'string' || stored.playerId !== current.id) {
+            return linkFail('link_requires_session');
+          }
+
+          // The link and its audit row commit together, which is what
+          // `writeAudit` exists to make structural: a record written afterwards
+          // is one that can go missing exactly when the change was the one
+          // somebody wanted hidden.
+          const linked = await db.db.transaction(async (tx) => {
+            const before = (await listIdentities(tx, current.id)).map((m) => m.provider);
+            const result = await linkIdentity(tx, current.id, {
+              provider: name,
+              ...config.toIdentity(profile),
+            });
+            if (!result.ok || result.value.alreadyLinked) return result;
+
+            await writeAudit(tx, {
+              actorPlayerId: current.id,
+              actorLabel: current.displayName,
+              action: 'identity.linked',
+              subjectType: 'player',
+              subjectId: current.id,
+              // How this account could be entered, before and after. More use to
+              // whoever reads the log later than the single provider name would
+              // be, and it is what makes the before/after genuinely differ.
+              before: { providers: before },
+              after: { providers: [...before, name] },
+              requestId: request.id,
+            });
+            return result;
+          });
+
+          if (!linked.ok) {
+            request.log.info(
+              { provider: name, failure: linked.failure.code },
+              'identity link refused',
+            );
+            return linkFail(linkFailureCode(linked.failure));
+          }
+
+          void reply.clearCookie(OAUTH_COOKIE, { path: '/' });
+          // No new session: they are already signed in as the right player, and
+          // rotating the cookie here would be a change with no reason behind it.
+          return reply.redirect(`/settings?linked=${name}`);
+        }
+
+        // ----------------------------------------------------------- signing in
         // Account policy is one module for every provider (AUTH-02). Resolving
         // on `(provider, subject)`, the ALLOW_REGISTRATION gate and AUTH-04's
         // conflict rules all live in `signInWithIdentity`, so Discord, magic
@@ -513,6 +666,89 @@ export function registerAuthRoutes(
       avatarUrl: profile.avatarUrl,
     }),
   });
+
+  // ------------------------------------------------------- sign-in methods
+
+  /**
+   * The player's own ways in (AUTH-09).
+   *
+   * Scoped by the session-resolved player and by nothing the client sent, so
+   * there is no id here to tamper with (SEC-07) and no cross-owner case to
+   * conceal — the question is only ever "mine".
+   */
+  app.get(
+    '/api/me/sign-in-methods',
+    { onRequest: app.requireAuth, schema: { response: { 200: signInMethodsResponseJsonSchema } } },
+    async (request, reply) => {
+      const playerId = request.player!.id;
+      const methods = await listIdentities(db.db, playerId);
+
+      return reply.code(200).send({
+        methods: methods.map((method) => ({
+          id: method.id,
+          provider: method.provider as SignInProvider,
+          email: method.email,
+          linkedAt: method.createdAt.toISOString(),
+          lastUsedAt: method.lastUsedAt?.toISOString() ?? null,
+        })),
+        // Decided here rather than by the client counting rows, so the answer
+        // cannot disagree with the rule `unlinkIdentity` will actually apply.
+        canDisconnect: methods.length > 1,
+      });
+    },
+  );
+
+  app.delete<{ Params: { identityId: string } }>(
+    '/api/me/sign-in-methods/:identityId',
+    {
+      onRequest: app.requireAuth,
+      schema: { response: { 200: disconnectMethodResponseJsonSchema } },
+    },
+    async (request, reply) => {
+      const player = request.player!;
+
+      // As with linking: the removal and its record commit together.
+      const removed = await db.db.transaction(async (tx) => {
+        const before = (await listIdentities(tx, player.id)).map((m) => m.provider);
+        const result = await unlinkIdentity(tx, player.id, request.params.identityId);
+        if (!result.ok) return result;
+
+        await writeAudit(tx, {
+          actorPlayerId: player.id,
+          actorLabel: player.displayName,
+          action: 'identity.unlinked',
+          subjectType: 'player',
+          subjectId: player.id,
+          before: { providers: before },
+          after: { providers: (await listIdentities(tx, player.id)).map((m) => m.provider) },
+          requestId: request.id,
+        });
+        return result;
+      });
+
+      if (!removed.ok) {
+        if (removed.failure.code === 'last_method') {
+          // 409 rather than 403: the request is permitted and well-formed, and
+          // what refuses it is the state of the account. "Sign in another way
+          // first" is advice a 403 cannot carry.
+          return reply.code(409).send({
+            code: 'last_method',
+            message: 'That is the only way into this account. Connect another first.',
+          });
+        }
+        // Malformed, absent and another player's identity are the same answer
+        // (ADR-0020) — the resolution is already scoped by owner, so there is
+        // nothing here that could disclose one exists.
+        return reply
+          .code(404)
+          .send({ code: 'not_found', message: 'No such sign-in method on this account' });
+      }
+
+      return reply
+        .code(200)
+        .send({ disconnected: true, provider: removed.value.provider as SignInProvider });
+    },
+  );
 
   app.post(
     '/api/auth/logout',

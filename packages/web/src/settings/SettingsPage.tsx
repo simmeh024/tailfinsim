@@ -7,6 +7,7 @@ import { useCurrency } from '../currency/CurrencyProvider';
 import { formatInCurrency } from '../currency/display';
 
 import { reloadPage } from './reload';
+import { SignInMethods } from './SignInMethods';
 
 import './settings.css';
 
@@ -83,6 +84,8 @@ export function SettingsPage(): ReactNode {
         <h1>Settings</h1>
         {player && <p>Signed in as {player.displayName}</p>}
       </header>
+
+      <SignInMethods />
 
       <section className="settings__section" aria-labelledby="currency-heading">
         <h2 id="currency-heading">Display currency</h2>

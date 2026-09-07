@@ -18,7 +18,11 @@ import { registerPlayerAirlineContext } from './airline/context';
 import { type AirlineIdentityModerator } from './airline/moderation';
 import { registerAirlineRoutes } from './airline/routes';
 import { registerAlertRoutes } from './alerts/routes';
-import { type GoogleAuthOperations, registerAuthRoutes } from './auth/routes';
+import {
+  registerAuthRoutes,
+  type DiscordAuthOperations,
+  type GoogleAuthOperations,
+} from './auth/routes';
 import { registerAutomationRoutes } from './automation/routes';
 import { readBuildInfo } from './build-info';
 import { registerCrewRoutes } from './crew/routes';
@@ -104,8 +108,14 @@ export interface BuildAppOptions {
   identityModerator?: AirlineIdentityModerator;
   /** AIR-04/M11-08 allocation strategy; defaults to per-world availability. */
   airlineCodePolicy?: AirlineCodeAllocationPolicy;
-  /** Test seam at the external OAuth boundary; production uses the real provider. */
+  /**
+   * Test seams at the external OAuth boundary; production uses the real
+   * providers. One per provider rather than a map, so a provider added
+   * without a seam is a type error at its first callback test rather than a
+   * silently unreachable one.
+   */
   googleAuth?: GoogleAuthOperations;
+  discordAuth?: DiscordAuthOperations;
   /**
    * Called once for every route as it is registered (SEC-04).
    *
@@ -136,6 +146,7 @@ export async function buildApp({
   identityModerator,
   airlineCodePolicy,
   googleAuth,
+  discordAuth,
   onRoute,
 }: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({
@@ -234,7 +245,7 @@ export async function buildApp({
   await app.register(fastifyRateLimit, rateLimitOptions(env));
 
   app.register(fastifyCookie, env.sessionSecret ? { secret: env.sessionSecret } : {});
-  registerAuthRoutes(app, { env, db, googleAuth });
+  registerAuthRoutes(app, { env, db, googleAuth, discordAuth });
   // Resolves "my airline" from the authenticated session and active world.
   // Founding itself does not use the guard because having no airline is its
   // precondition; player-airline operations registered later do (AIR-05).
