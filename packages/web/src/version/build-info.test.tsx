@@ -37,7 +37,9 @@ afterEach(() => {
 
 describe('reading the build', () => {
   it('asks the server once however many badges mount', async () => {
-    const fetchMock = vi.fn(() =>
+    // The parameter is declared so `mock.calls` is a tuple with a URL in it; a
+    // zero-argument `vi.fn` types its calls as `[]` and indexing one is an error.
+    const fetchMock = vi.fn((_input: unknown) =>
       Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(BODY) }),
     );
     vi.stubGlobal('fetch', fetchMock);
