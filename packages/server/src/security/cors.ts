@@ -33,11 +33,11 @@ import { type EnvironmentLabel } from '../env';
  * "production may not trust that origin" and "this build has no CORS" are
  * different problems and only one of them is about the value.
  *
- * The absence is what [ADR-0025](../../../../docs/adr/0025-no-csrf-token.md)
+ * The absence is what [ADR-0027](../../../../docs/adr/0027-no-csrf-token.md)
  * rests on: no CORS is one of the four facts that make a CSRF token
  * unnecessary, and `security/csrf.test.ts` proves it over the wire. The day
  * that changes, this table is the only sanctioned way to build the list, and
- * ADR-0025 has to be amended in the same change.
+ * ADR-0027 has to be amended in the same change.
  *
  * ## Local development should not need this at all
  *
@@ -93,7 +93,7 @@ export function resolveCorsOrigins(
       throw new Error(
         `CORS_ALLOWED_ORIGINS may not contain ${JSON.stringify(origin)}. A reflecting or ` +
           'wildcard origin combined with credentialed requests lets any site read an ' +
-          'authenticated response. Name the exact origins instead. See SEC-HARD-08 and ADR-0025.',
+          'authenticated response. Name the exact origins instead. See SEC-HARD-08 and ADR-0027.',
       );
     }
     if (permitted.includes(origin)) {
@@ -130,10 +130,10 @@ export function resolveCorsOrigins(
   throw new Error(
     `CORS_ALLOWED_ORIGINS names ${accepted.map((o) => JSON.stringify(o)).join(', ')}, which ` +
       `ENVIRONMENT_LABEL=${label} is permitted to trust — but this build registers no CORS ` +
-      'plugin at all, so the value would have no effect. That absence is deliberate: ADR-0025 ' +
+      'plugin at all, so the value would have no effect. That absence is deliberate: ADR-0027 ' +
       'treats it as one of the four facts that make a CSRF token unnecessary. For local ' +
       "development use Vite's `/api` proxy (packages/web/vite.config.ts) so the browser sees " +
       'one origin. If cross-origin access is genuinely needed, register the plugin with exactly ' +
-      'this list, never `origin: true`, and amend ADR-0025 in the same change. See SEC-HARD-08.',
+      'this list, never `origin: true`, and amend ADR-0027 in the same change. See SEC-HARD-08.',
   );
 }

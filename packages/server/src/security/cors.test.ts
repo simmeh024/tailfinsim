@@ -131,7 +131,7 @@ describe('what a production process can be told to trust', () => {
     for (const [label, origins] of Object.entries(CORS_PERMITTED_ORIGINS)) {
       const message = refusalFor(origins[0]!, label as EnvironmentLabel);
       expect(message).toMatch(/registers no CORS plugin/i);
-      expect(message).toMatch(/ADR-0025/);
+      expect(message).toMatch(/ADR-0027/);
       // The alternative that removes the need entirely.
       expect(message).toMatch(/vite/i);
       // And it confirms the value itself was fine, so nobody re-types it.
@@ -245,10 +245,10 @@ describe('the plugin that would make it possible is not in the tree', () => {
 
       expect(
         found,
-        `${manifest} declares ${found.join(', ')}. ADR-0025 treats the absence of CORS as one of ` +
+        `${manifest} declares ${found.join(', ')}. ADR-0027 treats the absence of CORS as one of ` +
           'the four facts that replace a CSRF token, and `origin: true` reflects the requesting ' +
           'origin — with credentials, the worst configuration available. If cross-origin access ' +
-          'is genuinely needed, use the allowlist in security/cors.ts and amend ADR-0025 in the ' +
+          'is genuinely needed, use the allowlist in security/cors.ts and amend ADR-0027 in the ' +
           'same change. See SEC-HARD-08.',
       ).toEqual([]);
     }
@@ -262,7 +262,7 @@ describe('the plugin that would make it possible is not in the tree', () => {
     for (const name of CORS_PACKAGES) {
       expect(
         lockfile.includes(`\n  ${name}@`),
-        `${name} appears in pnpm-lock.yaml. See SEC-HARD-08 and ADR-0025 before adding it.`,
+        `${name} appears in pnpm-lock.yaml. See SEC-HARD-08 and ADR-0027 before adding it.`,
       ).toBe(false);
     }
   });

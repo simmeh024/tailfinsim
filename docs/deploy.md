@@ -188,7 +188,7 @@ the callback, after the player has been sent to Google. Production also refuses 
 ##### `CORS_ALLOWED_ORIGINS` refuses every value, on purpose (SEC-HARD-08)
 
 This build registers no CORS plugin, and the absence is load-bearing:
-[ADR-0025](adr/0025-no-csrf-token.md) counts it as one of the four facts that make a CSRF
+[ADR-0027](adr/0027-no-csrf-token.md) counts it as one of the four facts that make a CSRF
 token unnecessary. So the variable exists only to fail loudly rather than to be ignored, and
 which failure you get depends on the value:
 
@@ -203,7 +203,7 @@ which failure you get depends on the value:
 For local development against the Vite dev server, use its `/api` proxy
 (`packages/web/vite.config.ts`) so the browser sees one origin and no cross-origin request is
 made. If cross-origin access ever becomes genuinely necessary, that allowlist is the only
-sanctioned way to build the list, and ADR-0025 has to be amended in the same change.
+sanctioned way to build the list, and ADR-0027 has to be amended in the same change.
 
 ##### Rate limits are per endpoint class (SEC-HARD-09)
 

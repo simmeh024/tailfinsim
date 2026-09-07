@@ -199,7 +199,7 @@ API calls made at machine speed; it is not limited to malformed traffic.
   resource indistinguishable from an absent one and requires the owner scope inside the
   database query.
 - Cookie authentication implies request forgery, and the answer is architectural rather than a
-  token. ADR-0025 records the four properties that carry it — `SameSite=Lax` session cookies, a
+  token. ADR-0027 records the four properties that carry it — `SameSite=Lax` session cookies, a
   single origin, no CORS, and no state-changing `GET` — states that they are load-bearing
   together, and names the changes that would end the arrangement.
 - Controls that preserve world integrity outrank controls that hide already-public source or

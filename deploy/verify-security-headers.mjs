@@ -63,7 +63,7 @@ function expectedCspHeader(mode) {
 }
 
 /**
- * The edge half of ADR-0025's second fact: no CORS, anywhere.
+ * The edge half of ADR-0027's second fact: no CORS, anywhere.
  *
  * The application asserts its own half in `security/csrf.test.ts`, but Caddy
  * owns browser-side policy for static assets, API responses and error responses
@@ -79,7 +79,7 @@ async function verifyNoCors(url, failures) {
   for (const [name] of response.headers) {
     if (name.toLowerCase().startsWith('access-control-')) {
       failures.push(
-        `${name}: expected absent — ADR-0025 treats the absence of CORS as one of the four ` +
+        `${name}: expected absent — ADR-0027 treats the absence of CORS as one of the four ` +
           'facts that replace a CSRF token. Amend the ADR in the same change (see SEC-HARD-08).',
       );
     }
