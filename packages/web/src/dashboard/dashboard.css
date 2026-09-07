@@ -279,3 +279,196 @@
   font-size: var(--text-xs);
   color: var(--text-muted);
 }
+
+/* -------------------------------------------------- §14.4's chart (M8-11) ---- */
+
+/*
+ * Profit by route, ranked, with a breakeven line.
+ *
+ * The chart is a list of rows and a rule down the middle of each track. Nothing
+ * is drawn: the "line" is a border, the bars are percentage widths, and every
+ * colour is a theme token — so light, dark and greyscale are the theme's problem
+ * rather than this file's.
+ *
+ * **Colour is never the only signal** (§14.6, AC3). A loss bar carries the loss
+ * hue *and* a hatch, and the row's own text carries a glyph and a signed figure.
+ * Remove the colour and the chart still reads.
+ */
+
+.profit-chart__summary {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/*
+ * Fixed-height rows in a scroll box. Three hundred rows is nothing to render;
+ * what does not work is three hundred rows pushing the page to 12,000px, so the
+ * list scrolls inside itself and the page does not (AC2).
+ */
+.profit-chart__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 26rem;
+  overflow-y: auto;
+}
+
+.profit-chart__row {
+  display: block;
+}
+
+.profit-chart__button {
+  display: grid;
+  grid-template-columns: minmax(5rem, 8rem) 1fr minmax(6rem, auto);
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.profit-chart__button:hover {
+  background: var(--bg-inset);
+}
+
+.profit-chart__button--selected {
+  border-color: var(--accent);
+  background: var(--accent-quiet);
+}
+
+.profit-chart__label {
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*
+ * The breakeven line. A centre border rather than a drawn axis, so it is exactly
+ * one pixel in every theme and needs no measuring.
+ */
+.profit-chart__track {
+  position: relative;
+  display: block;
+  height: 0.75rem;
+  min-width: 4rem;
+}
+
+.profit-chart__track::before {
+  content: '';
+  position: absolute;
+  inset-block: -2px;
+  left: 50%;
+  border-left: 1px solid var(--border-strong);
+}
+
+.profit-chart__bar {
+  position: absolute;
+  inset-block: 2px;
+  left: 50%;
+  background: var(--status-profit);
+  border-radius: 0 2px 2px 0;
+}
+
+/*
+ * A loss grows the other way from the same line, and is hatched as well as
+ * coloured — the second of AC3's three signals.
+ */
+.profit-chart__bar--loss {
+  left: auto;
+  right: 50%;
+  border-radius: 2px 0 0 2px;
+  background: repeating-linear-gradient(
+    135deg,
+    var(--status-loss) 0,
+    var(--status-loss) 3px,
+    transparent 3px,
+    transparent 6px
+  );
+  outline: 1px solid var(--status-loss);
+}
+
+.profit-chart__value {
+  font-size: var(--text-xs);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.profit-chart__value--loss {
+  color: var(--status-loss);
+}
+
+.profit-chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.profit-chart__key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.profit-chart__swatch {
+  display: inline-block;
+  width: 1.5rem;
+  height: 0.5rem;
+  border-radius: 2px;
+  background: var(--status-profit);
+}
+
+.profit-chart__swatch--loss {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--status-loss) 0,
+    var(--status-loss) 3px,
+    transparent 3px,
+    transparent 6px
+  );
+  outline: 1px solid var(--status-loss);
+}
+
+/* ------------------------------------------- §14.4's drill-down (M8-11) ---- */
+
+/* The answer first, then the working. */
+.diagnosis__cause {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-base);
+  color: var(--text-primary);
+}
+
+.diagnosis__action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/*
+ * The action chip is deliberately the same shape for all five: an action is an
+ * action, and colour-coding "cut" as alarming would put a judgement in the
+ * stylesheet that the diagnosis has already made in words.
+ */
+.chip--action {
+  background: var(--accent-quiet);
+  color: var(--accent);
+  font-weight: 600;
+}

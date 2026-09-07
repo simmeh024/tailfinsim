@@ -3,6 +3,7 @@ import {
   ExecutiveDashboardResponse,
   FinancePnlResponse,
   MetricBreakdownResponse,
+  RouteDiagnosisResponse,
   StatisticsResponse,
 } from '@tailfin/shared';
 
@@ -66,4 +67,15 @@ export function fetchBreakdown(metricId: string): Promise<MetricBreakdownRespons
     `/api/statistics/${encodeURIComponent(metricId)}/breakdown?by=route`,
     MetricBreakdownResponse,
   );
+}
+
+/**
+ * §14.4's drill-down for one route (M8-11).
+ *
+ * Per route and on a click, never for the whole chart: the competitor cause
+ * needs App. A's share model, and three hundred of those on one page load would
+ * make §14.4 the slowest screen in the game.
+ */
+export function fetchRouteDiagnosis(routeId: string): Promise<RouteDiagnosisResponse | null> {
+  return shaped(`/api/routes/${encodeURIComponent(routeId)}/diagnosis`, RouteDiagnosisResponse);
 }

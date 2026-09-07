@@ -621,6 +621,34 @@ takes the navigation off screen to show one more column. `docs/statistics.md` ha
 both dashboards, and why cargo profitability and a debt amortisation schedule are
 deliberately absent.
 
+**§14.4's chart has a real diagnosis behind it, and the classifier is not what
+you would guess (M8-11).** The design doc's _"drill-down tells you whether it's
+yield, cost, load factor or a competitor"_ is one cause and one action, never a
+breakdown — three numbers and no decision is where the confused player already
+was. The obvious implementation ranks each figure against the airline's median
+and names the worst, and it is **wrong on the routes that matter**: a thin route
+whose cost base no load factor could cover gets "re-time", and re-timing cannot
+help it.
+
+So the classifier is the **breakeven load factor**: above 1, no load factor pays
+and the answer is cost or price; at or below 1 with the route under-filled, the
+answer is timing or a competitor. That is why M8-09's `breakevenLoadFactor`
+deliberately does not clamp to 1 — the unclamped value is load-bearing here, not
+a curiosity, and a test asserts an unfillable route is never sent to be re-timed.
+
+Two more decisions worth keeping. **Unknown competition means `load_factor`, not
+`competitor`** — re-timing a route a rival owns wastes a week, cutting one that
+only needed re-timing throws a market away, so the cheaper mistake wins. And
+**the peer median excludes the route being diagnosed**, because a benchmark a
+route sits inside pulls toward that route's own figure; a database test uses
+exactly one peer, since with two the median of three is the middle value either
+way and the test would pass against the bug.
+
+The **chart** reads one grouped query however many routes there are; the
+**diagnosis** is per route on a click, because the competitor cause needs App.
+A's share model and three hundred of those on one page load would make §14.4 the
+slowest screen in the game. `docs/statistics.md` has the tree and the table.
+
 **And one thing not to "fix".** `airframe.maintenance_state` is nullable, and a null means
 _every tier was last completed at the hours this airframe has now_ — not _at hour zero_. It
 looks like a missing default and it is load-bearing: the other reading would make every

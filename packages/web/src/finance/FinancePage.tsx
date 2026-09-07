@@ -3,14 +3,25 @@ import { useCallback, useEffect, useState } from 'react';
 import type {
   CreditStandingResponse,
   FinancePnlResponse,
+  MetricBreakdownResponse,
   PnlDimensionRow,
+  RouteDiagnosisResponse,
   StatisticsResponse,
 } from '@tailfin/shared';
 
 import { formatUsdMinor } from '../currency/display';
-import { fetchCreditStanding, fetchProfitAndLoss, fetchStatistics } from '../dashboard/api';
+import {
+  fetchBreakdown,
+  fetchCreditStanding,
+  fetchProfitAndLoss,
+  fetchRouteDiagnosis,
+  fetchStatistics,
+} from '../dashboard/api';
 import { MetricTile } from '../dashboard/MetricTile';
 import { StateBlock } from '../ui/StateBlock';
+
+import { RouteDiagnosisPanel } from './RouteDiagnosisPanel';
+import { RouteProfitChart } from './RouteProfitChart';
 
 import type { ReactNode } from 'react';
 
@@ -40,9 +51,9 @@ import '../dashboard/dashboard.css';
  * nothing amortises yet — M8-07 charges interest and no principal is ever
  * repaid. A schedule would be a promise about payments the game does not make.
  *
- * **§14.4's ranked profit-by-route chart** is M8-11's, deliberately: it is the
- * one chart the design doc says players learn the game through, and it gets its
- * own issue rather than being a panel here.
+ * **§14.4's ranked profit-by-route chart** leads the page as of M8-11 — the
+ * design doc calls it *"the chart that turns a confused player into an airline
+ * manager"*, so it sits above the statement rather than below the rollups.
  */
 
 /** One of the P&L's four dimensional rollups. */
@@ -199,19 +210,37 @@ export function FinancePage(): ReactNode {
   const [pnl, setPnl] = useState<FinancePnlResponse | null>(null);
   const [stats, setStats] = useState<StatisticsResponse | null>(null);
   const [credit, setCredit] = useState<CreditStandingResponse | null>(null);
+  const [profitByRoute, setProfitByRoute] = useState<MetricBreakdownResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  /*
+   * §14.4's drill-down is fetched per route on a click, never for the whole
+   * chart: the competitor cause needs App. A's share model, and three hundred of
+   * those on one page load would make this the slowest screen in the game.
+   */
+  const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
+  const [diagnosis, setDiagnosis] = useState<RouteDiagnosisResponse | null>(null);
+  const [diagnosing, setDiagnosing] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [nextPnl, nextStats, nextCredit] = await Promise.all([
+    const [nextPnl, nextStats, nextCredit, nextRoutes] = await Promise.all([
       fetchProfitAndLoss(),
       fetchStatistics(),
       fetchCreditStanding(),
+      fetchBreakdown('operating_profit'),
     ]);
     setPnl(nextPnl);
     setStats(nextStats);
     setCredit(nextCredit);
+    setProfitByRoute(nextRoutes);
     setLoading(false);
+  }, []);
+
+  const diagnose = useCallback(async (routeId: string) => {
+    setSelectedRoute(routeId);
+    setDiagnosing(true);
+    setDiagnosis(await fetchRouteDiagnosis(routeId));
+    setDiagnosing(false);
   }, []);
 
   useEffect(() => {
@@ -230,6 +259,31 @@ export function FinancePage(): ReactNode {
         <StateBlock kind="loading">Reading the ledger.</StateBlock>
       ) : (
         <>
+          {/*
+            §14.4 first. It is the chart the design doc says players learn the
+            game through, and a player who opens this page to find out why they
+            are losing money should not have to scroll past four tables to
+            reach it.
+          */}
+          <section className="panel" aria-label="Profit by route">
+            <h2 className="panel__title">Profit by route</h2>
+            {profitByRoute === null ? (
+              <StateBlock kind="broken">Profit by route could not be read.</StateBlock>
+            ) : (
+              <RouteProfitChart
+                rows={profitByRoute.rows}
+                selectedKey={selectedRoute}
+                onSelect={(row) => {
+                  // A row whose route has been deleted has nothing to diagnose;
+                  // `drillDown` is null for exactly that case.
+                  if (row.drillDown !== null) void diagnose(row.key);
+                }}
+              />
+            )}
+          </section>
+
+          <RouteDiagnosisPanel diagnosis={diagnosis} loading={diagnosing} />
+
           <section className="panel" aria-label="Unit economics">
             <h2 className="panel__title">Unit economics</h2>
             {stats === null ? (
@@ -356,8 +410,7 @@ export function FinancePage(): ReactNode {
           <p className="page__note">
             Profitability by <strong>cargo</strong> is in §14.3&rsquo;s list and is not here:
             settlement splits no revenue between passengers and freight, so a cargo column would be
-            an invented number in the middle of a real table. §14.4&rsquo;s ranked profit-by-route
-            chart with its breakeven line is M8-11.
+            an invented number in the middle of a real table.
           </p>
         </>
       )}
