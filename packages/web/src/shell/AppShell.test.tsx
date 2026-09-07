@@ -149,13 +149,20 @@ describe('layout', () => {
 
   it('renders the world on the World page and nowhere else', async () => {
     const { unmount } = await renderAt('/world');
-    expect(screen.getByLabelText('Interactive world renderer')).toBeInTheDocument();
+    // `findBy` since PERF-01: the world page is a lazily-loaded chunk, so it
+    // arrives a microtask after the shell rather than with it. `renderAt` waits
+    // for the rail, which is eager; the page behind it needs its own wait.
+    expect(await screen.findByLabelText('Interactive world renderer')).toBeInTheDocument();
     unmount();
 
     // The shell used to mount the renderer for every route with the page drawn
     // on top of it, so a WebGL context and its frames were paid for on screens
     // that never showed a map — and page content took every drag aimed at it.
     await renderAt('/fleet');
+    // Waiting for the fleet page to actually arrive, so this asserts "the world
+    // is absent from a loaded page" rather than "the page has not loaded yet",
+    // which would pass against a shell that still mounted the renderer.
+    await screen.findByRole('heading', { level: 1 });
     expect(screen.queryByLabelText('Interactive world renderer')).toBeNull();
   });
 

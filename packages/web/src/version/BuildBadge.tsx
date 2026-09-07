@@ -31,23 +31,62 @@ function isVersion(value: unknown): value is VersionResponse {
   );
 }
 
+/**
+ * The build, read once per page load however many badges ask (PERF-01).
+ *
+ * Two badges are on screen together on more surfaces than it looks: the sign-in
+ * wall renders one while it resolves the session and the login page renders
+ * another behind it, so an unauthenticated visit used to make **two** identical
+ * `/api/version` requests before the player had done anything. The admin console
+ * and the livery builder each read it through `useBuildInfo` as well.
+ *
+ * A module-level promise is the right cache rather than a context, and for the
+ * same reason the economy config's cache needs no invalidation: **the answer
+ * cannot change while this page is loaded.** A new build is a new deploy, which
+ * serves a new bundle, which the browser gets on the next navigation — so
+ * "stale" here is not a state the value can be in. A failure is not cached: the
+ * promise is dropped so the next badge to mount tries again, because the one
+ * time this matters is a server that was briefly unreachable.
+ */
+let inFlight: Promise<VersionResponse | null> | null = null;
+
+async function readBuildInfo(): Promise<VersionResponse | null> {
+  try {
+    const response = await fetch('/api/version', { headers: { accept: 'application/json' } });
+    if (!response.ok) return null;
+    const body: unknown = await response.json();
+    return isVersion(body) ? body : null;
+  } catch {
+    // Silent: the badge is informational, and a failed fetch here is already
+    // visible as the session going `unavailable`.
+    return null;
+  }
+}
+
+function buildInfo(): Promise<VersionResponse | null> {
+  inFlight ??= readBuildInfo().then((value) => {
+    // Only a real answer is worth keeping. Caching a null would make one
+    // unreachable moment permanent for the life of the page.
+    if (value === null) inFlight = null;
+    return value;
+  });
+  return inFlight;
+}
+
+/** Drops the cached read. For tests, which need each case to start cold. */
+export function clearBuildInfoCache(): void {
+  inFlight = null;
+}
+
 export function useBuildInfo(): VersionResponse | null {
   const [version, setVersion] = useState<VersionResponse | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    void (async () => {
-      try {
-        const response = await fetch('/api/version', { headers: { accept: 'application/json' } });
-        if (!response.ok) return;
-        const body: unknown = await response.json();
-        if (!cancelled && isVersion(body)) setVersion(body);
-      } catch {
-        // Silent: the badge is informational, and a failed fetch here is already
-        // visible as the session going `unavailable`.
-      }
-    })();
+    void buildInfo().then((value) => {
+      if (!cancelled && value !== null) setVersion(value);
+    });
 
     return () => {
       cancelled = true;

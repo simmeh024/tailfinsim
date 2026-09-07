@@ -74,9 +74,19 @@ export function projectAlerts(rows: readonly AlertRow[]): Alert[] {
 export async function readOpenAlerts(
   db: Database,
   own: ResolvedPlayerAirline,
+  /**
+   * The world's game time, when the caller already has it (PERF-01).
+   *
+   * The digest reads the clock to work out its own window and then called this,
+   * which read it again — two `world` lookups per request for a value that
+   * cannot differ between them by anything a player could observe. Optional
+   * rather than required so `GET /api/alerts`, which has no other reason to know
+   * the clock, still reads it here.
+   */
+  knownGameNow?: Date,
 ): Promise<AlertsResponse> {
   const [gameNow, rows, state] = await Promise.all([
-    worldGameNow(db, own.worldId),
+    knownGameNow ?? worldGameNow(db, own.worldId),
     db
       .select()
       .from(alert)

@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
 
 import { AlertKind } from '@tailfin/shared';
 import {
@@ -151,13 +151,20 @@ export async function sweepAirlineAlerts(
   airlineName: string,
   gameNow: Date,
 ): Promise<{ raised: number; resolved: number }> {
-  const state = await readAirlineAlertState(db, own, airlineName, gameNow);
+  /*
+   * The state and the open rows are read together (PERF-01). What is already
+   * open does not depend on what the rules decide, and the reads behind the
+   * rules are the slow part of the sweep — so waiting for them before asking a
+   * single indexed question added a round trip per airline for nothing.
+   */
+  const [state, open] = await Promise.all([
+    readAirlineAlertState(db, own, airlineName, gameNow),
+    db
+      .select({ id: alert.id, kind: alert.kind, subjectKey: alert.subjectKey })
+      .from(alert)
+      .where(and(eq(alert.airlineId, own.id), isNull(alert.resolvedAt))),
+  ]);
   const evaluated = evaluateAlerts(state, ALERT_THRESHOLDS);
-
-  const open = await db
-    .select({ id: alert.id, kind: alert.kind, subjectKey: alert.subjectKey })
-    .from(alert)
-    .where(and(eq(alert.airlineId, own.id), isNull(alert.resolvedAt)));
 
   /*
    * A `kind` the running build no longer knows is left alone rather than
@@ -347,35 +354,74 @@ async function readRouteStates(
       .groupBy(flight.originIcao, flight.destinationIcao),
 
     /*
-     * Who else flies these pairs, and when they *first* did.
+     * Who else has flown these pairs **inside the lookback**.
      *
      * "Entered" is started flying, not opened a route row: a rival can hold an
-     * open route it never operates, and that costs the player nothing. So the
-     * test is the rival's earliest settled flight on the pair, which needs no
-     * remembered state and stops being true on its own once they have older
-     * history — the alert resolves without anything having to expire it.
+     * open route it never operates, and that costs the player nothing.
+     *
+     * This is the candidate half of a two-step test, and the split is a
+     * performance decision worth stating (PERF-01). The single-query form asks
+     * for `min(settled_at)` per `(pair, airline)` over **all history**, which is
+     * correct and unbounded — on a mature world it aggregates every flight ever
+     * settled on the player's pairs, once per airline, once per game hour. This
+     * query instead reads only the lookback window, which
+     * `flight_result_world_id_settled_at_idx` serves, and the *earlier history*
+     * question is asked below only about whoever this returns. On the common
+     * case — nobody new — that second step does not run at all.
      */
     db
-      .select({
+      .selectDistinct({
         airlineId: flightResult.airlineId,
         name: airline.name,
         originIcao: flight.originIcao,
         destinationIcao: flight.destinationIcao,
-        firstAt: sql<string>`min(${flightResult.settledAt})::text`,
       })
       .from(flightResult)
       .innerJoin(flight, eq(flight.id, flightResult.flightId))
       .innerJoin(airline, eq(airline.id, flightResult.airlineId))
       .where(
         and(
-          eq(flight.worldId, own.worldId),
+          eq(flightResult.worldId, own.worldId),
           ne(flightResult.airlineId, own.id),
+          gte(flightResult.settledAt, rivalSince),
+          lte(flightResult.settledAt, gameNow),
           inArray(flight.originIcao, origins),
           inArray(flight.destinationIcao, destinations),
         ),
-      )
-      .groupBy(flightResult.airlineId, airline.name, flight.originIcao, flight.destinationIcao),
+      ),
   ]);
+
+  /*
+   * The second step: of the carriers that flew a pair inside the lookback, which
+   * have **no** settled flight on it before the window.
+   *
+   * One `EXISTS` per candidate, which Postgres can stop at the first matching
+   * row rather than scanning to build an aggregate — and there are as many of
+   * these as there are recent entrants, which is normally none. `LIMIT 1` says
+   * the same thing to a reader as it does to the planner.
+   */
+  const entrants: {
+    airlineId: string;
+    name: string;
+    originIcao: string;
+    destinationIcao: string;
+  }[] = [];
+  for (const candidate of rivals) {
+    const earlier = await db
+      .select({ one: sql<number>`1` })
+      .from(flightResult)
+      .innerJoin(flight, eq(flight.id, flightResult.flightId))
+      .where(
+        and(
+          eq(flightResult.airlineId, candidate.airlineId),
+          lt(flightResult.settledAt, rivalSince),
+          eq(flight.originIcao, candidate.originIcao),
+          eq(flight.destinationIcao, candidate.destinationIcao),
+        ),
+      )
+      .limit(1);
+    if (earlier.length === 0) entrants.push(candidate);
+  }
 
   const days = new Map<string, RouteDayContribution[]>();
   for (const row of daily) {
@@ -397,12 +443,7 @@ async function readRouteStates(
   );
 
   const newRivals = new Map<string, { airlineId: string; name: string }[]>();
-  for (const row of rivals) {
-    // `min()` on a timestamp comes back as a string: column type parsers do not
-    // apply to raw aggregates. Normalise at the boundary — CLAUDE.md's trap.
-    const firstAt = new Date(row.firstAt);
-    if (!Number.isFinite(firstAt.getTime()) || firstAt < rivalSince) continue;
-
+  for (const row of entrants) {
     const key = pairKey(row.originIcao, row.destinationIcao);
     const list = newRivals.get(key) ?? [];
     list.push({ airlineId: row.airlineId, name: row.name });

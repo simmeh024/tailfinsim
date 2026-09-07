@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router';
 
 import type {
@@ -24,6 +24,7 @@ import {
 } from '../hq/api';
 import { HqLayoutPanel, type ExpandResult } from '../hq/HqLayoutPanel';
 import { useTheme } from '../theme/ThemeProvider';
+import { StateBlock } from '../ui/StateBlock';
 import { BuildBadge } from '../version/BuildBadge';
 
 import { ContextSelectionProvider, useContextSelection } from './context-selection';
@@ -155,7 +156,22 @@ function LeftRail({ ownAirline }: { ownAirline: OwnAirlineResponse | null }): Re
 function Stage({ children }: { children: ReactNode }): ReactNode {
   return (
     <main className="stage" id={STAGE_ID} tabIndex={-1}>
-      {children}
+      {/*
+        The Suspense boundary for every lazily-loaded route (PERF-01) sits here
+        rather than around the whole shell, and that is the point of putting it
+        in this component: the rail, the context panel and the status strip stay
+        on screen while a page's chunk arrives, so a rail click looks like a page
+        changing rather than like the application restarting.
+      */}
+      <Suspense
+        fallback={
+          <section className="page">
+            <StateBlock kind="loading">Opening…</StateBlock>
+          </section>
+        }
+      >
+        {children}
+      </Suspense>
     </main>
   );
 }

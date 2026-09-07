@@ -102,7 +102,7 @@ export async function readDigest(
     readActivity(db, own.id, fromAt, gameNow),
     readAlertsRaisedBetween(db, own.id, fromAt, gameNow),
     readAlertsResolvedBetween(db, own.id, fromAt, gameNow),
-    readOpenAlerts(db, own),
+    readOpenAlerts(db, own, gameNow),
   ]);
 
   return { window, activity, raised, resolved, open: open.alerts };
