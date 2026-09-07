@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { Timestamp } from './primitives';
+import { MinorUnits, Timestamp } from './primitives';
 
 /**
  * §14's metrics API — value, trend, forecast, and where the number came from
@@ -259,3 +259,73 @@ export const RouteFlightsResponse = z
   })
   .strict();
 export type RouteFlightsResponse = z.infer<typeof RouteFlightsResponse>;
+
+/* ---- §14.4's ranked chart and its drill-down (M8-11) ------------------------ */
+
+/**
+ * Why a route is below the line, and what to do about it.
+ *
+ * > Loss-making routes sit below the line in red and the drill-down tells you
+ * > whether it's **yield, cost, load factor or a competitor** — and therefore
+ * > whether to **reprice, re-gauge, re-time, or kill it**.
+ *
+ * Four causes, four actions, paired one-to-one. `none`/`keep` is the fifth pair
+ * and it is the honest answer for a profitable route: §14.4's chart ranks those
+ * too, and naming their weakest lever as a problem would be a made-up finding.
+ */
+export const RouteCause = z.enum(['none', 'yield', 'cost', 'load_factor', 'competitor']);
+export type RouteCause = z.infer<typeof RouteCause>;
+
+export const RouteAction = z.enum(['keep', 'reprice', 're-gauge', 're-time', 'cut']);
+export type RouteAction = z.infer<typeof RouteAction>;
+
+/** One lever, and what closing its gap to the airline's median would be worth. */
+export const RouteGapView = z
+  .object({
+    /** Minor units of contribution this lever would recover. Never negative. */
+    worthMinor: MinorUnits.nonnegative(),
+    /** The route's own figure. Null when the window has nothing to measure. */
+    own: z.number().nullable(),
+    /** The benchmark. Null for a one-route airline, which has no median. */
+    peer: z.number().nullable(),
+  })
+  .strict();
+export type RouteGapView = z.infer<typeof RouteGapView>;
+
+/**
+ * `GET /api/routes/:routeId/diagnosis` — §14.4's drill-down for one route.
+ *
+ * Carries **one** cause and **one** action, because three numbers and no
+ * decision is where a confused player already was. The quantified gaps come with
+ * it whichever cause won: a player told "cut this" will want to know what the
+ * alternatives were worth, and §14.1 forbids a figure that cannot be
+ * interrogated.
+ */
+export const RouteDiagnosisResponse = z
+  .object({
+    routeId: z.string().min(1),
+    label: z.string().min(1),
+    windowDays: z.number().int().positive(),
+    gameNow: Timestamp,
+    /** Settled flights the diagnosis read. Zero means it is reading nothing. */
+    flights: z.number().int().nonnegative(),
+
+    cause: RouteCause,
+    action: RouteAction,
+    contributionMinor: z.number().int(),
+    loadFactor: z.number().nullable(),
+    /** Deliberately unclamped: above 1, no load factor saves the route. */
+    breakevenLoadFactor: z.number().nullable(),
+    /** The distinction the chart exists to draw — fixable by filling, or not. */
+    unfillable: z.boolean(),
+
+    /** Share of the market held by everyone else. Null when competition is unknown. */
+    rivalShare: z.number().min(0).max(1).nullable(),
+    rivalShareThreshold: z.number().min(0).max(1),
+    /** How many of the airline's other routes the medians were taken over. */
+    peerRoutes: z.number().int().nonnegative(),
+
+    gaps: z.object({ yield: RouteGapView, cost: RouteGapView, load: RouteGapView }).strict(),
+  })
+  .strict();
+export type RouteDiagnosisResponse = z.infer<typeof RouteDiagnosisResponse>;
