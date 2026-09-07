@@ -10,6 +10,7 @@ import {
   createAuthorizationTestSuite,
   type AuthorizationTestSuite,
 } from '../test-fixtures/authorization';
+import { makeAuthedTestEnv } from '../test-fixtures/env';
 import { collectRegisteredRoutes, isAdminRoute } from '../test-fixtures/route-inventory';
 import { createWorld } from '../world/lifecycle';
 
@@ -51,23 +52,7 @@ if (!url) {
 }
 const describeDb = url ? describe : describe.skip;
 
-const env: ServerEnv = {
-  nodeEnv: 'test',
-  databaseUrl: url ?? 'postgres://unused',
-  databasePoolMax: 2,
-  databaseConnectTimeoutMs: 5_000,
-  logLevel: 'silent',
-  webSurface: 'holding',
-  environmentLabel: 'local',
-  publicOrigin: 'http://localhost:3000',
-  googleClientId: 'test-client-id.apps.googleusercontent.com',
-  googleClientSecret: 'test-client-secret',
-  sessionSecret: 's'.repeat(48),
-  authEnabled: true,
-  sessionTtlHours: 24,
-  adminSessionTtlHours: 12,
-  allowRegistration: false,
-};
+const env: ServerEnv = makeAuthedTestEnv();
 
 /**
  * A syntactically valid id that resolves to nothing.

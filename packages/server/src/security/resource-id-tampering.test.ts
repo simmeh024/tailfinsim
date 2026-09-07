@@ -27,6 +27,7 @@ import {
 } from '../db/schema';
 import { type ServerEnv } from '../env';
 import { openSelfHandling, readStation, signContract } from '../ground/contracts';
+import { makeAuthedTestEnv } from '../test-fixtures/env';
 import { createOwnershipTestSuite, type OwnershipTestSuite } from '../test-fixtures/ownership';
 import {
   ABSENT_RESOURCE_UUID,
@@ -40,23 +41,7 @@ const url = process.env.DATABASE_URL;
 if (!url) console.warn('\n  [resource-id-tampering.test] DATABASE_URL not set — skipping.\n');
 const describeDb = url ? describe : describe.skip;
 
-const env: ServerEnv = {
-  nodeEnv: 'test',
-  databaseUrl: url ?? 'postgres://unused',
-  databasePoolMax: 2,
-  databaseConnectTimeoutMs: 5_000,
-  logLevel: 'silent',
-  webSurface: 'holding',
-  environmentLabel: 'local',
-  publicOrigin: 'http://localhost:3000',
-  googleClientId: 'test-client-id.apps.googleusercontent.com',
-  googleClientSecret: 'test-client-secret',
-  sessionSecret: 's'.repeat(48),
-  authEnabled: true,
-  sessionTtlHours: 24,
-  adminSessionTtlHours: 12,
-  allowRegistration: false,
-};
+const env: ServerEnv = makeAuthedTestEnv();
 
 describeDb('SEC-07 resource id tampering at owner-scoped HTTP boundaries', () => {
   let db: DatabaseHandle;

@@ -6,6 +6,7 @@ import { player } from '../db/schema';
 import { type ServerEnv } from '../env';
 
 import { createAuthorizationTestSuite, type AuthorizationTestSuite } from './authorization';
+import { makeAuthedTestEnv } from './env';
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -15,23 +16,7 @@ if (!url) {
 }
 const describeDb = url ? describe : describe.skip;
 
-const env: ServerEnv = {
-  nodeEnv: 'test',
-  databaseUrl: url ?? 'postgres://unused',
-  databasePoolMax: 2,
-  databaseConnectTimeoutMs: 5000,
-  logLevel: 'silent',
-  webSurface: 'holding',
-  environmentLabel: 'local',
-  publicOrigin: 'http://localhost:3000',
-  googleClientId: 'test-client-id.apps.googleusercontent.com',
-  googleClientSecret: 'test-client-secret',
-  sessionSecret: 'a'.repeat(48),
-  authEnabled: true,
-  sessionTtlHours: 24,
-  adminSessionTtlHours: 12,
-  allowRegistration: false,
-};
+const env: ServerEnv = makeAuthedTestEnv();
 
 describeDb('authorization test fixtures', () => {
   let db: DatabaseHandle;
