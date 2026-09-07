@@ -56,6 +56,7 @@ import { registerWorldRoutes } from './world/routes';
 const here = dirname(fileURLToPath(import.meta.url));
 /** Both resolve the same from `src` (dev) and `dist` (built) — each sits one level under packages/server. */
 const HOLDING_PAGE = resolve(here, '..', '..', 'web', 'holding', 'index.html');
+const LANDING_PAGE = resolve(here, '..', '..', 'web', 'landing', 'index.html');
 const CLIENT_DIR = resolve(here, '..', '..', 'web', 'dist', 'client');
 const DEV_A320NEO_CANDIDATE_DIRECTORY = resolve(
   here,
@@ -422,6 +423,52 @@ export async function buildApp({
       );
     }
   }
+
+  /**
+   * `GET /landing` — the public landing page (LANDING-01, ADR-0028).
+   *
+   * Served on **every** surface, and at its own path rather than at `/`. Both
+   * halves of that are the decision rather than an accident:
+   *
+   *   - **Every surface**, because a landing page that only existed under
+   *     `WEB_SURFACE=app` could not reach production without also promoting the
+   *     whole game client — an OPS decision nobody has taken, and one this
+   *     milestone has no business forcing.
+   *   - **Its own path**, because `/` is already spoken for on both surfaces: the
+   *     holding page on production, and `IndexRedirect` on dev, which resolves a
+   *     signed-in player to `/found` or `/world` and carries the OAuth error
+   *     query string through. Putting marketing at `/` would either displace dev's
+   *     app or make a returning player walk through a sales page. `/landing` is
+   *     reviewable on dev without either.
+   *
+   * A static document rather than a route inside the SPA, so a crawler gets real
+   * HTML, the page costs one request, and `RequireSession` keeps wrapping the
+   * whole route table — the comment in `App.tsx` explains why that matters, and
+   * a public SPA route is exactly the hole it warns about.
+   *
+   * It fetches nothing. The whole funnel is `<a href="/api/auth/google">`, which
+   * exists on every surface, which is why this needs no JavaScript to work.
+   *
+   * The switchover — landing at `/`, holding page retired — is deliberately not
+   * here. See ADR-0028 for its two conditions.
+   */
+  let landingPage: Buffer;
+  try {
+    landingPage = readFileSync(LANDING_PAGE);
+  } catch (cause) {
+    throw new Error(`Could not read the landing page at ${LANDING_PAGE}`, { cause });
+  }
+
+  app.get('/landing', async (_request, reply) =>
+    reply
+      .code(200)
+      .type('text/html; charset=utf-8')
+      // Short, matching the holding page: the front door can be changed without
+      // waiting out a cache.
+      .header('cache-control', 'public, max-age=60')
+      .header('x-content-type-options', 'nosniff')
+      .send(landingPage),
+  );
 
   /**
    * The public surface at `/` — one of two, chosen by `WEB_SURFACE`.

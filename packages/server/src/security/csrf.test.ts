@@ -65,6 +65,10 @@ const READ_ONLY_GET_ROUTES = [
   '/api/admin/worlds/:worldId/config',
   '/api/admin/worlds/:worldId/npc',
   '/api/admin/worlds/health',
+  // LANDING-01. A static marketing document: it reads nothing, writes nothing
+  // and fetches nothing, so a refresh shows the same page. Its only outbound
+  // link is the sign-in route, which is its own decision (ADR-0027 fact 4).
+  '/landing',
   '/api/airlines/founding-airports',
   '/api/airlines/founding-options',
   '/api/airlines/me',
