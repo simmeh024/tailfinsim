@@ -144,12 +144,19 @@ sitting in the schema looking load-bearing.
   opening cost, pay bands, hotel tiers and morale. A second row also called a crew base would
   be two records meaning one thing, and the one that did nothing would be the one a player
   found first.
-- **Cargo facility.** Blocked on
-  [GAP-14](https://github.com/simmeh024/tailfinsim/issues/667), which asks whether Tailfin has
-  cargo airlines at all and says of this exact bullet that if the answer is no it _"should be
-  removed rather than shipped as decoration"_. `docs/roadmap-dependencies.md` lists that
-  decision as due before M7-04 ships. Shipping the unlock first would answer the question by
-  accident.
+- **Cargo facility.** Not blocked any more, and **not cancelled**: the cargo question was
+  answered **yes** on 2026-09-07 — Tailfin has cargo, shipped as its own update rather than
+  inside M7. So the facility is coming, and it arrives with
+  [CARGO-10](https://github.com/simmeh024/tailfinsim/issues/1096), which explicitly builds the
+  cargo terminal _"through M7-04's facility mechanism, not a parallel one"_. It is absent here
+  because a facility that costs money and does nothing is what
+  [GAP-14](https://github.com/simmeh024/tailfinsim/issues/667) warned against — the unlock
+  arrives with the throughput, cold storage and DG handling that give it a purpose.
+
+  Adding it later is deliberately cheap, which is why waiting costs nothing: one value in
+  `HubFacilityKind`, one in the `hub_facility_kind` pgEnum (an `ALTER TYPE … ADD VALUE`, expand),
+  and two fractions in `SHIPPED_HUB_FACILITIES`. Facility prices scale off the hub tier base on
+  their own, so there is no new balance table and nothing already sold is re-priced.
 
 ### What a facility does
 

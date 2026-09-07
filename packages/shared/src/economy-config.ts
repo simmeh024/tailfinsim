@@ -2133,10 +2133,13 @@ export type HubTier = z.infer<typeof HubTier>;
  *     `crew_base`, with its own opening cost, pay bands, hotel tiers and morale).
  *     A second row also called a crew base would be two records meaning one thing,
  *     and the one that did nothing would be the one a player found first.
- *   - **cargo facility** waits on GAP-14 (issue #667), which asks whether Tailfin
- *     has cargo at all and says of this exact bullet that if the answer is no it
- *     *"should be removed rather than shipped as decoration"*. Shipping the unlock
- *     first would answer that question by accident.
+ *   - **cargo facility** is coming, and is absent only because it has nothing to
+ *     do yet. GAP-14 (#667) asked whether Tailfin has cargo at all and was
+ *     answered **yes** on 2026-09-07: cargo ships as its own update, and CARGO-10
+ *     (#1096) builds the cargo terminal *"through M7-04's facility mechanism, not
+ *     a parallel one"*. Adding the kind here before then would be the "shipped as
+ *     decoration" outcome GAP-14 warned about — a facility that charges rent and
+ *     does nothing. It costs one enum value to add when it has a purpose.
  *
  * `heavy_check` requires `maintenance_line`, which is App. B.5's own ordering
  * (*"maintenance line, **then** heavy check capability"*).

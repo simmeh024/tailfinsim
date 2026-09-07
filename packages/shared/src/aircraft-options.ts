@@ -121,6 +121,15 @@ export const AircraftSpecDelta = z
      *
      * Volume, not weight — §12's cargo system owns whether a consignment
      * physically fits, and `payload-range.ts` says so explicitly.
+     *
+     * **Nothing consumes this yet, and that is now a scheduled gap rather than an
+     * open question.** It flows through `effective_spec` and out of the fleet API,
+     * where it is a number on a page. GAP-14 (#667) required its fate to be
+     * decided either way, and the 2026-09-07 cargo decision decided it: cargo is
+     * coming, so this is the capacity input CARGO-04
+     * (https://github.com/simmeh024/tailfinsim/issues/1090) consumes. Do not file
+     * it as a dead field, and do not remove the option — the buyer of a cargo door
+     * is buying something the freight domain will read.
      */
     cargoVolumeFactor: z.number().positive().optional(),
     /** C.3's comfort charge. An **input to M6-09's score**, not a score. */
