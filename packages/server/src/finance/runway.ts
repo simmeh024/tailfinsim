@@ -80,8 +80,13 @@ const HORIZON_DAYS = 365;
  * The server decides it rather than the client, so the strip and any later alert
  * agree about when an airline is in trouble — the same reason the admin overview
  * decides its own alerts rather than shipping thresholds to a page.
+ *
+ * Exported since M8-13, which is *"any later alert"* arriving: §14.5's *cash
+ * runway < 30 days* reads this rather than restating 30, so the strip, the
+ * dashboard tile and the alert cannot disagree about what running out of cash
+ * means.
  */
-const CRITICAL_DAYS = 30;
+export const CRITICAL_DAYS = 30;
 
 /** How many upcoming bills the response carries. A strip shows a few; the rest are the total. */
 const UPCOMING_LIMIT = 8;

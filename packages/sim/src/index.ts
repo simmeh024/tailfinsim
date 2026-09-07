@@ -60,3 +60,6 @@ export * from './finance';
 
 /** §14's metrics: unit economics, trends and forecast bands (M8-09). */
 export * from './statistics';
+
+/** §14.5's alert rules and their deduplication (M8-13). */
+export * from './alerts';

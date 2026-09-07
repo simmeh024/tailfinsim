@@ -39,6 +39,7 @@ import {
   OwnAirlineResponse,
   UpdateOwnAirlineResponse,
 } from './airline';
+import { AlertsResponse, DigestResponse, MarkDigestReadResponse } from './alerts';
 import { ApiError, HealthResponse } from './api';
 import { LogoutResponse, MeResponse, RevokeSessionsResponse } from './auth';
 import { AutomationStateResponse } from './automation';
@@ -192,3 +193,6 @@ export const statisticsResponseJsonSchema = z.toJSONSchema(StatisticsResponse);
 export const metricBreakdownResponseJsonSchema = z.toJSONSchema(MetricBreakdownResponse);
 export const routeFlightsResponseJsonSchema = z.toJSONSchema(RouteFlightsResponse);
 export const routeDiagnosisResponseJsonSchema = z.toJSONSchema(RouteDiagnosisResponse);
+export const alertsResponseJsonSchema = z.toJSONSchema(AlertsResponse);
+export const digestResponseJsonSchema = z.toJSONSchema(DigestResponse);
+export const markDigestReadResponseJsonSchema = z.toJSONSchema(MarkDigestReadResponse);

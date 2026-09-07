@@ -17,6 +17,7 @@ import { type AirlineCodeAllocationPolicy } from './airline/codes';
 import { registerPlayerAirlineContext } from './airline/context';
 import { type AirlineIdentityModerator } from './airline/moderation';
 import { registerAirlineRoutes } from './airline/routes';
+import { registerAlertRoutes } from './alerts/routes';
 import { type GoogleAuthOperations, registerAuthRoutes } from './auth/routes';
 import { registerAutomationRoutes } from './automation/routes';
 import { readBuildInfo } from './build-info';
@@ -265,6 +266,8 @@ export async function buildApp({
   registerCreditRoutes(app, { db });
   registerFinanceRoutes(app, { db });
   registerStatisticsRoutes(app, { db });
+  // §14.5's alerts and §3.2's offline digest (M8-13).
+  registerAlertRoutes(app, { db });
   registerCurrencyRoutes(app, { db });
 
   const startedAt = Date.now();

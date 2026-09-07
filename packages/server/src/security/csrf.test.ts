@@ -68,10 +68,15 @@ const READ_ONLY_GET_ROUTES = [
   '/api/airlines/founding-options',
   '/api/airlines/me',
   '/api/airports/:icao/slots',
+  '/api/alerts',
   '/api/automation',
   '/api/credit',
   '/api/crew',
   '/api/currencies',
+  // M8-13. The digest deliberately does **not** advance its watermark: the read is
+  // safe, a refresh shows the same feed, and `POST /api/digest/read` is what
+  // acknowledges it. That split is what keeps this line honest.
+  '/api/digest',
   '/api/finance/pnl',
   '/api/finance/runway',
   '/api/statistics',

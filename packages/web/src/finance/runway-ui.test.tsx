@@ -166,6 +166,14 @@ describe('the cash runway in the status strip', () => {
 
     const strip = screen.getByLabelText('Status');
     expect(within(strip).getByText('Runway')).toBeInTheDocument();
-    await waitFor(() => expect(within(strip).getByText('—')).toBeInTheDocument());
+    /*
+     * `getAllByText` since M8-13: the alert count renders the same em dash when
+     * no sweep has run, and this fixture stubs neither endpoint. Two unknown
+     * figures in the strip is the correct render, so the query is the ambiguous
+     * one rather than the page.
+     */
+    await waitFor(() => {
+      expect(within(strip).getAllByText('—').length).toBeGreaterThan(0);
+    });
   });
 });

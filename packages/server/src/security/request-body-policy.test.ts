@@ -20,6 +20,7 @@ import {
   EditScheduleRequest,
   FLAGSHIP_CONFIG,
   ForceRenameAirlineInput,
+  MarkDigestReadRequest,
   HireCrewInput,
   HireOfficeRequest,
   OpenCrewBaseInput,
@@ -159,6 +160,11 @@ const STRICT_WRITE_CONTRACTS = [
     payload: { instrument: 'working_capital', principalMinor: 100_000 },
   },
   {
+    endpoint: 'POST /api/digest/read',
+    schema: MarkDigestReadRequest,
+    payload: { throughAt: '2026-03-10T00:00:00.000Z' },
+  },
+  {
     endpoint: 'POST /api/service/payback',
     schema: ServicePaybackRequest,
     payload: { content: { perClass: { economy: { catering: 2 } }, commercialIntensity: 0 } },
@@ -282,6 +288,7 @@ const COVERED_WRITE_ENDPOINTS = [
   'POST /api/crew/bases',
   'POST /api/crew/conversions',
   'POST /api/crew/hires',
+  'POST /api/digest/read',
   'POST /api/fleet/acquisition-quotes',
   'POST /api/fleet/acquisitions',
   'POST /api/fleet/maintenance/checks',

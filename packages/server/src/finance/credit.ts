@@ -200,6 +200,37 @@ function monthsBetween(from: Date, to: Date): number {
   );
 }
 
+/**
+ * §13.1's coverage ratio and its floor, and nothing else (M8-13).
+ *
+ * `readCreditStanding` returns both, and calling it for them would be wrong
+ * twice over: it runs six more queries the caller does not want, and it
+ * **reviews the rating** as a side effect — so an alert sweep asking *is
+ * coverage thin?* would also be advancing the airline's credit rating on the
+ * world's behalf, every game hour, dated on the sweep rather than on the read
+ * that CLAUDE.md says drives it.
+ *
+ * `dscr` is null when the airline owes nothing, exactly as it is in the standing:
+ * §13.1's gate does not apply to an airline with no debt, and zero would read as
+ * the worst possible coverage rather than as none required.
+ */
+export async function readDebtServiceCoverage(
+  db: Database,
+  own: ResolvedPlayerAirline,
+  gameNow: Date,
+): Promise<{ dscr: number | null; minimumDscr: number }> {
+  const [economy, trade, debt] = await Promise.all([
+    loadWorldEconomyConfig(db, own.worldId),
+    trailingTrade(db, own.id, gameNow),
+    debtPosition(db, own.id),
+  ]);
+
+  return {
+    dscr: debtServiceCoverage(trade.ebitdaMinor, debt.annualServiceMinor),
+    minimumDscr: economy.credit.minimumDscr,
+  };
+}
+
 /** The airline's standing, reviewing the rating first if a review is due. */
 export async function readCreditStanding(
   db: Database,

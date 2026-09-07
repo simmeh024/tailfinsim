@@ -149,27 +149,37 @@ describe('layout', () => {
 
   it('renders the world on the World page and nowhere else', async () => {
     const { unmount } = await renderAt('/world');
-    expect(screen.getByLabelText('Interactive world renderer')).toBeInTheDocument();
+    // `findBy` since PERF-01: the world page is a lazily-loaded chunk, so it
+    // arrives a microtask after the shell rather than with it. `renderAt` waits
+    // for the rail, which is eager; the page behind it needs its own wait.
+    expect(await screen.findByLabelText('Interactive world renderer')).toBeInTheDocument();
     unmount();
 
     // The shell used to mount the renderer for every route with the page drawn
     // on top of it, so a WebGL context and its frames were paid for on screens
     // that never showed a map — and page content took every drag aimed at it.
     await renderAt('/fleet');
+    // Waiting for the fleet page to actually arrive, so this asserts "the world
+    // is absent from a loaded page" rather than "the page has not loaded yet",
+    // which would pass against a shell that still mounted the renderer.
+    await screen.findByRole('heading', { level: 1 });
     expect(screen.queryByLabelText('Interactive world renderer')).toBeNull();
   });
 
   it('has a rail link for each destination', async () => {
     await renderAt('/world');
     const rail = screen.getByRole('navigation', { name: 'Main' });
-    // Eight from App. H.4 and M5-04, plus M8-05's Service configurator and
+    // Eight from App. H.4 and M5-04, plus M8-05's Service configurator,
     // M8-10's Dashboard — which leads the rail, because §14 calls the dashboard
-    // the game's main interface after the first week.
-    expect(NAV_ITEMS).toHaveLength(11);
+    // the game's main interface after the first week — and M8-13's Alerts.
+    expect(NAV_ITEMS).toHaveLength(12);
     expect(NAV_ITEMS[0]?.to).toBe('/dashboard');
     // M8-12's operational dashboards sit beside the executive one: a player
     // asking "why was yesterday bad?" starts at the headline and goes there.
     expect(NAV_ITEMS[1]?.to).toBe('/operations');
+    // M8-13's alerts sit next to both, because every row links away to the
+    // screen that can act on it — the page is a junction, not a workplace.
+    expect(NAV_ITEMS[2]?.to).toBe('/alerts');
     for (const item of NAV_ITEMS) {
       /*
        * An **exact** name, not a substring. The loose `new RegExp(label)` this

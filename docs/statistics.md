@@ -466,7 +466,9 @@ empty rather than as having positioned an aeroplane.
 - **A world median benchmark** for the diagnosis levers (§14.6). The comparison
   is the airline's own median today, and the panel says so rather than letting a
   player assume otherwise.
-- **§14.5's alerts** and §14.6's CSV export and world-median benchmarks.
+- **§14.6's CSV export** and world-median benchmarks. §14.5's alerts have
+  since shipped (M8-13) — see [`alerts-and-digest.md`](alerts-and-digest.md),
+  which also records the two of its nine rules the game cannot answer.
 - **A booking curve against departure** (§14.3's traffic list). Bookings are not
   modelled over time, so there is no curve to draw.
 - **Vendor scorecards and turnaround against contract** (§14.3's ground list).

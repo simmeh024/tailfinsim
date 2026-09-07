@@ -5,6 +5,7 @@ import { gameTime, horizonFrom, type WorldClock } from '@tailfin/sim';
 import { deliverDueAircraftOrders } from '../aircraft/acquisition';
 import { sweepMaintenance } from '../aircraft/maintenance';
 import { refreshUsedAircraftMarket } from '../aircraft/used-market';
+import { sweepWorldAlerts } from '../alerts/evaluate';
 import { returnRestedCrew, standDownIdleCrew } from '../crew/duty-store';
 import { returnSickCrew, reviewCrewMorale } from '../crew/morale';
 import { runCrewPayroll } from '../crew/payroll';
@@ -129,6 +130,11 @@ export interface TickReport {
   airframesRepossessed: number;
   /** M2-03. Flights materialised from schedules onto the horizon this run. */
   flightsMaterialised: number;
+  /** M8-13. Airlines whose §14.5 rules were evaluated this run. */
+  alertsSwept: number;
+  /** M8-13. Alerts raised and resolved this run. */
+  alertsRaised: number;
+  alertsResolved: number;
 }
 
 export interface EngineLog {
@@ -200,6 +206,8 @@ export interface SimulationEngineOptions {
   reviewDefaults?: typeof reviewWorldDefaults;
   /** M2-03. Rolls each world's active schedules onto the flight horizon. */
   materialise?: typeof materialiseWorld;
+  /** M8-13. Evaluates §14.5's alert rules for the world's due player airlines. */
+  sweepAlerts?: typeof sweepWorldAlerts;
   depth?: typeof queueDepth;
   /**
    * The FX source for the nightly display-currency refresh (M8-02). Global and
@@ -375,6 +383,22 @@ export interface EngineSnapshot {
   flightsMaterialised: number;
   scheduleErrors: number;
   /**
+   * M8-13. Airlines evaluated, alerts raised and alerts resolved since start.
+   *
+   * The trap these three exist for is the sharpest kind, because the surface
+   * fails **quietly and reassuringly**: on a node with no worker no alert is ever
+   * raised, so `GET /api/alerts` answers 200 with an empty list and every page
+   * that badges it shows nothing to do. That reads as an airline with no
+   * problems rather than as a missing process. `alertsSwept` rising with
+   * `alertsRaised` at zero is a world where the rules ran and found nothing,
+   * which is a real and completely different state; `alertsSwept` at zero is a
+   * world where nothing ran. `alertErrors` tells a sweep that threw from either.
+   */
+  alertsSwept: number;
+  alertsRaised: number;
+  alertsResolved: number;
+  alertErrors: number;
+  /**
    * M8-02. Successful nightly display-currency refreshes, and attempts that
    * threw. Global and on the real clock, so — unlike every counter above — not
    * per world. **Production has no worker**, so there the rates never refresh and
@@ -501,6 +525,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     accrueInterest = accrueLoanInterest,
     reviewDefaults = reviewWorldDefaults,
     materialise = materialiseWorld,
+    sweepAlerts = sweepWorldAlerts,
     fxSource,
     refreshFx = refreshFxRates,
   } = options;
@@ -549,6 +574,10 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let financeErrors = 0;
   let flightsMaterialised = 0;
   let scheduleErrors = 0;
+  let alertsSwept = 0;
+  let alertsRaised = 0;
+  let alertsResolved = 0;
+  let alertErrors = 0;
   let fxRefreshes = 0;
   let fxRefreshErrors = 0;
   let fxRefreshesSkipped = 0;
@@ -587,6 +616,9 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     let tickGroundShortfalls = 0;
     let tickGroundPaid = 0;
     let tickFlightsMaterialised = 0;
+    let tickAlertsSwept = 0;
+    let tickAlertsRaised = 0;
+    let tickAlertsResolved = 0;
 
     // The display-currency refresh (M8-02), **global and on the real clock** —
     // an FX rate is a real-world quantity, not a per-world game-time one, so it
@@ -942,6 +974,40 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         log?.warn?.(`[${entry.name}] schedule materialisation failed: ${String(error)}`);
       }
 
+      /*
+       * §14.5's alerts (M8-13), on the world's game clock, and **after**
+       * materialisation on purpose: the rules read routes, checks and contracts
+       * rather than the queue, but running before the roll would judge a
+       * schedule the world has not yet been given.
+       *
+       * Deduplicated by `alert`'s partial unique index and by
+       * `reconcileAlerts`, so calling it every tick raises each condition once
+       * — which is M8-13's second criterion, and the same guarantee the used
+       * market gets from its own constraint. Each airline carries a game-hour
+       * watermark and the sweep is capped per tick, because the reads behind the
+       * rules are the expensive part: a runway projection and a coverage ratio
+       * each walk a year of the ledger, and none of §14.5's conditions can move
+       * faster than a game hour anyway.
+       *
+       * Isolated like every sweep above. A sweep that threw leaves the watermark
+       * where it was, so the airline is simply evaluated on the next tick.
+       */
+      try {
+        const swept = await sweepAlerts(db, entry.id, gameTime(entry.clock, now()));
+        tickAlertsSwept += swept.airlinesSwept;
+        tickAlertsRaised += swept.raised;
+        tickAlertsResolved += swept.resolved;
+        if (swept.raised > 0 || swept.resolved > 0) {
+          log?.info?.(
+            `[${entry.name}] alerts: ${String(swept.raised)} raised, ` +
+              `${String(swept.resolved)} resolved across ${String(swept.airlinesSwept)} airline(s)`,
+          );
+        }
+      } catch (error) {
+        alertErrors += 1;
+        log?.warn?.(`[${entry.name}] alert sweep failed: ${String(error)}`);
+      }
+
       // Each world is drained against its own clock: `fire_at` is a game-time
       // instant, so what is due depends on where that world's clock has got to,
       // and two worlds at different speeds disagree about the same moment.
@@ -1001,6 +1067,9 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     groundVolumeShortfalls += tickGroundShortfalls;
     groundPayrollBilled += tickGroundPaid;
     flightsMaterialised += tickFlightsMaterialised;
+    alertsSwept += tickAlertsSwept;
+    alertsRaised += tickAlertsRaised;
+    alertsResolved += tickAlertsResolved;
     lastTickAt = context.tickedAt;
     lastTickDurationMs = durationMs;
     lastWorldCount = worlds.length;
@@ -1036,6 +1105,9 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       defaultCures: tickDefaultCures,
       airframesRepossessed: tickRepossessed,
       flightsMaterialised: tickFlightsMaterialised,
+      alertsSwept: tickAlertsSwept,
+      alertsRaised: tickAlertsRaised,
+      alertsResolved: tickAlertsResolved,
     };
   }
 
@@ -1120,6 +1192,10 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         financeErrors,
         flightsMaterialised,
         scheduleErrors,
+        alertsSwept,
+        alertsRaised,
+        alertsResolved,
+        alertErrors,
         fxRefreshes,
         fxRefreshErrors,
         fxRefreshesSkipped,
