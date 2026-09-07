@@ -15,8 +15,9 @@ import type { ServerEnv } from '../env';
  * Twenty-eight test files were carrying twenty-nine such literals, near-identical
  * down to the arbitrary letter each one repeated forty-eight times for its
  * session secret. Adding one configuration field was therefore a
- * twenty-eight-file change; AUTH-08, which adds four, had to patch them with a
- * script to stay reviewable. The next field costs one file, and it is this one.
+ * twenty-eight-file change; AUTH-08, which adds four, patched them with a script
+ * to stay reviewable and then threw that away when this landed first. The next
+ * field costs one file, and it is this one.
  *
  * ## What the defaults describe
  *
@@ -47,7 +48,11 @@ export function makeTestEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
     publicOrigin: 'http://localhost:3000',
     googleClientId: undefined,
     googleClientSecret: undefined,
+    discordClientId: undefined,
+    discordClientSecret: undefined,
     sessionSecret: undefined,
+    googleEnabled: false,
+    discordEnabled: false,
     authEnabled: false,
     sessionTtlHours: 24,
     adminSessionTtlHours: 12,
@@ -80,7 +85,25 @@ export function makeAuthedTestEnv(overrides: Partial<ServerEnv> = {}): ServerEnv
     googleClientId: 'test-client-id.apps.googleusercontent.com',
     googleClientSecret: 'test-client-secret',
     sessionSecret: 'a'.repeat(48),
+    googleEnabled: true,
     authEnabled: true,
+    ...overrides,
+  });
+}
+
+/**
+ * Google *and* Discord configured, for the cases that need two ways in (AUTH-08).
+ *
+ * Separate from `makeAuthedTestEnv` rather than folded into it, because most
+ * tests want the ordinary one-provider instance and a second button on every
+ * login-page assertion would be noise. Reach for this only when the *number* of
+ * providers is the thing under test.
+ */
+export function makeMultiProviderTestEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
+  return makeAuthedTestEnv({
+    discordClientId: '000000000000000000',
+    discordClientSecret: 'test-discord-client-secret',
+    discordEnabled: true,
     ...overrides,
   });
 }

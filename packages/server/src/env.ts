@@ -225,17 +225,36 @@ export interface ServerEnv {
   publicOrigin: string;
 
   /**
-   * Google OAuth credentials (ADR-0004), and the session signing secret.
+   * OAuth credentials per provider, and the session signing secret.
    *
-   * All three are **optional**, and auth is simply switched off when any is
-   * missing. That is deliberate: this code deploys to environments that do not
-   * yet have credentials, and a server that refused to boot without them would
-   * take the whole site down to add a feature nobody can use yet. `authEnabled`
-   * is the single thing routes check.
+   * Every one is **optional**, and a provider is simply switched off when its
+   * pair is missing. That is deliberate: this code deploys to environments that
+   * do not yet have credentials, and a server that refused to boot without them
+   * would take the whole site down to add a feature nobody can use yet.
+   *
+   * `SESSION_SECRET` is the shared prerequisite rather than a fourth credential.
+   * It signs the short-lived OAuth state cookie — sessions themselves need no
+   * secret, since their tokens are CSPRNG output stored as hashes — so no
+   * provider can run without it, and it alone enables nothing.
    */
   googleClientId: string | undefined;
   googleClientSecret: string | undefined;
+  discordClientId: string | undefined;
+  discordClientSecret: string | undefined;
   sessionSecret: string | undefined;
+  /** Whether Google sign-in is configured on this instance (ADR-0004). */
+  googleEnabled: boolean;
+  /** Whether Discord sign-in is configured on this instance (AUTH-08). */
+  discordEnabled: boolean;
+  /**
+   * Whether *any* provider is configured.
+   *
+   * What the session hook checks, and what makes `/api/me` meaningful. A route
+   * for a specific provider must check that provider's own flag: with two
+   * providers, `authEnabled` no longer implies either one in particular, and a
+   * route that assumed it would send a player to a provider this instance has
+   * no credentials for.
+   */
   authEnabled: boolean;
 
   /** Player sessions last 30 days; see ADR-0015 for the persistent-world trade-off. */
@@ -335,18 +354,46 @@ export function loadEnv(): ServerEnv {
 
   const googleClientId = optionalUndefined('GOOGLE_CLIENT_ID');
   const googleClientSecret = optionalUndefined('GOOGLE_CLIENT_SECRET');
+  const discordClientId = optionalUndefined('DISCORD_CLIENT_ID');
+  const discordClientSecret = optionalUndefined('DISCORD_CLIENT_SECRET');
   const sessionSecret = optionalUndefined('SESSION_SECRET');
-  const authEnabled = Boolean(googleClientId && googleClientSecret && sessionSecret);
 
-  // A half-configured auth setup is a trap: it looks enabled and fails at the
-  // callback. Say so at boot instead.
-  const supplied = [googleClientId, googleClientSecret, sessionSecret].filter(Boolean).length;
-  if (supplied > 0 && !authEnabled) {
+  /**
+   * A half-configured provider is a trap: it looks enabled and fails at the
+   * callback, by which point the player has already been sent to the provider.
+   * Say so at boot instead — per provider, so adding Discord does not make a
+   * half-configured Google boot quietly, and a half-configured Discord is
+   * refused exactly as firmly.
+   */
+  const providers = [
+    { name: 'Google', prefix: 'GOOGLE', id: googleClientId, secret: googleClientSecret },
+    { name: 'Discord', prefix: 'DISCORD', id: discordClientId, secret: discordClientSecret },
+  ] as const;
+
+  for (const provider of providers) {
+    if (Boolean(provider.id) === Boolean(provider.secret)) continue;
     throw new Error(
-      'Auth is partially configured. GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and SESSION_SECRET ' +
-        'must all be set, or all be absent. See docs/adr/0004-google-oauth.md.',
+      `${provider.name} sign-in is partially configured. ${provider.prefix}_CLIENT_ID and ` +
+        `${provider.prefix}_CLIENT_SECRET must both be set, or both be absent.`,
     );
   }
+
+  const configured = providers.filter((provider) => provider.id && provider.secret);
+
+  // `SESSION_SECRET` signs the OAuth state cookie, so a provider without it
+  // would fail at the callback in exactly the way the check above exists to
+  // prevent.
+  if (configured.length > 0 && !sessionSecret) {
+    throw new Error(
+      `SESSION_SECRET is required when a sign-in provider is configured (${configured
+        .map((provider) => provider.name)
+        .join(', ')}). Try: openssl rand -base64 48`,
+    );
+  }
+
+  const googleEnabled = Boolean(googleClientId && googleClientSecret && sessionSecret);
+  const discordEnabled = Boolean(discordClientId && discordClientSecret && sessionSecret);
+  const authEnabled = googleEnabled || discordEnabled;
 
   if (sessionSecret !== undefined && sessionSecret.length < 32) {
     throw new Error('SESSION_SECRET must be at least 32 characters. Try: openssl rand -base64 48');
@@ -379,7 +426,11 @@ export function loadEnv(): ServerEnv {
     publicOrigin,
     googleClientId,
     googleClientSecret,
+    discordClientId,
+    discordClientSecret,
     sessionSecret,
+    googleEnabled,
+    discordEnabled,
     authEnabled,
     sessionTtlHours,
     adminSessionTtlHours,

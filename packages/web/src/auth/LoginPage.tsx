@@ -1,10 +1,34 @@
+import type { SignInProvider } from '@tailfin/shared';
+
 import { BuildBadge } from '../version/BuildBadge';
 
-import { SIGN_IN_PATH } from './api';
+import { signInPathFor } from './api';
 import { messageFor, useAuthError } from './authError';
 import { useSession } from './SessionProvider';
 
 import type { ReactNode } from 'react';
+
+/**
+ * How each provider is named and marked on the door.
+ *
+ * Total maps over `SignInProvider`, so a provider added in `@tailfin/shared`
+ * without deciding its label here is a compile error rather than a button
+ * reading "Continue with undefined".
+ *
+ * The glyphs are the existing typographic marks rather than brand logos:
+ * reproducing Google's and Discord's marks correctly means their brand
+ * guidelines, their exact assets and their colours, which is a licensing
+ * question and a second visual language on a page that has one.
+ */
+const PROVIDER_LABEL: Record<SignInProvider, string> = {
+  google: 'Google',
+  discord: 'Discord',
+};
+
+const PROVIDER_GLYPH: Record<SignInProvider, string> = {
+  google: '⌾',
+  discord: '◈',
+};
 
 /**
  * The front door (M0-12).
@@ -18,7 +42,7 @@ import type { ReactNode } from 'react';
  * visitor sees a door instead of an empty cockpit.
  */
 export function LoginPage(): ReactNode {
-  const { registrationOpen } = useSession();
+  const { registrationOpen, signInProviders } = useSession();
   const authError = useAuthError();
 
   return (
@@ -43,12 +67,22 @@ export function LoginPage(): ReactNode {
           </p>
         )}
 
-        <a className="login__button" href={SIGN_IN_PATH}>
-          <span className="login__glyph" aria-hidden="true">
-            ⌾
-          </span>
-          <span>Sign in with Google</span>
-        </a>
+        {signInProviders.length === 0 ? (
+          // A real state, not an error: production runs this build with no OAuth
+          // client of its own. Saying so is better than a button that 503s.
+          <p className="login__note" role="status">
+            Sign-in is not configured on this server yet.
+          </p>
+        ) : (
+          signInProviders.map((provider) => (
+            <a key={provider} className="login__button" href={signInPathFor(provider)}>
+              <span className="login__glyph" aria-hidden="true">
+                {PROVIDER_GLYPH[provider]}
+              </span>
+              <span>Continue with {PROVIDER_LABEL[provider]}</span>
+            </a>
+          ))
+        )}
 
         <p className="login__note">
           {registrationOpen

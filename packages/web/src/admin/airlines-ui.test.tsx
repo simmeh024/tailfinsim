@@ -15,6 +15,7 @@ const ADMIN: MeResponse = {
     createdAt: '2026-08-17T09:00:00.000Z',
   },
   registrationOpen: false,
+  signInProviders: [],
   isAdmin: true,
 };
 

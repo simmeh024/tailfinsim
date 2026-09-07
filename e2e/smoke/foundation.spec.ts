@@ -11,5 +11,9 @@ test('serves the built login wall from the application origin @smoke', async ({ 
   expect(response).not.toBeNull();
   expect(response?.headers()['content-type']).toContain('text/html');
   await expect(page.getByRole('heading', { name: 'Run an airline' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Sign in with Google' })).toBeVisible();
+  // Both providers, in a real browser. The unit tests prove the page renders
+  // what the server reports; this proves the server reports both when both are
+  // configured (AUTH-08).
+  await expect(page.getByRole('link', { name: 'Continue with Google' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Continue with Discord' })).toBeVisible();
 });

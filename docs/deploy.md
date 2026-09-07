@@ -52,7 +52,7 @@ Split them only when there is a reason, and take the cookie complexity on knowin
 Permissions Policy, HSTS, content-type and referrer controls to the holding page, application,
 API and error responses on both hosts. Google OAuth needs no CSP exception because it is a
 top-level navigation; the one external resource exception is
-`https://lh3.googleusercontent.com` for player avatars. The exact policy, rollout decision
+`https://lh3.googleusercontent.com` and `https://cdn.discordapp.com` for player avatars. The exact policy, rollout decision
 and rejected HSTS preload option are in
 [ADR-0014](adr/0014-browser-security-policy.md).
 
@@ -309,19 +309,36 @@ one.
 
 ### Auth configuration (M0-11)
 
-The three auth variables are **optional together**. Set all three and Google sign-in
-works; set none and it is switched off — `/api/me` still answers, and the sign-in routes
-return `503 auth_not_configured` rather than 404, so a client can tell "not configured
-here" from "no such feature". Setting only some of them is refused at boot: a
-half-configured server looks like working sign-in right up to the callback, by which
-point the player has already been sent to Google.
+Auth variables come in **pairs, one per provider**, plus `SESSION_SECRET`. Set a
+provider's pair and that provider works; set none and sign-in is switched off — `/api/me`
+still answers, its `signInProviders` list is empty, the login page says so, and the
+sign-in routes return `503 auth_not_configured` rather than 404, so a client can tell "not
+configured here" from "no such feature".
+
+Setting only half of a pair is refused at boot, per provider: a half-configured server
+looks like working sign-in right up to the callback, by which point the player has already
+been sent to the provider. `SESSION_SECRET` is required as soon as any provider is
+configured — it signs the short-lived OAuth state cookie — and enables nothing by itself.
 
 That optionality is what lets production run this build today with no OAuth client of its
-own. Google must authorize each environment's exact redirect URI; separate OAuth clients are
-recommended for blast-radius isolation but are not technically required:
+own. Each provider must authorize each environment's exact redirect URI:
 
     https://tailfinsim.com/api/auth/google/callback
     https://dev.tailfinsim.com/api/auth/google/callback
+    https://tailfinsim.com/api/auth/discord/callback
+    https://dev.tailfinsim.com/api/auth/discord/callback
+
+For **Google**, separate OAuth clients per environment are recommended for blast-radius
+isolation but are not technically required. For **Discord** a separate application per
+environment is required rather than recommended (AUTH-23): sharing one would put a
+production credential in dev's `.env`, on the box that runs unmerged branches with open
+registration. Discord's scopes are `identify` and `email` only — Tailfin holds no bot token
+and reads no guild membership.
+
+Adding a provider also changes the browser policy: Discord avatars are served from
+`https://cdn.discordapp.com`, which is allowed in the CSP's `img-src`. That lives in
+`deploy/Caddyfile`, and **an application deploy does not install it** — see the edge
+procedure in [`deploy/README.md`](../deploy/README.md).
 
 `ALLOW_REGISTRATION=false` refuses a Google account that has no player record, redirecting
 to `/?auth_error=registration_closed`. Note the consequence: **the first account on a new

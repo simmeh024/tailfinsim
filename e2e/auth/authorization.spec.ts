@@ -49,7 +49,7 @@ test.describe('session and administrator boundaries @smoke', () => {
     await page.goto('/admin');
 
     await expect(page.getByRole('heading', { name: 'Run an airline' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Sign in with Google' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Continue with Google' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Admin console' })).toHaveCount(0);
     await expect(page.getByRole('navigation', { name: 'Admin sections' })).toHaveCount(0);
     expect(await observedConsoleContent(page)).toEqual([]);

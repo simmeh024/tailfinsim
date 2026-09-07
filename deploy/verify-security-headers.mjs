@@ -6,7 +6,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const CSP =
-  "default-src 'self'; script-src 'self'; style-src 'self' 'sha256-ftYZ6VWMqcx4KWcJ2/G2tKyA+X9oEaozaSrupOVb8KM='; img-src 'self' data: https://lh3.googleusercontent.com; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'";
+  "default-src 'self'; script-src 'self'; style-src 'self' 'sha256-ftYZ6VWMqcx4KWcJ2/G2tKyA+X9oEaozaSrupOVb8KM='; img-src 'self' data: https://lh3.googleusercontent.com https://cdn.discordapp.com; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'";
 const PERMISSIONS_POLICY =
   'accelerometer=(), autoplay=(), camera=(), display-capture=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), usb=(), web-share=(), xr-spatial-tracking=()';
 const COMMON_HEADERS = new Map([

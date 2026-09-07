@@ -29,10 +29,20 @@ const PLAYER: MeResponse = {
     displayCurrency: 'USD',
   },
   registrationOpen: false,
+  // A signed-in player still carries the server's provider list: signing out
+  // returns them to the login wall, which must offer a way back in.
+  signInProviders: ['google', 'discord'],
   isAdmin: false,
 };
 
-const ANONYMOUS: MeResponse = { player: null, registrationOpen: false, isAdmin: false };
+const ANONYMOUS: MeResponse = {
+  player: null,
+  registrationOpen: false,
+  // Both configured, which is dev's state. The login page renders exactly
+  // what the server says it has credentials for (AUTH-08).
+  signInProviders: ['google', 'discord'],
+  isAdmin: false,
+};
 
 const VERSION: VersionResponse = {
   build: 137,
@@ -110,7 +120,7 @@ describe('the login wall', () => {
     stubApi(ANONYMOUS);
     renderAt('/world');
 
-    expect(await screen.findByRole('link', { name: /sign in with google/i })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: /continue with google/i })).toBeInTheDocument();
     // The app itself must not be rendered behind it.
     expect(screen.queryByRole('navigation', { name: 'Main' })).not.toBeInTheDocument();
     expect(screen.queryByRole('main', { name: 'World' })).not.toBeInTheDocument();
@@ -121,7 +131,9 @@ describe('the login wall', () => {
     stubApi(ANONYMOUS);
     for (const path of ['/fleet', '/finance', '/board', '/nonsense']) {
       const { unmount } = renderAt(path);
-      expect(await screen.findByRole('link', { name: /sign in with google/i })).toBeInTheDocument();
+      expect(
+        await screen.findByRole('link', { name: /continue with google/i }),
+      ).toBeInTheDocument();
       expect(screen.queryByRole('navigation', { name: 'Main' })).not.toBeInTheDocument();
       unmount();
     }
@@ -132,13 +144,13 @@ describe('the login wall', () => {
     renderAt('/world');
 
     expect(await screen.findByRole('navigation', { name: 'Main' })).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /sign in with google/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /continue with google/i })).not.toBeInTheDocument();
   });
 
   it('does not flash the login page while the session is still unknown', () => {
     // The default stub never settles, so the session stays in `loading`.
     renderAt('/world');
-    expect(screen.queryByRole('link', { name: /sign in with google/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /continue with google/i })).not.toBeInTheDocument();
     expect(screen.getByText(/checking your sign-in/i)).toBeInTheDocument();
   });
 
@@ -147,7 +159,7 @@ describe('the login wall', () => {
     renderAt('/world');
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/cannot reach tailfin/i);
-    expect(screen.queryByRole('link', { name: /sign in with google/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /continue with google/i })).not.toBeInTheDocument();
   });
 
   it('offers sign-in as a link, not a button', async () => {
@@ -156,16 +168,46 @@ describe('the login wall', () => {
     stubApi(ANONYMOUS);
     renderAt('/world');
 
-    expect(await screen.findByRole('link', { name: /sign in with google/i })).toHaveAttribute(
+    expect(await screen.findByRole('link', { name: /continue with google/i })).toHaveAttribute(
       'href',
       '/api/auth/google',
     );
   });
 
+  it('offers every provider the server says it has credentials for', async () => {
+    stubApi(ANONYMOUS);
+    renderAt('/world');
+
+    expect(await screen.findByRole('link', { name: /continue with discord/i })).toHaveAttribute(
+      'href',
+      '/api/auth/discord',
+    );
+  });
+
+  it('offers only the providers the server actually has', async () => {
+    // A button for a provider this instance has no credentials for would send
+    // the player to a 503 (AUTH-08).
+    stubApi({ ...ANONYMOUS, signInProviders: ['google'] });
+    renderAt('/world');
+
+    await screen.findByRole('link', { name: /continue with google/i });
+    expect(screen.queryByRole('link', { name: /continue with discord/i })).not.toBeInTheDocument();
+  });
+
+  it('says sign-in is unconfigured rather than offering a door that does not open', async () => {
+    // Production's real state today: this build runs there with no OAuth client
+    // of its own, so the honest page says so.
+    stubApi({ ...ANONYMOUS, signInProviders: [] });
+    renderAt('/world');
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/not configured/i);
+    expect(screen.queryByRole('link', { name: /continue with/i })).not.toBeInTheDocument();
+  });
+
   it('asks the server who it is exactly once on mount', async () => {
     const { calls } = stubApi(ANONYMOUS);
     renderAt('/world');
-    await screen.findByRole('link', { name: /sign in with google/i });
+    await screen.findByRole('link', { name: /continue with google/i });
     expect(calls.filter((url) => url === '/api/me')).toHaveLength(1);
   });
 
@@ -176,7 +218,7 @@ describe('the login wall', () => {
   });
 
   it('says so when registration is open', async () => {
-    stubApi({ player: null, registrationOpen: true, isAdmin: false });
+    stubApi({ ...ANONYMOUS, registrationOpen: true });
     renderAt('/world');
     expect(await screen.findByText(/new accounts are open/i)).toBeInTheDocument();
   });
@@ -217,7 +259,7 @@ describe('signed in', () => {
     await waitFor(() => {
       expect(calls).toContain('/api/auth/logout');
     });
-    expect(await screen.findByRole('link', { name: /sign in with google/i })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: /continue with google/i })).toBeInTheDocument();
     expect(screen.queryByRole('navigation', { name: 'Main' })).not.toBeInTheDocument();
   });
 
@@ -230,7 +272,7 @@ describe('signed in', () => {
     await waitFor(() => {
       expect(calls).toContain('/api/auth/logout-all');
     });
-    expect(await screen.findByRole('link', { name: /sign in with google/i })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: /continue with google/i })).toBeInTheDocument();
   });
 });
 
@@ -250,7 +292,7 @@ describe('auth_error in the query string', () => {
     stubApi(ANONYMOUS);
     renderAt('/?auth_error=provider_error');
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/google did not complete/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/sign-in was not completed/i);
   });
 
   it('clears the code from the URL so a refresh does not resurrect it', async () => {
@@ -298,7 +340,7 @@ describe('the build badge', () => {
     const { calls } = stubApi(ANONYMOUS);
     renderAt('/world');
 
-    await screen.findByRole('link', { name: /sign in with google/i });
+    await screen.findByRole('link', { name: /continue with google/i });
     expect(await screen.findByText('build 137')).toBeInTheDocument();
     expect(screen.queryByLabelText('In-game time')).not.toBeInTheDocument();
     expect(calls).not.toContain('/api/world/clock');

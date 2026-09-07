@@ -11,7 +11,10 @@
 Tailfin serves a React application, static assets and the Fastify API through one Caddy
 origin. Google sign-in leaves Tailfin through a top-level redirect and returns to the same
 origin; signed-in players may display profile images hosted at
-`https://lh3.googleusercontent.com`. M6 will add player-authored liveries and cabins that
+`https://lh3.googleusercontent.com`, joined by `https://cdn.discordapp.com` for Discord
+avatars when AUTH-08 added a second sign-in provider. Both are image hosts and nothing
+else: they receive a request for an avatar URL and no Tailfin data, and neither may serve
+script, style or a frame. M6 will add player-authored liveries and cabins that
 other players can see, increasing the consequence of a stored cross-site-scripting bug.
 
 The edge already supplied one-year HSTS with `includeSubDomains`, `nosniff`, a strict-origin
@@ -28,7 +31,7 @@ API responses and errors. The enforced Content Security Policy is:
 default-src 'self';
 script-src 'self';
 style-src 'self' 'sha256-ftYZ6VWMqcx4KWcJ2/G2tKyA+X9oEaozaSrupOVb8KM=';
-img-src 'self' data: https://lh3.googleusercontent.com;
+img-src 'self' data: https://lh3.googleusercontent.com https://cdn.discordapp.com;
 connect-src 'self';
 frame-ancestors 'none';
 form-action 'self';

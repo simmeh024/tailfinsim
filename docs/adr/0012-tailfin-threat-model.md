@@ -22,15 +22,15 @@ re-read during design and review. It describes the deployed system in
 The ranks decide priority when time or controls conflict; a lower rank is not permission to
 ignore an asset.
 
-| Rank | Asset                                              | What must remain true                                                                                                                                                            |
-| ---- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | Airlines, world history and the game economy       | Commands and simulation outcomes are authorised, deterministic where promised, durable and attributable. One player cannot manufacture value or change another airline.          |
-| 2    | Admin authority, grants and audit history          | Only the intended operator can perform privileged actions, and the durable record of those actions cannot be rewritten.                                                          |
-| 3    | Player accounts, ownership and session tokens      | A Google identity resolves to the right player; a session grants no more authority and lasts no longer than intended.                                                            |
-| 4    | PostgreSQL, off-box backups and service continuity | The authoritative state stays correct and recoverable. Confidential copies do not become a cheaper route around application controls.                                            |
-| 5    | Deployment access and build provenance             | SSH, GitHub access, Actions, dependencies and the code deployed to the VM cannot silently replace the reviewed application.                                                      |
-| 6    | Secrets                                            | Database and session secrets, Google OAuth credentials, DreamObjects keys and future Stripe/POD credentials stay out of source, logs and untrusted processes and can be rotated. |
-| 7    | Personal and commerce data                         | Email/profile data and future shipping addresses, order identifiers and fulfilment data are disclosed only for their intended purpose. Tailfin never receives card data.         |
+| Rank | Asset                                              | What must remain true                                                                                                                                                                        |
+| ---- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | Airlines, world history and the game economy       | Commands and simulation outcomes are authorised, deterministic where promised, durable and attributable. One player cannot manufacture value or change another airline.                      |
+| 2    | Admin authority, grants and audit history          | Only the intended operator can perform privileged actions, and the durable record of those actions cannot be rewritten.                                                                      |
+| 3    | Player accounts, ownership and session tokens      | A provider identity resolves to the right player; a session grants no more authority and lasts no longer than intended, whichever provider minted it.                                        |
+| 4    | PostgreSQL, off-box backups and service continuity | The authoritative state stays correct and recoverable. Confidential copies do not become a cheaper route around application controls.                                                        |
+| 5    | Deployment access and build provenance             | SSH, GitHub access, Actions, dependencies and the code deployed to the VM cannot silently replace the reviewed application.                                                                  |
+| 6    | Secrets                                            | Database and session secrets, Google and Discord OAuth credentials, DreamObjects keys and future Stripe/POD credentials stay out of source, logs and untrusted processes and can be rotated. |
+| 7    | Personal and commerce data                         | Email/profile data and future shipping addresses, order identifiers and fulfilment data are disclosed only for their intended purpose. Tailfin never receives card data.                     |
 
 Availability is part of ranks 1 and 4: a stopped event queue or exhausted database can make
 the persistent world incorrect, not merely slow. Public source code, public airline facts
@@ -67,8 +67,10 @@ Untrusted Internet
                                         tailfin_worker_dev (pg_hba refuses it
                                         the production database)
 
-Browser <--------------------> Google OAuth
+Browser <--------------------> Google OAuth, Discord OAuth
 Tailfin server --------------> Google token/user-info endpoints
+Tailfin server --------------> Discord token/users@me endpoints [AUTH-08]
+Browser <--------------------- cdn.discordapp.com (avatar images only)
 operator/deploy checkout ----> GitHub
 local backup job ------------> DreamObjects (a full database copy)
 dev worker ------------------> Cloudflare FX provider (display rates) [M8-02]
@@ -91,6 +93,26 @@ and unable to forward anywhere else. The database role `tailfin_worker_dev` is c
 the server rather than of the connection string the worker was handed. It holds no
 `SESSION_SECRET` and no Google credential: a process that serves no sessions has no business
 holding the key that signs them.
+
+**A second identity provider (AUTH-08).** Discord joins Google as a way in, and the boundary
+is deliberately the same shape rather than a parallel one: both are authorization-code flows
+with PKCE and a signed, provider-bound state cookie; both spend the access token immediately on
+a user-info call and keep no refresh token; and both hand the result to one account-policy
+module, so neither can create, merge or move an account by a rule the other does not apply.
+
+Three consequences for this model. The **outbound** surface gains `discord.com` from the web
+node — not the worker, whose `IPAddressDeny=any` is unchanged and still allows only the FX host.
+The **browser** surface gains `cdn.discordapp.com`, allowed in `img-src` for avatars and nothing
+else; it is an image host, so it receives a request for a URL derived from a player's Discord
+avatar hash and no Tailfin data. And the **personal-data** class is unchanged in kind: Discord
+returns an id, a display name, an avatar hash and an email address, and the email is recorded as
+informational and never used to resolve an account (ADR-0004), which is enforced by
+`auth/identity-email.test.ts` rather than left as a convention.
+
+Discord is a **separate application per environment** — dev and production do not share one, so
+a dev credential cannot authorise a production callback. Scopes are `identify` and `email` only;
+Tailfin holds no bot token and reads no guild membership, so a compromised Tailfin cannot act in
+a Discord server.
 
 What this does not buy: the forward is a convenience over a shared segment, not a private
 network. Root on the worker node can use the tunnel, so the worker node is inside the dev

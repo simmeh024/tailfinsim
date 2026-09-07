@@ -33,9 +33,14 @@ const server = spawn(process.execPath, ['packages/server/dist/main.js'], {
     PUBLIC_ORIGIN: `http://127.0.0.1:${port}`,
     ENVIRONMENT_LABEL: 'local',
     // Authentication stays fully enabled in browser tests. The setup mints
-    // sessions directly in the disposable database, so Google is never called.
+    // sessions directly in the disposable database, so no provider is ever
+    // called — these credentials exist to make both sign-in buttons render, and
+    // are deliberately not valid anywhere (AUTH-23: CI must not be able to reach
+    // a real provider).
     GOOGLE_CLIENT_ID: 'e2e-client.apps.googleusercontent.com',
     GOOGLE_CLIENT_SECRET: 'e2e-client-secret',
+    DISCORD_CLIENT_ID: '000000000000000000',
+    DISCORD_CLIENT_SECRET: 'e2e-discord-client-secret',
     SESSION_SECRET: 'e2e-session-secret-that-is-longer-than-thirty-two-characters',
     ALLOW_REGISTRATION: 'false',
   },

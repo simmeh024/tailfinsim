@@ -116,12 +116,14 @@ const READ_ONLY_GET_ROUTES = [
 /**
  * The `GET` routes that **do** change state, and what protects each instead.
  *
- * Both are the sign-in flow rather than the game, and both must be `GET`: OAuth
- * returns the browser by top-level navigation, which is exactly the case
- * `SameSite=Lax` deliberately allows through.
+ * All of them are the sign-in flow rather than the game, and all of them must
+ * be `GET`: OAuth returns the browser by top-level navigation, which is exactly
+ * the case `SameSite=Lax` deliberately allows through.
  *
- * A third entry here is a decision, not a detail. Whoever adds one has to write
- * the control down in the same line.
+ * They come in pairs, one pair per provider (AUTH-08). A pair for a *new*
+ * provider is a small decision; an entry that is not an OAuth pair is a large
+ * one, and either way whoever adds it has to write the control down on the same
+ * line.
  */
 const STATE_CHANGING_GET_ROUTES: { url: string; instead: string }[] = [
   {
@@ -136,6 +138,19 @@ const STATE_CHANGING_GET_ROUTES: { url: string; instead: string }[] = [
       'Creates a session, and is guarded by the OAuth `state` parameter matching the signed ' +
       '`tailfin_oauth` cookie — the standard login-CSRF control. `session-cookie.test.ts` ' +
       'proves a callback arriving without that cookie is refused.',
+  },
+  {
+    url: '/api/auth/discord',
+    instead:
+      'As `/api/auth/google`: writes the signed `tailfin_oauth` state cookie and nothing else. ' +
+      'Forging the request starts a sign-in the attacker cannot finish.',
+  },
+  {
+    url: '/api/auth/discord/callback',
+    instead:
+      'As the Google callback, and the same control: the OAuth `state` must match the signed ' +
+      '`tailfin_oauth` cookie. The cookie also names the provider it was minted for, so a ' +
+      'state issued for Google is refused here rather than spending the credential.',
   },
 ];
 
@@ -175,6 +190,8 @@ describe('no state-changing endpoint is reachable by GET (ADR-0027, fact 4)', ()
     expect(STATE_CHANGING_GET_ROUTES.map((route) => route.url)).toEqual([
       '/api/auth/google',
       '/api/auth/google/callback',
+      '/api/auth/discord',
+      '/api/auth/discord/callback',
     ]);
 
     // And the exception has to still exist, or the list is stale prose.
