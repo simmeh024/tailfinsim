@@ -57,6 +57,28 @@ Expiry is a correctness condition in every session lookup, not a cleanup job. Th
 scheduled. Expired rows may remain as harmless metadata until a retention policy is deliberately
 introduced; they cannot authenticate.
 
+### A session does not know how it was obtained (AUTH-05)
+
+Every lifetime, cookie flag, rotation and revocation rule above is chosen by **player kind** —
+player or administrator — and never by authentication method. `createSession` takes a player id
+and a TTL; `session` has no provider column; and nothing in `session.ts` or `revocation.ts`
+names a provider. A session belongs to the `player`, not to the identity that minted it, so
+unlinking that identity does not end it — revocation stays explicit, through `logout-all` or the
+administrator control.
+
+**Changing that requires a new ADR, not a pull request.** The pressure will be real and will
+sound reasonable: passkeys authenticate more strongly than a magic link, so a longer passkey
+session looks like a free improvement. It is not. Four providers with four session models means
+the security of an account is set by whichever model is weakest, and the weakest one is reachable
+by whoever picks it — so a "stronger" method's longer session is only ever an upper bound on an
+attacker's convenience, never on their access. If a method-specific lifetime is genuinely wanted,
+the thing to write down first is which method an _attacker_ would choose.
+
+`auth/session-uniformity.test.ts` holds this: it exercises create, resolve, TTL, hashing, logout,
+expiry, revocation and rotation across all four `auth_provider` values, and fails if a provider
+name appears in the session modules or a provider column appears on the table. A deliberate
+change amends this ADR and that file together.
+
 ## Consequences
 
 ### What this makes easier
