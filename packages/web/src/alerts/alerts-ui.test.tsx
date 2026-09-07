@@ -6,12 +6,12 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { Alert, AlertsResponse, DigestResponse, MeResponse } from '@tailfin/shared';
+
 import { App } from '../App';
 import { NAV_ITEMS } from '../shell/AppShell';
 
 import { alertHref, ALERT_SCREENS } from './link';
-
-import type { Alert, AlertsResponse, DigestResponse, MeResponse } from '@tailfin/shared';
 
 /**
  * §14.5's alerts and §3.2's digest on screen — M8-13's third criterion (M8-13).
@@ -120,26 +120,34 @@ function alerts(overrides: Partial<AlertsResponse> = {}): AlertsResponse {
 }
 
 function mountAlerts(options: { digest?: DigestResponse | null; alerts?: AlertsResponse } = {}) {
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+  const fetchMock = vi.fn((input: unknown) => {
     const url = String(input).split('?')[0] ?? '';
-    let body: unknown = {};
-    if (url === '/api/me') body = SIGNED_IN;
-    else if (url === '/api/airlines/me') body = AIRLINE;
-    else if (url === '/api/alerts') body = options.alerts ?? alerts();
-    else if (url === '/api/digest') {
-      const value = options.digest === undefined ? digest() : options.digest;
-      if (value === null) return new Response('{}', { status: 500 });
-      body = value;
-    } else if (url === '/api/finance/runway') return new Response('{}', { status: 409 });
-    else if (url === '/api/office' || url === '/api/office/executive') {
-      return new Response('{}', { status: 409 });
-    } else if (url === '/api/currencies') {
-      body = { base: 'USD', asOf: '2027-03-10T00:00:00.000Z', rates: [] };
+
+    // The digest is the one read that has to be able to fail, so it answers a
+    // 500 rather than an unshaped 200 — a page that renders `broken` is the
+    // criterion, not a page that renders NaN.
+    if (url === '/api/digest' && options.digest === null) {
+      return Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) });
     }
-    return new Response(JSON.stringify(body), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
+    // Neither the runway nor the office exists for these fixtures. 409 is what
+    // the real endpoints answer for an airline that has not got one.
+    if (url === '/api/finance/runway' || url === '/api/office' || url === '/api/office/executive') {
+      return Promise.resolve({ ok: false, status: 409, json: () => Promise.resolve({}) });
+    }
+
+    const payload =
+      url === '/api/me'
+        ? SIGNED_IN
+        : url === '/api/airlines/me'
+          ? AIRLINE
+          : url === '/api/alerts'
+            ? (options.alerts ?? alerts())
+            : url === '/api/digest'
+              ? (options.digest ?? digest())
+              : url === '/api/currencies'
+                ? { base: 'USD', asOf: '2027-03-10T00:00:00.000Z', rates: [] }
+                : {};
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(payload) });
   });
   vi.stubGlobal('fetch', fetchMock);
 
