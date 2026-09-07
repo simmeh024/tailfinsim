@@ -29,12 +29,10 @@ export function Placeholder({ title, note }: { title: string; note: string }): R
 // NetworkPage is no longer a placeholder — M3-09 filled it. Schedules and the
 // seven reachability checks are still M2-01's, and land on the same page.
 
-export const FinancePage = (): ReactNode => (
-  <Placeholder
-    title="Finance"
-    note="P&L, unit economics, and profit by route with a breakeven line — the chart players learn the game through. M8-11."
-  />
-);
+// FinancePage is no longer a placeholder — M8-10 filled it with §14.3's
+// Financial dashboard: the P&L and its four dimensional rollups, the unit
+// economics, and the debt with its DSCR and interest drain. §14.4's ranked
+// profit-by-route chart with the breakeven line is still M8-11's.
 
 export const CrewPage = (): ReactNode => (
   <Placeholder

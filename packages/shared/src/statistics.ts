@@ -91,6 +91,14 @@ export const MetricDimension = z.enum([
   'flight',
   'segment',
   'ledger_category',
+  /**
+   * Not rows at all — a single record that explains the figure.
+   *
+   * Net worth drills to the credit standing because that is where the assets and
+   * the borrowing it is made of are already reported. Pretending such a link had
+   * a dimension would make `by` meaningless on the ones that do.
+   */
+  'record',
 ]);
 export type MetricDimension = z.infer<typeof MetricDimension>;
 

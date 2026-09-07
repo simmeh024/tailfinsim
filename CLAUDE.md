@@ -601,6 +601,31 @@ rungs of the load-factor chain — the third of which,
 `GET /api/routes/:routeId/flights`, M8-09 had to add because the chain the design
 doc spells out was missing its middle link.
 
+**And M8-10 put §14 on screen, which makes that trap visible rather than
+theoretical.** `/dashboard` is §14.3's Executive view and `/finance` its
+Financial one, and on a node with no worker **both read null and zero all the way
+down** — the runway says `365+ days`, every ratio is an em dash, both mover lists
+are empty. It looks like a new airline. It is a missing process.
+
+Three decisions there worth not undoing. **Net worth must not move when an
+airline borrows**: cash and debt rise together, and a dashboard reading it off
+cash alone would congratulate a player for taking a loan — the exact confusion
+§13 exists to prevent. A database test holds that line. **The MTD forecast is
+scaled to the days elapsed**, because comparing a whole month's projection
+against six days of trading would report every airline as catastrophically behind
+plan for the first three weeks of every month; `withinBand` is what keeps a
+variance from being an alarm. And **a drill-down with no page yet is named, not
+linked** — `drillHref` returns null and the tile prints the destination as text.
+M8-09's guard proves the endpoint exists on the server; nothing proves a page
+consumes it, and a link to a page that cannot answer is how a drill-down rots.
+
+The 390px criterion is met by layout rather than by a media query: `auto-fit`
+grids with a floor that fits, and every table inside its own `overflow-x` box —
+because the real narrow-screen failure is the **page** scrolling sideways, which
+takes the navigation off screen to show one more column. `docs/statistics.md` has
+both dashboards, and why cargo profitability and a debt amortisation schedule are
+deliberately absent.
+
 **And one thing not to "fix".** `airframe.maintenance_state` is nullable, and a null means
 _every tier was last completed at the hours this airframe has now_ — not _at hour zero_. It
 looks like a missing default and it is load-bearing: the other reading would make every

@@ -67,6 +67,13 @@ interface NavItem {
  * *in* the cabin, next to who runs the airline.
  */
 export const NAV_ITEMS: readonly NavItem[] = [
+  /*
+   * The dashboard leads the rail because §14 says it should: *"the dashboard
+   * **is** the game's main interface after the first week"*, and §2's check-in
+   * session is one glance at it. The world map is the thing you look at on day
+   * one; this is the thing you look at on day thirty.
+   */
+  { to: '/dashboard', label: 'Dashboard', glyph: '▦' },
   { to: '/world', label: 'World', glyph: '◎' },
   { to: '/fleet', label: 'Fleet', glyph: '✈' },
   { to: '/network', label: 'Network', glyph: '⤳' },
