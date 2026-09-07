@@ -70,8 +70,14 @@ test('the deployed public surface renders the intended build without browser err
   } else {
     // Dev serves the app. The anonymous login wall proves the client bundle,
     // routing and its initial API call all rendered rather than a blank page.
+    //
+    // Matched by shape rather than by provider (AUTH-08): which buttons appear
+    // is decided by that box's `.env`, and this check exists to prove the page
+    // rendered — not to assert which credentials the environment happens to
+    // hold. Pinning a provider here turns an ordinary configuration change into
+    // a failed deploy.
     await expect(page).toHaveTitle('Tailfin');
-    await expect(page.getByRole('link', { name: 'Sign in with Google' })).toBeVisible();
+    await expect(page.getByRole('link', { name: /^Continue with / }).first()).toBeVisible();
     await expect(page.getByRole('main')).toHaveCSS('background-color', 'rgb(19, 26, 36)');
   }
 

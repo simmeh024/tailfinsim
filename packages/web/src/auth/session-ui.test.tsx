@@ -292,7 +292,7 @@ describe('auth_error in the query string', () => {
     stubApi(ANONYMOUS);
     renderAt('/?auth_error=provider_error');
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/google did not complete/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/sign-in was not completed/i);
   });
 
   it('clears the code from the URL so a refresh does not resurrect it', async () => {

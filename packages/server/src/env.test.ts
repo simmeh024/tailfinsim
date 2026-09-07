@@ -176,17 +176,58 @@ describe('loadEnv — auth', () => {
     expect(loadEnv().authEnabled).toBe(true);
   });
 
-  it('refuses to boot on a half-configured setup', () => {
+  it('refuses to boot on a half-configured provider', () => {
     // The trap this exists to prevent: a server that looks signed-in-capable and
-    // only fails at the callback, after the player has already been to Google.
+    // only fails at the callback, after the player has already been sent to the
+    // provider. Checked per provider since AUTH-08, so a second provider cannot
+    // make a half-configured first one boot quietly.
     stubAuth(CLIENT_ID, '', SECRET);
-    expect(() => loadEnv()).toThrow(/partially configured/);
+    expect(() => loadEnv()).toThrow(/Google sign-in is partially configured/);
 
     stubAuth('', CLIENT_SECRET, SECRET);
-    expect(() => loadEnv()).toThrow(/partially configured/);
+    expect(() => loadEnv()).toThrow(/Google sign-in is partially configured/);
+  });
 
+  it('refuses to boot when a configured provider has no session secret', () => {
+    // Its own message rather than "partially configured": the pair *is*
+    // complete, and what is missing is the secret that signs the OAuth state
+    // cookie. Naming it is the difference between a one-line fix and a hunt.
     stubAuth(CLIENT_ID, CLIENT_SECRET, '');
-    expect(() => loadEnv()).toThrow(/partially configured/);
+    expect(() => loadEnv()).toThrow(/SESSION_SECRET is required/);
+  });
+
+  it('refuses a half-configured Discord independently of Google', () => {
+    // The regression AUTH-08 could most easily have introduced: generalising the
+    // guard and then only applying it to the provider that already had a test.
+    stubAuth(CLIENT_ID, CLIENT_SECRET, SECRET);
+    vi.stubEnv('DISCORD_CLIENT_ID', '000000000000000000');
+    expect(() => loadEnv()).toThrow(/Discord sign-in is partially configured/);
+  });
+
+  it('enables each provider independently', () => {
+    stubAuth(CLIENT_ID, CLIENT_SECRET, SECRET);
+    let env = loadEnv();
+    expect(env.googleEnabled).toBe(true);
+    expect(env.discordEnabled).toBe(false);
+    expect(env.authEnabled).toBe(true);
+
+    vi.stubEnv('DISCORD_CLIENT_ID', '000000000000000000');
+    vi.stubEnv('DISCORD_CLIENT_SECRET', 'discord-secret');
+    env = loadEnv();
+    expect(env.googleEnabled).toBe(true);
+    expect(env.discordEnabled).toBe(true);
+  });
+
+  it('enables Discord with no Google configured at all', () => {
+    // `authEnabled` must mean "some provider", not "Google" — otherwise an
+    // instance offering only Discord would resolve no sessions.
+    stubAuth('', '', SECRET);
+    vi.stubEnv('DISCORD_CLIENT_ID', '000000000000000000');
+    vi.stubEnv('DISCORD_CLIENT_SECRET', 'discord-secret');
+    const env = loadEnv();
+    expect(env.googleEnabled).toBe(false);
+    expect(env.discordEnabled).toBe(true);
+    expect(env.authEnabled).toBe(true);
   });
 
   it('rejects a session secret too short to be worth signing with', () => {
