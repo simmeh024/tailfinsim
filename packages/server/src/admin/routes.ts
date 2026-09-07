@@ -77,7 +77,7 @@ import {
   validateWorldConfig,
 } from './worlds';
 
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 /**
  * The admin API (M1A-01 to M1A-03, §22).
@@ -118,6 +118,34 @@ function actorOf(request: FastifyRequest): Actor {
     label: request.player?.displayName ?? 'unknown admin',
     requestId: request.id,
   };
+}
+
+/**
+ * A pagination query parameter: absent, a usable number, or `null` for refuse.
+ *
+ * `Number('abc')` is `NaN`, and `NaN` survives every clamp `Math.min`/`Math.max`
+ * can apply — so the previous `Number(request.query.limit)` reached
+ * `listPlayers`, passed its bounds untouched, and asked Postgres for
+ * `limit 'NaN'`. That is a 500 for a malformed query string, where 400 is the
+ * answer.
+ *
+ * The same shape as `finance/routes.ts`'s `queryDate` and `optionalUuid`:
+ * `undefined` means the caller said nothing and the default applies, `null`
+ * means they said something unusable and the route refuses. Bounds stay with
+ * the reader that knows them.
+ */
+function queryCount(value: string | undefined): number | undefined | null {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+/** The one refusal body both paginated admin reads share. */
+function invalidPagination(reply: FastifyReply): FastifyReply {
+  return reply.code(400).send({
+    code: 'invalid_pagination',
+    message: 'limit and offset must be non-negative numbers.',
+  });
 }
 
 export function registerAdminRoutes(app: FastifyInstance, { db, env }: AdminRoutesOptions): void {
@@ -190,11 +218,11 @@ export function registerAdminRoutes(app: FastifyInstance, { db, env }: AdminRout
     async (request, reply) => {
       // Not audited. A search returning a page of names is not a view of a
       // person's record — the detail route below is, and that one is recorded.
-      const page = await listPlayers(db.db, {
-        query: request.query.q,
-        limit: request.query.limit === undefined ? undefined : Number(request.query.limit),
-        offset: request.query.offset === undefined ? undefined : Number(request.query.offset),
-      });
+      const limit = queryCount(request.query.limit);
+      const offset = queryCount(request.query.offset);
+      if (limit === null || offset === null) return invalidPagination(reply);
+
+      const page = await listPlayers(db.db, { query: request.query.q, limit, offset });
       return reply.code(200).send(page);
     },
   );
@@ -281,15 +309,13 @@ export function registerAdminRoutes(app: FastifyInstance, { db, env }: AdminRout
       // Purely read-only. AIR-06 owns every game-balance change and records its
       // immutable cause in the same transaction; this route only makes that
       // evidence visible to support.
+      const movementLimit = queryCount(request.query.movementLimit);
+      const movementOffset = queryCount(request.query.movementOffset);
+      if (movementLimit === null || movementOffset === null) return invalidPagination(reply);
+
       const detail = await readAirline(db.db, request.params.airlineId, {
-        movementLimit:
-          request.query.movementLimit === undefined
-            ? undefined
-            : Number(request.query.movementLimit),
-        movementOffset:
-          request.query.movementOffset === undefined
-            ? undefined
-            : Number(request.query.movementOffset),
+        movementLimit,
+        movementOffset,
       });
       if (!detail) {
         return reply

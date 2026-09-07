@@ -8,6 +8,7 @@ import type {
 } from '@tailfin/shared';
 
 import { type Database } from '../db/client';
+import { containsPattern } from '../db/like';
 import { airline, airport, world } from '../db/schema';
 import { loadEconomyConfigs } from '../economy/loader';
 
@@ -173,7 +174,11 @@ export async function searchAirlineFoundingAirports(
     return { airports: rows.map(wireFoundingAirport), query };
   }
 
-  const pattern = `%${query}%`;
+  // `containsPattern`, not `` `%${query}%` ``: a typed `%` or `_` would
+  // otherwise reach five leading-wildcard `ILIKE`s as a wildcard, so `%`
+  // matched every scheduled-service airport and was sorted by the `case`
+  // below before the `limit` could discard it.
+  const pattern = containsPattern(query);
   const exact = query.toUpperCase();
   const rows = await db
     .select(AIRPORT_SELECTION)
