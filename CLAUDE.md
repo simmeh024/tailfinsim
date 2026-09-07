@@ -443,10 +443,15 @@ sequence of stops, so the server finds or **opens** each leg's route — reachab
 runway, wingspan and operating authority all checked against the _actual airframe_ — and an
 `autoReturn` flag appends the nonstop leg home, so the editor's out-and-back is one authored leg
 plus `autoReturn` rather than two routes the player must open by hand. The response carries a
-per-leg cost estimate (§14 decision support, never a gate). What is **not** yet wired is the web
-editor's Publish: the planner's schedule surface is still mock — but the API now matches the
-editor's own model, so wiring it is a web change, not an API one. The Performance and Competition
-tabs, by contrast, now read their real endpoints.
+per-leg cost estimate (§14 decision support, never a gate). **The editor's Publish is wired**
+(IMPROVE-04): `RotationPublisher` saves through `POST`/`PUT /api/schedules` and the page restores
+what the server holds on load, so a reload shows the player's own rotations rather than a
+regenerated draft. The Performance and Competition tabs read their real endpoints, and
+`AirportSlotsView` reads the airport-slot ADR's holdings. What is still mock is narrower and worth knowing
+before believing a number on that page: the **Overview tab's** slot, competition and performance
+_summaries_, and the **first draft** a route with no saved rotation opens with — the latter
+deliberately, because it is a proposal to edit and the button says "Publish" until the server has
+taken it.
 
 **Display currency is a worker story too, and a different-shaped one (M8-02).** A player picks a
 display currency; **all money stays USD integer minor units** everywhere — the conversion happens
@@ -874,6 +879,18 @@ specification` (42P10) — which reads like a missing index rather than an incom
   months, because only `ops:status` had a proxy script and nobody had typed the others.
   Run the command before writing it down — including when you are only adding a row to a
   table that already exists.
+- **A closed issue is not evidence that a player can reach a feature.** An audit of every
+  player-facing route against `packages/web/src` found five shipped subsystems with **no
+  client consumer at all**: loans and the default ladder (`/api/credit`), maintenance
+  (`/api/fleet/maintenance`), ground handling (`/api/ground/*`), the drillable statistics API
+  (`/api/statistics`) and the itemised P&L (`/api/finance/pnl`). Every one had a closed issue
+  and live endpoints. The cause is structural — milestones are organised by domain and each
+  domain's UI issues sit at its end, so surfaces lag, and a domain that closes before its
+  surface is filed never gets one. `grep` the client for an endpoint before believing a
+  feature exists; SURFACE-01 owns making that a CI gate rather than a habit.
+- **A file:line in a document rots, and quietly.** `docs/roadmap-dependencies.md` pinned the
+  traffic-rights literal at `open-route.ts:191`; it was at 206 a fortnight later, and the
+  wrong line points at plausible unrelated code rather than failing. Cite the symbol.
 
 ---
 
