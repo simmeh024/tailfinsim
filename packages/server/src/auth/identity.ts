@@ -75,6 +75,15 @@ export type IdentityFailure =
    * person.
    */
   | { code: 'identity_already_linked' }
+  /**
+   * A session is already held, and this identity belongs to nobody.
+   *
+   * Signing in would have created a *second* account and switched to it, which
+   * is indistinguishable from losing the first one. Connecting the identity to
+   * the account already signed in is a different act and belongs on the account
+   * page (AUTH-09).
+   */
+  | { code: 'already_signed_in' }
   /** Unlinking this would leave the player no way back in (AUTH-03). */
   | { code: 'last_method' }
   /** No such identity *for this player* — see the concealment note on `unlinkIdentity`. */
@@ -173,8 +182,23 @@ export async function signInWithIdentity(
 
   // The pre-launch front door, and it must hold for *every* provider — adding a
   // second way in must not become a way around it (AUTH-02).
+  //
+  // Checked before the already-signed-in rule below, and the order is
+  // deliberate: where registration is closed, `registration_closed` is true
+  // whether or not a session is held, while "sign out and try again" would be
+  // advice that fails for a second reason the moment it is followed.
   if (!options.allowRegistration) {
     return { ok: false, failure: { code: 'registration_closed' } };
+  }
+
+  // Nobody owns this identity, so signing in would mint a *new* account and
+  // replace the session that is already here. AUTH-04 permitted that at first;
+  // the first real Discord sign-in landed the player in an empty account and
+  // read as a lost airline. Creating a second account is still possible — it
+  // just has to start from a signed-out browser, which makes it a decision
+  // rather than a side effect of clicking the wrong button.
+  if (options.currentPlayerId != null) {
+    return { ok: false, failure: { code: 'already_signed_in' } };
   }
 
   try {

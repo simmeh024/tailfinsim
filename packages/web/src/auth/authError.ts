@@ -29,6 +29,12 @@ const FAILURE_MESSAGES: Record<AuthFailureCode, string> = {
   identity_already_linked:
     'That account is already connected to a different Tailfin account. ' +
     'Sign out first, or connect it from your account settings.',
+  // Says what did *not* happen, because the fear is that it did: the session is
+  // untouched and no second account was created.
+  already_signed_in:
+    'You are already signed in, and that account is not connected to this one. ' +
+    'You are still signed in as before — sign out first to use it as a separate ' +
+    'account, or connect it from your account settings.',
 };
 
 export function messageFor(code: string): string {

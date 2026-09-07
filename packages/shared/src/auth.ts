@@ -118,5 +118,18 @@ export const AuthFailureCode = z.enum([
    * callback that the identity is in use, and by whom.
    */
   'identity_already_linked',
+  /**
+   * A sign-in arrived for an account that is not the one already signed in, and
+   * the identity belongs to nobody yet.
+   *
+   * Separate from `identity_already_linked` because the advice differs: there is
+   * no other account to be told about, and what happened is that a *new* one
+   * would have been created and switched to. AUTH-04 originally allowed that on
+   * the grounds that refusing it would stop anyone making a second account
+   * without signing out. The first real use of Discord sign-in hit it and read
+   * as "my airline is gone", which is a far worse outcome than the inconvenience
+   * that reasoning was protecting.
+   */
+  'already_signed_in',
 ]);
 export type AuthFailureCode = z.infer<typeof AuthFailureCode>;
