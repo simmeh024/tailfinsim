@@ -1,15 +1,13 @@
-import { and, eq } from 'drizzle-orm';
-
 import {
   logoutResponseJsonSchema,
   meResponseJsonSchema,
   revokeSessionsResponseJsonSchema,
+  type AuthFailureCode,
 } from '@tailfin/shared';
 
 import { type AdminCapability, type AdminRole, roleHasCapability } from '../admin/capabilities';
 import { adminRoleOf, isAdmin } from '../admin/grants';
 import { type DatabaseHandle } from '../db/client';
-import { player, playerIdentity } from '../db/schema';
 import { type ServerEnv } from '../env';
 
 import {
@@ -21,6 +19,7 @@ import {
   redirectUriFor,
   type GoogleProfile,
 } from './google';
+import { signInWithIdentity, type IdentityFailure } from './identity';
 import { revokePlayerSessions } from './revocation';
 import {
   destroySession,
@@ -41,6 +40,30 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
  * absent, so a misconfigured environment says "not configured" instead of
  * looking like a missing feature.
  */
+
+/**
+ * Turns an account-policy refusal into the code the client can explain.
+ *
+ * Exhaustive with no `default`, so AUTH-04's conflict codes cannot be added
+ * without someone deciding what a *player* should be told about each one. A
+ * catch-all here would silently render every new conflict as the generic
+ * failure, which is the one outcome that leaves somebody stuck with no idea
+ * what to do next.
+ */
+function signInFailureCode(failure: IdentityFailure): AuthFailureCode {
+  switch (failure.code) {
+    case 'registration_closed':
+      return 'registration_closed';
+    case 'identity_already_linked':
+    case 'last_method':
+    case 'not_found':
+      // Unreachable from sign-in: `signInWithIdentity` neither links nor
+      // unlinks, so it cannot produce these. Mapped rather than thrown, because
+      // an unexpected refusal should still land the player back on the login
+      // page with something to read instead of a 500.
+      return 'exchange_failed';
+  }
+}
 
 /** Holds the OAuth `state` and PKCE verifier between the two legs of the flow. */
 const OAUTH_COOKIE = 'tailfin_oauth';
@@ -310,42 +333,31 @@ export function registerAuthRoutes(
         return fail('exchange_failed');
       }
 
-      // Match on the provider subject, never the email address (ADR-0004).
-      const existing = await db.db
-        .select({ playerId: playerIdentity.playerId })
-        .from(playerIdentity)
-        .where(
-          and(eq(playerIdentity.provider, 'google'), eq(playerIdentity.subject, profile.subject)),
-        )
-        .limit(1);
-
-      let playerId = existing[0]?.playerId;
-
-      if (!playerId) {
-        if (!env.allowRegistration) {
-          // The pre-launch gate. A valid Google account is still refused.
-          request.log.info('sign-in refused: registration closed');
-          return fail('registration_closed');
-        }
-
-        const created = await db.db
-          .insert(player)
-          .values({
-            displayName: profile.name ?? 'New player',
-            avatarUrl: profile.picture,
-          })
-          .returning({ id: player.id });
-
-        playerId = created[0]?.id;
-        if (!playerId) return fail('exchange_failed');
-
-        await db.db.insert(playerIdentity).values({
-          playerId,
+      // Account policy is one module for every provider (AUTH-02). What used to
+      // be here — resolve on `(provider, subject)`, gate on ALLOW_REGISTRATION,
+      // create the player and its identity — is `signInWithIdentity`, so Discord
+      // (AUTH-08), magic link (AUTH-10) and passkeys (AUTH-15) cannot answer the
+      // same question differently. Matching still happens on the provider
+      // subject and never the email address (ADR-0004); that rule now lives in
+      // the module and is enforced by `identity-email.test.ts`.
+      const outcome = await signInWithIdentity(
+        db.db,
+        {
           provider: 'google',
           subject: profile.subject,
           email: profile.email,
-        });
+          displayName: profile.name,
+          avatarUrl: profile.picture,
+        },
+        { allowRegistration: env.allowRegistration },
+      );
+
+      if (!outcome.ok) {
+        request.log.info({ failure: outcome.failure.code }, 'sign-in refused');
+        return fail(signInFailureCode(outcome.failure));
       }
+
+      const { playerId } = outcome.value;
 
       const ttlHours = (await isAdmin(db.db, playerId))
         ? env.adminSessionTtlHours
