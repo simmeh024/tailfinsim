@@ -8,6 +8,7 @@ import { createSession, SESSION_COOKIE } from '../auth/session';
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { airline, airport, player, route, world } from '../db/schema';
 import { type ServerEnv } from '../env';
+import { makeAuthedTestEnv } from '../test-fixtures/env';
 import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixtureHarness,
@@ -21,23 +22,7 @@ if (!url)
   console.warn('\n  [context.test] DATABASE_URL not set — skipping airline context tests.\n');
 const describeDb = url ? describe : describe.skip;
 
-const env: ServerEnv = {
-  nodeEnv: 'test',
-  databaseUrl: url ?? 'postgres://unused',
-  databasePoolMax: 2,
-  databaseConnectTimeoutMs: 5_000,
-  logLevel: 'silent',
-  webSurface: 'holding',
-  environmentLabel: 'local',
-  publicOrigin: 'http://localhost:3000',
-  googleClientId: 'test-client-id.apps.googleusercontent.com',
-  googleClientSecret: 'test-client-secret',
-  sessionSecret: 'a'.repeat(48),
-  authEnabled: true,
-  sessionTtlHours: 24,
-  adminSessionTtlHours: 12,
-  allowRegistration: false,
-};
+const env: ServerEnv = makeAuthedTestEnv();
 
 describe('active world header', () => {
   const worldId = '3f2b8c9e-1d4a-4f6b-8c2e-9a7d5b3f1e0c';

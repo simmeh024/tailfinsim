@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../app';
 import { type DatabaseHandle } from '../db/client';
 import { type ServerEnv } from '../env';
+import { makeTestEnv } from '../test-fixtures/env';
 import { collectRegisteredRoutes } from '../test-fixtures/route-inventory';
 
 import {
@@ -37,22 +38,12 @@ import {
  * one nobody notices breaking.
  */
 
-const testEnv: ServerEnv = {
-  nodeEnv: 'test',
+const testEnv: ServerEnv = makeTestEnv({
+  // Named so an accidental connection attempt says which suite made it:
+  // the classification is pure and the endpoints exercised never query.
   databaseUrl: 'postgres://rate-limit-unused',
   databasePoolMax: 1,
   databaseConnectTimeoutMs: 500,
-  logLevel: 'silent',
-  webSurface: 'holding',
-  environmentLabel: 'local',
-  publicOrigin: 'http://localhost:3000',
-  googleClientId: undefined,
-  googleClientSecret: undefined,
-  sessionSecret: undefined,
-  authEnabled: false,
-  sessionTtlHours: 24,
-  adminSessionTtlHours: 12,
-  allowRegistration: false,
   // Tiny ceilings, so a handful of requests proves a limit without a flood.
   // Set per class, because the point is that they are separate.
   rateLimits: {
@@ -60,7 +51,7 @@ const testEnv: ServerEnv = {
     write: { max: 3, windowMs: 60_000 },
     auth: { max: 2, windowMs: 60_000 },
   },
-};
+});
 
 /** A handle whose query surface throws: nothing here may reach the pool. */
 const stubDatabase = {

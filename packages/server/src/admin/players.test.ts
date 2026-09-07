@@ -12,6 +12,7 @@ import {
   createAuthorizationTestSuite,
   type AuthorizationTestSuite,
 } from '../test-fixtures/authorization';
+import { makeAuthedTestEnv } from '../test-fixtures/env';
 import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixtureHarness,
@@ -40,23 +41,9 @@ const url = process.env.DATABASE_URL;
 if (!url) console.warn('\n  [players.test] DATABASE_URL not set — skipping player tests.\n');
 const describeDb = url ? describe : describe.skip;
 
-const env: ServerEnv = {
-  nodeEnv: 'test',
-  databaseUrl: url ?? 'postgres://unused',
+const env: ServerEnv = makeAuthedTestEnv({
   databasePoolMax: 4,
-  databaseConnectTimeoutMs: 5000,
-  logLevel: 'silent',
-  webSurface: 'holding',
-  environmentLabel: 'local',
-  publicOrigin: 'http://localhost:3000',
-  googleClientId: 'test-client-id.apps.googleusercontent.com',
-  googleClientSecret: 'test-client-secret',
-  sessionSecret: 'a'.repeat(48),
-  authEnabled: true,
-  sessionTtlHours: 24,
-  adminSessionTtlHours: 12,
-  allowRegistration: false,
-};
+});
 
 describeDb('browsing players', () => {
   let db: DatabaseHandle;

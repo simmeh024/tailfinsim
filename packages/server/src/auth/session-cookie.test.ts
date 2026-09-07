@@ -7,6 +7,7 @@ import { buildApp } from '../app';
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { adminAudit, adminGrant, player, playerIdentity, session } from '../db/schema';
 import { type ServerEnv } from '../env';
+import { makeAuthedTestEnv, makeTestEnv } from '../test-fixtures/env';
 
 import {
   createSession,
@@ -40,33 +41,10 @@ if (!url) {
 
 const describeDb = url ? describe : describe.skip;
 
-const baseEnv: ServerEnv = {
-  nodeEnv: 'test',
-  databaseUrl: url ?? 'postgres://unused',
-  databasePoolMax: 2,
-  databaseConnectTimeoutMs: 5000,
-  logLevel: 'silent',
-  webSurface: 'holding',
-  environmentLabel: 'local',
-  // http, not https, so the cookies are not `Secure` and travel under inject().
-  publicOrigin: 'http://localhost:3000',
-  googleClientId: 'test-client-id.apps.googleusercontent.com',
-  googleClientSecret: 'test-client-secret',
-  sessionSecret: 'a'.repeat(48),
-  authEnabled: true,
-  sessionTtlHours: 24,
-  adminSessionTtlHours: 12,
-  allowRegistration: false,
-};
+const baseEnv: ServerEnv = makeAuthedTestEnv();
 
 /** Auth switched off, as production runs until its OAuth client exists. */
-const unconfiguredEnv: ServerEnv = {
-  ...baseEnv,
-  googleClientId: undefined,
-  googleClientSecret: undefined,
-  sessionSecret: undefined,
-  authEnabled: false,
-};
+const unconfiguredEnv: ServerEnv = makeTestEnv();
 
 function sha256Hex(value: string): string {
   return createHash('sha256').update(value).digest('hex');
