@@ -344,6 +344,108 @@ describeDb('database constraints', () => {
         ).resolves.toBeDefined();
       });
     });
+
+    /**
+     * The unique key is on the *pair*, and this is the case that proves it
+     * rather than assuming it. Two providers can legitimately issue the same
+     * subject string — they are separate namespaces, and Discord's ids are
+     * numeric while Google's happen to be too — so a constraint accidentally
+     * narrowed to `subject` alone would refuse an honest second identity and
+     * look like an account conflict (AUTH-04) instead of a schema bug.
+     */
+    it('treats the same subject string under two providers as two identities', async () => {
+      await inTx(async () => {
+        const p = await makePlayer();
+        await client.query(
+          `INSERT INTO player_identity (player_id, provider, subject) VALUES ($1, 'google', '1546526514504278117')`,
+          [p],
+        );
+        await expect(
+          client.query(
+            `INSERT INTO player_identity (player_id, provider, subject) VALUES ($1, 'discord', '1546526514504278117')`,
+            [p],
+          ),
+        ).resolves.toBeDefined();
+      });
+    });
+
+    it('cascades identities when the player is deleted', async () => {
+      await inTx(async () => {
+        const p = await makePlayer();
+        await client.query(
+          `INSERT INTO player_identity (player_id, provider, subject) VALUES ($1, 'discord', 'cascade-me')`,
+          [p],
+        );
+        await client.query(`DELETE FROM player WHERE id = $1`, [p]);
+        const { rows } = await client.query<{ n: string }>(
+          `SELECT count(*)::text AS n FROM player_identity WHERE player_id = $1`,
+          [p],
+        );
+        expect(rows[0]!.n).toBe('0');
+      });
+    });
+  });
+
+  /**
+   * The identity model AUTH-01 extended, checked against the migrated database
+   * rather than against `schema.ts`. A Drizzle schema that compiles says
+   * nothing about whether `0059` actually reached this database — and CI runs
+   * these against a virgin one, which is the case that has twice caught an
+   * enum used in the transaction that created it.
+   */
+  describe('the identity model carries every provider (AUTH-01)', () => {
+    it('offers all four auth_provider values, google first', async () => {
+      const { rows } = await client.query<{ enumlabel: string }>(
+        `SELECT e.enumlabel
+           FROM pg_enum e
+           JOIN pg_type t ON t.oid = e.enumtypid
+          WHERE t.typname = 'auth_provider'
+          ORDER BY e.enumsortorder`,
+      );
+      expect(rows.map((r) => r.enumlabel)).toEqual(['google', 'discord', 'email', 'passkey']);
+    });
+
+    /**
+     * Null means *never authenticated with*, and the distinction is the whole
+     * point of the column: an identity a player has linked but not yet used is
+     * exactly what AUTH-03's last-method guard must not count as a live way in.
+     * A `defaultNow()` would have made every row claim otherwise.
+     */
+    it('leaves last_used_at null on a freshly linked identity', async () => {
+      await inTx(async () => {
+        const p = await makePlayer();
+        const { rows } = await client.query<{ last_used_at: Date | null; updated_at: Date }>(
+          `INSERT INTO player_identity (player_id, provider, subject) VALUES ($1, 'discord', 'fresh')
+           RETURNING last_used_at, updated_at`,
+          [p],
+        );
+        expect(rows[0]!.last_used_at).toBeNull();
+        expect(rows[0]!.updated_at).toBeInstanceOf(Date);
+      });
+    });
+
+    /**
+     * The migration is additive, so a row written the way the *previous*
+     * release wrote one — provider, subject, email and nothing else — must
+     * still insert and still resolve through the unchanged unique key.
+     */
+    it('still resolves a google identity written the old way', async () => {
+      await inTx(async () => {
+        const p = await makePlayer();
+        await client.query(
+          `INSERT INTO player_identity (player_id, provider, subject, email)
+           VALUES ($1, 'google', 'legacy-sub', 'someone@example.com')`,
+          [p],
+        );
+        const { rows } = await client.query<{ player_id: string; last_used_at: Date | null }>(
+          `SELECT player_id, last_used_at FROM player_identity
+            WHERE provider = 'google' AND subject = 'legacy-sub'`,
+        );
+        expect(rows).toHaveLength(1);
+        expect(rows[0]!.player_id).toBe(p);
+        expect(rows[0]!.last_used_at).toBeNull();
+      });
+    });
   });
 
   describe('indexes required by M0-06', () => {
