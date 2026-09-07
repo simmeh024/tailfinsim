@@ -154,7 +154,7 @@ row **unchanged**. The last one is the assertion that separates a real guard fro
 Tailfin has **no CSRF token**, and does not need one, because four properties hold together:
 session cookies are `SameSite=Lax`, the client and API share one origin, no CORS is configured
 anywhere, and every state-changing route is `POST`, `PUT`, `PATCH` or `DELETE`.
-[ADR-0025](docs/adr/0025-no-csrf-token.md) records why, and
+[ADR-0027](docs/adr/0027-no-csrf-token.md) records why, and
 `packages/server/src/security/csrf.test.ts` fails when one of the four stops being true.
 
 Two consequences for a new route:
@@ -164,7 +164,7 @@ Two consequences for a new route:
   page on the internet. Every registered `GET` is classified in that test; adding one fails
   until you say which it is.
 - **Do not install `@fastify/cors`**, or add an `Access-Control-*` header in a handler or in
-  `deploy/Caddyfile`, without amending ADR-0025 in the same change. Three things assert it:
+  `deploy/Caddyfile`, without amending ADR-0027 in the same change. Three things assert it:
   `security/csrf.test.ts` for the responses, `security/cors.test.ts` for the manifests and the
   lockfile, and `pnpm security:headers` for the edge. If cross-origin access is genuinely
   needed, `packages/server/src/security/cors.ts` holds the exact-match allowlist of what each

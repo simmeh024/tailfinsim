@@ -13,7 +13,7 @@ import {
 import { collectRegisteredRoutes } from '../test-fixtures/route-inventory';
 
 /**
- * The four facts that stand in for a CSRF token (SEC-HARD-07, ADR-0025).
+ * The four facts that stand in for a CSRF token (SEC-HARD-07, ADR-0027).
  *
  * Tailfin authenticates with a cookie and has no CSRF token, and that is a
  * decision rather than an omission: `SameSite=Lax` + one origin + no CORS + no
@@ -133,7 +133,7 @@ const STATE_CHANGING_GET_ROUTES: { url: string; instead: string }[] = [
   },
 ];
 
-describe('no state-changing endpoint is reachable by GET (ADR-0025, fact 4)', () => {
+describe('no state-changing endpoint is reachable by GET (ADR-0027, fact 4)', () => {
   it('has every registered GET route classified as safe or as a named exception', async () => {
     const registered = (await collectRegisteredRoutes())
       .filter((route) => route.method === 'GET')
@@ -155,7 +155,7 @@ describe('no state-changing endpoint is reachable by GET (ADR-0025, fact 4)', ()
         'This matters more than it looks. Session cookies are SameSite=Lax, which withholds them ' +
         'on a cross-site POST but SENDS them on a top-level cross-site GET — so a GET that ' +
         'changes anything can be triggered from any page on the internet by getting a signed-in ' +
-        'player to follow a link. There is no CSRF token to catch it (ADR-0025).\n\n' +
+        'player to follow a link. There is no CSRF token to catch it (ADR-0027).\n\n' +
         'If these routes change nothing, add them to READ_ONLY_GET_ROUTES. If one of them does ' +
         'change something, it almost certainly wants to be a POST instead; if it genuinely ' +
         'cannot be, add it to STATE_CHANGING_GET_ROUTES and name the control that replaces ' +
@@ -209,7 +209,7 @@ describe('no state-changing endpoint is reachable by GET (ADR-0025, fact 4)', ()
     const options = (await collectRegisteredRoutes()).filter((route) => route.method === 'OPTIONS');
     expect(
       options.map((route) => route.url),
-      'An OPTIONS route was registered. If CORS is now wanted, ADR-0025 has to be amended in ' +
+      'An OPTIONS route was registered. If CORS is now wanted, ADR-0027 has to be amended in ' +
         'the same change — SameSite=Lax stops being sufficient once cross-origin requests are ' +
         'answered. See SEC-HARD-08.',
       // The enumeration filters HEAD and OPTIONS as derived methods, so this is
@@ -312,7 +312,7 @@ describeDb('the cookie and the origin are what stop a forged request', () => {
      *
      * So the server cannot tell a forged request from a real one. The browser
      * can, and `SameSite=Lax` is how it is told. If this test ever starts
-     * returning 403, something began checking `Origin` server-side, and ADR-0025
+     * returning 403, something began checking `Origin` server-side, and ADR-0027
      * should be updated to say so rather than left describing a control that has
      * moved.
      */
@@ -356,7 +356,7 @@ describeDb('the cookie and the origin are what stop a forged request', () => {
       expect(
         cors,
         `${request.method} ${request.url} answered a cross-origin request with ${cors.join(', ')}. ` +
-          'ADR-0025 treats the absence of CORS as one of the four facts replacing a CSRF token.',
+          'ADR-0027 treats the absence of CORS as one of the four facts replacing a CSRF token.',
       ).toEqual([]);
     }
   });
@@ -442,7 +442,7 @@ describeDb('the session cookie carries the attribute the decision rests on', () 
     expect(cookie, 'the sign-in issued no session cookie at all').toBeDefined();
     // Lax or Strict. Not None — which is the value a future embed or a second
     // origin would push it towards, and the one that removes the protection
-    // entirely (ADR-0025 revisit trigger 3).
+    // entirely (ADR-0027 revisit trigger 3).
     expect(cookie).toMatch(/SameSite=(Lax|Strict)/);
     expect(cookie).not.toMatch(/SameSite=None/i);
     // Not part of the CSRF argument, but the same options object writes them,

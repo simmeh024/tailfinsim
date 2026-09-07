@@ -49,7 +49,7 @@ import { type ServerEnv } from '../env';
  *
  * **`trustProxy` is believed.** `request.ip` comes from `X-Forwarded-For`, so
  * any per-address budget is only as good as the guarantee that nothing reaches
- * the app port directly. Both hosts bind `127.0.0.1` (ADR-0025 checked this),
+ * the app port directly. Both hosts bind `127.0.0.1` (ADR-0027 checked this),
  * and SEC-HARD-28 owns the question properly.
  */
 

@@ -197,7 +197,7 @@ export interface ServerEnv {
    * Exact origins this server may answer cross-origin for (SEC-HARD-08).
    *
    * Absent or empty is the shipped state and means **no CORS at all**: nothing
-   * is registered and no `Access-Control-*` header is ever sent. ADR-0025
+   * is registered and no `Access-Control-*` header is ever sent. ADR-0027
    * depends on that, so a change here is a change there.
    *
    * Optional like the rate-limit knobs, so the many hand-written `ServerEnv`

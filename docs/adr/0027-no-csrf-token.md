@@ -1,10 +1,18 @@
-# ADR-0025: No CSRF token, and the four facts that replace it
+# ADR-0027: No CSRF token, and the four facts that replace it
 
 - **Status:** Accepted
 - **Date:** 2026-09-05
 - **Deciders:** @simmeh024
 - **Constrains:** every cookie attribute, every state-changing route's HTTP method, any future CORS
   configuration, and any proposal to serve the API from a second origin
+- **Renumbered:** filed as ADR-0025, which
+  [ADR-0025 (Airport slots)](0025-airport-slots.md) already held — accepted 2026-09-04, a day
+  earlier. Two accepted ADRs shared a number, and `CLAUDE.md` cited "ADR-0025" for both, meaning
+  different things in each place. This one moved because it collided, and because the slot ADR is
+  cited inside `drizzle/0048_perpetual_tag.sql`: drizzle sha256-hashes a migration's **whole file
+  content**, so editing even a comment there would make the migrator treat an applied migration as
+  new and try to `CREATE TABLE "slot_holding"` again. Nothing outside this repository referenced
+  0025-as-CSRF, so no external link breaks.
 
 ## Context
 

@@ -6,6 +6,10 @@
 - **Constrains:** M7-05 and everything downstream of it — slot trading (→ MARKET), slot
   seasonality and use-it-or-lose-it (→ SEASON), incumbency/reputation priority, and any NPC slot
   consumption
+- **Note:** this ADR keeps 0025. The CSRF decision was also filed as ADR-0025 a day later and has
+  been renumbered to [ADR-0027](0027-no-csrf-token.md). A reference to "ADR-0025" in a commit,
+  issue or pull request written between 2026-09-05 and the renumber may mean either — read the
+  surrounding subject rather than the number.
 
 ## Context
 

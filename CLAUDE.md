@@ -865,7 +865,7 @@ explaining a choice twice, write it down once instead. ADR-0003 (deployment) and
 
 **There is no CSRF token, and four things keep that safe.** Session cookies are
 `SameSite=Lax`, the client and API are one origin, no CORS is configured anywhere, and every
-state-changing route is `POST`/`PUT`/`PATCH`/`DELETE`. [ADR-0025](docs/adr/0025-no-csrf-token.md)
+state-changing route is `POST`/`PUT`/`PATCH`/`DELETE`. [ADR-0027](docs/adr/0027-no-csrf-token.md)
 says why a token would be worse, and `security/csrf.test.ts` fails when any of the four stops
 being true. The two that get removed by accident: **a `GET` that changes something** is
 reachable from any page on the internet, because Lax withholds the cookie on a cross-site POST
