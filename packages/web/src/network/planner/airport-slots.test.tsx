@@ -22,10 +22,20 @@ function coordinated(overrides: Partial<AirportSlotsResponse> = {}): AirportSlot
     bands: Array.from({ length: 24 }, (_, band) => ({
       band,
       capacity: 5,
+      released: 5,
+      shape: 'shoulder' as const,
       held: 0,
       heldByYou: false,
       available: 5,
+      holders: [],
     })),
+    releases: {
+      worldAgeGameDays: 120,
+      releasedFraction: 1,
+      nextWaveAtGameDay: null,
+      nextWaveFraction: null,
+      nextWaveInGameDays: null,
+    },
     ...overrides,
   };
 }
@@ -56,7 +66,14 @@ describe('AirportSlotsView', () => {
       if (url.endsWith('/api/airports/EGSS/slots')) {
         return {
           status: 200,
-          body: { icao: 'EGSS', name: 'Stansted', coordinated: false, slotLevel: 1, bands: [] },
+          body: {
+            icao: 'EGSS',
+            name: 'Stansted',
+            coordinated: false,
+            slotLevel: 1,
+            bands: [],
+            releases: null,
+          },
         };
       }
       return { status: 404, body: {} };
@@ -110,5 +127,124 @@ describe('AirportSlotsView', () => {
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(/Every slot in this band is taken/);
+  });
+
+  it('tells a newcomer the board is not carved up, and when the next wave lands', async () => {
+    // §21's land grab is only answered if waiting is visibly not futile. A wave
+    // nobody can see is indistinguishable from a permanently full airport.
+    stub((url) => {
+      if (url.endsWith('/api/airports/EHAM/slots')) {
+        return {
+          status: 200,
+          body: coordinated({
+            releases: {
+              worldAgeGameDays: 18,
+              releasedFraction: 0.5,
+              nextWaveAtGameDay: 30,
+              nextWaveFraction: 0.75,
+              nextWaveInGameDays: 12,
+            },
+          }),
+        };
+      }
+      return { status: 404, body: {} };
+    });
+    render(<AirportSlotsView airports={['EHAM']} />);
+
+    await waitFor(() => expect(screen.getByText('00:00')).toBeInTheDocument());
+    expect(screen.getByText(/50% of this airport’s slots are released/)).toBeInTheDocument();
+    expect(screen.getByText(/game day 30/)).toBeInTheDocument();
+    expect(screen.getByText(/12 game days away/)).toBeInTheDocument();
+  });
+
+  it('distinguishes a band that is taken from one the wave has not opened', async () => {
+    // Two different refusals that must not read the same: somebody else's slot,
+    // versus capacity that does not exist yet.
+    stub((url) => {
+      if (url.endsWith('/api/airports/EHAM/slots')) {
+        const base = coordinated();
+        const bands = base.bands.map((band) =>
+          band.band === 0
+            ? // Fully released and fully taken — gone.
+              { ...band, capacity: 5, released: 5, held: 5, available: 0 }
+            : band.band === 1
+              ? // Only part released, and that part is taken — not yet.
+                { ...band, capacity: 5, released: 2, held: 2, available: 0 }
+              : band,
+        );
+        return { status: 200, body: { ...base, bands } };
+      }
+      return { status: 404, body: {} };
+    });
+    render(<AirportSlotsView airports={['EHAM']} />);
+
+    await waitFor(() => expect(screen.getByText('00:00')).toBeInTheDocument());
+    expect(screen.getByText('Full')).toBeInTheDocument();
+    expect(screen.getByText('Not yet')).toBeInTheDocument();
+  });
+
+  it('names the airlines holding a band, and marks which one is you', async () => {
+    // M7-05's third acceptance criterion: holdings visible per airport for all
+    // airlines, not a bare count.
+    stub((url) => {
+      if (url.endsWith('/api/airports/EHAM/slots')) {
+        const base = coordinated();
+        const bands = base.bands.map((band) =>
+          band.band === 0
+            ? {
+                ...band,
+                held: 2,
+                heldByYou: true,
+                available: 3,
+                holders: [
+                  {
+                    airlineId: '00000000-0000-4000-8000-000000000001',
+                    name: 'Your Airline',
+                    iataCode: 'YA',
+                    isYou: true,
+                  },
+                  {
+                    airlineId: '00000000-0000-4000-8000-000000000002',
+                    name: 'Rival Air',
+                    iataCode: 'RV',
+                    isYou: false,
+                  },
+                ],
+              }
+            : band,
+        );
+        return { status: 200, body: { ...base, bands } };
+      }
+      return { status: 404, body: {} };
+    });
+    render(<AirportSlotsView airports={['EHAM']} />);
+
+    await waitFor(() => expect(screen.getByText('00:00')).toBeInTheDocument());
+    // The rival is named by its code; you are named as "You" rather than by yours.
+    expect(screen.getByText(/You, RV/)).toBeInTheDocument();
+  });
+
+  it('labels how contested each hour is, so an empty band is explicable', async () => {
+    stub((url) => {
+      if (url.endsWith('/api/airports/EHAM/slots')) {
+        const base = coordinated();
+        const bands = base.bands.map((band) => ({
+          ...band,
+          shape:
+            band.band === 8
+              ? ('peak' as const)
+              : band.band === 3
+                ? ('off_peak' as const)
+                : ('shoulder' as const),
+        }));
+        return { status: 200, body: { ...base, bands } };
+      }
+      return { status: 404, body: {} };
+    });
+    render(<AirportSlotsView airports={['EHAM']} />);
+
+    await waitFor(() => expect(screen.getByText('00:00')).toBeInTheDocument());
+    expect(screen.getByText('Peak')).toBeInTheDocument();
+    expect(screen.getByText('Off-peak')).toBeInTheDocument();
   });
 });
