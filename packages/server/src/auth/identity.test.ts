@@ -324,28 +324,62 @@ describeDb('identity policy', () => {
     });
 
     /**
-     * The invariant that keeps "sign-in never links" true now that a player id
-     * is in scope: `currentPlayerId` may only ever *narrow* the outcome. It can
-     * turn a success into a refusal, and it must never cause an identity to be
-     * attached to it.
+     * The rule this originally got wrong, and the reason it changed.
+     *
+     * AUTH-04 first allowed an *unknown* identity arriving on a live session to
+     * create a second account and switch to it, reasoning that refusing it would
+     * stop anyone ever making a second account without signing out. The first
+     * real Discord sign-in did exactly that: the player landed in an empty
+     * account and read it as a lost airline. Creating a second account is still
+     * possible; it now has to begin from a signed-out browser, which makes it a
+     * decision rather than a consequence of clicking the wrong button.
      */
-    it('never attaches an unknown identity to the signed-in player', async () => {
+    it('refuses an unknown identity while somebody is signed in', async () => {
       const incumbent = await makePlayer('Incumbent');
       await linkIdentity(db.db, incumbent, proven({ provider: 'google' }));
+      const stranger = proven({ provider: 'discord' });
 
-      const result = await signInWithSession(proven({ provider: 'discord' }), {
+      const result = await signInWithSession(stranger, {
         allowRegistration: true,
         currentPlayerId: incumbent,
       });
 
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.failure.code).toBe('already_signed_in');
+
+      // Nothing was created and nothing was attached: not a second player, and
+      // not a second identity on the incumbent.
+      expect(await resolveIdentity(db.db, stranger.provider, stranger.subject)).toBeNull();
+      expect(await countIdentities(db.db, incumbent)).toBe(1);
+    });
+
+    it('still creates that account from a signed-out browser', async () => {
+      // The escape hatch the refusal above deliberately leaves open.
+      const stranger = proven({ provider: 'discord' });
+      const result = await signInWithSession(stranger, {
+        allowRegistration: true,
+        currentPlayerId: null,
+      });
+
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      // A brand-new identity gets a brand-new account, even though a session
-      // was in scope. Connecting it to the incumbent is AUTH-09's `Connect`
-      // button, never a side effect of signing in.
       expect(result.value.created).toBe(true);
-      expect(result.value.playerId).not.toBe(incumbent);
-      expect(await countIdentities(db.db, incumbent)).toBe(1);
+    });
+
+    it('prefers registration_closed over already_signed_in', async () => {
+      // Order matters for the advice, not for the outcome. Where registration is
+      // closed, "sign out and try again" is advice that fails for a second
+      // reason the moment it is followed.
+      const incumbent = await makePlayer('Incumbent');
+      const result = await signInWithSession(proven({ provider: 'discord' }), {
+        allowRegistration: false,
+        currentPlayerId: incumbent,
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.failure.code).toBe('registration_closed');
     });
 
     it('resolves two concurrent first sign-ins to one account', async () => {

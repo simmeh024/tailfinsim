@@ -345,14 +345,29 @@ to `/?auth_error=registration_closed`. Note the consequence: **the first account
 environment cannot be created while it is false**, because nobody's Google subject is
 known until they have signed in once. Open it, sign in, close it again.
 
-**Signing in cannot switch accounts** (AUTH-04). A completed callback whose identity belongs
-to a _different_ player from the one already holding the session is refused with
-`/?auth_error=identity_already_linked`, and the existing session is left untouched — a
-callback must not move somebody between accounts, because from the inside that is
-indistinguishable from a takeover. The operational consequence is worth knowing before it
-surprises you on dev: if you hold two accounts, re-running sign-in will **not** move you to
-the other one. Sign out first. Connecting a second provider to the account you already have
-is a different action and belongs on the account page (AUTH-09).
+**Signing in cannot switch accounts** (AUTH-04). While a session is held, a completed
+callback that does not resolve to _that_ player is refused and the existing session is left
+untouched. Two cases, two codes:
+
+- the identity belongs to a **different** player → `/?auth_error=identity_already_linked`;
+- the identity belongs to **nobody** → `/?auth_error=already_signed_in`, rather than
+  creating a second account and switching into it.
+
+A callback must not move somebody between accounts: from the inside that is
+indistinguishable from a takeover, and the second case is worse than it sounds — it lands
+the player in an empty account, which reads as a lost airline rather than as a new one.
+That is not hypothetical; it is what the first real Discord sign-in did on dev before this
+rule covered unknown identities.
+
+The operational consequences are worth knowing before they surprise you: if you hold two
+accounts, re-running sign-in will **not** move you between them, and signing in with a
+provider you have never used will **not** silently create a second account. Sign out first
+for either. Connecting a second provider to the account you already have is a different
+action and belongs on the account page (AUTH-09).
+
+Where `ALLOW_REGISTRATION=false`, `registration_closed` takes precedence over
+`already_signed_in` — "sign out and try again" would otherwise be advice that fails for a
+second reason the moment it is followed.
 
 Secrets live in the instance's environment or a `.env` file readable only by the service
 user — **never in the repository**. `.env` is gitignored; commit `.env.example` instead.

@@ -67,6 +67,12 @@ function signInFailureCode(failure: IdentityFailure): AuthFailureCode {
       // identically, and what works is signing out or connecting it from the
       // account page.
       return 'identity_already_linked';
+    case 'already_signed_in':
+      // AUTH-04, revised: they are already someone here, and this identity is
+      // nobody's. Its own code because there is no other account to mention and
+      // the useful advice is different — sign out, or connect it from the
+      // account page.
+      return 'already_signed_in';
     case 'last_method':
     case 'not_found':
       // Unreachable from sign-in: `signInWithIdentity` neither links nor
