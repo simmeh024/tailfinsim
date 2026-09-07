@@ -1,5 +1,13 @@
 import { and, eq, gte } from 'drizzle-orm';
 
+import type {
+  Metric,
+  MetricBreakdownResponse,
+  MetricDimension,
+  MetricForecast,
+  MetricId,
+  StatisticsResponse,
+} from '@tailfin/shared';
 import {
   addFlight,
   clampBand,
@@ -17,14 +25,6 @@ import { METRICS, metricDefinition, rowDrillDown, type MetricDefinition } from '
 
 import type { ResolvedPlayerAirline } from '../airline/context';
 import type { Database } from '../db/client';
-import type {
-  Metric,
-  MetricBreakdownResponse,
-  MetricDimension,
-  MetricForecast,
-  MetricId,
-  StatisticsResponse,
-} from '@tailfin/shared';
 
 /**
  * §14's metrics, folded from settled flights (M8-09).

@@ -1,3 +1,10 @@
+import type {
+  MetricDimension,
+  MetricDrillDown,
+  MetricId,
+  MetricPolarity,
+  MetricUnit,
+} from '@tailfin/shared';
 import {
   breakevenLoadFactor,
   cask,
@@ -8,14 +15,6 @@ import {
   spillRate,
   type TrafficTotals,
 } from '@tailfin/sim';
-
-import type {
-  MetricDimension,
-  MetricDrillDown,
-  MetricId,
-  MetricPolarity,
-  MetricUnit,
-} from '@tailfin/shared';
 
 /**
  * The metric registry — §14.1's rule made structural (M8-09).
