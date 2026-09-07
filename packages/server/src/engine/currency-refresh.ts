@@ -35,8 +35,36 @@ export const FX_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
  */
 export const FX_ATTEMPT_INTERVAL_MS = 60 * 60 * 1000;
 
+/**
+ * What an attempt did, and how old the live rates are now.
+ *
+ * `newestAt` is on **both** branches deliberately. The counters in
+ * `simulation.ts` are per process and reset on every restart, so after a deploy
+ * they cannot answer the only question an operator actually has — *are we
+ * serving stale money?* This can, because it is a fact about the database rather
+ * than about this process's lifetime, and the daily gate has already read it.
+ *
+ * `null` means no live refresh has ever happened and the shipped seed is still
+ * in force. That is the expected state on a node with no worker.
+ */
 export type RefreshFxResult =
-  { refreshed: false; reason: 'fresh' } | { refreshed: true; updated: number };
+  | { refreshed: false; reason: 'fresh'; newestAt: Date }
+  | { refreshed: true; updated: number; newestAt: Date | null };
+
+/**
+ * The newest live rate's timestamp, normalised.
+ *
+ * `sql<Date>` is an assertion, not a conversion: drizzle's column type parsers
+ * do not apply to a raw aggregate, so `max()` arrives from the driver as a
+ * **string** however it is typed here. Reading `.getTime()` off it would throw,
+ * and the type would not have warned. So the boundary normalises once, and
+ * everything downstream gets a real `Date`.
+ */
+function toDate(value: Date | string | null): Date | null {
+  if (value === null) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
 
 /**
  * Refresh the `currency_rate` table from `source`, if a day has passed since the
@@ -50,12 +78,12 @@ export async function refreshFxRates(
   // The newest live rate. Seed rows do not count, so a freshly seeded database
   // refreshes on the first tick rather than waiting a day.
   const [gate] = await db
-    .select({ newest: sql<Date | null>`max(${currencyRate.refreshedAt})` })
+    .select({ newest: sql<Date | string | null>`max(${currencyRate.refreshedAt})` })
     .from(currencyRate)
     .where(ne(currencyRate.source, 'seed'));
-  const newest = gate?.newest ?? null;
-  if (newest !== null && now.getTime() - new Date(newest).getTime() < FX_REFRESH_INTERVAL_MS) {
-    return { refreshed: false, reason: 'fresh' };
+  const newest = toDate(gate?.newest ?? null);
+  if (newest !== null && now.getTime() - newest.getTime() < FX_REFRESH_INTERVAL_MS) {
+    return { refreshed: false, reason: 'fresh', newestAt: newest };
   }
 
   const rates = await source();
@@ -75,5 +103,8 @@ export async function refreshFxRates(
       .where(sql`${currencyRate.code} = ${meta.code}`);
     updated += 1;
   }
-  return { refreshed: true, updated };
+  // `now` is what every row above was just stamped with, so it *is* the new
+  // newest — except when the source supplied nothing usable, in which case
+  // nothing was written and the rates are as old as they were.
+  return { refreshed: true, updated, newestAt: updated === 0 ? newest : now };
 }

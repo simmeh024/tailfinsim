@@ -384,6 +384,32 @@ export interface EngineSnapshot {
    */
   fxRefreshes: number;
   fxRefreshErrors: number;
+  /**
+   * Attempts that found the rates already fresh and did nothing.
+   *
+   * Without this, the FX sweep was the one sweep whose healthy state and whose
+   * absence looked identical: the daily gate returning `fresh` incremented
+   * nothing, so `fxRefreshes: 0, fxRefreshErrors: 0` meant either *"up to date"*
+   * or *"this sweep never ran"* — the same `ticks: 0, errors: 0` ambiguity the
+   * counters beside it exist to remove, reproduced inside one of them. A moving
+   * `fxRefreshesSkipped` is the proof the sweep is alive.
+   */
+  fxRefreshesSkipped: number;
+  /**
+   * When the live rates were last refreshed, from the database.
+   *
+   * Every counter above is per process and resets on restart, so after a deploy
+   * none of them can answer *are we serving stale money?* — which is the only
+   * question the FX sweep exists to make answerable. This survives a restart
+   * because it is a fact about `currency_rate`, and the daily gate reads it
+   * anyway, so it costs no extra query.
+   *
+   * `null` means no live refresh has ever happened and the shipped seed baseline
+   * is still in force — the expected reading on a node with no worker, and the
+   * one CLAUDE.md warns *"reads as slightly stale rather than as a broken
+   * conversion"*.
+   */
+  fxRatesRefreshedAt: Date | null;
 }
 
 export interface QueueDepthByWorld {
@@ -525,6 +551,10 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let scheduleErrors = 0;
   let fxRefreshes = 0;
   let fxRefreshErrors = 0;
+  let fxRefreshesSkipped = 0;
+  // Durable, unlike the counters above: read from `currency_rate` by the daily
+  // gate, so it still answers "how stale are the rates?" after a restart.
+  let fxRatesRefreshedAt: Date | null = null;
   // In-memory attempt throttle for the FX refresh (M8-02). Global and real-time,
   // so it lives with the engine's counters rather than in any world's state.
   let lastFxAttemptAt: Date | null = null;
@@ -574,9 +604,15 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         lastFxAttemptAt = at;
         try {
           const result = await refreshFx(db, fxSource, at);
+          fxRatesRefreshedAt = result.newestAt;
           if (result.refreshed) {
             fxRefreshes += 1;
             log?.info?.(`currency refresh: ${String(result.updated)} rate(s) updated`);
+          } else {
+            // Counted rather than logged. An hourly "nothing to do" line would be
+            // noise, but a number that never moves is how the sweep's absence
+            // hid — so the state is visible without being loud.
+            fxRefreshesSkipped += 1;
           }
         } catch (error) {
           fxRefreshErrors += 1;
@@ -1086,6 +1122,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         scheduleErrors,
         fxRefreshes,
         fxRefreshErrors,
+        fxRefreshesSkipped,
+        fxRatesRefreshedAt,
       };
     },
 

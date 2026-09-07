@@ -814,6 +814,30 @@ export const AdminNodeEngine = z.object({
   /** Real-time factory orders delivered since this Worker started (M4-04). */
   aircraftDeliveries: z.number().int().nonnegative().default(0),
   aircraftDeliveryErrors: z.number().int().nonnegative().default(0),
+  /**
+   * The display-currency refresh (M8-02), which the console could not see at all.
+   *
+   * The worker's own loopback `/healthz` has carried these counters since M8-02,
+   * but that endpoint binds `127.0.0.1` and has no vhost — so reading them meant
+   * an SSH session, and the console CLAUDE.md calls *"the place to look first"*
+   * showed nothing. Worse, the two it did not show were ambiguous: the daily gate
+   * returning `fresh` incremented nothing, so all-zero meant either *"up to
+   * date"* or *"this sweep never ran"*.
+   *
+   * `fxRefreshesSkipped` resolves that — a moving number is the sweep proving it
+   * is alive — and `fxRatesRefreshedAt` is the durable half, because the three
+   * counters reset on restart and cannot say how stale the rates actually are.
+   * `null` means no live refresh has ever run and the shipped seed still stands,
+   * which is the correct reading for a node with no worker.
+   *
+   * All four are defaulted for the reason every field above them is: an older
+   * worker's heartbeat JSON must still parse against a newer web node's schema.
+   * This payload has no migration, so the default *is* the expand rule.
+   */
+  fxRefreshes: z.number().int().nonnegative().default(0),
+  fxRefreshErrors: z.number().int().nonnegative().default(0),
+  fxRefreshesSkipped: z.number().int().nonnegative().default(0),
+  fxRatesRefreshedAt: Timestamp.nullable().default(null),
   lastTickAt: Timestamp.nullable(),
   /** Events due and unhandled across every world this node drives. */
   queueDue: z.number().int().nonnegative(),
