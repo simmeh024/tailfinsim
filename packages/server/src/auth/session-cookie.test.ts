@@ -53,6 +53,10 @@ const baseEnv: ServerEnv = {
   googleClientId: 'test-client-id.apps.googleusercontent.com',
   googleClientSecret: 'test-client-secret',
   sessionSecret: 'a'.repeat(48),
+  discordClientId: undefined,
+  discordClientSecret: undefined,
+  googleEnabled: true,
+  discordEnabled: false,
   authEnabled: true,
   sessionTtlHours: 24,
   adminSessionTtlHours: 12,
@@ -65,6 +69,10 @@ const unconfiguredEnv: ServerEnv = {
   googleClientId: undefined,
   googleClientSecret: undefined,
   sessionSecret: undefined,
+  discordClientId: undefined,
+  discordClientSecret: undefined,
+  googleEnabled: false,
+  discordEnabled: false,
   authEnabled: false,
 };
 
@@ -116,7 +124,12 @@ describeDb('sessions over HTTP', () => {
     it('answers 200 with a null player when nobody is signed in', async () => {
       const res = await app.inject({ method: 'GET', url: '/api/me' });
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toEqual({ player: null, registrationOpen: false, isAdmin: false });
+      expect(res.json()).toEqual({
+        player: null,
+        registrationOpen: false,
+        signInProviders: ['google'],
+        isAdmin: false,
+      });
     });
 
     it('identifies the player behind a valid session cookie', async () => {
@@ -503,7 +516,15 @@ describeDb('with auth not configured', () => {
   it('still answers /api/me, so the client is not left guessing', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/me' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ player: null, registrationOpen: false, isAdmin: false });
+    // No providers, because this instance has credentials for none. The login
+    // page renders that as "not configured" rather than as a button that 503s
+    // (AUTH-08).
+    expect(res.json()).toEqual({
+      player: null,
+      registrationOpen: false,
+      signInProviders: [],
+      isAdmin: false,
+    });
   });
 
   it('returns 503 from the sign-in route rather than 404', async () => {

@@ -8,18 +8,25 @@ import {
 import { type AdminCapability, type AdminRole, roleHasCapability } from '../admin/capabilities';
 import { adminRoleOf, isAdmin } from '../admin/grants';
 import { type DatabaseHandle } from '../db/client';
+import { type AuthProviderName } from '../db/schema';
 import { type ServerEnv } from '../env';
 
 import {
-  buildAuthorizeUrl,
-  createPkcePair,
-  createState,
-  exchangeCode,
-  fetchProfile,
-  redirectUriFor,
+  buildAuthorizeUrl as buildDiscordAuthorizeUrl,
+  exchangeCode as discordExchangeCode,
+  fetchProfile as discordFetchProfile,
+  redirectUriFor as discordRedirectUriFor,
+  type DiscordProfile,
+} from './discord';
+import {
+  buildAuthorizeUrl as buildGoogleAuthorizeUrl,
+  exchangeCode as googleExchangeCode,
+  fetchProfile as googleFetchProfile,
+  redirectUriFor as googleRedirectUriFor,
   type GoogleProfile,
 } from './google';
-import { signInWithIdentity, type IdentityFailure } from './identity';
+import { signInWithIdentity, type IdentityFailure, type ProvenIdentity } from './identity';
+import { createPkcePair, createState } from './pkce';
 import { revokePlayerSessions } from './revocation';
 import {
   destroySession,
@@ -125,26 +132,68 @@ export interface AuthRoutesOptions {
   db: DatabaseHandle;
   /** Provider boundary injected only by callback integration tests. */
   googleAuth?: GoogleAuthOperations;
+  discordAuth?: DiscordAuthOperations;
 }
 
-export interface GoogleAuthOperations {
-  exchangeCode: typeof exchangeCode;
-  fetchProfile: typeof fetchProfile;
+/**
+ * The two network calls an authorization-code provider makes, as an injection
+ * point for tests that drive a callback without reaching the real provider.
+ */
+export interface OAuthOperations<Profile> {
+  exchangeCode: (options: {
+    code: string;
+    clientId: string;
+    clientSecret: string;
+    redirectUri: string;
+    codeVerifier: string;
+  }) => Promise<string>;
+  fetchProfile: (accessToken: string) => Promise<Profile>;
+}
+
+export type GoogleAuthOperations = OAuthOperations<GoogleProfile>;
+export type DiscordAuthOperations = OAuthOperations<DiscordProfile>;
+
+/**
+ * Everything that genuinely differs between one OAuth provider and another.
+ *
+ * The credentials are read through functions rather than captured as values so
+ * a test can rebuild `env` between cases without re-registering the routes.
+ *
+ * `toIdentity` is the seam where a provider's own profile shape becomes the
+ * narrow thing account policy accepts — and it deliberately cannot pass the
+ * whole profile through, because the moment it could, somebody would match on a
+ * field in it.
+ */
+interface OAuthProvider<Profile> {
+  name: AuthProviderName;
+  /** Used only in the "not configured" message a misconfigured instance returns. */
+  label: string;
+  enabled: () => boolean;
+  clientId: () => string | undefined;
+  clientSecret: () => string | undefined;
+  buildAuthorizeUrl: (options: {
+    clientId: string;
+    redirectUri: string;
+    state: string;
+    codeChallenge: string;
+  }) => string;
+  redirectUriFor: (publicOrigin: string) => string;
+  operations: OAuthOperations<Profile>;
+  toIdentity: (profile: Profile) => Omit<ProvenIdentity, 'provider'>;
 }
 
 export function registerAuthRoutes(
   app: FastifyInstance,
-  { env, db, googleAuth }: AuthRoutesOptions,
+  { env, db, googleAuth, discordAuth }: AuthRoutesOptions,
 ): void {
   const secureCookies = env.publicOrigin.startsWith('https://');
-  const provider = googleAuth ?? { exchangeCode, fetchProfile };
 
   const sessionCookieOptions = {
     httpOnly: true,
     // Off over plain HTTP or the cookie is never sent back on localhost.
     secure: secureCookies,
-    // Lax, not Strict: the OAuth callback is a cross-site top-level navigation
-    // back from Google, and Strict would withhold the cookie on arrival.
+    // Lax, not Strict: an OAuth callback is a cross-site top-level navigation
+    // back from the provider, and Strict would withhold the cookie on arrival.
     // Same-origin API calls (ADR-0003) mean Lax is sufficient.
     sameSite: 'lax' as const,
     path: '/',
@@ -244,6 +293,11 @@ export function registerAuthRoutes(
             }
           : null,
         registrationOpen: env.allowRegistration,
+        // What this instance can actually offer, not what the schema can store.
+        signInProviders: [
+          ...(env.googleEnabled ? (['google'] as const) : []),
+          ...(env.discordEnabled ? (['discord'] as const) : []),
+        ],
         // False for anonymous visitors by construction: the flag is only set
         // alongside a resolved session, so there is no state where a stranger is
         // told anything about admin at all.
@@ -253,141 +307,206 @@ export function registerAuthRoutes(
 
   // ------------------------------------------------------------ sign in / out
 
-  app.get('/api/auth/google', async (_request, reply) => {
-    if (!env.authEnabled || !env.googleClientId) {
-      return reply
+  /**
+   * One provider's two routes: the redirect out, and the callback back.
+   *
+   * Parameterised rather than copied. The PKCE pair, the CSPRNG state, the
+   * signed short-lived cookie, the constant-time comparison and the failure
+   * vocabulary *are* the security of an authorization-code flow, not incidental
+   * detail — and a second copy is a second place for one of them to be relaxed
+   * by a well-meant edit that only one test file would catch. What genuinely
+   * differs between providers is three things: the endpoints, the credentials,
+   * and the shape of the profile that comes back. Those are the arguments.
+   */
+  function registerOAuthProvider<Profile>(config: OAuthProvider<Profile>): void {
+    const { name, label } = config;
+
+    const notConfigured = (reply: FastifyReply): FastifyReply =>
+      reply
         .code(503)
-        .send({ code: 'auth_not_configured', message: 'Google sign-in is not configured' });
-    }
+        .send({ code: 'auth_not_configured', message: `${label} sign-in is not configured` });
 
-    const state = createState();
-    const { verifier, challenge } = createPkcePair();
+    app.get(`/api/auth/${name}`, async (_request, reply) => {
+      // This provider's own flag, never `authEnabled`: with more than one
+      // provider, "auth works here" no longer implies "this provider works
+      // here", and the difference is a player sent to a consent screen for an
+      // application this instance has no credentials for.
+      const clientId = config.clientId();
+      if (!config.enabled() || !clientId) return notConfigured(reply);
 
-    // Signed so a client cannot forge a state/verifier pair of its own.
-    void reply.setCookie(OAUTH_COOKIE, JSON.stringify({ state, verifier }), {
-      ...sessionCookieOptions,
-      signed: true,
-      maxAge: OAUTH_COOKIE_TTL_SECONDS,
+      const state = createState();
+      const { verifier, challenge } = createPkcePair();
+
+      // Signed so a client cannot forge a state/verifier pair of its own. The
+      // provider name rides along and is checked on the way back: with two
+      // providers a state minted for one must not be presentable at the
+      // other's callback.
+      void reply.setCookie(OAUTH_COOKIE, JSON.stringify({ provider: name, state, verifier }), {
+        ...sessionCookieOptions,
+        signed: true,
+        maxAge: OAUTH_COOKIE_TTL_SECONDS,
+      });
+
+      return reply.redirect(
+        config.buildAuthorizeUrl({
+          clientId,
+          redirectUri: config.redirectUriFor(env.publicOrigin),
+          state,
+          codeChallenge: challenge,
+        }),
+      );
     });
 
-    return reply.redirect(
-      buildAuthorizeUrl({
-        clientId: env.googleClientId,
-        redirectUri: redirectUriFor(env.publicOrigin),
-        state,
-        codeChallenge: challenge,
-      }),
+    app.get<{ Querystring: { code?: string; state?: string; error?: string } }>(
+      `/api/auth/${name}/callback`,
+      async (request, reply) => {
+        const clientId = config.clientId();
+        const clientSecret = config.clientSecret();
+        if (!config.enabled() || !clientId || !clientSecret) return notConfigured(reply);
+
+        const fail = (code: string): FastifyReply => {
+          void reply.clearCookie(OAUTH_COOKIE, { path: '/' });
+          // Back to the app with a code the UI can explain, rather than a bare
+          // error page. Never includes anything from the provider's response.
+          return reply.redirect(`/?auth_error=${code}`);
+        };
+
+        if (request.query.error) {
+          request.log.warn(
+            { provider: name, providerError: request.query.error },
+            'provider returned an error',
+          );
+          return fail('provider_error');
+        }
+
+        const { code, state } = request.query;
+        if (!code || !state) return fail('provider_error');
+
+        const raw = request.cookies[OAUTH_COOKIE];
+        const unsigned = raw ? reply.unsignCookie(raw) : null;
+        if (!unsigned?.valid || !unsigned.value) return fail('state_mismatch');
+
+        let stored: { provider?: unknown; state?: unknown; verifier?: unknown };
+        try {
+          stored = JSON.parse(unsigned.value) as typeof stored;
+        } catch {
+          return fail('state_mismatch');
+        }
+
+        if (
+          typeof stored.state !== 'string' ||
+          typeof stored.verifier !== 'string' ||
+          // A state minted for another provider is as invalid as a forged one.
+          // The exchange would fail anyway — wrong client, wrong endpoint — but
+          // failing here keeps the reason legible and the credential unused.
+          stored.provider !== name ||
+          !safeEqual(stored.state, state)
+        ) {
+          return fail('state_mismatch');
+        }
+
+        let profile: Profile;
+        try {
+          const accessToken = await config.operations.exchangeCode({
+            code,
+            clientId,
+            clientSecret,
+            redirectUri: config.redirectUriFor(env.publicOrigin),
+            codeVerifier: stored.verifier,
+          });
+          profile = await config.operations.fetchProfile(accessToken);
+        } catch (error) {
+          request.log.error({ err: error, provider: name }, 'oauth exchange failed');
+          return fail('exchange_failed');
+        }
+
+        // Account policy is one module for every provider (AUTH-02). Resolving
+        // on `(provider, subject)`, the ALLOW_REGISTRATION gate and AUTH-04's
+        // conflict rules all live in `signInWithIdentity`, so Discord, magic
+        // link (AUTH-10) and passkeys (AUTH-15) cannot answer the same question
+        // differently. Matching is on the provider subject and never the email
+        // address (ADR-0004), enforced by `identity-email.test.ts`.
+        const outcome = await signInWithIdentity(
+          db.db,
+          { provider: name, ...config.toIdentity(profile) },
+          {
+            allowRegistration: env.allowRegistration,
+            // Refusal-only, and what makes AUTH-04's rule hold here: a callback
+            // for somebody else's account must not silently replace this
+            // player's session. `fail` clears only the OAuth state cookie,
+            // never `tailfin_session`, so a refusal leaves them signed in as
+            // whoever they were — "do not sign out, do not switch, do not link".
+            currentPlayerId: request.player?.id ?? null,
+          },
+        );
+
+        if (!outcome.ok) {
+          request.log.info({ provider: name, failure: outcome.failure.code }, 'sign-in refused');
+          return fail(signInFailureCode(outcome.failure));
+        }
+
+        const { playerId } = outcome.value;
+
+        const ttlHours = (await isAdmin(db.db, playerId))
+          ? env.adminSessionTtlHours
+          : env.sessionTtlHours;
+        const { token, expiresAt } = await replaceSession(
+          db.db,
+          request.cookies[SESSION_COOKIE],
+          playerId,
+          ttlHours,
+        );
+
+        void reply.clearCookie(OAUTH_COOKIE, { path: '/' });
+        void reply.setCookie(SESSION_COOKIE, token, {
+          ...sessionCookieOptions,
+          expires: expiresAt,
+        });
+
+        return reply.redirect('/');
+      },
     );
+  }
+
+  registerOAuthProvider<GoogleProfile>({
+    name: 'google',
+    label: 'Google',
+    enabled: () => env.googleEnabled,
+    clientId: () => env.googleClientId,
+    clientSecret: () => env.googleClientSecret,
+    buildAuthorizeUrl: buildGoogleAuthorizeUrl,
+    redirectUriFor: googleRedirectUriFor,
+    operations: googleAuth ?? {
+      exchangeCode: googleExchangeCode,
+      fetchProfile: googleFetchProfile,
+    },
+    toIdentity: (profile) => ({
+      subject: profile.subject,
+      email: profile.email,
+      displayName: profile.name,
+      avatarUrl: profile.picture,
+    }),
   });
 
-  app.get<{ Querystring: { code?: string; state?: string; error?: string } }>(
-    '/api/auth/google/callback',
-    async (request, reply) => {
-      if (!env.authEnabled || !env.googleClientId || !env.googleClientSecret) {
-        return reply
-          .code(503)
-          .send({ code: 'auth_not_configured', message: 'Google sign-in is not configured' });
-      }
-
-      const fail = (code: string): FastifyReply => {
-        void reply.clearCookie(OAUTH_COOKIE, { path: '/' });
-        // Back to the app with a code the UI can explain, rather than a bare
-        // error page. Never includes anything from the provider's response.
-        return reply.redirect(`/?auth_error=${code}`);
-      };
-
-      if (request.query.error) {
-        request.log.warn({ providerError: request.query.error }, 'google returned an error');
-        return fail('provider_error');
-      }
-
-      const { code, state } = request.query;
-      if (!code || !state) return fail('provider_error');
-
-      const raw = request.cookies[OAUTH_COOKIE];
-      const unsigned = raw ? reply.unsignCookie(raw) : null;
-      if (!unsigned?.valid || !unsigned.value) return fail('state_mismatch');
-
-      let stored: { state?: unknown; verifier?: unknown };
-      try {
-        stored = JSON.parse(unsigned.value) as { state?: unknown; verifier?: unknown };
-      } catch {
-        return fail('state_mismatch');
-      }
-
-      if (
-        typeof stored.state !== 'string' ||
-        typeof stored.verifier !== 'string' ||
-        !safeEqual(stored.state, state)
-      ) {
-        return fail('state_mismatch');
-      }
-
-      let profile: GoogleProfile;
-      try {
-        const accessToken = await provider.exchangeCode({
-          code,
-          clientId: env.googleClientId,
-          clientSecret: env.googleClientSecret,
-          redirectUri: redirectUriFor(env.publicOrigin),
-          codeVerifier: stored.verifier,
-        });
-        profile = await provider.fetchProfile(accessToken);
-      } catch (error) {
-        request.log.error({ err: error }, 'google exchange failed');
-        return fail('exchange_failed');
-      }
-
-      // Account policy is one module for every provider (AUTH-02). What used to
-      // be here — resolve on `(provider, subject)`, gate on ALLOW_REGISTRATION,
-      // create the player and its identity — is `signInWithIdentity`, so Discord
-      // (AUTH-08), magic link (AUTH-10) and passkeys (AUTH-15) cannot answer the
-      // same question differently. Matching still happens on the provider
-      // subject and never the email address (ADR-0004); that rule now lives in
-      // the module and is enforced by `identity-email.test.ts`.
-      const outcome = await signInWithIdentity(
-        db.db,
-        {
-          provider: 'google',
-          subject: profile.subject,
-          email: profile.email,
-          displayName: profile.name,
-          avatarUrl: profile.picture,
-        },
-        {
-          allowRegistration: env.allowRegistration,
-          // Refusal-only, and it is what makes AUTH-04's rule hold here: a
-          // callback for somebody else's account must not silently replace this
-          // player's session. `fail` clears only the OAuth state cookie, never
-          // `tailfin_session`, so a refusal leaves them signed in as whoever
-          // they were — "do not sign out, do not switch, do not link".
-          currentPlayerId: request.player?.id ?? null,
-        },
-      );
-
-      if (!outcome.ok) {
-        request.log.info({ failure: outcome.failure.code }, 'sign-in refused');
-        return fail(signInFailureCode(outcome.failure));
-      }
-
-      const { playerId } = outcome.value;
-
-      const ttlHours = (await isAdmin(db.db, playerId))
-        ? env.adminSessionTtlHours
-        : env.sessionTtlHours;
-      const { token, expiresAt } = await replaceSession(
-        db.db,
-        request.cookies[SESSION_COOKIE],
-        playerId,
-        ttlHours,
-      );
-
-      void reply.clearCookie(OAUTH_COOKIE, { path: '/' });
-      void reply.setCookie(SESSION_COOKIE, token, { ...sessionCookieOptions, expires: expiresAt });
-
-      return reply.redirect('/');
+  registerOAuthProvider<DiscordProfile>({
+    name: 'discord',
+    label: 'Discord',
+    enabled: () => env.discordEnabled,
+    clientId: () => env.discordClientId,
+    clientSecret: () => env.discordClientSecret,
+    buildAuthorizeUrl: buildDiscordAuthorizeUrl,
+    redirectUriFor: discordRedirectUriFor,
+    operations: discordAuth ?? {
+      exchangeCode: discordExchangeCode,
+      fetchProfile: discordFetchProfile,
     },
-  );
+    toIdentity: (profile) => ({
+      subject: profile.subject,
+      email: profile.email,
+      displayName: profile.name,
+      avatarUrl: profile.avatarUrl,
+    }),
+  });
 
   app.post(
     '/api/auth/logout',

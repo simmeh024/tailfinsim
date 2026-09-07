@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createPkcePair, createState } from './pkce';
 
 /**
  * Google OAuth 2.0, authorization-code flow with PKCE (ADR-0004).
@@ -11,29 +11,11 @@ import { createHash, randomBytes } from 'node:crypto';
  * round trip, no crypto to get wrong.
  */
 
+export { createPkcePair, createState };
+
 const AUTHORIZE_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 const USERINFO_ENDPOINT = 'https://openidconnect.googleapis.com/v1/userinfo';
-
-/** URL-safe random string, used for both the state and the PKCE verifier. */
-function randomUrlSafe(bytes = 32): string {
-  return randomBytes(bytes).toString('base64url');
-}
-
-export interface PkcePair {
-  verifier: string;
-  challenge: string;
-}
-
-export function createPkcePair(): PkcePair {
-  const verifier = randomUrlSafe(32);
-  const challenge = createHash('sha256').update(verifier).digest('base64url');
-  return { verifier, challenge };
-}
-
-export function createState(): string {
-  return randomUrlSafe(16);
-}
 
 export function redirectUriFor(publicOrigin: string): string {
   // Must match a value registered on the OAuth client exactly, path included.

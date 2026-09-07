@@ -1,4 +1,4 @@
-import type { AuthenticatedPlayer, MeResponse } from '@tailfin/shared';
+import type { AuthenticatedPlayer, MeResponse, SignInProvider } from '@tailfin/shared';
 
 /**
  * The auth half of the client's API surface (M0-11).
@@ -19,7 +19,9 @@ import type { AuthenticatedPlayer, MeResponse } from '@tailfin/shared';
  * redirect to a page the user has to interact with. It has to be a real
  * top-level navigation.
  */
-export const SIGN_IN_PATH = '/api/auth/google';
+export function signInPathFor(provider: SignInProvider): string {
+  return `/api/auth/${provider}`;
+}
 
 function isPlayer(value: unknown): value is AuthenticatedPlayer {
   if (typeof value !== 'object' || value === null) return false;
@@ -37,6 +39,10 @@ function isMeResponse(value: unknown): value is MeResponse {
   const body = value as Record<string, unknown>;
   if (typeof body.registrationOpen !== 'boolean') return false;
   if (typeof body.isAdmin !== 'boolean') return false;
+  // An older server predating AUTH-08 sends no `signInProviders`. Treating that
+  // as a malformed body would turn a rolling deploy into a broken login page,
+  // so the absence is tolerated here and defaulted by the caller.
+  if (body.signInProviders !== undefined && !Array.isArray(body.signInProviders)) return false;
   return body.player === null || isPlayer(body.player);
 }
 

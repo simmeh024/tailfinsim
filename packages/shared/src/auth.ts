@@ -41,10 +41,29 @@ export type AuthenticatedPlayer = z.infer<typeof AuthenticatedPlayer>;
  * meaningful. A client that treats every 401 as "session expired, reload" would
  * otherwise loop on the landing page.
  */
+/**
+ * A way in that this instance actually has credentials for (AUTH-08).
+ *
+ * Deliberately not the whole `auth_provider` enum: that enum says what the
+ * *schema* can store, and this says what a player can click today. An instance
+ * with no Discord credentials must not render a Discord button that 503s.
+ */
+export const SignInProvider = z.enum(['google', 'discord']);
+export type SignInProvider = z.infer<typeof SignInProvider>;
+
 export const MeResponse = z.object({
   player: AuthenticatedPlayer.nullable(),
   /** Whether this instance would let a new account be created (`ALLOW_REGISTRATION`). */
   registrationOpen: z.boolean(),
+  /**
+   * Which sign-in providers are configured here, in the order to offer them.
+   *
+   * Server-decided rather than a client constant, because it differs per
+   * environment: production runs with no OAuth client of its own, and dev may
+   * have one provider before the other. An empty array means sign-in is not
+   * configured at all, which is a real state and not an error.
+   */
+  signInProviders: z.array(SignInProvider),
   /**
    * Whether this player holds an admin grant (M1A-01).
    *

@@ -74,10 +74,12 @@ Each fact is worthless alone and none is a fallback for another.
 `SameSite=Lax` does not protect top-level `GET`. Two registered `GET` routes do change state, and
 both are the sign-in flow rather than the game:
 
-| route                           | what it changes                                | what protects it instead                                                                                                                                                                       |
-| ------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/auth/google`          | writes the signed `tailfin_oauth` state cookie | writes only; forging it grants nothing                                                                                                                                                         |
-| `GET /api/auth/google/callback` | creates a session                              | the OAuth `state` parameter must match the signed `tailfin_oauth` cookie, which is the standard login-CSRF control; `session-cookie.test.ts` proves a callback with no state cookie is refused |
+| route                            | what it changes                                | what protects it instead                                                                                                                                                                       |
+| -------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/auth/google`           | writes the signed `tailfin_oauth` state cookie | writes only; forging it grants nothing                                                                                                                                                         |
+| `GET /api/auth/google/callback`  | creates a session                              | the OAuth `state` parameter must match the signed `tailfin_oauth` cookie, which is the standard login-CSRF control; `session-cookie.test.ts` proves a callback with no state cookie is refused |
+| `GET /api/auth/discord`          | writes the signed `tailfin_oauth` state cookie | as the Google pair; forging it starts a sign-in the attacker cannot finish                                                                                                                     |
+| `GET /api/auth/discord/callback` | creates a session                              | the same `state`/cookie control, and the cookie names the provider it was minted for, so a state issued for Google is refused here rather than spending the credential (AUTH-08)               |
 
 They are exceptions with their own control, listed by name in `security/csrf.test.ts` so that a
 third one cannot join them silently. **Every other `GET` route must change nothing.**

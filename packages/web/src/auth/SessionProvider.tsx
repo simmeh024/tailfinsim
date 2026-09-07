@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
-import type { AuthenticatedPlayer } from '@tailfin/shared';
+import type { AuthenticatedPlayer, SignInProvider } from '@tailfin/shared';
 
 import { fetchMe, postSignOut, postSignOutEverywhere } from './api';
 
@@ -32,6 +32,8 @@ interface SessionContextValue {
   player: AuthenticatedPlayer | null;
   /** Whether this instance would create an account for a new Google user. */
   registrationOpen: boolean;
+  /** Providers this instance actually has credentials for (AUTH-08). */
+  signInProviders: SignInProvider[];
   /**
    * Whether this player may open the admin console.
    *
@@ -51,6 +53,7 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
   const [status, setStatus] = useState<SessionStatus>('loading');
   const [player, setPlayer] = useState<AuthenticatedPlayer | null>(null);
   const [registrationOpen, setRegistrationOpen] = useState(false);
+  const [signInProviders, setSignInProviders] = useState<SignInProvider[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -58,6 +61,7 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
       const me = await fetchMe();
       setPlayer(me.player);
       setRegistrationOpen(me.registrationOpen);
+      setSignInProviders(me.signInProviders ?? []);
       setIsAdmin(me.isAdmin);
       setStatus(me.player ? 'signed-in' : 'anonymous');
     } catch {
@@ -99,8 +103,26 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
   }, []);
 
   const value = useMemo(
-    () => ({ status, player, registrationOpen, isAdmin, signOut, signOutEverywhere, refresh }),
-    [status, player, registrationOpen, isAdmin, signOut, signOutEverywhere, refresh],
+    () => ({
+      status,
+      player,
+      registrationOpen,
+      signInProviders,
+      isAdmin,
+      signOut,
+      signOutEverywhere,
+      refresh,
+    }),
+    [
+      status,
+      player,
+      registrationOpen,
+      signInProviders,
+      isAdmin,
+      signOut,
+      signOutEverywhere,
+      refresh,
+    ],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

@@ -33,6 +33,7 @@ const ADMIN: MeResponse = {
     displayCurrency: 'USD',
   },
   registrationOpen: false,
+  signInProviders: [],
   isAdmin: true,
 };
 

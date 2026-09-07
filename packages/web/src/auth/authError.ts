@@ -18,7 +18,10 @@ import type { AuthFailureCode } from '@tailfin/shared';
 const FAILURE_MESSAGES: Record<AuthFailureCode, string> = {
   registration_closed: 'Tailfin is not open for new accounts yet.',
   state_mismatch: 'That sign-in attempt expired. Please try again.',
-  provider_error: 'Google did not complete the sign-in.',
+  // Provider-neutral since AUTH-08: the same code arrives from Google and
+  // Discord, and the redirect carries no provider, deliberately — naming one
+  // would mean trusting a query parameter to say who refused.
+  provider_error: 'The sign-in was not completed.',
   exchange_failed: 'Sign-in could not be completed. Please try again.',
   // Specific about the situation, silent about the other account (AUTH-04).
   // "Please try again" would be actively wrong: repeating the attempt produces
