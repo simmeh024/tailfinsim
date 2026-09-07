@@ -408,6 +408,31 @@ async function openFleet(): Promise<void> {
   await waitForSignInCheck();
 }
 
+/**
+ * The detail panel, once it is showing the aircraft that was just clicked.
+ *
+ * Selecting a market row updates the panel in a later effect, and a panel is
+ * already on screen for the default selection — so a synchronous
+ * `getByLabelText('Selected aircraft')` finds the *previous* aircraft's panel
+ * and asserts against it. That is what broke in CI while passing locally: the
+ * DOM it printed still carried `alt="Airbus A320neo…"` after a click on the
+ * 737-800. A fast machine wins the race; a loaded runner loses it.
+ *
+ * Waiting on the panel element alone would not fix it, because that element
+ * does not change identity between selections. `AircraftImage`'s `alt` does —
+ * it names the manufacturer and designation — so it is the one thing on screen
+ * that says *which* aircraft the panel is currently describing.
+ *
+ * CLAUDE.md records this shape twice already, on the build badge's clock:
+ * "effects that arrive in a later React effect race a test that waits for the
+ * first render".
+ */
+async function selectionShows(aircraft: string): Promise<HTMLElement> {
+  const detail = await screen.findByLabelText('Selected aircraft');
+  await within(detail).findByAltText(new RegExp(`${aircraft} in a neutral catalogue finish`, 'i'));
+  return detail;
+}
+
 async function fleetTable(): Promise<HTMLElement> {
   const tables = await screen.findAllByRole('table');
   const found = tables.find((table) => within(table).queryByText('Registration') !== null);
@@ -432,6 +457,7 @@ describe('the fleet catalogue', () => {
     // from a wall into a plan.
     const xlr = await screen.findByRole('button', { name: /View Airbus A321XLR/i });
     fireEvent.click(xlr);
+    await selectionShows('Airbus A321XLR');
     expect(await screen.findByText('11 Nov 2024')).toBeInTheDocument();
   });
 
@@ -443,6 +469,7 @@ describe('the fleet catalogue', () => {
     // aircraft exists than the world did. Lint already stops the client
     // importing `@tailfin/sim`; this proves it renders what it was told.
     fireEvent.click(await screen.findByRole('button', { name: /View Airbus A321XLR/i }));
+    await selectionShows('Airbus A321XLR');
     expect(
       await screen.findByText(
         'Flying as a prototype. Enters service on 2024-11-11, and can be ordered from then.',
@@ -464,7 +491,7 @@ describe('the fleet catalogue', () => {
 
     // Not a zero. An aircraft you cannot buy new does not cost nothing.
     fireEvent.click(await screen.findByRole('button', { name: /View Boeing 737-800/i }));
-    const detail = screen.getByLabelText('Selected aircraft');
+    const detail = await selectionShows('Boeing 737-800');
     expect(within(detail).getAllByText('Unavailable').length).toBeGreaterThan(0);
   });
 
