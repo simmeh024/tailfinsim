@@ -592,6 +592,12 @@ sudo -u tailfin pnpm admin grant --email you@example.com
 The grant needs a `player` row, which only exists after that account has signed in through
 Google at least once — so sign in first, then grant.
 
+An address that matches **two** accounts is refused rather than resolved: a second sign-in
+provider reporting the same address does not merge onto an existing account, so the address
+can name two separate players and picking one would change admin on a coin toss. The refusal
+names each candidate player id with the provider whose identity matched it; re-run with
+`--player <uuid>` to say which account you mean.
+
 ---
 
 ## Operating notes
