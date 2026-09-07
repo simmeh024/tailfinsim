@@ -567,6 +567,10 @@ export const AdminCashMovementCause = z.enum([
   'ground_contract_penalty',
   'ground_volume_shortfall',
   'ground_self_handling_payroll',
+  /** App. B.5's hubs (M7-04): buying one, building a facility, and holding both. */
+  'hub_purchase',
+  'hub_facility_opening',
+  'hub_upkeep',
   'admin_adjustment',
   'flight_settlement',
   'disruption_cost',

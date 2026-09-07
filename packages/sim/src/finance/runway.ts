@@ -40,6 +40,8 @@ export type CommitmentKind =
   | 'office'
   /** Payroll for stations the airline handles itself (§9.3). */
   | 'ground'
+  /** App. B.5's monthly hub and facility fees (M7-04). */
+  | 'hub'
   /** A game day of interest on the outstanding debt (§13.4). */
   | 'interest'
   /** Interest already charged and unpaid — owed now, not later (§13.5). */

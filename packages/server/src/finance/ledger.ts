@@ -26,6 +26,10 @@ export const PNL_CATEGORIES: readonly LedgerCategory[] = [
   'marketing',
   'repaint_retrofit',
   'interest',
+  // App. B.5's hub and facility upkeep. Operating, unlike `hub_purchase`: this is
+  // what a hub costs to hold, and it is the number the free-flagship decision
+  // eventually shows up in.
+  'hub_facility',
 ];
 
 export interface LedgerQuery {

@@ -33,6 +33,7 @@ import { type ServerEnv } from './env';
 import { registerCreditRoutes } from './finance/credit-routes';
 import { registerFinanceRoutes } from './finance/routes';
 import { registerGroundRoutes } from './ground/routes';
+import { registerHubRoutes } from './hub/routes';
 import { createEconomicsProvider } from './network/economics';
 import { registerNetworkRoutes } from './network/routes';
 import { registerSlotRoutes } from './network/slot-routes';
@@ -273,6 +274,7 @@ export async function buildApp({
   registerOfficeRoutes(app, { db });
   registerAutomationRoutes(app, { db });
   registerGroundRoutes(app, { db });
+  registerHubRoutes(app, { db });
   registerServiceRoutes(app, { db });
   registerCreditRoutes(app, { db });
   registerFinanceRoutes(app, { db });

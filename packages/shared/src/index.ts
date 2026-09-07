@@ -57,6 +57,7 @@ export * from './alerts';
 export * from './slots';
 export * from './automation';
 export * from './ground';
+export * from './hub';
 export * from './service';
 export * from './credit';
 export * from './dashboard';

@@ -56,6 +56,7 @@ import { ExecutiveFloorState } from './executive';
 import { CashRunwayResponse, FinancePnlResponse } from './finance';
 import { AirframeDetailResponse, FleetAirframesResponse } from './fleet';
 import { GroundContractsResponse, GroundStationResponse } from './ground';
+import { HubCandidateListResponse, HubsResponse } from './hub';
 import { LiveryDocument } from './livery';
 import { MaintenanceResponse, BookCheckResponse } from './maintenance';
 import { AdminNpcResponse } from './npc';
@@ -183,6 +184,8 @@ export const crewResponseJsonSchema = z.toJSONSchema(CrewResponse);
 export const automationStateResponseJsonSchema = z.toJSONSchema(AutomationStateResponse);
 export const groundStationResponseJsonSchema = z.toJSONSchema(GroundStationResponse);
 export const groundContractsResponseJsonSchema = z.toJSONSchema(GroundContractsResponse);
+export const hubsResponseJsonSchema = z.toJSONSchema(HubsResponse);
+export const hubCandidateListResponseJsonSchema = z.toJSONSchema(HubCandidateListResponse);
 
 export const serviceCatalogueResponseJsonSchema = z.toJSONSchema(ServiceCatalogueResponse);
 export const servicePackagesResponseJsonSchema = z.toJSONSchema(ServicePackagesResponse);

@@ -142,6 +142,12 @@ export const RESOURCE_ID_SURFACES = [
     field: 'airframeId',
     semantics: 'owner-scoped-resource',
   },
+  {
+    endpoint: 'POST /api/hubs/:hubId/facilities',
+    position: 'path',
+    field: 'hubId',
+    semantics: 'owner-scoped-resource',
+  },
   ...[
     'PUT /api/routes/:routeId/fares',
     'GET /api/routes/:routeId/waterfall',

@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { moveAirlineCash } from '../airline/cash';
 import { createDatabase, type DatabaseHandle } from '../db/client';
 import { airline, cashMovement } from '../db/schema';
+import { listHubs } from '../hub/hubs';
 import { hireOffice } from '../office/hires';
 import { runOfficePayroll } from '../office/payroll';
 import {
@@ -102,8 +103,24 @@ describeDb('the cash runway', () => {
     expect(runway.days).toBeNull();
     expect(runway.horizonDays).toBe(365);
     expect(runway.critical).toBe(false);
-    expect(runway.committedMinor).toBe(0);
     expect(runway.cashMinor).toBe(fixture.airline.cash);
+    expect(runway.owedNowMinor).toBe(0);
+
+    /*
+     * Not zero since M7-04, and the change is the point rather than an
+     * inconvenience: a founded airline already holds its **founder hub**, and
+     * App. B.5 makes that hub free to take and never free to hold. An airline
+     * that has done nothing still owes its hub fee every month.
+     *
+     * Asserted against `listHubs` rather than against a literal, so a retune of
+     * `hubs.annualFeeMinor` moves both sides — and asserted as the *only* kind
+     * of commitment, which is what keeps "quiet" meaningful.
+     */
+    const hubs = await listHubs(db.db, own(fixture));
+    const monthly = Math.round((hubs.hubs[0]?.totalAnnualFeeMinor ?? 0) / 12);
+    expect(monthly).toBeGreaterThan(0);
+    expect(runway.committedMinor).toBe(monthly * 12);
+    expect(new Set(runway.upcoming.map((commitment) => commitment.kind))).toEqual(new Set(['hub']));
   });
 
   it('shortens the moment a commitment is signed, before any bill is charged (AC1)', async () => {

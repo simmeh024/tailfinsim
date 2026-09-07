@@ -540,6 +540,9 @@ export const cashMovementCause = pgEnum('cash_movement_cause', [
   'office_expansion',
   'executive_floor',
   'executive_office',
+  'hub_purchase',
+  'hub_facility_opening',
+  'hub_upkeep',
   /** §9.3's *"breaking one early costs a penalty"*, pro-rated to what is left of the term. */
   'ground_contract_penalty',
   /** The committed departures a term ended without flying (§9.3). */
@@ -585,6 +588,10 @@ export const ledgerCategory = pgEnum('ledger_category', [
   'asset_deposit',
   /** §13.3's loan principal arriving — neither revenue nor cost (M8-06). */
   'debt_draw',
+  /** Buying a hub, or building a facility at one — capital, like `aircraft_purchase` (M7-04). */
+  'hub_purchase',
+  /** App. B.5's recurring hub and facility fees — operating cost, unlike the above (M7-04). */
+  'hub_facility',
   'other',
 ]);
 export type LedgerCategory = (typeof ledgerCategory.enumValues)[number];
@@ -1053,7 +1060,17 @@ export const airport = pgTable(
 // ---------------------------------------------------------------------------
 
 /**
- * Founding grants the first hub; M7-04 later adds paid hubs and facilities.
+ * App. B.5 prices four tiers; B.3 classifies airports into five.
+ *
+ * A separate enum from `airport_tier` rather than a reuse, because it is a
+ * different thing: this is the **price band** a hub was sold in, and `regional`
+ * has no price of its own. Keeping them separate means adding a sixth airport
+ * tier cannot silently invent a sixth hub price.
+ */
+export const hubTier = pgEnum('hub_tier', ['small', 'medium', 'large', 'flagship']);
+
+/**
+ * Founding grants the first hub; M7-04 adds paid hubs and facilities.
  *
  * The relationship gets its own row rather than a single hub column on
  * `airline`, because an airline may own several hubs. The airport foreign key
@@ -1071,12 +1088,85 @@ export const airlineHub = pgTable(
       .references(() => airport.id, { onDelete: 'restrict' }),
     /** Consumed from the world's starting-position config, so its zero cost is explainable. */
     founderGrant: boolean('founder_grant').notNull().default(false),
+
+    /**
+     * The price band this hub was sold in, pinned at purchase (M7-04).
+     *
+     * Not derived from `airport.tier` on read, and the difference is the point: a
+     * reference-data refresh can reclassify an airport, and an airline's annual
+     * fee must not change because somebody re-ran `data:classify`. The bill an
+     * airline pays is the one it agreed to.
+     *
+     * **Nullable, meaning a hub granted before M7-04** — every existing founder
+     * hub. Those read as their airport's current tier, which is the only answer
+     * available and was true when they were granted. New rows always set it.
+     */
+    tier: hubTier('tier'),
+    /** What was paid, minor units. Null alongside `tier`; zero for a founder grant. */
+    purchaseCostMinor: bigint('purchase_cost_minor', { mode: 'number' }),
+    /**
+     * Game time the hub opened — the anchor the monthly fee is billed from.
+     *
+     * Game time rather than `created_at`'s wall clock, so a world reset moves it
+     * with everything else (ADR-0005) and a world at 4x bills twice as often in
+     * real time as one at 2x. Null on pre-M7-04 rows, which fall back to
+     * `created_at`: an approximation, but the alternative is a hub that is never
+     * billed, and free hubs would be a worse lie than a fee starting a few real
+     * days early on dev data.
+     */
+    openedAt: timestamp('opened_at', { withTimezone: true }),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     unique('airline_hub_airline_id_airport_id_key').on(t.airlineId, t.airportId),
     index('airline_hub_airline_id_idx').on(t.airlineId),
     index('airline_hub_airport_id_idx').on(t.airportId),
+  ],
+);
+
+/** App. B.5's unlockables, minus the two `HubFacilityKind` explains are absent. */
+export const hubFacilityKind = pgEnum('hub_facility_kind', [
+  'training_academy',
+  'maintenance_line',
+  'heavy_check',
+  'lounge',
+  'self_handling',
+]);
+
+/**
+ * One facility unlocked at one hub (M7-04, App. B.5).
+ *
+ * A row's existence *is* the unlock — there is no status column, because a
+ * facility is not closed or reopened: App. B.5 gives an opening cost and an
+ * annual fee and no way back, and a nullable `closed_at` would be a mechanic
+ * nobody has designed sitting in the schema looking load-bearing.
+ *
+ * The prices are pinned here for the same reason `airline_hub.tier` is: a retune
+ * of the economy config must not silently re-price a facility somebody already
+ * bought, and a hub's monthly bill has to be explicable from its own rows.
+ */
+export const hubFacility = pgTable(
+  'hub_facility',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    hubId: uuid('hub_id')
+      .notNull()
+      .references(() => airlineHub.id, { onDelete: 'cascade' }),
+    kind: hubFacilityKind('kind').notNull(),
+
+    /** What opening it cost, minor units — pinned, like the hub's own price. */
+    openingCostMinor: bigint('opening_cost_minor', { mode: 'number' }).notNull(),
+    /** What it adds to the hub's annual bill, minor units. Pinned for the same reason. */
+    annualFeeMinor: bigint('annual_fee_minor', { mode: 'number' }).notNull(),
+
+    /** Game time, like the hub's own `opened_at`. */
+    openedAt: timestamp('opened_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('hub_facility_hub_id_kind_key').on(t.hubId, t.kind),
+    index('hub_facility_hub_id_idx').on(t.hubId),
   ],
 );
 

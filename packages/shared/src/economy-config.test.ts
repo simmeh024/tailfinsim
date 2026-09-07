@@ -127,6 +127,32 @@ describe('a payload written before a section existed', () => {
     expect(parsed.hubs).toEqual(ECONOMY_CONFIG_V1.hubs);
   });
 
+  it('takes the shipped hub fees when a payload has the curve but not the fees', () => {
+    /*
+     * The sharper version of the same rule, and the one that actually bites here.
+     * `hubs` shipped with the purchase curve one milestone before the fees, so
+     * there are real `v1` rows carrying a `hubs` object with `tierBaseMinor` and
+     * `costGrowth` and nothing else. A required `annualFeeMinor` would make those
+     * unparseable — and the failure is total, not partial: a world pinned to that
+     * version could not price a flight or found an airline.
+     *
+     * The defaults have to sit on the *fields*, not just on the section, and that
+     * is what this proves. Dropping the whole section (the test above) would keep
+     * passing even if the fields were required.
+     */
+    const curveOnly = {
+      ...ECONOMY_CONFIG_V1,
+      hubs: {
+        tierBaseMinor: ECONOMY_CONFIG_V1.hubs.tierBaseMinor,
+        costGrowth: ECONOMY_CONFIG_V1.hubs.costGrowth,
+      },
+    };
+
+    const parsed = EconomyConfig.parse(JSON.parse(JSON.stringify(curveOnly)));
+    expect(parsed.hubs.annualFeeMinor).toEqual(ECONOMY_CONFIG_V1.hubs.annualFeeMinor);
+    expect(parsed.hubs.facilities).toEqual(ECONOMY_CONFIG_V1.hubs.facilities);
+  });
+
   it('keeps a section the payload does carry, rather than defaulting over it', () => {
     // A default fills an absence. It must never overwrite a live retune —
     // which is the property the whole seed-but-never-update design rests on.

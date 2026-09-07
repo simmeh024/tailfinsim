@@ -421,6 +421,13 @@
       "when": 1788792512774,
       "tag": "0059_familiar_justice",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1788808863562,
+      "tag": "0060_hub_purchases_and_facilities",
+      "breakpoints": true
     }
   ]
 }

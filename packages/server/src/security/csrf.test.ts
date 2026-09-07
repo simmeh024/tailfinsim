@@ -94,6 +94,11 @@ const READ_ONLY_GET_ROUTES = [
   '/api/fleet/used-market',
   '/api/ground/:icao',
   '/api/ground/contracts',
+  // M7-04. Both are reads. `candidates` prices what a hub *would* cost and holds
+  // nothing — no quote row, no reservation — so a refresh re-quotes rather than
+  // repeating anything. The purchase is the POST.
+  '/api/hubs',
+  '/api/hubs/candidates',
   '/api/me',
   '/api/network/connections',
   '/api/office',

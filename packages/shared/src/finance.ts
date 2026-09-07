@@ -35,6 +35,17 @@ export const LedgerCategory = z.enum([
    * the only category treated that way.
    */
   'debt_draw',
+  /**
+   * Buying a hub, or building a facility at one (App. B.5, M7-04).
+   *
+   * Capital, so it sits outside the operating P&L exactly as `aircraft_purchase`
+   * does: a hub is an asset acquired, and charging $25M against one month would
+   * bury the operation that month and flatter it for ever after. What a hub
+   * *costs to run* is `hub_facility`, which is in the P&L.
+   */
+  'hub_purchase',
+  /** App. B.5's recurring hub and facility fees — an operating cost, and in the P&L. */
+  'hub_facility',
   'other',
 ]);
 export type LedgerCategory = z.infer<typeof LedgerCategory>;
@@ -88,7 +99,7 @@ export type FinancePnlResponse = z.infer<typeof FinancePnlResponse>;
 /* ---- §13.6's cash runway (M8-08) -------------------------------------------- */
 
 /** Which obligation a projected outflow is, so a UI can name the cause. */
-export const CommitmentKind = z.enum(['crew', 'office', 'ground', 'interest', 'arrears']);
+export const CommitmentKind = z.enum(['crew', 'office', 'ground', 'hub', 'interest', 'arrears']);
 export type CommitmentKind = z.infer<typeof CommitmentKind>;
 
 /** One dated bill the airline has already committed to. */
