@@ -57,3 +57,6 @@ export * from './ground';
 export * from './service';
 
 export * from './finance';
+
+/** §14's metrics: unit economics, trends and forecast bands (M8-09). */
+export * from './statistics';

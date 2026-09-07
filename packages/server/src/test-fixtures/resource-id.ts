@@ -131,6 +131,7 @@ export const RESOURCE_ID_SURFACES = [
     'PUT /api/routes/:routeId/fares',
     'GET /api/routes/:routeId/waterfall',
     'GET /api/routes/:routeId/performance',
+    'GET /api/routes/:routeId/flights',
     'GET /api/routes/:routeId/competition',
     'POST /api/routes/:routeId/fares/preview',
     'DELETE /api/routes/:routeId',
@@ -232,6 +233,27 @@ export const RESOURCE_ID_SURFACES = [
     position: 'header',
     field: 'x-tailfin-world-id',
     semantics: 'context-selector',
+  },
+  /*
+   * §14's metric id (M8-09). A **selector over a fixed server-side enum**, not
+   * an owned resource: it names nothing the player has, so there is no
+   * cross-owner case to conceal and an unknown one is a 404 because the metric
+   * does not exist. The data behind it is still scoped to the resolved owner —
+   * SEC-07 asks for the classification to be explicit rather than for every id
+   * to be treated as a resource, and treating this one as a resource would
+   * invent an ownership question that has no answer.
+   */
+  {
+    endpoint: 'GET /api/statistics/:metricId/breakdown',
+    position: 'path',
+    field: 'metricId',
+    semantics: 'computed-selector',
+  },
+  {
+    endpoint: 'GET /api/statistics/:metricId/breakdown',
+    position: 'query',
+    field: 'by',
+    semantics: 'computed-selector',
   },
   {
     endpoint: 'GET /api/routes/:routeId/waterfall',

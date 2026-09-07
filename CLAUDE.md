@@ -572,6 +572,30 @@ office bill then runs the real payroll and asserts the cash matches.
 excluded — nothing in the game charges them yet, so projecting them would predict
 an outflow that never arrives.
 
+**§14's metrics are the loudest missing-worker surface in the game (M8-09).**
+Every figure `GET /api/statistics` returns comes from `flight_result`, and only
+the worker writes one — so on **production, which has no worker**, the whole of
+§14 reads null and zero. Not one panel: the entire dashboard, reading as an
+airline that has done nothing rather than as a missing process. Same trap as the
+fleet page and the empty sky on the world map.
+
+Two things there worth knowing before touching it. **A metric is a record in
+`statistics/registry.ts` and the record has no optional fields**, because §14.1's
+_"every figure drills down to its cause"_ does not survive as a convention — the
+drill-down becomes a follow-up and the follow-up does not happen. `drilldown.test.ts`
+asks the router what it actually serves and fails on a drill-down naming an
+endpoint that has been renamed, which is the failure the type system cannot
+catch. And **a ratio over an empty window is `null`, never `0`** — zero reads as
+_"earned nothing per seat"_, a claim about a bad month rather than an absent one,
+while ASK and revenue genuinely are zero. The two together are what let a client
+say _"nothing has flown"_.
+
+`docs/statistics.md` has the metric table, why RASK and yield are different
+questions, why breakeven load is deliberately not clamped to 1, and the four
+rungs of the load-factor chain — the third of which,
+`GET /api/routes/:routeId/flights`, M8-09 had to add because the chain the design
+doc spells out was missing its middle link.
+
 **And one thing not to "fix".** `airframe.maintenance_state` is nullable, and a null means
 _every tier was last completed at the hours this airframe has now_ — not _at hour zero_. It
 looks like a missing default and it is load-bearing: the other reading would make every
