@@ -74,9 +74,19 @@ describeDb('identity policy', () => {
     return id;
   }
 
-  /** Signs in and records the player for cleanup. */
+  /** Signs in with no session in scope, and records the player for cleanup. */
   async function signIn(identity: ProvenIdentity, allowRegistration = true) {
     const result = await signInWithIdentity(db.db, identity, { allowRegistration });
+    if (result.ok) madePlayers.push(result.value.playerId);
+    return result;
+  }
+
+  /** As `signIn`, for the cases that need to pass a current session. */
+  async function signInWithSession(
+    identity: ProvenIdentity,
+    options: { allowRegistration: boolean; currentPlayerId?: string | null },
+  ) {
+    const result = await signInWithIdentity(db.db, identity, options);
     if (result.ok) madePlayers.push(result.value.playerId);
     return result;
   }
@@ -228,6 +238,114 @@ describeDb('identity policy', () => {
       expect(viaDiscord.value.playerId).not.toBe(viaGoogle.value.playerId);
       expect(await countIdentities(db.db, viaGoogle.value.playerId)).toBe(1);
       expect(await countIdentities(db.db, viaDiscord.value.playerId)).toBe(1);
+    });
+
+    /**
+     * AUTH-04's decision table, sign-in half.
+     *
+     * The two rows differ only in whether a session exists, and they were
+     * chosen to have opposite answers: with nobody signed in the identity's
+     * owner is signed in, because it is their identity; with somebody else
+     * signed in the attempt is refused, because a callback must not move a
+     * player between accounts.
+     */
+    describe('when the identity belongs to another player', () => {
+      it('signs that player in when nobody is signed in', async () => {
+        const identity = proven();
+        const owner = await signIn(identity);
+        if (!owner.ok) return;
+
+        const again = await signInWithIdentity(db.db, identity, {
+          allowRegistration: false,
+          currentPlayerId: null,
+        });
+
+        expect(again.ok).toBe(true);
+        if (!again.ok) return;
+        expect(again.value.playerId).toBe(owner.value.playerId);
+      });
+
+      it('refuses when a different player is signed in, and changes nothing', async () => {
+        const identity = proven();
+        const owner = await signIn(identity);
+        if (!owner.ok) return;
+        const bystander = await makePlayer('Bystander');
+
+        const resolved = await resolveIdentity(db.db, identity.provider, identity.subject);
+        const usedBefore = (
+          await db.db
+            .select({ lastUsedAt: playerIdentity.lastUsedAt })
+            .from(playerIdentity)
+            .where(eq(playerIdentity.id, resolved!.identityId))
+        )[0]!.lastUsedAt;
+
+        const result = await signInWithIdentity(db.db, identity, {
+          allowRegistration: true,
+          currentPlayerId: bystander,
+        });
+
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.failure.code).toBe('identity_already_linked');
+        expect(Object.keys(result.failure)).toEqual(['code']);
+
+        // Nothing moved: not the ownership, not the bystander's identities, and
+        // not `last_used_at` — a refused attempt must not report a sign-in that
+        // never happened.
+        const after = await resolveIdentity(db.db, identity.provider, identity.subject);
+        expect(after!.playerId).toBe(owner.value.playerId);
+        expect(await countIdentities(db.db, bystander)).toBe(0);
+
+        const usedAfter = (
+          await db.db
+            .select({ lastUsedAt: playerIdentity.lastUsedAt })
+            .from(playerIdentity)
+            .where(eq(playerIdentity.id, resolved!.identityId))
+        )[0]!.lastUsedAt;
+        expect(usedAfter!.getTime()).toBe(usedBefore!.getTime());
+      });
+
+      it('still signs the owner in when they are the one signed in', async () => {
+        const identity = proven();
+        const owner = await signIn(identity);
+        if (!owner.ok) return;
+
+        // Re-authenticating as yourself is not a conflict — it is the ordinary
+        // case of signing in again on a live session.
+        const result = await signInWithIdentity(db.db, identity, {
+          allowRegistration: false,
+          currentPlayerId: owner.value.playerId,
+        });
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.value.playerId).toBe(owner.value.playerId);
+      });
+    });
+
+    /**
+     * The invariant that keeps "sign-in never links" true now that a player id
+     * is in scope: `currentPlayerId` may only ever *narrow* the outcome. It can
+     * turn a success into a refusal, and it must never cause an identity to be
+     * attached to it.
+     */
+    it('never attaches an unknown identity to the signed-in player', async () => {
+      const incumbent = await makePlayer('Incumbent');
+      await linkIdentity(db.db, incumbent, proven({ provider: 'google' }));
+
+      const result = await signInWithSession(proven({ provider: 'discord' }), {
+        allowRegistration: true,
+        currentPlayerId: incumbent,
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // A brand-new identity gets a brand-new account, even though a session
+      // was in scope. Connecting it to the incumbent is AUTH-09's `Connect`
+      // button, never a side effect of signing in.
+      expect(result.value.created).toBe(true);
+      expect(result.value.playerId).not.toBe(incumbent);
+      expect(await countIdentities(db.db, incumbent)).toBe(1);
     });
 
     it('resolves two concurrent first sign-ins to one account', async () => {

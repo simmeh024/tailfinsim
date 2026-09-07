@@ -20,6 +20,12 @@ const FAILURE_MESSAGES: Record<AuthFailureCode, string> = {
   state_mismatch: 'That sign-in attempt expired. Please try again.',
   provider_error: 'Google did not complete the sign-in.',
   exchange_failed: 'Sign-in could not be completed. Please try again.',
+  // Specific about the situation, silent about the other account (AUTH-04).
+  // "Please try again" would be actively wrong: repeating the attempt produces
+  // the same refusal, and the two things that do work are named instead.
+  identity_already_linked:
+    'That account is already connected to a different Tailfin account. ' +
+    'Sign out first, or connect it from your account settings.',
 };
 
 export function messageFor(code: string): string {

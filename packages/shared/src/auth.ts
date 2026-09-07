@@ -85,5 +85,19 @@ export const AuthFailureCode = z.enum([
   'state_mismatch',
   'provider_error',
   'exchange_failed',
+  /**
+   * The identity that just authenticated belongs to a different account from
+   * the one currently signed in (AUTH-04).
+   *
+   * Its own code rather than `exchange_failed`, because the two need opposite
+   * advice: "try again" is right for a failed exchange and useless here, where
+   * nothing is broken and the player has to either sign out first or connect
+   * the identity from the account page instead.
+   *
+   * Deliberately says nothing about the other account. A message naming a
+   * display name or email address would confirm to whoever completed that
+   * callback that the identity is in use, and by whom.
+   */
+  'identity_already_linked',
 ]);
 export type AuthFailureCode = z.infer<typeof AuthFailureCode>;
