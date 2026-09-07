@@ -30,6 +30,15 @@ signed-in non-admin. The airline guards compose `requireAuth` with session-deriv
 restricted or ceased airline, and `requireOperatingAirline` refuses a ceased airline while
 allowing an existing operation to continue when restricted.
 
+**Slot holdings are a deliberate public projection (M7-05).** `GET /api/airports/:icao/slots`
+returns every airline holding a band at that airport, not only the caller's own holdings — id, name,
+IATA code and an `isYou` flag. This is an explicit authorization-matrix entry with limited fields
+rather than an accidental disclosure: airline name and codes are already public on every competing
+carrier, and §8.1 calls slots _"the scarce resource of the shared world — held, traded, and lost"_,
+which a resource nobody can attribute cannot be. Nothing commercial is disclosed — no schedules,
+fares, utilisation or intent — and the write endpoints stay owner-scoped. ADR-0025's amendment
+records the reasoning.
+
 Persisted logo JSON does not grant authority. An unsupported logo format uses the default
 emblem in airline projections without changing the stored source or owner. After the normal
 owner/active-airline guards, an explicit logo replacement or clear on an incompatible build
@@ -265,7 +274,7 @@ must compare with Fastify's route table. One method/path pair appears in each ro
 | `PUT /api/schedules/:id/active`                     | `requireActiveAirline`; schedule scoped by owner; 404 cross-owner            | 401   | 409 without an owned airline         | Allow when active                        | Same as player/owner        |
 | `DELETE /api/schedules/:id`                         | `requireActiveAirline`; schedule scoped by owner; 404 cross-owner            | 401   | 409 without an owned airline         | Allow when active                        | Same as player/owner        |
 | `GET /api/network/connections`                      | `requireAirline`; hub and flights scoped by resolved owner                   | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
-| `GET /api/airports/:icao/slots`                     | `requireAirline`; holdings scoped by resolved owner; public airport id       | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
+| `GET /api/airports/:icao/slots`                     | `requireAirline`; **world-wide holdings, holders named** (see below)         | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
 | `POST /api/airports/:icao/slots/:band`              | `requireActiveAirline`; holding scoped by resolved owner; public airport id  | 401   | 409 without an owned airline         | Allow when active                        | Same as player/owner        |
 | `DELETE /api/airports/:icao/slots/:band`            | `requireActiveAirline`; holding scoped by resolved owner; public airport id  | 401   | 409 without an owned airline         | Allow when active                        | Same as player/owner        |
 

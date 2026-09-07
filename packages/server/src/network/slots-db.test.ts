@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { airport } from '../db/schema';
+import { airport, world } from '../db/schema';
 import { createAirportIdentities } from '../test-fixtures/airport-codes';
 import {
   createFoundedAirlineFixtureHarness,
@@ -38,7 +38,11 @@ function own(fixture: FoundedAirlineFixture): ResolvedPlayerAirline {
   return { id: fixture.airline.id, worldId: fixture.world.id, status: 'active' };
 }
 
-const BAND = 8; // the 08:00 band
+const BAND = 8; // the 08:00 band — peak, and therefore the tightest of the day
+const OFF_PEAK_BAND = 3; // 03:00 — App. B.5's "you get 05:40 and 23:10"
+
+/** Real milliseconds in a day, for ageing a world's launch date. */
+const DAY_MS = 86_400_000;
 
 describeDb('airport slots', () => {
   let db: DatabaseHandle;
@@ -88,6 +92,23 @@ describeDb('airport slots', () => {
     return icao;
   }
 
+  /**
+   * Make a world read as `gameDays` old, so a release wave has landed.
+   *
+   * A world's age is `gameNow − epoch`, and `gameNow` is
+   * `epoch + speed × (realNow − launchDate)` — so a freshly created fixture is
+   * always about zero days old whatever epoch it was given. Backdating
+   * `launch_date` is the only way to age one, and it is the fixture's own world.
+   */
+  async function ageWorld(fixture: FoundedAirlineFixture, gameDays: number): Promise<void> {
+    const speed = Number(fixture.world.speedMultiplier);
+    const realMs = (gameDays / speed) * DAY_MS;
+    await db.db
+      .update(world)
+      .set({ launchDate: new Date(Date.now() - realMs) })
+      .where(eq(world.id, fixture.world.id));
+  }
+
   it('reads an uncoordinated airport as free — no bands to hold', async () => {
     const a = await fixtures.create({ baseCountry: 'GB' });
     const icao = await makeAirport(null, 'regional');
@@ -101,20 +122,123 @@ describeDb('airport slots', () => {
     expect(await readAirportSlots(db.db, own(a), 'ZZZZ')).toBeNull();
   });
 
-  it('lays out 24 bands at a coordinated airport, capacity by tier', async () => {
+  it('lays out 24 bands at a coordinated airport, shaped by hour', async () => {
+    // Capacity is no longer flat across the day (M7-05): a flagship's base of 8
+    // is halved at peak and nearly doubled overnight, which is what makes App.
+    // B.5's "you get 05:40 and 23:10" true rather than aspirational.
     const a = await fixtures.create({ baseCountry: 'GB' });
+    await ageWorld(a, 90); // fully released, so this is about shape alone
     const icao = await makeAirport(3, 'flagship');
     const slots = await readAirportSlots(db.db, own(a), icao);
     expect(slots?.coordinated).toBe(true);
     expect(slots?.bands).toHaveLength(24);
-    const band = slots?.bands[BAND];
-    expect(band).toMatchObject({
+
+    expect(slots?.bands[BAND]).toMatchObject({
       band: BAND,
-      capacity: 8,
+      shape: 'peak',
+      capacity: 4,
+      released: 4,
       held: 0,
       heldByYou: false,
-      available: 8,
+      available: 4,
+      holders: [],
     });
+    expect(slots?.bands[OFF_PEAK_BAND]).toMatchObject({
+      shape: 'off_peak',
+      capacity: 14,
+      released: 14,
+      available: 14,
+    });
+  });
+
+  it('holds back half the board on opening day, and opens the rest on schedule', async () => {
+    // §21's third open question: "first-come-first-served creates a permanent
+    // land grab. Consider scheduled slot release waves." This is the wave.
+    const a = await fixtures.create({ baseCountry: 'GB' });
+    const icao = await makeAirport(3, 'flagship');
+
+    const young = await readAirportSlots(db.db, own(a), icao);
+    expect(young?.releases).toMatchObject({
+      releasedFraction: 0.5,
+      nextWaveAtGameDay: 30,
+    });
+    // Eventual capacity 14 overnight; half of it open on day one.
+    expect(young?.bands[OFF_PEAK_BAND]).toMatchObject({ capacity: 14, released: 7 });
+
+    await ageWorld(a, 30);
+    const middle = await readAirportSlots(db.db, own(a), icao);
+    expect(middle?.releases).toMatchObject({ releasedFraction: 0.75, nextWaveAtGameDay: 90 });
+    expect(middle?.bands[OFF_PEAK_BAND]?.released).toBe(11); // ceil(14 × 0.75)
+
+    await ageWorld(a, 90);
+    const mature = await readAirportSlots(db.db, own(a), icao);
+    expect(mature?.releases).toMatchObject({
+      releasedFraction: 1,
+      nextWaveAtGameDay: null,
+      nextWaveInGameDays: null,
+    });
+    expect(mature?.bands[OFF_PEAK_BAND]?.released).toBe(14);
+  });
+
+  it('refuses a claim the wave has not opened yet, and allows it once it has', async () => {
+    const a = await fixtures.create({ baseCountry: 'GB' });
+    const icao = await makeAirport(3, 'medium'); // default base 4 → peak capacity 2
+
+    // Day one: peak releases ceil(2 × 0.5) = 1. One airline takes it.
+    const first = await fixtures.create({ worldId: a.world.id, baseCountry: 'GB' });
+    expect((await claimSlot(db.db, own(first), icao, BAND)).ok).toBe(true);
+    expect(await claimSlot(db.db, own(a), icao, BAND)).toMatchObject({
+      ok: false,
+      problem: 'band_full',
+    });
+
+    // The second wave opens the second seat, and the waiting airline gets in
+    // without anybody giving anything up. That is the whole point.
+    await ageWorld(a, 90);
+    expect((await claimSlot(db.db, own(a), icao, BAND)).ok).toBe(true);
+  });
+
+  it('leaves a newcomer an off-peak slot at an airport whose peak is gone', async () => {
+    // M7-05's first acceptance criterion, end to end: "a new player joining a
+    // mature world can still obtain off-peak slots at a Level 3 airport".
+    const a = await fixtures.create({ baseCountry: 'GB' });
+    await ageWorld(a, 90);
+    const icao = await makeAirport(3, 'medium'); // peak 2, off-peak 7
+
+    for (let i = 0; i < 2; i += 1) {
+      const incumbent = await fixtures.create({ worldId: a.world.id, baseCountry: 'GB' });
+      expect((await claimSlot(db.db, own(incumbent), icao, BAND)).ok).toBe(true);
+    }
+
+    // The newcomer is locked out of 08:00…
+    expect(await claimSlot(db.db, own(a), icao, BAND)).toMatchObject({
+      ok: false,
+      problem: 'band_full',
+    });
+    // …and still gets 03:00, which is exactly the deal B.5 describes.
+    expect((await claimSlot(db.db, own(a), icao, OFF_PEAK_BAND)).ok).toBe(true);
+  });
+
+  it('names every airline holding a band, not just a count', async () => {
+    // The third acceptance criterion. Slots are "the scarce resource of the
+    // shared world" — a scarce resource you cannot attribute is a closed door.
+    const a = await fixtures.create({ baseCountry: 'GB' });
+    await ageWorld(a, 90);
+    const rival = await fixtures.create({ worldId: a.world.id, baseCountry: 'GB' });
+    const icao = await makeAirport(3, 'flagship');
+
+    await claimSlot(db.db, own(a), icao, OFF_PEAK_BAND);
+    await claimSlot(db.db, own(rival), icao, OFF_PEAK_BAND);
+
+    const slots = await readAirportSlots(db.db, own(a), icao);
+    const holders = slots?.bands[OFF_PEAK_BAND]?.holders ?? [];
+    expect(holders).toHaveLength(2);
+
+    const mine = holders.find((h) => h.airlineId === a.airline.id);
+    const theirs = holders.find((h) => h.airlineId === rival.airline.id);
+    expect(mine?.isYou).toBe(true);
+    expect(theirs?.isYou).toBe(false);
+    expect(theirs?.name).toBe(rival.airline.name);
   });
 
   it('claims a band, idempotently, and shows it held', async () => {
@@ -129,7 +253,15 @@ describeDb('airport slots', () => {
 
     const slots = await readAirportSlots(db.db, own(a), icao);
     const band = slots?.bands[BAND];
-    expect(band).toMatchObject({ held: 1, heldByYou: true, available: 4 }); // large cap 5
+    // Large base 5, peak-shaped to 3, half released on a fresh world → 2 seats.
+    // One taken leaves one, and the second claim added no row.
+    expect(band).toMatchObject({
+      capacity: 3,
+      released: 2,
+      held: 1,
+      heldByYou: true,
+      available: 1,
+    });
   });
 
   it('refuses a claim at an uncoordinated airport and for an impossible band', async () => {
@@ -151,25 +283,32 @@ describeDb('airport slots', () => {
   });
 
   it('refuses a full band, then lets a claim through once one is released', async () => {
-    // A Level-3 airport whose tier gives the default capacity of 4.
     const icao = await makeAirport(3, 'medium');
     const a = await fixtures.create({ baseCountry: 'GB' });
+    await ageWorld(a, 90); // everything released, so this is about exhaustion
+
+    // Fill exactly the released capacity, read from the server rather than
+    // assumed — so retuning the shape or the waves does not silently turn this
+    // into a test that stops filling the band.
+    const before = await readAirportSlots(db.db, own(a), icao);
+    const seats = before?.bands[OFF_PEAK_BAND]?.released ?? 0;
+    expect(seats).toBeGreaterThan(0);
+
     const others = [] as FoundedAirlineFixture[];
-    for (let i = 0; i < 4; i += 1) {
+    for (let i = 0; i < seats; i += 1) {
       const b = await fixtures.create({ worldId: a.world.id, baseCountry: 'GB' });
       others.push(b);
-      expect((await claimSlot(db.db, own(b), icao, BAND)).ok).toBe(true);
+      expect((await claimSlot(db.db, own(b), icao, OFF_PEAK_BAND)).ok).toBe(true);
     }
 
-    // The band is now full: four holders at capacity four.
-    expect(await claimSlot(db.db, own(a), icao, BAND)).toMatchObject({
+    expect(await claimSlot(db.db, own(a), icao, OFF_PEAK_BAND)).toMatchObject({
       ok: false,
       problem: 'band_full',
     });
 
     // Free one and the waiting airline gets in.
-    await releaseSlot(db.db, own(others[0]!), icao, BAND);
-    expect((await claimSlot(db.db, own(a), icao, BAND)).ok).toBe(true);
+    await releaseSlot(db.db, own(others[0]!), icao, OFF_PEAK_BAND);
+    expect((await claimSlot(db.db, own(a), icao, OFF_PEAK_BAND)).ok).toBe(true);
   });
 
   it('releases a band, idempotently', async () => {

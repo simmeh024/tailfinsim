@@ -17,19 +17,49 @@
  * band. Route *opening* is never slot-gated — a route is not a movement — so the
  * gate lives here at schedule authoring, where a real departure time exists.
  *
+ * ## Release waves, and why they still need no worker
+ *
+ * §21's third open question is *"slot allocation at world launch:
+ * first-come-first-served creates a permanent land grab. Consider scheduled slot
+ * release waves."* Capacity is therefore released in waves measured in game days
+ * since the world's epoch, and a band is additionally shaped by how contested its
+ * hour is — App. B.5's *"as a new entrant at LHR you get 05:40 and 23:10, and
+ * nothing else"* is a promise a uniform 24-hour capacity cannot keep.
+ *
  * ## No worker
  *
  * Holdings are standing state. Nothing expires, drifts or bills on a tick, so —
  * unlike almost everything else in the network engine — the slot system works
  * identically on a world with no worker.
+ *
+ * **The waves preserve that**, and it is the reason they are computed rather than
+ * stored. A wave is a pure function of the world clock read at request time, so
+ * nothing has to fire at game-day 30 for the capacity to appear; the next read
+ * simply sees more. A scheduled job would have made slots the fifth subsystem
+ * that silently does nothing on a production world.
  */
 
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
-import type { AirportSlotBand, AirportSlotsResponse } from '@tailfin/shared';
-import { bandOf, SLOT_BANDS_PER_DAY } from '@tailfin/sim';
+import type {
+  AirportSlotBand,
+  AirportSlotsResponse,
+  SlotHolder,
+  SlotReleaseSchedule,
+} from '@tailfin/shared';
+import {
+  bandCapacity,
+  bandOf,
+  bandShape,
+  nextReleaseWave,
+  releasedBandCapacity,
+  releasedFraction,
+  SLOT_BANDS_PER_DAY,
+  worldAgeGameDays,
+} from '@tailfin/sim';
 
-import { airport, slotHolding } from '../db/schema';
+import { airline, airport, slotHolding, world } from '../db/schema';
+import { worldGameNow } from '../world/game-now';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
 import type { Database } from '../db/client';
@@ -86,6 +116,35 @@ async function loadAirport(db: Database, icao: string): Promise<AirportRow | nul
   return { icao: row.icao, name: row.name, slotLevel: row.slotLevel, tier: row.tier };
 }
 
+/**
+ * Game days since this world opened — what a release wave is measured in.
+ *
+ * Game time rather than real time (ADR-0026), so a world at 4x reaches its second
+ * wave in half the real days of one at 2x. A wave is an in-world period, and an
+ * in-world span is game time.
+ */
+async function worldAge(db: Database, worldId: string): Promise<number> {
+  const [row] = await db
+    .select({ epoch: world.epoch })
+    .from(world)
+    .where(eq(world.id, worldId))
+    .limit(1);
+  if (!row) return 0;
+  return worldAgeGameDays(row.epoch, await worldGameNow(db, worldId));
+}
+
+/** The published wave schedule, as the client shows it. */
+function releaseSchedule(ageGameDays: number): SlotReleaseSchedule {
+  const next = nextReleaseWave(ageGameDays);
+  return {
+    worldAgeGameDays: ageGameDays,
+    releasedFraction: releasedFraction(ageGameDays),
+    nextWaveAtGameDay: next?.atGameDay ?? null,
+    nextWaveFraction: next?.fraction ?? null,
+    nextWaveInGameDays: next === null ? null : Math.max(0, next.atGameDay - ageGameDays),
+  };
+}
+
 /** Build the per-band picture of one coordinated airport for one airline. */
 async function pictureOf(
   db: Database,
@@ -100,46 +159,67 @@ async function pictureOf(
       coordinated: false,
       slotLevel: air.slotLevel,
       bands: [],
+      releases: null,
     };
   }
 
-  const capacity = slotCapacityPerHour(air.tier);
+  const base = slotCapacityPerHour(air.tier);
+  const ageGameDays = await worldAge(db, own.worldId);
 
-  // How full each band is, across every airline, and which bands this airline holds.
-  const [heldRows, mineRows] = await Promise.all([
-    db
-      .select({ band: slotHolding.band, count: sql<number>`count(*)::int` })
-      .from(slotHolding)
-      .where(and(eq(slotHolding.worldId, own.worldId), eq(slotHolding.airportIcao, air.icao)))
-      .groupBy(slotHolding.band),
-    db
-      .select({ band: slotHolding.band })
-      .from(slotHolding)
-      .where(
-        and(
-          eq(slotHolding.worldId, own.worldId),
-          eq(slotHolding.airlineId, own.id),
-          eq(slotHolding.airportIcao, air.icao),
-        ),
-      ),
-  ]);
+  /*
+   * Every holding at this airport, with the holder named — one grouped query and
+   * a lookup rather than a correlated subquery in the select list, which came
+   * back empty against real Postgres once and is recorded in CLAUDE.md's traps.
+   */
+  const heldRows = await db
+    .select({
+      band: slotHolding.band,
+      airlineId: airline.id,
+      name: airline.name,
+      iataCode: airline.iataCode,
+    })
+    .from(slotHolding)
+    .innerJoin(airline, eq(airline.id, slotHolding.airlineId))
+    .where(and(eq(slotHolding.worldId, own.worldId), eq(slotHolding.airportIcao, air.icao)));
 
-  const heldByBand = new Map<number, number>(heldRows.map((r) => [r.band, r.count]));
-  const mine = new Set<number>(mineRows.map((r) => r.band));
+  const holdersByBand = new Map<number, SlotHolder[]>();
+  for (const row of heldRows) {
+    const list = holdersByBand.get(row.band) ?? [];
+    list.push({
+      airlineId: row.airlineId,
+      name: row.name,
+      iataCode: row.iataCode,
+      isYou: row.airlineId === own.id,
+    });
+    holdersByBand.set(row.band, list);
+  }
 
   const bands: AirportSlotBand[] = [];
   for (let band = 0; band < SLOT_BANDS_PER_DAY; band += 1) {
-    const held = heldByBand.get(band) ?? 0;
+    const holders = holdersByBand.get(band) ?? [];
+    const released = releasedBandCapacity(base, band, ageGameDays);
     bands.push({
       band,
-      capacity,
-      held,
-      heldByYou: mine.has(band),
-      available: Math.max(capacity - held, 0),
+      capacity: bandCapacity(base, band),
+      released,
+      shape: bandShape(band),
+      held: holders.length,
+      heldByYou: holders.some((holder) => holder.isYou),
+      // A wave only ever adds: a band already held beyond what is released today
+      // reports nothing free, and revokes nothing.
+      available: Math.max(released - holders.length, 0),
+      holders,
     });
   }
 
-  return { icao: air.icao, name: air.name, coordinated: true, slotLevel: air.slotLevel, bands };
+  return {
+    icao: air.icao,
+    name: air.name,
+    coordinated: true,
+    slotLevel: air.slotLevel,
+    bands,
+    releases: releaseSchedule(ageGameDays),
+  };
 }
 
 /** One airport's slot picture for this airline, or null if no such airport. */
@@ -181,7 +261,16 @@ export async function claimSlot(
   if (!isCoordinated(air.slotLevel)) return { ok: false, problem: 'not_coordinated' };
   if (!validBand(band)) return { ok: false, problem: 'invalid_band' };
 
-  const capacity = slotCapacityPerHour(air.tier);
+  /*
+   * Today's released capacity, not the eventual ceiling. A claim is refused
+   * `band_full` when the wave that would open the seat has not landed yet, which
+   * is the whole point of §21's waves: the board cannot be carved up on day one.
+   */
+  const capacity = releasedBandCapacity(
+    slotCapacityPerHour(air.tier),
+    band,
+    await worldAge(db, own.worldId),
+  );
 
   const full = await db.transaction(async (tx) => {
     const already = await tx
