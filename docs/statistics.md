@@ -1,8 +1,9 @@
 # Statistics
 
 Every figure §14 exposes, what it means, where it goes when a player asks
-_why_, and the two dashboards that show it. Design doc **§14.1–§14.3**, **§14.6**;
-built by **M8-09** and **M8-10**.
+_why_, the two dashboards that show it, and the one chart the design doc says
+players learn the game through. Design doc **§14.1–§14.4**, **§14.6**; built by
+**M8-09**, **M8-10** and **M8-11**.
 
 ---
 
@@ -216,6 +217,118 @@ and read `dashboard.css` to do it. A visual check belongs on dev.
 
 ---
 
+## §14.4's chart (M8-11)
+
+> **Profit by route, ranked, with a breakeven line.** It's the chart that turns a
+> confused player into an airline manager. Loss-making routes sit below the line
+> in red and the drill-down tells you whether it's yield, cost, load factor or a
+> competitor — and therefore whether to **reprice**, **re-gauge**, **re-time**,
+> or **kill it**.
+
+It leads `/finance`, above the statement: a player who opens that page to find
+out why they are losing money should not scroll past four tables to reach it.
+
+### The chart is a list, not a canvas
+
+Every row is real text, every colour is a theme token, and the breakeven line is
+a **border down the middle of each track** rather than a drawn axis — exactly one
+pixel in every theme, and nothing to measure. A chart library would have brought
+its own palette, which is the thing §14.6's _"colour never the sole carrier of
+meaning"_ has to survive.
+
+Bars grow right from the centre rule for profit and left for a loss, each a share
+of the widest absolute value in the set.
+
+### Five routes and three hundred (AC2)
+
+Both fall out of one layout rather than needing a mode:
+
+- **Rows are fixed height and the list scrolls in its own box.** Three hundred
+  rows is nothing to render; three hundred rows pushing the page to 12,000px is
+  the actual failure.
+- **Ranking is what makes it readable at scale.** The extremes sit at the two
+  ends, so the routes a player must act on are the first and last thing they see
+  however many there are. No filter, no paging, and no "top ten" that hides the
+  airline's worst route on page 31.
+
+Ranked by **profit**, deliberately re-sorted from the breakdown endpoint's own
+order — that one ranks by magnitude, biggest contributor first whichever
+direction, which interleaves the best and worst routes.
+
+### Colour is never alone (AC3)
+
+A loss-making row carries three signals: the loss hue, a **hatched fill**, and a
+`▼` glyph beside a figure that is already signed. Any one of them survives
+greyscale, colour blindness or a screen reader reading only text. The legend says
+the hatch is doing work, so it does not read as decoration.
+
+---
+
+## The drill-down: one cause, one action (M8-11)
+
+`GET /api/routes/:routeId/diagnosis`. Four causes, four actions, paired
+one-to-one, plus `none`/`keep` for a route that is fine — §14.4's chart ranks
+profitable routes too, and naming their weakest lever as a problem would be an
+invented finding.
+
+| Cause         | Action       | What it means                                         |
+| ------------- | ------------ | ----------------------------------------------------- |
+| `yield`       | **reprice**  | selling too cheaply for what it costs to fly          |
+| `cost`        | **re-gauge** | costs more per seat offered than the network average  |
+| `load_factor` | **re-time**  | it could pay at a normal load; it is flying too empty |
+| `competitor`  | **cut**      | a rival holds most of the market, so it will not fill |
+
+### Why it is a decision tree and not a ranking of gaps
+
+The obvious implementation compares each figure to the airline's median and names
+whichever is furthest below. It answers for every route, including the routes
+where it is **wrong**: a thin route whose cost base no load factor could cover
+gets "re-time", and re-timing cannot help it.
+
+So the classifier is the **breakeven load factor**, the one figure that says
+whether a route is fixable by filling it:
+
+```
+contribution >= 0        → nothing to fix
+BELF > 1                 → no load factor saves it   → cost or yield
+BELF <= 1 and LF < BELF  → it is under-filled        → competitor or timing
+```
+
+`BELF > 1` means every extra passenger loses money, which is why M8-09
+deliberately does **not** clamp it to 1. That unclamped value is what makes this
+tree possible, and a test asserts the unfillable route is never sent to be
+re-timed.
+
+The peer medians are still there, as the three **quantified gaps** the response
+always carries — how a player sees the working (§14.1), and how the tree chooses
+between cost and yield. They are simply not the classifier.
+
+### Two judgement calls
+
+**Unknown competition means `load_factor`, not `competitor`.** Re-timing a route
+a rival owns wastes a week; cutting a route that only needed re-timing throws a
+market away. The cheaper mistake wins.
+
+**The benchmark excludes the route being diagnosed.** A median a route sits
+inside pulls toward that route's own figure, and the effect is largest exactly
+when it matters most — a two-route airline would be comparing one against the
+average of itself and one other.
+
+The benchmark is the airline's **own** median, not a world median: §14.6 asks for
+_"benchmarks against world median for your fleet size"_ and nothing computes one
+yet. The panel says which it is rather than letting the other be assumed.
+
+### Why the diagnosis is per route and on a click
+
+The competitor cause needs App. A's share model run against the market. Three
+hundred of those on one page load would make §14.4 the slowest screen in the
+game. So the **chart** reads one grouped query however many routes there are, and
+the **diagnosis** is one route at a time — the expensive half paid per question
+asked rather than per render. A route whose market cannot be resolved still gets
+a diagnosis, with the competitor cause simply unavailable.
+
+---
+
 ## Where each thing lives
 
 |                                           | Where                                                 |
@@ -229,6 +342,9 @@ and read `dashboard.css` to do it. A visual check belongs on dev.
 | The Executive assembly                    | `packages/server/src/statistics/executive.ts`         |
 | The tile, the formatting and the href map | `packages/web/src/dashboard/`                         |
 | One chart language for both dashboards    | `packages/web/src/dashboard/dashboard.css`            |
+| §14.4's decision tree and the peer median | `packages/sim/src/statistics/route-diagnosis.ts`      |
+| The diagnosis, fed real trading           | `packages/server/src/network/route-diagnosis.ts`      |
+| The ranked chart and its drill-down panel | `packages/web/src/finance/RouteProfitChart.tsx`       |
 
 ---
 
@@ -287,9 +403,9 @@ empty rather than as having positioned an aeroplane.
   payment timetable would promise something the game does not do.
 - **A cash-flow statement.** The runway answers the question it was built for; a
   statement is its own rollup.
-- **§14.4's ranked profit-by-route chart** with the breakeven line — M8-11,
-  deliberately its own issue, because it is the one chart the design doc says
-  players learn the game through.
+- **A world median benchmark** for the diagnosis levers (§14.6). The comparison
+  is the airline's own median today, and the panel says so rather than letting a
+  player assume otherwise.
 - **The other five dashboards** in §14.3 — traffic, fleet, crew, ground,
   reputation — which are M8-12.
 - **§14.5's alerts** and §14.6's CSV export and world-median benchmarks.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { LiveryMask } from '@tailfin/shared';
+import type { LiveryDocument, LiveryMask } from '@tailfin/shared';
 
 import {
   DEFAULT_PRIMARY_COLOR,
@@ -190,5 +190,86 @@ describe('M6-03 side-profile livery renderer', () => {
     const averageMilliseconds = (performance.now() - startedAt) / sampleCount;
 
     expect(averageMilliseconds).toBeLessThan(1000 / 60);
+  });
+});
+
+/**
+ * The composition is safe on its own, not because of what validated the input.
+ *
+ * `renderLiverySvg`'s output goes to `dangerouslySetInnerHTML`. The schema makes
+ * every interpolated value harmless — colours are hex, ids are alphanumeric,
+ * zones and blend modes are enums — so with a validated document these
+ * assertions are indistinguishable from the ones above.
+ *
+ * They exist for the day the document is *not* the player's own validated draft.
+ * A public airline profile (M12-02), a public airframe (HIST-13), a map sprite
+ * or persisted artwork all put someone else's livery through this function, and
+ * an unescaped attribute would be cross-player scripting rather than a private
+ * oddity. So the hostile values here are cast past the schema deliberately: the
+ * point is that the renderer refuses them, whatever the caller did.
+ */
+describe('renderLiverySvg escapes attribute values regardless of the schema', () => {
+  const pair = AIRCRAFT_LIVERY_TEMPLATES[0];
+  if (pair === undefined) throw new Error('missing test template');
+  const template = pair.side;
+
+  /** A minimal document whose fill layer carries a hostile string. */
+  function documentWith(overrides: Record<string, unknown>): LiveryDocument {
+    return {
+      version: 2,
+      palette: [],
+      layers: [
+        {
+          id: 'base',
+          type: 'fill',
+          zone: 'fuselage',
+          visible: true,
+          opacity: 1,
+          blendMode: 'normal',
+          mask: null,
+          style: { fill: '#0B1F3AFF' },
+          ...overrides,
+        },
+      ],
+    } as unknown as LiveryDocument;
+  }
+
+  const BREAKOUT = '"><script>alert(1)</script><g id="';
+
+  it('does not let a hostile fill close the attribute', () => {
+    const svg = renderLiverySvg(template.source, documentWith({ style: { fill: BREAKOUT } }));
+
+    expect(svg).not.toContain('<script>');
+    expect(svg).toContain('&quot;');
+    // Parses as one document with no injected element, rather than markup that
+    // happens to look wrong.
+    expect(parse(svg).querySelector('script')).toBeNull();
+  });
+
+  it('does not let a hostile layer id escape into markup', () => {
+    const svg = renderLiverySvg(template.source, documentWith({ id: BREAKOUT }));
+
+    expect(svg).not.toContain('<script>');
+    expect(parse(svg).querySelector('script')).toBeNull();
+  });
+
+  it('does not let a hostile blend mode escape the style attribute', () => {
+    const svg = renderLiverySvg(template.source, documentWith({ blendMode: BREAKOUT }));
+
+    expect(svg).not.toContain('<script>');
+    expect(parse(svg).querySelector('script')).toBeNull();
+  });
+
+  it('leaves a valid document byte-identical, so the escape costs nothing', () => {
+    // The escape must be the identity for everything the schema permits —
+    // otherwise it is a rendering change dressed as a security fix.
+    const valid = documentWith({});
+    const svg = renderLiverySvg(template.source, valid);
+
+    expect(svg).toContain('data-painted-layer="base"');
+    expect(svg).toContain('fill="#0B1F3AFF"');
+    expect(svg).toContain('mix-blend-mode:normal');
+    expect(svg).not.toContain('&amp;');
+    expect(svg).not.toContain('&quot;');
   });
 });

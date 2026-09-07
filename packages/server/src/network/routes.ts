@@ -27,6 +27,7 @@ import { and, eq } from 'drizzle-orm';
 import {
   CabinClass,
   OpenRouteInput,
+  routeDiagnosisResponseJsonSchema,
   routeFlightsResponseJsonSchema,
   SetFaresRequest,
   Uuid,
@@ -42,6 +43,7 @@ import { hubConnections } from './connections';
 import { parseFares, previewFares, type RouteEconomics, type RouteRow, setFares } from './fares';
 import { openRoute } from './open-route';
 import { routePerformance } from './performance';
+import { diagnoseOwnRoute } from './route-diagnosis';
 import { routeFlights } from './route-flights';
 import { rivalsOn, waterfallFor } from './waterfall';
 
@@ -329,6 +331,42 @@ export function registerNetworkRoutes(
       const flights = await routeFlights(db.db, resolvedAirlineOf(request), request.params.routeId);
       if (flights === null) return notFound(reply);
       return reply.code(200).send(flights);
+    },
+  );
+
+  /**
+   * §14.4's drill-down: **why** this route is below the line (M8-11).
+   *
+   * > …the drill-down tells you whether it's yield, cost, load factor or a
+   * > competitor — and therefore whether to reprice, re-gauge, re-time, or kill
+   * > it.
+   *
+   * One cause, one action. A breakdown showing revenue, cost and load factor
+   * would leave a player where they started: three numbers and no decision.
+   *
+   * This is the **only** part of §14.4 that costs a share-model run, which is
+   * why it is per route and on a click rather than folded into the chart —
+   * M8-11's second criterion is that the chart works with three hundred routes,
+   * and three hundred share models on one page load would make it the slowest
+   * screen in the game. Competition is resolved here and passed in; a route
+   * whose market cannot be resolved still gets a diagnosis, with the competitor
+   * cause simply unavailable rather than the whole answer withheld.
+   */
+  app.get<{ Params: { routeId: string } }>(
+    '/api/routes/:routeId/diagnosis',
+    {
+      onRequest: app.requireAirline,
+      schema: { response: { 200: routeDiagnosisResponseJsonSchema } },
+    },
+    async (request, reply) => {
+      const own = resolvedAirlineOf(request);
+      const row = await ownedRoute(db.db, own.id, request.params.routeId);
+      if (!row) return notFound(reply);
+
+      const competition = await routeCompetition(db.db, own, row, await economicsFor(row));
+      const diagnosis = await diagnoseOwnRoute(db.db, own, row.id, competition);
+      if (diagnosis === null) return notFound(reply);
+      return reply.code(200).send(diagnosis);
     },
   );
 

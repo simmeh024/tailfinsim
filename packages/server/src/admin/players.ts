@@ -3,6 +3,7 @@ import { asc, count, desc, eq, ilike, inArray, max, or, sql } from 'drizzle-orm'
 import { type AdminPlayerDetail, type AdminPlayerSummary } from '@tailfin/shared';
 
 import { type Database } from '../db/client';
+import { containsPattern } from '../db/like';
 import { adminGrant, airline, player, playerIdentity, session, world } from '../db/schema';
 
 import { writeAudit } from './audit';
@@ -36,6 +37,20 @@ import { type Actor } from './grants';
 export const PLAYER_PAGE_LIMIT = 50;
 const MAX_LIMIT = 200;
 
+/**
+ * A page size or offset, clamped, with a non-finite value treated as absent.
+ *
+ * The `Number.isFinite` guard is the load-bearing part. `Math.trunc(NaN)` is
+ * `NaN` and `NaN` survives both `Math.max` and `Math.min`, so the obvious clamp
+ * passes `NaN` straight through to `.limit()` — which Postgres rejects, turning
+ * a bad query string into a 500 rather than a 400. `Infinity` clamps correctly
+ * on its own, but is folded in here so "not a usable number" has one answer.
+ */
+function boundedCount(value: number | undefined, fallback: number, max: number, min = 1): number {
+  if (value === undefined || !Number.isFinite(value)) return fallback;
+  return Math.min(Math.max(Math.trunc(value), min), max);
+}
+
 export interface PlayerQuery {
   /** Matched against display name, airline name, and IATA/ICAO code. Empty means everyone. */
   query?: string;
@@ -49,17 +64,6 @@ export interface PlayerPage {
   query: string;
   limit: number;
   offset: number;
-}
-
-/**
- * Escapes a user's search text so `%` and `_` are literals rather than wildcards.
- *
- * Without this, searching for `_` matches every player, which looks like a broken
- * search rather than a working one. The backslash is doubled because it is also
- * the escape character.
- */
-function escapeLike(input: string): string {
-  return input.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
 /**
@@ -84,10 +88,16 @@ function escapeLike(input: string): string {
  */
 export async function listPlayers(db: Database, options: PlayerQuery = {}): Promise<PlayerPage> {
   const query = (options.query ?? '').trim();
-  const limit = Math.min(Math.max(Math.trunc(options.limit ?? PLAYER_PAGE_LIMIT), 1), MAX_LIMIT);
-  const offset = Math.max(Math.trunc(options.offset ?? 0), 0);
+  // `boundedCount` rather than the arithmetic inline, because `Math.trunc(NaN)`
+  // is `NaN` and every clamp around it propagates it — `Math.min(Math.max(NaN,
+  // 1), 200)` is `NaN`, which reached `.limit()` and asked Postgres for
+  // `limit 'NaN'`. The route rejects a non-numeric query parameter before it
+  // gets here (see `admin/routes.ts`); this is the second line of defence, so
+  // no caller can reintroduce it.
+  const limit = boundedCount(options.limit, PLAYER_PAGE_LIMIT, MAX_LIMIT);
+  const offset = boundedCount(options.offset, 0, Number.MAX_SAFE_INTEGER, 0);
 
-  const pattern = `%${escapeLike(query)}%`;
+  const pattern = containsPattern(query);
   // A player matches if their own name matches, or if any airline they hold
   // matches by name or by code. `exists` rather than a join so a player with
   // three matching airlines is still one row.
@@ -376,5 +386,5 @@ export async function readPlayer(
   });
 }
 
-/** Exported for the tests that prove the search does not treat `%` as a wildcard. */
-export { escapeLike };
+/** Exported for the tests that pin the pagination clamp, including its `NaN` case. */
+export { boundedCount };

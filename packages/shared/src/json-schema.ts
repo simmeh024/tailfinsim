@@ -62,7 +62,12 @@ import {
   ServicePackageSummary,
   ServicePaybackResponse,
 } from './service';
-import { MetricBreakdownResponse, RouteFlightsResponse, StatisticsResponse } from './statistics';
+import {
+  MetricBreakdownResponse,
+  RouteDiagnosisResponse,
+  RouteFlightsResponse,
+  StatisticsResponse,
+} from './statistics';
 import { UsedMarketResponse } from './used-market';
 import { VersionResponse } from './version';
 import { WorldClock } from './world';
@@ -186,3 +191,4 @@ export const operationsDashboardResponseJsonSchema = z.toJSONSchema(OperationsDa
 export const statisticsResponseJsonSchema = z.toJSONSchema(StatisticsResponse);
 export const metricBreakdownResponseJsonSchema = z.toJSONSchema(MetricBreakdownResponse);
 export const routeFlightsResponseJsonSchema = z.toJSONSchema(RouteFlightsResponse);
+export const routeDiagnosisResponseJsonSchema = z.toJSONSchema(RouteDiagnosisResponse);

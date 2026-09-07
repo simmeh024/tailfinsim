@@ -487,6 +487,70 @@ describeDb('browsing players', () => {
       }
     });
 
+    it('refuses a non-numeric page size with 400, not a 500 from Postgres', async () => {
+      // `Number('abc')` is NaN and NaN survives `Math.min`/`Math.max`, so this
+      // used to reach `.limit()` and Postgres answered `limit 'NaN'`. A
+      // malformed query string is the client's mistake and deserves a 400.
+      const actor = await makeAdmin();
+      const app = await buildApp({ env, db });
+      try {
+        const cookie = await cookieFor(actor);
+        for (const query of ['limit=abc', 'offset=abc', 'limit=NaN', 'limit=-1', 'offset=-1']) {
+          const reply = await app.inject({
+            method: 'GET',
+            url: `/api/admin/players?${query}`,
+            headers: { cookie },
+          });
+          expect(reply.statusCode, query).toBe(400);
+          expect(reply.json<{ code: string }>().code, query).toBe('invalid_pagination');
+        }
+      } finally {
+        await app.close();
+      }
+    });
+
+    it('still accepts an absent or ordinary page size', async () => {
+      const actor = await makeAdmin();
+      const app = await buildApp({ env, db });
+      try {
+        const cookie = await cookieFor(actor);
+        for (const query of ['', 'limit=5', 'limit=5&offset=0', 'limit=99999']) {
+          const reply = await app.inject({
+            method: 'GET',
+            url: `/api/admin/players?${query}`,
+            headers: { cookie },
+          });
+          expect(reply.statusCode, query).toBe(200);
+        }
+      } finally {
+        await app.close();
+      }
+    });
+
+    it('treats a typed wildcard as text, so `%` does not match everyone', async () => {
+      // `containsPattern` escapes it. Without that, the ILIKE answered `%` with
+      // every row it was allowed to see.
+      const actor = await makeAdmin();
+      const app = await buildApp({ env, db });
+      try {
+        const reply = await app.inject({
+          method: 'GET',
+          url: '/api/admin/players?q=%25',
+          headers: { cookie: await cookieFor(actor) },
+        });
+
+        expect(reply.statusCode).toBe(200);
+        const body = reply.json<{ players: unknown[]; total: number; query: string }>();
+        expect(body.query).toBe('%');
+        // Fixtures are tagged with a uuid, so none contains a literal `%`.
+        // A live wildcard would return every one of them.
+        expect(body.total).toBe(0);
+        expect(body.players).toEqual([]);
+      } finally {
+        await app.close();
+      }
+    });
+
     it('lists players to an admin', async () => {
       const actor = await makeAdmin();
       const app = await buildApp({ env, db });
