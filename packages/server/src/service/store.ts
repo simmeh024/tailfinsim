@@ -16,6 +16,7 @@ import {
   type EconomyConfig,
 } from '@tailfin/shared';
 
+import { uniqueViolation } from '../db/constraint-violation';
 import { route, routeGroup, routeGroupMember, servicePackage, world } from '../db/schema';
 import { loadEconomyConfig } from '../economy/loader';
 
@@ -163,19 +164,17 @@ export type ServiceWriteFailure =
 export type ServiceWriteResult<T> =
   { ok: true; value: T } | { ok: false; failure: ServiceWriteFailure };
 
-/** Postgres' unique-violation code, walked out of drizzle's wrapper. */
+/**
+ * Postgres' unique-violation code, walked out of drizzle's wrapper.
+ *
+ * The walk itself moved to `db/constraint-violation.ts` when AUTH-02 needed the
+ * same thing and had to distinguish *which* constraint fired. Two copies would
+ * have been two chances to fix the wrong one. Behaviour here is unchanged: every
+ * table written below has exactly one unique index, so any 23505 is a duplicate
+ * name.
+ */
 function isUniqueViolation(error: unknown): boolean {
-  let cause: unknown = error;
-  for (let depth = 0; depth < 5 && cause !== null && cause !== undefined; depth += 1) {
-    if (
-      typeof cause === 'object' &&
-      'code' in cause &&
-      (cause as { code?: string }).code === '23505'
-    )
-      return true;
-    cause = (cause as { cause?: unknown }).cause;
-  }
-  return false;
+  return uniqueViolation(error) !== null;
 }
 
 export async function createPackage(
