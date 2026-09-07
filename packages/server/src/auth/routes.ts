@@ -55,6 +55,11 @@ function signInFailureCode(failure: IdentityFailure): AuthFailureCode {
     case 'registration_closed':
       return 'registration_closed';
     case 'identity_already_linked':
+      // AUTH-04: this identity is some other account's. Its own code, because
+      // "try again" is the wrong advice — the attempt will be refused
+      // identically, and what works is signing out or connecting it from the
+      // account page.
+      return 'identity_already_linked';
     case 'last_method':
     case 'not_found':
       // Unreachable from sign-in: `signInWithIdentity` neither links nor
@@ -349,7 +354,15 @@ export function registerAuthRoutes(
           displayName: profile.name,
           avatarUrl: profile.picture,
         },
-        { allowRegistration: env.allowRegistration },
+        {
+          allowRegistration: env.allowRegistration,
+          // Refusal-only, and it is what makes AUTH-04's rule hold here: a
+          // callback for somebody else's account must not silently replace this
+          // player's session. `fail` clears only the OAuth state cookie, never
+          // `tailfin_session`, so a refusal leaves them signed in as whoever
+          // they were — "do not sign out, do not switch, do not link".
+          currentPlayerId: request.player?.id ?? null,
+        },
       );
 
       if (!outcome.ok) {

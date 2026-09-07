@@ -139,10 +139,34 @@ export async function touchIdentity(db: Database, identityId: string): Promise<v
 export async function signInWithIdentity(
   db: Database,
   proven: ProvenIdentity,
-  options: { allowRegistration: boolean },
+  options: {
+    allowRegistration: boolean;
+    /**
+     * The player already holding a session, if there is one. **Refusal-only.**
+     *
+     * This is the one thing sign-in is told about the current session, and the
+     * invariant is that it can only ever *narrow* the outcome: it can turn a
+     * success into `identity_already_linked`, and there is no path on which it
+     * causes an identity to be attached to it. That is what keeps "sign-in
+     * never links" true even though a player id is now in scope — and
+     * `identity.test.ts` asserts the narrowing rather than trusting the comment.
+     *
+     * AUTH-04's rule: a callback must not silently move somebody between
+     * accounts. Signing in as B while signed in as A would discard A's session
+     * for an account the player may not have meant to reach — recoverable, but
+     * indistinguishable from a takeover from the inside.
+     */
+    currentPlayerId?: string | null;
+  },
 ): Promise<IdentityResult<{ playerId: string; created: boolean }>> {
   const existing = await resolveIdentity(db, proven.provider, proven.subject);
   if (existing) {
+    // Refuse before touching anything: a refused attempt must leave
+    // `last_used_at` alone, or the account page reports a sign-in that did not
+    // happen.
+    if (options.currentPlayerId != null && options.currentPlayerId !== existing.playerId) {
+      return { ok: false, failure: { code: 'identity_already_linked' } };
+    }
     await touchIdentity(db, existing.identityId);
     return { ok: true, value: { playerId: existing.playerId, created: false } };
   }
@@ -189,6 +213,14 @@ export async function signInWithIdentity(
     // is the correct outcome rather than an error to show them.
     const settled = await resolveIdentity(db, proven.provider, proven.subject);
     if (!settled) throw error;
+
+    // The same refusal as the fast path above. Without it, losing a race would
+    // be a way *past* AUTH-04's rule rather than a slower route to the same
+    // answer — narrow, but it is the kind of gap that only exists on the branch
+    // nobody re-reads.
+    if (options.currentPlayerId != null && options.currentPlayerId !== settled.playerId) {
+      return { ok: false, failure: { code: 'identity_already_linked' } };
+    }
 
     await touchIdentity(db, settled.identityId);
     return { ok: true, value: { playerId: settled.playerId, created: false } };

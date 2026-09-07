@@ -328,6 +328,15 @@ to `/?auth_error=registration_closed`. Note the consequence: **the first account
 environment cannot be created while it is false**, because nobody's Google subject is
 known until they have signed in once. Open it, sign in, close it again.
 
+**Signing in cannot switch accounts** (AUTH-04). A completed callback whose identity belongs
+to a _different_ player from the one already holding the session is refused with
+`/?auth_error=identity_already_linked`, and the existing session is left untouched — a
+callback must not move somebody between accounts, because from the inside that is
+indistinguishable from a takeover. The operational consequence is worth knowing before it
+surprises you on dev: if you hold two accounts, re-running sign-in will **not** move you to
+the other one. Sign out first. Connecting a second provider to the account you already have
+is a different action and belongs on the account page (AUTH-09).
+
 Secrets live in the instance's environment or a `.env` file readable only by the service
 user — **never in the repository**. `.env` is gitignored; commit `.env.example` instead.
 
