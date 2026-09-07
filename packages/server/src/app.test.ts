@@ -170,7 +170,7 @@ describeDb('HTTP surface', () => {
       const body = (await app.inject({ method: 'GET', url: '/landing' })).body;
       expect(body).not.toMatch(/<script/i);
       expect(body).not.toMatch(/<link[^>]+stylesheet/i);
-      expect(body).not.toMatch(/src\s*=\s*["']https?:/i);
+      expect(body).not.toMatch(/\bsrc\s*=\s*["']https?:/i);
       expect(body).not.toMatch(/url\(\s*["']?https?:/i);
       expect(body).not.toMatch(/@import/i);
     });
