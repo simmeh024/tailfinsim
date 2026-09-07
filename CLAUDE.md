@@ -654,6 +654,31 @@ The **chart** reads one grouped query however many routes there are; the
 A's share model and three hundred of those on one page load would make §14.4 the
 slowest screen in the game. `docs/statistics.md` has the tree and the table.
 
+**M8-12 finished §14.3's seven dashboards, and its guard is the interesting
+part.** `/operations` carries the other five — traffic, punctuality, fleet, crew,
+ground — from one `GET /api/statistics/operations`, and like everything else in
+§14 it reads null and zero on a node with no worker.
+
+**Delay attribution keeps an `unattributed` row on purpose.** A flight can arrive
+late with no `flight.disruption_cause` behind it — a slow turn, a long taxi — and
+dropping those minutes would show a player _less_ delay than they suffered while
+the causes silently stopped adding up to the headline beside them. A database
+test asserts the sum matches; the page prints the difference if it ever does not.
+
+**"One consistent chart language" is enforced structurally, not intended.**
+`operations-ui.test.tsx` reads the page's own source and fails on any `className`
+that `dashboard.css`, `shell.css` and `ui.css` do not declare, and asserts the
+directory holds no stylesheet of its own. A render assertion cannot catch this: a
+page with its own `.ops-bar` looks fine in jsdom and is a second vocabulary in
+the product. The delay chart therefore reuses §14.4's row-and-bar markup.
+
+**And a smaller one worth copying.** `num()` on that page pins `en-US` rather
+than the environment locale, because `currency/display.ts` already does — a page
+where the passenger count groups with dots and the money beside it with commas is
+the inconsistency the chart-language rule is about. The first draft used the
+default locale and the tests failed in a non-US environment, which is how it was
+found. Display _currency_ is the player's choice (M8-02); digit grouping is not.
+
 **And one thing not to "fix".** `airframe.maintenance_state` is nullable, and a null means
 _every tier was last completed at the hours this airframe has now_ — not _at hour zero_. It
 looks like a missing default and it is load-bearing: the other reading would make every

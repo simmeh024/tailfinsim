@@ -26,6 +26,7 @@ import { ExecutiveSuitePage } from './hq/ExecutiveSuitePage';
 import { HeadquartersPage } from './hq/HeadquartersPage';
 import { LiveryBuilderPage } from './livery/LiveryBuilder';
 import { NetworkPage } from './network/NetworkPage';
+import { OperationsPage } from './operations/OperationsPage';
 import { BoardPage } from './routes/Placeholder';
 import { ServicePage } from './service/ServicePage';
 import { SettingsPage } from './settings/SettingsPage';
@@ -129,6 +130,7 @@ export function App(): ReactNode {
               <Route path="/fleet/cabin" element={<CabinConfiguratorPage />} />
               <Route element={<AppShell />}>
                 <Route path="dashboard" element={<ExecutivePage />} />
+                <Route path="operations" element={<OperationsPage />} />
                 <Route path="world" element={<WorldPage />} />
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="airline" element={<AirlinePage />} />

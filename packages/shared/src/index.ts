@@ -59,6 +59,7 @@ export * from './ground';
 export * from './service';
 export * from './credit';
 export * from './dashboard';
+export * from './operations';
 export * from './statistics';
 export * from './fuel';
 export * from './office';

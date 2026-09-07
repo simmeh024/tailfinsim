@@ -53,6 +53,7 @@ import { LiveryDocument } from './livery';
 import { MaintenanceResponse, BookCheckResponse } from './maintenance';
 import { AdminNpcResponse } from './npc';
 import { OfficeStateResponse } from './office';
+import { OperationsDashboardResponse } from './operations';
 import {
   RouteGroupsResponse,
   RouteGroupSummary,
@@ -186,6 +187,7 @@ export const executiveFloorStateJsonSchema = z.toJSONSchema(ExecutiveFloorState)
 export const financePnlResponseJsonSchema = z.toJSONSchema(FinancePnlResponse);
 export const cashRunwayResponseJsonSchema = z.toJSONSchema(CashRunwayResponse);
 export const executiveDashboardResponseJsonSchema = z.toJSONSchema(ExecutiveDashboardResponse);
+export const operationsDashboardResponseJsonSchema = z.toJSONSchema(OperationsDashboardResponse);
 export const statisticsResponseJsonSchema = z.toJSONSchema(StatisticsResponse);
 export const metricBreakdownResponseJsonSchema = z.toJSONSchema(MetricBreakdownResponse);
 export const routeFlightsResponseJsonSchema = z.toJSONSchema(RouteFlightsResponse);

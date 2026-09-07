@@ -2,6 +2,7 @@ import {
   MetricDimension,
   MetricId,
   executiveDashboardResponseJsonSchema,
+  operationsDashboardResponseJsonSchema,
   metricBreakdownResponseJsonSchema,
   statisticsResponseJsonSchema,
 } from '@tailfin/shared';
@@ -10,6 +11,7 @@ import { resolvedAirlineOf } from '../airline/context';
 
 import { readExecutiveDashboard } from './executive';
 import { readMetricBreakdown, readStatistics } from './metrics';
+import { readOperationsDashboard } from './operations';
 
 import type { DatabaseHandle } from '../db/client';
 import type { FastifyInstance } from 'fastify';
@@ -63,6 +65,23 @@ export function registerStatisticsRoutes(
     },
     async (request, reply) =>
       reply.code(200).send(await readExecutiveDashboard(db.db, resolvedAirlineOf(request))),
+  );
+
+  /**
+   * §14.3's five operational dashboards (M8-12).
+   *
+   * One response rather than five endpoints: they share one window and one read
+   * of `flight_result`, and five separate reads would let five panels disagree
+   * about which flights were in the period.
+   */
+  app.get(
+    '/api/statistics/operations',
+    {
+      onRequest: app.requireAirline,
+      schema: { response: { 200: operationsDashboardResponseJsonSchema } },
+    },
+    async (request, reply) =>
+      reply.code(200).send(await readOperationsDashboard(db.db, resolvedAirlineOf(request))),
   );
 
   app.get<{ Params: { metricId: string }; Querystring: { by?: string } }>(
