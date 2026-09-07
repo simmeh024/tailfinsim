@@ -1,5 +1,14 @@
 import { and, eq, gte, isNull, sql } from 'drizzle-orm';
 
+import type {
+  BaseMoraleRow,
+  ContractExpiry,
+  CrewRankHeadcount,
+  DelayByCause,
+  DelayCause,
+  FleetAgeBand,
+  OperationsDashboardResponse,
+} from '@tailfin/shared';
 import {
   addFlight,
   emptyTraffic,
@@ -24,15 +33,6 @@ import { worldGameNow } from '../world/game-now';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
 import type { Database } from '../db/client';
-import type {
-  BaseMoraleRow,
-  ContractExpiry,
-  CrewRankHeadcount,
-  DelayByCause,
-  DelayCause,
-  FleetAgeBand,
-  OperationsDashboardResponse,
-} from '@tailfin/shared';
 
 /**
  * §14.3's five operational dashboards, assembled once (M8-12).

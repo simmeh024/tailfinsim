@@ -10,8 +10,8 @@ import {
 import { resolvedAirlineOf } from '../airline/context';
 
 import { readExecutiveDashboard } from './executive';
-import { readOperationsDashboard } from './operations';
 import { readMetricBreakdown, readStatistics } from './metrics';
+import { readOperationsDashboard } from './operations';
 
 import type { DatabaseHandle } from '../db/client';
 import type { FastifyInstance } from 'fastify';

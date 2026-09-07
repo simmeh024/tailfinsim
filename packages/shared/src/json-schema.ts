@@ -45,7 +45,6 @@ import { AutomationStateResponse } from './automation';
 import { CreditStandingResponse } from './credit';
 import { CrewResponse } from './crew';
 import { ExecutiveDashboardResponse } from './dashboard';
-import { OperationsDashboardResponse } from './operations';
 import { ExecutiveFloorState } from './executive';
 import { CashRunwayResponse, FinancePnlResponse } from './finance';
 import { AirframeDetailResponse, FleetAirframesResponse } from './fleet';
@@ -54,6 +53,7 @@ import { LiveryDocument } from './livery';
 import { MaintenanceResponse, BookCheckResponse } from './maintenance';
 import { AdminNpcResponse } from './npc';
 import { OfficeStateResponse } from './office';
+import { OperationsDashboardResponse } from './operations';
 import {
   RouteGroupsResponse,
   RouteGroupSummary,

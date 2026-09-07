@@ -74,13 +74,15 @@ export const NAV_ITEMS: readonly NavItem[] = [
    * one; this is the thing you look at on day thirty.
    */
   { to: '/dashboard', label: 'Dashboard', glyph: '▦' },
-  { to: '/world', label: 'World', glyph: '◎' },
   /*
-   * §14.3's five operational dashboards. Next to the executive one because a
-   * player asking "why was yesterday bad?" starts at the headline and goes
-   * straight here — not through the world map.
+   * §14.3's five operational dashboards, next to the executive one rather than
+   * beside Finance. A player asking "why was yesterday bad?" starts at the
+   * headline figure and goes straight to the operation behind it; routing them
+   * past the world map first would put a decoration between a question and its
+   * answer.
    */
   { to: '/operations', label: 'Operations', glyph: '◈' },
+  { to: '/world', label: 'World', glyph: '◎' },
   { to: '/fleet', label: 'Fleet', glyph: '✈' },
   { to: '/network', label: 'Network', glyph: '⤳' },
   { to: '/finance', label: 'Finance', glyph: '§' },

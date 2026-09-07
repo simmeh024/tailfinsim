@@ -165,8 +165,11 @@ describe('layout', () => {
     // Eight from App. H.4 and M5-04, plus M8-05's Service configurator and
     // M8-10's Dashboard — which leads the rail, because §14 calls the dashboard
     // the game's main interface after the first week.
-    expect(NAV_ITEMS).toHaveLength(10);
+    expect(NAV_ITEMS).toHaveLength(11);
     expect(NAV_ITEMS[0]?.to).toBe('/dashboard');
+    // M8-12's operational dashboards sit beside the executive one: a player
+    // asking "why was yesterday bad?" starts at the headline and goes there.
+    expect(NAV_ITEMS[1]?.to).toBe('/operations');
     for (const item of NAV_ITEMS) {
       /*
        * An **exact** name, not a substring. The loose `new RegExp(label)` this

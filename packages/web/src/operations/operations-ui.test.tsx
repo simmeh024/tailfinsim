@@ -6,9 +6,9 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { App } from '../App';
-
 import type { MeResponse, OperationsDashboardResponse } from '@tailfin/shared';
+
+import { App } from '../App';
 
 /**
  * §14.3's operational dashboards — M8-12's three acceptance criteria.

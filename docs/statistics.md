@@ -2,8 +2,8 @@
 
 Every figure §14 exposes, what it means, where it goes when a player asks
 _why_, the two dashboards that show it, and the one chart the design doc says
-players learn the game through. Design doc **§14.1–§14.4**, **§14.6**; built by
-**M8-09**, **M8-10** and **M8-11**.
+players learn the game through, and the five operational dashboards beside it.
+Design doc **§14.1–§14.4**, **§14.6**; built by **M8-09** through **M8-12**.
 
 ---
 
@@ -329,6 +329,64 @@ a diagnosis, with the competitor cause simply unavailable.
 
 ---
 
+## The operational dashboards (M8-12)
+
+§14.3's other five — traffic, punctuality, fleet, crew and ground — at
+`/operations`, from one `GET /api/statistics/operations`. Five sections rather
+than five pages: they share one window and one read of `flight_result`, and five
+separate reads would let five panels disagree about which flights were in the
+period.
+
+### Delay is attributed, and the unattributed part is a row
+
+M2-08's taxonomy is `flight.disruption_cause`, and it was a database enum only
+until M8-12 named it on the wire. A flight can arrive late with **no** disruption
+row behind it — a slow turn, a long taxi, weather en route that never became a
+recorded disruption.
+
+Those minutes get an `unattributed` row. Dropping them would show a player _less_
+delay than they actually suffered, and the sum of the causes would silently
+disagree with the total beside it — the one thing an attribution must never do. A
+database test asserts the causes add up to the headline, and the page says out
+loud that the row is not one of M2-08's causes so it cannot be mistaken for one.
+If the two ever do disagree, the page prints the difference rather than hiding it.
+
+### Spill is a count first
+
+> Spill is surfaced as 'passengers turned away', an actionable number.
+
+A rate says you are losing 3.7% of something. A count says you turned away 1,240
+people, which is a decision. Both are shown and the count leads.
+
+### Cancellations come from the schedule, not from what settled
+
+A cancelled flight never settles, so it has no `flight_result` row at all.
+Counting only what settled would report a perfect cancellation rate on an airline
+that cancelled everything.
+
+### D0 and D15 are different questions
+
+D0 is arrivals on time or early; D15 is the industry's fifteen-minute headline. A
+flight nine minutes late counts for one and not the other, and showing only D15
+would hide a whole airline's worth of small slippage.
+
+### One chart language, enforced (AC3)
+
+> Each dashboard shares one consistent chart language.
+
+Every class the operations page writes must already be declared in
+`dashboard.css`, `shell.css` or `ui.css`. `operations-ui.test.tsx` reads the
+page's own source and fails on any class none of them declares, and asserts the
+directory contains no stylesheet of its own.
+
+A render assertion cannot see this: a page with its own `.ops-bar` looks fine in
+jsdom and is a second visual vocabulary in the product. The delay chart therefore
+reuses §14.4's row-and-bar markup rather than inventing a second bar — the one
+difference being that its bars grow one way, because delay has no breakeven line
+to sit either side of.
+
+---
+
 ## Where each thing lives
 
 |                                           | Where                                                 |
@@ -345,6 +403,8 @@ a diagnosis, with the competitor cause simply unavailable.
 | §14.4's decision tree and the peer median | `packages/sim/src/statistics/route-diagnosis.ts`      |
 | The diagnosis, fed real trading           | `packages/server/src/network/route-diagnosis.ts`      |
 | The ranked chart and its drill-down panel | `packages/web/src/finance/RouteProfitChart.tsx`       |
+| §14.3's five operational sections         | `packages/server/src/statistics/operations.ts`        |
+| The operations page and its delay chart   | `packages/web/src/operations/`                        |
 
 ---
 
@@ -406,9 +466,16 @@ empty rather than as having positioned an aeroplane.
 - **A world median benchmark** for the diagnosis levers (§14.6). The comparison
   is the airline's own median today, and the panel says so rather than letting a
   player assume otherwise.
-- **The other five dashboards** in §14.3 — traffic, fleet, crew, ground,
-  reputation — which are M8-12.
 - **§14.5's alerts** and §14.6's CSV export and world-median benchmarks.
+- **A booking curve against departure** (§14.3's traffic list). Bookings are not
+  modelled over time, so there is no curve to draw.
+- **Vendor scorecards and turnaround against contract** (§14.3's ground list).
+  Nothing measures a turnaround, so a score would be invented.
+- **Satisfaction by class and route, and complaint drivers** (§14.3's reputation
+  list). There is no per-cabin survey and no complaint model.
+- **An airline-level product score.** M8-04 assembles one per cabin per package;
+  averaging those into a single figure would be a number nothing computes, so the
+  field is present and null.
 - **Forecast inputs beyond the airline's own history**, as above.
 - **Fleet, crew, ground and reputation metrics.** §14.3 lists seven dashboards'
   worth; M8-09 covers the traffic, commercial and financial figures that
