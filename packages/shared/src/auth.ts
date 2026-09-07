@@ -33,15 +33,6 @@ export const AuthenticatedPlayer = z.object({
 export type AuthenticatedPlayer = z.infer<typeof AuthenticatedPlayer>;
 
 /**
- * `GET /api/me`.
- *
- * Answers 200 with `{ player: null }` when nobody is signed in, rather than 401.
- * "Who am I?" is a question an anonymous client is entitled to ask and get a
- * straight answer to; reserving 401 for *protected* routes keeps the status code
- * meaningful. A client that treats every 401 as "session expired, reload" would
- * otherwise loop on the landing page.
- */
-/**
  * A way in that this instance actually has credentials for (AUTH-08).
  *
  * Deliberately not the whole `auth_provider` enum: that enum says what the
@@ -51,6 +42,15 @@ export type AuthenticatedPlayer = z.infer<typeof AuthenticatedPlayer>;
 export const SignInProvider = z.enum(['google', 'discord']);
 export type SignInProvider = z.infer<typeof SignInProvider>;
 
+/**
+ * `GET /api/me`.
+ *
+ * Answers 200 with `{ player: null }` when nobody is signed in, rather than 401.
+ * "Who am I?" is a question an anonymous client is entitled to ask and get a
+ * straight answer to; reserving 401 for *protected* routes keeps the status code
+ * meaningful. A client that treats every 401 as "session expired, reload" would
+ * otherwise loop on the landing page.
+ */
 export const MeResponse = z.object({
   player: AuthenticatedPlayer.nullable(),
   /** Whether this instance would let a new account be created (`ALLOW_REGISTRATION`). */
@@ -131,5 +131,59 @@ export const AuthFailureCode = z.enum([
    * that reasoning was protecting.
    */
   'already_signed_in',
+  /**
+   * A *link* callback came back with no session behind it (AUTH-09).
+   *
+   * Connecting a provider is an act by an account, so the session is not
+   * incidental to it — it is the whole authority for the operation. If it went
+   * away between the redirect out and the callback back, the honest answer is
+   * to refuse and say so. Quietly falling back to signing in would hand the
+   * player a *different* account than the one they were connecting to, which is
+   * the shape of the mistake AUTH-04 exists to prevent.
+   */
+  'link_requires_session',
 ]);
 export type AuthFailureCode = z.infer<typeof AuthFailureCode>;
+
+/**
+ * One of a player's ways into their own account (AUTH-09).
+ *
+ * Shown only to the owner. `email` is here because it is what tells two
+ * identities of the same provider apart on the account page — it is still never
+ * how an identity is *found* (ADR-0004), and `identity-email.test.ts` holds that
+ * line in the server's source rather than in a comment.
+ */
+export const SignInMethod = z.object({
+  id: Uuid,
+  provider: SignInProvider,
+  email: z.string().nullable(),
+  linkedAt: Timestamp,
+  /**
+   * When it last completed an authentication, or **null for never**.
+   *
+   * Null is not "at the epoch" and not "unknown": an identity linked and not yet
+   * signed in with has honestly never been used, and the account page should be
+   * able to say exactly that.
+   */
+  lastUsedAt: Timestamp.nullable(),
+});
+export type SignInMethod = z.infer<typeof SignInMethod>;
+
+export const SignInMethodsResponse = z.object({
+  methods: z.array(SignInMethod),
+  /**
+   * Whether removing one would leave the account with no way in.
+   *
+   * Server-decided rather than inferred from `methods.length`, so the client
+   * cannot disagree with the rule the server will actually enforce — and so the
+   * definition of a *usable* method (AUTH-03) can change in one place.
+   */
+  canDisconnect: z.boolean(),
+});
+export type SignInMethodsResponse = z.infer<typeof SignInMethodsResponse>;
+
+export const DisconnectMethodResponse = z.object({
+  disconnected: z.literal(true),
+  provider: SignInProvider,
+});
+export type DisconnectMethodResponse = z.infer<typeof DisconnectMethodResponse>;

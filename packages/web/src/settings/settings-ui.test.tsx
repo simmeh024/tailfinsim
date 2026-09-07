@@ -69,6 +69,11 @@ beforeEach(() => {
         putCalls.push(JSON.parse((init?.body as string | undefined) ?? '{}'));
         return Promise.resolve(new Response(JSON.stringify({ currency: 'EUR' }), { status: 200 }));
       }
+      if (url === '/api/me/sign-in-methods') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ methods: [], canDisconnect: false }), { status: 200 }),
+        );
+      }
       // /api/me and anything else: a signed-in session.
       return Promise.resolve(new Response(JSON.stringify(SIGNED_IN), { status: 200 }));
     }),

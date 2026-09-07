@@ -31,6 +31,12 @@ const FAILURE_MESSAGES: Record<AuthFailureCode, string> = {
     'Sign out first, or connect it from your account settings.',
   // Says what did *not* happen, because the fear is that it did: the session is
   // untouched and no second account was created.
+  // The link flow's own refusal. Says what to do rather than what broke: the
+  // session went away mid-flow, so the connect has to start again from a page
+  // they are signed in on.
+  link_requires_session:
+    'Your session ended before that account could be connected. ' +
+    'Nothing was changed — sign in and try connecting it again.',
   already_signed_in:
     'You are already signed in, and that account is not connected to this one. ' +
     'You are still signed in as before — sign out first to use it as a separate ' +

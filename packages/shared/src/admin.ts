@@ -48,6 +48,20 @@ export const AdminAction = z.enum([
   'economy.version_created',
   'world.economy_pinned',
   'events.requeued',
+  /**
+   * A player connected or disconnected one of their own sign-in methods
+   * (AUTH-09).
+   *
+   * In this log rather than one of its own, following `sessions.revoked`, which
+   * a player already writes here through `POST /api/auth/logout-all`. The table
+   * is named for the console but what it actually guarantees — append-only,
+   * enforced by trigger, written in the same transaction as the change — is
+   * exactly what a record of "how can this account be entered" needs. AUTH-06
+   * may reorganise where these live; it should not have to re-earn the
+   * guarantee.
+   */
+  'identity.linked',
+  'identity.unlinked',
 ]);
 export type AdminAction = z.infer<typeof AdminAction>;
 

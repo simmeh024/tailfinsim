@@ -116,6 +116,21 @@ export const RESOURCE_ID_SURFACES = [
     semantics: 'owner-scoped-resource',
   },
   {
+    /**
+     * The player's own sign-in method (AUTH-09).
+     *
+     * Owner-scoped: `unlinkIdentity` resolves it inside a query already narrowed
+     * to the session's player, so another player's identity id and one that
+     * never existed produce the identical 404 (ADR-0020). The refusal path also
+     * has to leave the target untouched, which the HTTP tests assert by counting
+     * the other player's methods afterwards.
+     */
+    endpoint: 'DELETE /api/me/sign-in-methods/:identityId',
+    position: 'path',
+    field: 'identityId',
+    semantics: 'owner-scoped-resource',
+  },
+  {
     endpoint: 'DELETE /api/ground/self-handling/:id',
     position: 'path',
     field: 'id',

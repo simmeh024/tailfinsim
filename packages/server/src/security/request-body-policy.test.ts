@@ -305,6 +305,7 @@ const COVERED_WRITE_ENDPOINTS = [
   'DELETE /api/ground/contracts/:id',
   'POST /api/ground/:icao/self-handling',
   'DELETE /api/ground/self-handling/:id',
+  'DELETE /api/me/sign-in-methods/:identityId',
   // Airport slots (M7-05): the band is in the path, so neither write reads a body.
   'POST /api/airports/:icao/slots/:band',
   'DELETE /api/airports/:icao/slots/:band',

@@ -152,3 +152,79 @@
   color: var(--text-muted);
   font-size: var(--text-xs);
 }
+
+/* Sign-in methods (AUTH-09) --------------------------------------------- */
+
+.settings__methods {
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.settings__method {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.settings__method-name {
+  font-family: var(--font-ui);
+  color: var(--text-primary);
+}
+
+/* Takes the slack so the action stays hard right at any width. */
+.settings__method-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings__method-action {
+  flex: 0 0 auto;
+  padding: var(--space-1) var(--space-3);
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.settings__method-action:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+/* Disabled means "this is your only way in", which the title attribute says. */
+.settings__method-action:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.settings__connect {
+  display: inline-block;
+  padding: var(--space-2) var(--space-4);
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  text-decoration: none;
+  margin-right: var(--space-2);
+}
+
+.settings__connect:hover {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--accent);
+}
