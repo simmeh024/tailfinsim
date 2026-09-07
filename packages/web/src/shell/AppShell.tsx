@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router';
+import { Link, NavLink, Outlet, useLocation } from 'react-router';
 
 import type {
+  AlertsResponse,
   CashRunwayResponse,
   ExecutiveFloorState,
   OfficeSeatId,
@@ -10,6 +11,7 @@ import type {
 } from '@tailfin/shared';
 
 import { fetchOwnAirline, formatMinorUnits } from '../airline/api';
+import { fetchAlerts } from '../alerts/alerts-api';
 import { AccountBadge } from '../auth/AccountBadge';
 import { fetchCashRunway } from '../finance/runway-api';
 import { RunwayIndicator } from '../finance/RunwayIndicator';
@@ -82,6 +84,13 @@ export const NAV_ITEMS: readonly NavItem[] = [
    * answer.
    */
   { to: '/operations', label: 'Operations', glyph: '◈' },
+  /*
+   * §14.5's alerts and §3.2's offline digest (M8-13), next to the dashboards
+   * they are delivered on. It is the one destination a player goes to in order
+   * to *leave* it: every row links to the screen that can act on it, so this
+   * page is a junction rather than a place to work.
+   */
+  { to: '/alerts', label: 'Alerts', glyph: '⚑' },
   { to: '/world', label: 'World', glyph: '◎' },
   { to: '/fleet', label: 'Fleet', glyph: '✈' },
   { to: '/network', label: 'Network', glyph: '⤳' },
@@ -304,9 +313,11 @@ function ContextPanel({
 function StatusStrip({
   ownAirline,
   runway,
+  alerts,
 }: {
   ownAirline: OwnAirlineResponse | null;
   runway: CashRunwayResponse | null;
+  alerts: AlertsResponse | null;
 }): ReactNode {
   const runwayItem = <RunwayIndicator runway={runway} />;
   return (
@@ -325,13 +336,50 @@ function StatusStrip({
       </div>
       <div className="strip__item">
         <span className="strip__label">Alerts</span>
-        <span className="strip__value status status--ontime">None</span>
+        <Link className="strip__link" to="/alerts">
+          <AlertCount alerts={alerts} />
+        </Link>
       </div>
 
       {/* Pushed to the far right of the bottom strip — the corner of the page. */}
       <div className="strip__spacer" />
       <BuildBadge />
     </div>
+  );
+}
+
+/**
+ * The strip's alert count (M8-13), and the three states it distinguishes.
+ *
+ * `critical` outranks everything: §2's check-in session is *"one glance at cash,
+ * alerts, and aircraft airborne"*, and a glance has to be able to tell an
+ * airline that is fine from one that is losing money. The tone carries a glyph
+ * as well as a hue, like every other status in the strip.
+ *
+ * **The em dash is the third state, and it is the important one.** An empty list
+ * means *nothing is wrong*; a null response — or one whose `evaluatedAt` is null
+ * — means *the rules have never run*, which is what a node with no worker looks
+ * like permanently. Rendering that as "None" would congratulate an airline on a
+ * clean bill of health nothing had checked.
+ */
+function AlertCount({ alerts }: { alerts: AlertsResponse | null }): ReactNode {
+  if (alerts?.evaluatedAt == null) {
+    return (
+      <span className="strip__value status" title="No alert sweep has run for this airline yet">
+        —
+      </span>
+    );
+  }
+
+  const open = alerts.alerts;
+  if (open.length === 0) return <span className="strip__value status status--ontime">None</span>;
+
+  const critical = open.filter((entry) => entry.severity === 'critical').length;
+  const tone = critical > 0 ? 'status--cancelled' : 'status--delayed';
+  return (
+    <span className={`strip__value status ${tone}`}>
+      {critical > 0 ? `${String(critical)} critical` : `${String(open.length)} open`}
+    </span>
   );
 }
 
@@ -343,6 +391,16 @@ function StatusStrip({
  * times"* honest on a page left open.
  */
 const RUNWAY_POLL_MS = 60_000;
+
+/**
+ * How often the strip re-reads the alert count, in real milliseconds.
+ *
+ * The same minute as the runway. The worker evaluates the rules at most once per
+ * game hour, so a faster poll would ask a question whose answer cannot have
+ * changed — and this is the figure §2's check-in session glances at, which makes
+ * *soon* worth more than *instant*.
+ */
+const ALERT_POLL_MS = 60_000;
 
 export function AppShell(): ReactNode {
   // The title, and focus on navigation. See `route-identity.ts`.
@@ -356,6 +414,13 @@ export function AppShell(): ReactNode {
    * endpoint answers 409 then, and an unknown runway is the honest render.
    */
   const [runway, setRunway] = useState<CashRunwayResponse | null>(null);
+  /*
+   * §14.5's alerts (M8-13), owned here for the same reason the runway is: the
+   * strip is on every page, and §2's check-in session is one glance at it. Null
+   * until the first read and null again for a player with no airline — the
+   * endpoint answers 409 then, and an unknown count is the honest render.
+   */
+  const [alerts, setAlerts] = useState<AlertsResponse | null>(null);
   const [ownAirlineLoading, setOwnAirlineLoading] = useState(true);
   const [ownAirlineError, setOwnAirlineError] = useState(false);
   // The office state behind the always-on context panel. `fetchOffice` answers
@@ -389,6 +454,10 @@ export function AppShell(): ReactNode {
 
   const loadRunway = useCallback(async () => {
     setRunway(await fetchCashRunway());
+  }, []);
+
+  const loadAlerts = useCallback(async () => {
+    setAlerts(await fetchAlerts());
   }, []);
 
   const loadOffice = useCallback(async () => {
@@ -458,6 +527,23 @@ export function AppShell(): ReactNode {
     return () => clearInterval(timer);
   }, [hasAirline, loadRunway]);
 
+  /*
+   * The alert count on the same cadence and the same gate.
+   *
+   * One timer per figure rather than one shared one, because the two answer
+   * different questions and a shared interval would couple them: a runway that
+   * needed a faster poll would start re-reading the alert list with it. Both
+   * clients are incapable of throwing, which is what makes a polling timer safe
+   * to leave running on every page — an unhandled rejection here would take the
+   * whole app down and then do it again a minute later.
+   */
+  useEffect(() => {
+    if (!hasAirline) return;
+    void loadAlerts();
+    const timer = setInterval(() => void loadAlerts(), ALERT_POLL_MS);
+    return () => clearInterval(timer);
+  }, [hasAirline, loadAlerts]);
+
   const outletContext: OwnAirlineShellContext = {
     ownAirline,
     ownAirlineLoading,
@@ -504,7 +590,7 @@ export function AppShell(): ReactNode {
           selectedExecOffice={selectedExecOffice}
           onSelectExecOffice={setSelectedExecOffice}
         />
-        <StatusStrip ownAirline={ownAirline} runway={runway} />
+        <StatusStrip ownAirline={ownAirline} runway={runway} alerts={alerts} />
       </div>
     </ContextSelectionProvider>
   );

@@ -162,14 +162,17 @@ describe('layout', () => {
   it('has a rail link for each destination', async () => {
     await renderAt('/world');
     const rail = screen.getByRole('navigation', { name: 'Main' });
-    // Eight from App. H.4 and M5-04, plus M8-05's Service configurator and
+    // Eight from App. H.4 and M5-04, plus M8-05's Service configurator,
     // M8-10's Dashboard — which leads the rail, because §14 calls the dashboard
-    // the game's main interface after the first week.
-    expect(NAV_ITEMS).toHaveLength(11);
+    // the game's main interface after the first week — and M8-13's Alerts.
+    expect(NAV_ITEMS).toHaveLength(12);
     expect(NAV_ITEMS[0]?.to).toBe('/dashboard');
     // M8-12's operational dashboards sit beside the executive one: a player
     // asking "why was yesterday bad?" starts at the headline and goes there.
     expect(NAV_ITEMS[1]?.to).toBe('/operations');
+    // M8-13's alerts sit next to both, because every row links away to the
+    // screen that can act on it — the page is a junction, not a workplace.
+    expect(NAV_ITEMS[2]?.to).toBe('/alerts');
     for (const item of NAV_ITEMS) {
       /*
        * An **exact** name, not a substring. The loose `new RegExp(label)` this

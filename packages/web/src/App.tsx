@@ -12,6 +12,7 @@ import { SystemHealthPage } from './admin/SystemHealthPage';
 import { WorldsPage } from './admin/WorldsPage';
 import { AirlinePage } from './airline/AirlinePage';
 import { LogoStudioPage } from './airline/LogoStudioPage';
+import { AlertsPage } from './alerts/AlertsPage';
 import { RequireSession } from './auth/RequireSession';
 import { SessionProvider } from './auth/SessionProvider';
 import { CrewPage } from './crew/CrewPage';
@@ -131,6 +132,8 @@ export function App(): ReactNode {
               <Route element={<AppShell />}>
                 <Route path="dashboard" element={<ExecutivePage />} />
                 <Route path="operations" element={<OperationsPage />} />
+                {/* §14.5’s alerts and §3.2’s offline digest (M8-13). */}
+                <Route path="alerts" element={<AlertsPage />} />
                 <Route path="world" element={<WorldPage />} />
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="airline" element={<AirlinePage />} />

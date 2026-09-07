@@ -268,4 +268,19 @@ export const RESOURCE_ID_SURFACES = [
     field: 'requestId',
     semantics: 'client-generated-token',
   },
+  /*
+   * M8-13. `throughAt` names no resource — it is a game-time instant selecting
+   * how much of the digest the player is acknowledging. Registered anyway,
+   * because the thing this matrix exists to make reviewable is a **client value
+   * that decides scope**, and this one decides which period's events the server
+   * will never show again. `markDigestRead` clamps it to the world's own game
+   * time and only ever moves the watermark forward, so a forged or stale value
+   * can neither skip an unseen period nor replay a dismissed one.
+   */
+  {
+    endpoint: 'POST /api/digest/read',
+    position: 'body',
+    field: 'throughAt',
+    semantics: 'computed-selector',
+  },
 ] as const satisfies readonly ResourceIdSurface[];

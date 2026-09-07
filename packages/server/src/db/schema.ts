@@ -4086,3 +4086,163 @@ export const creditStanding = pgTable(
 );
 
 export type CreditStandingRow = typeof creditStanding.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// alert / alert_state — §14.5's alerts and §3.2's offline digest (M8-13)
+// ---------------------------------------------------------------------------
+
+/**
+ * One raised alert (M8-13, §14.5).
+ *
+ * ## Why alerts are rows rather than a computed list
+ *
+ * The tempting implementation recomputes the eight conditions on every read, and
+ * it cannot satisfy either criterion that matters. *"Alerts are deduplicated,
+ * not repeated every tick"* needs to know whether this alert has already been
+ * raised, which is a memory. *"The digest covers the exact period since last
+ * seen"* needs to know **when** each one was raised, which is the same memory
+ * with a timestamp on it. So the worker raises rows and every read projects
+ * them.
+ *
+ * ## The deduplication is the database's, not the sweep's
+ *
+ * The partial unique index is the same pattern `operations_task` uses and for
+ * the same reason: one open alert per subject, idempotent by constraint rather
+ * than by application logic that has to be right on every restart and through
+ * every handover between two racing workers.
+ *
+ * It is keyed on `subject_key` rather than on a nullable `subject_id`, and that
+ * is deliberate. A unique index treats NULLs as distinct, so an airline-wide
+ * alert — a cash runway, a coverage ratio — would stack a new row every tick
+ * behind an index that looks like it prevents exactly that. `subject_key` is
+ * `NOT NULL` for every rule, so there is no null case to get wrong.
+ *
+ * ## `raised_at` and `resolved_at` are game time
+ *
+ * Everything an alert is about is measured on the world's clock (ADR-0026), and
+ * a digest window that mixed the two calendars would select a set that depended
+ * on which world speed the player left running. `created_at` stays real, like
+ * everywhere else — *when did this row appear* is a different question from
+ * *when did this happen in the world*.
+ */
+export const alert = pgTable(
+  'alert',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+
+    /** A `@tailfin/shared` `AlertKind`. */
+    kind: text('kind').notNull(),
+    /** A `@tailfin/shared` `AlertSeverity`. */
+    severity: text('severity').notNull(),
+
+    /** A `@tailfin/shared` `AlertSubjectType` — `airline` for a whole-airline alert. */
+    subjectType: text('subject_type').notNull(),
+    /**
+     * What the alert links to: a route, airframe, base or contract id, an ICAO,
+     * or the airline's own id. Text rather than `uuid` because a station is
+     * addressed by its ICAO code and a column that only sometimes held a uuid
+     * would make every reader guess which case it had.
+     */
+    subjectId: text('subject_id').notNull(),
+    /** What to call the subject on screen — a route label, a registration, an ICAO. */
+    subjectLabel: text('subject_label').notNull(),
+
+    /**
+     * The deduplication identity, usually equal to `subject_id`.
+     *
+     * Two rules need it finer. A crew shortfall is per rank on a family and the
+     * airline is the only thing to link to; a rival entry is per rival and the
+     * route is the only thing to link to. Folding either into `subject_id` would
+     * lose the link or lose the distinction.
+     */
+    subjectKey: text('subject_key').notNull(),
+
+    title: text('title').notNull(),
+    detail: text('detail').notNull(),
+    /** A `@tailfin/shared` `AlertScreen` — where the player can act on it. */
+    screen: text('screen').notNull(),
+
+    /** Game time the rule first fired. */
+    raisedAt: timestamp('raised_at', { withTimezone: true }).notNull(),
+    /** Game time the condition stopped being true. Null while open. */
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('alert_open_subject_key')
+      .on(t.airlineId, t.kind, t.subjectKey)
+      .where(sql`resolved_at is null`),
+    // `GET /api/alerts` is "open alerts for this airline, worst first".
+    index('alert_airline_open_idx').on(t.airlineId, t.resolvedAt),
+    // The digest asks for the alerts raised or resolved inside a game-time window.
+    index('alert_airline_raised_idx').on(t.airlineId, t.raisedAt),
+    index('alert_world_idx').on(t.worldId),
+    check(
+      'alert_resolved_after_raised',
+      sql`${t.resolvedAt} IS NULL OR ${t.resolvedAt} >= ${t.raisedAt}`,
+    ),
+  ],
+);
+
+export type AlertRow = typeof alert.$inferSelect;
+
+/**
+ * One airline's alerting state: the sweep's watermark and the digest's (M8-13).
+ *
+ * ## Why the digest watermark is not `session.last_seen_at`
+ *
+ * It is the obvious column and it cannot do the job. `findSessionPlayer` touches
+ * it on **every authenticated request**, so by the time a digest handler runs it
+ * already reads *now* and the window is empty. It is also per **device** — a
+ * player with a phone and a laptop has two — and every row is deleted when a
+ * privilege change rotates session authority (ADR-0015), which would silently
+ * erase the fact that the player had ever been here.
+ *
+ * So *"last seen"* means *last digest the player acknowledged*, and only
+ * `POST /api/digest/read` moves it. `GET /api/digest` deliberately does not: a
+ * page refresh must show the same feed rather than an empty one, and a read that
+ * changed state would also make the endpoint an unsafe `GET` under ADR-0025.
+ *
+ * ## Why the sweep has a watermark at all
+ *
+ * The rules are cheap to decide and expensive to read — a runway projection and
+ * a credit assessment per airline. Every tick would spend the world's budget
+ * asking whether a seven-day trend had changed since a second ago. Both columns
+ * are **game time** and **nullable, meaning never**: null `swept_at` is what
+ * lets `GET /api/alerts` say *nothing has run* rather than *nothing is wrong*,
+ * which on a node with no worker is the difference between a missing process and
+ * a healthy airline.
+ */
+export const alertState = pgTable(
+  'alert_state',
+  {
+    airlineId: uuid('airline_id')
+      .primaryKey()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+
+    /** Game time the rules were last evaluated. Null means never. */
+    sweptAt: timestamp('swept_at', { withTimezone: true }),
+
+    /** Game time the last acknowledged digest covered through. Null means never. */
+    digestCoveredThroughAt: timestamp('digest_covered_through_at', { withTimezone: true }),
+    /** Wall clock of that acknowledgement — *when did the player read it*. */
+    digestReadAt: timestamp('digest_read_at', { withTimezone: true }),
+
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // The sweep claims the airlines whose watermark is oldest, per world.
+    index('alert_state_world_swept_idx').on(t.worldId, t.sweptAt),
+  ],
+);
+
+export type AlertStateRow = typeof alertState.$inferSelect;

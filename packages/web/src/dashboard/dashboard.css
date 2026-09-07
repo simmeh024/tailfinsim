@@ -472,3 +472,148 @@
   color: var(--accent);
   font-weight: 600;
 }
+
+/* ------------------------------------------------------------- alerts ---- */
+
+/*
+ * §14.5's alert list (M8-13).
+ *
+ * Added here rather than to a stylesheet of its own, for the reason the file's
+ * header gives: §14.6's *"consistent chart language across every dashboard"*
+ * does not survive as a convention, and an alerts page with its own idea of a
+ * row is exactly how it stops being true. `alerts-ui.test.tsx` fails on a class
+ * this file, `shell.css` and `ui.css` do not declare.
+ *
+ * **Severity is never carried by hue alone.** The row's ground and its left
+ * edge take the status tone, and the markup puts a glyph and the word
+ * *Critical* or *Warning* beside it — so the list is readable in greyscale, in
+ * print and to a screen reader, which is H.7's rule rather than a nicety.
+ */
+
+.alert-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.alert-row {
+  border-radius: var(--radius-md);
+  /* The severity's edge. 3px reads at a glance without becoming a rule line. */
+  border-left: 3px solid var(--border-strong);
+  background: var(--bg-raised);
+}
+
+.alert-row[data-severity='critical'] {
+  border-left-color: var(--status-cancelled);
+  background: var(--status-cancelled-quiet);
+}
+
+.alert-row[data-severity='warning'] {
+  border-left-color: var(--status-delayed);
+  background: var(--status-delayed-quiet);
+}
+
+/*
+ * The whole row is the link, not a trailing affordance. The player's decision is
+ * *deal with this*; making them find a small target to express it is how an
+ * alert list becomes wallpaper.
+ */
+.alert-row__link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3);
+  color: inherit;
+  text-decoration: none;
+}
+
+.alert-row__link:hover .alert-row__title {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+.alert-row__mark {
+  flex: none;
+  font-size: var(--text-sm);
+  line-height: 1.4;
+}
+
+.alert-row[data-severity='critical'] .alert-row__mark {
+  color: var(--status-cancelled);
+}
+
+.alert-row[data-severity='warning'] .alert-row__mark {
+  color: var(--status-delayed);
+}
+
+.alert-row__text {
+  /* Takes the slack so the meta column sits right without a fixed width. */
+  flex: 1 1 14rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.alert-row__title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.alert-row__detail {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/*
+ * `flex-end` on a wide row and the start of a new line on a narrow one, which is
+ * what keeps the page inside 390px without a media query — the same discipline
+ * as the tiles above.
+ */
+.alert-row__meta {
+  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.alert-row__severity {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.alert-row__subject {
+  font-family: var(--font-figures);
+}
+
+/* The digest's one action, and the sentence explaining what it moves. */
+.alert-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  margin-top: var(--space-4);
+}
+
+/*
+ * The strip's alert count, which is a link because the strip is where a player
+ * notices and the page is where they act.
+ */
+.strip__link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.strip__link:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}

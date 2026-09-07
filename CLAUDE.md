@@ -679,6 +679,51 @@ the inconsistency the chart-language rule is about. The first draft used the
 default locale and the tests failed in a non-US environment, which is how it was
 found. Display _currency_ is the player's choice (M8-02); digit grouping is not.
 
+**§14.5's alerts are a worker story whose failure mode is _reassuring_, which
+makes it the worst one on this page (M8-13).** The rules are evaluated by a
+per-world sweep on the game clock and raised as rows in `alert`; nothing
+evaluates them on read, and that is deliberate rather than lazy. §3.2's digest
+has to cover _"the exact period since last seen"_, and a period only means
+something if the things inside it are dated when they happened — evaluating on
+read would date every alert at the moment the player looked, put all of them
+inside every window, and turn the digest into a list of everything currently
+wrong. **Production has no worker**, so there `alert_state.swept_at` stays null
+for ever: no alert is ever raised, the digest records nothing as having happened,
+and `GET /api/alerts` answers `200` with an empty list. Every other missing-worker
+surface at least looks _empty_; this one looks like an airline with nothing wrong.
+`AlertsResponse.evaluatedAt` is null there and the status strip renders that as an
+em dash rather than as "None", which is the only thing separating the two.
+`alertsSwept`, `alertsRaised`, `alertsResolved` and `alertErrors` are the
+counters — `alertsSwept` rising with `alertsRaised` at zero is a world where the
+rules ran and found nothing, and `alertsSwept` at zero is a world where nothing
+ran.
+
+Four things there worth not undoing. **The deduplication index is keyed on
+`subject_key`, not on a nullable `subject_id`** — a unique index treats NULLs as
+distinct, so an airline-wide alert would stack a fresh row on every sweep behind
+an index that looked like it prevented exactly that; and the insert is
+`ON CONFLICT DO NOTHING` **without a target**, because Postgres cannot infer a
+partial index from the target columns alone. **The digest watermark is not
+`session.last_seen_at`**: that column is touched on every authenticated request,
+is per device, and is deleted when a privilege change rotates session authority
+(ADR-0015) — so _last seen_ means _the last digest the player acknowledged_, and
+only `POST /api/digest/read` moves it. **`GET /api/digest` therefore changes
+nothing**, which keeps it a safe GET under ADR-0025 and means a page refresh
+cannot destroy a week of news. And **"loss-making 7 days running" is not seven
+consecutive negative days** — a thrice-weekly route can never produce them, so
+the obvious test would quietly exempt exactly the thin routes §14.4 exists to
+find; the rule is _no profitable day in the window_ over at least three flown
+days.
+
+Two of §14.5's nine are named as absent rather than approximated, and both are
+gaps in the game: nothing **leases a gate** (a `slot_holding` is a per-band
+operating right with no term, so §9.3's contract-lapse warning stands in its
+place and says _contract_), and `world_event` is §21's flight transition queue
+rather than §18's **announced** world events, so there is nothing for a network
+to be affected by. `docs/alerts-and-digest.md` has the rule table, the three
+window cases and why the thresholds are server constants rather than an
+`EconomyConfig` section.
+
 **And one thing not to "fix".** `airframe.maintenance_state` is nullable, and a null means
 _every tier was last completed at the hours this airframe has now_ — not _at hour zero_. It
 looks like a missing default and it is load-bearing: the other reading would make every
