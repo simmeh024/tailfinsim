@@ -60,6 +60,7 @@ import {
   ServicePackageSummary,
   ServicePaybackResponse,
 } from './service';
+import { MetricBreakdownResponse, RouteFlightsResponse, StatisticsResponse } from './statistics';
 import { UsedMarketResponse } from './used-market';
 import { VersionResponse } from './version';
 import { WorldClock } from './world';
@@ -178,3 +179,6 @@ export const officeStateResponseJsonSchema = z.toJSONSchema(OfficeStateResponse)
 export const executiveFloorStateJsonSchema = z.toJSONSchema(ExecutiveFloorState);
 export const financePnlResponseJsonSchema = z.toJSONSchema(FinancePnlResponse);
 export const cashRunwayResponseJsonSchema = z.toJSONSchema(CashRunwayResponse);
+export const statisticsResponseJsonSchema = z.toJSONSchema(StatisticsResponse);
+export const metricBreakdownResponseJsonSchema = z.toJSONSchema(MetricBreakdownResponse);
+export const routeFlightsResponseJsonSchema = z.toJSONSchema(RouteFlightsResponse);

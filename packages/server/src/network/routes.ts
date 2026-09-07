@@ -24,7 +24,13 @@
 
 import { and, eq } from 'drizzle-orm';
 
-import { CabinClass, OpenRouteInput, SetFaresRequest, Uuid } from '@tailfin/shared';
+import {
+  CabinClass,
+  OpenRouteInput,
+  routeFlightsResponseJsonSchema,
+  SetFaresRequest,
+  Uuid,
+} from '@tailfin/shared';
 
 import { resolvedAirlineOf } from '../airline/context';
 import { route } from '../db/schema';
@@ -36,6 +42,7 @@ import { hubConnections } from './connections';
 import { parseFares, previewFares, type RouteEconomics, type RouteRow, setFares } from './fares';
 import { openRoute } from './open-route';
 import { routePerformance } from './performance';
+import { routeFlights } from './route-flights';
 import { rivalsOn, waterfallFor } from './waterfall';
 
 import type { Database, DatabaseHandle } from '../db/client';
@@ -299,6 +306,29 @@ export function registerNetworkRoutes(
       const performance = await routePerformance(db.db, own, request.params.routeId);
       if (performance === null) return notFound(reply);
       return reply.code(200).send(performance);
+    },
+  );
+
+  /**
+   * The individual departures behind those figures — §14.1's missing rung (M8-09).
+   *
+   * *"Which of these flights was empty?"* and *"who took the market?"* are
+   * different questions, and until this route only the second was answerable:
+   * load factor drilled to a route and a route drilled straight to the
+   * waterfall. Each row's own next step is the waterfall, so the chain the
+   * design doc spells out — route → flight → segment → waterfall — is now
+   * walkable without the client knowing it in advance.
+   */
+  app.get<{ Params: { routeId: string } }>(
+    '/api/routes/:routeId/flights',
+    {
+      onRequest: app.requireAirline,
+      schema: { response: { 200: routeFlightsResponseJsonSchema } },
+    },
+    async (request, reply) => {
+      const flights = await routeFlights(db.db, resolvedAirlineOf(request), request.params.routeId);
+      if (flights === null) return notFound(reply);
+      return reply.code(200).send(flights);
     },
   );
 
