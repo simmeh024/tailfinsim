@@ -70,9 +70,14 @@ export function makeTestEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
  * is auth *off*, and a fixture whose default quietly disagrees with the real
  * loader is a fixture that stops describing the thing it stands in for.
  *
- * It sets all four auth fields together, which makes `env.ts`'s
- * half-configured trap — credentials without a secret, or either without
- * `authEnabled` — unrepresentable at a call site.
+ * It sets one provider's fields as a set — id, secret, that provider's own
+ * `…Enabled` flag, and the `sessionSecret` those flags depend on — which makes
+ * `env.ts`'s half-configured traps unrepresentable at a call site. There are
+ * three of them since AUTH-08, and they are per provider: an id without its
+ * secret is refused at boot, a provider is `…Enabled` only if the session
+ * secret is also present, and `authEnabled` is the disjunction rather than a
+ * fourth thing to remember. A fixture that let a caller set `authEnabled: true`
+ * with no provider enabled would describe a state `loadEnv` cannot produce.
  *
  * The credential values are arbitrary and shared. They were arbitrary and
  * *unshared* before, which is how the tree came to hold five different
