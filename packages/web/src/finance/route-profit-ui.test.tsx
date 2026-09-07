@@ -219,8 +219,13 @@ describe('§14.4’s ranked chart', () => {
     // Signal three: the row's own text carries a direction glyph and a sign.
     const worst = [...chart.querySelectorAll('.profit-chart__row')].at(-1);
     expect(worst?.textContent).toContain('▼');
-    // And the legend says the hatch is doing work, so it is not decoration.
-    expect(container.textContent).toContain('hatched, not only red');
+    /*
+     * And the legend says the hatch is doing work, so it is not decoration —
+     * without naming the hue, which is a different red in each theme and absent
+     * in a monochrome print. `theme/tokens.test.ts` caught the first draft for
+     * exactly that: the word "red" in the copy tripped the colour-literal guard.
+     */
+    expect(container.textContent).toContain('hatched, not colour alone');
   });
 
   it('draws the breakeven line as a rule down the middle of every track', () => {

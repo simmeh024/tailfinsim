@@ -146,7 +146,13 @@ export function RouteProfitChart({
         </span>
         <span className="profit-chart__key">
           <span className="profit-chart__swatch profit-chart__swatch--loss" aria-hidden="true" />{' '}
-          below it — hatched, not only red
+          {/*
+            Deliberately does not name the hue. The loss colour is a different
+            red in each theme and no colour at all in a monochrome print, so
+            legend copy that named one would be wrong in two of the three — which
+            is the same mistake as carrying the meaning in colour alone.
+          */}
+          below it — hatched, not colour alone
         </span>
       </p>
     </div>
