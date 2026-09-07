@@ -608,6 +608,11 @@ The micro lives here, and it should be a place players *want* to spend time — 
 
 Cargo is not a bolt-on. It has its own demand model, its own customers, its own daily rhythm, and its own airports. A player can run a pure freight operation and never sell a single seat.
 
+> **Status: committed, 2026-09-07.** This chapter is being built. The question GAP-14 (#667) asked — *does Tailfin have cargo airlines at all* — was answered **yes**, and cargo ships as **its own update after the passenger game**, not folded into M7 or M8. The [CARGO milestone](https://github.com/simmeh024/tailfinsim/milestone/46) owns the build (CARGO-01 … CARGO-12) and CARGO-01 (#1087) records the decision and its phasing. Two consequences worth knowing while reading the rest of this chapter:
+>
+> - **Belly cargo (§12.1) is independent and stays with M8-15 (#87).** It needs the payload arithmetic, not the freight domain, so it is not waiting on any of this.
+> - **The facilities that mention cargo are deliberately inert until CARGO reaches them.** M7-04 shipped hub facilities *without* a cargo facility, on purpose: a facility that charges rent and does nothing is what GAP-14 warned against. CARGO-10 (#1096) adds it through M7-04's own mechanism. The same applies to M7-06's cargo stand and M7-07's cargo area.
+
 ### 12.1 Two channels
 
 **Belly cargo `[MVP-lite]`** — freight in the hold of passenger flights.

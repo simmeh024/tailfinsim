@@ -1125,7 +1125,14 @@ export const airlineHub = pgTable(
   ],
 );
 
-/** App. B.5's unlockables, minus the two `HubFacilityKind` explains are absent. */
+/**
+ * App. B.5's unlockables, minus the two `HubFacilityKind` explains are absent.
+ *
+ * `cargo_facility` is a deliberate omission rather than a forgotten one, and it
+ * is **expected to arrive**: cargo was committed on 2026-09-07 and CARGO-10
+ * (#1096) adds the terminal through this mechanism. Adding the value then is an
+ * `ALTER TYPE … ADD VALUE`, which is expand-safe.
+ */
 export const hubFacilityKind = pgEnum('hub_facility_kind', [
   'training_academy',
   'maintenance_line',
