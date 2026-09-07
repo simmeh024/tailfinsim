@@ -4,7 +4,7 @@ import { Button } from '../ui/Button';
 import { StateBlock } from '../ui/StateBlock';
 
 import { fetchSystemHealth } from './api';
-import { adminDate } from './format';
+import { adminAt, adminDate } from './format';
 import { usePolledData } from './polling';
 
 import type { ReactNode } from 'react';
@@ -133,6 +133,26 @@ function EngineDetail({ node }: { node: AdminNodeHealth }): ReactNode {
             missing. Sharing one number made the first meaningless. */}
         <dt>Unsupported</dt>
         <dd className="figure">{engine.unsupported}</dd>
+      </div>
+      <div>
+        {/* M8-02's display-currency refresh, which this page could not see at
+            all until now — the counters lived only on the worker's loopback
+            health endpoint. Skipped is shown beside the other two because a
+            gate that returns "already fresh" increments nothing, so all-zero
+            used to mean either "up to date" or "this sweep never ran". */}
+        <dt>FX refresh</dt>
+        <dd className="figure">
+          {engine.fxRefreshes} / {engine.fxRefreshesSkipped} skipped
+          {engine.fxRefreshErrors > 0 ? ` / ${String(engine.fxRefreshErrors)} failed` : ''}
+        </dd>
+      </div>
+      <div>
+        {/* The durable half. The three counters above reset on restart; this is
+            read from `currency_rate`, so it still answers "how stale are the
+            rates?" after a deploy. A dash means no live refresh has ever run and
+            the shipped seed stands — the correct reading with no worker. */}
+        <dt>Rates as of</dt>
+        <dd className="figure">{adminAt(engine.fxRatesRefreshedAt)}</dd>
       </div>
     </dl>
   );

@@ -76,12 +76,42 @@ describeDb('refreshFxRates', () => {
 
     const hourLater = new Date(base.getTime() + 60 * 60 * 1000);
     const second = await refreshFxRates(db.db, STUB, hourLater);
-    expect(second).toEqual({ refreshed: false, reason: 'fresh' });
+    expect(second).toEqual({ refreshed: false, reason: 'fresh', newestAt: base });
 
     // A day and change later, it refreshes again.
     const dayLater = new Date(base.getTime() + 25 * 60 * 60 * 1000);
     const third = await refreshFxRates(db.db, STUB, dayLater);
     expect(third.refreshed).toBe(true);
+  });
+
+  it('reports how old the live rates are, on both branches', async () => {
+    // The durable half of the observability fix. `simulation.ts`'s counters reset
+    // on restart, so after a deploy only this can answer "are we serving stale
+    // money?" — and the daily gate has already read it, so it is free.
+    const base = new Date('2024-07-01T00:00:00.000Z');
+    const refreshed = await refreshFxRates(db.db, STUB, base);
+    // A refresh stamped every row with `now`, so `now` *is* the new newest.
+    expect(refreshed.newestAt).toEqual(base);
+
+    const hourLater = new Date(base.getTime() + 60 * 60 * 1000);
+    const skipped = await refreshFxRates(db.db, STUB, hourLater);
+    // The skip reports the *previous* refresh, not the instant it was asked.
+    expect(skipped.refreshed).toBe(false);
+    expect(skipped.newestAt).toEqual(base);
+  });
+
+  it('returns a real Date from max(), which the driver hands back as a string', async () => {
+    // The trap CLAUDE.md records: `sql<Date>` is an assertion, not a conversion.
+    // Drizzle's column parsers do not apply to a raw aggregate, so `max()`
+    // arrives as a string however it is typed — and `.getTime()` on it throws
+    // while the types stay silent. Asserting the instance is what pins the
+    // normalisation; `toEqual` alone would pass against a string.
+    const base = new Date('2024-08-01T00:00:00.000Z');
+    await refreshFxRates(db.db, STUB, base);
+
+    const skipped = await refreshFxRates(db.db, STUB, new Date(base.getTime() + 1000));
+    expect(skipped.newestAt).toBeInstanceOf(Date);
+    expect(skipped.newestAt?.getTime()).toBe(base.getTime());
   });
 
   it('propagates a source failure and leaves the last good rates in place', async () => {

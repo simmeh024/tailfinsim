@@ -261,6 +261,11 @@ const heartbeat = createHeartbeat({
       unhandledEventTypes: snapshot.unhandledEventTypes,
       aircraftDeliveries: snapshot.aircraftDeliveries,
       aircraftDeliveryErrors: snapshot.aircraftDeliveryErrors,
+      fxRefreshes: snapshot.fxRefreshes,
+      fxRefreshErrors: snapshot.fxRefreshErrors,
+      fxRefreshesSkipped: snapshot.fxRefreshesSkipped,
+      fxRatesRefreshedAt:
+        snapshot.fxRatesRefreshedAt === null ? null : snapshot.fxRatesRefreshedAt.toISOString(),
     };
   },
   onError: (error) => {
