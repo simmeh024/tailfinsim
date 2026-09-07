@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -409,23 +409,12 @@ async function openFleet(): Promise<void> {
 }
 
 /**
- * The detail panel, once it is showing the aircraft that was just clicked.
+ * The detail panel, once it is showing the aircraft named.
  *
- * Selecting a market row updates the panel in a later effect, and a panel is
- * already on screen for the default selection — so a synchronous
- * `getByLabelText('Selected aircraft')` finds the *previous* aircraft's panel
- * and asserts against it. That is what broke in CI while passing locally: the
- * DOM it printed still carried `alt="Airbus A320neo…"` after a click on the
- * 737-800. A fast machine wins the race; a loaded runner loses it.
- *
- * Waiting on the panel element alone would not fix it, because that element
- * does not change identity between selections. `AircraftImage`'s `alt` does —
- * it names the manufacturer and designation — so it is the one thing on screen
- * that says *which* aircraft the panel is currently describing.
- *
- * CLAUDE.md records this shape twice already, on the build badge's clock:
- * "effects that arrive in a later React effect race a test that waits for the
- * first render".
+ * The panel element does not change identity between selections, so a
+ * synchronous `getByLabelText('Selected aircraft')` finds whichever aircraft it
+ * was already describing. `AircraftImage`'s `alt` is the one thing on screen
+ * that says *which* aircraft that is, so the wait anchors on it.
  */
 async function selectionShows(aircraft: string): Promise<HTMLElement> {
   const detail = await screen.findByLabelText('Selected aircraft');
@@ -433,11 +422,66 @@ async function selectionShows(aircraft: string): Promise<HTMLElement> {
   return detail;
 }
 
+/**
+ * Click a market row — but not before the catalogue has selected for itself.
+ *
+ * `FleetMarket` picks a default the first time it sees a non-empty catalogue,
+ * in a `useEffect` guarded by a ref so it fires exactly once. Here the
+ * catalogue arrives from a stubbed `fetch`, so that effect belongs to a commit
+ * React made outside `act` — and React flushes passive effects on the
+ * Scheduler's own macrotask, *after* the commit that put the rows on screen.
+ * `findByRole` resolves off the commit. There is therefore a window in which
+ * the rows are clickable and the default has not been chosen yet.
+ *
+ * A click inside that window is **discarded**: `selectType` sets the clicked
+ * designation, then the pending effect runs, does not know a human has since
+ * chosen, and sets `catalogue.types[0]`. The panel settles on the default and
+ * stays there. That is what CI printed — `alt="Airbus A320neo…"` after a click
+ * on the A321XLR — and it is why waiting harder *after* the click could not fix
+ * it (PR #1145): there is nothing left to wait for, the selection is gone.
+ *
+ * Reproduced deliberately by dispatching the click from a `MutationObserver`
+ * callback, which is a microtask off the commit and so lands before the
+ * Scheduler's macrotask: the panel then reads A320neo permanently.
+ *
+ * So the wait that matters is the one *before* the click. A panel on screen can
+ * only have been published by that one-shot effect — nothing else selects an
+ * aircraft until a row is clicked — so it is proof the effect has run and can
+ * never run again. The click is then unloseable rather than merely lucky.
+ *
+ * CLAUDE.md records this family twice already, on the build badge's clock:
+ * "effects that arrive in a later React effect race a test that waits for the
+ * first render".
+ */
+async function selectAircraft(aircraft: string): Promise<HTMLElement> {
+  const settled = await screen.findByLabelText('Selected aircraft');
+  const already = await within(settled).findByAltText(/in a neutral catalogue finish/i);
+
+  // Guards the wait below against being vacuous: if the fixture ever put this
+  // aircraft first, the panel would already say so and the click would prove
+  // nothing.
+  expect(already).not.toHaveAttribute('alt', expect.stringContaining(aircraft));
+
+  fireEvent.click(await screen.findByRole('button', { name: new RegExp(`View ${aircraft}`, 'i') }));
+  return selectionShows(aircraft);
+}
+
+/**
+ * The table of owned airframes.
+ *
+ * Anchored on that table rather than on *a* table: the airframe detail renders
+ * two spec tables and the market renders a comparison table, so resolving on
+ * whichever appears first and then searching it once throws "no fleet table"
+ * while the fleet's own load is still in flight.
+ */
 async function fleetTable(): Promise<HTMLElement> {
-  const tables = await screen.findAllByRole('table');
-  const found = tables.find((table) => within(table).queryByText('Registration') !== null);
-  if (!found) throw new Error('No fleet table rendered');
-  return found;
+  return waitFor(() => {
+    const found = screen
+      .getAllByRole('table')
+      .find((table) => within(table).queryByText('Registration') !== null);
+    if (!found) throw new Error('the fleet table has not rendered');
+    return found;
+  });
 }
 
 describe('the fleet catalogue', () => {
@@ -455,9 +499,7 @@ describe('the fleet catalogue', () => {
 
     // M4-02's second acceptance criterion. The date is what turns a locked row
     // from a wall into a plan.
-    const xlr = await screen.findByRole('button', { name: /View Airbus A321XLR/i });
-    fireEvent.click(xlr);
-    await selectionShows('Airbus A321XLR');
+    await selectAircraft('Airbus A321XLR');
     expect(await screen.findByText('11 Nov 2024')).toBeInTheDocument();
   });
 
@@ -468,8 +510,7 @@ describe('the fleet catalogue', () => {
     // §21: a browser must not reach a different conclusion about whether an
     // aircraft exists than the world did. Lint already stops the client
     // importing `@tailfin/sim`; this proves it renders what it was told.
-    fireEvent.click(await screen.findByRole('button', { name: /View Airbus A321XLR/i }));
-    await selectionShows('Airbus A321XLR');
+    await selectAircraft('Airbus A321XLR');
     expect(
       await screen.findByText(
         'Flying as a prototype. Enters service on 2024-11-11, and can be ordered from then.',
@@ -490,8 +531,7 @@ describe('the fleet catalogue', () => {
     await openFleet();
 
     // Not a zero. An aircraft you cannot buy new does not cost nothing.
-    fireEvent.click(await screen.findByRole('button', { name: /View Boeing 737-800/i }));
-    const detail = await selectionShows('Boeing 737-800');
+    const detail = await selectAircraft('Boeing 737-800');
     expect(within(detail).getAllByText('Unavailable').length).toBeGreaterThan(0);
   });
 
@@ -582,8 +622,12 @@ describe('open aircraft orders', () => {
     // attribute.
     const failure = await screen.findByText('Could not load your aircraft orders.');
     expect(failure.closest('[role="alert"]')).not.toBeNull();
-    expect(screen.getByText('PH-TFB')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /View Airbus A320neo/i })).toBeInTheDocument();
+    // Three independent loads, so three independent waits. Anchoring on the
+    // orders failure and then reading the other two synchronously puts the whole
+    // chain inside one query's budget — and the fleet and the catalogue have no
+    // reason to have answered by the time the orders have failed.
+    expect(await screen.findByText('PH-TFB')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /View Airbus A320neo/i })).toBeInTheDocument();
   });
 });
 
