@@ -75,6 +75,12 @@ export const NAV_ITEMS: readonly NavItem[] = [
    */
   { to: '/dashboard', label: 'Dashboard', glyph: '▦' },
   { to: '/world', label: 'World', glyph: '◎' },
+  /*
+   * §14.3's five operational dashboards. Next to the executive one because a
+   * player asking "why was yesterday bad?" starts at the headline and goes
+   * straight here — not through the world map.
+   */
+  { to: '/operations', label: 'Operations', glyph: '◈' },
   { to: '/fleet', label: 'Fleet', glyph: '✈' },
   { to: '/network', label: 'Network', glyph: '⤳' },
   { to: '/finance', label: 'Finance', glyph: '§' },

@@ -45,6 +45,7 @@ import { AutomationStateResponse } from './automation';
 import { CreditStandingResponse } from './credit';
 import { CrewResponse } from './crew';
 import { ExecutiveDashboardResponse } from './dashboard';
+import { OperationsDashboardResponse } from './operations';
 import { ExecutiveFloorState } from './executive';
 import { CashRunwayResponse, FinancePnlResponse } from './finance';
 import { AirframeDetailResponse, FleetAirframesResponse } from './fleet';
@@ -181,6 +182,7 @@ export const executiveFloorStateJsonSchema = z.toJSONSchema(ExecutiveFloorState)
 export const financePnlResponseJsonSchema = z.toJSONSchema(FinancePnlResponse);
 export const cashRunwayResponseJsonSchema = z.toJSONSchema(CashRunwayResponse);
 export const executiveDashboardResponseJsonSchema = z.toJSONSchema(ExecutiveDashboardResponse);
+export const operationsDashboardResponseJsonSchema = z.toJSONSchema(OperationsDashboardResponse);
 export const statisticsResponseJsonSchema = z.toJSONSchema(StatisticsResponse);
 export const metricBreakdownResponseJsonSchema = z.toJSONSchema(MetricBreakdownResponse);
 export const routeFlightsResponseJsonSchema = z.toJSONSchema(RouteFlightsResponse);
