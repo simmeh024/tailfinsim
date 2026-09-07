@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import type { HubTier } from '@tailfin/shared';
 
-import { DEFAULT_HUB_COST, hubPurchaseCost } from './hub-cost';
+import {
+  DEFAULT_HUB_COST,
+  hubAnnualFee,
+  hubAnnualUpkeep,
+  hubFacilityCost,
+  hubMonthlyUpkeep,
+  hubPurchaseCost,
+} from './hub-cost';
 
 /**
  * The hub purchase curve is App. B.5 turned into a function, so it is checked
@@ -66,5 +73,95 @@ describe('hubPurchaseCost', () => {
   it('rejects a negative or fractional hub count', () => {
     expect(() => hubPurchaseCost('small', -1)).toThrow();
     expect(() => hubPurchaseCost('small', 1.5)).toThrow();
+  });
+});
+
+/**
+ * The upkeep half (M7-04). App. B.5 fixes no figures for these, so what is
+ * asserted is the *shape* the doc does fix — fees rise with tier, facilities
+ * scale off the same tier base, and the free first hub is still not free to hold.
+ */
+describe('hub upkeep', () => {
+  it('charges an annual fee that rises with every tier', () => {
+    const fees = (['small', 'medium', 'large', 'flagship'] as const).map((t) => hubAnnualFee(t));
+    expect(fees).toEqual([...fees].sort((a, b) => a - b));
+    expect(new Set(fees).size).toBe(4);
+  });
+
+  it('keeps the annual fee at 2% of the tier base, the anchor it was tuned to', () => {
+    for (const tier of ['small', 'medium', 'large', 'flagship'] as const) {
+      expect(hubAnnualFee(tier)).toBe(DEFAULT_HUB_COST.tierBaseMinor[tier] * 0.02);
+    }
+  });
+
+  it('makes the free first hub free to buy and never free to hold', () => {
+    // The whole of App. B.5's self-balancing argument for the free flagship:
+    // acquisition is waived, upkeep is not.
+    expect(hubPurchaseCost('flagship', 0)).toBe(0);
+    expect(hubAnnualFee('flagship')).toBeGreaterThan(0);
+    expect(hubMonthlyUpkeep('flagship', [])).toBeGreaterThan(0);
+  });
+
+  it('prices a facility off its hub tier, so a flagship lounge costs 12.5x a small one', () => {
+    const small = hubFacilityCost('lounge', 'small');
+    const flagship = hubFacilityCost('lounge', 'flagship');
+    const ratio = DEFAULT_HUB_COST.tierBaseMinor.flagship / DEFAULT_HUB_COST.tierBaseMinor.small;
+    expect(ratio).toBe(12.5);
+    expect(flagship.openingMinor).toBe(small.openingMinor * ratio);
+    expect(flagship.annualFeeMinor).toBe(small.annualFeeMinor * ratio);
+  });
+
+  it('makes heavy check the dearest facility and the lounge the cheapest', () => {
+    const at = (kind: Parameters<typeof hubFacilityCost>[0]) =>
+      hubFacilityCost(kind, 'medium').openingMinor;
+    expect(at('heavy_check')).toBeGreaterThan(at('self_handling'));
+    expect(at('self_handling')).toBeGreaterThan(at('maintenance_line'));
+    expect(at('maintenance_line')).toBeGreaterThan(at('training_academy'));
+    expect(at('training_academy')).toBeGreaterThan(at('lounge'));
+  });
+
+  it('adds every open facility to the hub bill, and counts a duplicate once', () => {
+    const bare = hubAnnualUpkeep('medium', []);
+    expect(bare).toBe(hubAnnualFee('medium'));
+
+    const withLounge = hubAnnualUpkeep('medium', ['lounge']);
+    expect(withLounge).toBe(bare + hubFacilityCost('lounge', 'medium').annualFeeMinor);
+
+    // The database cannot hold two of the same facility at one hub; charging
+    // twice for a caller's mistake would be the wrong way to discover that.
+    expect(hubAnnualUpkeep('medium', ['lounge', 'lounge'])).toBe(withLounge);
+  });
+
+  it('bills a twelfth a month, rounding the instalment rather than the year', () => {
+    const annual = hubAnnualUpkeep('large', ['lounge', 'maintenance_line']);
+    expect(hubMonthlyUpkeep('large', ['lounge', 'maintenance_line'])).toBe(Math.round(annual / 12));
+  });
+
+  it('returns integer minor units for every tier and facility', () => {
+    for (const tier of ['small', 'medium', 'large', 'flagship'] as const) {
+      expect(Number.isSafeInteger(hubAnnualFee(tier))).toBe(true);
+      expect(Number.isSafeInteger(hubMonthlyUpkeep(tier, ['heavy_check']))).toBe(true);
+      for (const kind of [
+        'training_academy',
+        'maintenance_line',
+        'heavy_check',
+        'lounge',
+        'self_handling',
+      ] as const) {
+        const cost = hubFacilityCost(kind, tier);
+        expect(Number.isSafeInteger(cost.openingMinor)).toBe(true);
+        expect(Number.isSafeInteger(cost.annualFeeMinor)).toBe(true);
+      }
+    }
+  });
+
+  it('makes a fully built small hub cost about 2.75x the hub itself', () => {
+    // The stated intent of the shipped fractions: facilities are the larger half
+    // of a hub's lifetime bill, which is what makes siting them a decision.
+    const base = DEFAULT_HUB_COST.tierBaseMinor.small;
+    const build = (
+      ['training_academy', 'maintenance_line', 'heavy_check', 'lounge', 'self_handling'] as const
+    ).reduce((sum, kind) => sum + hubFacilityCost(kind, 'small').openingMinor, 0);
+    expect(build / base).toBeCloseTo(2.75, 10);
   });
 });

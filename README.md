@@ -25,6 +25,7 @@ wall-clock time, that never pauses.
   [`docs/fleet-management.md`](docs/fleet-management.md) ·
   [`docs/fuel-pricing.md`](docs/fuel-pricing.md) ·
   [`docs/ground-handling.md`](docs/ground-handling.md) ·
+  [`docs/hubs.md`](docs/hubs.md) ·
   [`docs/world-renderer.md`](docs/world-renderer.md)
 - **Deployment & DNS:** [`docs/deploy.md`](docs/deploy.md) ·
   [`deploy/README.md`](deploy/README.md)

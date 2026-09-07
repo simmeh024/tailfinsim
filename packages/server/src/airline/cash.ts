@@ -112,6 +112,11 @@ function categoryForCause(cause: CashMovementCause): LedgerCategory {
     case 'ground_volume_shortfall':
     case 'ground_self_handling_payroll':
       return 'ground_handling';
+    case 'hub_purchase':
+    case 'hub_facility_opening':
+      return 'hub_purchase';
+    case 'hub_upkeep':
+      return 'hub_facility';
     case 'office_expansion':
     case 'executive_floor':
     case 'executive_office':

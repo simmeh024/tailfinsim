@@ -399,6 +399,23 @@ contract and therefore works on every node. `docs/ground-handling.md` has the bo
 including why self-handling is its own table and why a line-level advisory lock replaced the
 per-grade one.
 
+**A hub's fee is a worker story where the missing process looks like generosity (M7-04).**
+App. B.5 makes the first hub free _at any tier_ and then answers "so why isn't a free Dubai
+simply the best move?" with upkeep: _"annual facility fees scale with tier — a flagship hub
+bleeds you monthly from day one"_. `billHubUpkeep` is what charges it, monthly on the world's
+game clock. **Production has no worker**, so there a hub is bought once and held for nothing
+for ever, and the free flagship becomes exactly the dominant opening the curve was designed
+against — acquisition waived, upkeep never arriving. Every other missing-worker symptom in
+this section reads as broken; this one reads as **generous balance**, which is worse, because
+nobody files a bug against a game being kind. `hubFeesBilled`, `hubFeesMinor` and `hubErrors`
+are the counters. Two things not to "fix": `airline_hub.tier` is **nullable and means a hub
+granted before M7-04** — it reads at the airport's current tier rather than being backfilled,
+because a backfilled band would be indistinguishable from a pinned one; and a hub gets **one
+grace month**, billed only for a month it was open before that month began, because billing
+the month it opened would make the amount depend on when the tick ran and AIR-06's replay
+guard would then throw instead of no-op. `docs/hubs.md` has the boundary, including the two
+App. B.5 facilities deliberately not built and why.
+
 **`FLIGHT_DEPART` has a handler as of M5-02, and that was a decision.** `handlers.ts` had said
 for two milestones that inventing a departure would be _"the accidental decision ADR-0019's
 boundary exists to prevent"_, and that remains true of an accidental one. M5-02's _"legality is

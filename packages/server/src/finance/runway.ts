@@ -1,10 +1,11 @@
 import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 
-import { AdminCashMovementCause } from '@tailfin/shared';
+import { AdminCashMovementCause, hubTierForAirport } from '@tailfin/shared';
 import type { CashRunwayResponse } from '@tailfin/shared';
 import {
   cashRunway,
   dailyInterestMinor,
+  hubAnnualFee,
   monthBoundariesAhead,
   type CashCommitment,
 } from '@tailfin/sim';
@@ -12,9 +13,12 @@ import {
 import { crewPayrollLines, foldCrewBills } from '../crew/payroll';
 import {
   airline,
+  airlineHub,
+  airport,
   cashMovement,
   executiveHire,
   groundSelfHandling,
+  hubFacility,
   loan,
   officeHire,
 } from '../db/schema';
@@ -123,15 +127,23 @@ function classifyCause(cause: CashMovementCause): CauseRole {
       return 'rate';
 
     // Reproduced exactly by a commitment below. Counting these in the rate as
-    // well would bill the airline's payroll and interest twice over.
+    // well would bill the airline's payroll and interest twice over. App. B.5's
+    // monthly hub fee is here for exactly that reason: `commitmentsFor` rebuilds
+    // it from the hubs the airline holds.
     case 'crew_payroll':
     case 'crew_base_overhead':
     case 'office_salary':
     case 'ground_self_handling_payroll':
     case 'loan_interest':
+    case 'hub_upkeep':
       return 'projected';
 
-    // Capital and financing. Each is a real movement and none is a rate.
+    /*
+     * Capital and financing. Each is a real movement and none is a rate — a hub
+     * and its facilities included, because a $25M flagship inside the window
+     * would otherwise imply a burn that reports a healthy airline as having days
+     * to live, which is the exact failure this class exists to prevent.
+     */
     case 'airline_founding':
     case 'airline_rebrand':
     case 'aircraft_lease_deposit':
@@ -143,6 +155,8 @@ function classifyCause(cause: CashMovementCause): CauseRole {
     case 'office_expansion':
     case 'executive_floor':
     case 'executive_office':
+    case 'hub_purchase':
+    case 'hub_facility_opening':
     case 'admin_adjustment':
     case 'migration_opening_balance':
     case 'loan_draw':
@@ -200,31 +214,42 @@ async function commitmentsFor(
   const economy = await loadWorldEconomyConfig(db, own.worldId);
   const commitments: CashCommitment[] = [];
 
-  const [crewLines, officeRows, execRows, selfHandled, loans] = await Promise.all([
-    crewPayrollLines(db, own.worldId, own.id),
-    db
-      .select({ monthlySalaryMinor: officeHire.monthlySalaryMinor })
-      .from(officeHire)
-      .where(eq(officeHire.airlineId, own.id)),
-    db
-      .select({ monthlySalaryMinor: executiveHire.monthlySalaryMinor })
-      .from(executiveHire)
-      .where(eq(executiveHire.airlineId, own.id)),
-    db
-      .select({ headcount: groundSelfHandling.headcount })
-      .from(groundSelfHandling)
-      .where(
-        and(eq(groundSelfHandling.airlineId, own.id), eq(groundSelfHandling.status, 'active')),
-      ),
-    db
-      .select({
-        outstandingMinor: loan.outstandingMinor,
-        arrearsMinor: loan.arrearsMinor,
-        annualRateBps: loan.annualRateBps,
-      })
-      .from(loan)
-      .where(and(eq(loan.airlineId, own.id), eq(loan.status, 'active'))),
-  ]);
+  const [crewLines, officeRows, execRows, selfHandled, loans, hubRows, hubFacilityRows] =
+    await Promise.all([
+      crewPayrollLines(db, own.worldId, own.id),
+      db
+        .select({ monthlySalaryMinor: officeHire.monthlySalaryMinor })
+        .from(officeHire)
+        .where(eq(officeHire.airlineId, own.id)),
+      db
+        .select({ monthlySalaryMinor: executiveHire.monthlySalaryMinor })
+        .from(executiveHire)
+        .where(eq(executiveHire.airlineId, own.id)),
+      db
+        .select({ headcount: groundSelfHandling.headcount })
+        .from(groundSelfHandling)
+        .where(
+          and(eq(groundSelfHandling.airlineId, own.id), eq(groundSelfHandling.status, 'active')),
+        ),
+      db
+        .select({
+          outstandingMinor: loan.outstandingMinor,
+          arrearsMinor: loan.arrearsMinor,
+          annualRateBps: loan.annualRateBps,
+        })
+        .from(loan)
+        .where(and(eq(loan.airlineId, own.id), eq(loan.status, 'active'))),
+      db
+        .select({ id: airlineHub.id, tier: airlineHub.tier, airportTier: airport.tier })
+        .from(airlineHub)
+        .innerJoin(airport, eq(airport.id, airlineHub.airportId))
+        .where(eq(airlineHub.airlineId, own.id)),
+      db
+        .select({ hubId: hubFacility.hubId, annualFeeMinor: hubFacility.annualFeeMinor })
+        .from(hubFacility)
+        .innerJoin(airlineHub, eq(airlineHub.id, hubFacility.hubId))
+        .where(eq(airlineHub.airlineId, own.id)),
+    ]);
 
   /*
    * The three monthly payrolls, on the first of each game month ahead — the same
@@ -243,6 +268,24 @@ async function commitmentsFor(
   );
   const groundHeads = selfHandled.reduce((total, row) => total + row.headcount, 0);
   const groundMonthlyMinor = groundHeads * economy.ground.selfHandling.salaryPerHeadMinor;
+
+  /*
+   * App. B.5's hub and facility fees (M7-04), folded the same way `billHubUpkeep`
+   * folds them: the hub's own fee from today's config, each facility's from the
+   * row it was sold at, and the twelfth taken per hub rather than on the total —
+   * so this projects the figure the sweep will actually charge rather than one
+   * that rounds differently.
+   */
+  const hubFeesByHub = new Map<string, number>();
+  for (const row of hubFacilityRows) {
+    hubFeesByHub.set(row.hubId, (hubFeesByHub.get(row.hubId) ?? 0) + row.annualFeeMinor);
+  }
+  const hubMonthlyMinor = hubRows.reduce((total, row) => {
+    const tier =
+      row.tier ?? (row.airportTier === null ? 'small' : hubTierForAirport(row.airportTier));
+    const annualMinor = hubAnnualFee(tier, economy.hubs) + (hubFeesByHub.get(row.id) ?? 0);
+    return total + Math.round(annualMinor / 12);
+  }, 0);
 
   for (const dueAt of monthBoundariesAhead(gameNow, HORIZON_DAYS)) {
     if (crewMonthlyMinor > 0) {
@@ -267,6 +310,14 @@ async function commitmentsFor(
         amountMinor: groundMonthlyMinor,
         kind: 'ground',
         label: `Self-handling payroll (${String(groundHeads)} staff)`,
+      });
+    }
+    if (hubMonthlyMinor > 0) {
+      commitments.push({
+        dueAt,
+        amountMinor: hubMonthlyMinor,
+        kind: 'hub',
+        label: `Hub and facility fees (${String(hubRows.length)} hub${hubRows.length === 1 ? '' : 's'})`,
       });
     }
   }

@@ -2121,6 +2121,94 @@ export const SHIPPED_SOCIAL_MEDIA_BALANCE = {
 export const HubTier = z.enum(['small', 'medium', 'large', 'flagship']);
 export type HubTier = z.infer<typeof HubTier>;
 
+/**
+ * The facilities a hub can unlock (M7-04, App. B.5).
+ *
+ * App. B.5 lists *"crew base (§9.2) · training academy (§10.1) · maintenance
+ * line, then heavy check capability · lounge (product score) · cargo facility ·
+ * self-handling station (§9.3)"*. Two of those are deliberately absent here, and
+ * the absence is a decision rather than an oversight:
+ *
+ *   - **crew base** already exists as its own first-class subsystem (M5-01/M5-03's
+ *     `crew_base`, with its own opening cost, pay bands, hotel tiers and morale).
+ *     A second row also called a crew base would be two records meaning one thing,
+ *     and the one that did nothing would be the one a player found first.
+ *   - **cargo facility** waits on GAP-14 (issue #667), which asks whether Tailfin
+ *     has cargo at all and says of this exact bullet that if the answer is no it
+ *     *"should be removed rather than shipped as decoration"*. Shipping the unlock
+ *     first would answer that question by accident.
+ *
+ * `heavy_check` requires `maintenance_line`, which is App. B.5's own ordering
+ * (*"maintenance line, **then** heavy check capability"*).
+ */
+export const HubFacilityKind = z.enum([
+  'training_academy',
+  'maintenance_line',
+  'heavy_check',
+  'lounge',
+  'self_handling',
+]);
+export type HubFacilityKind = z.infer<typeof HubFacilityKind>;
+export const HUB_FACILITY_KINDS = HubFacilityKind.options;
+
+/**
+ * One facility's price, as a fraction of the hub tier's base price.
+ *
+ * Fractions rather than four explicit figures per facility, because App. B.5's
+ * requirement is that fees *"scale with tier"* — expressing that as a multiple of
+ * `tierBaseMinor` makes the scaling the definition instead of four numbers that
+ * have to be kept in proportion by hand. A lounge at a flagship hub therefore
+ * costs 12.5x a lounge at a small one, automatically and for ever.
+ */
+export const HubFacilityBalance = z
+  .object({
+    /** One-off unlock cost, as a fraction of the hub tier's base price. */
+    openingCostFraction: z.number().finite().positive(),
+    /** Recurring annual fee, as a fraction of the hub tier's base price. */
+    annualFeeFraction: z.number().finite().positive(),
+  })
+  .strict();
+export type HubFacilityBalance = z.infer<typeof HubFacilityBalance>;
+
+const SHIPPED_HUB_ANNUAL_FEE_MINOR = {
+  // 2% of the tier's base price a year: $40K small, $100K medium, $200K large,
+  // $500K flagship. App. B.5 gives the purchase table exactly and says only that
+  // annual facility fees "scale with tier", so the shape is the doc's and the
+  // level is anchored to the one number the doc does fix — the tier base.
+  //
+  // 2% is chosen against the opening position rather than in the abstract. A
+  // founder who takes the free flagship hub burns $41.7K a month against $500K of
+  // opening cash: about 8% a month, which kills an airline that does not fly and
+  // leaves one that does about a year to prove itself. That is precisely App. B.5's
+  // "a flagship hub bleeds you monthly from day one" and its insistence that
+  // "ambition should be allowed to be a mistake" — a fee that merely stung would
+  // make the free flagship the obvious choice, and one that killed outright would
+  // make it a trap rather than a decision.
+  small: 4_000_000,
+  medium: 10_000_000,
+  large: 20_000_000,
+  flagship: 50_000_000,
+} as const;
+
+const SHIPPED_HUB_FACILITIES = {
+  // Opening costs run a quarter to a full tier base, so a fully built small hub
+  // costs about 2.75x what the hub itself did — facilities are the larger half of
+  // a hub's lifetime bill, which is what makes "which hub gets the academy" a
+  // decision rather than a formality. Annual fees are roughly an eighth of the
+  // opening cost, so a facility pays for itself in capital terms long before it
+  // stops charging rent.
+  //
+  // The ordering between them is the doc's: heavy check is the dearest (§7.3's
+  // heaviest infrastructure), the lounge the cheapest (a product-score nicety),
+  // and self-handling sits above the academy because §9.3's alternative to it is
+  // paying a vendor rather than paying nobody.
+  training_academy: { openingCostFraction: 0.4, annualFeeFraction: 0.06 },
+  maintenance_line: { openingCostFraction: 0.5, annualFeeFraction: 0.08 },
+  heavy_check: { openingCostFraction: 1.0, annualFeeFraction: 0.12 },
+  lounge: { openingCostFraction: 0.25, annualFeeFraction: 0.05 },
+  self_handling: { openingCostFraction: 0.6, annualFeeFraction: 0.1 },
+} as const;
+
 export const HubBalance = z
   .object({
     /** Tier base price, minor units — the `TierBase` in the App. B.5 formula. */
@@ -2134,6 +2222,36 @@ export const HubBalance = z
       .strict(),
     /** The exponential base: each hub already owned multiplies the next one's cost. */
     costGrowth: z.number().finite().gt(1),
+    /**
+     * App. B.5's *"annual facility fees scale with tier"*, in minor units a year.
+     *
+     * Defaulted, exactly as a new section is — `hubs` shipped one milestone earlier
+     * with the purchase curve alone, so a `v1` row written between then and now has
+     * a `hubs` object with no fees in it. A required field here would make those
+     * rows unparseable, and an unparseable economy config is total: the world it is
+     * pinned to cannot price a flight or found an airline. The rule is CLAUDE.md's,
+     * and it applies to a new field inside a section as much as to a new section.
+     */
+    annualFeeMinor: z
+      .object({
+        small: MinorUnits.nonnegative(),
+        medium: MinorUnits.nonnegative(),
+        large: MinorUnits.nonnegative(),
+        flagship: MinorUnits.nonnegative(),
+      })
+      .strict()
+      .default(SHIPPED_HUB_ANNUAL_FEE_MINOR),
+    /** Per-facility prices, as fractions of the tier base. Defaulted for the same reason. */
+    facilities: z
+      .object({
+        training_academy: HubFacilityBalance,
+        maintenance_line: HubFacilityBalance,
+        heavy_check: HubFacilityBalance,
+        lounge: HubFacilityBalance,
+        self_handling: HubFacilityBalance,
+      })
+      .strict()
+      .default(SHIPPED_HUB_FACILITIES),
   })
   .strict();
 export type HubBalance = z.infer<typeof HubBalance>;
@@ -2150,6 +2268,8 @@ export const SHIPPED_HUB_BALANCE = {
   // "doubling with every hub you already own" — App. B.5. The strategic tension the
   // issue is about lives entirely in this being 2 and counting all hubs owned.
   costGrowth: 2,
+  annualFeeMinor: SHIPPED_HUB_ANNUAL_FEE_MINOR,
+  facilities: SHIPPED_HUB_FACILITIES,
 } as const satisfies z.input<typeof HubBalance>;
 
 /**

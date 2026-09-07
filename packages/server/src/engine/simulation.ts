@@ -17,6 +17,7 @@ import { reviewWorldDefaults } from '../finance/default';
 import { accrueLoanInterest } from '../finance/interest';
 import { expireGroundContracts } from '../ground/contracts';
 import { runGroundPayroll } from '../ground/payroll';
+import { billHubUpkeep } from '../hub/upkeep';
 import { reviewNpcCarriers } from '../npc/operate';
 import { runOfficePayroll } from '../office/payroll';
 import { reviewSocialMediaReputation } from '../office/reputation';
@@ -121,6 +122,8 @@ export interface TickReport {
   groundVolumeShortfalls: number;
   /** M5-06. Airlines billed this run for a station they handle themselves. */
   groundPayrollBilled: number;
+  /** M7-04. Airlines billed this run for the hubs and facilities they hold. */
+  hubFeesBilled: number;
   /** M8-07. Game days of §13.4 interest charged across every loan this run. */
   interestDaysCharged: number;
   /** M8-07. Ladder rungs descended, and airlines that cleared their arrears. */
@@ -200,6 +203,8 @@ export interface SimulationEngineOptions {
   expireGround?: typeof expireGroundContracts;
   /** M5-06. Bills the month's payroll for stations the airline handles itself. */
   payGround?: typeof runGroundPayroll;
+  /** M7-04. Bills App. B.5's monthly hub and facility fees. */
+  billHubs?: typeof billHubUpkeep;
   /** M8-07. Charges §13.4's per-game-day interest on every active loan. */
   accrueInterest?: typeof accrueLoanInterest;
   /** M8-07. Moves §13.5's default ladder, and applies the rung it lands on. */
@@ -344,6 +349,19 @@ export interface EngineSnapshot {
    */
   groundPayrollBilled: number;
   groundErrors: number;
+  /**
+   * M7-04. Airlines billed for their hubs since start, and sweeps that threw.
+   *
+   * The counter that separates "no hub has completed a month yet" from "nothing
+   * is billing hubs at all". Without a worker the second is permanent and looks
+   * exactly like generous balance: App. B.5 makes the first hub free precisely
+   * because upkeep is what stops a free flagship being the dominant opening, so a
+   * world where the fee never arrives has the acquisition rule without the rule
+   * that balances it.
+   */
+  hubFeesBilled: number;
+  hubFeesMinor: number;
+  hubErrors: number;
   /**
    * M8-07. Game days of §13.4 interest charged since start, and what was paid.
    *
@@ -522,6 +540,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     reviewReputation = reviewSocialMediaReputation,
     expireGround = expireGroundContracts,
     payGround = runGroundPayroll,
+    billHubs = billHubUpkeep,
     accrueInterest = accrueLoanInterest,
     reviewDefaults = reviewWorldDefaults,
     materialise = materialiseWorld,
@@ -565,6 +584,9 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let groundVolumeShortfallMinor = 0;
   let groundPayrollBilled = 0;
   let groundErrors = 0;
+  let hubFeesBilled = 0;
+  let hubFeesMinor = 0;
+  let hubErrors = 0;
   let interestDaysCharged = 0;
   let interestPaidMinor = 0;
   let arrearsMinor = 0;
@@ -615,6 +637,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     let tickGroundExpired = 0;
     let tickGroundShortfalls = 0;
     let tickGroundPaid = 0;
+    let tickHubFeesBilled = 0;
     let tickFlightsMaterialised = 0;
     let tickAlertsSwept = 0;
     let tickAlertsRaised = 0;
@@ -894,6 +917,32 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       }
 
       /*
+       * App. B.5's hub and facility fees (M7-04), on the world's game clock and
+       * on the world's own calendar month — the same shape as every payroll above
+       * and for the same reason: a hub costs a fixed sum to hold whether or not
+       * anything flew through it, and that fixed cost is the whole reason a free
+       * flagship hub is a decision rather than a free win.
+       *
+       * Isolated like the sweeps above. A month missed at a boundary self-heals
+       * for as long as the following month lasts, so a worker that was down over
+       * a month end bills when it comes back rather than skipping the month.
+       */
+      try {
+        const billed = await billHubs(db, entry.id, gameTime(entry.clock, now()));
+        tickHubFeesBilled += billed.airlinesBilled;
+        hubFeesMinor += billed.totalMinor;
+        if (billed.airlinesBilled > 0) {
+          log?.info?.(
+            `[${entry.name}] hub fees: ${String(billed.airlinesBilled)} airline(s), ` +
+              `${String(Math.round(billed.totalMinor / 100))}`,
+          );
+        }
+      } catch (error) {
+        hubErrors += 1;
+        log?.warn?.(`[${entry.name}] hub fee sweep failed: ${String(error)}`);
+      }
+
+      /*
        * §13.4's interest and §13.5's default ladder (M8-07), on the world's game
        * clock like every sweep above.
        *
@@ -1066,6 +1115,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     groundContractsExpired += tickGroundExpired;
     groundVolumeShortfalls += tickGroundShortfalls;
     groundPayrollBilled += tickGroundPaid;
+    hubFeesBilled += tickHubFeesBilled;
     flightsMaterialised += tickFlightsMaterialised;
     alertsSwept += tickAlertsSwept;
     alertsRaised += tickAlertsRaised;
@@ -1100,6 +1150,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       groundContractsExpired: tickGroundExpired,
       groundVolumeShortfalls: tickGroundShortfalls,
       groundPayrollBilled: tickGroundPaid,
+      hubFeesBilled: tickHubFeesBilled,
       interestDaysCharged: tickInterestDays,
       defaultEscalations: tickDefaultEscalations,
       defaultCures: tickDefaultCures,
@@ -1183,6 +1234,9 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         groundVolumeShortfallMinor,
         groundPayrollBilled,
         groundErrors,
+        hubFeesBilled,
+        hubFeesMinor,
+        hubErrors,
         interestDaysCharged,
         interestPaidMinor,
         arrearsMinor,
