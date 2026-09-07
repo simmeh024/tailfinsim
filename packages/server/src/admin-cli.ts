@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { ADMIN_ROLES, type AdminRole, isAdminRole } from './admin/capabilities';
 import { adjustAirlineCash } from './admin/cash';
 import { BOOTSTRAP_ACTOR, grantAdmin, listAdmins, revokeAdmin } from './admin/grants';
+import { resolvePlayerIdFromIdentities } from './admin/identity-lookup';
 import { createDatabase } from './db/client';
 import { player, playerIdentity } from './db/schema';
 
@@ -44,6 +45,11 @@ import { player, playerIdentity } from './db/schema';
  * the provider lives. It is a *lookup*, not an identity: ADR-0004 is explicit
  * that accounts are matched on the provider subject, and nothing here changes
  * that. The email is simply how a human names the account they mean.
+ *
+ * An address that names more than one account is **refused**, not resolved --
+ * see `admin/identity-lookup.ts` for why, and `--player <uuid>` for the way
+ * through. `grant` and `revoke` share the one lookup, so they share the refusal;
+ * `cash` names an airline and `list` names nobody, so neither reaches it.
  */
 
 type Command = 'list' | 'grant' | 'revoke' | 'cash';
@@ -179,19 +185,22 @@ async function main(): Promise<void> {
 
     let playerId = args.playerId;
     if (!playerId) {
+      /*
+       * Every match, not the first. `player_identity.email` is not unique, and
+       * once a second provider reports an address one human holds two rows
+       * carrying it -- which AUTH-04 leaves pointing at two separate players.
+       * `resolvePlayerIdFromIdentities` refuses that rather than guessing; the
+       * `ORDER BY` is what makes its refusal name them in the same order twice.
+       */
       const found = await db.db
-        .select({ playerId: playerIdentity.playerId })
+        .selectDistinct({
+          playerId: playerIdentity.playerId,
+          provider: playerIdentity.provider,
+        })
         .from(playerIdentity)
         .where(eq(playerIdentity.email, args.email))
-        .limit(1);
-      const id = found[0]?.playerId;
-      if (!id) {
-        throw new Error(
-          `No account with the sign-in address ${args.email}. ` +
-            'They have to sign in once before they can be granted anything.',
-        );
-      }
-      playerId = id;
+        .orderBy(playerIdentity.playerId, playerIdentity.provider);
+      playerId = resolvePlayerIdFromIdentities(args.email, found);
     }
 
     const named = await db.db
