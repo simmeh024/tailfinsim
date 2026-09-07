@@ -162,13 +162,24 @@ describe('layout', () => {
   it('has a rail link for each destination', async () => {
     await renderAt('/world');
     const rail = screen.getByRole('navigation', { name: 'Main' });
-    // Eight from App. H.4 and M5-04, plus M8-05's Service configurator.
-    expect(NAV_ITEMS).toHaveLength(9);
+    // Eight from App. H.4 and M5-04, plus M8-05's Service configurator and
+    // M8-10's Dashboard — which leads the rail, because §14 calls the dashboard
+    // the game's main interface after the first week.
+    expect(NAV_ITEMS).toHaveLength(10);
+    expect(NAV_ITEMS[0]?.to).toBe('/dashboard');
     for (const item of NAV_ITEMS) {
-      expect(within(rail).getByRole('link', { name: new RegExp(item.label, 'i') })).toHaveAttribute(
-        'href',
-        item.to,
-      );
+      /*
+       * An **exact** name, not a substring. The loose `new RegExp(label)` this
+       * used to be broke the moment a label contained another one — "Dashboard"
+       * matches /Board/i — and reported it as two links for one destination
+       * rather than as an ambiguous query. The accessible names are distinct;
+       * only the matcher was not.
+       */
+      expect(
+        within(rail).getByRole('link', {
+          name: (accessibleName) => accessibleName.trim() === item.label,
+        }),
+      ).toHaveAttribute('href', item.to);
     }
   });
 
