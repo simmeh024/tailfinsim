@@ -1,0 +1,281 @@
+/*
+ * §14.3's dashboards, and §14.6's one chart language (M8-10).
+ *
+ * Shared by the Executive and Financial pages on purpose:
+ *
+ * > Consistent chart language across every dashboard; light and dark; colour
+ * > never the sole carrier of meaning
+ *
+ * Two pages with their own tile and table styles would drift within a
+ * milestone. Every colour here is a token, so light and dark are the theme's
+ * problem rather than this file's, and every tone pairs its hue with a glyph
+ * rendered in the markup — so meaning survives greyscale and a screen reader.
+ *
+ * ## The 390px requirement is the layout, not a media query afterthought
+ *
+ * M8-10's third acceptance criterion is *"renders usefully on a 390px-wide
+ * screen"*, and §14.6 asks for a *"mobile-first executive view"*. So the grid is
+ * `auto-fit` with a `minmax` floor that fits inside 390px minus the shell's
+ * padding, which means it collapses to one column on its own rather than at a
+ * breakpoint somebody has to maintain. The only explicit query is the one thing
+ * `auto-fit` cannot do: stop a wide table from pushing the page sideways.
+ */
+
+/* ------------------------------------------------------------- tiles ---- */
+
+.tiles {
+  display: grid;
+  /*
+   * 13rem is about 208px, so two fit in a 390px viewport and one fits with room
+   * to spare when the shell's padding is tighter. No breakpoint decides this.
+   */
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+/*
+ * The three figures §14.3 opens with. Emphasis is weight and size rather than
+ * colour, so it reads the same in every theme and in none.
+ */
+.tile--featured {
+  border-color: var(--border-strong);
+}
+
+/*
+ * Emphasis without a new token: the featured value keeps `--text-lg` and gains
+ * weight and a stronger border. Inventing a `--text-2xl` here would put a type
+ * scale decision in a feature stylesheet, where the next page would not find it.
+ */
+.tile--featured .tile__value {
+  font-weight: 700;
+}
+
+.tile__label {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.tile__value {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+  /* Long money strings must wrap rather than widen the grid column. */
+  overflow-wrap: anywhere;
+}
+
+.tile__trend {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  margin: 0;
+  font-size: var(--text-xs);
+}
+
+.tile__trend--good {
+  color: var(--status-profit);
+}
+.tile__trend--bad {
+  color: var(--status-loss);
+}
+.tile__trend--neutral,
+.tile__trend--unknown {
+  color: var(--text-muted);
+}
+
+.tile__drill {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--accent);
+}
+
+/* A figure whose drill-down no page consumes yet: named, not linked. */
+.tile__drill--absent {
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------------ panels ---- */
+
+.panel {
+  margin-bottom: var(--space-6);
+  padding: var(--space-4);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.panel__title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-base);
+}
+
+.panel__note {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* Two panels side by side above 48rem, stacked below it. */
+.panel-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: var(--space-3);
+}
+
+.panel-pair .panel {
+  margin-bottom: 0;
+}
+
+/* ----------------------------------------------------------- figures ---- */
+
+.figures {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.figures__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.figures__row dt {
+  color: var(--text-muted);
+}
+
+.figures__row dd {
+  margin: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.chip {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.chip--calm {
+  background: var(--status-ontime-quiet);
+  color: var(--status-ontime);
+}
+
+.chip--warn {
+  background: var(--status-cancelled-quiet);
+  color: var(--status-cancelled);
+}
+
+/* ------------------------------------------------------------ tables ---- */
+
+/*
+ * The one thing `auto-fit` cannot do.
+ *
+ * A four-column money table does not fit in 390px at any font size worth
+ * reading, so it scrolls **inside its own box**. Letting the page scroll
+ * sideways instead is the failure the acceptance criterion is really about: it
+ * moves the navigation off screen to show one more column.
+ */
+.table-scroll {
+  overflow-x: auto;
+  /* Keeps a focused cell's outline from being clipped by the scroll container. */
+  padding-bottom: var(--space-1);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.data-table th,
+.data-table td {
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+
+.data-table thead th {
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.data-table tbody th {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.data-table__num {
+  text-align: right;
+}
+
+.figure--profit {
+  color: var(--status-profit);
+}
+
+.figure--loss {
+  color: var(--status-loss);
+}
+
+/* ------------------------------------------------------------ movers ---- */
+
+.movers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.movers__item {
+  display: grid;
+  /* One column under 26rem, three above it — same auto-fit reasoning. */
+  grid-template-columns: minmax(6rem, 1fr) auto;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.movers__route {
+  font-weight: 500;
+}
+
+.movers__change--up {
+  color: var(--status-profit);
+}
+
+.movers__change--down {
+  color: var(--status-loss);
+}
+
+.movers__level {
+  grid-column: 1 / -1;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}

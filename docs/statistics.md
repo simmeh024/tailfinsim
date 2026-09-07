@@ -1,7 +1,8 @@
 # Statistics
 
-Every figure §14 exposes, what it means, and where it goes when a player asks
-_why_. Design doc **§14.1–§14.3**; built by **M8-09**.
+Every figure §14 exposes, what it means, where it goes when a player asks
+_why_, and the two dashboards that show it. Design doc **§14.1–§14.3**, **§14.6**;
+built by **M8-09** and **M8-10**.
 
 ---
 
@@ -137,6 +138,84 @@ share; ratios get their value alone.
 
 ---
 
+## The dashboards (M8-10)
+
+§14.3 describes seven. Two are built, and they have deliberately different jobs:
+the Executive page answers _"is the airline all right?"_ in one glance — §2's
+check-in session — and the Financial page answers _"where did the money go?"_,
+which takes tables. Merging them would produce a screen that does neither.
+
+### Executive, at `/dashboard`
+
+> cash, **cash runway in days**, net worth, MTD profit vs. forecast, load factor,
+> OTP, reputation, credit rating, top gainers and losers this week
+
+Nine figures from six subsystems, assembled by `GET /api/statistics/executive`
+rather than by the page. Six of them already exist somewhere; **three do not**,
+and those three are the reason the endpoint exists:
+
+| Figure              | Why the server computes it                                                         |
+| ------------------- | ---------------------------------------------------------------------------------- |
+| **Net worth**       | cash + tangible assets − debt, on the same asset basis the lender advances against |
+| **MTD vs forecast** | a partial month compared against a **band**, scaled to the days actually elapsed   |
+| **Top movers**      | a week-over-week difference by route, which nothing else computes                  |
+
+A page that derived those would own three numbers the server could not explain,
+which is the opposite of §14.1's rule.
+
+Two decisions inside them worth keeping. **Net worth must not move when an
+airline borrows** — cash and debt rise together — because a dashboard that read
+it off cash alone would congratulate a player for taking a loan, precisely the
+confusion §13 exists to prevent; a database test holds that line. And **the
+forecast is scaled to the elapsed days**: comparing a whole month's projection
+against six days of trading would report every airline in the game as
+catastrophically behind plan for the first three weeks of every month.
+`withinBand` is what stops a variance being an alarm — a projection is never
+exactly right.
+
+**Movers are ranked on the change, not the level.** The best route in the network
+is not news if it was also the best last week.
+
+### Financial, at `/finance`
+
+The P&L with its lines and its four dimensional rollups, the unit economics as
+tiles, and the debt with its DSCR and §13.4's per-game-day interest drain. A
+`null` dimension key renders as **Unattributed** rather than being dropped, so
+the columns still add up to the statement above them.
+
+### Every headline carries its movement
+
+> Absolute value **and** rate of change on every headline metric — a falling
+> profit that's falling more slowly is a different story from one that isn't.
+
+So `MetricTile` renders three things and none is optional: the level, the
+movement, and the drill-down. Tone pairs its hue with an arrow glyph and spells
+the movement out in words, so it survives greyscale and a screen reader (H.4,
+H.7).
+
+**A drill-down with no page yet is named, not linked.** `drillHref` maps an API
+endpoint to this build's page for it and returns `null` when there is none — the
+tile then shows its figure with the destination named in plain text. M8-09's
+guard proves the endpoint exists on the server; nothing proves a page consumes
+it, and a link to a page that cannot answer is how a drill-down rots.
+
+### 390px is the layout, not a media query
+
+M8-10's third criterion is _"renders usefully on a 390px-wide screen"_, and
+§14.6 asks for a mobile-first executive view. Both grids are `auto-fit` with a
+`minmax` floor that fits inside 390px, so they collapse to one column on their
+own rather than at a breakpoint somebody has to maintain. The one thing
+`auto-fit` cannot do is stop a four-column money table pushing the page
+sideways, so every table sits in an `overflow-x: auto` box — letting the
+**page** scroll instead is the real failure, because it takes the navigation off
+screen to show one more column.
+
+jsdom has no layout engine, so the tests assert the two decidable facts — the
+`auto-fit` floors, and that every rendered table is inside a scroll container —
+and read `dashboard.css` to do it. A visual check belongs on dev.
+
+---
+
 ## Where each thing lives
 
 |                                           | Where                                                 |
@@ -147,6 +226,9 @@ share; ratios get their value alone.
 | The rollup and the breakdown              | `packages/server/src/statistics/metrics.ts`           |
 | The flights behind a route                | `packages/server/src/network/route-flights.ts`        |
 | The guard that keeps drill-downs alive    | `packages/server/src/statistics/drilldown.test.ts`    |
+| The Executive assembly                    | `packages/server/src/statistics/executive.ts`         |
+| The tile, the formatting and the href map | `packages/web/src/dashboard/`                         |
+| One chart language for both dashboards    | `packages/web/src/dashboard/dashboard.css`            |
 
 ---
 
@@ -188,7 +270,7 @@ empty rather than as having positioned an aeroplane.
 
 ---
 
-## What M8-09 did not build
+## What is still not built
 
 - **Dimensions other than route.** §14.3's Financial dashboard wants profitability
   by aircraft, hub and cabin class, and `GET /api/finance/pnl` already answers all
@@ -196,10 +278,22 @@ empty rather than as having positioned an aeroplane.
   means the breakdown can actually _produce_ it; a dimension listed and unserved
   would be the dead-end drill-down §14.1 forbids, so `by=hub` is a 404 today
   rather than an empty answer.
-- **The dashboards themselves** (§14.3) and §14.4's ranked profit-by-route chart.
-  This is the API; there is no web surface yet.
+- **Profitability by cargo.** §14.3 lists it. `flight_result` records `cargo_kg`
+  but settlement splits no revenue between passengers and freight, so a cargo
+  column would be an invented number in the middle of a real table. RTK appears
+  on the traffic side, where the tonnage is genuine.
+- **A debt amortisation schedule.** The Financial page lists the loans; nothing
+  repays principal yet (see [`loans-and-credit.md`](loans-and-credit.md)), so a
+  payment timetable would promise something the game does not do.
+- **A cash-flow statement.** The runway answers the question it was built for; a
+  statement is its own rollup.
+- **§14.4's ranked profit-by-route chart** with the breakeven line — M8-11,
+  deliberately its own issue, because it is the one chart the design doc says
+  players learn the game through.
+- **The other five dashboards** in §14.3 — traffic, fleet, crew, ground,
+  reputation — which are M8-12.
 - **§14.5's alerts** and §14.6's CSV export and world-median benchmarks.
 - **Forecast inputs beyond the airline's own history**, as above.
 - **Fleet, crew, ground and reputation metrics.** §14.3 lists seven dashboards'
-  worth; this covers the traffic, commercial and financial figures that
+  worth; M8-09 covers the traffic, commercial and financial figures that
   `flight_result` can answer. The rest need their own rollups.

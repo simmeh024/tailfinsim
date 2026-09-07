@@ -1,12 +1,14 @@
 import {
   MetricDimension,
   MetricId,
+  executiveDashboardResponseJsonSchema,
   metricBreakdownResponseJsonSchema,
   statisticsResponseJsonSchema,
 } from '@tailfin/shared';
 
 import { resolvedAirlineOf } from '../airline/context';
 
+import { readExecutiveDashboard } from './executive';
 import { readMetricBreakdown, readStatistics } from './metrics';
 
 import type { DatabaseHandle } from '../db/client';
@@ -39,6 +41,28 @@ export function registerStatisticsRoutes(
     },
     async (request, reply) =>
       reply.code(200).send(await readStatistics(db.db, resolvedAirlineOf(request))),
+  );
+
+  /**
+   * §14.3's Executive dashboard (M8-10).
+   *
+   * Assembled here rather than by the page, because three of its nine figures —
+   * net worth, month-to-date against forecast, and the week's top movers — exist
+   * nowhere else. A page that derived them would own numbers the server could
+   * not explain, which is the opposite of §14.1's rule.
+   *
+   * Registered **before** `/api/statistics/:metricId/breakdown` for clarity
+   * rather than necessity: the paths do not overlap, and Fastify's radix router
+   * prefers a static segment over a parametric one either way.
+   */
+  app.get(
+    '/api/statistics/executive',
+    {
+      onRequest: app.requireAirline,
+      schema: { response: { 200: executiveDashboardResponseJsonSchema } },
+    },
+    async (request, reply) =>
+      reply.code(200).send(await readExecutiveDashboard(db.db, resolvedAirlineOf(request))),
   );
 
   app.get<{ Params: { metricId: string }; Querystring: { by?: string } }>(

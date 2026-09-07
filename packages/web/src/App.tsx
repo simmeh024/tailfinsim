@@ -16,6 +16,8 @@ import { RequireSession } from './auth/RequireSession';
 import { SessionProvider } from './auth/SessionProvider';
 import { CrewPage } from './crew/CrewPage';
 import { CurrencyProvider } from './currency/CurrencyProvider';
+import { ExecutivePage } from './dashboard/ExecutivePage';
+import { FinancePage } from './finance/FinancePage';
 import { CabinConfiguratorPage } from './fleet/cabin/CabinConfiguratorPage';
 import { FleetPage } from './fleet/FleetPage';
 import { fetchFoundingOptions } from './founding/api';
@@ -24,7 +26,7 @@ import { ExecutiveSuitePage } from './hq/ExecutiveSuitePage';
 import { HeadquartersPage } from './hq/HeadquartersPage';
 import { LiveryBuilderPage } from './livery/LiveryBuilder';
 import { NetworkPage } from './network/NetworkPage';
-import { BoardPage, FinancePage } from './routes/Placeholder';
+import { BoardPage } from './routes/Placeholder';
 import { ServicePage } from './service/ServicePage';
 import { SettingsPage } from './settings/SettingsPage';
 import { AppShell } from './shell/AppShell';
@@ -126,6 +128,7 @@ export function App(): ReactNode {
               */}
               <Route path="/fleet/cabin" element={<CabinConfiguratorPage />} />
               <Route element={<AppShell />}>
+                <Route path="dashboard" element={<ExecutivePage />} />
                 <Route path="world" element={<WorldPage />} />
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="airline" element={<AirlinePage />} />

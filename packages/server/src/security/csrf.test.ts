@@ -75,6 +75,7 @@ const READ_ONLY_GET_ROUTES = [
   '/api/finance/pnl',
   '/api/finance/runway',
   '/api/statistics',
+  '/api/statistics/executive',
   '/api/statistics/:metricId/breakdown',
   '/api/routes/:routeId/flights',
   '/api/fleet/airframes',
