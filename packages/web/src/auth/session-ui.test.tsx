@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 
+import { REGISTRATION_COPY } from '@tailfin/shared';
 import type { MeResponse, VersionResponse, WorldClock } from '@tailfin/shared';
 
 import { App } from '../App';
@@ -239,16 +240,26 @@ describe('the login wall', () => {
     expect(calls.filter((url) => url === '/api/me')).toHaveLength(1);
   });
 
+  /*
+   * Both states, against the shared table rather than a copy of the words
+   * (LANDING-04).
+   *
+   * The login wall and the public landing page now explain this instance's
+   * account policy, and they must not disagree — a front door promising accounts
+   * in front of a wall saying they are closed is worse than either alone. The
+   * sentences live in `REGISTRATION_COPY`; asserting the literal here would let
+   * one surface be reworded while the other quietly kept the old line.
+   */
   it('says whether new accounts are being created', async () => {
     stubApi(ANONYMOUS);
     renderAt('/world');
-    expect(await screen.findByText(/not open for new accounts/i)).toBeInTheDocument();
+    expect(await screen.findByText(REGISTRATION_COPY.closed.note)).toBeInTheDocument();
   });
 
   it('says so when registration is open', async () => {
     stubApi({ ...ANONYMOUS, registrationOpen: true });
     renderAt('/world');
-    expect(await screen.findByText(/new accounts are open/i)).toBeInTheDocument();
+    expect(await screen.findByText(REGISTRATION_COPY.open.note)).toBeInTheDocument();
   });
 });
 

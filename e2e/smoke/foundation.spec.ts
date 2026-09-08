@@ -97,6 +97,160 @@ test('advances the fleet carousel when its buttons are used @smoke', async ({ pa
   await expect(first).not.toHaveAttribute('inert', /.*/);
 });
 
+/**
+ * The viewports the hero's above-the-fold claim is made at (LANDING-04).
+ *
+ * Stated rather than implied, because "above the fold" is meaningless without
+ * them. 1280x720 is the one that matters: it is the tightest common laptop, it
+ * is the band LANDING-10 predicts the mock breaks in first, and it is where the
+ * first measurement put the sign-in card 58px *below* the fold.
+ */
+const FOLD_VIEWPORTS = [
+  { name: 'phone', width: 390, height: 844 },
+  { name: 'small laptop', width: 1280, height: 720 },
+  { name: 'laptop', width: 1366, height: 768 },
+  { name: 'desktop', width: 1440, height: 900 },
+] as const;
+
+for (const { name, width, height } of FOLD_VIEWPORTS) {
+  test(`puts the sign-in button above the fold on a ${name} @smoke`, async ({ page }) => {
+    /*
+     * The **button**, not the whole card. The card's last line is a footnote; the
+     * button is the thing the hero exists to get pressed, and it is what survives
+     * when an error alert pushes the card taller. Measuring the card here would
+     * make the assertion fail for a reason nobody should act on.
+     */
+    await page.setViewportSize({ width, height });
+    await page.goto('/');
+
+    const bottom = await page.evaluate<number>(`
+      (() => {
+        const buttons = document.querySelectorAll('.lp-provider');
+        const last = buttons[buttons.length - 1];
+        return last === undefined ? Infinity : last.getBoundingClientRect().bottom;
+      })()
+    `);
+
+    expect(
+      bottom,
+      `the sign-in button is ${String(Math.round(bottom))}px down a ${String(height)}px viewport`,
+    ).toBeLessThanOrEqual(height);
+    // And nothing scrolls sideways to achieve it.
+    const overflows = await page.evaluate<boolean>(
+      `document.documentElement.scrollWidth > window.innerWidth`,
+    );
+    expect(overflows, 'the page scrolls horizontally').toBe(false);
+  });
+}
+
+test('shows enough of the next section to invite a scroll @smoke', async ({ page }) => {
+  /*
+   * The hero used to be exactly `100svh - header`, ending on a clean edge that
+   * gave a visitor no reason to believe anything followed it. `--lp-peek` takes a
+   * sliver back — but only out of the hero's *budget*, so the sliver exists only
+   * when the hero is tall enough to be budget-driven rather than content-driven.
+   *
+   * **Asserted on a monitor, not a laptop lid, and that is the honest limit.**
+   * The hero's content is 830-880px tall at desktop type sizes depending on the
+   * font stack, so under roughly 1000px of viewport the content sets the height
+   * and the peek is spent. That is the right way round: the peek and the
+   * above-the-fold CTA compete for the same pixels, and a visitor who cannot
+   * reach the button has a worse problem than one who has to guess that
+   * scrolling works.
+   *
+   * At 1440x1200 the hero measures exactly its budget — 1072px of 1072 — which is
+   * the condition the sliver depends on, with ~240px of slack before the content
+   * could take it back.
+   *
+   * This was asserted at 1440x900 first and CI returned **-0.75**, where the same
+   * page measured 49px on the machine it was written on. Same cause as the fold
+   * assertions above: a wider font stack on the runner makes the content taller,
+   * which on a 900px lid is exactly enough to consume the sliver. So the claim
+   * moves to a viewport where it is true with margin rather than true on one
+   * platform.
+   */
+  await page.setViewportSize({ width: 1440, height: 1200 });
+  await page.goto('/');
+
+  const visible = await page.evaluate<number>(`
+    (() => {
+      const next = document.querySelector('.lp-section');
+      return next === null ? 0 : window.innerHeight - next.getBoundingClientRect().top;
+    })()
+  `);
+  expect(visible, 'no part of the next section is on screen').toBeGreaterThan(16);
+});
+
+test('tells the truth about accounts, from the server @smoke', async ({ page }) => {
+  /*
+   * This harness runs with `ALLOW_REGISTRATION=false` (see `start-server.mjs`),
+   * which makes it the one place the **closed** state is exercised end to end —
+   * through a real server, a real response and a real browser. The unit tests in
+   * `landing-page.test.ts` cover the open state, which is what dev runs.
+   *
+   * The pairing is the point. A page that hardcoded the mock's promise would
+   * pass every open-state test ever written and still lie here.
+   */
+  await page.goto('/');
+
+  await expect(page.getByText(/sign-in is limited to existing players/)).toBeVisible();
+  await expect(page.getByText(/New accounts are created automatically/)).toHaveCount(0);
+  // The heading changes with it: "Start your airline" promises an account this
+  // server will not create.
+  await expect(page.getByRole('heading', { name: 'Sign in to Tailfin' })).toBeVisible();
+});
+
+test('explains a refused sign-in on the page it lands on @smoke', async ({ page }) => {
+  /*
+   * The regression LANDING-04 closes, end to end.
+   *
+   * A failed OAuth callback redirects to `/?auth_error=<code>`, and a failed
+   * attempt leaves no session cookie — so it lands on the public landing
+   * document. That document is static and its funnel carries no JavaScript, so
+   * before this the reason had nowhere to go: the visitor bounced back to an
+   * unchanged page that said nothing at all.
+   *
+   * Driven through the real URL rather than a unit call, because the thing worth
+   * proving is that the query parameter survives the surface branch at `/` and
+   * reaches the renderer.
+   */
+  await page.goto('/?auth_error=registration_closed');
+
+  const alert = page.getByRole('alert');
+  await expect(alert).toBeVisible();
+  await expect(alert).toContainText('Tailfin is not open for new accounts yet.');
+
+  // Inside the card, above the buttons: read before the button that failed is
+  // pressed again.
+  await expect(page.locator('.lp-signin .lp-alert')).toHaveCount(1);
+
+  // And the funnel still works while the error is on screen.
+  await expect(page.getByRole('link', { name: 'Continue with Google' })).toBeVisible();
+});
+
+test('does not echo a hostile auth_error into the page @smoke', async ({ page }) => {
+  /*
+   * `auth_error` is a query parameter on the one document every stranger
+   * reaches, served from the origin that holds the session cookie. A page that
+   * printed it would be a reflected-XSS sink there.
+   *
+   * Asserted in a real browser as well as in the unit test, because "the string
+   * is absent from the HTML" and "the browser did not execute anything" are
+   * different claims and only one of them can be made here.
+   */
+  const dialogs: string[] = [];
+  page.on('dialog', (dialog) => {
+    dialogs.push(dialog.message());
+    void dialog.dismiss();
+  });
+
+  await page.goto(`/?auth_error=${encodeURIComponent('<img src=x onerror=alert(1)>')}`);
+
+  await expect(page.getByRole('alert')).toContainText('Sign-in failed. Please try again.');
+  expect(dialogs, 'the page executed something from the query string').toEqual([]);
+  expect(await page.locator('img[onerror]').count()).toBe(0);
+});
+
 test('stays legible and signable-up with every image blocked @smoke', async ({ page }) => {
   /*
    * LANDING-03's last acceptance criterion: the page degrades to a solid token

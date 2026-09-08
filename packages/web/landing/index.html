@@ -138,8 +138,29 @@
               </li>
             </ul>
 
+            <!--
+              The sign-in card, and the three things in it the server writes
+              (LANDING-04).
+
+              This document is static and its funnel deliberately needs no
+              JavaScript (ADR-0028), so anything that varies per server or per
+              request is filled in by Fastify before the bytes are sent, between
+              the `tailfin:` markers below. What is written here is the **open**
+              state, which is the state dev runs and the state the mock-up
+              approves — so the file on disk renders correctly on its own and
+              the markers are an override rather than a template language.
+
+              Do not turn these into client-side lookups. An error only a
+              visitor with working JavaScript can read is an error some
+              visitors never see, and the account-state line has to be true for
+              everyone or it should not be here.
+            -->
             <div class="lp-signin">
-              <h2 class="lp-signin__title">Start your airline</h2>
+              <h2 class="lp-signin__title">
+                <!--tailfin:signin-title-->Start your airline<!--/tailfin:signin-title-->
+              </h2>
+
+              <!--tailfin:auth-error--><!--/tailfin:auth-error-->
               <div class="lp-signin__buttons">
                 <a class="lp-provider lp-provider--google" href="/api/auth/google">
                   <svg
@@ -184,7 +205,9 @@
                   Continue with Discord
                 </a>
               </div>
-              <p class="lp-signin__note">Free to play · New accounts are created automatically.</p>
+              <p class="lp-signin__note">
+                <!--tailfin:signin-note-->Free to play · New accounts are created automatically.<!--/tailfin:signin-note-->
+              </p>
             </div>
           </div>
         </div>

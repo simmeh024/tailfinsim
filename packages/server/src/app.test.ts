@@ -305,6 +305,75 @@ describeDb('HTTP surface', () => {
       expect(res.body).toContain('#5865f2');
     });
 
+    it('explains a refused sign-in, and does not let it be cached', async () => {
+      /*
+       * The regression LANDING-04 closes, at the HTTP boundary.
+       *
+       * A failed OAuth callback redirects to `/?auth_error=<code>` and leaves no
+       * session cookie, so it lands on this document. Until now there was
+       * nowhere to put the reason: the visitor bounced back to an unchanged page
+       * that said nothing at all.
+       *
+       * `no-store` matters as much as the message. The response describes one
+       * attempt; a shared cache holding it would show the next visitor somebody
+       * else's refusal, and a cached back-navigation would resurrect one that
+       * has already been read.
+       */
+      const res = await app.inject({
+        method: 'GET',
+        url: '/landing?auth_error=registration_closed',
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('role="alert"');
+      expect(res.body).toContain('Tailfin is not open for new accounts yet.');
+      expect(res.headers['cache-control']).toBe('no-store');
+
+      // And the ordinary request is unchanged: no alert, still cacheable.
+      const clean = await app.inject({ method: 'GET', url: '/landing' });
+      expect(clean.body).not.toContain('role="alert"');
+      expect(clean.headers['cache-control']).toBe('public, max-age=60');
+    });
+
+    it('never reflects the failure code into the document', async () => {
+      // `auth_error` is a query parameter on the one page every stranger
+      // reaches, served from the origin that holds the session cookie. The code
+      // selects a fixed sentence; it is never echoed. `landing-page.test.ts`
+      // covers the vocabulary — this proves the wiring does not undo it.
+      const res = await app.inject({
+        method: 'GET',
+        url: `/landing?auth_error=${encodeURIComponent('<img src=x onerror=alert(1)>')}`,
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('Sign-in failed. Please try again.');
+      expect(res.body).not.toContain('onerror');
+      expect(res.body).not.toContain('alert(1)');
+    });
+
+    it('states the account policy of this server rather than a build-time promise', async () => {
+      // `makeTestEnv` leaves ALLOW_REGISTRATION at its production default of
+      // false, so this fixture is the closed state — which is the one that would
+      // otherwise lie.
+      const res = await app.inject({ method: 'GET', url: '/landing' });
+      expect(res.body).toContain('sign-in is limited to existing players');
+      expect(res.body).not.toContain('New accounts are created automatically');
+    });
+
+    it('every in-page nav link points at a section that exists', async () => {
+      /*
+       * The nav is in-page anchors, not routes (LANDING-04). A `World status`
+       * link that scrolls nowhere is the failure mode when LANDING-09's strip is
+       * eventually gated off, and it is silent — the browser simply does nothing.
+       */
+      const body = (await app.inject({ method: 'GET', url: '/landing' })).body;
+      const targets = [...body.matchAll(/<a href="#([a-z-]+)"/g)].map((m) => m[1]);
+      expect(targets.length).toBeGreaterThanOrEqual(3);
+      for (const id of targets) {
+        expect(body, `nav links to #${String(id)}, which no element has`).toContain(
+          `id="${String(id)}"`,
+        );
+      }
+    });
+
     it('ships no invented statistics', async () => {
       /*
        * LANDING-09 is titled "Real numbers, or no numbers". The mock's 21,547

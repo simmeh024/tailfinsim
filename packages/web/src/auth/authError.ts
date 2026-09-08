@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 
-import type { AuthFailureCode } from '@tailfin/shared';
+import { authFailureMessage } from '@tailfin/shared';
 
 /**
  * Turning a failed sign-in into words.
@@ -11,43 +11,19 @@ import type { AuthFailureCode } from '@tailfin/shared';
  */
 
 /**
- * Typed as a total map over `AuthFailureCode`, so adding a code in
- * `@tailfin/shared` without a message here is a compile error rather than a
- * player seeing a raw slug.
+ * The words live in `@tailfin/shared` (LANDING-04).
+ *
+ * They used to live here, which was fine while the login wall was the only
+ * surface that had to explain a refused sign-in. The public landing page is now
+ * the front door, it is a static document, and its funnel deliberately needs no
+ * JavaScript — so the *server* renders the same message into the HTML. One table,
+ * two renderers; two tables would have drifted invisibly, because each surface
+ * looks correct on its own.
+ *
+ * Kept as a named export rather than replaced at every call site: this is the
+ * client's word for it, and the indirection costs nothing.
  */
-const FAILURE_MESSAGES: Record<AuthFailureCode, string> = {
-  registration_closed: 'Tailfin is not open for new accounts yet.',
-  state_mismatch: 'That sign-in attempt expired. Please try again.',
-  // Provider-neutral since AUTH-08: the same code arrives from Google and
-  // Discord, and the redirect carries no provider, deliberately — naming one
-  // would mean trusting a query parameter to say who refused.
-  provider_error: 'The sign-in was not completed.',
-  exchange_failed: 'Sign-in could not be completed. Please try again.',
-  // Specific about the situation, silent about the other account (AUTH-04).
-  // "Please try again" would be actively wrong: repeating the attempt produces
-  // the same refusal, and the two things that do work are named instead.
-  identity_already_linked:
-    'That account is already connected to a different Tailfin account. ' +
-    'Sign out first, or connect it from your account settings.',
-  // Says what did *not* happen, because the fear is that it did: the session is
-  // untouched and no second account was created.
-  // The link flow's own refusal. Says what to do rather than what broke: the
-  // session went away mid-flow, so the connect has to start again from a page
-  // they are signed in on.
-  link_requires_session:
-    'Your session ended before that account could be connected. ' +
-    'Nothing was changed — sign in and try connecting it again.',
-  already_signed_in:
-    'You are already signed in, and that account is not connected to this one. ' +
-    'You are still signed in as before — sign out first to use it as a separate ' +
-    'account, or connect it from your account settings.',
-};
-
-export function messageFor(code: string): string {
-  return code in FAILURE_MESSAGES
-    ? FAILURE_MESSAGES[code as AuthFailureCode]
-    : 'Sign-in failed. Please try again.';
-}
+export const messageFor = authFailureMessage;
 
 /**
  * Lifts `?auth_error=` off the URL and clears it, keeping the message.

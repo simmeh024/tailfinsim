@@ -146,6 +146,86 @@ export const AuthFailureCode = z.enum([
 export type AuthFailureCode = z.infer<typeof AuthFailureCode>;
 
 /**
+ * What each failure says to a person (LANDING-04).
+ *
+ * Here rather than in the client because there are now **two** surfaces that
+ * have to explain a refused sign-in, and they cannot share a component. The
+ * React login wall renders it from `useAuthError`; the public landing page is a
+ * static document with no JavaScript in its funnel, so the *server* writes the
+ * message into the HTML before sending it. Two copies of this table would drift,
+ * and the drift would be invisible — each surface looks right on its own.
+ *
+ * Typed as a total map, so adding a code above without a message here is a
+ * compile error rather than a player seeing a raw slug.
+ */
+export const AUTH_FAILURE_MESSAGES: Record<AuthFailureCode, string> = {
+  registration_closed: 'Tailfin is not open for new accounts yet.',
+  state_mismatch: 'That sign-in attempt expired. Please try again.',
+  // Provider-neutral since AUTH-08: the same code arrives from Google and
+  // Discord, and the redirect carries no provider, deliberately — naming one
+  // would mean trusting a query parameter to say who refused.
+  provider_error: 'The sign-in was not completed.',
+  exchange_failed: 'Sign-in could not be completed. Please try again.',
+  // Specific about the situation, silent about the other account (AUTH-04).
+  // "Please try again" would be actively wrong: repeating the attempt produces
+  // the same refusal, and the two things that do work are named instead.
+  identity_already_linked:
+    'That account is already connected to a different Tailfin account. ' +
+    'Sign out first, or connect it from your account settings.',
+  // Says what did *not* happen, because the fear is that it did: the session is
+  // untouched and no second account was created.
+  already_signed_in:
+    'You are already signed in, and that account is not connected to this one. ' +
+    'You are still signed in as before — sign out first to use it as a separate ' +
+    'account, or connect it from your account settings.',
+  // The link flow's own refusal. Says what to do rather than what broke: the
+  // session went away mid-flow, so the connect has to start again from a page
+  // they are signed in on.
+  link_requires_session:
+    'Your session ended before that account could be connected. ' +
+    'Nothing was changed — sign in and try connecting it again.',
+};
+
+/**
+ * A failure code from a query string, as words.
+ *
+ * Takes `string` rather than `AuthFailureCode` on purpose: the only source of
+ * these is `?auth_error=`, which anybody can type. Anything unrecognised falls
+ * back to a fixed sentence, so **no caller ever renders text it was handed** —
+ * which is what keeps this safe to write straight into a server-rendered
+ * document.
+ */
+export function authFailureMessage(code: string): string {
+  return code in AUTH_FAILURE_MESSAGES
+    ? AUTH_FAILURE_MESSAGES[code as AuthFailureCode]
+    : 'Sign-in failed. Please try again.';
+}
+
+/**
+ * What the sign-in card says, depending on whether this server will create an
+ * account (LANDING-04).
+ *
+ * `ALLOW_REGISTRATION` is a per-box `.env` value, so the answer differs between
+ * dev and production and can change without a deploy. Shipping the open promise
+ * against a server that refuses accounts would make the front door's last
+ * sentence a lie and the visitor's next experience a refusal.
+ *
+ * Shared for the same reason as the failure messages: the login wall and the
+ * landing page must not disagree about whether this instance is taking new
+ * players.
+ */
+export const REGISTRATION_COPY = {
+  open: {
+    title: 'Start your airline',
+    note: 'Free to play · New accounts are created automatically.',
+  },
+  closed: {
+    title: 'Sign in to Tailfin',
+    note: 'Tailfin is not open for new accounts yet — sign-in is limited to existing players.',
+  },
+} as const;
+
+/**
  * One of a player's ways into their own account (AUTH-09).
  *
  * Shown only to the owner. `email` is here because it is what tells two

@@ -137,6 +137,30 @@ arrives. So the literal stays in the query and the test asserts every media widt
 declared `--lp-bp-*` token. Everything is written mobile-first, `min-width` only, so no boundary
 needs an off-by-one companion (`max-width: 47.99rem`) that a token could not express either.
 
+**And one height boundary, `--lp-bp-short` at 50rem** (LANDING-04). The four width bands
+cannot say _"this screen is short"_, and that turned out to be the hero's actual constraint: a
+1280×720 laptop is wide and short, so every width-driven rule pays out its maximum exactly
+where there is least room, and the display headline alone took 207px of a ~700px budget. Below
+that line the hero uses a smaller display treatment — which is the correct type size for the
+screen rather than a compromise. 50rem sits above every common laptop height (720, 768) and
+below every desktop one (900, 1080) and the tall phones (844, 852).
+
+The same test holds it: every media query value, width or height, must equal a declared
+`--lp-bp-*` token.
+
+### The peek, and when it is there
+
+`--lp-peek` takes 3.5rem out of the hero's _budget_ so a sliver of the next section shows and
+scrolling is discoverable without a chevron or a label. It is a budget, not a guarantee: the
+hero grows past its `min-height` when its own content is taller, and at desktop type sizes that
+content is 830–880px depending on the font stack. So under roughly 1000px of viewport the
+content sets the height and the sliver is spent.
+
+That is the right way round. The peek and the above-the-fold CTA compete for the same pixels,
+and a visitor who cannot reach the button has a worse problem than one who has to guess that
+scrolling works. The e2e suite asserts the CTA at four viewports and the peek only on a monitor,
+which is where it is true rather than where it would be nice.
+
 ---
 
 ## Contrast
