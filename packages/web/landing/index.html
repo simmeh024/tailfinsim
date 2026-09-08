@@ -53,11 +53,20 @@
           <a href="#features">Features</a>
           <a href="#status">World status</a>
           <!--
-            The whole funnel is this link. It is a plain anchor to a server route
-            that exists on every surface, which is why this document needs no
-            JavaScript to be useful. LANDING-13 owns everything after the click.
+            An in-page anchor to the sign-in card, not a provider route.
+
+            This was `/api/auth/google` — hardcoded, so it survived on a box with
+            no Google credentials and sent that visitor to a 503. The same bug as
+            the card's buttons had, in a second place, and `app.test.ts` caught it
+            when Twitch made the card's buttons conditional and this one did not
+            move with them.
+
+            An anchor also matches LANDING-04's rule that the nav's items are
+            in-page anchors rather than routes, and it cannot rot: it works with
+            three providers, with one, and with none — where it scrolls to a card
+            that explains the state instead of to a door that does not open.
           -->
-          <a class="lp-cta" href="/api/auth/google">Start airline →</a>
+          <a class="lp-cta" href="#start">Start airline →</a>
         </nav>
       </div>
     </header>
@@ -155,7 +164,7 @@
               visitors never see, and the account-state line has to be true for
               everyone or it should not be here.
             -->
-            <div class="lp-signin">
+            <div class="lp-signin" id="start">
               <h2 class="lp-signin__title">
                 <!--tailfin:signin-title-->Start your airline<!--/tailfin:signin-title-->
               </h2>

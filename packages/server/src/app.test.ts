@@ -418,12 +418,52 @@ describeDb('HTTP surface', () => {
     });
 
     it('reaches no protected data — the document fetches nothing at all', async () => {
-      // The one security property of a public page: an anonymous visitor gets
-      // marketing and nothing else. No player, airline or world is named, and
-      // the only API path referenced is the sign-in route itself.
+      /*
+       * The one security property of a public page: an anonymous visitor gets
+       * marketing and nothing else. No player, airline or world is named, and
+       * the only API paths referenced are sign-in routes.
+       *
+       * `makeTestEnv` configures no provider, so this fixture is also the
+       * strongest version of the assertion: **no** API path at all. That is not
+       * incidental — it is what proves the page offers no door this box cannot
+       * open, which is the failure AUTH-08's third provider exposed. The nav's
+       * "Start airline" used to be a hardcoded `/api/auth/google` and would show
+       * up here even with Google switched off.
+       */
       const body = (await app.inject({ method: 'GET', url: '/landing' })).body;
       const apiPaths = [...body.matchAll(/\/api\/[\w/-]*/g)].map((match) => match[0]);
-      expect([...new Set(apiPaths)].sort()).toEqual(['/api/auth/discord', '/api/auth/google']);
+      expect([...new Set(apiPaths)].sort()).toEqual([]);
+    });
+
+    it('offers exactly the providers this instance has credentials for', async () => {
+      /*
+       * The positive half, since the fixture above has none. Built with a
+       * throwaway app rather than the suite's, because provider configuration is
+       * read at boot.
+       */
+      const configured = await buildApp({
+        env: makeTestEnv({
+          googleClientId: 'id',
+          googleClientSecret: 'secret',
+          googleEnabled: true,
+          twitchClientId: 'id',
+          twitchClientSecret: 'secret',
+          twitchEnabled: true,
+          sessionSecret: 'x'.repeat(48),
+          authEnabled: true,
+        }),
+        db,
+      });
+      try {
+        await configured.ready();
+        const body = (await configured.inject({ method: 'GET', url: '/landing' })).body;
+        expect(body).toContain('href="/api/auth/google"');
+        expect(body).toContain('href="/api/auth/twitch"');
+        // Discord is not configured on this instance, so it is not offered.
+        expect(body).not.toContain('href="/api/auth/discord"');
+      } finally {
+        await configured.close();
+      }
     });
   });
 
