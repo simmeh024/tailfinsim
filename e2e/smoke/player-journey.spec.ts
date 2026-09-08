@@ -49,13 +49,30 @@ test.describe('sign out @smoke', () => {
   // own fixture rather than racing specs that use player.json.
   test.use({ storageState: 'e2e/.auth/logout-player.json' });
 
-  test('returns the player to the login wall and clears the signed-in shell', async ({ page }) => {
+  test('returns the player to the public front door, not to the login wall', async ({ page }) => {
+    /*
+     * The destination changed deliberately. Signing out used to leave the player
+     * on whatever route they were on, looking at the login wall — technically
+     * signed out, but still parked inside the application on a URL like
+     * `/fleet`. They now land on the public landing page, which is where a
+     * visitor with no session belongs.
+     *
+     * That requires a **document** navigation, because `/` is a static page
+     * Fastify serves rather than a route in the bundle (ADR-0028) — so this test
+     * asserts the URL *and* something only the landing document renders. Either
+     * alone would pass against a client-side redirect that never left the SPA.
+     */
     await page.goto('/fleet');
     await expect(page.getByText('E2E Sign-out Player', { exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Sign out', exact: true }).click();
 
-    await expect(page.getByRole('heading', { name: 'Run an airline' })).toBeVisible();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(
+      page.getByRole('heading', { name: 'Build an airline. Make it yours.' }),
+    ).toBeVisible();
+
+    // And nothing of the previous session survives the trip.
     await expect(page.getByRole('navigation', { name: 'Main' })).toHaveCount(0);
     await expect(page.getByText('E2E Sign-out Player', { exact: true })).toHaveCount(0);
   });

@@ -97,6 +97,48 @@ test('advances the fleet carousel when its buttons are used @smoke', async ({ pa
   await expect(first).not.toHaveAttribute('inert', /.*/);
 });
 
+test('stays legible and signable-up with every image blocked @smoke', async ({ page }) => {
+  /*
+   * LANDING-03's last acceptance criterion: the page degrades to a solid token
+   * background if every image fails to load.
+   *
+   * Worth a real test rather than an eyeball, because the failure is not
+   * hypothetical and not uniform — a corporate proxy that strips WebP, a
+   * half-deployed origin, a phone on a train. The hero is a CSS background on a
+   * pseudo-element, so when it fails there is nothing in the DOM to notice: the
+   * headline simply sits on whatever colour is underneath, and if that colour
+   * had been left transparent the whole first screen would be white text on
+   * white.
+   *
+   * Aborting the requests rather than hiding the elements, so the browser takes
+   * the same path it would on a real failure.
+   */
+  await page.route('**/*.{webp,png,jpg,jpeg,avif,gif,svg}', (route) => route.abort());
+  await page.goto('/');
+
+  // The ground the tokens promise, on both the page and the hero — the hero
+  // paints its own so the letterboxed map never shows page black through it.
+  const grounds = await page.evaluate<string[]>(`
+    [
+      getComputedStyle(document.body).backgroundColor,
+      getComputedStyle(document.querySelector('.lp-hero')).backgroundColor,
+    ]
+  `);
+  expect(grounds).toEqual(['rgb(11, 16, 23)', 'rgb(11, 16, 23)']);
+
+  // The words survive, because none of them were ever in the artwork.
+  await expect(
+    page.getByRole('heading', { name: 'Build an airline. Make it yours.' }),
+  ).toBeVisible();
+
+  // And the funnel still works, which is the whole point of the criterion.
+  await expect(page.getByRole('link', { name: 'Continue with Google' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Continue with Discord' })).toBeVisible();
+
+  // A broken aircraft image still says which aircraft it was.
+  await expect(page.getByText('ATR 72-600')).toBeVisible();
+});
+
 test('still shows the login wall to an anonymous visitor on an app route @smoke', async ({
   page,
 }) => {
