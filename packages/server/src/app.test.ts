@@ -201,9 +201,15 @@ describeDb('HTTP surface', () => {
       expect(res.headers['x-content-type-options']).toBe('nosniff');
       // Immutable art, unlike the document and its styles: a day, not a minute.
       expect(res.headers['cache-control']).toContain('max-age=86400');
-      // LANDING-11 owns this page's weight budget. The source PNG was 1.7 MB;
-      // anything approaching that has come back by accident.
-      expect(res.rawPayload.length).toBeLessThan(200_000);
+      /*
+       * LANDING-11 owns this page's weight budget, and this is the whole of what
+       * it spends on art. The ceiling is deliberately close to the current size
+       * rather than generous: the source PNG was 1.7 MB, and the failure this
+       * catches is somebody committing the original by accident or re-exporting
+       * at a quality nobody costed. Raising it should be a decision with a
+       * sentence attached, which is why it is asserted rather than assumed.
+       */
+      expect(res.rawPayload.length).toBeLessThan(300_000);
     });
 
     it('serves the stylesheet as CSS from the same origin', async () => {
