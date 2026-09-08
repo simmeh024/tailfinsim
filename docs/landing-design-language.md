@@ -148,6 +148,19 @@ below every desktop one (900, 1080) and the tall phones (844, 852).
 The same test holds it: every media query value, width or height, must equal a declared
 `--lp-bp-*` token.
 
+### The peek, and when it is there
+
+`--lp-peek` takes 3.5rem out of the hero's _budget_ so a sliver of the next section shows and
+scrolling is discoverable without a chevron or a label. It is a budget, not a guarantee: the
+hero grows past its `min-height` when its own content is taller, and at desktop type sizes that
+content is 830–880px depending on the font stack. So under roughly 1000px of viewport the
+content sets the height and the sliver is spent.
+
+That is the right way round. The peek and the above-the-fold CTA compete for the same pixels,
+and a visitor who cannot reach the button has a worse problem than one who has to guess that
+scrolling works. The e2e suite asserts the CTA at four viewports and the peek only on a monitor,
+which is where it is true rather than where it would be nice.
+
 ---
 
 ## Contrast
