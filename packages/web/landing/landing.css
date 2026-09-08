@@ -1,5 +1,7 @@
 /*
- * The landing page's styles (LANDING-01).
+ * The landing page's design language (LANDING-02), and its styles.
+ *
+ * ## Why this file exists at all, before anything about design
  *
  * A separate same-origin file rather than an inline <style>, and that is a CSP
  * decision rather than a stylistic one.
@@ -7,35 +9,285 @@
  * The edge policy is `style-src 'self' 'sha256-<the holding page's hash>'`. An
  * inline block here would need its **own** hash pinned in the Caddyfile — and
  * `deploy.sh` and `deploy-dev.sh` do not install Caddy config, so every future
- * edit to this file would need a manual edge change to be visible. With
- * thirteen LANDING issues still to touch these styles, that is a trap that
- * springs repeatedly and silently: the page deploys, the CSS is blocked, and
- * the deploy reports success.
+ * edit to this file would need a manual edge change to be visible. With twelve
+ * LANDING issues still to touch these styles, that is a trap that springs
+ * repeatedly and silently: the page deploys, the CSS is blocked, and the deploy
+ * reports success.
  *
  * `'self'` already allows this file, so it needs no CSP change now and none
  * ever again. The holding page's "zero external requests: no fonts, no CDN, no
  * analytics" property is kept — this is one same-origin file on the same
  * connection, not a third party.
+ *
+ * ## THE ONLY PLACE IN packages/web/landing THAT MAY CONTAIN A COLOUR VALUE
+ *
+ * The same rule `theme/tokens.css` carries for the client, for the same reason:
+ * a stray literal is exactly the thing that survives review and then turns out
+ * to be the one element nobody can read. `theme/landing-tokens.test.ts` scans
+ * this directory — the HTML and the script included — and fails on a colour
+ * anywhere but the `:root` block below.
+ *
+ * It cannot be `tokens.css` itself. This is a static document outside the Vite
+ * client, so it can reach nothing the bundler produces. The tokens are therefore
+ * **duplicated deliberately and pinned by test**: the values that carry identity
+ * — the ground, the ink, the interaction accent, the brand amber — must equal
+ * `theme/tokens.css`'s dark theme, and that test fails if either side moves.
+ * A landing page that drifts from the product it sells is the failure worth
+ * spending a test on.
+ *
+ * ## One composition, and it is dark
+ *
+ * The client has two themes; this page has one. The hero is a photograph of a
+ * night world and the whole composition is built on it — there is no light
+ * treatment of that image that is not a different page. So the tokens below are
+ * a single set, `color-scheme` is pinned to dark, and the contrast figures
+ * recorded beside them are the only ones there are. LANDING-10 holds them to AA;
+ * these are measured, not asserted.
  */
 
 :root {
-  --bg: #060a12;
-  --bg-lift: #0b1220;
-  --panel: #0e1626;
-  --ink: #eef2f8;
-  --muted: #8494ad;
-  --accent: #ffb84d;
-  --link: #4a9eff;
-  /* The map's own deep navy — what the hero's wash is tinted with, so the
-     overlay belongs to the image rather than flattening it to page black. */
-  --wash: #0b1a38;
-  /* Provider brand colours: Google blue and Discord blurple, as published. */
-  --google: #4285f4;
-  --discord: #5865f2;
-  --hairline: rgba(132, 148, 173, 0.16);
-  --good: #37d39b;
-  --bad: #ff6b6b;
+  color-scheme: dark;
+
+  /* ---- ground and surfaces -------------------------------------------
+   *
+   * `--lp-bg` is `tokens.css`'s `--bg-base`, and that is the reconciliation
+   * LANDING-02 owed. There were two dark navies in this repository: the client's
+   * #0b1017 and the holding page's #060a12, which this page had copied. They are
+   * three points apart and nobody could tell them apart side by side, which is
+   * precisely why the difference was not deliberate — it was a value typed twice.
+   *
+   * The front door now uses the product's ground, so a visitor who signs in
+   * lands in the same world they were just looking at.
+   *
+   * The **holding page keeps #060a12**, and that is deliberate rather than
+   * missed: its <style> is inline and pinned in the Caddyfile by hash, so
+   * editing it is an edge rollout, and ADR-0028 retires the document at go-live
+   * anyway. Two navies remain; one of them has an expiry date.
+   */
+  --lp-bg: #0b1017;
+  --lp-bg-none: rgb(11 16 23 / 0%);
+  --lp-surface: #131a24;
+  --lp-surface-quiet: rgb(148 163 184 / 7%);
+  --lp-border: rgb(148 163 184 / 14%);
+  --lp-border-strong: rgb(148 163 184 / 28%);
+  --lp-header-bg: rgb(11 16 23 / 86%);
+  --lp-scrim: rgb(11 16 23 / 72%);
+  --lp-scrim-strong: rgb(11 16 23 / 92%);
+
+  /* ---- ink ------------------------------------------------------------
+   *
+   * Measured against the two grounds it is used on (AA needs 4.5:1 for body
+   * text, 3:1 for large text and meaningful graphics):
+   *
+   *   --lp-text        on --lp-bg          16.38    on --lp-surface   15.01
+   *   --lp-text-secondary on --lp-bg        8.19    on --lp-surface    7.51
+   *   --lp-text-secondary on the quiet fill 6.73
+   *
+   * There is deliberately **no third, quieter ink**. `tokens.css`'s
+   * `--text-muted` (#6d7c93) was the obvious import and it measures **4.13:1 on
+   * --lp-surface** — under AA, on the cards, for copy. It sits at exactly 4.50
+   * on the page ground, which is the kind of pass that becomes a fail the first
+   * time a surface moves. So the quiet register on this page is
+   * `--lp-text-secondary` at a smaller size, not a dimmer colour.
+   */
+  --lp-text: #e9eef6;
+  --lp-text-secondary: #9dabc0;
+  --lp-ink-on-accent: #04121f;
+
+  /* ---- the two roles colour is allowed to carry -----------------------
+   *
+   * Blue is interaction. Amber is the mark. Nothing on this page is both, and
+   * `landing-tokens.test.ts` fails if a rule paints an interactive selector
+   * with `--lp-brand`. See `theme/tokens.css`, which carries the rule this
+   * qualifies.
+   *
+   *   --lp-accent on --lp-bg (link text)          8.88
+   *   --lp-ink-on-accent on --lp-accent (the CTA) 8.80
+   *   --lp-brand on --lp-bg (mark, icons)        11.10
+   *   --lp-brand on the hero wash                10.02
+   */
+  --lp-accent: #5eb8ff;
+  --lp-accent-hover: #8ccdff;
+  --lp-brand: #ffb84d;
+
+  /* ---- the provider marks ---------------------------------------------
+   *
+   * Google's and Discord's own colours, which is the whole point of using them:
+   * a sign-in button that does not look like the service it opens is the one
+   * people hesitate over.
+   *
+   * **Google's published button is not AA at body size, and this is the fix.**
+   * White on #4285F4 measures **3.56:1** — under 4.5 for normal text, and
+   * Google's branding guidelines specify that exact pairing, so honouring the
+   * guideline and honouring AA are in direct conflict. WCAG's large-text
+   * threshold is 3:1 at 18.66px bold, so `--lp-text-provider` is 1.1875rem
+   * (19px) at weight 700 and the pair conforms *as large text* rather than by
+   * waiver. Discord's white on #5865F2 is 4.61 and would have passed either way;
+   * it gets the same treatment so the two buttons match.
+   *
+   * The size is not decoration. Change it down and the Google button stops
+   * being accessible — the test records the requirement next to the token.
+   */
+  --lp-google: #4285f4;
+  --lp-google-field: #ffffff;
+  --lp-discord: #5865f2;
+  --lp-provider-ink: #ffffff;
+
+  /* ---- the hero photograph ---------------------------------------------
+   *
+   * `--lp-hero-wash` is the map image's own deep navy, so the tint over it
+   * belongs to the picture rather than flattening it toward page black. The
+   * alpha steps are tokens rather than inline `rgb(… / …)` for the same reason
+   * every other colour here is: they are the gradient, and a gradient stop typed
+   * by hand in four places drifts.
+   */
+  --lp-hero-wash: #0b1a38;
+  --lp-hero-wash-strong: rgb(11 26 56 / 88%);
+  --lp-hero-wash-mid: rgb(11 26 56 / 60%);
+  --lp-hero-wash-soft: rgb(11 26 56 / 22%);
+  --lp-hero-wash-none: rgb(11 26 56 / 0%);
+  --lp-hero-veil: rgb(11 26 56 / 82%);
+  --lp-hero-veil-deep: rgb(9 18 38 / 94%);
+
+  /* ---- type ------------------------------------------------------------
+   *
+   * The same system stack `tokens.css` chose, and for its reason: the CSP has no
+   * `font-src`, so a web font would be blocked by `default-src 'self'` — and a
+   * marketing page whose headline arrives late is the one LANDING-11 is trying
+   * to prevent.
+   *
+   * **The text steps are the client's**, so the front door and the product set
+   * type at the same sizes. `--lp-text-md` and `--lp-text-provider` are the two
+   * additions, and both have a stated job.
+   *
+   * **The display steps are this page's alone**, and they are not in
+   * `tokens.css` on purpose. Nothing in the client sets 4.4rem type; a display
+   * scale sitting unused in the shared token file is how `--rail-width-collapsed`
+   * came to be defined-and-unused, which LANDING-10 names as a smell. They live
+   * where they are used.
+   *
+   * Every display step is a `clamp()` rather than a media-query staircase, so
+   * the headline reflows continuously and survives 200% text scaling — the
+   * failure LANDING-10 tests for is a display headline overflowing, and a clamp
+   * with a `rem` floor scales with the user's text size where a `vw`-only rule
+   * would not.
+   */
+  --lp-font:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+
+  --lp-text-xs: 0.6875rem;
+  --lp-text-sm: 0.8125rem;
+  --lp-text-base: 0.9375rem;
+  --lp-text-md: 1.0625rem;
+  --lp-text-lg: 1.125rem;
+  --lp-text-provider: 1.1875rem;
+
+  --lp-display-1: clamp(2.4rem, 6.4vw, 4.4rem);
+  --lp-display-2: clamp(1.5rem, 3vw, 2.1rem);
+  --lp-display-3: clamp(1.25rem, 2.4vw, 1.7rem);
+  --lp-display-4: clamp(1.3rem, 2.6vw, 1.75rem);
+  --lp-lede-size: clamp(1rem, 1.4vw, 1.0625rem);
+
+  --lp-weight-regular: 400;
+  --lp-weight-semibold: 600;
+  --lp-weight-bold: 700;
+  --lp-weight-display: 800;
+
+  --lp-leading-display: 0.98;
+  --lp-leading-tight: 1.15;
+  --lp-leading-snug: 1.3;
+  --lp-leading-normal: 1.5;
+
+  --lp-tracking-display: -0.02em;
+  --lp-tracking-title: -0.01em;
+  --lp-tracking-label: 0.06em;
+  --lp-tracking-wordmark: 0.22em;
+
+  /* ---- space ----------------------------------------------------------
+   *
+   * A rhythm, not a pile. The first draft of this page used twenty-one distinct
+   * gap values between 0.4rem and 2.75rem, most of them within a hair of each
+   * other; they are snapped onto these steps, which moves a few edges by a pixel
+   * or two and makes the page's vertical rhythm something a later section can
+   * match rather than guess at.
+   */
+  --lp-space-1: 0.25rem;
+  --lp-space-2: 0.5rem;
+  --lp-space-3: 0.75rem;
+  --lp-space-4: 1rem;
+  --lp-space-5: 1.25rem;
+  --lp-space-6: 1.5rem;
+  --lp-space-7: 1.75rem;
+  --lp-space-8: 2rem;
+  --lp-space-10: 2.75rem;
+
+  --lp-radius-sm: 0.375rem;
+  --lp-radius-md: 0.55rem;
+  --lp-radius-lg: 0.85rem;
+  --lp-radius-round: 50%;
+
+  /* ---- layout ----------------------------------------------------------
+   *
+   * **Four bands, three boundaries** — mobile, tablet, laptop, wide desktop —
+   * which is what LANDING-10 needs and what the client's single `--bp-mobile`
+   * could not express. The laptop boundary is the one that matters most: a
+   * two-column hero with a bleeding map has an awkward middle, and that band is
+   * also the app's own known gap (UX-09).
+   *
+   * **A media query cannot read a custom property.** `@media (min-width:
+   * var(--lp-bp-laptop))` is not valid CSS and fails silently — the query never
+   * matches and the layout below it simply never arrives. So the literals stay
+   * in the queries and `landing-tokens.test.ts` asserts that every width in
+   * every media query is one of these three values. The token is the source of
+   * truth; the test is what keeps the literal honest.
+   *
+   * Everything below is written mobile-first, `min-width` only, so no boundary
+   * needs an off-by-one companion (`max-width: 47.99rem`) that a token cannot
+   * express either.
+   */
+  --lp-bp-tablet: 48rem;
+  --lp-bp-laptop: 64rem;
+  --lp-bp-desktop: 90rem;
+
+  --lp-page-max: 120rem;
+  --lp-gutter: clamp(1rem, 3.5vw, 3rem);
+  --lp-header-h: 4.5rem;
+  --lp-measure: 34rem;
+  --lp-measure-lede: 32rem;
+
+  /* ---- motion ----------------------------------------------------------
+   *
+   * Zeroed at the root under `prefers-reduced-motion`, exactly as `tokens.css`
+   * does it, so **no component below needs its own media query** — which is the
+   * property that keeps the rule true as LANDING-04…09 add sections. The
+   * carousel's slide is the one long duration on the page and it is a token, so
+   * reduced motion turns it off without the carousel knowing.
+   */
+  --lp-motion-fast: 150ms;
+  --lp-motion-slide: 620ms;
+  --lp-ease: cubic-bezier(0.2, 0, 0.2, 1);
+  --lp-ease-slide: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
+
+/*
+ * The page's only `prefers-reduced-motion` block, and it is root-level.
+ *
+ * Somebody who asked their system not to animate did not mean "except when the
+ * page scrolls itself", so `scroll-behavior` is here too — it is the one motion
+ * that is not a duration and therefore cannot be a token.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --lp-motion-fast: 0ms;
+    --lp-motion-slide: 0ms;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* ---- base ------------------------------------------------------------- */
 
 *,
 *::before,
@@ -47,61 +299,14 @@ html {
   scroll-behavior: smooth;
 }
 
-/* Somebody who asked their system not to animate did not mean "except
-   when the page scrolls itself". */
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
-}
-
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--ink);
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    Helvetica,
-    Arial,
-    sans-serif;
+  background: var(--lp-bg);
+  color: var(--lp-text);
+  font-family: var(--lp-font);
+  font-size: var(--lp-text-base);
+  line-height: var(--lp-leading-normal);
   -webkit-font-smoothing: antialiased;
-  line-height: 1.5;
-}
-
-/*
- * Full-bleed rather than a centred column.
- *
- * The mock is edge to edge: the map runs to the right edge of the viewport and
- * the nav sits against the left and right margins. A `max-width` column would
- * box the map into the middle of the screen and lose exactly the thing that
- * makes the page feel like a world. The cap is generous rather than absent so
- * the hero copy does not drift a metre from the sign-in card on an ultrawide.
- */
-.wrap {
-  width: 100%;
-  max-width: 120rem;
-  margin-inline: auto;
-  padding-inline: clamp(1rem, 3.5vw, 3rem);
-}
-
-/* Keyboard users get to skip the nav; LANDING-10 owns the full pass. */
-.skip {
-  position: absolute;
-  left: -9999px;
-}
-
-.skip:focus {
-  left: 1rem;
-  top: 1rem;
-  z-index: 10;
-  padding: 0.6rem 1rem;
-  background: var(--panel);
-  border: 1px solid var(--hairline);
-  border-radius: 0.5rem;
 }
 
 a {
@@ -109,11 +314,49 @@ a {
 }
 
 :focus-visible {
-  outline: 2px solid var(--link);
+  outline: 2px solid var(--lp-accent-hover);
   outline-offset: 2px;
 }
 
-.visually-hidden {
+/* ---- the component family --------------------------------------------
+ *
+ * Every class on this page is `lp-`. The client's own families — `admin__*`,
+ * `login__*`, the console's — are not reachable from here and must not be
+ * recreated here either; a landing page borrowing `.login__button` would be the
+ * same mistake UX-11 exists to fix, in a new place.
+ *
+ * The prefix is not only hygiene. `.card`, `.panel` and `.stat` — which this
+ * page used before LANDING-02 — are all live class names in `dashboard.css`, so
+ * the moment ADR-0028's deferred "static shell that hydrates" arrives, an
+ * unprefixed family collides with the product on its first day.
+ *
+ * `docs/landing-design-language.md` is the catalogue LANDING-04…09 compose from.
+ */
+
+.lp-wrap {
+  width: 100%;
+  max-width: var(--lp-page-max);
+  margin-inline: auto;
+  padding-inline: var(--lp-gutter);
+}
+
+/* Keyboard users get to skip the nav; LANDING-10 owns the full pass. */
+.lp-skip {
+  position: absolute;
+  left: -9999px;
+}
+
+.lp-skip:focus {
+  left: var(--lp-space-4);
+  top: var(--lp-space-4);
+  z-index: 10;
+  padding: var(--lp-space-3) var(--lp-space-4);
+  background: var(--lp-surface);
+  border: 1px solid var(--lp-border);
+  border-radius: var(--lp-radius-md);
+}
+
+.lp-sr-only {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -125,76 +368,91 @@ a {
   border: 0;
 }
 
-/* ---- header ---------------------------------------------------------- */
+/* ---- header ----------------------------------------------------------- */
 
-.top {
-  border-bottom: 1px solid var(--hairline);
-  background: rgba(6, 10, 18, 0.86);
+.lp-header {
+  border-bottom: 1px solid var(--lp-border);
+  background: var(--lp-header-bg);
 }
 
-.top__inner {
+.lp-header__inner {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
-  padding-block: 1rem;
+  gap: var(--lp-space-6);
+  padding-block: var(--lp-space-4);
 }
 
-.brand {
+.lp-brand {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.22em;
+  gap: var(--lp-space-3);
+  font-weight: var(--lp-weight-bold);
+  letter-spacing: var(--lp-tracking-wordmark);
   text-decoration: none;
-  font-size: 0.95rem;
+  font-size: var(--lp-text-base);
 }
 
-.brand__mark {
+/*
+ * The tail fin, in the brand amber.
+ *
+ * Decorative and not interaction, even though it sits inside a link: what makes
+ * the wordmark clickable is the word beside it, in `--lp-text`. This is the
+ * exact case the amber rule is qualified for.
+ */
+.lp-brand__mark {
   width: 1.6rem;
   height: 1.6rem;
+  color: var(--lp-brand);
 }
 
-.top__nav {
+.lp-header__nav {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 1.75rem;
+  gap: var(--lp-space-7);
 }
 
-.top__nav a {
-  color: var(--muted);
+/*
+ * The in-page links are hidden on a phone, where the CTA is the only thing worth
+ * the width. Mobile-first: they arrive at the tablet boundary.
+ */
+.lp-header__nav a:not(.lp-cta) {
+  display: none;
+  color: var(--lp-text-secondary);
   text-decoration: none;
-  font-size: 0.9rem;
+  font-size: var(--lp-text-base);
+  transition: color var(--lp-motion-fast) var(--lp-ease);
 }
 
-.top__nav a:hover {
-  color: var(--ink);
+.lp-header__nav a:not(.lp-cta):hover {
+  color: var(--lp-text);
 }
 
-.cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.6rem 1.15rem;
-  border-radius: 0.5rem;
-  background: var(--link);
-  color: #04101f;
-  font-weight: 600;
-  text-decoration: none;
-  font-size: 0.9rem;
-}
-
-.cta:hover {
-  filter: brightness(1.08);
-}
-
-@media (max-width: 46rem) {
-  .top__nav a:not(.cta) {
-    display: none;
+@media (min-width: 48rem) {
+  .lp-header__nav a:not(.lp-cta) {
+    display: inline;
   }
 }
 
-/* ---- hero ------------------------------------------------------------ */
+.lp-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lp-space-2);
+  padding: var(--lp-space-3) var(--lp-space-5);
+  border-radius: var(--lp-radius-md);
+  background: var(--lp-accent);
+  color: var(--lp-ink-on-accent);
+  font-weight: var(--lp-weight-semibold);
+  text-decoration: none;
+  font-size: var(--lp-text-base);
+  transition: background var(--lp-motion-fast) var(--lp-ease);
+}
+
+.lp-cta:hover {
+  background: var(--lp-accent-hover);
+}
+
+/* ---- hero ------------------------------------------------------------- */
 
 /*
  * The hero fills the first screen, and the world sits behind it.
@@ -204,37 +462,40 @@ a {
  * taller than the screen at rest and pushes the sign-in button below the fold
  * on the one device where that matters most. `svh` is the conservative
  * measurement, and the header is subtracted so header + hero come to exactly one
- * screen. `min()` keeps it sane on a short landscape window.
+ * screen. `max()` keeps it sane on a short landscape window.
  */
-.hero {
+.lp-hero {
   position: relative;
   overflow: clip;
   display: grid;
   align-items: center;
-  min-height: max(34rem, calc(100svh - 4.5rem));
+  min-height: max(34rem, calc(100svh - var(--lp-header-h)));
   padding-block: clamp(2rem, 5vw, 4rem);
-  background-color: var(--bg);
+  background-color: var(--lp-bg);
 }
 
 /*
- * The map, as its own layer rather than a background on `.hero`.
+ * The map, as its own layer rather than a background on the section.
  *
- * A pseudo-element because the map is **inset to the right** rather than
- * covering the section: measured off the mock, it occupies about the right 72%
- * of the hero, which is what puts the Americas clear of the headline instead of
- * underneath it. `background-size: cover` cannot express that — cover fills the
- * box, so the only way to move the map right is to crop the Americas off the
- * left, which is the opposite of what is wanted.
+ * A pseudo-element because the map is **inset to the right** on wide screens
+ * rather than covering the section: measured off the mock, it occupies about the
+ * right 68% of the hero, which is what puts the Americas clear of the headline
+ * instead of underneath it. `background-size: cover` cannot express that — cover
+ * fills the box, so the only way to move the map right is to crop the Americas
+ * off the left, which is the opposite of what is wanted.
  *
- * Its own element also means the fades below can sit on top of the map without
- * also fading the section, and the map can be positioned without fighting the
+ * Its own element also means the wash below can sit on top of the map without
+ * also washing the section, and the map can be positioned without fighting the
  * gradient's own `background-position`.
+ *
+ * Mobile first: full width and quiet. Inset to the right on a phone would leave
+ * a strip too small to read as a map. LANDING-10 owns the purpose-made narrow
+ * crop that should eventually replace the scaled wide one here.
  */
-.hero::before {
+.lp-hero::before {
   content: '';
   position: absolute;
-  inset: 0 0 0 auto;
-  width: 68%;
+  inset: 0;
   background-image: url('/landing-hero.webp');
   background-repeat: no-repeat;
   background-position: center;
@@ -263,291 +524,295 @@ a {
  * deliberately keeps legible. A **blue** tint at lower opacity does the same job
  * for contrast while leaving the coastline and city lights visible through it, so
  * the left of the hero still reads as ocean rather than as a black panel.
- *
- * `--wash` is the map's own deep-navy rather than `--bg`, so the tint belongs to
- * the image it sits on.
  */
-.hero::after {
+.lp-hero::after {
   content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background-image:
-    linear-gradient(
-      100deg,
-      var(--wash) 0%,
-      rgba(11, 26, 56, 0.88) 24%,
-      rgba(11, 26, 56, 0.6) 40%,
-      rgba(11, 26, 56, 0.22) 58%,
-      rgba(11, 26, 56, 0) 74%
-    ),
-    /* Feathers the map's left edge into the page so the inset does not read as a
-       pasted rectangle. */
-    linear-gradient(to right, var(--bg) 0%, rgba(6, 10, 18, 0) 26%),
-    /* And the bottom, so the section below meets the map rather than colliding. */
-    linear-gradient(to bottom, rgba(6, 10, 18, 0) 62%, var(--bg) 100%);
+  background-image: linear-gradient(
+    to bottom,
+    var(--lp-hero-veil) 0%,
+    var(--lp-hero-veil-deep) 58%,
+    var(--lp-bg) 100%
+  );
 }
 
-/* The copy has to sit above both layers. */
-.hero__grid {
+@media (min-width: 48rem) {
+  .lp-hero::before {
+    inset: 0 0 0 auto;
+    width: 68%;
+  }
+
+  .lp-hero::after {
+    background-image:
+      linear-gradient(
+        100deg,
+        var(--lp-hero-wash) 0%,
+        var(--lp-hero-wash-strong) 24%,
+        var(--lp-hero-wash-mid) 40%,
+        var(--lp-hero-wash-soft) 58%,
+        var(--lp-hero-wash-none) 74%
+      ),
+      /* Feathers the map's left edge into the page so the inset does not read as a
+         pasted rectangle. */
+        linear-gradient(to right, var(--lp-bg) 0%, var(--lp-bg-none) 26%),
+      /* And the bottom, so the section below meets the map rather than colliding. */
+        linear-gradient(to bottom, var(--lp-bg-none) 62%, var(--lp-bg) 100%);
+  }
+}
+
+/*
+ * The copy sits at the page's left margin, in line with the wordmark above it —
+ * not centred, and above both map layers.
+ *
+ * The grid carries `.lp-wrap` too, so capping *it* would leave `.lp-wrap`'s
+ * `margin-inline: auto` centring a narrow box in a wide viewport, which is what
+ * it did on the first attempt. The cap belongs on the child; the wrap keeps its
+ * full width and its padding.
+ */
+.lp-hero__grid {
+  position: relative;
   z-index: 1;
 }
 
-/*
- * Narrow screens: the map goes full width and quiet.
- *
- * Inset to the right there would leave a strip too small to read as a map, and
- * the gradient has to cover most of it anyway to keep the text legible.
- */
-@media (max-width: 48rem) {
-  .hero::before {
-    width: 100%;
-    background-position: center;
-  }
-
-  .hero::after {
-    background-image: linear-gradient(
-      to bottom,
-      rgba(11, 26, 56, 0.82) 0%,
-      rgba(9, 18, 38, 0.94) 58%,
-      var(--bg) 100%
-    );
-  }
+.lp-hero__copy {
+  max-width: var(--lp-measure);
 }
 
-/*
- * One column. The map used to be a boxed second column; it is the section's
- * background now, so the copy simply occupies the left of it.
- */
-/*
- * The copy sits at the page's left margin, in line with the wordmark above it —
- * not centred.
- *
- * `.hero__grid` carries `.wrap` too, so capping *it* at 34rem would leave
- * `.wrap`'s `margin-inline: auto` centring a narrow box in a wide viewport, which
- * is what it did on the first attempt. The cap belongs on the child; the wrap
- * keeps its full width and its padding.
- */
-.hero__grid {
-  position: relative;
-}
-
-.hero__grid > div {
-  max-width: 34rem;
-}
-
-h1 {
-  margin: 0 0 1.1rem;
-  font-size: clamp(2.4rem, 6.4vw, 4.4rem);
-  line-height: 0.98;
-  letter-spacing: -0.02em;
+.lp-headline {
+  margin: 0 0 var(--lp-space-5);
+  font-size: var(--lp-display-1);
+  line-height: var(--lp-leading-display);
+  letter-spacing: var(--lp-tracking-display);
   text-transform: uppercase;
-  font-weight: 800;
+  font-weight: var(--lp-weight-display);
   text-wrap: balance;
 }
 
-h1 .dot {
-  color: var(--accent);
+/* The full stop after MAKE IT YOURS. Punctuation, not a control. */
+.lp-headline__stop {
+  color: var(--lp-brand);
 }
 
-.lede {
-  margin: 0 0 1.75rem;
-  color: var(--muted);
-  max-width: 32rem;
-  font-size: clamp(0.98rem, 1.4vw, 1.06rem);
+.lp-lede {
+  margin: 0 0 var(--lp-space-7);
+  color: var(--lp-text-secondary);
+  max-width: var(--lp-measure-lede);
+  font-size: var(--lp-lede-size);
 }
 
-.pillars {
+.lp-pillars {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.4rem;
-  margin: 0 0 1.9rem;
+  gap: var(--lp-space-6);
+  margin: 0 0 var(--lp-space-8);
   padding: 0;
   list-style: none;
 }
 
-.pillars li {
+.lp-pillars__item {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-  font-size: 0.8rem;
-  line-height: 1.25;
-  color: var(--muted);
+  gap: var(--lp-space-2);
+  font-size: var(--lp-text-sm);
+  line-height: var(--lp-leading-tight);
+  color: var(--lp-text-secondary);
   max-width: 8.5rem;
 }
 
-.pillars svg {
+/* Feature shorthand, beside the mark's own colour. Decorative, never a control. */
+.lp-pillars__icon {
   flex: none;
-  color: var(--accent);
+  color: var(--lp-brand);
 }
 
-.signin {
-  border: 1px solid var(--hairline);
-  border-radius: 0.85rem;
-  background: var(--bg-lift);
-  padding: 1.4rem;
+/* ---- sign-in ----------------------------------------------------------- */
+
+.lp-signin {
+  border: 1px solid var(--lp-border);
+  border-radius: var(--lp-radius-lg);
+  background: var(--lp-surface);
+  padding: var(--lp-space-6);
   max-width: 30rem;
 }
 
-.signin h2 {
-  margin: 0 0 0.9rem;
-  font-size: 1.05rem;
+.lp-signin__title {
+  margin: 0 0 var(--lp-space-4);
+  font-size: var(--lp-text-md);
+  line-height: var(--lp-leading-snug);
 }
 
-.signin__buttons {
+.lp-signin__buttons {
   display: grid;
-  gap: 0.6rem;
-}
-
-.signin__button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.6rem;
-  width: 100%;
-  padding: 0.8rem 1rem;
-  border-radius: 0.55rem;
-  font-weight: 600;
-  text-decoration: none;
-  color: #fff;
+  gap: var(--lp-space-3);
 }
 
 /*
-  Each provider wears its own colour, because a sign-in button that does not
-  look like the service it opens is the one people hesitate over. Both marks
-  are inlined as SVG paths rather than fetched, so the document keeps making
-  zero external requests.
-*/
-.signin__button--google {
-  background: var(--google);
+ * Each provider wears its own colour, because a sign-in button that does not
+ * look like the service it opens is the one people hesitate over. Both marks are
+ * inlined as SVG paths rather than fetched, so the document keeps making zero
+ * external requests.
+ *
+ * The size and weight are load-bearing, not styling — see `--lp-text-provider`.
+ * White on Google's blue is 3.56:1, which conforms only as WCAG large text
+ * (>=18.66px bold). Shrink this and the button stops being accessible.
+ */
+.lp-provider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--lp-space-3);
+  width: 100%;
+  padding: var(--lp-space-3) var(--lp-space-4);
+  min-height: 3rem;
+  border-radius: var(--lp-radius-md);
+  font-size: var(--lp-text-provider);
+  font-weight: var(--lp-weight-bold);
+  text-decoration: none;
+  color: var(--lp-provider-ink);
+  transition: filter var(--lp-motion-fast) var(--lp-ease);
 }
 
-.signin__button--discord {
-  background: var(--discord);
+.lp-provider--google {
+  background: var(--lp-google);
 }
 
-.signin__button:hover {
+.lp-provider--discord {
+  background: var(--lp-discord);
+}
+
+.lp-provider:hover {
   filter: brightness(1.08);
 }
 
 /* The Google mark is four fixed brand colours and must not inherit ours. */
-.signin__button--google svg {
-  background: #fff;
+.lp-provider--google .lp-provider__mark {
+  background: var(--lp-google-field);
   border-radius: 2px;
   padding: 1px;
 }
 
-.signin__note {
-  margin: 0.8rem 0 0;
-  font-size: 0.78rem;
-  color: var(--muted);
+.lp-signin__note {
+  margin: var(--lp-space-3) 0 0;
+  font-size: var(--lp-text-sm);
+  color: var(--lp-text-secondary);
 }
 
-/* The boxed placeholder is gone — the hero background is the map now. What
-   LANDING-05 still owns is a map that is *alive*: real routes, real aircraft,
-   moving. This is a photograph of one. */
+/* ---- sections ---------------------------------------------------------- */
 
-/* ---- sections -------------------------------------------------------- */
-
-section {
+.lp-section {
   padding-block: clamp(2.5rem, 6vw, 4.5rem);
 }
 
-h2.section__title {
-  margin: 0 0 1.6rem;
-  font-size: clamp(1.5rem, 3vw, 2.1rem);
-  letter-spacing: -0.01em;
+.lp-section__title {
+  margin: 0 0 var(--lp-space-6);
+  font-size: var(--lp-display-2);
+  line-height: var(--lp-leading-tight);
+  letter-spacing: var(--lp-tracking-title);
 }
 
-.split {
+.lp-split {
   display: grid;
-  gap: 1.5rem;
+  gap: var(--lp-space-6);
   grid-template-columns: minmax(0, 1fr);
 }
 
-@media (min-width: 68rem) {
-  .split {
+/*
+ * Two columns from the laptop band up. This is the boundary the mock is most
+ * likely to break at, and it is deliberately not the tablet one: a 2fr/1fr split
+ * at 48rem leaves the aside too narrow to hold its own headline.
+ */
+@media (min-width: 64rem) {
+  .lp-split {
     grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
     align-items: start;
   }
 }
 
-.cards {
+.lp-cards {
   display: grid;
-  gap: 1rem;
+  gap: var(--lp-space-4);
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
 }
 
-.card {
-  border: 1px solid var(--hairline);
-  border-radius: 0.85rem;
-  background: var(--panel);
-  padding: 1.1rem;
+.lp-card {
+  border: 1px solid var(--lp-border);
+  border-radius: var(--lp-radius-lg);
+  background: var(--lp-surface);
+  padding: var(--lp-space-4);
 }
 
-.card h3 {
-  margin: 0 0 0.9rem;
-  font-size: 0.98rem;
+.lp-card__title {
+  margin: 0 0 var(--lp-space-4);
+  font-size: var(--lp-text-md);
+  line-height: var(--lp-leading-snug);
 }
 
-.card p {
-  margin: 0.9rem 0 0;
-  color: var(--muted);
-  font-size: 0.85rem;
+.lp-card__body {
+  margin: var(--lp-space-4) 0 0;
+  color: var(--lp-text-secondary);
+  font-size: var(--lp-text-sm);
 }
 
-/* ---- the fleet carousel (LANDING-06) ---------------------------------- */
+.lp-figure {
+  min-height: 6.5rem;
+  border-radius: var(--lp-radius-md);
+  background: var(--lp-surface-quiet);
+  display: grid;
+  place-items: center;
+  color: var(--lp-text-secondary);
+  font-size: var(--lp-text-xs);
+  text-align: center;
+  padding: var(--lp-space-3);
+}
 
-.fleet {
+/* ---- the fleet carousel (LANDING-06) ----------------------------------- */
+
+.lp-fleet {
   position: relative;
-  margin-bottom: 0.9rem;
+  margin-bottom: var(--lp-space-4);
 }
 
-.fleet__viewport {
+.lp-fleet__viewport {
   overflow: clip;
-  border-radius: 0.6rem;
-  background: rgba(132, 148, 173, 0.07);
+  border-radius: var(--lp-radius-md);
+  background: var(--lp-surface-quiet);
 }
 
-.fleet__track {
+.lp-fleet__track {
   display: flex;
   margin: 0;
   padding: 0;
   list-style: none;
   /*
-   * The movement. `transform` rather than `left` or `scroll-left` so it runs on
-   * the compositor and never lays the page out again mid-slide.
+   * `transform` rather than `left` or `scroll-left` so the slide runs on the
+   * compositor and never lays the page out again mid-move. Reduced motion zeroes
+   * the token at the root — the carousel still works, it just arrives instead of
+   * gliding, and this rule needs no media query of its own to know that.
    */
-  transition: transform 620ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  transition: transform var(--lp-motion-slide) var(--lp-ease-slide);
 }
 
-/* Reduced motion: the carousel still works, it just arrives instead of gliding. */
-@media (prefers-reduced-motion: reduce) {
-  .fleet__track {
-    transition: none;
-  }
-}
-
-.fleet__slide {
+.lp-fleet__slide {
   flex: 0 0 100%;
   min-width: 0;
   text-align: center;
-  padding: 0.4rem 0.4rem 0.7rem;
+  padding: var(--lp-space-1) var(--lp-space-1) var(--lp-space-3);
 }
 
-.fleet__image {
+.lp-fleet__image {
   display: block;
   width: 100%;
   height: auto;
-  border-radius: 0.4rem;
+  border-radius: var(--lp-radius-sm);
 }
 
-.fleet__type {
-  margin: 0.55rem 0 0;
-  font-size: 0.82rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--ink);
+.lp-fleet__type {
+  margin: var(--lp-space-2) 0 0;
+  font-size: var(--lp-text-sm);
+  font-weight: var(--lp-weight-semibold);
+  color: var(--lp-text);
 }
 
 /*
@@ -557,7 +822,7 @@ h2.section__title {
  * nothing because the script was blocked, slow or broken is worse than no
  * button — it reads as a bug rather than as a page that degrades.
  */
-.fleet__nav {
+.lp-fleet__nav {
   display: none;
   position: absolute;
   top: calc(50% - 0.9rem);
@@ -565,132 +830,136 @@ h2.section__title {
   width: 1.85rem;
   height: 1.85rem;
   place-items: center;
-  border: 1px solid var(--hairline);
-  border-radius: 50%;
-  background: rgba(6, 10, 18, 0.72);
-  color: var(--ink);
-  font-size: 1.1rem;
+  border: 1px solid var(--lp-border);
+  border-radius: var(--lp-radius-round);
+  background: var(--lp-scrim);
+  color: var(--lp-text);
+  font-size: var(--lp-text-lg);
   line-height: 1;
   cursor: pointer;
   padding: 0;
+  transition: background var(--lp-motion-fast) var(--lp-ease);
 }
 
-.fleet[data-ready] .fleet__nav {
+.lp-fleet[data-ready] .lp-fleet__nav {
   display: grid;
 }
 
-.fleet__nav:hover {
-  background: rgba(6, 10, 18, 0.92);
-  border-color: rgba(132, 148, 173, 0.4);
+.lp-fleet__nav:hover {
+  background: var(--lp-scrim-strong);
+  border-color: var(--lp-border-strong);
 }
 
-.fleet__nav--prev {
-  left: 0.3rem;
+.lp-fleet__nav--prev {
+  left: var(--lp-space-1);
 }
 
-.fleet__nav--next {
-  right: 0.3rem;
+.lp-fleet__nav--next {
+  right: var(--lp-space-1);
 }
 
-.card__figure {
-  min-height: 6.5rem;
-  border-radius: 0.6rem;
-  background: rgba(132, 148, 173, 0.07);
-  display: grid;
-  place-items: center;
-  color: var(--muted);
-  font-size: 0.72rem;
-  text-align: center;
-  padding: 0.75rem;
+/* ---- the persistent-world aside (LANDING-07) --------------------------- */
+
+.lp-aside {
+  border: 1px solid var(--lp-border);
+  border-radius: var(--lp-radius-lg);
+  background: var(--lp-surface);
+  padding: var(--lp-space-5);
 }
 
-.panel {
-  border: 1px solid var(--hairline);
-  border-radius: 0.85rem;
-  background: var(--panel);
-  padding: 1.25rem;
+.lp-aside__title {
+  margin: 0 0 var(--lp-space-3);
+  font-size: var(--lp-display-3);
+  line-height: var(--lp-leading-tight);
+  letter-spacing: var(--lp-tracking-title);
 }
 
-.panel h2 {
-  margin: 0 0 0.7rem;
-  font-size: clamp(1.25rem, 2.4vw, 1.7rem);
-  letter-spacing: -0.01em;
+.lp-aside__body {
+  margin: 0 0 var(--lp-space-4);
+  color: var(--lp-text-secondary);
+  font-size: var(--lp-text-sm);
 }
 
-.panel p {
-  margin: 0 0 1.1rem;
-  color: var(--muted);
-  font-size: 0.88rem;
-}
+/* ---- stats (LANDING-09) ------------------------------------------------ */
 
-/* ---- stats (LANDING-09) ---------------------------------------------- */
-
-.stats {
+.lp-stats {
   display: grid;
   gap: 0;
   grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-  border: 1px solid var(--hairline);
-  border-radius: 0.85rem;
-  background: var(--panel);
+  border: 1px solid var(--lp-border);
+  border-radius: var(--lp-radius-lg);
+  background: var(--lp-surface);
   overflow: clip;
 }
 
-.stat {
-  padding: 1.25rem;
-  border-right: 1px solid var(--hairline);
+.lp-stat {
+  padding: var(--lp-space-5);
+  border-right: 1px solid var(--lp-border);
 }
 
-.stat:last-child {
+.lp-stat:last-child {
   border-right: 0;
 }
 
-.stat__value {
-  font-size: clamp(1.3rem, 2.6vw, 1.75rem);
-  font-weight: 700;
-  letter-spacing: -0.01em;
+.lp-stat__value {
+  font-size: var(--lp-display-4);
+  font-weight: var(--lp-weight-bold);
+  line-height: var(--lp-leading-tight);
+  letter-spacing: var(--lp-tracking-title);
 }
 
-/* An unknown number reads as unknown, not as zero. */
-.stat__value--pending {
-  color: var(--muted);
-  font-weight: 400;
+/*
+ * An unknown number reads as unknown, not as zero — and not in a dimmer colour
+ * either, because the dim register on this page is size and weight rather than a
+ * third ink that does not clear AA on this surface.
+ */
+.lp-stat__value--pending {
+  font-weight: var(--lp-weight-regular);
 }
 
-.stat__label {
-  color: var(--muted);
-  font-size: 0.82rem;
+.lp-stat__label {
+  color: var(--lp-text-secondary);
+  font-size: var(--lp-text-sm);
 }
 
-/* ---- footer ---------------------------------------------------------- */
+/* ---- footer ------------------------------------------------------------ */
 
-footer {
-  border-top: 1px solid var(--hairline);
-  padding-block: 2rem 2.75rem;
+.lp-footer {
+  border-top: 1px solid var(--lp-border);
+  padding-block: var(--lp-space-8) var(--lp-space-10);
   text-align: center;
 }
 
-.footer__line {
+.lp-footer__line {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.55rem;
-  font-weight: 600;
+  gap: var(--lp-space-2);
+  font-weight: var(--lp-weight-semibold);
 }
 
-.footer__sub {
-  margin: 0.4rem 0 0;
-  color: var(--muted);
-  font-size: 0.88rem;
+.lp-footer__mark {
+  color: var(--lp-brand);
 }
 
-.todo {
+.lp-footer__sub {
+  margin: var(--lp-space-1) 0 0;
+  color: var(--lp-text-secondary);
+  font-size: var(--lp-text-sm);
+}
+
+/*
+ * Scaffolding. Every one of these names an issue that owes this page something
+ * real, and LANDING-04…09 delete them as they land.
+ */
+.lp-todo {
   display: inline-block;
-  margin-top: 0.5rem;
-  padding: 0.1rem 0.45rem;
-  border: 1px dashed var(--hairline);
-  border-radius: 0.35rem;
-  color: var(--muted);
-  font-size: 0.68rem;
-  letter-spacing: 0.06em;
+  margin-top: var(--lp-space-2);
+  padding: 0 var(--lp-space-2);
+  border: 1px dashed var(--lp-border-strong);
+  border-radius: var(--lp-radius-sm);
+  color: var(--lp-text-secondary);
+  font-size: var(--lp-text-xs);
+  letter-spacing: var(--lp-tracking-label);
   text-transform: uppercase;
 }

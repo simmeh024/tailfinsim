@@ -51,7 +51,7 @@ test('actually paints the landing stylesheet @smoke', async ({ page }) => {
   // `authorization.spec.ts`: this project's tsconfig gives e2e specs `node`
   // types and no DOM lib, so a callback touching `document` is untyped.
   const background = await page.evaluate<string>(`getComputedStyle(document.body).backgroundColor`);
-  expect(background).toBe('rgb(6, 10, 18)');
+  expect(background).toBe('rgb(11, 16, 23)');
 
   // A second property, from a different rule, so one lucky default cannot pass
   // this on its own.
@@ -80,10 +80,10 @@ test('advances the fleet carousel when its buttons are used @smoke', async ({ pa
 
   // The arrows stay hidden until the script marks itself ready, so this
   // attribute is the signal that it ran at all.
-  const carousel = page.locator('.fleet');
+  const carousel = page.locator('.lp-fleet');
   await expect(carousel).toHaveAttribute('data-ready', 'true');
 
-  const first = page.locator('.fleet__slide').first();
+  const first = page.locator('.lp-fleet__slide').first();
   await expect(first).not.toHaveAttribute('inert', /.*/);
   await expect(page.getByText('ATR 72-600')).toBeVisible();
 
@@ -91,7 +91,7 @@ test('advances the fleet carousel when its buttons are used @smoke', async ({ pa
 
   // The first slide steps out of the tab order and the second takes over.
   await expect(first).toHaveAttribute('inert', /.*/);
-  await expect(page.locator('.fleet__slide').nth(1)).not.toHaveAttribute('inert', /.*/);
+  await expect(page.locator('.lp-fleet__slide').nth(1)).not.toHaveAttribute('inert', /.*/);
 
   await page.getByRole('button', { name: 'Previous aircraft' }).click();
   await expect(first).not.toHaveAttribute('inert', /.*/);

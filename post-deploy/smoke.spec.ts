@@ -87,8 +87,14 @@ test('the deployed public surface renders the intended build without browser err
     // Dev's front door since LANDING-01. Its stylesheet is a separate
     // same-origin file, so the colour proves `/landing.css` was served *and*
     // allowed by `style-src 'self'`.
+    //
+    // A *different* navy from the holding branch above, and deliberately so:
+    // LANDING-02 moved this page onto the client's own `--bg-base` (#0b1017) so
+    // the front door and the product share a ground, while the holding page
+    // keeps #060a12 until ADR-0028 retires it at go-live. Two values here means
+    // the reconciliation happened, not that one of them is stale.
     await expect(page).toHaveTitle(/^Tailfin — build an airline/);
-    await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(6, 10, 18)');
+    await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(11, 16, 23)');
     // Matched by shape rather than by provider, for the same reason as the app
     // branch below: which buttons appear is that box's `.env`.
     await expect(page.getByRole('link', { name: /^Continue with / }).first()).toBeVisible();

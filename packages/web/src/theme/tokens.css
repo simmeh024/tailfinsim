@@ -17,6 +17,25 @@
  *    Using amber for both would make "this is clickable" and "this is late"
  *    the same colour. The amber survives as --brand, used only for the mark.
  *
+ *    QUALIFIED BY LANDING-02, and the qualification lives here so the next
+ *    reader finds it where they find the rule. The prohibition is about
+ *    **interaction and status**, not about the hue. Amber may be used
+ *    decoratively where it is neither: the mark itself, an icon beside a feature
+ *    name, the full stop in a headline. It may not be used for anything a person
+ *    can click, and it may not be used to say how something is doing.
+ *
+ *    The test is one question — *would a reader take this colour as an
+ *    instruction or as a state?* A clickable amber button is out, because it
+ *    competes with the accent. An amber figure in a statistics panel is out,
+ *    because a number that changes colour is a status by any other name. An
+ *    amber tail fin is in.
+ *
+ *    That reading is what let the public landing page use the mark's colour for
+ *    its feature icons and its headline stop while its only interactive colour
+ *    stays this blue. It is asserted rather than trusted: that page's own token
+ *    guard fails the build if a rule paints an interactive selector with the
+ *    brand token. See docs/landing-design-language.md.
+ *
  * 2. Status colour is never the only signal. H.4 is explicit: "status colour is
  *    always paired with a shape or label, never carried by hue alone", and H.7
  *    requires colour-blind-safe palettes with shape redundancy. This file holds
@@ -354,10 +373,37 @@
   --text-base: 0.9375rem;
   --text-lg: 1.125rem;
 
+  /*
+   * There is no display scale, and no weight or line-height scale, here.
+   *
+   * LANDING-02 needed all three and put them in packages/web/landing's own token
+   * block instead, because nothing in this client sets 4.4rem type and a scale
+   * defined here would be a scale nothing referenced. That is not hypothetical
+   * tidiness: --rail-width-collapsed below is exactly that — a token defined for
+   * a layout that was never built, and UX-09 now cites it as the example.
+   *
+   * The landing page is a static document outside the Vite client and cannot
+   * read this file anyway, so sharing was never on the table. What *is* shared
+   * is pinned by test: theme/landing-tokens.test.ts fails if that page's ground,
+   * ink, accent or brand amber stops matching the dark values above.
+   *
+   * When UX-11 wants weights and line-heights for the client, they belong here
+   * and the landing page's set is the shape to copy.
+   */
+
+  /*
+   * --space-5 is here because its absence was a live footgun rather than a
+   * tasteful omission. The admin console referenced `var(--space-5)` when it did
+   * not exist; CSS drops an unresolved custom property silently, so the console
+   * shipped with no padding and it read as a layout bug. The `token references`
+   * test below catches that now, but a gap in the middle of an otherwise
+   * complete sequence is a value somebody will type again.
+   */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
   --space-4: 1rem;
+  --space-5: 1.25rem;
   --space-6: 1.5rem;
 
   --radius-sm: 4px;
