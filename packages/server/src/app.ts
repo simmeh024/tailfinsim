@@ -41,7 +41,8 @@ import { registerCreditRoutes } from './finance/credit-routes';
 import { registerFinanceRoutes } from './finance/routes';
 import { registerGroundRoutes } from './ground/routes';
 import { registerHubRoutes } from './hub/routes';
-import { landingPageWithAuthError, renderLandingPage } from './landing-page';
+import { landingPageWithAuthError, landingPageWithStats, renderLandingPage } from './landing-page';
+import { readLandingStats } from './landing-stats';
 import { createEconomicsProvider } from './network/economics';
 import { registerNetworkRoutes } from './network/routes';
 import { registerSlotRoutes } from './network/slot-routes';
@@ -483,15 +484,33 @@ export async function buildApp({
    * should not resurrect a refusal that has been read. The ordinary response
    * keeps the short public cache the front door has always had.
    */
-  function sendLanding(request: FastifyRequest, reply: FastifyReply): FastifyReply {
+  /**
+   * The composed document, rebuilt only when the figures actually move.
+   *
+   * `readLandingStats` is cached for five minutes, so this recomposes at most
+   * that often; in between, every request sends the same string. Keying the memo
+   * on the values rather than on a timestamp means a refresh that returns the
+   * same counts — which is nearly every refresh — costs nothing at all.
+   */
+  let composed: { key: string; html: string } | null = null;
+
+  async function landingDocument(): Promise<string> {
+    const stats = await readLandingStats(db.db);
+    const key = `${String(stats.airlines)}|${String(stats.aircraftTypes)}`;
+    if (composed?.key !== key) composed = { key, html: landingPageWithStats(landingPage, stats) };
+    return composed.html;
+  }
+
+  async function sendLanding(request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> {
     const raw = (request.query as { auth_error?: unknown }).auth_error;
     const code = typeof raw === 'string' ? raw : null;
+    const html = await landingDocument();
     return reply
       .code(200)
       .type('text/html; charset=utf-8')
       .header('cache-control', code === null ? 'public, max-age=60' : 'no-store')
       .header('x-content-type-options', 'nosniff')
-      .send(code === null ? landingPage : landingPageWithAuthError(landingPage, code));
+      .send(code === null ? html : landingPageWithAuthError(html, code));
   }
 
   app.get('/landing', async (request, reply) => sendLanding(request, reply));

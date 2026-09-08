@@ -94,6 +94,43 @@ export function renderLandingPage(template: string, allowRegistration: boolean):
 }
 
 /**
+ * The world-status figures, written into the strip (LANDING-09).
+ *
+ * A number renders as a grouped figure carrying `data-count` — the raw integer
+ * the count-up animation reads, so the script never parses formatted text back
+ * into a number, and its absence is how the script knows to leave a figure
+ * alone.
+ *
+ * `null` renders as an em-dash and keeps `--pending`, because **unknown is a
+ * legitimate answer and zero is not the same claim.** A count that failed must
+ * not become a "0" a visitor would read as a measurement — that is inventing a
+ * statistic by a slightly more technical route than typing one.
+ *
+ * `en-US` grouping, pinned rather than taken from the environment, for the
+ * reason the operations dashboard already pins it: a page where one figure
+ * groups with commas and the next with dots is the inconsistency the design
+ * language exists to prevent. The visitor's own locale is a LANDING i18n
+ * question (M13-06), not a per-figure accident.
+ */
+function statMarkup(value: number | null): string {
+  if (value === null) return '&mdash;';
+  return `<span data-count="${escapeHtml(String(value))}">${escapeHtml(
+    value.toLocaleString('en-US'),
+  )}</span>`;
+}
+
+export function landingPageWithStats(
+  page: string,
+  stats: { airlines: number | null; aircraftTypes: number | null },
+): string {
+  return fillSlot(
+    fillSlot(page, 'stat-airlines', statMarkup(stats.airlines)),
+    'stat-aircraft-types',
+    statMarkup(stats.aircraftTypes),
+  );
+}
+
+/**
  * The same page with a failed sign-in explained inside the sign-in card.
  *
  * **The code is never rendered.** It is a query parameter, so it is whatever

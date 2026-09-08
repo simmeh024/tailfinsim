@@ -181,6 +181,59 @@ test('shows enough of the next section to invite a scroll @smoke', async ({ page
   expect(visible, 'no part of the next section is on screen').toBeGreaterThan(16);
 });
 
+test('shows measured world figures, and settles the count on them @smoke', async ({ page }) => {
+  /*
+   * The strip, end to end: a real server, a real database, a real browser
+   * (LANDING-09).
+   *
+   * Deliberately not asserting *which* numbers. The airline count is whatever
+   * this harness's fixtures happen to have founded, and pinning it would make
+   * every future fixture change break a landing-page test for no reason. What
+   * matters is the property: every figure is either something the server
+   * measured or an honest em-dash, and **never a fabricated zero**.
+   *
+   * The count-up is checked by where it *lands*. An animation that ended a digit
+   * short, or that reformatted the value in a different locale on the way past,
+   * would turn a real statistic into an approximate one — so the settled text
+   * must equal the integer the server put in `data-count`, grouped the same way.
+   */
+  await page.goto('/');
+
+  await expect(page.getByText('Aircraft types')).toBeVisible();
+
+  // Give the animation its 1.1s and the safety timeout its margin.
+  await page.waitForTimeout(1800);
+
+  const figures = await page.evaluate<{ shown: string; count: string | null }[]>(`
+    [...document.querySelectorAll('.lp-stat__value')].map((value) => {
+      const counted = value.querySelector('[data-count]');
+      return {
+        shown: value.textContent.trim(),
+        count: counted === null ? null : counted.getAttribute('data-count'),
+      };
+    })
+  `);
+
+  expect(figures).toHaveLength(4);
+
+  for (const { shown, count } of figures) {
+    if (count === null) {
+      // Not measured: an em-dash, and nothing that could be read as a number.
+      expect(shown).toBe('—');
+    } else {
+      // Measured: settled exactly on the server's integer, grouped for reading.
+      expect(shown).toBe(Number(count).toLocaleString('en-US'));
+    }
+  }
+
+  // At least one is real, or this test is asserting nothing.
+  expect(figures.filter((f) => f.count !== null).length).toBeGreaterThan(0);
+
+  // No delta line, and no liveness claim a five-minute cache cannot support.
+  await expect(page.getByText('Live now')).toHaveCount(0);
+  await expect(page.getByText(/\+\d+ today/)).toHaveCount(0);
+});
+
 test('tells the truth about accounts, from the server @smoke', async ({ page }) => {
   /*
    * This harness runs with `ALLOW_REGISTRATION=false` (see `start-server.mjs`),

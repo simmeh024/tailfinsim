@@ -398,21 +398,51 @@
             mock's numbers do not appear in this document, including in a comment.
           -->
           <div class="lp-stats">
+            <!--
+              Two of these are real and two are not, and the difference is
+              visible on purpose.
+
+              The server writes the figures between the markers below, from a
+              query, cached for five minutes. No number here was typed by
+              anybody. If the query fails the em-dash stays and the page is
+              complete without it — an unknown is a legitimate answer, a
+              fabricated one is not.
+
+              `data-count` is what the count-up animation reads. It carries the
+              raw integer so the script never has to parse the formatted text
+              back into a number, and its absence is how the script knows a
+              figure is unknown and leaves it alone.
+            -->
+            <div class="lp-stat">
+              <div class="lp-stat__value lp-stat__value--pending">
+                <!--tailfin:stat-airlines-->—<!--/tailfin:stat-airlines-->
+              </div>
+              <div class="lp-stat__label">Airlines</div>
+            </div>
+            <div class="lp-stat">
+              <div class="lp-stat__value lp-stat__value--pending">
+                <!--tailfin:stat-aircraft-types-->—<!--/tailfin:stat-aircraft-types-->
+              </div>
+              <div class="lp-stat__label">Aircraft types</div>
+            </div>
+            <!--
+              Structurally zero in production and honestly unknown here.
+              Nothing flies without a worker (OPS-12), so both of these would
+              read `0` on the front door for ever — which beside two measured
+              numbers reads as a measurement rather than as an absence.
+              LANDING-09 owns whether they ship at all.
+            -->
             <div class="lp-stat">
               <div class="lp-stat__value lp-stat__value--pending">—</div>
-              <div class="lp-stat__label">Airlines <span class="lp-todo">LANDING-09</span></div>
+              <div class="lp-stat__label">
+                Flights airborne <span class="lp-todo">LANDING-09</span>
+              </div>
             </div>
             <div class="lp-stat">
               <div class="lp-stat__value lp-stat__value--pending">—</div>
-              <div class="lp-stat__label">Aircraft</div>
-            </div>
-            <div class="lp-stat">
-              <div class="lp-stat__value lp-stat__value--pending">—</div>
-              <div class="lp-stat__label">Flights airborne</div>
-            </div>
-            <div class="lp-stat">
-              <div class="lp-stat__value lp-stat__value--pending">—</div>
-              <div class="lp-stat__label">Passengers today</div>
+              <div class="lp-stat__label">
+                Passengers today <span class="lp-todo">LANDING-09</span>
+              </div>
             </div>
           </div>
         </div>

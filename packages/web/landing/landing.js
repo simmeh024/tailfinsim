@@ -116,6 +116,97 @@
   });
 
   /**
+   * Count the world-status figures up on load (LANDING-09).
+   *
+   * Decoration over a value that is already correct. The server writes the real
+   * number into the document, so a visitor with no JavaScript reads it
+   * immediately and one with JavaScript watches it arrive — nothing here fetches
+   * anything, and nothing here can produce a figure the server did not send.
+   *
+   * `data-count` carries the raw integer beside the formatted text, so this
+   * never has to parse "1,234" back into 1234 — which would be one locale away
+   * from a wrong answer. A figure the server could not measure has no
+   * `data-count`, which is exactly how this knows to leave the em-dash alone.
+   *
+   * The animation **always lands on the server's number**, and the last frame
+   * restores the server's own formatted string rather than re-deriving it. An
+   * animation that ends a digit off, or that reformats a value slightly
+   * differently from the way it arrived, would turn a real statistic into an
+   * approximate one for the sake of a flourish.
+   */
+  function countUp() {
+    const figures = document.querySelectorAll('[data-count]');
+    if (figures.length === 0) return;
+
+    /*
+     * Reduced motion is not "a faster count" — it is no count. Somebody who
+     * asked their system not to animate did not ask for a shorter animation, and
+     * numbers spinning in the corner of the eye is exactly the kind of movement
+     * the preference exists to stop.
+     */
+    if (reduceMotion.matches) return;
+
+    const DURATION = 1100;
+    // Fast out, slow in: the figure is legible for most of the animation rather
+    // than a blur that resolves at the last moment.
+    const ease = (t) => 1 - Math.pow(1 - t, 3);
+
+    for (const figure of figures) {
+      const target = Number(figure.dataset.count);
+      // A malformed attribute leaves the rendered figure exactly as the server
+      // wrote it. Never blank, never NaN.
+      if (!Number.isFinite(target) || target <= 0) continue;
+
+      const settled = figure.textContent;
+      let started = null;
+      let done = false;
+
+      const settle = () => {
+        if (done) return;
+        done = true;
+        // The server's own string, not a re-derivation of it. Reformatting the
+        // number here would be one locale away from ending on a figure that
+        // differs from the one the page was served with.
+        figure.textContent = settled;
+      };
+
+      const step = (at) => {
+        if (done) return;
+        /*
+         * The clock starts on the **first frame**, not when the loop ran, and
+         * the text is not zeroed until then either.
+         *
+         * That ordering is the whole safety property. `requestAnimationFrame`
+         * does not run in a background tab, so writing "0" up front and waiting
+         * for a frame leaves a throttled visitor looking at `0 Airlines` — a
+         * fabricated statistic produced by an animation, which is exactly what
+         * this strip is not allowed to do. Deferring the zero means a frame that
+         * never comes leaves the real number on screen.
+         */
+        if (started === null) started = at;
+        const elapsed = at - started;
+        if (elapsed >= DURATION) {
+          settle();
+          return;
+        }
+        figure.textContent = Math.round(target * ease(elapsed / DURATION)).toLocaleString('en-US');
+        window.requestAnimationFrame(step);
+      };
+
+      /*
+       * ...and a belt to go with those braces. A tab backgrounded *mid*-count
+       * gets one frame and then no more, which would strand the figure at
+       * whatever it had reached. Timers are throttled in the background too, but
+       * they do fire — so this lands eventually and always on the true value.
+       */
+      window.setTimeout(settle, DURATION + 400);
+      window.requestAnimationFrame(step);
+    }
+  }
+
+  countUp();
+
+  /**
    * Tidy `?auth_error=` out of the address bar (LANDING-04).
    *
    * The split here is the point. The **server** renders the message, because the

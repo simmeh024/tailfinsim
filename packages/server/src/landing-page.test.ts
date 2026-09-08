@@ -6,7 +6,12 @@ import { describe, expect, it } from 'vitest';
 
 import { REGISTRATION_COPY } from '@tailfin/shared';
 
-import { fillSlot, landingPageWithAuthError, renderLandingPage } from './landing-page';
+import {
+  fillSlot,
+  landingPageWithAuthError,
+  landingPageWithStats,
+  renderLandingPage,
+} from './landing-page';
 
 /**
  * Rendering the public landing document (LANDING-04).
@@ -162,5 +167,80 @@ describe('the slots themselves', () => {
     expect(page).toContain('<b>x</b>');
     const escaped = renderLandingPage(TEMPLATE, true);
     expect(escaped).not.toContain('<b>');
+  });
+});
+
+describe('the world-status figures', () => {
+  const base = renderLandingPage(TEMPLATE, true);
+
+  it('writes measured counts into the strip', () => {
+    const page = landingPageWithStats(base, { airlines: 1247, aircraftTypes: 18 });
+    // Grouped for a reader...
+    expect(page).toContain('1,247');
+    expect(page).toContain('>18<');
+    // ...and raw for the animation, so nothing has to parse "1,247" back into a
+    // number and get it wrong in a locale that groups with dots.
+    expect(page).toContain('data-count="1247"');
+    expect(page).toContain('data-count="18"');
+  });
+
+  it('renders an unknown as an em-dash, never as zero', () => {
+    /*
+     * The rule LANDING-09 exists for, at its sharpest. A count that failed is not
+     * a count of zero: rendering `0 Airlines` would be presenting a fabricated
+     * statistic, arrived at by a more technical route than typing one.
+     */
+    const page = landingPageWithStats(base, { airlines: null, aircraftTypes: null });
+    expect(page).toContain('&mdash;');
+    // The attribute, not the bare word: the document's own comment explains
+    // `data-count`, and the first version of this assertion failed on it.
+    expect(page).not.toContain('data-count="');
+    expect(page).not.toContain('>0<');
+  });
+
+  it('lets one figure be known while the other is not', () => {
+    // The catalogue count and the airline count come from different tables and
+    // can fail independently; one missing must not blank the other.
+    const page = landingPageWithStats(base, { airlines: null, aircraftTypes: 18 });
+    expect(page).toContain('data-count="18"');
+    expect(page).toContain('&mdash;');
+  });
+
+  it('renders a real zero as zero, because that is a measurement', () => {
+    /*
+     * The mirror of the rule above, and the reason `null` and `0` are different
+     * types here rather than one nullable number treated as falsy. A brand new
+     * instance genuinely has no airlines, and saying so is honest; the animation
+     * skips it because counting up to zero is not a count.
+     */
+    const page = landingPageWithStats(base, { airlines: 0, aircraftTypes: 18 });
+    expect(page).toContain('data-count="0"');
+  });
+
+  it('claims no liveness and publishes no growth delta', () => {
+    const page = landingPageWithStats(base, { airlines: 1247, aircraftTypes: 18 });
+    // The mock wants "Live now" and "+128 today" under these. A five-minute
+    // cache cannot support the first, and the second publishes the product's
+    // growth rate — a business disclosure nobody has decided to make.
+    expect(page).not.toContain('Live now');
+    expect(page).not.toMatch(/\+\d+ today/);
+  });
+
+  it('names the two metrics that are structurally zero rather than showing them', () => {
+    const page = landingPageWithStats(base, { airlines: 1247, aircraftTypes: 18 });
+    // Production has no worker (OPS-12), so both would read 0 for ever. They
+    // keep their em-dash and their owning issue.
+    expect(page).toContain('Flights airborne');
+    expect(page).toContain('Passengers today');
+    expect(page).toMatch(/Flights airborne\s*<span class="lp-todo">LANDING-09<\/span>/);
+  });
+
+  it('discloses nothing but the two integers', () => {
+    // Aggregate-only is the whole basis on which this is safe to publish. No id
+    // of any kind reaches the document.
+    const page = landingPageWithStats(base, { airlines: 1247, aircraftTypes: 18 });
+    expect(page).not.toMatch(/world[_-]?id/i);
+    expect(page).not.toMatch(/airline[_-]?id/i);
+    expect(page).not.toMatch(/player[_-]?id/i);
   });
 });
