@@ -22,7 +22,9 @@ asset was not generated for. Baked route arcs and aircraft can never become live
 entire point of LANDING-05. Baked UI cannot be corrected without regenerating and re-optimising
 an image.
 
-**The shipped hero breaks this rule, and it is the open item on LANDING-03.** See below.
+**The shipped hero breaks this rule, and that has been reviewed and accepted** (2026-09-08). It
+is a known cost with a named consequence for LANDING-05, not a defect waiting to be found — see
+below before changing anything about it.
 
 ---
 
@@ -81,7 +83,15 @@ avoid.
 
 ---
 
-## Open: the hero bakes what it must not bake
+## Accepted for now: the hero bakes what it must not bake
+
+**Reviewed and accepted by @simmeh024 on 2026-09-08** — _"the hero image is fine as of now"_ —
+after the audit below was put to them. So this is a **deferred constraint, not an oversight**,
+and the distinction matters to exactly one person: whoever picks up LANDING-05 and finds a map
+with a network already painted on it. They are drawing over it by decision.
+
+Nothing here is a defect to be fixed on sight. It is the cost of the current asset, written
+down so it is paid knowingly.
 
 `landing-hero.webp` is not ground only. It has, in pixels:
 
@@ -108,7 +118,7 @@ composition and the obvious move is to crop the existing master — but every cr
 contains labels, so cropping would duplicate the problem into a second asset rather than solve
 it. The crop should be made from the regenerated ground.
 
-### What fixes it
+### What fixes it, when somebody decides to
 
 Regenerate the hero as **ground only** — geography, water, city lights, atmospheric glow,
 negative space where the interface sits — in a desktop and a narrow crop. Then LANDING-05 puts
@@ -116,8 +126,16 @@ the nodes, arcs, codes and aircraft back as **SVG in the document**, where they 
 translatable, announceable, sharp at any density, and able to be driven by real flights.
 
 That needs an image generator this repository does not have, and it needs the provenance rows
-above filled in so the new asset matches the old one's direction. It is the remaining work on
-LANDING-03; nothing else blocks LANDING-04 or LANDING-06.
+above filled in so the new asset matches the old one's direction.
+
+**Until then, LANDING-05 has a decision to make rather than a blocker.** Live routes drawn over
+a map with three painted arcs give a visitor two networks in slightly different blues, so that
+issue has to choose: regenerate the ground first, draw only in regions the baked arcs do not
+touch, or accept the doubling. Naming the choice here is the point — it is much cheaper to make
+before the live map is built than after.
+
+Nothing else in the milestone is blocked. LANDING-04, -06, -07 and -09 all sit on top of this
+image and do not care what is in it.
 
 ---
 
