@@ -147,13 +147,26 @@ describeDb('HTTP surface', () => {
       expect(res.body).toContain('<title>Tailfin — coming soon</title>');
     });
 
-    it('offers both providers as plain links, so the page needs no JavaScript', async () => {
+    it('offers both providers as plain links, so the funnel needs no JavaScript', async () => {
       const res = await app.inject({ method: 'GET', url: '/landing' });
       expect(res.body).toContain('href="/api/auth/google"');
       expect(res.body).toContain('href="/api/auth/discord"');
-      // A script tag here would break LANDING-11's budget and ADR-0028's
-      // "one document, one paint" inheritance from the holding page.
-      expect(res.body).not.toMatch(/<script/i);
+
+      /*
+       * Both are ordinary anchors to server routes, so signing in works with
+       * scripting off entirely.
+       *
+       * This used to assert the page carried no `<script>` at all. It carries one
+       * now — the fleet carousel — and the assertion is narrowed rather than
+       * dropped: whatever that script does, it must not be load-bearing for the
+       * one thing the page exists to do. A funnel that needs JavaScript is a
+       * funnel that fails silently.
+       */
+      const signIn = [...res.body.matchAll(/<a[^>]+href="\/api\/auth\/[^"]+"[^>]*>/g)];
+      expect(signIn.length).toBeGreaterThanOrEqual(2);
+      for (const anchor of signIn) {
+        expect(anchor[0]).not.toMatch(/\son[a-z]+\s*=/i);
+      }
     });
 
     it('makes no external request — no font, CDN or analytics origin', async () => {
@@ -165,7 +178,6 @@ describeDb('HTTP surface', () => {
        * would have to be silenced rather than satisfied.
        */
       const body = (await app.inject({ method: 'GET', url: '/landing' })).body;
-      expect(body).not.toMatch(/<script/i);
       expect(body).not.toMatch(/\bsrc\s*=\s*["']https?:/i);
       expect(body).not.toMatch(/url\(\s*["']?https?:/i);
       expect(body).not.toMatch(/@import/i);
@@ -177,7 +189,7 @@ describeDb('HTTP surface', () => {
       expect(sheets[0]).toContain('href="/landing.css"');
     });
 
-    it('carries no inline style, which the enforced CSP would block', async () => {
+    it('carries no inline style or inline script, which the enforced CSP would block', async () => {
       /*
        * The bug this exists to prevent, because it is invisible to every other
        * check we run. `style-src` at the edge is `'self'` plus **the holding
@@ -192,6 +204,72 @@ describeDb('HTTP surface', () => {
       const body = (await app.inject({ method: 'GET', url: '/landing' })).body;
       expect(body).not.toMatch(/<style[\s>]/i);
       expect(body).not.toMatch(/\sstyle\s*=\s*["']/i);
+
+      /*
+       * The same rule for scripts, and it is the one the carousel could have
+       * broken. `script-src` is `'self'` with no hashes at all, so an inline
+       * `<script>` here would not merely be unstyled — the carousel would sit
+       * dead on the page while every gate stayed green.
+       *
+       * Every `<script>` must therefore carry a same-origin `src`.
+       */
+      const scripts = [...body.matchAll(/<script\b[^>]*>/gi)].map((match) => match[0]);
+      expect(scripts.length).toBeGreaterThan(0);
+      for (const tag of scripts) {
+        expect(tag).toMatch(/\ssrc\s*=\s*["']\//);
+      }
+    });
+
+    it('serves the carousel script as JavaScript from the same origin', async () => {
+      const res = await app.inject({ method: 'GET', url: '/landing.js' });
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toMatch(/javascript/);
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+      expect(res.body).toContain('data-carousel');
+    });
+
+    it('serves all five fleet aircraft, and keeps them small', async () => {
+      const fleet = [
+        '/fleet-atr72.webp',
+        '/fleet-e190.webp',
+        '/fleet-a321neo.webp',
+        '/fleet-777.webp',
+        '/fleet-747.webp',
+      ];
+      let total = 0;
+      for (const route of fleet) {
+        const res = await app.inject({ method: 'GET', url: route });
+        expect(res.statusCode, route).toBe(200);
+        expect(res.headers['content-type'], route).toBe('image/webp');
+        total += res.rawPayload.length;
+      }
+      // The five sources were 1.2 MB each. LANDING-11 owns the budget, and five
+      // aircraft are not allowed to cost more than the hero.
+      expect(total).toBeLessThan(200_000);
+    });
+
+    it('shows an aircraft and its type without JavaScript', async () => {
+      /*
+       * The carousel is an enhancement, not the content. With no script the
+       * track never moves, so the first aircraft stands as a static
+       * illustration — and the arrows stay hidden, because a control that does
+       * nothing reads as a bug rather than as graceful degradation.
+       */
+      const body = (await app.inject({ method: 'GET', url: '/landing' })).body;
+      expect(body).toContain('src="/fleet-atr72.webp"');
+      expect(body).toContain('ATR 72-600');
+      // Five slides, each captioned.
+      expect([...body.matchAll(/class="fleet__slide"/g)]).toHaveLength(5);
+      expect([...body.matchAll(/class="fleet__type"/g)]).toHaveLength(5);
+      // Every aircraft image carries alt text and explicit dimensions, so the
+      // card does not reflow as they load.
+      const images = [...body.matchAll(/<img[^>]+class="fleet__image"[^>]*>/g)].map((m) => m[0]);
+      expect(images).toHaveLength(5);
+      for (const tag of images) {
+        expect(tag).toMatch(/\salt="[^"]+"/);
+        expect(tag).toMatch(/\swidth="\d+"/);
+        expect(tag).toMatch(/\sheight="\d+"/);
+      }
     });
 
     it('serves the hero backdrop as WebP, cached longer than the document', async () => {

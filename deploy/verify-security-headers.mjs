@@ -65,6 +65,28 @@ function verifyLandingPageStyling() {
         "`style-src 'self'`, which the CSP no longer grants.",
     );
   }
+
+  /*
+   * The same rule for scripts, added when the fleet carousel gave the page its
+   * first one. `script-src` carries no hashes at all, so an inline `<script>`
+   * would be refused outright — and unlike the stylesheet the symptom is not an
+   * ugly page but a dead control: arrows that do nothing, a carousel that never
+   * moves, and every gate green.
+   */
+  const inlineScripts = [...html.matchAll(/<script\b(?![^>]*\ssrc=)[^>]*>/g)];
+  if (inlineScripts.length > 0) {
+    throw new Error(
+      `The landing page has ${inlineScripts.length} inline <script> block(s). Its scripts must ` +
+        `stay in same-origin files: script-src grants no hashes, and deploys do not install ` +
+        `Caddy config, so the page would ship with dead controls and a green pipeline.`,
+    );
+  }
+  if (!CSP.includes("script-src 'self'")) {
+    throw new Error(
+      "The landing page's script is served from the application origin and needs " +
+        "`script-src 'self'`, which the CSP no longer grants.",
+    );
+  }
 }
 
 function parseArguments(argv) {

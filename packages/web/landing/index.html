@@ -179,9 +179,120 @@
             <div class="cards">
               <article class="card">
                 <h3>Build your fleet</h3>
-                <div class="card__figure">
-                  Aircraft artwork <span class="todo">LANDING-06</span>
+
+                <!--
+                  The fleet carousel (LANDING-06).
+
+                  Built to work without JavaScript and to be improved by it. With
+                  no script the track never moves, so the first aircraft simply
+                  sits there as a static illustration — and the buttons stay
+                  hidden, because a control that does nothing is worse than no
+                  control. `landing.js` adds `data-ready`, which is what reveals
+                  them.
+                -->
+                <div
+                  class="fleet"
+                  data-carousel
+                  data-interval="5000"
+                  role="region"
+                  aria-roledescription="carousel"
+                  aria-label="Aircraft you can fly"
+                >
+                  <div class="fleet__viewport">
+                    <ul class="fleet__track">
+                      <li
+                        class="fleet__slide"
+                        role="group"
+                        aria-roledescription="slide"
+                        aria-label="1 of 5: ATR 72-600"
+                      >
+                        <img
+                          class="fleet__image"
+                          src="/fleet-atr72.webp"
+                          alt="A twin-turboprop regional airliner"
+                          width="1400"
+                          height="467"
+                          fetchpriority="high"
+                        />
+                        <p class="fleet__type">ATR 72-600</p>
+                      </li>
+                      <li
+                        class="fleet__slide"
+                        role="group"
+                        aria-roledescription="slide"
+                        aria-label="2 of 5: E190-E2"
+                      >
+                        <img
+                          class="fleet__image"
+                          src="/fleet-e190.webp"
+                          alt="A regional jet"
+                          width="1400"
+                          height="467"
+                          loading="lazy"
+                        />
+                        <p class="fleet__type">E190-E2</p>
+                      </li>
+                      <li
+                        class="fleet__slide"
+                        role="group"
+                        aria-roledescription="slide"
+                        aria-label="3 of 5: A321neo"
+                      >
+                        <img
+                          class="fleet__image"
+                          src="/fleet-a321neo.webp"
+                          alt="A single-aisle narrowbody airliner"
+                          width="1400"
+                          height="467"
+                          loading="lazy"
+                        />
+                        <p class="fleet__type">A321neo</p>
+                      </li>
+                      <li
+                        class="fleet__slide"
+                        role="group"
+                        aria-roledescription="slide"
+                        aria-label="4 of 5: 777-300ER"
+                      >
+                        <img
+                          class="fleet__image"
+                          src="/fleet-777.webp"
+                          alt="A long-haul twin-engine widebody airliner"
+                          width="1400"
+                          height="467"
+                          loading="lazy"
+                        />
+                        <p class="fleet__type">777-300ER</p>
+                      </li>
+                      <li
+                        class="fleet__slide"
+                        role="group"
+                        aria-roledescription="slide"
+                        aria-label="5 of 5: 747-400"
+                      >
+                        <img
+                          class="fleet__image"
+                          src="/fleet-747.webp"
+                          alt="A four-engine widebody airliner"
+                          width="1400"
+                          height="467"
+                          loading="lazy"
+                        />
+                        <p class="fleet__type">747-400</p>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <button class="fleet__nav fleet__nav--prev" type="button" data-fleet-prev>
+                    <span class="visually-hidden">Previous aircraft</span>
+                    <span aria-hidden="true">‹</span>
+                  </button>
+                  <button class="fleet__nav fleet__nav--next" type="button" data-fleet-next>
+                    <span class="visually-hidden">Next aircraft</span>
+                    <span aria-hidden="true">›</span>
+                  </button>
                 </div>
+
                 <p>Choose aircraft, negotiate deals and grow a fleet that fits your strategy.</p>
               </article>
               <article class="card">
@@ -258,5 +369,14 @@
         <p class="footer__sub">Plan today. Fly tomorrow. Compete forever.</p>
       </div>
     </footer>
+    <!--
+      The page's only script, and a same-origin file for the same reason the
+      stylesheet is: `script-src 'self'` covers it, while an inline block would
+      need its own CSP hash pinned in a Caddyfile that deploys do not install.
+
+      `defer` so it never blocks the first paint. Everything above works without
+      it; all it adds is movement.
+    -->
+    <script src="/landing.js" defer></script>
   </body>
 </html>

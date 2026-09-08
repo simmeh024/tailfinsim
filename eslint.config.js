@@ -144,6 +144,20 @@ export default tseslint.config(
     },
   },
 
+  /*
+   * The landing page's script (LANDING-01).
+   *
+   * Plain browser JavaScript served as a static file, outside the Vite client and
+   * outside its TypeScript project — so it needs browser globals declared here or
+   * `document` reads as undefined. It is deliberately not bundled: the landing
+   * page is a static document, and a second build pipeline for forty lines would
+   * cost more than it saves.
+   */
+  {
+    files: ['packages/web/landing/**/*.js'],
+    languageOptions: { globals: { ...globals.browser } },
+  },
+
   // Invariant 2 — the client never runs the economy.
   {
     files: ['packages/web/**/*.ts', 'packages/web/**/*.tsx'],
