@@ -60,13 +60,38 @@ test('the deployed public surface renders the intended build without browser err
     postDeploySmoke.expectedEnvironment,
   );
 
+  /*
+   * Three public surfaces now, not two (LANDING-01).
+   *
+   * Every branch ends in a **computed colour**, and that is the point of this
+   * test rather than a flourish. This smoke is the only check in the repository
+   * that loads a deployed page through Caddy in a real browser, so it is the only
+   * one that can see the Content-Security-Policy — which lives in the Caddyfile,
+   * is not installed by `deploy.sh`, and is invisible to every unit and e2e
+   * suite. The landing page shipped once with an inline `<style>` the policy
+   * refused: valid HTML, green deploy, healthy service, unstyled page. A colour
+   * is what tells "served" from "served and allowed to paint".
+   */
   const holdingHeading = page.getByRole('heading', { name: 'TAILFIN', exact: true });
+  const landingHeading = page.getByRole('heading', {
+    name: 'Build an airline. Make it yours.',
+  });
+
   if (await holdingHeading.isVisible()) {
     // Production currently serves this surface. Its style is inline, so a
     // computed colour proves the stylesheet survived as well as the HTML.
     await expect(page).toHaveTitle('Tailfin — coming soon');
     await expect(page.getByText('Coming soon.')).toBeVisible();
     await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(6, 10, 18)');
+  } else if (await landingHeading.isVisible()) {
+    // Dev's front door since LANDING-01. Its stylesheet is a separate
+    // same-origin file, so the colour proves `/landing.css` was served *and*
+    // allowed by `style-src 'self'`.
+    await expect(page).toHaveTitle(/^Tailfin — build an airline/);
+    await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(6, 10, 18)');
+    // Matched by shape rather than by provider, for the same reason as the app
+    // branch below: which buttons appear is that box's `.env`.
+    await expect(page.getByRole('link', { name: /^Continue with / }).first()).toBeVisible();
   } else {
     // Dev serves the app. The anonymous login wall proves the client bundle,
     // routing and its initial API call all rendered rather than a blank page.
