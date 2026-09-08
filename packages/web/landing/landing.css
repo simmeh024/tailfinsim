@@ -110,6 +110,23 @@
   --lp-accent-hover: #8ccdff;
   --lp-brand: #ffb84d;
 
+  /* ---- the one status this page can show -------------------------------
+   *
+   * A refused sign-in, and nothing else. The client's whole status set does
+   * not belong here — there is no flight to be late — but this one does,
+   * because the OAuth callback can land a visitor back on this page having
+   * failed, and until LANDING-04 it said nothing at all.
+   *
+   * The client's `--status-cancelled`, pinned by test like every other shared
+   * value: a refusal should look the same on the front door as it does inside.
+   * And paired with a glyph, per H.4 — meaning is never carried by hue alone,
+   * which matters most in the one place a visitor is already confused.
+   *
+   *   --lp-status-refused on --lp-surface   6.32
+   */
+  --lp-status-refused: #f87171;
+  --lp-status-refused-quiet: rgb(248 113 113 / 16%);
+
   /* ---- the provider marks ---------------------------------------------
    *
    * Google's and Discord's own colours, which is the whole point of using them:
@@ -252,6 +269,36 @@
   --lp-page-max: 120rem;
   --lp-gutter: clamp(1rem, 3.5vw, 3rem);
   --lp-header-h: 4.5rem;
+  /*
+   * How much of the next section shows under the hero.
+   *
+   * The hero used to be exactly `100svh - header`, so the first screen ended
+   * on a clean edge and gave a visitor no reason to believe anything followed
+   * it. A sliver of the next section is the cheapest possible affordance and
+   * the only one that needs no chrome — no bouncing chevron, no 'scroll'
+   * label, nothing to translate or animate.
+   *
+   * Small on purpose: it comes out of the CTA's budget, and the CTA being
+   * above the fold is the criterion that outranks this one.
+   */
+  --lp-peek: 3.5rem;
+  /*
+   * The hero's own vertical rhythm, which answers to height rather than the
+   * page's spacing scale.
+   *
+   * Everything else on this page is spaced on the `--lp-space-*` steps, and
+   * the hero cannot be, because it is the one block with a hard vertical
+   * budget: headline, lede, four pillars and the sign-in card have to fit
+   * above the fold together. On a 1280x720 laptop the fixed steps put the CTA
+   * 58px below it — measured, not guessed.
+   *
+   * So the three gaps in the stack breathe with the viewport and stop at the
+   * scale's own values on a tall screen. It is the smallest change that keeps
+   * the composition intact; the alternative was shrinking the headline, which
+   * is the one element the hero exists to show.
+   */
+  --lp-hero-gap: clamp(0.625rem, 2.4svh, 1.75rem);
+  --lp-hero-gap-tight: clamp(0.5rem, 1.8svh, 1.5rem);
   --lp-measure: 34rem;
   --lp-measure-lede: 32rem;
 
@@ -469,8 +516,20 @@ a {
   overflow: clip;
   display: grid;
   align-items: center;
-  min-height: max(34rem, calc(100svh - var(--lp-header-h)));
-  padding-block: clamp(2rem, 5vw, 4rem);
+  min-height: max(34rem, calc(100svh - var(--lp-header-h) - var(--lp-peek)));
+  /*
+   * Height-based, not width-based, and that was a measured correction.
+   *
+   * This was `clamp(2rem, 5vw, 4rem)`, which is the wrong axis: what runs out in
+   * a hero is vertical room, and a wide-but-short laptop is exactly the viewport
+   * where a width-driven clamp pays out its *maximum* padding. At 1280x720 the
+   * sign-in card's bottom measured 778px against a 720px fold — the CTA, the one
+   * thing the hero exists for, was below it.
+   *
+   * `svh` matches the min-height above, so both react to the same measurement of
+   * the viewport rather than disagreeing while the browser chrome slides away.
+   */
+  padding-block: clamp(1.25rem, 4svh, 4rem);
   background-color: var(--lp-bg);
 }
 
@@ -581,7 +640,7 @@ a {
 }
 
 .lp-headline {
-  margin: 0 0 var(--lp-space-5);
+  margin: 0 0 var(--lp-hero-gap);
   font-size: var(--lp-display-1);
   line-height: var(--lp-leading-display);
   letter-spacing: var(--lp-tracking-display);
@@ -596,7 +655,7 @@ a {
 }
 
 .lp-lede {
-  margin: 0 0 var(--lp-space-7);
+  margin: 0 0 var(--lp-hero-gap);
   color: var(--lp-text-secondary);
   max-width: var(--lp-measure-lede);
   font-size: var(--lp-lede-size);
@@ -605,8 +664,8 @@ a {
 .lp-pillars {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--lp-space-6);
-  margin: 0 0 var(--lp-space-8);
+  gap: var(--lp-hero-gap-tight) var(--lp-space-6);
+  margin: 0 0 var(--lp-hero-gap);
   padding: 0;
   list-style: none;
 }
@@ -641,6 +700,51 @@ a {
   margin: 0 0 var(--lp-space-4);
   font-size: var(--lp-text-md);
   line-height: var(--lp-leading-snug);
+}
+
+/*
+ * A refused sign-in, explained inside the card (LANDING-04).
+ *
+ * Inside rather than above it: the card is what the visitor was interacting with,
+ * and an error banner at the top of a long hero is an error they scroll away
+ * from. It sits between the heading and the buttons, so the explanation is read
+ * before the button that failed is pressed again.
+ *
+ * Rendered by the server — this page's funnel carries no JavaScript, and an
+ * error only a scripting-enabled browser can see is one some visitors never get.
+ */
+.lp-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--lp-space-3);
+  margin: 0 0 var(--lp-space-4);
+  padding: var(--lp-space-3);
+  border: 1px solid var(--lp-status-refused);
+  border-radius: var(--lp-radius-md);
+  background: var(--lp-status-refused-quiet);
+  color: var(--lp-text);
+  font-size: var(--lp-text-sm);
+  line-height: var(--lp-leading-snug);
+}
+
+/*
+ * The shape half of the pair. H.4 is explicit that status is never carried by
+ * hue alone, and this is the one place on the page that shows a status at all —
+ * so the ring is not decoration, it is what survives greyscale, colour blindness
+ * and a monochrome print.
+ */
+.lp-alert__glyph {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 1px solid var(--lp-status-refused);
+  border-radius: var(--lp-radius-round);
+  color: var(--lp-status-refused);
+  font-weight: var(--lp-weight-bold);
+  font-size: var(--lp-text-xs);
+  line-height: 1;
 }
 
 .lp-signin__buttons {

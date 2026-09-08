@@ -192,6 +192,10 @@ describe('the landing tokens and the client tokens say the same thing', () => {
     ['--lp-accent', '--accent'],
     ['--lp-accent-hover', '--accent-hover'],
     ['--lp-brand', '--brand'],
+    // The one status this page can show, so a refused sign-in looks the same
+    // on the front door as it does inside the product (LANDING-04).
+    ['--lp-status-refused', '--status-cancelled'],
+    ['--lp-status-refused-quiet', '--status-cancelled-quiet'],
   ];
 
   const client = clientDarkTokens();
@@ -381,6 +385,7 @@ describe('contrast, measured rather than asserted', () => {
     ['--lp-ink-on-accent', '--lp-accent', 4.5, 'the CTA label'],
     ['--lp-brand', '--lp-bg', 3, 'the mark and the feature icons — a graphic, not text'],
     ['--lp-brand', '--lp-hero-wash', 3, 'the headline stop over the map'],
+    ['--lp-status-refused', '--lp-surface', 4.5, 'a refused sign-in, inside the card'],
     // Large text (>=18.66px bold) needs 3:1, which is the whole reason
     // --lp-text-provider is 1.1875rem at weight 700: white on Google's blue is
     // 3.56 and does not reach 4.5 at any size.

@@ -1,3 +1,4 @@
+import { REGISTRATION_COPY } from '@tailfin/shared';
 import type { SignInProvider } from '@tailfin/shared';
 
 import { BuildBadge } from '../version/BuildBadge';
@@ -84,10 +85,18 @@ export function LoginPage(): ReactNode {
           ))
         )}
 
+        {/*
+          The same sentence the landing page shows, from the same table
+          (LANDING-04). Two surfaces now explain this instance's account policy
+          and they must not disagree — a front door promising accounts in front
+          of a login wall saying they are closed is worse than either alone.
+
+          The open wording changed with the move: it is the mock's *Free to play
+          · New accounts are created automatically*, which says the same thing
+          more plainly than "Signing in creates one".
+        */}
         <p className="login__note">
-          {registrationOpen
-            ? 'New accounts are open. Signing in creates one.'
-            : 'Tailfin is not open for new accounts yet — sign-in is limited to existing players.'}
+          {registrationOpen ? REGISTRATION_COPY.open.note : REGISTRATION_COPY.closed.note}
         </p>
       </main>
 

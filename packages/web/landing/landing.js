@@ -114,4 +114,27 @@
   document.querySelectorAll('[data-carousel]').forEach((element) => {
     setUpCarousel(/** @type {HTMLElement} */ (element));
   });
+
+  /**
+   * Tidy `?auth_error=` out of the address bar (LANDING-04).
+   *
+   * The split here is the point. The **server** renders the message, because the
+   * funnel must work without JavaScript and an error only some visitors can read
+   * is not an error message. This only removes the spent parameter afterwards,
+   * which is genuinely optional: without it a refresh resurrects a refusal the
+   * player has already read, and the code rides along in any link they copy out
+   * of the bar.
+   *
+   * `replaceState`, not `pushState` — a failed sign-in should not put an extra
+   * entry in the back button. The alert stays on screen; only the URL changes.
+   *
+   * This mirrors what `useAuthError` does inside the application, and for the
+   * same reasons. What differs is that there, one hook does both jobs; here they
+   * belong to different layers, and each is done by the layer that can.
+   */
+  const url = new URL(window.location.href);
+  if (url.searchParams.has('auth_error')) {
+    url.searchParams.delete('auth_error');
+    window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+  }
 })();

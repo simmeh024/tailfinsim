@@ -7,7 +7,13 @@ import fastifyCookie from '@fastify/cookie';
 import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import { sql } from 'drizzle-orm';
-import Fastify, { type FastifyError, type FastifyInstance, type RouteOptions } from 'fastify';
+import Fastify, {
+  type FastifyError,
+  type FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest,
+  type RouteOptions,
+} from 'fastify';
 
 import { healthResponseJsonSchema, versionResponseJsonSchema } from '@tailfin/shared';
 
@@ -35,6 +41,7 @@ import { registerCreditRoutes } from './finance/credit-routes';
 import { registerFinanceRoutes } from './finance/routes';
 import { registerGroundRoutes } from './ground/routes';
 import { registerHubRoutes } from './hub/routes';
+import { landingPageWithAuthError, renderLandingPage } from './landing-page';
 import { createEconomicsProvider } from './network/economics';
 import { registerNetworkRoutes } from './network/routes';
 import { registerSlotRoutes } from './network/slot-routes';
@@ -454,23 +461,40 @@ export async function buildApp({
    * The switchover — landing at `/`, holding page retired — is deliberately not
    * here. See ADR-0028 for its two conditions.
    */
-  let landingPage: Buffer;
+  let landingTemplate: string;
   try {
-    landingPage = readFileSync(LANDING_PAGE);
+    landingTemplate = readFileSync(LANDING_PAGE, 'utf8');
   } catch (cause) {
     throw new Error(`Could not read the landing page at ${LANDING_PAGE}`, { cause });
   }
 
-  app.get('/landing', async (_request, reply) =>
-    reply
+  /**
+   * Built once at boot: `ALLOW_REGISTRATION` is a per-box `.env` value and cannot
+   * change without a restart, so a request costs a lookup rather than a render.
+   * `landing-page.ts` says why any of this is server-side at all.
+   */
+  const landingPage = renderLandingPage(landingTemplate, env.allowRegistration);
+
+  /**
+   * Serve the landing document, explaining a failed sign-in if there is one.
+   *
+   * The error response is `no-store`: it describes one attempt, it must not be
+   * held by a shared cache in front of the next visitor, and pressing back
+   * should not resurrect a refusal that has been read. The ordinary response
+   * keeps the short public cache the front door has always had.
+   */
+  function sendLanding(request: FastifyRequest, reply: FastifyReply): FastifyReply {
+    const raw = (request.query as { auth_error?: unknown }).auth_error;
+    const code = typeof raw === 'string' ? raw : null;
+    return reply
       .code(200)
       .type('text/html; charset=utf-8')
-      // Short, matching the holding page: the front door can be changed without
-      // waiting out a cache.
-      .header('cache-control', 'public, max-age=60')
+      .header('cache-control', code === null ? 'public, max-age=60' : 'no-store')
       .header('x-content-type-options', 'nosniff')
-      .send(landingPage),
-  );
+      .send(code === null ? landingPage : landingPageWithAuthError(landingPage, code));
+  }
+
+  app.get('/landing', async (request, reply) => sendLanding(request, reply));
 
   /**
    * Everything the landing document loads, as an explicit table (LANDING-01).
@@ -608,12 +632,10 @@ export async function buildApp({
       if (request.cookies[SESSION_COOKIE] !== undefined) {
         return reply.type('text/html; charset=utf-8').sendFile('index.html');
       }
-      return reply
-        .code(200)
-        .type('text/html; charset=utf-8')
-        .header('cache-control', 'public, max-age=60')
-        .header('x-content-type-options', 'nosniff')
-        .send(landingPage);
+      // Where a refused sign-in lands, so this is the branch that has to be able
+      // to explain one — the callback redirects to `/?auth_error=…` and a failed
+      // attempt leaves no session cookie, so it always arrives here.
+      return sendLanding(request, reply);
     });
   }
 
