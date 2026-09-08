@@ -6,9 +6,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { HealthResponse, VersionResponse } from '@tailfin/shared';
 
+import { seedAircraftCatalogue } from './aircraft/catalogue';
 import { buildApp } from './app';
 import { createDatabase, type DatabaseHandle } from './db/client';
 import { type ServerEnv } from './env';
+import { clearLandingStatsCache } from './landing-stats';
 import { makeTestEnv } from './test-fixtures/env';
 
 /**
@@ -356,6 +358,34 @@ describeDb('HTTP surface', () => {
       const res = await app.inject({ method: 'GET', url: '/landing' });
       expect(res.body).toContain('sign-in is limited to existing players');
       expect(res.body).not.toContain('New accounts are created automatically');
+    });
+
+    it('counts the real catalogue and the real airlines into the strip', async () => {
+      /*
+       * The query, against real Postgres — which is the half `landing-stats.test.ts`
+       * deliberately does not cover. That file proves the caching and the failure
+       * behaviour with a fake; this proves the SQL is valid and returns what the
+       * page claims.
+       *
+       * The catalogue is seeded here rather than assumed: the web node seeds it at
+       * startup in `main.ts`, not in `buildApp`, so a test database is only
+       * guaranteed to have it if a test puts it there. The seed is insert-if-absent
+       * and the rows are immutable, so doing it twice is a no-op.
+       */
+      await seedAircraftCatalogue(db.db);
+      clearLandingStatsCache();
+
+      const body = (await app.inject({ method: 'GET', url: '/landing' })).body;
+
+      // App. C.1 ships eighteen types, and the count comes from the table rather
+      // than from the shipped constant — nothing falls back to the build.
+      expect(body).toContain('data-count="18"');
+
+      // Airlines is whatever this database holds: a number, or an em-dash if the
+      // count could not be taken. Never a fabricated figure, and never a `0`
+      // standing in for "we did not manage to look".
+      const airlines = /<!--tailfin:stat-airlines-->([\s\S]*?)<!--\//.exec(body)?.[1] ?? '';
+      expect(airlines.trim()).toMatch(/^(&mdash;|<span data-count="\d+">[\d,]+<\/span>)$/);
     });
 
     it('every in-page nav link points at a section that exists', async () => {

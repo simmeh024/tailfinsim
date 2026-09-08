@@ -1036,6 +1036,23 @@ a {
   font-weight: var(--lp-weight-regular);
 }
 
+/*
+ * ...and a figure the server actually measured takes the full weight back.
+ *
+ * Keyed on `:has([data-count])` rather than on a second modifier class, because
+ * the thing that decides is whether a *number* arrived, and that is decided
+ * inside the element by a server-filled slot. A modifier would mean the server
+ * writing a class onto a parent it does not otherwise touch, and the two could
+ * then disagree — a bold em-dash, or a measured figure wearing the unknown
+ * treatment.
+ *
+ * `data-count` is the same attribute the count-up animation keys on, so the
+ * styling and the behaviour cannot drift apart: one attribute, one meaning.
+ */
+.lp-stat__value:has([data-count]) {
+  font-weight: var(--lp-weight-bold);
+}
+
 .lp-stat__label {
   color: var(--lp-text-secondary);
   font-size: var(--lp-text-sm);
