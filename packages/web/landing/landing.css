@@ -69,9 +69,20 @@ body {
   line-height: 1.5;
 }
 
+/*
+ * Full-bleed rather than a centred column.
+ *
+ * The mock is edge to edge: the map runs to the right edge of the viewport and
+ * the nav sits against the left and right margins. A `max-width` column would
+ * box the map into the middle of the screen and lose exactly the thing that
+ * makes the page feel like a world. The cap is generous rather than absent so
+ * the hero copy does not drift a metre from the sign-in card on an ultrawide.
+ */
 .wrap {
-  width: min(78rem, 100% - 2rem);
+  width: 100%;
+  max-width: 120rem;
   margin-inline: auto;
+  padding-inline: clamp(1rem, 3.5vw, 3rem);
 }
 
 /* Keyboard users get to skip the nav; LANDING-10 owns the full pass. */
@@ -170,24 +181,97 @@ a {
 
 /* ---- hero ------------------------------------------------------------ */
 
+/*
+ * The hero fills the first screen, and the world sits behind it.
+ *
+ * `100svh` — the *small* viewport height — rather than `100vh`: on mobile,
+ * `100vh` is the height with the browser chrome hidden, so a `100vh` hero is
+ * taller than the screen at rest and pushes the sign-in button below the fold
+ * on the one device where that matters most. `svh` is the conservative
+ * measurement, and the header is subtracted so header + hero come to exactly one
+ * screen. `min()` keeps it sane on a short landscape window.
+ */
 .hero {
   position: relative;
   overflow: clip;
-  padding-block: clamp(2.5rem, 7vw, 5rem) clamp(3rem, 8vw, 6rem);
+  display: grid;
+  align-items: center;
+  min-height: max(34rem, calc(100svh - 4.5rem));
+  padding-block: clamp(2rem, 5vw, 4rem);
+
+  /*
+   * The map, and a gradient that makes the text legible over it.
+   *
+   * Two layers in one property so they share a stacking context and neither can
+   * be painted over by a child. The gradient is opaque at the left edge and
+   * clear by 78%, which is what puts the headline on solid ground while leaving
+   * the Pacific and Asia visible — the same balance as the mock.
+   *
+   * `background-color` is set to the page background as well, so the hero is the
+   * right colour before the image arrives and if it never does.
+   */
+  background-color: var(--bg);
+  background-image:
+    /* Opaque only where the headline actually sits, then out of the way fast.
+       The first attempt held 62% opacity at the halfway mark and buried the
+       Americas — the very part of the map the mock leaves legible under the
+       copy. Text needs a floor to sit on, not the whole ocean painted out. */
+    linear-gradient(
+      100deg,
+      var(--bg) 0%,
+      rgba(6, 10, 18, 0.9) 18%,
+      rgba(6, 10, 18, 0.55) 36%,
+      rgba(6, 10, 18, 0.16) 56%,
+      rgba(6, 10, 18, 0) 72%
+    ),
+    /* A second wash from the bottom, so the section below meets the map rather
+       than colliding with it. */
+    linear-gradient(to bottom, rgba(6, 10, 18, 0) 55%, var(--bg) 100%),
+    url('/landing-hero.webp');
+  background-repeat: no-repeat;
+  background-position:
+    center,
+    center,
+    center right;
+  background-size: cover, cover, cover;
 }
 
+/* Narrow screens get the map as a quiet texture: at this width the gradient
+   would have to cover almost all of it to keep the text readable, and a map you
+   cannot see is weight without benefit. */
+@media (max-width: 48rem) {
+  .hero {
+    background-image:
+      linear-gradient(
+        to bottom,
+        rgba(6, 10, 18, 0.88) 0%,
+        rgba(6, 10, 18, 0.97) 62%,
+        var(--bg) 100%
+      ),
+      url('/landing-hero.webp');
+    background-position: center, center;
+  }
+}
+
+/*
+ * One column. The map used to be a boxed second column; it is the section's
+ * background now, so the copy simply occupies the left of it.
+ */
+/*
+ * The copy sits at the page's left margin, in line with the wordmark above it —
+ * not centred.
+ *
+ * `.hero__grid` carries `.wrap` too, so capping *it* at 34rem would leave
+ * `.wrap`'s `margin-inline: auto` centring a narrow box in a wide viewport, which
+ * is what it did on the first attempt. The cap belongs on the child; the wrap
+ * keeps its full width and its padding.
+ */
 .hero__grid {
   position: relative;
-  display: grid;
-  gap: 2rem;
-  grid-template-columns: minmax(0, 1fr);
 }
 
-@media (min-width: 62rem) {
-  .hero__grid {
-    grid-template-columns: minmax(0, 27rem) minmax(0, 1fr);
-    align-items: center;
-  }
+.hero__grid > div {
+  max-width: 34rem;
 }
 
 h1 {
@@ -297,27 +381,9 @@ h1 .dot {
   color: var(--muted);
 }
 
-/* ---- the world backdrop (LANDING-05) --------------------------------- */
-
-.world {
-  position: relative;
-  min-height: clamp(16rem, 34vw, 26rem);
-  border: 1px solid var(--hairline);
-  border-radius: 1rem;
-  background:
-    radial-gradient(ellipse at 60% 40%, rgba(74, 158, 255, 0.1) 0%, transparent 62%), var(--bg-lift);
-  display: grid;
-  place-items: center;
-  overflow: clip;
-}
-
-.world__placeholder {
-  text-align: center;
-  color: var(--muted);
-  font-size: 0.82rem;
-  padding: 1.5rem;
-  max-width: 24rem;
-}
+/* The boxed placeholder is gone — the hero background is the map now. What
+   LANDING-05 still owns is a map that is *alive*: real routes, real aircraft,
+   moving. This is a photograph of one. */
 
 /* ---- sections -------------------------------------------------------- */
 

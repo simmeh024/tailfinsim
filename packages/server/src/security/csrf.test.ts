@@ -70,6 +70,7 @@ const READ_ONLY_GET_ROUTES = [
   // link is the sign-in route, which is its own decision (ADR-0027 fact 4).
   '/landing',
   '/landing.css',
+  '/landing-hero.webp',
   '/api/airlines/founding-airports',
   '/api/airlines/founding-options',
   '/api/airlines/me',

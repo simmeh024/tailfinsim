@@ -194,6 +194,18 @@ describeDb('HTTP surface', () => {
       expect(body).not.toMatch(/\sstyle\s*=\s*["']/i);
     });
 
+    it('serves the hero backdrop as WebP, cached longer than the document', async () => {
+      const res = await app.inject({ method: 'GET', url: '/landing-hero.webp' });
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toBe('image/webp');
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+      // Immutable art, unlike the document and its styles: a day, not a minute.
+      expect(res.headers['cache-control']).toContain('max-age=86400');
+      // LANDING-11 owns this page's weight budget. The source PNG was 1.7 MB;
+      // anything approaching that has come back by accident.
+      expect(res.rawPayload.length).toBeLessThan(200_000);
+    });
+
     it('serves the stylesheet as CSS from the same origin', async () => {
       const res = await app.inject({ method: 'GET', url: '/landing.css' });
       expect(res.statusCode).toBe(200);
