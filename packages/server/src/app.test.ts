@@ -452,13 +452,25 @@ describeDb('HTTP surface', () => {
        * "Start airline" used to be a hardcoded `/api/auth/google` and would show
        * up here even with Google switched off.
        */
+      /*
+       * Matched where a path can actually be *followed* — an `href` or a `src` —
+       * rather than anywhere in the text.
+       *
+       * That is the more precise property and it is also the second thing this
+       * assertion got wrong. It first scanned the raw body, and failed on the
+       * comment explaining why the nav CTA stopped being a provider link: a path
+       * discussed in prose is not a path the document offers. Stripping comments
+       * first fixed that and introduced a worse shape — CodeQL's
+       * `js/incomplete-multi-character-sanitization` is right that one pass of
+       * `replace(/<!--…-->/)` can splice a fresh `<!--` out of what is left, and a
+       * test that looks like a half-working sanitiser is a pattern somebody will
+       * copy somewhere it matters.
+       *
+       * Nothing to strip if you never scan prose in the first place.
+       */
       const body = (await app.inject({ method: 'GET', url: '/landing' })).body;
-      // Comments stripped first: a path *discussed* in an HTML comment is not a
-      // path the document references, and the first version of this failed on the
-      // comment that explains why the nav CTA stopped being one.
-      const markup = body.replace(/<!--[\s\S]*?--!?>/g, '');
-      const apiPaths = [...markup.matchAll(/\/api\/[\w/-]*/g)].map((match) => match[0]);
-      expect([...new Set(apiPaths)].sort()).toEqual([]);
+      const linked = [...body.matchAll(/(?:href|src)="(\/api\/[^"]*)"/g)].map((m) => m[1]);
+      expect([...new Set(linked)].sort()).toEqual([]);
     });
 
     it('offers exactly the providers this instance has credentials for', async () => {
