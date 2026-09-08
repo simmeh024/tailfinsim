@@ -23,6 +23,7 @@ import {
   type DiscordAuthOperations,
   type GoogleAuthOperations,
 } from './auth/routes';
+import { SESSION_COOKIE } from './auth/session';
 import { registerAutomationRoutes } from './automation/routes';
 import { readBuildInfo } from './build-info';
 import { registerCrewRoutes } from './crew/routes';
@@ -57,6 +58,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 /** Both resolve the same from `src` (dev) and `dist` (built) — each sits one level under packages/server. */
 const HOLDING_PAGE = resolve(here, '..', '..', 'web', 'holding', 'index.html');
 const LANDING_PAGE = resolve(here, '..', '..', 'web', 'landing', 'index.html');
+const LANDING_STYLES = resolve(here, '..', '..', 'web', 'landing', 'landing.css');
 const CLIENT_DIR = resolve(here, '..', '..', 'web', 'dist', 'client');
 const DEV_A320NEO_CANDIDATE_DIRECTORY = resolve(
   here,
@@ -471,6 +473,37 @@ export async function buildApp({
   );
 
   /**
+   * The landing page's stylesheet, as a same-origin file rather than an inline
+   * block — and that is a CSP decision, not a stylistic one.
+   *
+   * The enforced edge policy is `style-src 'self' 'sha256-<the holding page's>'`.
+   * An inline `<style>` on the landing page would need its **own** hash pinned in
+   * the Caddyfile, and CLAUDE.md is explicit that `deploy.sh`/`deploy-dev.sh` do
+   * not install Caddy config or reload the edge. So every future edit to those
+   * styles would need a manual change on the box before it became visible, with
+   * thirteen LANDING issues still to touch them.
+   *
+   * That failure is silent in the worst way: the deploy succeeds, the health
+   * check passes, and the page renders unstyled. Serving the CSS from `'self'`
+   * needs no CSP change now and none ever again.
+   */
+  let landingStyles: Buffer;
+  try {
+    landingStyles = readFileSync(LANDING_STYLES);
+  } catch (cause) {
+    throw new Error(`Could not read the landing stylesheet at ${LANDING_STYLES}`, { cause });
+  }
+
+  app.get('/landing.css', async (_request, reply) =>
+    reply
+      .code(200)
+      .type('text/css; charset=utf-8')
+      .header('cache-control', 'public, max-age=60')
+      .header('x-content-type-options', 'nosniff')
+      .send(landingStyles),
+  );
+
+  /**
    * The public surface at `/` — one of two, chosen by `WEB_SURFACE`.
    *
    * This is what lets dev show a feature while the front door still shows the
@@ -510,7 +543,39 @@ export async function buildApp({
       // The SPA fallback below handles unmatched paths; the plugin's own
       // wildcard would shadow it.
       wildcard: false,
-      index: ['index.html'],
+      // `false`, not `['index.html']`: the front-door route below decides what
+      // `/` is, and a plugin-served index would shadow it.
+      index: false,
+    });
+
+    /**
+     * The front door on the app surface: marketing for a stranger, the app for a
+     * player (LANDING-01, ADR-0028).
+     *
+     * A signed-in player must never be made to walk through a sales page to
+     * reach their airline, so `/` branches on whether a session cookie is
+     * present and serves the SPA when it is. `IndexRedirect` then resolves them
+     * to `/found` or `/world` exactly as before, query string intact.
+     *
+     * **Presence, not validity.** This deliberately does not verify the token.
+     * It is the same class of decision as `RequireSession` — *"a user-interface
+     * gate, not a security boundary"* — and it fails in the harmless direction: a
+     * stale or forged cookie gets the SPA, whose own session check then shows the
+     * login wall. Nothing is disclosed either way, because both documents are
+     * public and neither carries player data. Validating here would put a
+     * database read in front of the first paint of every anonymous visit, which
+     * is the cost LANDING-11 exists to avoid.
+     */
+    app.get('/', async (request, reply) => {
+      if (request.cookies[SESSION_COOKIE] !== undefined) {
+        return reply.type('text/html; charset=utf-8').sendFile('index.html');
+      }
+      return reply
+        .code(200)
+        .type('text/html; charset=utf-8')
+        .header('cache-control', 'public, max-age=60')
+        .header('x-content-type-options', 'nosniff')
+        .send(landingPage);
     });
   }
 

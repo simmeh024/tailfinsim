@@ -25,9 +25,10 @@ a client-rendered SPA that production does not serve at all.
 
 ## Decision
 
-### 1. The landing page is a static document, served at `/landing`, on every surface
+### 1. The landing page is a static document, served at `/landing` on every surface
 
-Not a route inside the SPA, and not (yet) the document at `/`.
+Not a route inside the SPA. Since 2026-09-08 it is additionally the front door at `/` on the `app`
+surface — see below; production, which runs `holding`, is unchanged.
 
 **Static rather than a SPA route.** A public route inside the SPA would require `WEB_SURFACE=app`
 on production, which promotes the entire game client to the public — an OPS decision nobody has
@@ -35,11 +36,26 @@ taken, and one this milestone has no business forcing as a side effect of shippi
 It would also hand crawlers an empty root (LANDING-12 owns OpenGraph, and OG on an empty div is
 nothing), and put the SPA bundle in front of the first paint that LANDING-11 is trying to keep fast.
 
-**Its own path rather than `/`.** `/` is already spoken for on both surfaces. On production it is the
-holding page. On dev it is `IndexRedirect`, which resolves a signed-in player to `/found` or `/world`
-and carries the OAuth error query string through. Putting marketing at `/` would either displace
-dev's app or make a returning player walk through a sales page to reach their airline. `/landing` is
-reviewable on dev, deployable to production, and displaces nothing.
+**`/landing` is its stable path**, and it keeps working on every surface. It is what made the page
+reviewable before it was anybody's front door, and it stays the canonical URL — nothing about the
+document assumes where it is mounted.
+
+**It is also the front door on the `app` surface**, added 2026-09-08 at the user's request so dev
+shows it at `/`. The objection that made this non-obvious — a returning player must not be made to
+walk through a sales page to reach their airline — is answered rather than accepted: `/` branches on
+whether a session cookie is present, serving the SPA when it is and the landing page when it is not.
+`IndexRedirect` is untouched, so a signed-in player still resolves to `/found` or `/world` with the
+OAuth error query string intact.
+
+That branch tests cookie **presence, not validity**, deliberately. It is the same class of decision
+as `RequireSession` — _"a user-interface gate, not a security boundary"_ — and it fails harmlessly:
+a stale or forged cookie gets the SPA, whose own session check then shows the login wall. Nothing is
+disclosed either way, because both documents are public and neither carries player data. Validating
+the token here would put a database read in front of the first paint of every anonymous visit, which
+is the cost LANDING-11 exists to avoid.
+
+**Production is unaffected**, because it runs the `holding` surface. The switchover there is still
+decision 4's launch decision, and it did not happen by side effect.
 
 **On every surface**, because the landing page's whole job is to be reachable by a stranger. Gating
 it behind the surface flag would reintroduce the problem it exists to solve.
@@ -102,10 +118,32 @@ document assumes its path. The holding page is retired at that moment, not befor
 
 ### 5. Consequences handed to other issues, not taken here
 
-- **CSP.** The landing document has its own inline `<style>`, so it needs its own `sha256-` entry
-  before it can be served under the enforced policy at the edge. This ADR changes no header:
-  LANDING-11 and SEC-HARD-05 own that, and `deploy/README.md` has the report-only/enforced sequence.
-  Until then `/landing` is reviewable on dev, where the policy is not enforced the same way.
+- **CSP — corrected 2026-09-08, and the correction is the interesting part.** This bullet
+  originally said the landing document's inline `<style>` needed its own `sha256-` entry, handed
+  that to LANDING-11, and claimed `/landing` was _"reviewable on dev, where the policy is not
+  enforced the same way"_. **That last claim was simply wrong.** Dev enforces the same policy, and
+  `style-src` is `'self'` plus **the holding page's** hash — so the landing page shipped to dev and
+  rendered completely unstyled.
+
+  Nothing caught it. The build passed, the deploy passed, the health check passed, and the
+  post-deploy browser smoke passed, because that smoke asserts the _front door_ renders and the
+  front door is still the holding page. It was reviewed over `file://`, which has no CSP at all.
+
+  The fix is not a hash. **The stylesheet is a same-origin file, `/landing.css`, which
+  `style-src 'self'` already allows** — so this ADR needs no CSP change now, and neither does any
+  of the thirteen LANDING issues still to touch those styles. A hash would have made every future
+  CSS edit require a manual Caddy change, because CLAUDE.md is explicit that `deploy.sh` and
+  `deploy-dev.sh` do not install Caddy config or reload the edge; the styles would have silently
+  stopped applying each time until somebody remembered. A trap that springs on every edit is worse
+  than the one request it saves.
+
+  The holding page's _"zero external requests: no fonts, no CDN, no analytics"_ property is kept
+  intact: one same-origin file on the same connection is not a third party, which is what that
+  sentence was protecting against.
+
+  Two tests now hold the line — one asserting the document carries no inline `<style>` or `style=`
+  attribute, one asserting its only stylesheet is same-origin.
+
 - **The numbers.** The mock shows 21,547 airlines and 2.98M passengers. Those are invented, and the
   skeleton ships the shape with the figures absent rather than fabricated — LANDING-09 is titled
   _"Real numbers, or no numbers"_ and a marketing page that ships fake statistics is lying to a
