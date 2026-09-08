@@ -59,6 +59,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const HOLDING_PAGE = resolve(here, '..', '..', 'web', 'holding', 'index.html');
 const LANDING_PAGE = resolve(here, '..', '..', 'web', 'landing', 'index.html');
 const LANDING_STYLES = resolve(here, '..', '..', 'web', 'landing', 'landing.css');
+const LANDING_HERO = resolve(here, '..', '..', 'web', 'landing', 'landing-hero.webp');
 const CLIENT_DIR = resolve(here, '..', '..', 'web', 'dist', 'client');
 const DEV_A320NEO_CANDIDATE_DIRECTORY = resolve(
   here,
@@ -501,6 +502,35 @@ export async function buildApp({
       .header('cache-control', 'public, max-age=60')
       .header('x-content-type-options', 'nosniff')
       .send(landingStyles),
+  );
+
+  /**
+   * The hero backdrop — the one image the landing page loads.
+   *
+   * Same-origin, so `img-src 'self'` covers it with no CSP change, exactly like
+   * the stylesheet. WebP at 1920×1081 and 90 kB, down from a 1.7 MB PNG: it is a
+   * dark decorative starfield behind a gradient and text, so quality 72 is
+   * indistinguishable from 90 at four times the weight. LANDING-11 owns the
+   * budget for this page and 90 kB is the whole of what it spends on art.
+   *
+   * Cached for a day rather than a minute: unlike the document and its styles,
+   * this is immutable content that changes only when somebody replaces the file,
+   * and re-fetching a 90 kB image every minute is the opposite of the point.
+   */
+  let landingHero: Buffer;
+  try {
+    landingHero = readFileSync(LANDING_HERO);
+  } catch (cause) {
+    throw new Error(`Could not read the landing hero image at ${LANDING_HERO}`, { cause });
+  }
+
+  app.get('/landing-hero.webp', async (_request, reply) =>
+    reply
+      .code(200)
+      .type('image/webp')
+      .header('cache-control', 'public, max-age=86400')
+      .header('x-content-type-options', 'nosniff')
+      .send(landingHero),
   );
 
   /**
