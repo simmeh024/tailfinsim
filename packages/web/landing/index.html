@@ -8,7 +8,7 @@
       name="description"
       content="Tailfin is a real-time online airline management sim. Create your fleet, build a network and compete in a persistent aviation world that keeps flying even when you are offline."
     />
-    <meta name="theme-color" content="#060a12" />
+    <meta name="theme-color" content="#0b1017" />
 
     <meta property="og:title" content="Tailfin — build an airline, make it yours" />
     <meta
@@ -31,24 +31,24 @@
     -->
     <link
       rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23060a12'/%3E%3Cpath d='M12 25V12.5L21.5 7v18z' fill='%23ffb84d'/%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1017'/%3E%3Cpath d='M12 25V12.5L21.5 7v18z' fill='%23ffb84d'/%3E%3C/svg%3E"
     />
 
     <link rel="stylesheet" href="/landing.css" />
   </head>
 
   <body>
-    <a class="skip" href="#main">Skip to content</a>
+    <a class="lp-skip" href="#main">Skip to content</a>
 
-    <header class="top">
-      <div class="wrap top__inner">
-        <a class="brand" href="/landing">
-          <svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true">
-            <path d="M12 25V12.5L21.5 7v18z" fill="#ffb84d" />
+    <header class="lp-header">
+      <div class="lp-wrap lp-header__inner">
+        <a class="lp-brand" href="/landing">
+          <svg class="lp-brand__mark" viewBox="0 0 32 32" aria-hidden="true">
+            <path d="M12 25V12.5L21.5 7v18z" fill="currentColor" />
           </svg>
           TAILFIN
         </a>
-        <nav class="top__nav" aria-label="Primary">
+        <nav class="lp-header__nav" aria-label="Primary">
           <a href="#how">How it works</a>
           <a href="#features">Features</a>
           <a href="#status">World status</a>
@@ -57,7 +57,7 @@
             that exists on every surface, which is why this document needs no
             JavaScript to be useful. LANDING-13 owns everything after the click.
           -->
-          <a class="cta" href="/api/auth/google">Start airline →</a>
+          <a class="lp-cta" href="/api/auth/google">Start airline →</a>
         </nav>
       </div>
     </header>
@@ -67,18 +67,21 @@
       <!-- The map is a CSS background: decorative, so it has no alt text and
            no DOM node. LANDING-05 still owns a *live* map — real routes, real
            aircraft, moving. This is a photograph of one. -->
-      <div class="hero">
-        <div class="wrap hero__grid">
-          <div>
-            <h1>Build an airline. Make it yours<span class="dot">.</span></h1>
-            <p class="lede">
+      <div class="lp-hero">
+        <div class="lp-wrap lp-hero__grid">
+          <div class="lp-hero__copy">
+            <h1 class="lp-headline">
+              Build an airline. Make it yours<span class="lp-headline__stop">.</span>
+            </h1>
+            <p class="lp-lede">
               Create your fleet, build a network and compete in a persistent aviation world that
               keeps flying even when you are offline.
             </p>
 
-            <ul class="pillars">
-              <li>
+            <ul class="lp-pillars">
+              <li class="lp-pillars__item">
                 <svg
+                  class="lp-pillars__icon"
                   width="18"
                   height="18"
                   viewBox="0 0 24 24"
@@ -91,8 +94,9 @@
                 </svg>
                 Fleet management
               </li>
-              <li>
+              <li class="lp-pillars__item">
                 <svg
+                  class="lp-pillars__icon"
                   width="18"
                   height="18"
                   viewBox="0 0 24 24"
@@ -103,8 +107,9 @@
                 </svg>
                 Real airports
               </li>
-              <li>
+              <li class="lp-pillars__item">
                 <svg
+                  class="lp-pillars__icon"
                   width="18"
                   height="18"
                   viewBox="0 0 24 24"
@@ -118,8 +123,9 @@
                 </svg>
                 Persistent worlds
               </li>
-              <li>
+              <li class="lp-pillars__item">
                 <svg
+                  class="lp-pillars__icon"
                   width="18"
                   height="18"
                   viewBox="0 0 24 24"
@@ -132,11 +138,17 @@
               </li>
             </ul>
 
-            <div class="signin">
-              <h2>Start your airline</h2>
-              <div class="signin__buttons">
-                <a class="signin__button signin__button--google" href="/api/auth/google">
-                  <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+            <div class="lp-signin">
+              <h2 class="lp-signin__title">Start your airline</h2>
+              <div class="lp-signin__buttons">
+                <a class="lp-provider lp-provider--google" href="/api/auth/google">
+                  <svg
+                    class="lp-provider__mark"
+                    width="18"
+                    height="18"
+                    viewBox="0 0 48 48"
+                    aria-hidden="true"
+                  >
                     <path
                       fill="#4285F4"
                       d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"
@@ -156,8 +168,15 @@
                   </svg>
                   Continue with Google
                 </a>
-                <a class="signin__button signin__button--discord" href="/api/auth/discord">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff" aria-hidden="true">
+                <a class="lp-provider lp-provider--discord" href="/api/auth/discord">
+                  <svg
+                    class="lp-provider__mark"
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
                     <path
                       d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189z"
                     />
@@ -165,20 +184,20 @@
                   Continue with Discord
                 </a>
               </div>
-              <p class="signin__note">Free to play · New accounts are created automatically.</p>
+              <p class="lp-signin__note">Free to play · New accounts are created automatically.</p>
             </div>
           </div>
         </div>
       </div>
 
       <!-- ===== fleet / network / operations — LANDING-06 ================ -->
-      <section id="how">
-        <div class="wrap split">
+      <section class="lp-section" id="how">
+        <div class="lp-wrap lp-split">
           <div>
-            <h2 class="section__title">Your airline. Your decisions.</h2>
-            <div class="cards">
-              <article class="card">
-                <h3>Build your fleet</h3>
+            <h2 class="lp-section__title">Your airline. Your decisions.</h2>
+            <div class="lp-cards">
+              <article class="lp-card">
+                <h3 class="lp-card__title">Build your fleet</h3>
 
                 <!--
                   The fleet carousel (LANDING-06).
@@ -191,140 +210,146 @@
                   them.
                 -->
                 <div
-                  class="fleet"
+                  class="lp-fleet"
                   data-carousel
                   data-interval="5000"
                   role="region"
                   aria-roledescription="carousel"
                   aria-label="Aircraft you can fly"
                 >
-                  <div class="fleet__viewport">
-                    <ul class="fleet__track">
+                  <div class="lp-fleet__viewport">
+                    <ul class="lp-fleet__track">
                       <li
-                        class="fleet__slide"
+                        class="lp-fleet__slide"
                         role="group"
                         aria-roledescription="slide"
                         aria-label="1 of 5: ATR 72-600"
                       >
                         <img
-                          class="fleet__image"
+                          class="lp-fleet__image"
                           src="/fleet-atr72.webp"
                           alt="A twin-turboprop regional airliner"
                           width="1400"
                           height="467"
                           fetchpriority="high"
                         />
-                        <p class="fleet__type">ATR 72-600</p>
+                        <p class="lp-fleet__type">ATR 72-600</p>
                       </li>
                       <li
-                        class="fleet__slide"
+                        class="lp-fleet__slide"
                         role="group"
                         aria-roledescription="slide"
                         aria-label="2 of 5: E190-E2"
                       >
                         <img
-                          class="fleet__image"
+                          class="lp-fleet__image"
                           src="/fleet-e190.webp"
                           alt="A regional jet"
                           width="1400"
                           height="467"
                           loading="lazy"
                         />
-                        <p class="fleet__type">E190-E2</p>
+                        <p class="lp-fleet__type">E190-E2</p>
                       </li>
                       <li
-                        class="fleet__slide"
+                        class="lp-fleet__slide"
                         role="group"
                         aria-roledescription="slide"
                         aria-label="3 of 5: A321neo"
                       >
                         <img
-                          class="fleet__image"
+                          class="lp-fleet__image"
                           src="/fleet-a321neo.webp"
                           alt="A single-aisle narrowbody airliner"
                           width="1400"
                           height="467"
                           loading="lazy"
                         />
-                        <p class="fleet__type">A321neo</p>
+                        <p class="lp-fleet__type">A321neo</p>
                       </li>
                       <li
-                        class="fleet__slide"
+                        class="lp-fleet__slide"
                         role="group"
                         aria-roledescription="slide"
                         aria-label="4 of 5: 777-300ER"
                       >
                         <img
-                          class="fleet__image"
+                          class="lp-fleet__image"
                           src="/fleet-777.webp"
                           alt="A long-haul twin-engine widebody airliner"
                           width="1400"
                           height="467"
                           loading="lazy"
                         />
-                        <p class="fleet__type">777-300ER</p>
+                        <p class="lp-fleet__type">777-300ER</p>
                       </li>
                       <li
-                        class="fleet__slide"
+                        class="lp-fleet__slide"
                         role="group"
                         aria-roledescription="slide"
                         aria-label="5 of 5: 747-400"
                       >
                         <img
-                          class="fleet__image"
+                          class="lp-fleet__image"
                           src="/fleet-747.webp"
                           alt="A four-engine widebody airliner"
                           width="1400"
                           height="467"
                           loading="lazy"
                         />
-                        <p class="fleet__type">747-400</p>
+                        <p class="lp-fleet__type">747-400</p>
                       </li>
                     </ul>
                   </div>
 
-                  <button class="fleet__nav fleet__nav--prev" type="button" data-fleet-prev>
-                    <span class="visually-hidden">Previous aircraft</span>
+                  <button class="lp-fleet__nav lp-fleet__nav--prev" type="button" data-fleet-prev>
+                    <span class="lp-sr-only">Previous aircraft</span>
                     <span aria-hidden="true">‹</span>
                   </button>
-                  <button class="fleet__nav fleet__nav--next" type="button" data-fleet-next>
-                    <span class="visually-hidden">Next aircraft</span>
+                  <button class="lp-fleet__nav lp-fleet__nav--next" type="button" data-fleet-next>
+                    <span class="lp-sr-only">Next aircraft</span>
                     <span aria-hidden="true">›</span>
                   </button>
                 </div>
 
-                <p>Choose aircraft, negotiate deals and grow a fleet that fits your strategy.</p>
+                <p class="lp-card__body">
+                  Choose aircraft, negotiate deals and grow a fleet that fits your strategy.
+                </p>
               </article>
-              <article class="card">
-                <h3>Build your network</h3>
-                <div class="card__figure">Network diagram <span class="todo">LANDING-06</span></div>
-                <p>Open routes, set schedules and connect your airline to the world.</p>
+              <article class="lp-card">
+                <h3 class="lp-card__title">Build your network</h3>
+                <div class="lp-figure">Network diagram <span class="lp-todo">LANDING-06</span></div>
+                <p class="lp-card__body">
+                  Open routes, set schedules and connect your airline to the world.
+                </p>
               </article>
-              <article class="card">
-                <h3>Run the operation</h3>
-                <div class="card__figure">
-                  Operating figures <span class="todo">LANDING-06</span>
+              <article class="lp-card">
+                <h3 class="lp-card__title">Run the operation</h3>
+                <div class="lp-figure">
+                  Operating figures <span class="lp-todo">LANDING-06</span>
                 </div>
-                <p>Manage prices, control costs and keep your airline profitable.</p>
+                <p class="lp-card__body">
+                  Manage prices, control costs and keep your airline profitable.
+                </p>
               </article>
             </div>
           </div>
 
           <!-- ===== the world keeps running — LANDING-07 ================== -->
-          <aside class="panel" id="features">
-            <h2>The world doesn’t stop when you log out.</h2>
-            <p>
+          <aside class="lp-aside" id="features">
+            <h2 class="lp-aside__title">The world doesn’t stop when you log out.</h2>
+            <p class="lp-aside__body">
               Flights take off, land and connect around the clock. Your airline is always part of
               the world.
             </p>
-            <div class="card__figure">Live flight card <span class="todo">LANDING-07</span></div>
+            <div class="lp-figure">Live flight card <span class="lp-todo">LANDING-07</span></div>
           </aside>
         </div>
       </section>
 
       <!-- ===== world status — LANDING-09 ================================ -->
-      <section id="status">
-        <div class="wrap">
+      <section class="lp-section" id="status">
+        <div class="lp-wrap">
           <!--
             The mock fills these in. Its figures are invented, and LANDING-09 is
             titled "Real numbers, or no numbers" for exactly that reason — a
@@ -336,37 +361,43 @@
             something real, or deletes the section. There is a test asserting the
             mock's numbers do not appear in this document, including in a comment.
           -->
-          <div class="stats">
-            <div class="stat">
-              <div class="stat__value stat__value--pending">—</div>
-              <div class="stat__label">Airlines <span class="todo">LANDING-09</span></div>
+          <div class="lp-stats">
+            <div class="lp-stat">
+              <div class="lp-stat__value lp-stat__value--pending">—</div>
+              <div class="lp-stat__label">Airlines <span class="lp-todo">LANDING-09</span></div>
             </div>
-            <div class="stat">
-              <div class="stat__value stat__value--pending">—</div>
-              <div class="stat__label">Aircraft</div>
+            <div class="lp-stat">
+              <div class="lp-stat__value lp-stat__value--pending">—</div>
+              <div class="lp-stat__label">Aircraft</div>
             </div>
-            <div class="stat">
-              <div class="stat__value stat__value--pending">—</div>
-              <div class="stat__label">Flights airborne</div>
+            <div class="lp-stat">
+              <div class="lp-stat__value lp-stat__value--pending">—</div>
+              <div class="lp-stat__label">Flights airborne</div>
             </div>
-            <div class="stat">
-              <div class="stat__value stat__value--pending">—</div>
-              <div class="stat__label">Passengers today</div>
+            <div class="lp-stat">
+              <div class="lp-stat__value lp-stat__value--pending">—</div>
+              <div class="lp-stat__label">Passengers today</div>
             </div>
           </div>
         </div>
       </section>
     </main>
 
-    <footer>
-      <div class="wrap">
-        <p class="footer__line">
-          <svg width="16" height="16" viewBox="0 0 32 32" aria-hidden="true">
-            <path d="M12 25V12.5L21.5 7v18z" fill="#ffb84d" />
+    <footer class="lp-footer">
+      <div class="lp-wrap">
+        <p class="lp-footer__line">
+          <svg
+            class="lp-footer__mark"
+            width="16"
+            height="16"
+            viewBox="0 0 32 32"
+            aria-hidden="true"
+          >
+            <path d="M12 25V12.5L21.5 7v18z" fill="currentColor" />
           </svg>
           A persistent aviation world.
         </p>
-        <p class="footer__sub">Plan today. Fly tomorrow. Compete forever.</p>
+        <p class="lp-footer__sub">Plan today. Fly tomorrow. Compete forever.</p>
       </div>
     </footer>
     <!--

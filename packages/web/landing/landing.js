@@ -33,8 +33,8 @@
 
   /** @param {HTMLElement} root */
   function setUpCarousel(root) {
-    const track = root.querySelector('.fleet__track');
-    const slides = Array.from(root.querySelectorAll('.fleet__slide'));
+    const track = root.querySelector('.lp-fleet__track');
+    const slides = Array.from(root.querySelectorAll('.lp-fleet__slide'));
     const previous = root.querySelector('[data-fleet-prev]');
     const next = root.querySelector('[data-fleet-next]');
     if (track === null || slides.length < 2) return;

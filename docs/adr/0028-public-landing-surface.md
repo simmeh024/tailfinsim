@@ -128,8 +128,47 @@ silently become the front door, and that is a decision rather than caution:
   milestone.
 
 **The switchover is therefore: production auth is configured, and someone decides to open the doors.**
-At that point it is one `if` in `app.ts` and a CSP hash — no rework, because nothing about the
-document assumes its path. The holding page is retired at that moment, not before.
+No rework is needed, because nothing about the document assumes its path. The holding page is
+retired at that moment, not before.
+
+**Corrected 2026-09-08 (LANDING-02): the switchover needs no CSP hash.** This paragraph used to
+say it needed "one `if` in `app.ts` and a CSP hash", which was true of the inline `<style>` the
+page shipped with and stopped being true when decision 5 moved the styles into `/landing.css`.
+`style-src 'self'` already covers a same-origin file, so promotion touches no Caddyfile — and the
+holding page's pinned `sha256-` entry can be **removed** at the same moment, because the document
+it exists for is being retired.
+
+#### The go-live runbook
+
+What has to be true, and then what to do. Performing this is not the LANDING milestone's job;
+writing it down is.
+
+Preconditions, all of them:
+
+1. **Production has Google OAuth credentials**, and `PUBLIC_ORIGIN` is the https production
+   origin — ADR-0015 makes the server refuse a non-HTTPS one, so this fails closed rather than
+   quietly. A Discord application too, or the Discord button is removed for that surface.
+2. **`ALLOW_REGISTRATION` is decided** for production. The landing page's entire funnel is
+   "continue with…", and a front door whose only button is refused is worse than a holding page.
+3. **Somebody has decided to launch.** This is the actual gate; the rest is mechanics.
+
+Then:
+
+4. Set `WEB_SURFACE=app` in production's `.env` and deploy `main` with `./deploy/deploy.sh`. That
+   one variable is what makes `/` serve the landing page to an anonymous visitor and the client to
+   a signed-in one; it is not a different build.
+5. **Check `/` in a browser, signed out and signed in.** The post-deploy smoke knows all three
+   surfaces and will tell you which one answered, but the sign-in round trip is the thing no
+   automated check here exercises against real credentials.
+6. Remove the holding page's `sha256-` entry from `style-src` in `deploy/Caddyfile`, install it,
+   and reload the edge. **A deploy does not do this** — see CLAUDE.md — and `pnpm security:headers`
+   against the live host is what proves it took.
+7. Delete `packages/web/holding/` and the `holding` branch of the surface switch in `app.ts`, and
+   drop that branch from `post-deploy/smoke.spec.ts`. Not before step 6: while the hash is still
+   pinned, the file it is pinned for should still exist.
+8. Drop `noindex` from production and let LANDING-12's OpenGraph tags be verified for the first
+   time — dev is `noindex` and behind sign-in, so nothing about crawling or social unfurling can
+   be checked before this moment.
 
 ### 5. Consequences handed to other issues, not taken here
 
@@ -172,6 +211,11 @@ document assumes its path. The holding page is retired at that moment, not befor
 The sections LANDING-04 … LANDING-09 build into, in document order. Each is delimited by a comment
 naming its issue, so the milestone's issues do not collide in one undifferentiated file:
 
+The design language those sections share — tokens, the settled orange question, the contrast
+figures and the `lp-` component catalogue — is
+[`docs/landing-design-language.md`](../landing-design-language.md) (LANDING-02), enforced by
+`packages/web/src/theme/landing-tokens.test.ts`.
+
 | Section               | Owner                    | Ships today                         |
 | --------------------- | ------------------------ | ----------------------------------- |
 | Header and nav        | LANDING-02 (design), -13 | Structure, working sign-in link     |
@@ -187,8 +231,12 @@ naming its issue, so the milestone's issues do not collide in one undifferentiat
 
 - A stranger can reach exactly one public page, and it fetches nothing. There is no unauthenticated
   API caller introduced by this ADR — LANDING-09 owns that surface if it needs one.
-- A signed-in visitor never sees marketing, because the landing page is not at `/` on the app
-  surface and `IndexRedirect` is unchanged.
+- A signed-in visitor never sees marketing. **Corrected 2026-09-08 (LANDING-02):** this bullet used
+  to give the reason as _"the landing page is not at `/` on the app surface"_, which decision 1's
+  amendment made false the same day — it is. The property survives for a different reason, which is
+  the one to know: `/` branches on session-cookie presence, so a signed-in visitor gets the SPA and
+  `IndexRedirect` — unchanged — resolves them to `/found` or `/world` with the OAuth error query
+  string intact.
 - A future `/airlines/{slug}` (M12-02) is cheap: public server-served pages are now a first-class
   shape with a precedent, rather than a carve-out in the SPA's login wall.
 - The page is not yet the front door. `pnpm ops:status` and the deploy tell you what production
