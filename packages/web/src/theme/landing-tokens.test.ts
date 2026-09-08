@@ -290,17 +290,29 @@ describe('the rules LANDING-02 settled', () => {
         .filter(([name]) => name.startsWith('--lp-bp-'))
         .map(([, value]) => value),
     );
-    expect(declared.size).toBe(3);
+    expect(declared.size).toBe(4);
 
     const widths = [...css.matchAll(/@media\s*\((?:min|max)-width:\s*([^)]+)\)/g)].map((m) =>
       m[1]!.trim().toLowerCase(),
     );
     expect(widths.length, 'expected the page to have breakpoints at all').toBeGreaterThan(0);
 
-    const strays = widths.filter((width) => !declared.has(width));
-    expect(strays, `media widths not declared as --lp-bp-* tokens: ${strays.join(', ')}`).toEqual(
-      [],
+    /*
+     * Heights too, since LANDING-04. The hero's constraint turned out to be
+     * vertical — a 1280x720 laptop is wide and short, and every width-driven
+     * rule pays out its maximum there — so the page has a `max-height` query as
+     * well, and it needs the same discipline: one declared value, not a literal
+     * somebody nudged until their own screen looked right.
+     */
+    const heights = [...css.matchAll(/@media\s*\((?:min|max)-height:\s*([^)]+)\)/g)].map((m) =>
+      m[1]!.trim().toLowerCase(),
     );
+
+    const strays = [...widths, ...heights].filter((value) => !declared.has(value));
+    expect(
+      strays,
+      `media query values not declared as --lp-bp-* tokens: ${strays.join(', ')}`,
+    ).toEqual([]);
   });
 
   it('names every class in one family', () => {

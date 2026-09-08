@@ -137,6 +137,17 @@ arrives. So the literal stays in the query and the test asserts every media widt
 declared `--lp-bp-*` token. Everything is written mobile-first, `min-width` only, so no boundary
 needs an off-by-one companion (`max-width: 47.99rem`) that a token could not express either.
 
+**And one height boundary, `--lp-bp-short` at 50rem** (LANDING-04). The four width bands
+cannot say _"this screen is short"_, and that turned out to be the hero's actual constraint: a
+1280×720 laptop is wide and short, so every width-driven rule pays out its maximum exactly
+where there is least room, and the display headline alone took 207px of a ~700px budget. Below
+that line the hero uses a smaller display treatment — which is the correct type size for the
+screen rather than a compromise. 50rem sits above every common laptop height (720, 768) and
+below every desktop one (900, 1080) and the tall phones (844, 852).
+
+The same test holds it: every media query value, width or height, must equal a declared
+`--lp-bp-*` token.
+
 ---
 
 ## Contrast

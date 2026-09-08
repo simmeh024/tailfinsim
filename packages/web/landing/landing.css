@@ -266,6 +266,21 @@
   --lp-bp-laptop: 64rem;
   --lp-bp-desktop: 90rem;
 
+  /*
+   * A **height** boundary, which is the axis the four width bands cannot
+   * express and the one the hero actually runs out of.
+   *
+   * A 1280x720 laptop is wide and short: every width-driven rule pays out its
+   * maximum there, and the display headline alone took 207px of a ~700px
+   * budget. Below this line the hero uses a smaller display treatment — which
+   * is not a compromise so much as the correct type size for the screen.
+   *
+   * 50rem (800px) sits above every common laptop height (720, 768) and below
+   * every desktop one (900, 1080) and the tall phones (844, 852), so the
+   * block catches exactly the band that needs it.
+   */
+  --lp-bp-short: 50rem;
+
   --lp-page-max: 120rem;
   --lp-gutter: clamp(1rem, 3.5vw, 3rem);
   --lp-header-h: 4.5rem;
@@ -1066,4 +1081,39 @@ a {
   font-size: var(--lp-text-xs);
   letter-spacing: var(--lp-tracking-label);
   text-transform: uppercase;
+}
+
+/*
+ * Short viewports: the hero, compressed to fit its own CTA.
+ *
+ * The criterion this serves is that the sign-in button is above the fold, and it
+ * was failing at 1280x720 — first by 58px, and then, after the padding and gaps
+ * were made height-aware, by 45px more on CI than on the machine it was tuned
+ * on. That gap is font metrics: the system stack resolves to Segoe UI on
+ * Windows and to something wider on a Linux runner, so the headline wraps
+ * differently and every measurement taken on one platform is a guess about the
+ * other.
+ *
+ * Hence a real reduction rather than another few pixels. The headline is the
+ * largest single consumer of vertical space on the page, and 70px of uppercase
+ * display type is a desktop treatment being shown on a screen that cannot hold
+ * it. Shrinking it here buys enough room that the fold assertion passes with
+ * margin on both platforms instead of passing on one and failing on the other.
+ *
+ * A height query, not a width one, and it is the first on this page. The four
+ * width bands are the right model for layout; they cannot express "this screen
+ * is short", which is the only thing wrong at 1280x720.
+ */
+@media (max-height: 50rem) {
+  .lp-hero {
+    padding-block: clamp(1rem, 3svh, 4rem);
+  }
+
+  .lp-headline {
+    font-size: clamp(2rem, 6svh, 3.75rem);
+  }
+
+  .lp-lede {
+    font-size: var(--lp-text-base);
+  }
 }
