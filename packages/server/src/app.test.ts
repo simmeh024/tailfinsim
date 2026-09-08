@@ -149,8 +149,30 @@ describeDb('HTTP surface', () => {
       expect(res.body).toContain('<title>Tailfin — coming soon</title>');
     });
 
-    it('offers both providers as plain links, so the funnel needs no JavaScript', async () => {
-      const res = await app.inject({ method: 'GET', url: '/landing' });
+    it('offers its providers as plain links, so the funnel needs no JavaScript', async () => {
+      /*
+       * On an instance that has them. The suite's fixture configures no provider
+       * — which is the right default for every other case here and is what makes
+       * the "no API path at all" assertion below meaningful — so this one builds
+       * its own, because provider configuration is read at boot.
+       */
+      const configured = await buildApp({
+        env: makeTestEnv({
+          googleClientId: 'id',
+          googleClientSecret: 'secret',
+          googleEnabled: true,
+          discordClientId: 'id',
+          discordClientSecret: 'secret',
+          discordEnabled: true,
+          sessionSecret: 'x'.repeat(48),
+          authEnabled: true,
+        }),
+        db,
+      });
+      await configured.ready();
+      const res = await configured.inject({ method: 'GET', url: '/landing' });
+      await configured.close();
+
       expect(res.body).toContain('href="/api/auth/google"');
       expect(res.body).toContain('href="/api/auth/discord"');
 
@@ -431,7 +453,11 @@ describeDb('HTTP surface', () => {
        * up here even with Google switched off.
        */
       const body = (await app.inject({ method: 'GET', url: '/landing' })).body;
-      const apiPaths = [...body.matchAll(/\/api\/[\w/-]*/g)].map((match) => match[0]);
+      // Comments stripped first: a path *discussed* in an HTML comment is not a
+      // path the document references, and the first version of this failed on the
+      // comment that explains why the nav CTA stopped being one.
+      const markup = body.replace(/<!--[\s\S]*?--!?>/g, '');
+      const apiPaths = [...markup.matchAll(/\/api\/[\w/-]*/g)].map((match) => match[0]);
       expect([...new Set(apiPaths)].sort()).toEqual([]);
     });
 
