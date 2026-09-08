@@ -161,7 +161,22 @@
               </h2>
 
               <!--tailfin:auth-error--><!--/tailfin:auth-error-->
+              <!--
+                The provider buttons, written by the server (AUTH-08).
+
+                Hardcoded here until Twitch was added, which made the flaw
+                obvious: this document offered Google and Discord to every box,
+                including one with credentials for neither. `LoginPage` has
+                always asked the server — *"says sign-in is unconfigured rather
+                than offering a door that does not open"* — and the front door,
+                which is the surface a stranger actually meets, did not.
+
+                One list now (`configuredSignInProviders`), two renderers. The
+                marks are inlined SVG so the document still makes no external
+                request.
+              -->
               <div class="lp-signin__buttons">
+                <!--tailfin:provider-google-->
                 <a class="lp-provider lp-provider--google" href="/api/auth/google">
                   <svg
                     class="lp-provider__mark"
@@ -189,6 +204,8 @@
                   </svg>
                   Continue with Google
                 </a>
+                <!--/tailfin:provider-google-->
+                <!--tailfin:provider-discord-->
                 <a class="lp-provider lp-provider--discord" href="/api/auth/discord">
                   <svg
                     class="lp-provider__mark"
@@ -204,6 +221,24 @@
                   </svg>
                   Continue with Discord
                 </a>
+                <!--/tailfin:provider-discord-->
+                <!--tailfin:provider-twitch-->
+                <a class="lp-provider lp-provider--twitch" href="/api/auth/twitch">
+                  <svg
+                    class="lp-provider__mark"
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M4.3 3 3 6.2v13h4.4V21h2.5l2.2-1.8h3.3L21 14.6V3zm1.6 1.6h13.5v9.3l-2.6 2.6h-4.1l-2.2 1.8v-1.8H6V4.6zm4.4 8.2h1.7V7.6h-1.7zm4.6 0h1.7V7.6h-1.7z"
+                    />
+                  </svg>
+                  Continue with Twitch
+                </a>
+                <!--/tailfin:provider-twitch-->
               </div>
               <p class="lp-signin__note">
                 <!--tailfin:signin-note-->Free to play · New accounts are created automatically.<!--/tailfin:signin-note-->

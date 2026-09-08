@@ -39,7 +39,7 @@ export type AuthenticatedPlayer = z.infer<typeof AuthenticatedPlayer>;
  * *schema* can store, and this says what a player can click today. An instance
  * with no Discord credentials must not render a Discord button that 503s.
  */
-export const SignInProvider = z.enum(['google', 'discord']);
+export const SignInProvider = z.enum(['google', 'discord', 'twitch']);
 export type SignInProvider = z.infer<typeof SignInProvider>;
 
 /**

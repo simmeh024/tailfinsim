@@ -139,8 +139,9 @@
    * guideline and honouring AA are in direct conflict. WCAG's large-text
    * threshold is 3:1 at 18.66px bold, so `--lp-text-provider` is 1.1875rem
    * (19px) at weight 700 and the pair conforms *as large text* rather than by
-   * waiver. Discord's white on #5865F2 is 4.61 and would have passed either way;
-   * it gets the same treatment so the two buttons match.
+   * waiver. Discord's white on #5865F2 is 4.61 and Twitch's on #9146FF is 4.64;
+   * both would have passed either way, and both get the same treatment so the
+   * three buttons match.
    *
    * The size is not decoration. Change it down and the Google button stops
    * being accessible — the test records the requirement next to the token.
@@ -148,6 +149,7 @@
   --lp-google: #4285f4;
   --lp-google-field: #ffffff;
   --lp-discord: #5865f2;
+  --lp-twitch: #9146ff;
   --lp-provider-ink: #ffffff;
 
   /* ---- the hero photograph ---------------------------------------------
@@ -799,6 +801,10 @@ a {
 
 .lp-provider--discord {
   background: var(--lp-discord);
+}
+
+.lp-provider--twitch {
+  background: var(--lp-twitch);
 }
 
 .lp-provider:hover {

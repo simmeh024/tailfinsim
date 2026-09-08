@@ -23,6 +23,7 @@ import type { ReactNode } from 'react';
 const PROVIDER_LABEL: Record<SignInProvider, string> = {
   google: 'Google',
   discord: 'Discord',
+  twitch: 'Twitch',
 };
 
 /**

@@ -241,11 +241,14 @@ export interface ServerEnv {
   googleClientSecret: string | undefined;
   discordClientId: string | undefined;
   discordClientSecret: string | undefined;
+  twitchClientId: string | undefined;
+  twitchClientSecret: string | undefined;
   sessionSecret: string | undefined;
   /** Whether Google sign-in is configured on this instance (ADR-0004). */
   googleEnabled: boolean;
   /** Whether Discord sign-in is configured on this instance (AUTH-08). */
   discordEnabled: boolean;
+  twitchEnabled: boolean;
   /**
    * Whether *any* provider is configured.
    *
@@ -356,6 +359,8 @@ export function loadEnv(): ServerEnv {
   const googleClientSecret = optionalUndefined('GOOGLE_CLIENT_SECRET');
   const discordClientId = optionalUndefined('DISCORD_CLIENT_ID');
   const discordClientSecret = optionalUndefined('DISCORD_CLIENT_SECRET');
+  const twitchClientId = optionalUndefined('TWITCH_CLIENT_ID');
+  const twitchClientSecret = optionalUndefined('TWITCH_CLIENT_SECRET');
   const sessionSecret = optionalUndefined('SESSION_SECRET');
 
   /**
@@ -368,6 +373,7 @@ export function loadEnv(): ServerEnv {
   const providers = [
     { name: 'Google', prefix: 'GOOGLE', id: googleClientId, secret: googleClientSecret },
     { name: 'Discord', prefix: 'DISCORD', id: discordClientId, secret: discordClientSecret },
+    { name: 'Twitch', prefix: 'TWITCH', id: twitchClientId, secret: twitchClientSecret },
   ] as const;
 
   for (const provider of providers) {
@@ -393,7 +399,8 @@ export function loadEnv(): ServerEnv {
 
   const googleEnabled = Boolean(googleClientId && googleClientSecret && sessionSecret);
   const discordEnabled = Boolean(discordClientId && discordClientSecret && sessionSecret);
-  const authEnabled = googleEnabled || discordEnabled;
+  const twitchEnabled = Boolean(twitchClientId && twitchClientSecret && sessionSecret);
+  const authEnabled = googleEnabled || discordEnabled || twitchEnabled;
 
   if (sessionSecret !== undefined && sessionSecret.length < 32) {
     throw new Error('SESSION_SECRET must be at least 32 characters. Try: openssl rand -base64 48');
@@ -428,9 +435,12 @@ export function loadEnv(): ServerEnv {
     googleClientSecret,
     discordClientId,
     discordClientSecret,
+    twitchClientId,
+    twitchClientSecret,
     sessionSecret,
     googleEnabled,
     discordEnabled,
+    twitchEnabled,
     authEnabled,
     sessionTtlHours,
     adminSessionTtlHours,

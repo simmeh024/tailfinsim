@@ -47,6 +47,13 @@ import {
   SESSION_COOKIE,
   type SessionPlayer,
 } from './session';
+import {
+  buildAuthorizeUrl as buildTwitchAuthorizeUrl,
+  exchangeCode as twitchExchangeCode,
+  fetchProfile as twitchFetchProfile,
+  redirectUriFor as twitchRedirectUriFor,
+  type TwitchProfile,
+} from './twitch';
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
@@ -173,6 +180,7 @@ export interface AuthRoutesOptions {
   /** Provider boundary injected only by callback integration tests. */
   googleAuth?: GoogleAuthOperations;
   discordAuth?: DiscordAuthOperations;
+  twitchAuth?: TwitchAuthOperations;
 }
 
 /**
@@ -187,11 +195,20 @@ export interface OAuthOperations<Profile> {
     redirectUri: string;
     codeVerifier: string;
   }) => Promise<string>;
-  fetchProfile: (accessToken: string) => Promise<Profile>;
+  /**
+   * `clientId` is passed to every provider and used by one: Twitch's
+   * `helix/users` requires the application's client id alongside the bearer
+   * token and refuses a request carrying only the token. Google's and
+   * Discord's implementations take one argument and ignore the second, which
+   * TypeScript allows and which keeps the seam honest — the interface says a
+   * provider *may* need its own identity to read a profile, because one does.
+   */
+  fetchProfile: (accessToken: string, clientId: string) => Promise<Profile>;
 }
 
 export type GoogleAuthOperations = OAuthOperations<GoogleProfile>;
 export type DiscordAuthOperations = OAuthOperations<DiscordProfile>;
+export type TwitchAuthOperations = OAuthOperations<TwitchProfile>;
 
 /**
  * Everything that genuinely differs between one OAuth provider and another.
@@ -222,9 +239,29 @@ interface OAuthProvider<Profile> {
   toIdentity: (profile: Profile) => Omit<ProvenIdentity, 'provider'>;
 }
 
+/**
+ * Which providers this instance can actually offer, in the order to offer them.
+ *
+ * Exported because **two** surfaces need the answer and they must not disagree:
+ * `/api/me` tells the React login wall, and `app.ts` renders the same list into
+ * the static landing page, whose funnel carries no JavaScript. A landing page
+ * showing a button the box has no credentials for sends a visitor to a 503 —
+ * which is the failure `LoginPage` already avoids by asking the server.
+ *
+ * What the schema can *store* is a different and longer list; this is what a
+ * player can click today.
+ */
+export function configuredSignInProviders(env: ServerEnv): SignInProvider[] {
+  return [
+    ...(env.googleEnabled ? (['google'] as const) : []),
+    ...(env.discordEnabled ? (['discord'] as const) : []),
+    ...(env.twitchEnabled ? (['twitch'] as const) : []),
+  ];
+}
+
 export function registerAuthRoutes(
   app: FastifyInstance,
-  { env, db, googleAuth, discordAuth }: AuthRoutesOptions,
+  { env, db, googleAuth, discordAuth, twitchAuth }: AuthRoutesOptions,
 ): void {
   const secureCookies = env.publicOrigin.startsWith('https://');
 
@@ -334,10 +371,7 @@ export function registerAuthRoutes(
           : null,
         registrationOpen: env.allowRegistration,
         // What this instance can actually offer, not what the schema can store.
-        signInProviders: [
-          ...(env.googleEnabled ? (['google'] as const) : []),
-          ...(env.discordEnabled ? (['discord'] as const) : []),
-        ],
+        signInProviders: configuredSignInProviders(env),
         // False for anonymous visitors by construction: the flag is only set
         // alongside a resolved session, so there is no state where a stranger is
         // told anything about admin at all.
@@ -509,7 +543,7 @@ export function registerAuthRoutes(
             redirectUri: config.redirectUriFor(env.publicOrigin),
             codeVerifier: stored.verifier,
           });
-          profile = await config.operations.fetchProfile(accessToken);
+          profile = await config.operations.fetchProfile(accessToken, clientId);
         } catch (error) {
           request.log.error({ err: error, provider: name }, 'oauth exchange failed');
           return fail('exchange_failed');
@@ -658,6 +692,33 @@ export function registerAuthRoutes(
     operations: discordAuth ?? {
       exchangeCode: discordExchangeCode,
       fetchProfile: discordFetchProfile,
+    },
+    toIdentity: (profile) => ({
+      subject: profile.subject,
+      email: profile.email,
+      displayName: profile.name,
+      avatarUrl: profile.avatarUrl,
+    }),
+  });
+
+  /*
+   * Twitch relaxes exactly one thing the other two do, and `twitch.ts` says so
+   * at length rather than leaving it to be noticed: its authorization-code grant
+   * documents no PKCE, so the challenge and verifier are accepted here for
+   * interface parity and not sent. The state binding and the confidential-client
+   * exchange are unchanged, and they are what actually hold this flow shut.
+   */
+  registerOAuthProvider<TwitchProfile>({
+    name: 'twitch',
+    label: 'Twitch',
+    enabled: () => env.twitchEnabled,
+    clientId: () => env.twitchClientId,
+    clientSecret: () => env.twitchClientSecret,
+    buildAuthorizeUrl: buildTwitchAuthorizeUrl,
+    redirectUriFor: twitchRedirectUriFor,
+    operations: twitchAuth ?? {
+      exchangeCode: twitchExchangeCode,
+      fetchProfile: twitchFetchProfile,
     },
     toIdentity: (profile) => ({
       subject: profile.subject,

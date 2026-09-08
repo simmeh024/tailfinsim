@@ -403,6 +403,7 @@ describe('contrast, measured rather than asserted', () => {
     // 3.56 and does not reach 4.5 at any size.
     ['--lp-provider-ink', '--lp-google', 3, 'the Google button label, as large text'],
     ['--lp-provider-ink', '--lp-discord', 3, 'the Discord button label, as large text'],
+    ['--lp-provider-ink', '--lp-twitch', 3, 'the Twitch button label, as large text'],
   ];
 
   it.each(PAIRS)('%s on %s clears %s:1 (%s)', (fg, bg, minimum) => {

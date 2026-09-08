@@ -1,0 +1,25 @@
+-- tailfin:migration-strategy expand
+-- Twitch sign-in (AUTH-08's third provider).
+--
+-- One new value on the `auth_provider` enum. Additive by construction: the
+-- previous release neither writes nor reads it, and an enum value nothing writes
+-- is inert. No existing row changes and no column moves, so the release before
+-- this one keeps working against the result — which is what `expand` promises.
+--
+-- `BEFORE 'email'` keeps the enum ordered by what actually ships: the two live
+-- providers, then Twitch, then the two placeholders (`email` for AUTH-10's magic
+-- link, `passkey` for AUTH-15). Ordering is cosmetic to Postgres and is only
+-- load-bearing for a human reading `\dT+`.
+--
+-- `IF NOT EXISTS` because ADR-0016 applies every pending migration in one
+-- transaction and a re-run must not fail the batch.
+--
+-- **Nothing in this migration reads the new value, and that is deliberate.**
+-- That single transaction is also the trap CLAUDE.md records twice: a data
+-- migration naming a value the same transaction just added is refused with
+-- `unsafe use of new value "..." of enum type`. It passes locally, where only
+-- this file is pending and the enum committed months ago, and fails on a virgin
+-- database — which is CI, and every new environment. There is no data to migrate
+-- here, so the rule costs nothing; the note is for whoever adds the next value
+-- and is tempted to backfill in the same file.
+ALTER TYPE "public"."auth_provider" ADD VALUE IF NOT EXISTS 'twitch' BEFORE 'email';

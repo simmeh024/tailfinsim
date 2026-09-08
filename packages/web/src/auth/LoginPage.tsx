@@ -24,11 +24,13 @@ import type { ReactNode } from 'react';
 const PROVIDER_LABEL: Record<SignInProvider, string> = {
   google: 'Google',
   discord: 'Discord',
+  twitch: 'Twitch',
 };
 
 const PROVIDER_GLYPH: Record<SignInProvider, string> = {
   google: '⌾',
   discord: '◈',
+  twitch: '◰',
 };
 
 /**

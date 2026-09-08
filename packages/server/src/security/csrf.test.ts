@@ -171,6 +171,21 @@ const STATE_CHANGING_GET_ROUTES: { url: string; instead: string }[] = [
       'state issued for Google is refused here rather than spending the credential.',
   },
   {
+    url: '/api/auth/twitch',
+    instead:
+      'As `/api/auth/google`: writes the signed `tailfin_oauth` state cookie and nothing else. ' +
+      'Forging the request starts a sign-in the attacker cannot finish.',
+  },
+  {
+    url: '/api/auth/twitch/callback',
+    instead:
+      'As the Google callback, and the same control — the OAuth `state` must match the signed ' +
+      '`tailfin_oauth` cookie, which also names the provider it was minted for. Twitch supports ' +
+      'no PKCE, so that state binding is doing more work here than for the other two: it is ' +
+      'what stops an attacker grafting their own authorization code onto a victim, and the ' +
+      'code itself is still only exchangeable with the client secret.',
+  },
+  {
     url: '/api/auth/google/connect',
     instead:
       'Writes the signed `tailfin_oauth` state cookie with intent `link`, and carries ' +
@@ -180,6 +195,12 @@ const STATE_CHANGING_GET_ROUTES: { url: string; instead: string }[] = [
   },
   {
     url: '/api/auth/discord/connect',
+    instead:
+      'As the Google connect route, with the same signed-cookie intent and the same ' +
+      'session-identity match at the callback.',
+  },
+  {
+    url: '/api/auth/twitch/connect',
     instead:
       'As the Google connect route, with the same signed-cookie intent and the same ' +
       'session-identity match at the callback.',
@@ -224,8 +245,11 @@ describe('no state-changing endpoint is reachable by GET (ADR-0027, fact 4)', ()
       '/api/auth/google/callback',
       '/api/auth/discord',
       '/api/auth/discord/callback',
+      '/api/auth/twitch',
+      '/api/auth/twitch/callback',
       '/api/auth/google/connect',
       '/api/auth/discord/connect',
+      '/api/auth/twitch/connect',
     ]);
 
     // And the exception has to still exist, or the list is stale prose.
