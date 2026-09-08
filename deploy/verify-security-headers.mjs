@@ -20,6 +20,7 @@ const DEV_ROBOTS = 'noindex, nofollow, noarchive';
 const here = dirname(fileURLToPath(import.meta.url));
 const caddyfile = resolve(here, 'Caddyfile');
 const holdingPage = resolve(here, '..', 'packages', 'web', 'holding', 'index.html');
+const landingPage = resolve(here, '..', 'packages', 'web', 'landing', 'index.html');
 
 function verifyHoldingStyleHash() {
   const html = readFileSync(holdingPage, 'utf8');
@@ -30,6 +31,39 @@ function verifyHoldingStyleHash() {
   const hash = `sha256-${createHash('sha256').update(styles[0][1]).digest('base64')}`;
   if (!CSP.includes(`style-src 'self' '${hash}'`)) {
     throw new Error(`The holding-page style hash is stale; expected CSP to include ${hash}`);
+  }
+}
+
+/**
+ * The landing page carries no inline style, and depends on `style-src 'self'`.
+ *
+ * Both halves are checked here because this file is where the policy is stated,
+ * and because the failure they prevent is invisible everywhere else. The landing
+ * page shipped once with an inline `<style>` whose hash was not in the policy: a
+ * browser refused it and the page rendered unstyled, while the build, the
+ * deploy, the health check and the post-deploy smoke were all green. Nothing in
+ * CI could see it, because the policy lives in the Caddyfile and the test
+ * harnesses run against Fastify directly.
+ *
+ * So: if somebody adds an inline style to that document, or tightens `style-src`
+ * to hashes only, this fails at the point the policy is edited rather than in a
+ * browser nobody is looking at.
+ */
+function verifyLandingPageStyling() {
+  const html = readFileSync(landingPage, 'utf8');
+  const inline = [...html.matchAll(/<style[\s>]/g)];
+  if (inline.length > 0) {
+    throw new Error(
+      `The landing page has ${inline.length} inline <style> block(s). Its styles must stay in ` +
+        `landing.css: an inline block needs its own CSP hash, and deploys do not install Caddy ` +
+        `config, so the page would render unstyled with every gate green.`,
+    );
+  }
+  if (!CSP.includes("style-src 'self'")) {
+    throw new Error(
+      "The landing page's stylesheet is served from the application origin and needs " +
+        "`style-src 'self'`, which the CSP no longer grants.",
+    );
   }
 }
 
@@ -229,6 +263,7 @@ async function runIntegration(caddy) {
 
 const arguments_ = parseArguments(process.argv.slice(2));
 verifyHoldingStyleHash();
+verifyLandingPageStyling();
 if (arguments_.integration !== null) {
   await runIntegration(resolve(arguments_.integration));
 } else {
