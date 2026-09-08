@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { OperationsDashboardResponse } from '@tailfin/shared';
 
+import { activeCurrency } from '../currency/display';
+import { csvMoney, type CsvTable } from '../export/csv';
+import { ExportButton } from '../export/ExportButton';
 import { StateBlock } from '../ui/StateBlock';
 
 import { DelayAttribution } from './DelayAttribution';
@@ -289,6 +292,63 @@ function GroundPanel({ data }: { data: OperationsDashboardResponse }): ReactNode
   );
 }
 
+/**
+ * The whole operational picture as one metric-per-row table (M8-14).
+ *
+ * Flat "Metric, Value, Unit" rather than a column per figure, because these five
+ * panels have nothing in common to make columns out of — a load factor, an AOG
+ * count and a cost per block hour share no axis. One row each is what a
+ * spreadsheet can actually pivot.
+ *
+ * `null` stays `null` all the way through: a load factor with no flights is
+ * *unmeasured*, and exporting it as `0` would claim an empty month was a
+ * catastrophic one.
+ */
+function operationsCsv(data: OperationsDashboardResponse): CsvTable {
+  const rows: (string | number | null)[][] = [
+    ['Window', data.windowDays, 'game days'],
+    ['Settled flights', data.flights, 'count'],
+    ['Passengers', data.traffic.passengers, 'count'],
+    ['Cargo', data.traffic.cargoTonnes, 'tonnes'],
+    ['ASK', data.traffic.askKm, 'seat-km'],
+    ['RPK', data.traffic.rpkKm, 'passenger-km'],
+    ['RTK', data.traffic.rtkKm, 'tonne-km'],
+    ['Load factor', data.traffic.loadFactor, 'ratio'],
+    ['Spilled passengers', data.traffic.spilledPassengers, 'count'],
+    ['Spill rate', data.traffic.spillRate, 'ratio'],
+    ['Yield', csvMoney(data.traffic.yieldMinor), activeCurrency()],
+    // §14.3 asks for both gates, and they are different claims: D0 is
+    // wheels-up on the minute, D15 is the industry's fifteen-minute grace.
+    ['On-time performance (D0)', data.punctuality.onTimeD0, 'ratio'],
+    ['On-time performance (D15)', data.punctuality.onTimeD15, 'ratio'],
+    ['Cancellation rate', data.punctuality.cancellationRate, 'ratio'],
+    ['Cancelled flights', data.punctuality.cancelledFlights, 'count'],
+    ['Total delay', data.punctuality.totalDelayMinutes, 'minutes'],
+    ['Airframes', data.fleet.airframes, 'count'],
+    ['AOG', data.fleet.aogCount, 'count'],
+    ['In check', data.fleet.inCheck, 'count'],
+    ['Block hours per day', data.fleet.blockHoursPerDay, 'hours'],
+    ['Cost per block hour', csvMoney(data.fleet.costPerBlockHourMinor), activeCurrency()],
+    ['Crew headcount', data.crew.headcount, 'count'],
+    ['Reserve coverage', data.crew.reserveCoverage, 'ratio'],
+    ['Crew converting', data.crew.converting, 'count'],
+    ['Active ground contracts', data.ground.activeContracts, 'count'],
+    ['Self-handled stations', data.ground.selfHandledStations, 'count'],
+    ['Product score', data.productScore, 'ratio'],
+    ['Reputation', data.reputation, 'ratio'],
+    ['Revenue', csvMoney(data.revenueMinor), activeCurrency()],
+    ['Cost', csvMoney(data.costMinor), activeCurrency()],
+  ];
+
+  // Delay causes are the one genuinely tabular thing on the page, so they are
+  // appended as their own rows rather than dropped.
+  for (const cause of data.punctuality.byCause) {
+    rows.push([`Delay — ${cause.cause.replace(/_/g, ' ')}`, cause.minutes, 'minutes']);
+  }
+
+  return { headers: ['Metric', 'Value', 'Unit'], rows };
+}
+
 export function OperationsPage(): ReactNode {
   const [data, setData] = useState<OperationsDashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -337,6 +397,16 @@ export function OperationsPage(): ReactNode {
             {data.flights === 1 ? 'flight' : 'flights'}. Only the worker settles a flight, so on a
             node without one every figure here stays at zero however much is scheduled.
           </p>
+
+          <div className="panel__head panel__head--bare">
+            <h2 className="visually-hidden">Export</h2>
+            <ExportButton
+              view="operations"
+              gameNow={data.gameNow}
+              label="Export operations CSV"
+              table={() => operationsCsv(data)}
+            />
+          </div>
 
           <div className="panel-pair">
             <TrafficPanel data={data} />

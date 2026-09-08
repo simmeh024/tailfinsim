@@ -50,6 +50,18 @@ export function activeCurrency(): string {
 }
 
 /**
+ * The rate the formatters are currently converting at, or null for parity.
+ *
+ * Exposed for the CSV export (M8-14), which needs the converted **number**
+ * rather than the formatted string: a spreadsheet cannot sum `€1,234.56`. It
+ * must use this rate and not fetch its own, or an export would disagree with the
+ * screen it was taken from the moment the rates refreshed between the two.
+ */
+export function displayRateE6(): number | null {
+  return state.rateByCode.get(state.code) ?? null;
+}
+
+/**
  * Format a USD minor amount in the active display currency, with its symbol and
  * native decimal count (¥ shows no decimals, $ shows two). `fractionDigits`
  * overrides the decimals — the salary display uses 0.

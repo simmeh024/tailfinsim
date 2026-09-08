@@ -3,7 +3,9 @@ import { Link } from 'react-router';
 
 import type { ExecutiveDashboardResponse, RouteMover } from '@tailfin/shared';
 
-import { formatUsdMinor } from '../currency/display';
+import { formatUsdMinor, activeCurrency } from '../currency/display';
+import { csvMoney, csvMoneyHeader } from '../export/csv';
+import { ExportButton } from '../export/ExportButton';
 import { StateBlock } from '../ui/StateBlock';
 
 import { fetchExecutiveDashboard } from './api';
@@ -93,14 +95,40 @@ function MoverList({
   title,
   movers,
   emptyNote,
+  view,
+  gameNow,
 }: {
   title: string;
   movers: readonly RouteMover[];
   emptyNote: string;
+  view: string;
+  gameNow: string;
 }): ReactNode {
   return (
     <section className="panel" aria-label={title}>
-      <h2 className="panel__title">{title}</h2>
+      <div className="panel__head">
+        <h2 className="panel__title">{title}</h2>
+        {movers.length > 0 && (
+          <ExportButton
+            view={view}
+            gameNow={gameNow}
+            table={() => ({
+              headers: ['Route', csvMoneyHeader('Change'), csvMoneyHeader('This week')],
+              /*
+               * The signed change, not the absolute one the screen shows beside
+               * an arrow. On screen the arrow carries the direction; a CSV has no
+               * arrow, and a column of positive numbers under "Change" in the
+               * losers file would be actively misleading.
+               */
+              rows: movers.map((mover) => [
+                mover.label,
+                csvMoney(mover.changeMinor),
+                csvMoney(mover.valueMinor),
+              ]),
+            })}
+          />
+        )}
+      </div>
       {movers.length === 0 ? (
         <StateBlock kind="empty">{emptyNote}</StateBlock>
       ) : (
@@ -162,6 +190,32 @@ export function ExecutivePage(): ReactNode {
             are the check-in glance §2 describes; net worth is the one that
             answers "am I building anything?" rather than "am I surviving?".
           */}
+          <div className="panel__head panel__head--bare">
+            <h2 className="visually-hidden">Headline figures</h2>
+            <ExportButton
+              view="executive-headlines"
+              gameNow={data.gameNow}
+              label="Export headlines"
+              table={() => ({
+                headers: ['Metric', 'Value', 'Unit', 'Change vs prior period', 'Period (days)'],
+                /*
+                 * The raw value and its unit rather than the formatted string.
+                 * A tile mixes currencies, ratios and per-kilometre fractions in
+                 * one list, so a single "Value" column can only be numeric if the
+                 * unit travels beside it — and a spreadsheet can then convert or
+                 * chart it. `text` headlines (the credit tier) have no number and
+                 * carry their words instead.
+                 */
+                rows: data.headlines.map((headline) => [
+                  headline.label,
+                  headline.unit === 'minor' ? csvMoney(headline.value) : headline.value,
+                  headline.unit === 'minor' ? activeCurrency() : headline.unit,
+                  headline.trend.changePct,
+                  headline.trend.days,
+                ]),
+              })}
+            />
+          </div>
           <div className="tiles" aria-label="Headline figures">
             {data.headlines.map((headline) => (
               <MetricTile
@@ -187,11 +241,15 @@ export function ExecutivePage(): ReactNode {
           <div className="panel-pair">
             <MoverList
               title="Gained this week"
+              view="executive-gainers"
+              gameNow={data.gameNow}
               movers={data.gainers}
               emptyNote="No route improved on last week. On a node with no worker nothing settles at all, so this is empty everywhere until flights fly."
             />
             <MoverList
               title="Lost this week"
+              view="executive-losers"
+              gameNow={data.gameNow}
               movers={data.losers}
               emptyNote="No route did worse than last week."
             />
