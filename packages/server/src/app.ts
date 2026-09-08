@@ -58,8 +58,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 /** Both resolve the same from `src` (dev) and `dist` (built) — each sits one level under packages/server. */
 const HOLDING_PAGE = resolve(here, '..', '..', 'web', 'holding', 'index.html');
 const LANDING_PAGE = resolve(here, '..', '..', 'web', 'landing', 'index.html');
-const LANDING_STYLES = resolve(here, '..', '..', 'web', 'landing', 'landing.css');
-const LANDING_HERO = resolve(here, '..', '..', 'web', 'landing', 'landing-hero.webp');
+const LANDING_DIR = resolve(here, '..', '..', 'web', 'landing');
 const CLIENT_DIR = resolve(here, '..', '..', 'web', 'dist', 'client');
 const DEV_A320NEO_CANDIDATE_DIRECTORY = resolve(
   here,
@@ -474,64 +473,73 @@ export async function buildApp({
   );
 
   /**
-   * The landing page's stylesheet, as a same-origin file rather than an inline
-   * block — and that is a CSP decision, not a stylistic one.
+   * Everything the landing document loads, as an explicit table (LANDING-01).
    *
-   * The enforced edge policy is `style-src 'self' 'sha256-<the holding page's>'`.
-   * An inline `<style>` on the landing page would need its **own** hash pinned in
-   * the Caddyfile, and CLAUDE.md is explicit that `deploy.sh`/`deploy-dev.sh` do
-   * not install Caddy config or reload the edge. So every future edit to those
-   * styles would need a manual change on the box before it became visible, with
-   * thirteen LANDING issues still to touch them.
+   * ## Why these are files rather than inline
    *
-   * That failure is silent in the worst way: the deploy succeeds, the health
-   * check passes, and the page renders unstyled. Serving the CSS from `'self'`
-   * needs no CSP change now and none ever again.
+   * A CSP decision, not a stylistic one, and it was learned the hard way. The
+   * enforced edge policy is `style-src 'self' 'sha256-<the holding page's>'` and
+   * `script-src 'self'`. An inline `<style>` or `<script>` on this page would need
+   * its **own** hash pinned in the Caddyfile — and CLAUDE.md is explicit that
+   * `deploy.sh` and `deploy-dev.sh` do not install Caddy config or reload the
+   * edge, so every future edit would need a manual change on the box before it
+   * became visible.
+   *
+   * The landing page shipped that way once and rendered completely unstyled while
+   * the build, the deploy, the health check and the post-deploy smoke were all
+   * green. Serving from `'self'` needs no CSP change now and none ever again.
+   *
+   * ## Why a table rather than a route each
+   *
+   * Eight assets, all read once at boot and served identically apart from their
+   * type and cache. Written out one at a time this was already three near-copies
+   * of the same eight lines, and the fleet carousel would have made it eight. A
+   * table also makes the full list of what this page loads readable in one place,
+   * which is what LANDING-11's weight budget is actually about.
+   *
+   * Every entry is a literal path, so there is no parameter to traverse and no
+   * SEC-07 identifier surface — the allowlist *is* the route table.
+   *
+   * Documents and styles cache for a minute so the front door can be changed
+   * without waiting one out. Images cache for a day: they are immutable content
+   * that changes only when somebody replaces the file, and re-fetching 300 kB of
+   * aircraft every minute is the opposite of the point.
    */
-  let landingStyles: Buffer;
-  try {
-    landingStyles = readFileSync(LANDING_STYLES);
-  } catch (cause) {
-    throw new Error(`Could not read the landing stylesheet at ${LANDING_STYLES}`, { cause });
+  const MINUTE = 60;
+  const DAY = 86_400;
+  const landingAssets: readonly { route: string; file: string; type: string; maxAge: number }[] = [
+    { route: '/landing.css', file: 'landing.css', type: 'text/css; charset=utf-8', maxAge: MINUTE },
+    {
+      route: '/landing.js',
+      file: 'landing.js',
+      type: 'text/javascript; charset=utf-8',
+      maxAge: MINUTE,
+    },
+    { route: '/landing-hero.webp', file: 'landing-hero.webp', type: 'image/webp', maxAge: DAY },
+    { route: '/fleet-atr72.webp', file: 'fleet-atr72.webp', type: 'image/webp', maxAge: DAY },
+    { route: '/fleet-e190.webp', file: 'fleet-e190.webp', type: 'image/webp', maxAge: DAY },
+    { route: '/fleet-a321neo.webp', file: 'fleet-a321neo.webp', type: 'image/webp', maxAge: DAY },
+    { route: '/fleet-777.webp', file: 'fleet-777.webp', type: 'image/webp', maxAge: DAY },
+    { route: '/fleet-747.webp', file: 'fleet-747.webp', type: 'image/webp', maxAge: DAY },
+  ];
+
+  for (const asset of landingAssets) {
+    const path = resolve(LANDING_DIR, asset.file);
+    let body: Buffer;
+    try {
+      body = readFileSync(path);
+    } catch (cause) {
+      throw new Error(`Could not read the landing asset at ${path}`, { cause });
+    }
+    app.get(asset.route, async (_request, reply) =>
+      reply
+        .code(200)
+        .type(asset.type)
+        .header('cache-control', `public, max-age=${String(asset.maxAge)}`)
+        .header('x-content-type-options', 'nosniff')
+        .send(body),
+    );
   }
-
-  app.get('/landing.css', async (_request, reply) =>
-    reply
-      .code(200)
-      .type('text/css; charset=utf-8')
-      .header('cache-control', 'public, max-age=60')
-      .header('x-content-type-options', 'nosniff')
-      .send(landingStyles),
-  );
-
-  /**
-   * The hero backdrop — the one image the landing page loads.
-   *
-   * Same-origin, so `img-src 'self'` covers it with no CSP change, exactly like
-   * the stylesheet. WebP at 1920×1081 and 90 kB, down from a 1.7 MB PNG: it is a
-   * dark decorative starfield behind a gradient and text, so quality 72 is
-   * indistinguishable from 90 at four times the weight. LANDING-11 owns the
-   * budget for this page and 90 kB is the whole of what it spends on art.
-   *
-   * Cached for a day rather than a minute: unlike the document and its styles,
-   * this is immutable content that changes only when somebody replaces the file,
-   * and re-fetching a 90 kB image every minute is the opposite of the point.
-   */
-  let landingHero: Buffer;
-  try {
-    landingHero = readFileSync(LANDING_HERO);
-  } catch (cause) {
-    throw new Error(`Could not read the landing hero image at ${LANDING_HERO}`, { cause });
-  }
-
-  app.get('/landing-hero.webp', async (_request, reply) =>
-    reply
-      .code(200)
-      .type('image/webp')
-      .header('cache-control', 'public, max-age=86400')
-      .header('x-content-type-options', 'nosniff')
-      .send(landingHero),
-  );
 
   /**
    * The public surface at `/` — one of two, chosen by `WEB_SURFACE`.

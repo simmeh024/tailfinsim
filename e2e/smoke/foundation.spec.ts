@@ -64,6 +64,39 @@ test('actually paints the landing stylesheet @smoke', async ({ page }) => {
   expect(headingTransform).toBe('uppercase');
 });
 
+test('advances the fleet carousel when its buttons are used @smoke', async ({ page }) => {
+  /*
+   * The carousel is the page's only scripted behaviour, so this doubles as the
+   * proof that `/landing.js` is served, allowed by `script-src 'self'` and
+   * actually running — a script the CSP refused would leave the arrows hidden
+   * and this test red.
+   *
+   * Driven by the buttons rather than by waiting out the five-second
+   * auto-advance: the same code path moves the slide either way, and sleeping
+   * five seconds to watch a timer costs five seconds of every CI run for no
+   * extra coverage.
+   */
+  await page.goto('/');
+
+  // The arrows stay hidden until the script marks itself ready, so this
+  // attribute is the signal that it ran at all.
+  const carousel = page.locator('.fleet');
+  await expect(carousel).toHaveAttribute('data-ready', 'true');
+
+  const first = page.locator('.fleet__slide').first();
+  await expect(first).not.toHaveAttribute('inert', /.*/);
+  await expect(page.getByText('ATR 72-600')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Next aircraft' }).click();
+
+  // The first slide steps out of the tab order and the second takes over.
+  await expect(first).toHaveAttribute('inert', /.*/);
+  await expect(page.locator('.fleet__slide').nth(1)).not.toHaveAttribute('inert', /.*/);
+
+  await page.getByRole('button', { name: 'Previous aircraft' }).click();
+  await expect(first).not.toHaveAttribute('inert', /.*/);
+});
+
 test('still shows the login wall to an anonymous visitor on an app route @smoke', async ({
   page,
 }) => {

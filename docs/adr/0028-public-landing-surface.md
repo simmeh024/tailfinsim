@@ -60,7 +60,7 @@ decision 4's launch decision, and it did not happen by side effect.
 **On every surface**, because the landing page's whole job is to be reachable by a stranger. Gating
 it behind the surface flag would reintroduce the problem it exists to solve.
 
-### 2. The funnel is two plain links, so the document needs no JavaScript
+### 2. The funnel is two plain links, so it never depends on JavaScript
 
 The entire call to action is `<a href="/api/auth/google">` and `<a href="/api/auth/discord">`. Both
 routes are registered by `auth/routes.ts` on **every** surface, independent of `WEB_SURFACE` and of
@@ -87,6 +87,21 @@ permit the marks in exactly this use.
 `LoginPage.tsx` is deliberately **not** changed here — it is a different surface with a different
 audience, seen only by someone already inside. If the two should converge, that is LANDING-13's call
 when it owns the post-click journey, not a change to make in passing.
+
+**Amended 2026-09-08: the page now has one script, and it is not in the funnel.** LANDING-06's fleet
+carousel needs JavaScript — auto-advance and arrow controls cannot be expressed in CSS — so
+`/landing.js` exists. Three properties keep decision 2 true rather than merely almost true:
+
+- **Same-origin, never inline.** `script-src` is `'self'` with _no_ hashes, so an inline `<script>`
+  would be refused outright. The failure would be worse than the stylesheet's: not an ugly page but
+  dead controls, with every gate green. `verify-security-headers.mjs` now refuses an inline
+  `<script>` in this document for exactly that reason.
+- **`defer`, so it never blocks the first paint.** LANDING-11's budget is unaffected by a 2 kB file
+  fetched after the document.
+- **The page works without it.** The first aircraft renders as a static illustration, the arrows stay
+  hidden until the script marks itself ready — a control that does nothing is worse than no control —
+  and both sign-in links are ordinary anchors. A visitor with scripting off loses movement, not the
+  ability to sign up.
 
 ### 3. `RequireSession` is not touched, and no public route enters the SPA
 
