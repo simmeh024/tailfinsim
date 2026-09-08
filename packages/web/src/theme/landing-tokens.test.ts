@@ -40,12 +40,25 @@ const landingCss = readFileSync(LANDING_CSS, 'utf8');
  * first draft of this guard failed on all four of them. Prose about the rule is
  * not a violation of it.
  */
-function blank(source: string, open: string, close: string): string {
-  const pattern = new RegExp(`${open}[\\s\\S]*?${close}`, 'g');
-  return source.replace(pattern, (match) => match.replace(/[^\n]/g, ' '));
+function blank(source: string, comment: RegExp): string {
+  return source.replace(comment, (match) => match.replace(/[^\n]/g, ' '));
 }
 
-const css = blank(landingCss, '/\\*', '\\*/');
+const CSS_COMMENT = /\/\*[\s\S]*?\*\//g;
+
+/**
+ * Both HTML comment terminators, and the second one is not pedantry.
+ *
+ * HTML closes a comment on `--!>` as well as on `-->`. A pattern matching only
+ * the latter does not merely miss such a comment — it runs on to the *next*
+ * `-->` anywhere in the file and blanks everything between, which is precisely
+ * how a colour literal would end up hidden from the scan below. CodeQL's
+ * `js/bad-tag-filter` caught this on LANDING-02's first push, in a guard whose
+ * whole job is to not be fooled.
+ */
+const HTML_COMMENT = /<!--[\s\S]*?--!?>/g;
+
+const css = blank(landingCss, CSS_COMMENT);
 
 /** The `:root { … }` block at the top of landing.css — the only place a colour may live. */
 const tokenBlock = ((): string => {
@@ -68,7 +81,7 @@ function declarations(source: string): Record<string, string> {
 const landingTokens = declarations(tokenBlock);
 
 function clientDarkTokens(): Record<string, string> {
-  const source = blank(readFileSync(CLIENT_TOKENS, 'utf8'), '/\\*', '\\*/');
+  const source = blank(readFileSync(CLIENT_TOKENS, 'utf8'), CSS_COMMENT);
   const start = source.indexOf(':root,');
   return declarations(source.slice(start, source.indexOf("[data-theme='light']")));
 }
@@ -79,8 +92,8 @@ function clientDarkTokens(): Record<string, string> {
  * itself. Line numbers survive, so an offence reports where it actually is.
  */
 function scannable(file: string): string {
-  let source = blank(readFileSync(file, 'utf8'), '/\\*', '\\*/');
-  source = blank(source, '<!--', '-->');
+  let source = blank(readFileSync(file, 'utf8'), CSS_COMMENT);
+  source = blank(source, HTML_COMMENT);
   // `[^:]` so a `https://` in a URL is not read as the start of a comment.
   source = source.replace(/(^|[^:])(\/\/.*)$/gm, (_m, before: string, comment: string) =>
     before.concat(' '.repeat(comment.length)),
@@ -152,7 +165,7 @@ describe('the landing page carries no colour outside its token block', () => {
      * is a phone painting its address bar a different navy from the page under
      * it — which reads as a rendering artefact rather than as a stale literal.
      */
-    const html = blank(readFileSync(join(landingDir, 'index.html'), 'utf8'), '<!--', '-->');
+    const html = blank(readFileSync(join(landingDir, 'index.html'), 'utf8'), HTML_COMMENT);
     const themeColour = /name="theme-color"\s+content="(#[0-9a-fA-F]{6})"/.exec(html)?.[1];
     expect(themeColour?.toLowerCase()).toBe(landingTokens['--lp-bg']);
   });
@@ -293,7 +306,7 @@ describe('the rules LANDING-02 settled', () => {
      * "static shell that hydrates" arrives, and a collision between a marketing
      * card and a finance card is not a bug anyone would look for here.
      */
-    const html = blank(readFileSync(join(landingDir, 'index.html'), 'utf8'), '<!--', '-->');
+    const html = blank(readFileSync(join(landingDir, 'index.html'), 'utf8'), HTML_COMMENT);
     const used = [...html.matchAll(/class="([^"]+)"/g)].flatMap((m) => m[1]!.split(/\s+/));
     const strays = [...new Set(used)].filter((name) => !name.startsWith('lp-')).sort();
     expect(strays, `landing classes must all be lp-…: ${strays.join(', ')}`).toEqual([]);

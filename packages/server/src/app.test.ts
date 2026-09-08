@@ -259,11 +259,11 @@ describeDb('HTTP surface', () => {
       expect(body).toContain('src="/fleet-atr72.webp"');
       expect(body).toContain('ATR 72-600');
       // Five slides, each captioned.
-      expect([...body.matchAll(/class="fleet__slide"/g)]).toHaveLength(5);
-      expect([...body.matchAll(/class="fleet__type"/g)]).toHaveLength(5);
+      expect([...body.matchAll(/class="lp-fleet__slide"/g)]).toHaveLength(5);
+      expect([...body.matchAll(/class="lp-fleet__type"/g)]).toHaveLength(5);
       // Every aircraft image carries alt text and explicit dimensions, so the
       // card does not reflow as they load.
-      const images = [...body.matchAll(/<img[^>]+class="fleet__image"[^>]*>/g)].map((m) => m[0]);
+      const images = [...body.matchAll(/<img[^>]+class="lp-fleet__image"[^>]*>/g)].map((m) => m[0]);
       expect(images).toHaveLength(5);
       for (const tag of images) {
         expect(tag).toMatch(/\salt="[^"]+"/);
@@ -295,7 +295,10 @@ describeDb('HTTP surface', () => {
       expect(res.statusCode).toBe(200);
       expect(res.headers['content-type']).toMatch(/text\/css/);
       expect(res.headers['x-content-type-options']).toBe('nosniff');
-      expect(res.body).toContain('--bg:');
+      // The token block LANDING-02 made the only place in this directory allowed a
+      // colour. Its ground is pinned by `theme/landing-tokens.test.ts` to the
+      // client's own `--bg-base`, so the front door and the product share one.
+      expect(res.body).toContain('--lp-bg: #0b1017;');
       // Each provider wears its own brand colour: Google blue, Discord blurple.
       // They live here rather than in the document now that the styles do.
       expect(res.body).toContain('#4285f4');
