@@ -69,6 +69,7 @@ const READ_ONLY_GET_ROUTES = [
   // and fetches nothing, so a refresh shows the same page. Its only outbound
   // link is the sign-in route, which is its own decision (ADR-0027 fact 4).
   '/landing',
+  '/landing.css',
   '/api/airlines/founding-airports',
   '/api/airlines/founding-options',
   '/api/airlines/me',

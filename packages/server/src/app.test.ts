@@ -151,9 +151,6 @@ describeDb('HTTP surface', () => {
       const res = await app.inject({ method: 'GET', url: '/landing' });
       expect(res.body).toContain('href="/api/auth/google"');
       expect(res.body).toContain('href="/api/auth/discord"');
-      // Each wears its own brand colour: Google blue, Discord blurple.
-      expect(res.body).toContain('#4285f4');
-      expect(res.body).toContain('#5865f2');
       // A script tag here would break LANDING-11's budget and ADR-0028's
       // "one document, one paint" inheritance from the holding page.
       expect(res.body).not.toMatch(/<script/i);
@@ -169,10 +166,44 @@ describeDb('HTTP surface', () => {
        */
       const body = (await app.inject({ method: 'GET', url: '/landing' })).body;
       expect(body).not.toMatch(/<script/i);
-      expect(body).not.toMatch(/<link[^>]+stylesheet/i);
       expect(body).not.toMatch(/\bsrc\s*=\s*["']https?:/i);
       expect(body).not.toMatch(/url\(\s*["']?https?:/i);
       expect(body).not.toMatch(/@import/i);
+      // The one stylesheet is same-origin, which is what keeps the holding
+      // page's "no fonts, no CDN, no analytics" property while satisfying
+      // `style-src 'self'`.
+      const sheets = [...body.matchAll(/<link[^>]+stylesheet[^>]*>/gi)].map((m) => m[0]);
+      expect(sheets).toHaveLength(1);
+      expect(sheets[0]).toContain('href="/landing.css"');
+    });
+
+    it('carries no inline style, which the enforced CSP would block', async () => {
+      /*
+       * The bug this exists to prevent, because it is invisible to every other
+       * check we run. `style-src` at the edge is `'self'` plus **the holding
+       * page's** hash. An inline `<style>` here parses, deploys, passes the
+       * health check and the post-deploy browser smoke — and renders unstyled in
+       * a real browser, because the hash does not match.
+       *
+       * It shipped exactly that way once. Nothing in CI could see it: the CSP
+       * lives in the Caddyfile, `deploy.sh` does not install it, and an inject()
+       * response has no browser to enforce it.
+       */
+      const body = (await app.inject({ method: 'GET', url: '/landing' })).body;
+      expect(body).not.toMatch(/<style[\s>]/i);
+      expect(body).not.toMatch(/\sstyle\s*=\s*["']/i);
+    });
+
+    it('serves the stylesheet as CSS from the same origin', async () => {
+      const res = await app.inject({ method: 'GET', url: '/landing.css' });
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toMatch(/text\/css/);
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+      expect(res.body).toContain('--bg:');
+      // Each provider wears its own brand colour: Google blue, Discord blurple.
+      // They live here rather than in the document now that the styles do.
+      expect(res.body).toContain('#4285f4');
+      expect(res.body).toContain('#5865f2');
     });
 
     it('ships no invented statistics', async () => {
