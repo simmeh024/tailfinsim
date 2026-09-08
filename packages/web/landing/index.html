@@ -1,0 +1,724 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tailfin — build an airline, make it yours</title>
+    <meta
+      name="description"
+      content="Tailfin is a real-time online airline management sim. Create your fleet, build a network and compete in a persistent aviation world that keeps flying even when you are offline."
+    />
+    <meta name="theme-color" content="#060a12" />
+
+    <meta property="og:title" content="Tailfin — build an airline, make it yours" />
+    <meta
+      property="og:description"
+      content="Create your fleet, build a network and compete in a persistent aviation world that keeps flying even when you are offline."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://tailfinsim.com/" />
+
+    <!--
+      LANDING-01's skeleton. Structure and design language; the words, the art and
+      the numbers belong to the issues named on each section below.
+
+      Inline, like the holding page beside it, and for the same stated reason:
+      "zero external requests: no fonts, no CDN, no analytics. One document, one
+      paint." LANDING-11 owns that budget and this document must not be the thing
+      that breaks it — so no script tag, no web font and no image request has been
+      added here. Anything a later section needs that cannot be met that way is a
+      decision for LANDING-11, not a detail to slip in.
+    -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23060a12'/%3E%3Cpath d='M12 25V12.5L21.5 7v18z' fill='%23ffb84d'/%3E%3C/svg%3E"
+    />
+
+    <style>
+      :root {
+        --bg: #060a12;
+        --bg-lift: #0b1220;
+        --panel: #0e1626;
+        --ink: #eef2f8;
+        --muted: #8494ad;
+        --accent: #ffb84d;
+        --link: #4a9eff;
+        /* Provider brand colours: Google blue and Discord blurple, as published. */
+        --google: #4285f4;
+        --discord: #5865f2;
+        --hairline: rgba(132, 148, 173, 0.16);
+        --good: #37d39b;
+        --bad: #ff6b6b;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      /* Somebody who asked their system not to animate did not mean "except
+         when the page scrolls itself". */
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          Helvetica,
+          Arial,
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+        line-height: 1.5;
+      }
+
+      .wrap {
+        width: min(78rem, 100% - 2rem);
+        margin-inline: auto;
+      }
+
+      /* Keyboard users get to skip the nav; LANDING-10 owns the full pass. */
+      .skip {
+        position: absolute;
+        left: -9999px;
+      }
+
+      .skip:focus {
+        left: 1rem;
+        top: 1rem;
+        z-index: 10;
+        padding: 0.6rem 1rem;
+        background: var(--panel);
+        border: 1px solid var(--hairline);
+        border-radius: 0.5rem;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      :focus-visible {
+        outline: 2px solid var(--link);
+        outline-offset: 2px;
+      }
+
+      /* ---- header ---------------------------------------------------------- */
+
+      .top {
+        border-bottom: 1px solid var(--hairline);
+        background: rgba(6, 10, 18, 0.86);
+      }
+
+      .top__inner {
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+        padding-block: 1rem;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        font-weight: 700;
+        letter-spacing: 0.22em;
+        text-decoration: none;
+        font-size: 0.95rem;
+      }
+
+      .brand__mark {
+        width: 1.6rem;
+        height: 1.6rem;
+      }
+
+      .top__nav {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 1.75rem;
+      }
+
+      .top__nav a {
+        color: var(--muted);
+        text-decoration: none;
+        font-size: 0.9rem;
+      }
+
+      .top__nav a:hover {
+        color: var(--ink);
+      }
+
+      .cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.6rem 1.15rem;
+        border-radius: 0.5rem;
+        background: var(--link);
+        color: #04101f;
+        font-weight: 600;
+        text-decoration: none;
+        font-size: 0.9rem;
+      }
+
+      .cta:hover {
+        filter: brightness(1.08);
+      }
+
+      @media (max-width: 46rem) {
+        .top__nav a:not(.cta) {
+          display: none;
+        }
+      }
+
+      /* ---- hero ------------------------------------------------------------ */
+
+      .hero {
+        position: relative;
+        overflow: clip;
+        padding-block: clamp(2.5rem, 7vw, 5rem) clamp(3rem, 8vw, 6rem);
+      }
+
+      .hero__grid {
+        position: relative;
+        display: grid;
+        gap: 2rem;
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      @media (min-width: 62rem) {
+        .hero__grid {
+          grid-template-columns: minmax(0, 27rem) minmax(0, 1fr);
+          align-items: center;
+        }
+      }
+
+      h1 {
+        margin: 0 0 1.1rem;
+        font-size: clamp(2.4rem, 6.4vw, 4.4rem);
+        line-height: 0.98;
+        letter-spacing: -0.02em;
+        text-transform: uppercase;
+        font-weight: 800;
+        text-wrap: balance;
+      }
+
+      h1 .dot {
+        color: var(--accent);
+      }
+
+      .lede {
+        margin: 0 0 1.75rem;
+        color: var(--muted);
+        max-width: 32rem;
+        font-size: clamp(0.98rem, 1.4vw, 1.06rem);
+      }
+
+      .pillars {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1.4rem;
+        margin: 0 0 1.9rem;
+        padding: 0;
+        list-style: none;
+      }
+
+      .pillars li {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        font-size: 0.8rem;
+        line-height: 1.25;
+        color: var(--muted);
+        max-width: 8.5rem;
+      }
+
+      .pillars svg {
+        flex: none;
+        color: var(--accent);
+      }
+
+      .signin {
+        border: 1px solid var(--hairline);
+        border-radius: 0.85rem;
+        background: var(--bg-lift);
+        padding: 1.4rem;
+        max-width: 30rem;
+      }
+
+      .signin h2 {
+        margin: 0 0 0.9rem;
+        font-size: 1.05rem;
+      }
+
+      .signin__buttons {
+        display: grid;
+        gap: 0.6rem;
+      }
+
+      .signin__button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.6rem;
+        width: 100%;
+        padding: 0.8rem 1rem;
+        border-radius: 0.55rem;
+        font-weight: 600;
+        text-decoration: none;
+        color: #fff;
+      }
+
+      /*
+        Each provider wears its own colour, because a sign-in button that does not
+        look like the service it opens is the one people hesitate over. Both marks
+        are inlined as SVG paths rather than fetched, so the document keeps making
+        zero external requests.
+      */
+      .signin__button--google {
+        background: var(--google);
+      }
+
+      .signin__button--discord {
+        background: var(--discord);
+      }
+
+      .signin__button:hover {
+        filter: brightness(1.08);
+      }
+
+      /* The Google mark is four fixed brand colours and must not inherit ours. */
+      .signin__button--google svg {
+        background: #fff;
+        border-radius: 2px;
+        padding: 1px;
+      }
+
+      .signin__note {
+        margin: 0.8rem 0 0;
+        font-size: 0.78rem;
+        color: var(--muted);
+      }
+
+      /* ---- the world backdrop (LANDING-05) --------------------------------- */
+
+      .world {
+        position: relative;
+        min-height: clamp(16rem, 34vw, 26rem);
+        border: 1px solid var(--hairline);
+        border-radius: 1rem;
+        background:
+          radial-gradient(ellipse at 60% 40%, rgba(74, 158, 255, 0.1) 0%, transparent 62%),
+          var(--bg-lift);
+        display: grid;
+        place-items: center;
+        overflow: clip;
+      }
+
+      .world__placeholder {
+        text-align: center;
+        color: var(--muted);
+        font-size: 0.82rem;
+        padding: 1.5rem;
+        max-width: 24rem;
+      }
+
+      /* ---- sections -------------------------------------------------------- */
+
+      section {
+        padding-block: clamp(2.5rem, 6vw, 4.5rem);
+      }
+
+      h2.section__title {
+        margin: 0 0 1.6rem;
+        font-size: clamp(1.5rem, 3vw, 2.1rem);
+        letter-spacing: -0.01em;
+      }
+
+      .split {
+        display: grid;
+        gap: 1.5rem;
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      @media (min-width: 68rem) {
+        .split {
+          grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+          align-items: start;
+        }
+      }
+
+      .cards {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+      }
+
+      .card {
+        border: 1px solid var(--hairline);
+        border-radius: 0.85rem;
+        background: var(--panel);
+        padding: 1.1rem;
+      }
+
+      .card h3 {
+        margin: 0 0 0.9rem;
+        font-size: 0.98rem;
+      }
+
+      .card p {
+        margin: 0.9rem 0 0;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+
+      .card__figure {
+        min-height: 6.5rem;
+        border-radius: 0.6rem;
+        background: rgba(132, 148, 173, 0.07);
+        display: grid;
+        place-items: center;
+        color: var(--muted);
+        font-size: 0.72rem;
+        text-align: center;
+        padding: 0.75rem;
+      }
+
+      .panel {
+        border: 1px solid var(--hairline);
+        border-radius: 0.85rem;
+        background: var(--panel);
+        padding: 1.25rem;
+      }
+
+      .panel h2 {
+        margin: 0 0 0.7rem;
+        font-size: clamp(1.25rem, 2.4vw, 1.7rem);
+        letter-spacing: -0.01em;
+      }
+
+      .panel p {
+        margin: 0 0 1.1rem;
+        color: var(--muted);
+        font-size: 0.88rem;
+      }
+
+      /* ---- stats (LANDING-09) ---------------------------------------------- */
+
+      .stats {
+        display: grid;
+        gap: 0;
+        grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+        border: 1px solid var(--hairline);
+        border-radius: 0.85rem;
+        background: var(--panel);
+        overflow: clip;
+      }
+
+      .stat {
+        padding: 1.25rem;
+        border-right: 1px solid var(--hairline);
+      }
+
+      .stat:last-child {
+        border-right: 0;
+      }
+
+      .stat__value {
+        font-size: clamp(1.3rem, 2.6vw, 1.75rem);
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+
+      /* An unknown number reads as unknown, not as zero. */
+      .stat__value--pending {
+        color: var(--muted);
+        font-weight: 400;
+      }
+
+      .stat__label {
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+
+      /* ---- footer ---------------------------------------------------------- */
+
+      footer {
+        border-top: 1px solid var(--hairline);
+        padding-block: 2rem 2.75rem;
+        text-align: center;
+      }
+
+      .footer__line {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.55rem;
+        font-weight: 600;
+      }
+
+      .footer__sub {
+        margin: 0.4rem 0 0;
+        color: var(--muted);
+        font-size: 0.88rem;
+      }
+
+      .todo {
+        display: inline-block;
+        margin-top: 0.5rem;
+        padding: 0.1rem 0.45rem;
+        border: 1px dashed var(--hairline);
+        border-radius: 0.35rem;
+        color: var(--muted);
+        font-size: 0.68rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+    </style>
+  </head>
+
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="top">
+      <div class="wrap top__inner">
+        <a class="brand" href="/landing">
+          <svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true">
+            <path d="M12 25V12.5L21.5 7v18z" fill="#ffb84d" />
+          </svg>
+          TAILFIN
+        </a>
+        <nav class="top__nav" aria-label="Primary">
+          <a href="#how">How it works</a>
+          <a href="#features">Features</a>
+          <a href="#status">World status</a>
+          <!--
+            The whole funnel is this link. It is a plain anchor to a server route
+            that exists on every surface, which is why this document needs no
+            JavaScript to be useful. LANDING-13 owns everything after the click.
+          -->
+          <a class="cta" href="/api/auth/google">Start airline →</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <!-- ===== hero — LANDING-04 owns the words ========================= -->
+      <div class="hero">
+        <div class="wrap hero__grid">
+          <div>
+            <h1>Build an airline. Make it yours<span class="dot">.</span></h1>
+            <p class="lede">
+              Create your fleet, build a network and compete in a persistent aviation world that
+              keeps flying even when you are offline.
+            </p>
+
+            <ul class="pillars">
+              <li>
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"
+                  />
+                </svg>
+                Fleet management
+              </li>
+              <li>
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path d="M6 21V9l6-4 6 4v12h-4v-6h-4v6z" />
+                </svg>
+                Real airports
+              </li>
+              <li>
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  aria-hidden="true"
+                >
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M3 12h18M12 3c2.5 2.7 2.5 15.3 0 18M12 3c-2.5 2.7-2.5 15.3 0 18" />
+                </svg>
+                Persistent worlds
+              </li>
+              <li>
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path d="M4 20h3v-7H4zm6.5 0h3V4h-3zM17 20h3v-11h-3z" />
+                </svg>
+                Airline economics
+              </li>
+            </ul>
+
+            <div class="signin">
+              <h2>Start your airline</h2>
+              <div class="signin__buttons">
+                <a class="signin__button signin__button--google" href="/api/auth/google">
+                  <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+                    <path
+                      fill="#4285F4"
+                      d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"
+                    />
+                  </svg>
+                  Continue with Google
+                </a>
+                <a class="signin__button signin__button--discord" href="/api/auth/discord">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff" aria-hidden="true">
+                    <path
+                      d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189z"
+                    />
+                  </svg>
+                  Continue with Discord
+                </a>
+              </div>
+              <p class="signin__note">Free to play · New accounts are created automatically.</p>
+            </div>
+          </div>
+
+          <!-- LANDING-05 replaces this with the map. It is a placeholder rather
+               than a decorative stand-in on purpose: a fake world map is worse
+               than an empty frame, because it invites nobody to build the real
+               one. -->
+          <div class="world" role="img" aria-label="A world map is planned for this space">
+            <p class="world__placeholder">
+              The live world map lands here.
+              <span class="todo">LANDING-05</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== fleet / network / operations — LANDING-06 ================ -->
+      <section id="how">
+        <div class="wrap split">
+          <div>
+            <h2 class="section__title">Your airline. Your decisions.</h2>
+            <div class="cards">
+              <article class="card">
+                <h3>Build your fleet</h3>
+                <div class="card__figure">
+                  Aircraft artwork <span class="todo">LANDING-06</span>
+                </div>
+                <p>Choose aircraft, negotiate deals and grow a fleet that fits your strategy.</p>
+              </article>
+              <article class="card">
+                <h3>Build your network</h3>
+                <div class="card__figure">Network diagram <span class="todo">LANDING-06</span></div>
+                <p>Open routes, set schedules and connect your airline to the world.</p>
+              </article>
+              <article class="card">
+                <h3>Run the operation</h3>
+                <div class="card__figure">
+                  Operating figures <span class="todo">LANDING-06</span>
+                </div>
+                <p>Manage prices, control costs and keep your airline profitable.</p>
+              </article>
+            </div>
+          </div>
+
+          <!-- ===== the world keeps running — LANDING-07 ================== -->
+          <aside class="panel" id="features">
+            <h2>The world doesn’t stop when you log out.</h2>
+            <p>
+              Flights take off, land and connect around the clock. Your airline is always part of
+              the world.
+            </p>
+            <div class="card__figure">Live flight card <span class="todo">LANDING-07</span></div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ===== world status — LANDING-09 ================================ -->
+      <section id="status">
+        <div class="wrap">
+          <!--
+            The mock fills these in. Its figures are invented, and LANDING-09 is
+            titled "Real numbers, or no numbers" for exactly that reason — a
+            marketing page that ships fabricated statistics is lying to a visitor
+            about how busy the game is, and it is the kind of lie that survives to
+            launch because everyone remembers it as placeholder copy.
+
+            So the shape is here and the figures are not. LANDING-09 wires them to
+            something real, or deletes the section. There is a test asserting the
+            mock's numbers do not appear in this document, including in a comment.
+          -->
+          <div class="stats">
+            <div class="stat">
+              <div class="stat__value stat__value--pending">—</div>
+              <div class="stat__label">Airlines <span class="todo">LANDING-09</span></div>
+            </div>
+            <div class="stat">
+              <div class="stat__value stat__value--pending">—</div>
+              <div class="stat__label">Aircraft</div>
+            </div>
+            <div class="stat">
+              <div class="stat__value stat__value--pending">—</div>
+              <div class="stat__label">Flights airborne</div>
+            </div>
+            <div class="stat">
+              <div class="stat__value stat__value--pending">—</div>
+              <div class="stat__label">Passengers today</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <p class="footer__line">
+          <svg width="16" height="16" viewBox="0 0 32 32" aria-hidden="true">
+            <path d="M12 25V12.5L21.5 7v18z" fill="#ffb84d" />
+          </svg>
+          A persistent aviation world.
+        </p>
+        <p class="footer__sub">Plan today. Fly tomorrow. Compete forever.</p>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -125,6 +125,79 @@ describeDb('HTTP surface', () => {
     });
   });
 
+  /**
+   * The public landing page (LANDING-01, ADR-0028).
+   *
+   * Served at its own path on every surface, so it reaches production without
+   * promoting the game client and without displacing dev's app at `/`.
+   */
+  describe('GET /landing', () => {
+    it('serves the landing page as HTML on the holding surface', async () => {
+      const res = await app.inject({ method: 'GET', url: '/landing' });
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toMatch(/text\/html/);
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+      expect(res.body).toContain('Build an airline. Make it yours');
+    });
+
+    it('leaves `/` alone — the holding page still answers the front door', async () => {
+      // The switchover is a launch decision with two named conditions in
+      // ADR-0028, not a side effect of adding the page.
+      const res = await app.inject({ method: 'GET', url: '/' });
+      expect(res.body).toContain('<title>Tailfin — coming soon</title>');
+    });
+
+    it('offers both providers as plain links, so the page needs no JavaScript', async () => {
+      const res = await app.inject({ method: 'GET', url: '/landing' });
+      expect(res.body).toContain('href="/api/auth/google"');
+      expect(res.body).toContain('href="/api/auth/discord"');
+      // Each wears its own brand colour: Google blue, Discord blurple.
+      expect(res.body).toContain('#4285f4');
+      expect(res.body).toContain('#5865f2');
+      // A script tag here would break LANDING-11's budget and ADR-0028's
+      // "one document, one paint" inheritance from the holding page.
+      expect(res.body).not.toMatch(/<script/i);
+    });
+
+    it('makes no external request — no font, CDN or analytics origin', async () => {
+      /*
+       * Asserted against the things that actually cause a fetch, not against any
+       * absolute URL in the document. An SVG `xmlns="http://www.w3.org/2000/svg"`
+       * is a namespace identifier the browser never resolves, and `og:url` names
+       * the site itself — neither is a request, and a regex that flagged them
+       * would have to be silenced rather than satisfied.
+       */
+      const body = (await app.inject({ method: 'GET', url: '/landing' })).body;
+      expect(body).not.toMatch(/<script/i);
+      expect(body).not.toMatch(/<link[^>]+stylesheet/i);
+      expect(body).not.toMatch(/\bsrc\s*=\s*["']https?:/i);
+      expect(body).not.toMatch(/url\(\s*["']?https?:/i);
+      expect(body).not.toMatch(/@import/i);
+    });
+
+    it('ships no invented statistics', async () => {
+      /*
+       * LANDING-09 is titled "Real numbers, or no numbers". The mock's 21,547
+       * airlines and 2.98M passengers are invented, and a marketing page that
+       * ships fabricated statistics is lying about how busy the game is — the
+       * kind of lie that survives to launch because everyone remembers it as
+       * placeholder copy. The shape is here; the figures are not.
+       */
+      expect((await app.inject({ method: 'GET', url: '/landing' })).body).not.toMatch(
+        /21,547|12,842|2\.98M|45,231/,
+      );
+    });
+
+    it('reaches no protected data — the document fetches nothing at all', async () => {
+      // The one security property of a public page: an anonymous visitor gets
+      // marketing and nothing else. No player, airline or world is named, and
+      // the only API path referenced is the sign-in route itself.
+      const body = (await app.inject({ method: 'GET', url: '/landing' })).body;
+      const apiPaths = [...body.matchAll(/\/api\/[\w/-]*/g)].map((match) => match[0]);
+      expect([...new Set(apiPaths)].sort()).toEqual(['/api/auth/discord', '/api/auth/google']);
+    });
+  });
+
   describe('unknown routes', () => {
     it('returns a structured 404, not an HTML error page', async () => {
       const res = await app.inject({ method: 'GET', url: '/nope' });
