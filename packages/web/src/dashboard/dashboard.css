@@ -617,3 +617,46 @@
   color: var(--accent-hover);
   text-decoration: underline;
 }
+
+/* ---- CSV export (M8-14, section 14.6) --------------------------------- */
+
+/*
+ * A panel heading with its export beside it.
+ *
+ * The button sits in the heading rather than under the table because a long
+ * table would put it off screen -- a control belongs with the thing it names,
+ * not at the end of it.
+ */
+.panel__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.panel__head .panel__title {
+  margin-bottom: 0;
+}
+
+/* For a run of tiles with no visible heading of its own. */
+.panel__head--bare {
+  justify-content: flex-end;
+  margin-bottom: var(--space-2);
+}
+
+.export-button {
+  flex: none;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.export-button:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}

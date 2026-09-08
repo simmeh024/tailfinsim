@@ -18,6 +18,8 @@ import {
   fetchStatistics,
 } from '../dashboard/api';
 import { MetricTile } from '../dashboard/MetricTile';
+import { csvMoney, csvMoneyHeader } from '../export/csv';
+import { ExportButton } from '../export/ExportButton';
 import { StateBlock } from '../ui/StateBlock';
 
 import { RouteDiagnosisPanel } from './RouteDiagnosisPanel';
@@ -61,14 +63,42 @@ function DimensionTable({
   title,
   rows,
   note,
+  view,
+  gameNow,
 }: {
   title: string;
   rows: readonly PnlDimensionRow[];
   note: string;
+  view: string;
+  gameNow: string;
 }): ReactNode {
   return (
     <section className="panel" aria-label={title}>
-      <h2 className="panel__title">{title}</h2>
+      <div className="panel__head">
+        <h2 className="panel__title">{title}</h2>
+        {rows.length > 0 && (
+          <ExportButton
+            view={view}
+            gameNow={gameNow}
+            table={() => ({
+              headers: [
+                title,
+                csvMoneyHeader('Revenue'),
+                csvMoneyHeader('Cost'),
+                csvMoneyHeader('Contribution'),
+              ],
+              // The same rows the table renders, through the same conversion —
+              // which is what makes the file agree with the screen (M8-14).
+              rows: rows.map((row) => [
+                row.key ?? 'Unattributed',
+                csvMoney(row.revenueMinor),
+                csvMoney(row.costMinor),
+                csvMoney(row.operatingProfitMinor),
+              ]),
+            })}
+          />
+        )}
+      </div>
       {rows.length === 0 ? (
         <StateBlock kind="empty">{note}</StateBlock>
       ) : (
@@ -317,7 +347,35 @@ export function FinancePage(): ReactNode {
           </section>
 
           <section className="panel" aria-label="Profit and loss">
-            <h2 className="panel__title">Profit and loss</h2>
+            <div className="panel__head">
+              <h2 className="panel__title">Profit and loss</h2>
+              {pnl !== null && pnl.lines.length > 0 && (
+                <ExportButton
+                  view="pnl"
+                  gameNow={pnl.to}
+                  table={() => ({
+                    headers: ['Category', csvMoneyHeader('Amount'), 'Entries'],
+                    rows: [
+                      ...pnl.lines.map((line) => [
+                        line.category.replace(/_/g, ' '),
+                        csvMoney(line.amountMinor),
+                        line.entryCount,
+                      ]),
+                      /*
+                       * The three totals the screen shows above the table, as
+                       * rows rather than a separate file. A statement whose
+                       * export omits its own bottom line would send the player
+                       * back to the screen to read it, which is the opposite of
+                       * the point.
+                       */
+                      ['Revenue', csvMoney(pnl.revenueMinor), null],
+                      ['Cost', csvMoney(pnl.costMinor), null],
+                      ['Operating profit', csvMoney(pnl.operatingProfitMinor), null],
+                    ],
+                  })}
+                />
+              )}
+            </div>
             {pnl === null ? (
               <StateBlock kind="broken">The P&amp;L could not be read.</StateBlock>
             ) : pnl.lines.length === 0 ? (
@@ -380,21 +438,29 @@ export function FinancePage(): ReactNode {
             <>
               <DimensionTable
                 title="By route"
+                view="pnl-by-route"
+                gameNow={pnl.to}
                 rows={pnl.byRoute}
                 note="No route has settled a flight in this period."
               />
               <DimensionTable
                 title="By aircraft"
+                view="pnl-by-aircraft"
+                gameNow={pnl.to}
                 rows={pnl.byAircraft}
                 note="No airframe has settled a flight in this period."
               />
               <DimensionTable
                 title="By hub"
+                view="pnl-by-hub"
+                gameNow={pnl.to}
                 rows={pnl.byHub}
                 note="Nothing is attributed to a hub in this period."
               />
               <DimensionTable
                 title="By cabin class"
+                view="pnl-by-cabin-class"
+                gameNow={pnl.to}
                 rows={pnl.byCabinClass}
                 note="No cabin-class split has been recorded in this period."
               />
