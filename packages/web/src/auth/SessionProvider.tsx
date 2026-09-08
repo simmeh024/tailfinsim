@@ -49,6 +49,29 @@ interface SessionContextValue {
 
 const SessionContext = createContext<SessionContextValue | null>(null);
 
+/**
+ * Where signing out goes, and why it has to be a whole page load.
+ *
+ * `/` is the public landing page for anyone without a session cookie (ADR-0028),
+ * and it is a **static document served by Fastify** — not a route in this bundle.
+ * So a client-side `navigate('/')` would not reach it: it would stay inside the
+ * already-loaded SPA, hit `IndexRedirect`, and leave the signed-out player
+ * looking at the login wall on whichever page they happened to be on. Only a
+ * document navigation leaves the application.
+ *
+ * Throwing the whole in-memory tree away is a feature rather than a cost. A
+ * shared machine should not keep the previous player's airline, cash position
+ * and route list one back-button press away in a React tree that merely stopped
+ * rendering them.
+ *
+ * The cookie is cleared by the request this follows. If that request failed, `/`
+ * still sees a cookie and serves the SPA — whose own session check then shows
+ * the login wall. Degrading to exactly the old behaviour is the right failure.
+ */
+function leaveForTheFrontDoor(): void {
+  window.location.assign('/');
+}
+
 export function SessionProvider({ children }: { children: ReactNode }): ReactNode {
   const [status, setStatus] = useState<SessionStatus>('loading');
   const [player, setPlayer] = useState<AuthenticatedPlayer | null>(null);
@@ -77,30 +100,52 @@ export function SessionProvider({ children }: { children: ReactNode }): ReactNod
     void refresh();
   }, [refresh]);
 
+  /**
+   * Forget the player and leave, whatever the server said.
+   *
+   * State clears **before** the navigation, not instead of it: if the document
+   * load is blocked or slow, what stays on screen must already be the signed-out
+   * shell rather than the previous player's airline.
+   */
+  const forgetAndLeave = useCallback(() => {
+    setPlayer(null);
+    // Cleared with the player, not left behind. An admin who signs out on a
+    // shared machine must not leave the console door visibly ajar.
+    setIsAdmin(false);
+    setStatus('anonymous');
+    leaveForTheFrontDoor();
+  }, []);
+
   const signOut = useCallback(async () => {
     try {
       await postSignOut();
-    } finally {
-      // Local state clears either way. If the request failed the cookie may
-      // still be live, and `refresh` will discover that; leaving the UI claiming
-      // "signed in" after the user asked to leave is the worse failure.
-      setPlayer(null);
-      // Cleared with the player, not left behind. An admin who signs out on a
-      // shared machine must not leave the console door visibly ajar.
-      setIsAdmin(false);
-      setStatus('anonymous');
+    } catch {
+      /*
+       * Swallowed, and this is the honest handling rather than the lazy one.
+       *
+       * Both call sites are `void signOut()`, so rethrowing produced an
+       * unhandled rejection and nothing else — no message, no retry, and a
+       * console error the post-deploy smoke counts as a browser error.
+       *
+       * There is also nothing to tell the player here that leaving does not tell
+       * them better. A refused sign-out may leave the cookie alive, and `/` then
+       * serves the application rather than the landing page — so a sign-out that
+       * did not take shows itself as *still being signed in*, which is the
+       * accurate signal. A swallowed error with a cleared rail would be the
+       * misleading one.
+       */
     }
-  }, []);
+    forgetAndLeave();
+  }, [forgetAndLeave]);
 
   const signOutEverywhere = useCallback(async () => {
     try {
       await postSignOutEverywhere();
-    } finally {
-      setPlayer(null);
-      setIsAdmin(false);
-      setStatus('anonymous');
+    } catch {
+      // As above.
     }
-  }, []);
+    forgetAndLeave();
+  }, [forgetAndLeave]);
 
   const value = useMemo(
     () => ({

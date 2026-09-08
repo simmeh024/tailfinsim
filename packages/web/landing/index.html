@@ -208,6 +208,19 @@
                   hidden, because a control that does nothing is worse than no
                   control. `landing.js` adds `data-ready`, which is what reveals
                   them.
+
+                  PROVISIONAL ARTWORK — replaced by VIS-05 (#376).
+
+                  These five side profiles are a stand-in. VIS-05 is the reusable
+                  aircraft render layer and VIS-15 (#386) the scene-generation
+                  API; between them they produce a real Tailfin aircraft rendered
+                  from an actual livery document, which beats any illustration of
+                  one. When they land, these files are deleted and the <img> tags
+                  point at rendered output — the markup does not otherwise change,
+                  because each slide is already just an image and a caption.
+
+                  Said here rather than only in docs/landing-artwork.md so the
+                  replacement path is visible from the thing being replaced.
                 -->
                 <div
                   class="lp-fleet"

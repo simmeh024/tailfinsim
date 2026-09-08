@@ -35,6 +35,25 @@ const PLAYER: MeResponse = {
   isAdmin: false,
 };
 
+/**
+ * Captures the document navigation signing out performs.
+ *
+ * jsdom cannot navigate, so `location.assign` is a stub that records where the
+ * app tried to go. Asserting the destination is the whole point: leaving the SPA
+ * is what puts a signed-out visitor on the public landing document, and a
+ * client-side route to `/` would silently do something else.
+ */
+function captureNavigation(): { to: () => string | null } {
+  let destination: string | null = null;
+  vi.stubGlobal('location', {
+    ...window.location,
+    assign: (url: string) => {
+      destination = url;
+    },
+  });
+  return { to: () => destination };
+}
+
 const ANONYMOUS: MeResponse = {
   player: null,
   registrationOpen: false,
@@ -74,7 +93,11 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 /** Stubs the endpoints the client calls, and fails loudly on any other. */
-function stubApi(me: MeResponse | 'error', worldClock: WorldClock | null = WORLD_CLOCK) {
+function stubApi(
+  me: MeResponse | 'error',
+  options: { worldClock?: WorldClock | null; failSignOut?: boolean } = {},
+) {
+  const { worldClock = WORLD_CLOCK, failSignOut = false } = options;
   const calls: string[] = [];
   const fetchMock = vi.fn((input: unknown) => {
     const url = String(input);
@@ -92,7 +115,12 @@ function stubApi(me: MeResponse | 'error', worldClock: WorldClock | null = WORLD
           : jsonResponse(worldClock),
       );
     }
-    if (url === '/api/auth/logout') return Promise.resolve(jsonResponse({ signedOut: true }));
+    if (url === '/api/auth/logout')
+      return Promise.resolve(
+        failSignOut
+          ? jsonResponse({ code: 'internal_error' }, 500)
+          : jsonResponse({ signedOut: true }),
+      );
     if (url === '/api/auth/logout-all')
       return Promise.resolve(jsonResponse({ signedOut: true, revokedSessions: 2 }));
     return Promise.reject(new Error(`unexpected fetch: ${url}`));
@@ -248,8 +276,9 @@ describe('signed in', () => {
     expect(screen.getByText('A')).toBeInTheDocument();
   });
 
-  it('signs out through the server, then returns to the front door', async () => {
+  it('signs out through the server, then leaves for the front door', async () => {
     const { calls } = stubApi(PLAYER);
+    const navigation = captureNavigation();
     renderAt('/world');
 
     fireEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
@@ -259,12 +288,26 @@ describe('signed in', () => {
     await waitFor(() => {
       expect(calls).toContain('/api/auth/logout');
     });
-    expect(await screen.findByRole('link', { name: /continue with google/i })).toBeInTheDocument();
+
+    /*
+     * A whole page load of `/`, not a router navigation. The landing page is a
+     * static document Fastify serves to anyone without a session cookie
+     * (ADR-0028) — it is not a route in this bundle, so staying inside the SPA
+     * would land on the login wall instead of the front door.
+     */
+    await waitFor(() => {
+      expect(navigation.to()).toBe('/');
+    });
+
+    // And the shell is already gone when it happens, so a blocked or slow
+    // navigation cannot leave the previous player's rail on screen.
     expect(screen.queryByRole('navigation', { name: 'Main' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Amelia Hart')).not.toBeInTheDocument();
   });
 
-  it('can end every session through the server', async () => {
+  it('can end every session through the server, and leaves the same way', async () => {
     const { calls } = stubApi(PLAYER);
+    const navigation = captureNavigation();
     renderAt('/world');
 
     fireEvent.click(await screen.findByRole('button', { name: 'Sign out everywhere' }));
@@ -272,7 +315,27 @@ describe('signed in', () => {
     await waitFor(() => {
       expect(calls).toContain('/api/auth/logout-all');
     });
-    expect(await screen.findByRole('link', { name: /continue with google/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(navigation.to()).toBe('/');
+    });
+  });
+
+  it('still leaves when the server refuses the sign-out', async () => {
+    /*
+     * The cookie may survive a failed request, and `/` would then serve the SPA
+     * whose own session check shows the login wall. That is the acceptable
+     * failure — what is not acceptable is staying on a page still rendering the
+     * previous player's airline because the POST returned 500.
+     */
+    stubApi(PLAYER, { failSignOut: true });
+    const navigation = captureNavigation();
+    renderAt('/world');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
+
+    await waitFor(() => {
+      expect(navigation.to()).toBe('/');
+    });
   });
 });
 
@@ -428,7 +491,7 @@ describe('the build badge', () => {
   });
 
   it('keeps the build details but hides the clock when no world is available', async () => {
-    const { calls } = stubApi(PLAYER, null);
+    const { calls } = stubApi(PLAYER, { worldClock: null });
     renderAt('/finance');
     await screen.findByText('build 137');
     await waitFor(() => expect(calls).toContain('/api/world/clock'));
