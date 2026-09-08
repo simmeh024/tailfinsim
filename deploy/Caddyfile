@@ -54,7 +54,7 @@ import /etc/caddy/conf.d/*.caddyfile
 		Referrer-Policy "strict-origin-when-cross-origin"
 		X-Frame-Options "DENY"
 		Permissions-Policy "accelerometer=(), autoplay=(), camera=(), display-capture=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), usb=(), web-share=(), xr-spatial-tracking=()"
-		{$TAILFIN_CSP_HEADER:Content-Security-Policy} "default-src 'self'; script-src 'self'; style-src 'self' 'sha256-ftYZ6VWMqcx4KWcJ2/G2tKyA+X9oEaozaSrupOVb8KM='; img-src 'self' data: https://lh3.googleusercontent.com https://cdn.discordapp.com; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'"
+		{$TAILFIN_CSP_HEADER:Content-Security-Policy} "default-src 'self'; script-src 'self'; style-src 'self' 'sha256-ftYZ6VWMqcx4KWcJ2/G2tKyA+X9oEaozaSrupOVb8KM='; img-src 'self' data: https://lh3.googleusercontent.com https://cdn.discordapp.com https://static-cdn.jtvnw.net; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'"
 		-Server
 	}
 }

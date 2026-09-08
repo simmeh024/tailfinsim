@@ -335,10 +335,17 @@ production credential in dev's `.env`, on the box that runs unmerged branches wi
 registration. Discord's scopes are `identify` and `email` only — Tailfin holds no bot token
 and reads no guild membership.
 
+**Twitch** is the third provider and follows Discord's rules: a separate application per
+environment, redirect URI `<PUBLIC_ORIGIN>/api/auth/twitch/callback`, and one scope,
+`user:read:email`. Twitch supports no PKCE — see ADR-0012 for what covers that and why it is
+defence in depth rather than a missing control.
+
 Adding a provider also changes the browser policy: Discord avatars are served from
-`https://cdn.discordapp.com`, which is allowed in the CSP's `img-src`. That lives in
-`deploy/Caddyfile`, and **an application deploy does not install it** — see the edge
-procedure in [`deploy/README.md`](../deploy/README.md).
+`https://cdn.discordapp.com` and Twitch's from `https://static-cdn.jtvnw.net`, both allowed
+in the CSP's `img-src`. That lives in `deploy/Caddyfile`, and **an application deploy does
+not install it** — see the edge procedure in [`deploy/README.md`](../deploy/README.md). Until
+the edge is updated, a Twitch player's avatar is blocked by the policy; sign-in itself is
+unaffected, so this is a cosmetic gap rather than a broken funnel.
 
 `ALLOW_REGISTRATION=false` refuses a Google account that has no player record, redirecting
 to `/?auth_error=registration_closed`. Note the consequence: **the first account on a new

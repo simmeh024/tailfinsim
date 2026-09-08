@@ -93,6 +93,48 @@ export function renderLandingPage(template: string, allowRegistration: boolean):
   );
 }
 
+/** Every provider the document carries a button for, whether or not a box has it. */
+const PROVIDER_BLOCKS = ['google', 'discord', 'twitch'] as const;
+
+/**
+ * Leave the buttons this instance has credentials for, and delete the rest
+ * (AUTH-08).
+ *
+ * The document carries all three, which keeps the markup — and the inlined SVG
+ * marks — where markup belongs and keeps the file rendering correctly when
+ * opened on its own. The server removes what does not apply, which is the same
+ * shape as the registration copy: the default content is right, the server
+ * overrides.
+ *
+ * This existed as a bug before Twitch made it obvious. The page offered Google
+ * and Discord to **every** box, including one with credentials for neither, so
+ * a stranger on the front door could press a button that answers 503.
+ * `LoginPage` has always asked the server — *"says sign-in is unconfigured
+ * rather than offering a door that does not open"* — and the surface a stranger
+ * actually meets did not. One list now, two renderers.
+ *
+ * An instance with no provider at all gets an empty card rather than a broken
+ * one. That is a real state (production runs with no OAuth client of its own)
+ * and it is the honest rendering of it.
+ */
+export function landingPageWithProviders(page: string, enabled: readonly string[]): string {
+  let document = page;
+  for (const provider of PROVIDER_BLOCKS) {
+    const open = `<!--tailfin:provider-${provider}-->`;
+    const close = `<!--/tailfin:provider-${provider}-->`;
+    const from = document.indexOf(open);
+    const to = document.indexOf(close);
+    if (from === -1 || to === -1 || to < from) {
+      // Loud, like every other slot: a renamed marker would silently start
+      // showing a provider the box cannot serve.
+      throw new Error(`The landing page has no ${provider} provider block.`);
+    }
+    if (enabled.includes(provider)) continue;
+    document = document.slice(0, from) + document.slice(to + close.length);
+  }
+  return document;
+}
+
 /**
  * The world-status figures, written into the strip (LANDING-09).
  *

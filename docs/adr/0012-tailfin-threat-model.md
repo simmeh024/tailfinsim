@@ -71,6 +71,8 @@ Browser <--------------------> Google OAuth, Discord OAuth
 Tailfin server --------------> Google token/user-info endpoints
 Tailfin server --------------> Discord token/users@me endpoints [AUTH-08]
 Browser <--------------------- cdn.discordapp.com (avatar images only)
+Tailfin server --------------> Twitch id/helix endpoints [AUTH-08]
+Browser <--------------------- static-cdn.jtvnw.net (avatar images only)
 operator/deploy checkout ----> GitHub
 local backup job ------------> DreamObjects (a full database copy)
 dev worker ------------------> Cloudflare FX provider (display rates) [M8-02]
@@ -108,6 +110,27 @@ avatar hash and no Tailfin data. And the **personal-data** class is unchanged in
 returns an id, a display name, an avatar hash and an email address, and the email is recorded as
 informational and never used to resolve an account (ADR-0004), which is enforced by
 `auth/identity-email.test.ts` rather than left as a convention.
+
+**A third identity provider: Twitch (AUTH-08).** The same shape again — one account-policy
+module, a signed provider-bound state cookie, the access token spent immediately on a user-info
+call and no refresh token kept — with **one documented difference and it is worth stating in the
+threat model rather than only in the code**: Twitch's authorization-code grant supports no PKCE,
+so the challenge and verifier are not sent.
+
+What that costs, and what covers it. PKCE's primary job is protecting a _public_ client with no
+secret; this is a confidential client, so an intercepted authorization code is not exchangeable
+without `TWITCH_CLIENT_SECRET`, which never leaves the web node. PKCE's secondary job — stopping
+an attacker grafting their own code onto a victim's session — is covered by the `state` binding:
+a CSPRNG value in a signed, short-lived, `SameSite` cookie that also names the provider it was
+minted for, compared in constant time on return. The residual gap versus Google and Discord is
+therefore defence in depth rather than a control, and it closes by itself if Twitch adds PKCE.
+
+The surfaces move the same way as Discord's. **Outbound** gains `id.twitch.tv` and
+`api.twitch.tv` from the web node; the worker's `IPAddressDeny=any` is unchanged and still
+allows only the FX host. **Browser** gains `static-cdn.jtvnw.net` in `img-src` for avatars and
+nothing else. **Personal data** is unchanged in kind: an id, a display name, an avatar URL and
+an email, with the email recorded as informational and never used to resolve an account
+(ADR-0004). The one scope requested is `user:read:email`.
 
 Discord is a **separate application per environment** — dev and production do not share one, so
 a dev credential cannot authorise a production callback. Scopes are `identify` and `email` only;

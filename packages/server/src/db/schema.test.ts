@@ -394,7 +394,7 @@ describeDb('database constraints', () => {
    * enum used in the transaction that created it.
    */
   describe('the identity model carries every provider (AUTH-01)', () => {
-    it('offers all four auth_provider values, google first', async () => {
+    it('offers every auth_provider value, google first', async () => {
       const { rows } = await client.query<{ enumlabel: string }>(
         `SELECT e.enumlabel
            FROM pg_enum e
@@ -402,7 +402,15 @@ describeDb('database constraints', () => {
           WHERE t.typname = 'auth_provider'
           ORDER BY e.enumsortorder`,
       );
-      expect(rows.map((r) => r.enumlabel)).toEqual(['google', 'discord', 'email', 'passkey']);
+      // Ordered by what actually ships: the three live providers, then the two
+      // placeholders (`email` for AUTH-10's magic link, `passkey` for AUTH-15).
+      expect(rows.map((r) => r.enumlabel)).toEqual([
+        'google',
+        'discord',
+        'twitch',
+        'email',
+        'passkey',
+      ]);
     });
 
     /**

@@ -239,11 +239,15 @@ export const session = pgTable(
 /**
  * How a player can prove they own their account (AUTH-01).
  *
- * All four values ship at once even though only `google` and `discord` have
- * code behind them, because extending a Postgres enum is a migration and four
- * one-value migrations would be three more chances to get an `ALTER TYPE`
+ * The original four shipped at once even though only `google` and `discord`
+ * had code behind them, because extending a Postgres enum is a migration and
+ * four one-value migrations would be three more chances to get an `ALTER TYPE`
  * wrong on a live database. An enum value nothing writes is inert; a missing
  * one blocks a deploy.
+ *
+ * `twitch` arrived later and did cost its own migration (0061) — which is the
+ * price of the reasoning above rather than a refutation of it: the four were
+ * batched because they were foreseen, and a fifth provider was not.
  *
  * `email` is the magic-link identity (AUTH-10) and `passkey` the WebAuthn one
  * (AUTH-15). Both are placeholders here on purpose: the `player_identity` row
@@ -251,7 +255,13 @@ export const session = pgTable(
  * themselves, and that table's shape belongs with the WebAuthn library that
  * will read it rather than guessed at now.
  */
-export const authProvider = pgEnum('auth_provider', ['google', 'discord', 'email', 'passkey']);
+export const authProvider = pgEnum('auth_provider', [
+  'google',
+  'discord',
+  'twitch',
+  'email',
+  'passkey',
+]);
 export type AuthProviderName = (typeof authProvider.enumValues)[number];
 
 /**

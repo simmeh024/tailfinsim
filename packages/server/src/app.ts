@@ -25,9 +25,11 @@ import { type AirlineIdentityModerator } from './airline/moderation';
 import { registerAirlineRoutes } from './airline/routes';
 import { registerAlertRoutes } from './alerts/routes';
 import {
+  configuredSignInProviders,
   registerAuthRoutes,
   type DiscordAuthOperations,
   type GoogleAuthOperations,
+  type TwitchAuthOperations,
 } from './auth/routes';
 import { SESSION_COOKIE } from './auth/session';
 import { registerAutomationRoutes } from './automation/routes';
@@ -41,7 +43,12 @@ import { registerCreditRoutes } from './finance/credit-routes';
 import { registerFinanceRoutes } from './finance/routes';
 import { registerGroundRoutes } from './ground/routes';
 import { registerHubRoutes } from './hub/routes';
-import { landingPageWithAuthError, landingPageWithStats, renderLandingPage } from './landing-page';
+import {
+  landingPageWithAuthError,
+  landingPageWithProviders,
+  landingPageWithStats,
+  renderLandingPage,
+} from './landing-page';
 import { readLandingStats } from './landing-stats';
 import { createEconomicsProvider } from './network/economics';
 import { registerNetworkRoutes } from './network/routes';
@@ -128,6 +135,7 @@ export interface BuildAppOptions {
    */
   googleAuth?: GoogleAuthOperations;
   discordAuth?: DiscordAuthOperations;
+  twitchAuth?: TwitchAuthOperations;
   /**
    * Called once for every route as it is registered (SEC-04).
    *
@@ -159,6 +167,7 @@ export async function buildApp({
   airlineCodePolicy,
   googleAuth,
   discordAuth,
+  twitchAuth,
   onRoute,
 }: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({
@@ -257,7 +266,7 @@ export async function buildApp({
   await app.register(fastifyRateLimit, rateLimitOptions(env));
 
   app.register(fastifyCookie, env.sessionSecret ? { secret: env.sessionSecret } : {});
-  registerAuthRoutes(app, { env, db, googleAuth, discordAuth });
+  registerAuthRoutes(app, { env, db, googleAuth, discordAuth, twitchAuth });
   // Resolves "my airline" from the authenticated session and active world.
   // Founding itself does not use the guard because having no airline is its
   // precondition; player-airline operations registered later do (AIR-05).
@@ -474,7 +483,10 @@ export async function buildApp({
    * change without a restart, so a request costs a lookup rather than a render.
    * `landing-page.ts` says why any of this is server-side at all.
    */
-  const landingPage = renderLandingPage(landingTemplate, env.allowRegistration);
+  const landingPage = landingPageWithProviders(
+    renderLandingPage(landingTemplate, env.allowRegistration),
+    configuredSignInProviders(env),
+  );
 
   /**
    * Serve the landing document, explaining a failed sign-in if there is one.

@@ -9,6 +9,7 @@ import { REGISTRATION_COPY } from '@tailfin/shared';
 import {
   fillSlot,
   landingPageWithAuthError,
+  landingPageWithProviders,
   landingPageWithStats,
   renderLandingPage,
 } from './landing-page';
@@ -242,5 +243,63 @@ describe('the world-status figures', () => {
     expect(page).not.toMatch(/world[_-]?id/i);
     expect(page).not.toMatch(/airline[_-]?id/i);
     expect(page).not.toMatch(/player[_-]?id/i);
+  });
+});
+
+describe('the sign-in buttons', () => {
+  const base = renderLandingPage(TEMPLATE, true);
+
+  it('offers only what this instance has credentials for', () => {
+    /*
+     * The bug Twitch exposed rather than caused. This document carried Google
+     * and Discord buttons for *every* box, including one with credentials for
+     * neither -- so a stranger on the front door could press a button that
+     * answers 503. `LoginPage` has always asked the server; the surface a
+     * stranger actually meets did not.
+     */
+    const page = landingPageWithProviders(base, ['google']);
+    expect(page).toContain('Continue with Google');
+    expect(page).not.toContain('Continue with Discord');
+    expect(page).not.toContain('Continue with Twitch');
+  });
+
+  it('offers all three when all three are configured', () => {
+    const page = landingPageWithProviders(base, ['google', 'discord', 'twitch']);
+    expect(page).toContain('href="/api/auth/google"');
+    expect(page).toContain('href="/api/auth/discord"');
+    expect(page).toContain('href="/api/auth/twitch"');
+  });
+
+  it('leaves an empty card rather than a broken one when nothing is configured', () => {
+    // A real state: production runs with no OAuth client of its own.
+    const page = landingPageWithProviders(base, []);
+    expect(page).not.toContain('Continue with');
+    // The card and its heading survive, so the layout does not collapse.
+    expect(page).toContain('lp-signin__buttons');
+    expect(page).toContain('lp-signin__title');
+  });
+
+  it('keeps every button a plain anchor', () => {
+    /*
+     * The CTA's shape is a security property. `form-action 'self'` is in the
+     * policy and OAuth needs no exception *because* the flow begins as a
+     * top-level navigation from an anchor. A form post or a scripted redirect
+     * would require weakening it.
+     */
+    const page = landingPageWithProviders(base, ['google', 'discord', 'twitch']);
+    expect(page).not.toContain('<form');
+    for (const provider of ['google', 'discord', 'twitch']) {
+      expect(page).toContain(
+        `<a class="lp-provider lp-provider--${provider}" href="/api/auth/${provider}">`,
+      );
+    }
+  });
+
+  it('refuses a template that has lost a provider block', () => {
+    // Loud, like every other slot: a renamed marker would silently start
+    // showing a provider the box cannot serve, which is the failure this
+    // function exists to prevent.
+    const mangled = TEMPLATE.replace('<!--tailfin:provider-twitch-->', '<!--provider-twitch-->');
+    expect(() => landingPageWithProviders(mangled, ['google'])).toThrow(/twitch/);
   });
 });
