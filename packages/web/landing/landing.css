@@ -26,6 +26,9 @@
   --muted: #8494ad;
   --accent: #ffb84d;
   --link: #4a9eff;
+  /* The map's own deep navy — what the hero's wash is tinted with, so the
+     overlay belongs to the image rather than flattening it to page black. */
+  --wash: #0b1a38;
   /* Provider brand colours: Google blue and Discord blurple, as published. */
   --google: #4285f4;
   --discord: #5865f2;
@@ -198,58 +201,105 @@ a {
   align-items: center;
   min-height: max(34rem, calc(100svh - 4.5rem));
   padding-block: clamp(2rem, 5vw, 4rem);
-
-  /*
-   * The map, and a gradient that makes the text legible over it.
-   *
-   * Two layers in one property so they share a stacking context and neither can
-   * be painted over by a child. The gradient is opaque at the left edge and
-   * clear by 78%, which is what puts the headline on solid ground while leaving
-   * the Pacific and Asia visible — the same balance as the mock.
-   *
-   * `background-color` is set to the page background as well, so the hero is the
-   * right colour before the image arrives and if it never does.
-   */
   background-color: var(--bg);
-  background-image:
-    /* Opaque only where the headline actually sits, then out of the way fast.
-       The first attempt held 62% opacity at the halfway mark and buried the
-       Americas — the very part of the map the mock leaves legible under the
-       copy. Text needs a floor to sit on, not the whole ocean painted out. */
-    linear-gradient(
-      100deg,
-      var(--bg) 0%,
-      rgba(6, 10, 18, 0.9) 18%,
-      rgba(6, 10, 18, 0.55) 36%,
-      rgba(6, 10, 18, 0.16) 56%,
-      rgba(6, 10, 18, 0) 72%
-    ),
-    /* A second wash from the bottom, so the section below meets the map rather
-       than colliding with it. */
-    linear-gradient(to bottom, rgba(6, 10, 18, 0) 55%, var(--bg) 100%),
-    url('/landing-hero.webp');
-  background-repeat: no-repeat;
-  background-position:
-    center,
-    center,
-    center right;
-  background-size: cover, cover, cover;
 }
 
-/* Narrow screens get the map as a quiet texture: at this width the gradient
-   would have to cover almost all of it to keep the text readable, and a map you
-   cannot see is weight without benefit. */
+/*
+ * The map, as its own layer rather than a background on `.hero`.
+ *
+ * A pseudo-element because the map is **inset to the right** rather than
+ * covering the section: measured off the mock, it occupies about the right 72%
+ * of the hero, which is what puts the Americas clear of the headline instead of
+ * underneath it. `background-size: cover` cannot express that — cover fills the
+ * box, so the only way to move the map right is to crop the Americas off the
+ * left, which is the opposite of what is wanted.
+ *
+ * Its own element also means the fades below can sit on top of the map without
+ * also fading the section, and the map can be positioned without fighting the
+ * gradient's own `background-position`.
+ */
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 68%;
+  background-image: url('/landing-hero.webp');
+  background-repeat: no-repeat;
+  background-position: center;
+  /*
+   * `100% auto`, not `cover`. Cover fills the box, and this box is taller than
+   * the map is proportioned — so cover scales to the height and crops the sides,
+   * which took the Americas off the left edge. Fitting the width shows the whole
+   * world and letterboxes vertically instead.
+   */
+  background-size: 100% auto;
+  /*
+   * The letterbox is why this mask exists. The map carries its own deep-navy
+   * background, and where that meets the page's near-black it draws a horizontal
+   * line across the hero. Feathering the top and bottom dissolves the seam, so an
+   * inset map reads as part of the page rather than as a pasted rectangle.
+   */
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 16%, #000 84%, transparent 100%);
+  pointer-events: none;
+}
+
+/*
+ * The wash over it, and the reason it is blue rather than black.
+ *
+ * The headline needs a floor to sit on, but painting it in the page's near-black
+ * flattens the map to nothing exactly where the Americas are — the part the mock
+ * deliberately keeps legible. A **blue** tint at lower opacity does the same job
+ * for contrast while leaving the coastline and city lights visible through it, so
+ * the left of the hero still reads as ocean rather than as a black panel.
+ *
+ * `--wash` is the map's own deep-navy rather than `--bg`, so the tint belongs to
+ * the image it sits on.
+ */
+.hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(
+      100deg,
+      var(--wash) 0%,
+      rgba(11, 26, 56, 0.88) 24%,
+      rgba(11, 26, 56, 0.6) 40%,
+      rgba(11, 26, 56, 0.22) 58%,
+      rgba(11, 26, 56, 0) 74%
+    ),
+    /* Feathers the map's left edge into the page so the inset does not read as a
+       pasted rectangle. */
+    linear-gradient(to right, var(--bg) 0%, rgba(6, 10, 18, 0) 26%),
+    /* And the bottom, so the section below meets the map rather than colliding. */
+    linear-gradient(to bottom, rgba(6, 10, 18, 0) 62%, var(--bg) 100%);
+}
+
+/* The copy has to sit above both layers. */
+.hero__grid {
+  z-index: 1;
+}
+
+/*
+ * Narrow screens: the map goes full width and quiet.
+ *
+ * Inset to the right there would leave a strip too small to read as a map, and
+ * the gradient has to cover most of it anyway to keep the text legible.
+ */
 @media (max-width: 48rem) {
-  .hero {
-    background-image:
-      linear-gradient(
-        to bottom,
-        rgba(6, 10, 18, 0.88) 0%,
-        rgba(6, 10, 18, 0.97) 62%,
-        var(--bg) 100%
-      ),
-      url('/landing-hero.webp');
-    background-position: center, center;
+  .hero::before {
+    width: 100%;
+    background-position: center;
+  }
+
+  .hero::after {
+    background-image: linear-gradient(
+      to bottom,
+      rgba(11, 26, 56, 0.82) 0%,
+      rgba(9, 18, 38, 0.94) 58%,
+      var(--bg) 100%
+    );
   }
 }
 
