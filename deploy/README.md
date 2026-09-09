@@ -1062,7 +1062,20 @@ It updates the checkout, builds, takes a migration backup when needed, migrates 
 the app. It deliberately cannot write to `/etc` or `/usr/local/sbin` — its sudoers grants are
 the two application restarts and two fixed backup unit instances above. So editing
 `deploy/Caddyfile`, a unit or an installed helper in the repo does **not** reach the running
-system on deploy. Apply those by hand, as root:
+system on deploy. Apply those by hand, as root.
+
+**Which login gets you root here, since `tailfin` cannot.** That inability is the point of the
+paragraph above, so the account you deploy from is not the account that installs an edge change.
+On the web host use `ubuntu`, the cloud-init account carrying the `tailfin2` key, which has
+unrestricted `sudo`:
+
+```bash
+ssh -i ~/.ssh/tailfin2.pem ubuntu@208.113.129.131
+```
+
+Note this is the mirror image of the dev worker below, where `ubuntu` is the only login and has
+to `sudo -u tailfin` **down** to reach the checkout. Here you log in as `tailfin` to deploy and
+as `ubuntu` to touch `/etc`.
 
 ```bash
 cp /srv/tailfin/deploy/Caddyfile /etc/caddy/Caddyfile
