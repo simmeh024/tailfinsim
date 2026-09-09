@@ -451,6 +451,23 @@ Google-hosted avatar, was observed successfully before enforcement. On 2026-08-2
 `pnpm security:headers --mode enforced`. The procedure below remains mandatory when rebuilding
 or materially changing the edge policy.
 
+**Amended 2026-09-09 (AUTH-08, Twitch):** `img-src` gained `https://static-cdn.jtvnw.net`, and
+the installed `/etc/caddy/Caddyfile` was updated from `/srv/tailfin-dev/deploy/Caddyfile` —
+**not** production's checkout, which the procedure above names and which was 58 commits behind
+`main` (at `ad8bb16`) and therefore did not contain the change. Diff the candidate against the
+installed file before copying; if the only difference is not the one you intended, you are
+installing something else as well. The report-only cycle was **not** repeated: a single additional image host on an
+already-enforced, already-browser-verified policy widens it by one source and cannot break a
+journey that passed without it. Both hosts pass `--mode enforced`, and the browser proof was
+done positively rather than by inference — a real `static-cdn.jtvnw.net` image loads on
+`dev.tailfinsim.com`, Google's avatar host still loads, and a disallowed host is still refused
+with a console violation naming the new policy. That control matters: `img.onerror` fires for a
+404 exactly as it does for a CSP block, and the first URL tried was a 404, which reads as
+"still blocked" and is not.
+
+Note that `tailfin_security_headers` is one snippet imported by **both** sites, so any change
+here reaches the front door as well as the back one.
+
 The committed Caddyfile defaults to an **enforced** Content Security Policy. Do not copy it
 over a running edge for the first time and skip straight to that default. Install it in
 report-only mode first so the real Google redirect and Google-hosted avatar are exercised,
@@ -1054,6 +1071,13 @@ caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy
 cp /srv/tailfin/deploy/tailfin.service /etc/systemd/system/
 systemctl daemon-reload && systemctl restart tailfin
 ```
+
+**Check which checkout has the change first.** These lines say `/srv/tailfin`, and production is
+promoted by hand, so its checkout is normally _behind_ `main` — on 2026-09-09 by 58 commits. An
+edge change merged to `main` therefore reaches `/srv/tailfin-dev` on the next dev deploy and does
+not reach `/srv/tailfin` at all, and copying from the path written above installs the _old_ file
+while every command reports success. `diff` the candidate against the installed file, confirm the
+difference is the one you came to make, and copy from whichever checkout actually contains it.
 
 Widening the grant so deploys could do this automatically would hand the deploy user most
 of root, which is the opposite of the point.
