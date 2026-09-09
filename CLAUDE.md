@@ -201,6 +201,12 @@ security-header change, follow the report-only/enforced sequence in `deploy/READ
 in-repository Caddy integration test proves the committed config, not the installed one.
 The SEC-HARD-05 rollout completed its browser sign-in/avatar check and both public hosts passed
 the enforced-policy verifier on 2026-08-22; the report-only procedure remains the rebuild path.
+Amended 2026-09-09 for Twitch's avatar host, and the trap that visit found is the one to
+remember: **the checkout the procedure names is the stale one.** Production is promoted by
+hand, so `/srv/tailfin` sits behind `main` — 58 commits on that day — and copying its
+`deploy/Caddyfile` installs the old policy while `validate` and `reload` both report success.
+Diff the candidate against `/etc/caddy/Caddyfile` first. The CSP is one snippet imported by
+both sites, so an edge change always reaches the front door too, whichever host needed it.
 
 **Session authority rotates when privilege changes.** A real admin grant or revocation deletes
 all of the target player's sessions in the same transaction as the grant and audit row. Do not
