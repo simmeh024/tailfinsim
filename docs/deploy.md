@@ -50,10 +50,11 @@ Split them only when there is a reason, and take the cookie complexity on knowin
 
 **Browser security policy lives at the edge.** Caddy applies the same CSP, frame denial,
 Permissions Policy, HSTS, content-type and referrer controls to the holding page, application,
-API and error responses on both hosts. Google OAuth needs no CSP exception because it is a
-top-level navigation; the one external resource exception is
-`https://lh3.googleusercontent.com` and `https://cdn.discordapp.com` for player avatars. The exact policy, rollout decision
-and rejected HSTS preload option are in
+API and error responses on both hosts. OAuth itself needs no CSP exception, whichever provider —
+sign-in is a top-level navigation, not a subresource. The external resource exceptions are the
+three avatar hosts, one per provider: `https://lh3.googleusercontent.com`,
+`https://cdn.discordapp.com` and `https://static-cdn.jtvnw.net`. The exact policy, rollout
+decision and rejected HSTS preload option are in
 [ADR-0014](adr/0014-browser-security-policy.md).
 
 The source default is enforced. The first live installation deliberately used

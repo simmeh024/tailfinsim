@@ -20,10 +20,13 @@ test('serves the landing page from the application origin @smoke', async ({ page
     page.getByRole('heading', { name: 'Build an airline. Make it yours.' }),
   ).toBeVisible();
 
-  // Both providers, in a real browser. The unit tests prove the page carries the
-  // links; this proves the server serves them where a browser can reach them.
+  // Every configured provider, in a real browser. The unit tests prove the page
+  // carries the links; this proves the server serves them where a browser can
+  // reach them. `start-server.mjs` configures all three deliberately — see the
+  // note there about why a missing one would weaken the fold assertions below.
   await expect(page.getByRole('link', { name: 'Continue with Google' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Continue with Discord' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Continue with Twitch' })).toBeVisible();
 });
 
 test('actually paints the landing stylesheet @smoke', async ({ page }) => {
@@ -104,6 +107,12 @@ test('advances the fleet carousel when its buttons are used @smoke', async ({ pa
  * them. 1280x720 is the one that matters: it is the tightest common laptop, it
  * is the band LANDING-10 predicts the mock breaks in first, and it is where the
  * first measurement put the sign-in card 58px *below* the fold.
+ *
+ * **Provider count is an input to this claim.** Each button costs 65px — 53 tall
+ * plus a 12 gap, measured on dev at 1280x720 — so the fold budget shrinks by that
+ * much every time a provider is added, and the assertion is only as honest as the
+ * number of providers the fixture configures. At three it clears 1280x720 with
+ * room; a fourth is the point to re-measure rather than assume.
  */
 const FOLD_VIEWPORTS = [
   { name: 'phone', width: 390, height: 844 },

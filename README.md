@@ -113,9 +113,11 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   de-icing.
 - **Demand pools.** Appendix A.2's gravity model, sized for every viable city pair and
   split into business, leisure and VFR.
-- **Accounts.** Google OAuth, database-backed sessions, atomic login rotation, immediate
-  per-player revocation, shorter admin lifetimes, admin grants, and an append-only audit log
-  the database itself refuses to let anyone edit ([ADR-0015](docs/adr/0015-session-lifecycle.md)).
+- **Accounts.** Google, Discord and Twitch OAuth — each independently configured, and an instance
+  offers only the ones it holds credentials for — plus identity linking, database-backed sessions,
+  atomic login rotation, immediate per-player revocation, shorter admin lifetimes, admin grants,
+  and an append-only audit log the database itself refuses to let anyone edit
+  ([ADR-0015](docs/adr/0015-session-lifecycle.md)).
 - **One authorization error contract.** A missing session is 401, a signed-in actor without
   a disclosed grant is 403, and a malformed, missing or cross-owner private resource is the
   same 404. Ownership is resolved inside the query so player endpoints cannot become
@@ -127,9 +129,10 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   mistakes and explicit non-goals
   in [ADR-0012](docs/adr/0012-tailfin-threat-model.md).
 - **A browser security boundary at Caddy.** CSP restricts code, connections and framing;
-  powerful unused browser features are denied; Google avatars have one narrow image-source
-  exception. The edge rollout was observed in report-only mode before enforcement, both live
-  hosts now pass the enforced-policy verifier, and HSTS preload is deliberately deferred
+  powerful unused browser features are denied; the three sign-in providers' avatar hosts are the
+  only image-source exceptions, one per provider and nothing else. The edge rollout was observed
+  in report-only mode before enforcement, both live hosts pass the enforced-policy verifier, and
+  HSTS preload is deliberately deferred
   ([ADR-0014](docs/adr/0014-browser-security-policy.md)).
 - **Recoverable off-box backups.** Nightly DreamObjects dumps and their checksums are restored
   repeatably into a guarded `_test` database, migrated, booted and checked against real domain
