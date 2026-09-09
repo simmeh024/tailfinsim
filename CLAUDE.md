@@ -490,6 +490,32 @@ counted, never fatal. `currency_rate` is **mutable by design** (seeded, then ref
 immutable economy/catalogue tables — do not "fix" it to match them. The one outbound dependency is
 `open.er-api.com` (no key); it is in ADR-0012.
 
+**Belly cargo is half a worker story, and knowing which half saves an hour (M8-15).** §12.1's
+freight rides in the hold of a passenger flight, so `flight.cargo_kg` — a column that has
+existed and been `0` since M2-06 — is now written **at pushback**, in the `FLIGHT_DEPART`
+handler, beside the handling snapshot and for the same reason: capacity depends on this
+departure's cabin and fuel, and the lane's yield depends on a pinned economy an admin can
+re-pin, so resolving it at arrival would let a retune change what an airborne aeroplane turned
+out to be carrying. The settlement then bills exactly what the column says.
+
+The half that is **not** the worker's is the readout. `GET /api/routes/:routeId/cargo` is a
+projection — what a flight _would_ carry — so it answers on a fresh world with no fleet and no
+worker, and it is decision support, never a gate. So on a **production** world the Cargo tab
+cheerfully reports what a route's hold is worth while no flight ever departs, no `cargo_kg` is
+ever written and the P&L's `cargo` line stays at zero: freight that reads as _"no money here"_
+rather than as a missing process. Same trap as the used market, maintenance, crew and the
+fleet page. There is no cargo counter of its own — the tonnage is a side effect of a departure,
+so `flightsMaterialised` and the queue depth are what to look at.
+
+Two things not to "fix". `costs.settlement.cargoRatePerTonneMinor` looks superseded by
+`EconomyConfig.cargo` and is not: every `v1` settlement written before M8-15 was billed at that
+number and `economy_config` rows are immutable, so it stays and now applies only when no lane
+could be resolved. And the pax/bag/hold-volume coefficients are literals in `packages/sim`
+beside `payload-range.ts` rather than in the economy — what **fits** is §22.5 aircraft
+performance and what a tonne **earns** is §22.3 balance, and `balance-source.test.ts` holds
+that line in both directions. The boundary, including what CARGO-03 replaces and what M8-15
+deliberately did not build, is in [`docs/belly-cargo.md`](docs/belly-cargo.md).
+
 **Fuel pricing is the one M5 mechanic that is _not_ a worker story (M5-07), and that is
 worth knowing before you go looking for its counter.** Every airport prices its own fuel — a
 regional commodity factor, an into-plane fee scaled by tier, and a per-station spread drawn

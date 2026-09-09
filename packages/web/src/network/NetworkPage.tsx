@@ -10,6 +10,7 @@ import { useUnsavedGuard } from '../ui/unsaved';
 import { closeRoute, fetchRoutes, fetchSchedules, setRouteActive, type RouteSummary } from './api';
 import { AirportSlotsView } from './planner/AirportSlotsView';
 import { liveEconomics } from './planner/analysis';
+import { CargoTab } from './planner/CargoTab';
 import { CompetitionTab } from './planner/CompetitionTab';
 import { describeSelection } from './planner/ContextBodies';
 import { useScheduleEditor } from './planner/editor';
@@ -51,7 +52,7 @@ import './network.css';
  * "Publish" until the server has taken it.
  */
 
-type Tab = 'overview' | 'schedule' | 'pricing' | 'competition' | 'performance';
+type Tab = 'overview' | 'schedule' | 'pricing' | 'competition' | 'cargo' | 'performance';
 type View = 'route' | 'fleet' | 'connections' | 'slots';
 type RouteSort = 'name' | 'profit' | 'load' | 'distance';
 
@@ -67,6 +68,7 @@ const TABS: readonly { value: Tab; label: string }[] = [
   { value: 'schedule', label: 'Schedule' },
   { value: 'pricing', label: 'Pricing' },
   { value: 'competition', label: 'Competition' },
+  { value: 'cargo', label: 'Cargo' },
   { value: 'performance', label: 'Performance' },
 ];
 
@@ -567,6 +569,7 @@ export function NetworkPage(): ReactNode {
                 )}
                 {tab === 'pricing' && <PricingTab route={currentPlan.route} />}
                 {tab === 'competition' && <CompetitionTab routeId={currentPlan.route.id} />}
+                {tab === 'cargo' && <CargoTab routeId={currentPlan.route.id} />}
                 {tab === 'performance' && <PerformanceTab routeId={currentPlan.route.id} />}
               </div>
             </>

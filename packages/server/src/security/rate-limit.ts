@@ -122,6 +122,10 @@ const REPORT_ROUTES = new Set([
   '/api/routes/:routeId/waterfall',
   '/api/routes/:routeId/performance',
   '/api/routes/:routeId/competition',
+  // M8-15 prices a lane and plans a hold: two airport rows, one airframe row and
+  // pure arithmetic. Cheaper than the aggregates above it, but it is the same
+  // decision-support panel and shares their refresh pattern.
+  '/api/routes/:routeId/cargo',
   '/api/airlines/founding-airports',
   '/api/world/airports',
 ]);

@@ -68,6 +68,17 @@ export interface FlightAirframeBasis {
   /** The options actually fitted, already folded into `performance`. */
   buildOptionIds: readonly string[];
   performance: SettlementAirframe;
+  /**
+   * The whole effective spec, as stored and parsed (M8-15).
+   *
+   * `performance` above is the three numbers a settlement bills on; this is the
+   * aeroplane. §12.1's belly capacity needs MTOW, OEW, the structural payload
+   * limit and the seats fitted — App. C.6's rule is that *"everything downstream
+   * reads only `effective_spec`"*, and adding a second loader that parsed the
+   * same column again would be the second-number dead end invariant 4 exists to
+   * prevent. So the parse happens once, here, and the whole result travels.
+   */
+  spec: AircraftSpec;
 }
 
 /**
@@ -189,5 +200,6 @@ export async function loadFlightAirframe(
       ? optionIds.filter((id) => typeof id === 'string')
       : [],
     performance: settlementAirframeOf(parsed.data, burn),
+    spec: parsed.data,
   };
 }

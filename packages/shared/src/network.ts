@@ -651,6 +651,139 @@ export const RouteCompetitionResponse = z.object({
 });
 export type RouteCompetitionResponse = z.infer<typeof RouteCompetitionResponse>;
 
+/* ------------------------------------------- belly cargo (M8-15) ---- */
+
+/** Which of §12.1's three limits stopped more freight going aboard. */
+export const BellyLimit = z.enum(['weight', 'structural', 'volume']);
+export type BellyLimit = z.infer<typeof BellyLimit>;
+
+/** Which way round the lane runs (§12.2). */
+export const CargoDirection = z.enum(['headhaul', 'backhaul', 'balanced']);
+export type CargoDirection = z.infer<typeof CargoDirection>;
+
+/**
+ * What each of the three limits would allow, in tonnes.
+ *
+ * All three, not just the one that bound. The gap between the binding limit and
+ * the runner-up is the whole decision — weight-limited with twelve tonnes of
+ * unused hold means a lighter cabin buys freight, weight-limited with the hold
+ * already full means it buys nothing — so the client is given the numbers rather
+ * than a verdict.
+ *
+ * `weight` may be **negative**: an aeroplane whose passengers and fuel alone put
+ * it over MTOW is over by an amount, and saying so is more use than a zero.
+ */
+export const BellyAllowances = z.object({
+  /** §12.1's equation: `MTOW − OEW − fuel − passengers − passenger bags`. */
+  weight: z.number(),
+  /** Structural payload limit less what the cabin and its bags already use. */
+  structural: z.number(),
+  /** What the hold has room for at this world's freight density, bags loaded first. */
+  volume: z.number().nonnegative(),
+});
+export type BellyAllowances = z.infer<typeof BellyAllowances>;
+
+/** The hold in cubic metres, so the volume answer can explain itself (§12.6). */
+export const BellyVolume = z.object({
+  holdM3: z.number().nonnegative(),
+  /** After the build's `cargoVolumeFactor` — a belly tank shows up here. */
+  usableM3: z.number().nonnegative(),
+  baggageM3: z.number().nonnegative(),
+  freightM3: z.number().nonnegative(),
+});
+export type BellyVolume = z.infer<typeof BellyVolume>;
+
+/**
+ * The aeroplane's half of §12.1 — what fits, and what stopped it.
+ *
+ * Separate from the lane above it because the two are facts about different
+ * things: the lane belongs to the *market* and answers whatever the world is
+ * asked, while this belongs to *your fleet* and has no answer at all if you own
+ * no aircraft. Folding them into one flat object would have needed an invented
+ * reference aeroplane to fill the gap, and a player pricing against an aeroplane
+ * they do not own is worse than a panel that says it has nothing to measure.
+ */
+export const RouteBellyCapacity = z.object({
+  /** The airframe the plan was drawn against — one the caller owns. */
+  airframeId: Uuid,
+  typeDesignation: z.string(),
+  registration: z.string(),
+  /** App. C.6's belly volume multiplier for the options fitted. 1 off the shelf. */
+  cargoVolumeFactor: z.number().positive(),
+
+  /** Seats the plan assumed full, and whose bags are therefore in the hold. */
+  plannedPassengers: z.number().int().nonnegative(),
+  /** Fuel aboard for the sector, tonnes — the term that makes range compete. */
+  fuelTonnes: z.number().nonnegative(),
+
+  /** Tonnes of freight that fit. Zero is a real answer on a full long sector. */
+  availableTonnes: z.number().nonnegative(),
+  /** Which of the three limits bound it. */
+  limit: BellyLimit,
+  allowances: BellyAllowances,
+  volume: BellyVolume,
+  /** One sentence naming the binding limit and the runner-up's slack. */
+  detail: z.string(),
+
+  /** Tonnes actually loaded: the lesser of what fits and what the lane offers. */
+  carriedTonnes: z.number().nonnegative(),
+  /** What that load earns in this direction, minor units. */
+  revenueMinor: MinorUnits,
+  /** The same tonnage at the other leg's rate — the round trip's other half. */
+  reverseRevenueMinor: MinorUnits,
+});
+export type RouteBellyCapacity = z.infer<typeof RouteBellyCapacity>;
+
+/**
+ * `GET /api/routes/:routeId/cargo` — what this route's hold is worth (§12.1, §12.2).
+ *
+ * §12.1 asks for one thing above the arithmetic: *"the game should make that
+ * discoverable rather than stated"*. So this is decision support and **never a
+ * gate** — the same contract the fares preview and the schedule cost estimate
+ * have. Nothing here refuses a route or changes what a flight loads; the load is
+ * decided at pushback, by the same functions, against the same world.
+ *
+ * **Both directions are always present**, because §12.2 calls pricing a cargo
+ * lane per leg *"the single most common real-world mistake"*. A client that
+ * showed only the leg being planned would build that mistake into the interface.
+ *
+ * This needs no worker, so it answers on a fresh world: it is a projection of
+ * what a flight *would* carry, not a report of what any flight did. What needs
+ * the worker is `flight_result.cargo_kg` actually filling up, which is the
+ * Performance tab's business and reads as zero on a world with no worker — the
+ * same boundary every other operational figure has.
+ */
+export const RouteCargoResponse = z.object({
+  routeId: Uuid,
+  originIcao: AirportIcaoCode,
+  destinationIcao: AirportIcaoCode,
+  distanceNm: NauticalMiles,
+
+  /** Which way round this lane runs, and how lopsidedly (§12.2). */
+  direction: CargoDirection,
+  /** Heavy direction ÷ light direction, always ≥ 1. Uncapped — the real ratio. */
+  imbalance: z.number().min(1),
+  ratePerTonneMinor: MinorUnits,
+  /** The other leg's rate, so the round trip can be priced (§12.2). */
+  reverseRatePerTonneMinor: MinorUnits,
+  /** Tonnes this lane offers one flight in this direction. */
+  offeredTonnes: z.number().nonnegative(),
+  /** The reverse direction's offered tonnage: §12.2's *"runs half-empty"*. */
+  reverseOfferedTonnes: z.number().nonnegative(),
+  /** One sentence: the direction, the ratio, and both legs' rates. */
+  laneDetail: z.string(),
+
+  /**
+   * The capacity half, or `null` when there is no aircraft to measure.
+   *
+   * Null means the airline owns no airframe this endpoint could plan against —
+   * an empty state, not a failure. The lane above is still real and still worth
+   * reading: it says what the market pays before you have bought anything.
+   */
+  belly: RouteBellyCapacity.nullable(),
+});
+export type RouteCargoResponse = z.infer<typeof RouteCargoResponse>;
+
 /* ------------------------------------------- hub connection banks (§7.4) ---- */
 
 /**

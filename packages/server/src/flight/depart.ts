@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 
-import type { FlightDisruption } from '@tailfin/shared';
+import type { FlightDisruption, FlightKind } from '@tailfin/shared';
 import { handlingPriceFactor } from '@tailfin/sim';
 import type { DisruptionRoll } from '@tailfin/sim';
 
@@ -8,6 +8,7 @@ import { lockDispatchAvailability, type DispatchAvailability } from '../aircraft
 import { resolveDisruptionResponse } from '../automation/response';
 import { readSetting } from '../automation/store';
 import { raiseOperationsTask } from '../automation/tasks';
+import { planBellyCargo } from '../cargo/plan';
 import { dispatchCrew, type DispatchDecision } from '../crew/dispatch';
 import { flight } from '../db/schema';
 import { loadWorldEconomyConfig } from '../economy/loader';
@@ -19,6 +20,7 @@ import { rollGroundDisruption } from './disruption';
 import { arrivalKey } from './settle';
 
 import type { Database } from '../db/client';
+import type { PinnedEconomyConfig } from '../economy/config';
 
 /**
  * `FLIGHT_DEPART` — the moment a flight is allowed to go, or is not (M5-02).
@@ -131,6 +133,7 @@ export async function departFlight(
       worldId: flight.worldId,
       airlineId: flight.airlineId,
       airframeId: flight.airframeId,
+      kind: flight.kind,
       originIcao: flight.originIcao,
       destinationIcao: flight.destinationIcao,
       phase: flight.phase,
@@ -225,8 +228,63 @@ interface FlightRow {
   id: string;
   worldId: string;
   airlineId: string;
+  airframeId: string;
   originIcao: string;
+  destinationIcao: string;
+  /** A ferry loads no freight — see {@link bellyKgFor}. */
+  kind: FlightKind;
   scheduledDeparture: Date;
+}
+
+/**
+ * What this flight loads into its hold, in kilograms (M8-15, §12.1).
+ *
+ * ## Why the load is decided here and not at arrival
+ *
+ * The same reasoning the handling snapshot two lines above it gives, and it
+ * matters more here. Belly capacity depends on the aeroplane, the cabin and the
+ * fuel — all of which are facts about *this departure* — and the lane's yield
+ * depends on a world's pinned economy, which an admin can re-pin at any time.
+ * Resolving the load at arrival instead would let a retune change how much
+ * freight an aeroplane that is already airborne turned out to be carrying, and
+ * would make a replayed arrival produce a different tonnage.
+ *
+ * So `flight.cargo_kg` is written once, at pushback, and the settlement bills
+ * exactly what it says. Until M8-15 that column existed and was always zero: the
+ * revenue line, the `cargo` ledger category and the P&L row have all been in
+ * place since M2-06 and M8-01, waiting for something to put a number here.
+ *
+ * ## A ferry carries nothing, and that is enforced rather than assumed
+ *
+ * §12.1's freight is *"revenue close to free: the aircraft is already flying"* —
+ * which is true of a scheduled sector and false of a positioning leg, because a
+ * ferry is not going where any freight wants to go. `settleFlight` already
+ * refuses a ferry that arrives carrying passengers; this is the same rule for the
+ * hold, applied before the tonnage is decided rather than after.
+ *
+ * ## It cannot stop a departure
+ *
+ * Zero on any failure to plan — an unknown airframe, an airport with no
+ * coordinates. The flight is cleared for pushback by this point and the crew are
+ * committed; refusing it over a hold that could not be priced would turn a
+ * missing catchment row into a cancelled flight. An aeroplane departing with an
+ * empty hold is a correct answer, and it is the one this returns.
+ */
+async function bellyKgFor(
+  db: Database,
+  row: FlightRow,
+  economy: PinnedEconomyConfig,
+): Promise<number> {
+  if (row.kind === 'ferry') return 0;
+
+  const plan = await planBellyCargo(db, {
+    worldId: row.worldId,
+    airframeId: row.airframeId,
+    originIcao: row.originIcao,
+    destinationIcao: row.destinationIcao,
+    economy,
+  });
+  return plan?.carriedKg ?? 0;
 }
 
 async function applyDecision(
@@ -266,6 +324,7 @@ async function applyDecision(
         estimatedArrival: arriveAt,
         crewDutyPeriodId: decision.dutyPeriodId,
         handlingPriceFactor: handlingPriceFactor(arrangement, handlingPriceBalanceOf(economy)),
+        cargoKg: await bellyKgFor(db, row, economy),
         // A flight that left late is a delayed flight even though it left: the
         // cause was set by whatever held it, and is not overwritten here.
         ...(delayMinutes > 0 ? { disruption: 'delayed' as const } : {}),

@@ -23,6 +23,7 @@ wall-clock time, that never pauses.
   [`docs/used-aircraft-market.md`](docs/used-aircraft-market.md) ·
   [`docs/maintenance.md`](docs/maintenance.md) ·
   [`docs/fleet-management.md`](docs/fleet-management.md) ·
+  [`docs/belly-cargo.md`](docs/belly-cargo.md) ·
   [`docs/fuel-pricing.md`](docs/fuel-pricing.md) ·
   [`docs/ground-handling.md`](docs/ground-handling.md) ·
   [`docs/hubs.md`](docs/hubs.md) ·

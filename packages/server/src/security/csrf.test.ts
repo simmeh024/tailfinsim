@@ -117,6 +117,7 @@ const READ_ONLY_GET_ROUTES = [
   '/api/office/executive',
   '/api/routes',
   '/api/routes/:routeId/competition',
+  '/api/routes/:routeId/cargo',
   '/api/routes/:routeId/performance',
   '/api/routes/:routeId/waterfall',
   '/api/schedules',

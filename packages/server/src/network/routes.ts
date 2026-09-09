@@ -34,6 +34,7 @@ import {
 } from '@tailfin/shared';
 
 import { resolvedAirlineOf } from '../airline/context';
+import { routeCargo } from '../cargo/route-cargo';
 import { route } from '../db/schema';
 import { RESTRICTED_MESSAGE } from '../finance/default';
 import { parseRequestBody } from '../http/request-body';
@@ -308,6 +309,40 @@ export function registerNetworkRoutes(
       const performance = await routePerformance(db.db, own, request.params.routeId);
       if (performance === null) return notFound(reply);
       return reply.code(200).send(performance);
+    },
+  );
+
+  /**
+   * What this route's hold is worth, and what is stopping it (M8-15, §12.1).
+   *
+   * §12.1's *"discoverable rather than stated"*, as a panel: the three limits, the
+   * one that bound, and the lane's yield in **both** directions — because §12.2
+   * calls pricing a cargo lane per leg *"the single most common real-world
+   * mistake"* and an interface that showed one leg would be teaching it.
+   *
+   * Decision support, never a gate. Nothing here changes what a flight loads; the
+   * load is decided at pushback by the same functions against the same world, so
+   * the preview and the settlement cannot disagree.
+   *
+   * `?airframeId=` names one of the caller's own aircraft. Absent, the airline's
+   * most recently delivered in-service aeroplane answers; owned by nobody else,
+   * malformed, or absent from this world all reach the same 404 as a route that is
+   * not the caller's (ADR-0020).
+   *
+   * Needs no worker — it is a projection of what a flight *would* carry rather
+   * than a report of what one did.
+   */
+  app.get<{ Params: { routeId: string }; Querystring: { airframeId?: string } }>(
+    '/api/routes/:routeId/cargo',
+    { onRequest: app.requireAirline },
+    async (request, reply) => {
+      const own = resolvedAirlineOf(request);
+      const row = await ownedRoute(db.db, own.id, request.params.routeId);
+      if (!row) return notFound(reply);
+
+      const cargo = await routeCargo(db.db, row, request.query.airframeId);
+      if (cargo === null) return notFound(reply);
+      return reply.code(200).send(cargo);
     },
   );
 

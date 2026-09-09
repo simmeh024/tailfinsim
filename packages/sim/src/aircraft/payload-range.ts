@@ -37,7 +37,8 @@
  * - **Belly volume.** C.3 charges auxiliary tanks *"−18% to −40% belly cargo
  *   volume"*, and C.4's long-range build gives up 38% of its hold. That is a
  *   volume constraint, not a weight one; cargo arrives here already in tonnes and
- *   §12's cargo system owns whether it physically fits.
+ *   `cargo/belly.ts` owns whether it physically fits (M8-15), and consumes the
+ *   same `cargoVolumeFactor` this file declines to.
  * - **Reserves.** The published ranges this calibrates against already carry
  *   them, so subtracting a reserve here would subtract it twice.
  */
