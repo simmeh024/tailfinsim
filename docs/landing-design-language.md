@@ -182,6 +182,7 @@ LANDING-10 owns holding the _page_ to AA; these are the palette's figures.
 | `--lp-brand` on the hero wash           | 10.02    | 3.0 |                                 |
 | white on `--lp-google`                  | **3.56** | 3.0 | **large text only** — see below |
 | white on `--lp-discord`                 | 4.61     | 3.0 | passes at any size              |
+| white on `--lp-twitch`                  | 4.64     | 3.0 | passes at any size              |
 
 Two findings worth keeping.
 
@@ -196,9 +197,17 @@ has to be deliberate.
 Google's branding guidelines specify that exact pairing — so honouring the guideline and
 honouring AA are in direct conflict. WCAG's large-text threshold is 3:1 at ≥18.66px bold, so
 `--lp-text-provider` is `1.1875rem` (19px) at weight 700 and the pair **conforms as large text**
-rather than by waiver. Discord gets the same treatment so the two buttons match. The size is not
-styling: shrink it and the ratio does not change but its threshold does, from 3 to 4.5, and the
-button silently stops being accessible. The test pins the size, the weight and the rule together.
+rather than by waiver. Discord and Twitch get the same treatment so all three buttons match. The
+size is not styling: shrink it and the ratio does not change but its threshold does, from 3 to
+4.5, and the button silently stops being accessible. The test pins the size, the weight and the
+rule together.
+
+Note that only Google actually needs the exemption — Discord's 4.61 and Twitch's 4.64 clear AA at
+any size on their own. They are sized with it because a row of provider buttons in three different
+type sizes is worse than a row that shares one, and because the rule then has a single place to
+live. A fourth provider inherits it and should be measured anyway: the table is the record of
+having looked, and a brand colour lighter than these would fail at 3:1 and need a different answer
+than "make the text bigger".
 
 ---
 
@@ -226,7 +235,7 @@ here.
 | `.lp-lede`                                                                          | the supporting paragraph                                                      | LANDING-04                  |
 | `.lp-pillars` · `__item` · `__icon`                                                 | the four feature shorthands                                                   | LANDING-04                  |
 | `.lp-signin` · `__title` · `__buttons` · `__note`                                   | the sign-in card                                                              | LANDING-13                  |
-| `.lp-provider` · `--google` · `--discord` · `__mark`                                | one button per provider                                                       | LANDING-13                  |
+| `.lp-provider` · `--google` · `--discord` · `--twitch` · `__mark`                   | one button per **configured** provider                                        | LANDING-13                  |
 | `.lp-section` · `__title`                                                           | a page section                                                                | all                         |
 | `.lp-split` · `.lp-cards`                                                           | the two page layouts                                                          | LANDING-06, -07             |
 | `.lp-card` · `__title` · `__body`                                                   | a feature card                                                                | LANDING-06                  |

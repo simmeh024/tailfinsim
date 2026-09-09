@@ -11,10 +11,13 @@
 Tailfin serves a React application, static assets and the Fastify API through one Caddy
 origin. Google sign-in leaves Tailfin through a top-level redirect and returns to the same
 origin; signed-in players may display profile images hosted at
-`https://lh3.googleusercontent.com`, joined by `https://cdn.discordapp.com` for Discord
-avatars when AUTH-08 added a second sign-in provider. Both are image hosts and nothing
-else: they receive a request for an avatar URL and no Tailfin data, and neither may serve
-script, style or a frame. M6 will add player-authored liveries and cabins that
+`https://lh3.googleusercontent.com`, joined by `https://cdn.discordapp.com` and
+`https://static-cdn.jtvnw.net` as AUTH-08 added Discord and then Twitch. All three are image
+hosts and nothing else: they receive a request for an avatar URL and no Tailfin data, and none
+may serve script, style or a frame. **One host per sign-in provider is the pattern**, so a
+fourth provider is a fourth `img-src` entry and an edge rollout, not a policy redesign — and
+the sign-in flow itself needs no entry at all, because it is a top-level redirect rather than a
+subresource. M6 will add player-authored liveries and cabins that
 other players can see, increasing the consequence of a stored cross-site-scripting bug.
 
 The edge already supplied one-year HSTS with `includeSubDomains`, `nosniff`, a strict-origin
@@ -31,7 +34,7 @@ API responses and errors. The enforced Content Security Policy is:
 default-src 'self';
 script-src 'self';
 style-src 'self' 'sha256-ftYZ6VWMqcx4KWcJ2/G2tKyA+X9oEaozaSrupOVb8KM=';
-img-src 'self' data: https://lh3.googleusercontent.com https://cdn.discordapp.com;
+img-src 'self' data: https://lh3.googleusercontent.com https://cdn.discordapp.com https://static-cdn.jtvnw.net;
 connect-src 'self';
 frame-ancestors 'none';
 form-action 'self';
@@ -75,7 +78,14 @@ already-HSTS pre-launch service and creates a recovery cost the project cannot y
 - Any future external image, API, font, worker or embedded content needs a reviewed policy
   change before it works.
 - A Caddyfile change is not delivered by the application deploy scripts; the operator must
-  install and reload edge configuration separately.
+  install and reload edge configuration separately. **This is the step that gets missed**, and
+  its failure mode is narrow enough to look like a bug elsewhere: when Twitch shipped on
+  2026-09-09 the code, the committed Caddyfile and the verifier all agreed, sign-in worked,
+  and only the avatar was blocked. A feature that half-works is a worse signal than one that
+  does not start.
+- One `img-src` entry per sign-in provider means every new provider carries an edge rollout,
+  and the policy is a single snippet imported by both sites — so an image host needed only by
+  dev is nevertheless allowed on production.
 - The real OAuth/avatar proof depends on the browser harness tracked by E2E-03/E2E-04, or a
   manual signed-in dev session during the first rollout.
 

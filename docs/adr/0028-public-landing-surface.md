@@ -60,19 +60,30 @@ decision 4's launch decision, and it did not happen by side effect.
 **On every surface**, because the landing page's whole job is to be reachable by a stranger. Gating
 it behind the surface flag would reintroduce the problem it exists to solve.
 
-### 2. The funnel is two plain links, so it never depends on JavaScript
+### 2. The funnel is plain links, so it never depends on JavaScript
 
-The entire call to action is `<a href="/api/auth/google">` and `<a href="/api/auth/discord">`. Both
-routes are registered by `auth/routes.ts` on **every** surface, independent of `WEB_SURFACE` and of
-whether a client is built.
+The entire call to action is `<a href="/api/auth/google">`, `<a href="/api/auth/discord">` and
+`<a href="/api/auth/twitch">`. Every one is registered by `auth/routes.ts` on **every** surface,
+independent of `WEB_SURFACE` and of whether a client is built.
 
 This is the fact that makes the whole decision cheap. A zero-JS static document can carry a working
 sign-in funnel, so none of LANDING-11's budget has to be spent to make the page functional, and
 nothing about the page depends on the SPA existing.
 
-**Both providers are offered, each in its own brand colour** — Google blue `#4285f4`, Discord
-blurple `#5865f2` — with the official marks inlined as SVG paths so the document still makes no
-external request.
+**Each provider is offered in its own brand colour** — Google blue `#4285f4`, Discord blurple
+`#5865f2`, Twitch purple `#9146ff` — with the official marks inlined as SVG paths so the document
+still makes no external request.
+
+**But only the providers this instance can actually serve** (AUTH-08, 2026-09-09). Each button
+lives between `<!--tailfin:provider-X-->` markers and `landingPageWithProviders` removes the block
+for any provider without credentials, so a box holding Google keys alone offers exactly one door.
+That is a correction rather than a refinement: while the page was static about this, an instance
+without Google credentials still rendered a Google button, and pressing it reached a `503`. The
+same bug had a second home — the nav's _Start airline →_ was a hardcoded `/api/auth/google` — and
+it is now the in-page anchor `#start`, which cannot rot because it names no provider at all.
+
+The document is still static in the sense the rest of this ADR means: no JavaScript, no request,
+no client. It is templated once on the way out, exactly as the auth-error slot already was.
 
 That **reverses, for this surface only, a decision recorded in `LoginPage.tsx`**, which uses
 typographic glyphs and says why: _"reproducing Google's and Discord's marks correctly means their
@@ -100,7 +111,7 @@ carousel needs JavaScript — auto-advance and arrow controls cannot be expresse
   fetched after the document.
 - **The page works without it.** The first aircraft renders as a static illustration, the arrows stay
   hidden until the script marks itself ready — a control that does nothing is worse than no control —
-  and both sign-in links are ordinary anchors. A visitor with scripting off loses movement, not the
+  and every sign-in link is an ordinary anchor. A visitor with scripting off loses movement, not the
   ability to sign up.
 
 ### 3. `RequireSession` is not touched, and no public route enters the SPA
@@ -118,11 +129,19 @@ better.
 `packages/web/holding/index.html` keeps serving `/` on production. The landing page does **not**
 silently become the front door, and that is a decision rather than caution:
 
-- **Production has no auth keys.** There is no Google OAuth application configured on production
-  today — dev has one, production has none. A landing page at `/` would put a large "Continue with
-  Google" button on the front door that cannot possibly work. The app already refuses to do this to
-  people (`session-ui.test.tsx`: _"says sign-in is unconfigured rather than offering a door that
-  does not open"_) and the front door must not be the exception.
+- **Production has no auth keys.** There is no OAuth application of any kind configured on
+  production today — dev has three, production has none. A landing page at `/` would put a large
+  "Continue with Google" button on the front door that cannot possibly work. The app already
+  refuses to do this to people (`session-ui.test.tsx`: _"says sign-in is unconfigured rather than
+  offering a door that does not open"_) and the front door must not be the exception.
+
+  **This premise no longer holds, and the decision stands anyway** (AUTH-08, 2026-09-09). The page
+  now removes the block for any provider without credentials, so a landing page on today's
+  production would offer a sign-in card with **no buttons at all** rather than a broken one. That
+  is the behaviour this bullet asked for, arriving from a different direction — so the argument
+  above is now a record of why the mechanism exists, not a live objection. What still keeps the
+  holding page is the second condition alone, which is the stronger of the two and always was.
+
 - **Nobody has decided to launch.** The holding page says "coming soon" because that is true.
   Replacing it is a launch, and a launch is the user's call, not a side effect of merging a
   milestone.
@@ -145,9 +164,14 @@ writing it down is.
 
 Preconditions, all of them:
 
-1. **Production has Google OAuth credentials**, and `PUBLIC_ORIGIN` is the https production
-   origin — ADR-0015 makes the server refuse a non-HTTPS one, so this fails closed rather than
-   quietly. A Discord application too, or the Discord button is removed for that surface.
+1. **Production has credentials for at least one provider**, and `PUBLIC_ORIGIN` is the https
+   production origin — ADR-0015 makes the server refuse a non-HTTPS one, so this fails closed
+   rather than quietly. Each provider is its own decision now: whichever of Google, Discord and
+   Twitch production holds keys for is what the page offers, and the rest remove themselves. Each
+   needs its **own application** registered against the production origin — a dev credential
+   authorising a production callback is the thing that separation exists to prevent. Twitch also
+   needs `static-cdn.jtvnw.net` in the edge's `img-src`, which an application deploy does not
+   install; without it sign-in works and the avatar does not.
 2. **`ALLOW_REGISTRATION` is decided** for production. The landing page's entire funnel is
    "continue with…", and a front door whose only button is refused is worse than a holding page.
 3. **Somebody has decided to launch.** This is the actual gate; the rest is mechanics.

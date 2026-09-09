@@ -71,18 +71,34 @@ Each fact is worthless alone and none is a fallback for another.
 
 ### The soft spot, named
 
-`SameSite=Lax` does not protect top-level `GET`. Two registered `GET` routes do change state, and
-both are the sign-in flow rather than the game:
+`SameSite=Lax` does not protect top-level `GET`. **Nine** registered `GET` routes do change
+state, and all nine are the identity flow rather than the game — three per sign-in provider,
+which is the shape to hold onto, because it is what makes the list grow predictably:
 
 | route                            | what it changes                                | what protects it instead                                                                                                                                                                       |
 | -------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET /api/auth/google`           | writes the signed `tailfin_oauth` state cookie | writes only; forging it grants nothing                                                                                                                                                         |
 | `GET /api/auth/google/callback`  | creates a session                              | the OAuth `state` parameter must match the signed `tailfin_oauth` cookie, which is the standard login-CSRF control; `session-cookie.test.ts` proves a callback with no state cookie is refused |
+| `GET /api/auth/google/connect`   | writes that cookie with intent `link`          | carries `requireAuth`, and the callback demands the **same player** the cookie was minted for — so a forged start achieves at most sending the victim to a consent screen (AUTH-09)            |
 | `GET /api/auth/discord`          | writes the signed `tailfin_oauth` state cookie | as the Google pair; forging it starts a sign-in the attacker cannot finish                                                                                                                     |
 | `GET /api/auth/discord/callback` | creates a session                              | the same `state`/cookie control, and the cookie names the provider it was minted for, so a state issued for Google is refused here rather than spending the credential (AUTH-08)               |
+| `GET /api/auth/discord/connect`  | writes that cookie with intent `link`          | as the Google connect route                                                                                                                                                                    |
+| `GET /api/auth/twitch`           | writes the signed `tailfin_oauth` state cookie | as the Google pair. **No PKCE** — Twitch does not offer it for the authorization-code grant, so the signed provider-bound state cookie and the confidential-client exchange carry the flow     |
+| `GET /api/auth/twitch/callback`  | creates a session                              | the same `state`/cookie control and the same provider binding                                                                                                                                  |
+| `GET /api/auth/twitch/connect`   | writes that cookie with intent `link`          | as the Google connect route                                                                                                                                                                    |
 
 They are exceptions with their own control, listed by name in `security/csrf.test.ts` so that a
-third one cannot join them silently. **Every other `GET` route must change nothing.**
+tenth cannot join them silently. **Every other `GET` route must change nothing.**
+
+**This table said "two" and listed four until 2026-09-09**, which is worth recording rather than
+quietly correcting. The `/connect` routes arrived with AUTH-09 and the Twitch pair with AUTH-08;
+`csrf.test.ts` gained all five, with a written justification for each, and this ADR gained none.
+So the mechanism worked exactly as designed — nothing joined the allowlist silently — while the
+document explaining the mechanism drifted to under half the surface it claims to enumerate. The
+lesson is not "update the ADR too": it is that **a prose list beside an executable one is a
+second source of truth**, and the one that cannot fail the build is the one that rots. If this
+happens a third time, the fix is to generate this table from the allowlist rather than to write
+it out again.
 
 ### Why not a token anyway
 
@@ -126,7 +142,9 @@ Any one of these makes this ADR wrong. Reopen it; do not work around it.
 2. **A mobile or third-party client that needs CORS**, or any `@fastify/cors` registration.
 3. **`SameSite=None` for any reason**, including an embed, a payment return, or a third-party
    iframe.
-4. **A state-changing `GET`** that is not one of the two sign-in exceptions above.
+4. **A state-changing `GET`** that is not one of the identity exceptions above. Another sign-in
+   provider is not this: it adds three routes of a shape already argued for, and `csrf.test.ts`
+   is where it must say so. A state-changing `GET` anywhere in the _game_ is.
 5. **A second authentication mechanism** that is not a cookie but is still ambient (a persistent
    `Authorization` header held by the browser, say).
 

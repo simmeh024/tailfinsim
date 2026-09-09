@@ -10,19 +10,19 @@
  *
  * `player_identity.email` is not unique and never was. With Google the only
  * provider a person holds one identity, so the address resolved to one row and
- * a `limit(1)` was harmless. AUTH-08 adds Discord and both providers report an
- * address, so one human commonly holds two rows carrying the same one — and
- * AUTH-04 decides that a Discord sign-in does **not** merge onto an account
- * matched by email, so those two rows can name two different players. An
- * unordered `limit(1)` would then hand admin to whichever account Postgres
- * happened to return first, silently, with the operator unable to tell which of
- * the two they had just changed.
+ * a `limit(1)` was harmless. AUTH-08 added Discord and then Twitch, and all
+ * three report an address, so one human commonly holds several rows carrying
+ * the same one — and AUTH-04 decides that a new provider's sign-in does **not**
+ * merge onto an account matched by email, so those rows can name different
+ * players. An unordered `limit(1)` would then hand admin to whichever account
+ * Postgres happened to return first, silently, with the operator unable to tell
+ * which of them they had just changed.
  *
  * So the ambiguity that matters is **several players**, not several rows.
  * Several identities resolving to one player is ordinary — that is one person
- * with two sign-ins — and proceeds, because every candidate row names the same
- * account and there is nothing to guess. Two players is refused and named, and
- * `--player <uuid>` is the way through: it bypasses this lookup entirely.
+ * with three sign-ins — and proceeds, because every candidate row names the same
+ * account and there is nothing to guess. Several players is refused and named,
+ * and `--player <uuid>` is the way through: it bypasses this lookup entirely.
  */
 
 /** One `player_identity` row that matched the address the operator typed. */
@@ -31,9 +31,10 @@ export interface IdentityMatch {
   /**
    * The provider whose identity carried the address, so the refusal can say
    * *which* sign-in points at each candidate. Deliberately `string` rather than
-   * today's one-value `auth_provider` enum: the ambiguity this module exists to
-   * refuse is the one AUTH-08 creates by adding a second provider, and a test
-   * has to be able to name a provider the enum does not carry yet.
+   * the `auth_provider` enum: the ambiguity this module exists to refuse is the
+   * one AUTH-08 creates by adding providers, and a test has to be able to name
+   * one the enum does not carry yet. The enum has grown from one value to five
+   * since this was written, which is the argument holding rather than expiring.
    */
   readonly provider: string;
 }
