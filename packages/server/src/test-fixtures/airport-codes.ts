@@ -68,6 +68,7 @@ export const AIRPORT_CODE_NAMESPACES = {
   'service/store': 'Q',
   'cargo/cargo-db': 'R',
   'academy/store': 'S',
+  'crew/xp': 'T',
 } as const;
 
 export type AirportCodeNamespace = keyof typeof AIRPORT_CODE_NAMESPACES;

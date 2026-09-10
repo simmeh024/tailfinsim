@@ -19,6 +19,9 @@ import {
   haversineNm,
   type SettlementConfig,
   settleFlight,
+  type Weather,
+  weatherFor,
+  type XpDisruption,
 } from '@tailfin/sim';
 
 import { accrueFlightHours } from '../aircraft/maintenance';
@@ -28,7 +31,8 @@ import {
   type FlightAirframeBasis,
 } from '../aircraft/performance';
 import { moveAirlineCash } from '../airline/cash';
-import { airport, flight, flightResult, route } from '../db/schema';
+import { awardFlightXp } from '../crew/xp-store';
+import { airport, flight, flightResult, route, world } from '../db/schema';
 import { type PinnedEconomyConfig } from '../economy/config';
 import { loadWorldFuelContext, marketAt, stationFor } from '../economy/fuel';
 import { loadWorldEconomyConfig } from '../economy/loader';
@@ -140,6 +144,23 @@ export interface SettlementDeps {
    * the instant the fuel was bought. Supplied by tests that want a fixed price.
    */
   market?: FuelMarket;
+  /**
+   * The weather the crew landed in (M9-02, §10.2).
+   *
+   * Left out in production, where M2-09's model derives it from the world's
+   * seed, the arrival station and the game date — deterministic, so an old
+   * arrival re-derives the same conditions. Supplied by tests whose subject is
+   * the XP rather than the weather, because two worlds have two seeds and
+   * therefore two different days at what is otherwise the same airport: without
+   * this, *"all else equal"* is not a thing a test can arrange.
+   *
+   * Returning `null` drops the weather term rather than failing the arrival.
+   */
+  resolveWeather?: (station: {
+    icaoCode: string;
+    latitude: number;
+    longitude: number;
+  }) => Weather | null;
   profile?: FlightProfile;
   config?: SettlementConfig;
 }
@@ -168,6 +189,28 @@ function disruptionOutcomeOf(disruption: FlightDisruption | null): DisruptionOut
       // null (clean), 'cancelled' (never settles) and 'returned_to_stand' (never
       // left the stand) have nothing to bill at an arrival.
       return null;
+  }
+}
+
+/**
+ * The same disruption, in §10.2's vocabulary.
+ *
+ * A separate mapping from `disruptionOutcomeOf` and not a reuse, because the two
+ * questions differ: that one asks *what does this owe the passengers*, and
+ * `returned_to_stand` owes them a rebooking while teaching the crew nothing
+ * because the aeroplane never left. This one asks *what did the crew learn*, and
+ * only a flight that actually flew and arrived has an answer.
+ */
+function xpDisruptionOf(disruption: FlightDisruption | null): XpDisruption {
+  switch (disruption) {
+    case 'delayed':
+      return 'delay';
+    case 'diverted':
+      return 'divert';
+    case 'air_return':
+      return 'air_return';
+    default:
+      return 'none';
   }
 }
 
@@ -256,6 +299,10 @@ export async function settleArrivedFlight(
       catchmentPopulation: airport.catchmentPopulation,
       businessIndex: airport.businessIndex,
       wealthIndex: airport.wealthIndex,
+      // §10.2's crew XP (M9-02): how hard the field is, and what its local clock
+      // reads. Both on the row already, so no second query for two columns.
+      difficulty: airport.difficulty,
+      utcOffsetMinutes: airport.utcOffsetMinutes,
     })
     .from(airport)
     // The scheduled destination is in the list as well as the arrival airport, so
@@ -602,6 +649,108 @@ export async function settleArrivedFlight(
   // unrecoverable. `block.blockMinutes` is the number the settlement already
   // billed against; recomputing it here would be a second answer to one fact.
   await accrueFlightHours(tx, row.airframeId, block.blockMinutes / 60);
+
+  /*
+   * And the crew got better (M9-02, §10.2). Same position and same reason as the
+   * hours above: after the `flight_result` insert has proved this is not a
+   * replay, so XP accrues exactly once per flight.
+   *
+   * The **first server consumer of M2-09's weather model.** It was built
+   * deterministic per station-day precisely so a question like this could be
+   * re-answered months later, and until now nothing asked — the disruption roll
+   * still leaves its two weather risks at zero. `worldSeed` is read here rather
+   * than threaded through the settlement because this is the only line that
+   * needs it, and a missing world row (a reset mid-flight) simply drops the
+   * weather term rather than failing an arrival over it.
+   *
+   * Isolated from the money above it in one respect only: XP that could not be
+   * awarded must not roll back a settled flight. There is nothing here that can
+   * fail on a legitimate arrival — the reads are indexed and the update matches
+   * on a unique key — so it is left inside the transaction, where an unexpected
+   * failure loses the settlement rather than silently diverging the two. A crew
+   * that flew a flight the ledger recorded and gained nothing from it is the
+   * drift this ordering exists to prevent.
+   */
+  const arrivalStation = {
+    icaoCode: arrival.icao ?? arrivalIcao,
+    latitude: arrival.lat,
+    longitude: arrival.lon,
+  };
+
+  let arrivalWeather: Weather | null;
+  if (deps.resolveWeather !== undefined) {
+    arrivalWeather = deps.resolveWeather(arrivalStation);
+  } else {
+    const [worldRow] = await tx
+      .select({ seed: world.seed })
+      .from(world)
+      .where(eq(world.id, row.worldId))
+      .limit(1);
+    arrivalWeather =
+      worldRow === undefined ? null : weatherFor(worldRow.seed, arrivalStation, arrivedAt);
+  }
+
+  /*
+   * Local hour at the arrival field. `utc_offset_minutes` is **standard time**
+   * and deliberately not daylight saving (see the column) — which is the right
+   * answer here as well: a night landing is a night landing, and shifting the
+   * window twice a year would make the same rotation earn different XP in
+   * summer.
+   */
+  const arrivalLocalHour =
+    arrival.utcOffsetMinutes === null
+      ? null
+      : Math.floor(
+          ((((arrivedAt.getTime() + arrival.utcOffsetMinutes * 60_000) / 3_600_000) % 24) + 24) %
+            24,
+        );
+
+  const xpAward = await awardFlightXp(
+    tx,
+    {
+      crewDutyPeriodId: row.crewDutyPeriodId,
+      distanceNm,
+      maxTakeoffWeightT: airframe.maxTakeoffWeightT,
+      arrivalDifficulty: arrival.difficulty,
+      originDifficulty: origin.difficulty,
+      arrivalWeather,
+      arrivalLocalHour,
+      disruption: xpDisruptionOf(row.disruption),
+      // The oceanic proxy (§10.2). Both continents are on the rows already read.
+      crossesContinents:
+        origin.continent !== null &&
+        arrival.continent !== null &&
+        origin.continent !== arrival.continent,
+    },
+    economy.crew.xp,
+  );
+
+  /*
+   * Recorded on the result rather than in a table of its own. §14.1 wants a
+   * figure to explain itself, and *"why did that flight earn 209 XP?"* is
+   * answered by the factors — but a row per flight per rank would be the
+   * highest-volume table in the schema for a question nobody queries in
+   * aggregate. `breakdown` is already the settlement's audit trail.
+   */
+  if (xpAward !== null) {
+    await tx
+      .update(flightResult)
+      .set({
+        breakdown: sql`
+          jsonb_set(${flightResult.breakdown}::jsonb, '{crewXp}', ${JSON.stringify({
+            xpPerHead: xpAward.xp.xpPerHead,
+            heads: xpAward.heads,
+            totalXp: xpAward.totalXp,
+            base: xpAward.xp.base,
+            typeFactor: xpAward.xp.typeFactor,
+            difficultyMultiplier: xpAward.xp.difficultyMultiplier,
+            capped: xpAward.xp.capped,
+            factors: xpAward.xp.factors,
+            pools: xpAward.pools,
+          })}::jsonb, true)::text`,
+      })
+      .where(eq(flightResult.flightId, row.id));
+  }
 
   // The flight's own arrival. `actualArrival` is only written if it is not
   // already set — a diversion or an air return records its own arrival, and this

@@ -1006,6 +1006,31 @@ export const airport = pgTable(
     catchmentBasis: text('catchment_basis'),
     catchmentAt: timestamp('catchment_at', { withTimezone: true }),
 
+    /**
+     * How hard this field is to fly into, 0-1 (M9-02, §10.2).
+     *
+     * §10.2's crew XP difficulty multiplier reads it, and nothing else does
+     * yet. **Null means never rated**, not easy — the same distinction
+     * `crew_base.morale` draws between *never reviewed* and *nothing*, and for
+     * the same reason: a world whose `data:difficulty` job has not run must not
+     * quietly pay flat XP everywhere while looking correctly configured.
+     * `xpFor` treats null as 0 and the Crew page can say which it is.
+     *
+     * Two of §10.2's four terms — short runway, high elevation — are derived
+     * from columns already on this table; slope and terrain are seeded from
+     * `data/reference/airport-difficulty.csv`, because OurAirports carries
+     * neither. The stored value is `max(derived, seeded)`.
+     *
+     * A rating, not a rate. What a difficulty point is *worth* is
+     * `EconomyConfig.crew.xp` — so a world can pay hard flying better without
+     * re-rating its geography, and a crew pool's history can say which of the
+     * two moved.
+     */
+    difficulty: doublePrecision('difficulty'),
+    /** Which terms fired and what they scored, as JSON. Same audit contract as `tier_basis`. */
+    difficultyBasis: text('difficulty_basis'),
+    difficultyRatedAt: timestamp('difficulty_rated_at', { withTimezone: true }),
+
     importedAt: timestamp('imported_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1021,6 +1046,10 @@ export const airport = pgTable(
     // The route picker's working set is scheduled-service airports by country.
     index('airport_kind_scheduled_service_idx').on(t.kind, t.scheduledService),
     check('airport_latitude_range', sql`${t.latitude} >= -90 AND ${t.latitude} <= 90`),
+    check(
+      'airport_difficulty_range',
+      sql`${t.difficulty} IS NULL OR (${t.difficulty} >= 0 AND ${t.difficulty} <= 1)`,
+    ),
     check('airport_longitude_range', sql`${t.longitude} >= -180 AND ${t.longitude} <= 180`),
     // Null Island is the canonical failed-geocode value; no aerodrome is there.
     check('airport_not_null_island', sql`NOT (${t.latitude} = 0 AND ${t.longitude} = 0)`),
@@ -3322,11 +3351,42 @@ export const crewPool = pgTable(
     /** Game time the sick heads come back. Null when nobody is off. */
     sickUntil: timestamp('sick_until', { withTimezone: true }),
 
+    /**
+     * Experience this pool has accumulated, in §10.2's XP (M9-02).
+     *
+     * ## A pool total, because there is still no crew member row
+     *
+     * M5-01's rule is that *"the player interacts with pool sizes and never
+     * with individuals"*, and the comment on this table says the quiet part:
+     * *"Individual hours and proficiency are M9; if one arrives it should hang
+     * off this rather than replace it."* This is that arrival, and it hangs off
+     * the pool: every head aboard a flight earns the same XP, and the sum lands
+     * here.
+     *
+     * The readout a player wants is **XP per head** — `xp / headcount` — and
+     * that behaves correctly in both directions. Hiring adds heads and no XP, so
+     * the average falls: a base that doubles its headcount really does have a
+     * greener crew force. Heads that **leave** take their share with them
+     * (`reviewCrewMorale` removes it pro rata), because a resignation that left
+     * the XP behind would make the survivors look better for having lost
+     * colleagues.
+     *
+     * M9-03's personal skill trees will need individuals; when they arrive they
+     * should draw from this rather than replace it, which is what keeps a base's
+     * total history intact across that change.
+     *
+     * `bigint` rather than `integer`: a long-lived base flying widebodies earns
+     * a few thousand a sector, and 2.1 billion is about ten world-years of a
+     * large operation. Not a limit worth discovering in production.
+     */
+    xp: bigint('xp', { mode: 'number' }).notNull().default(0),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     unique('crew_pool_base_family_rank_key').on(t.crewBaseId, t.family, t.rank),
+    check('crew_pool_xp_nonneg', sql`${t.xp} >= 0`),
     index('crew_pool_base_idx').on(t.crewBaseId),
     // The worker's claim: pools whose sick leave has run out.
     index('crew_pool_sick_idx').on(t.sickUntil),

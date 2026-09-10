@@ -450,6 +450,7 @@ Everything below runs from anywhere in the repo and needs the package **built** 
 | `pnpm data:classify`                                               | Assign tiers over the imported set (M1-02)                                          |
 | `pnpm data:catchment`                                              | Derive catchment population and the three indices (M1-03)                           |
 | `pnpm data:timezones`                                              | Give every airport a timezone and an offset (M3-04a)                                |
+| `pnpm data:difficulty`                                             | Rate how hard each field is to fly into (M9-02)                                     |
 | `pnpm data:distances`                                              | Pack the great-circle distance matrix (M1-04)                                       |
 | `pnpm world:seed`                                                  | Create the flagship world from config (M1-09)                                       |
 | `pnpm demand:generate`                                             | Size every viable city pair's demand pool (M3-01)                                   |
@@ -472,6 +473,14 @@ world's competition.
 run any time after `data:airports`. It sits here because it shares the GeoNames download
 with `data:catchment` — point both at the same `--cache` and `cities15000.zip` is fetched
 once. It is also safe to re-run; it updates in place.
+
+`data:difficulty` is the other exception, and needs even less: the airports and their
+runways, so any time after `data:airports`. It is a pure function of those two tables plus
+`data/reference/airport-difficulty.csv`, so re-running it is safe and idempotent — do it
+after any import, and after editing the reference list or a threshold. It exits non-zero
+when a reference entry matches no airport, because a typo in an ICAO code is otherwise
+invisible: the entry simply never applies while the file goes on claiming it does. The
+ratings are still written.
 
 Each of these is a one-line proxy in the **root** `package.json` to the real script in
 `packages/server`, so the commands above work from anywhere in the repo. That is not

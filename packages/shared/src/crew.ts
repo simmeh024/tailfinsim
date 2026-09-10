@@ -57,6 +57,26 @@ export const CrewPoolView = z.object({
   sick: z.number().int().nonnegative().default(0),
   /** `headcount - unavailable - onDuty`, decided by the server. */
   available: z.number().int().nonnegative(),
+  /**
+   * Section 10.2's XP this pool has accumulated (M9-02).
+   *
+   * A **pool total**, because there is still no crew member row — see
+   * `crew_pool.xp`. Defaulted, so a client built against an older payload keeps
+   * parsing.
+   */
+  xp: z.number().int().nonnegative().default(0),
+  /**
+   * `xp / headcount`, rounded — and **null for an empty pool**, not zero.
+   *
+   * Zero would read as *"these crew have learned nothing"*, a claim about a
+   * green crew force rather than about a pool with nobody in it. The two are
+   * different states and the page says which.
+   *
+   * Sent rather than left as a division the browser does, for the reason
+   * `available` is: the rule is the server's, and a client that had learned to
+   * divide would disagree the moment it changed.
+   */
+  xpPerHead: z.number().int().nonnegative().nullable().default(null),
 });
 export type CrewPoolView = z.infer<typeof CrewPoolView>;
 

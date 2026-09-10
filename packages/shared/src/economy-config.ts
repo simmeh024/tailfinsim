@@ -1956,6 +1956,202 @@ export const SHIPPED_CREW_MORALE_BALANCE = {
   serviceExecutionAtFull: 1,
 } as const satisfies z.input<typeof CrewMoraleBalance>;
 
+/**
+ * What a flight teaches the crew who flew it (M9-02, §10.2).
+ *
+ * ```
+ * XP = base(sector length) × typeFactor × difficultyMultiplier
+ * ```
+ *
+ * §10.2's formula, with every coefficient in it here. `packages/sim`'s
+ * `flightXp` does the arithmetic and holds no literal, so a world can retune
+ * how fast crew learn without a deploy — which matters more here than in most
+ * sections, because progression rate is the single lever that decides whether
+ * §10 is a rewarding investment or a grind.
+ *
+ * ## Why the difficulty terms are *additive* inside a multiplier
+ *
+ * The multiplier is `1 + Σ(terms)`, capped. Multiplying the terms together
+ * would make a hard night landing at a hard field in bad weather worth an
+ * unbounded amount, and §10.4's whole philosophy is that a ladder has a
+ * ceiling. Adding them means each hard thing is worth a stated amount and the
+ * cap says what the hardest possible sector is worth — which is a number a
+ * player can be told.
+ *
+ * ## What is *not* here
+ *
+ * An airport's difficulty **rating** is not balance and is not in this object.
+ * It is a property of the field — a short runway, a high elevation, a valley —
+ * and lives on `airport.difficulty`, written by `pnpm data:difficulty` from the
+ * imported geometry plus a committed reference list. This section says what a
+ * difficulty point is *worth*; that column says how much of one an airport has.
+ * Folding them together would make a retune of the XP curve and a re-rating of
+ * the world's geography indistinguishable in a crew pool's history.
+ */
+export const CrewXpBalance = z
+  .object({
+    /** XP for a sector of no length at all — the floor every flight earns. */
+    baseSectorXp: z.number().nonnegative(),
+    /** Added per nautical mile. Linear on purpose; see `SHIPPED_CREW_XP_BALANCE`. */
+    xpPerNm: z.number().nonnegative(),
+    /**
+     * The type factor, as a function of the aeroplane's weight.
+     *
+     * §10.2 says *"type factor"* and no more, so the honest reading is the one
+     * fact about a type that is already versioned and available at settlement:
+     * its maximum takeoff weight, off the §22.5 catalogue. A heavier aeroplane
+     * is a bigger licence and a harder machine, and the alternative — a
+     * hand-written factor per designation — would put eighteen balance numbers
+     * in a catalogue that is supposed to hold performance.
+     */
+    typeFactor: z
+      .object({
+        /** MTOW at which the factor is exactly 1. A narrowbody. */
+        referenceTonnes: z.number().positive(),
+        /** Added to the factor per tonne above the reference. */
+        perTonneAbove: z.number().nonnegative(),
+        /** The factor never leaves this range, however odd the aeroplane. */
+        min: z.number().positive(),
+        max: z.number().positive(),
+      })
+      .strict(),
+    /**
+     * The difficulty terms, each a share added to a multiplier that starts at 1.
+     *
+     * Every one of §10.2's five bullets appears here and nothing else does,
+     * because that list is a specification rather than a sketch.
+     */
+    difficulty: z
+      .object({
+        /** Multiplied by the arrival field's 0-1 rating. Landing is the hard part. */
+        arrivalAirport: z.number().nonnegative(),
+        /** Multiplied by the origin field's rating. Lower: a takeoff is more forgiving. */
+        originAirport: z.number().nonnegative(),
+        /** Multiplied by `landingChallenge` — §10.2's crosswind, visibility and snow. */
+        weather: z.number().nonnegative(),
+        /** Flat, for a landing in darkness at the arrival field's local time. */
+        night: z.number().nonnegative(),
+        /**
+         * §10.2's *"disruption handled well"*, by outcome.
+         *
+         * Only a flight that **arrived** reaches settlement, so every one of
+         * these is by definition handled well — a cancellation never settles
+         * and teaches nobody anything. A diversion is worth most: it is a
+         * different airfield, unplanned, with the fuel already burned.
+         */
+        disruption: z
+          .object({
+            delay: z.number().nonnegative(),
+            divert: z.number().nonnegative(),
+            airReturn: z.number().nonnegative(),
+          })
+          .strict(),
+        /** Sector length beyond which the long-haul term starts to accrue, nm. */
+        longHaulFromNm: z.number().positive(),
+        /** Sector length at which the long-haul term is fully earned, nm. */
+        longHaulFullAtNm: z.number().positive(),
+        /** The long-haul term at `longHaulFullAtNm` and beyond. */
+        longHaul: z.number().nonnegative(),
+        /** Flat, for a crossing between continents — the oceanic proxy. */
+        oceanic: z.number().nonnegative(),
+        /**
+         * The ceiling on the whole multiplier.
+         *
+         * Above 1, or a hard sector would teach less than an easy one. The cap
+         * is what makes "the hardest sector in the game is worth Nx an easy
+         * one" a sentence with an answer.
+         */
+        maxMultiplier: z.number().gt(1),
+      })
+      .strict(),
+    /**
+     * Local hours at the arrival field that count as night, `[start, end)`.
+     *
+     * Deliberately **not** `crew.duty.woclStartHour`. The WOCL is a body-clock
+     * fatigue window and is 02:00–06:00; night flying is a visual-conditions
+     * question and runs from dusk to dawn. Reusing one for the other would tie a
+     * regulatory limit to a progression rate, and retuning either would move the
+     * other.
+     */
+    nightFromHour: z.number().int().min(0).max(23),
+    nightToHour: z.number().int().min(1).max(24),
+  })
+  .strict();
+export type CrewXpBalance = z.infer<typeof CrewXpBalance>;
+
+/**
+ * The shipped XP curve.
+ *
+ * ## What the numbers are scaled against
+ *
+ * §10.2's requirement is comparative, not absolute: *"grinding easy domestic
+ * hops levels crew slowly"* and *"a pilot who flies your hard winter northern
+ * network becomes measurably better than one who doesn't"*. So the figures are
+ * chosen to make that gap large and legible rather than to hit any particular
+ * total.
+ *
+ *   - **An easy 250 nm domestic hop**, flat field, fair weather, daylight:
+ *     `(40 + 250×0.35) × 1.0 × 1.0` ≈ **128 XP**.
+ *   - **The same sector at night into a rated 0.6 field in a crosswind**:
+ *     roughly `128 × (1 + 0.36 + 0.15 + 0.12)` ≈ **209 XP**, 1.6× the easy one.
+ *   - **A 3,600 nm oceanic widebody sector into a hard field, at night, having
+ *     flown a diversion**: about `(40 + 1260) × 1.35 × 2.2` ≈ **3,860 XP**,
+ *     thirty times the domestic hop — most of it from the sector length, which
+ *     is right: a long-haul crew flies fewer, longer, harder sectors.
+ *
+ * `xpPerNm` linear rather than a curve, and `longHaul` as a *difficulty* term
+ * rather than a base one, because that is what §10.2 says: its bullet list puts
+ * *"Long-haul / ULH sectors and oceanic crossings"* under the difficulty
+ * multiplier, not under `base(sector length)`. A sublinear base would have
+ * fought the multiplier for the same job.
+ *
+ * `maxMultiplier` at 3.0: the very hardest sector the game can produce is worth
+ * three ordinary ones of the same length. Enough to reshape a network decision,
+ * not enough for one heroic route to replace a fleet's worth of flying.
+ *
+ * Defaulted, for the reason `SHIPPED_NPC_BALANCE` records.
+ */
+export const SHIPPED_CREW_XP_BALANCE = {
+  // A short positioning sector is worth something, but not much.
+  baseSectorXp: 40,
+  // 0.35/nm makes distance the dominant term for anything transcontinental,
+  // which is the shape of real seniority: long-haul crews accumulate hours fast.
+  xpPerNm: 0.35,
+  typeFactor: {
+    // An A320neo is about 79 t, a 737 MAX 8 about 82 t. The narrowbody the
+    // catalogue is built around sits at 1.0.
+    referenceTonnes: 80,
+    // A 777-size 350 t airframe reaches ~1.54; an ATR at 23 t floors at 0.85.
+    perTonneAbove: 0.002,
+    min: 0.85,
+    max: 1.6,
+  },
+  difficulty: {
+    // The arrival field is worth twice the origin: §10.2's four airport terms
+    // are all about arriving — sloped, terrain-constrained, steep approaches.
+    arrivalAirport: 0.6,
+    originAirport: 0.3,
+    // `landingChallenge` already saturates at 1, and it is the term §10.2 spends
+    // the most words on. Worth as much as a fully rated airport.
+    weather: 0.25,
+    night: 0.12,
+    disruption: { delay: 0.08, divert: 0.35, airReturn: 0.25 },
+    // Beyond a narrowbody's range: the point at which a sector stops being a
+    // day's work and starts being a licence of its own.
+    longHaulFromNm: 2_000,
+    longHaulFullAtNm: 5_000,
+    longHaul: 0.3,
+    oceanic: 0.2,
+    maxMultiplier: 3.0,
+  },
+  // Dusk to dawn, near enough at temperate latitudes. A single pair of hours
+  // rather than a solar calculation: the sun's actual position is a function of
+  // latitude and date, and modelling it would make XP depend on a calculation
+  // no other part of the game performs.
+  nightFromHour: 21,
+  nightToHour: 6,
+} as const satisfies z.input<typeof CrewXpBalance>;
+
 export const CrewBalance = z
   .object({
     regulation: CrewRegulationBalance,
@@ -1970,6 +2166,8 @@ export const CrewBalance = z
     duty: CrewDutyBalance.default(SHIPPED_CREW_DUTY_BALANCE),
     /** Defaulted, for the reason `duty` is. */
     morale: CrewMoraleBalance.default(SHIPPED_CREW_MORALE_BALANCE),
+    /** Defaulted, for the reason `duty` is (M9-02): §10.2's XP curve. */
+    xp: CrewXpBalance.default(SHIPPED_CREW_XP_BALANCE),
     /**
      * Monthly salary per head, by rank.
      *
@@ -2066,6 +2264,7 @@ export const SHIPPED_CREW_BALANCE = {
   hiringCostMinor: { flightDeck: 400_000, cabin: 100_000 },
   duty: SHIPPED_CREW_DUTY_BALANCE,
   morale: SHIPPED_CREW_MORALE_BALANCE,
+  xp: SHIPPED_CREW_XP_BALANCE,
 } as const satisfies z.input<typeof CrewBalance>;
 
 /**

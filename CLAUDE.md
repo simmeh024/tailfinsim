@@ -450,6 +450,41 @@ deploy that shipped it. And **the slot count is a query, not a column** — `sum
 `in_training` conversions pointing at the academy — because a counter would have to be reset on
 a world reset (ADR-0005), the same argument the used market makes.
 
+**Crew XP is a worker story with no counter of its own (M9-02).** §10.2's
+`XP = base(sector length) × typeFactor × difficultyMultiplier` is awarded inside
+`settleArrivedFlight`, after the `flight_result` insert has proved the arrival is not a replay
+— the same position and reason as `accrueFlightHours`. Settlement is the `FLIGHT_ARRIVE`
+handler, so **production awards no XP at all** and every pool reads 0 for ever, which looks
+like a brand-new airline rather than a missing process. There is deliberately no
+`xpAwarded` counter: XP is a side effect of an arrival, so `flightsMaterialised` and the queue
+depth are what to look at, and a counter would be a second thing to keep in step with the
+settlement.
+
+Five things worth not undoing. **XP lands on the pool, not on a person** — M5-01's rule that
+there are no crew member rows still holds, and §10.2's _"every crew member aboard"_ is
+reconciled through `crew_duty_period.complement`: the flight names the period, the period
+holds the ranks actually taken, and each pool gets `xpPerHead × heads`. **Leavers take their
+share with them** (`xpAfterDeparture`, called from `reviewCrewMorale`), because XP per head is
+the readout and a resignation that left the XP behind would make the survivors look _better_
+for having lost colleagues — §9.2's delayed bill, inverted. **`airport.difficulty` is nullable
+and means never rated**, not easy: `pnpm data:difficulty` writes it, and a world where that
+job has not run pays flat XP rather than XP against a guess; unknown runway geometry
+contributes nothing for the same reason, because 308 scheduled-service airports have no runway
+rows and treating "we were not told" as 3,000 ft would rate a third of Africa as harder than
+Innsbruck. **The difficulty terms add inside a capped multiplier**, never multiply, so the
+hardest possible sector is worth a stated three ordinary ones rather than an unbounded amount.
+And **the night window is not the WOCL** — 02:00–06:00 is a fatigue limit, dusk-to-dawn is a
+visual-conditions question, and reusing one for the other would tie a regulatory limit to a
+progression rate.
+
+This is also **the first server consumer of M2-09's weather model**, which had been built,
+tested and called by nothing for four milestones — the disruption roll still leaves its two
+weather risks at zero. `settle.ts` gained a `resolveWeather` resolver dep alongside
+`resolveAirframe` and `resolveStation`, because every fixture world has its own seed and
+without an injection point _"the same sector in different weather"_ is not something a test
+can arrange. `docs/crew.md` has the model, the term table and what M9-02 deliberately did not
+build — which is anything that **spends** XP.
+
 **§21 and §10.1 disagree about where an academy is built, and this followed §10.1.** M7-04
 already shipped a `hub_facility` of kind `training_academy` with an opening cost and an annual
 fee, from §21's _"unlocked per hub"_ list. It gates nothing in M9-01 and was left exactly as it
@@ -977,12 +1012,13 @@ and a closing keyword in a _comment_ never fires at all. Write `Closes #17` and
 `Closes #18` on separate lines, then check both actually closed.
 
 **One-off jobs run from `dist`, not from source.** `data:airports`, `data:classify`,
-`data:catchment`, `data:timezones`, `data:distances`, `world:seed`, `demand:generate`,
-`npc:seed`, `admin` and `ops:status` are all bundled entry points, so `pnpm build` has to
-have run first. The order matters for a new world — airports, then tiers and catchment,
-then distances, then the world, its demand pools and finally `npc:seed <worldId>` — because
-each reads what the preceding data stage wrote. `data:timezones` is the exception and needs
-only the airports. CONTRIBUTING.md has the table.
+`data:catchment`, `data:timezones`, `data:difficulty`, `data:distances`, `world:seed`,
+`demand:generate`, `npc:seed`, `admin` and `ops:status` are all bundled entry points, so
+`pnpm build` has to have run first. The order matters for a new world — airports, then tiers
+and catchment, then distances, then the world, its demand pools and finally
+`npc:seed <worldId>` — because each reads what the preceding data stage wrote.
+`data:timezones` and `data:difficulty` are the exceptions and need only the airports (and,
+for the second, their runways). CONTRIBUTING.md has the table.
 
 CI builds the bundles on every pull request and asserts that each of those entry points
 actually lands in `dist`, so an entry point dropped from `build.mjs` fails the run rather

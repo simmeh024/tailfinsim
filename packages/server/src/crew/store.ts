@@ -133,6 +133,8 @@ export interface CrewBaseView {
     onDuty: number;
     reserve: number;
     sick: number;
+    /** Section 10.2's accumulated XP for the pool (M9-02). */
+    xp: number;
   })[];
 }
 
@@ -171,6 +173,7 @@ export async function readCrewBases(
       onDuty: crewPool.onDuty,
       reserve: crewPool.reserve,
       sick: crewPool.sick,
+      xp: crewPool.xp,
     })
     .from(crewPool)
     .where(
@@ -183,7 +186,7 @@ export async function readCrewBases(
 
   const byBase = new Map<
     string,
-    (CrewPool & { id: string; onDuty: number; reserve: number; sick: number })[]
+    (CrewPool & { id: string; onDuty: number; reserve: number; sick: number; xp: number })[]
   >();
   for (const pool of pools) {
     const list = byBase.get(pool.crewBaseId) ?? [];
@@ -204,6 +207,7 @@ export async function readCrewBases(
       onDuty: pool.onDuty,
       reserve: pool.reserve,
       sick: pool.sick,
+      xp: pool.xp,
     });
     byBase.set(pool.crewBaseId, list);
   }
@@ -419,6 +423,11 @@ export async function readCrewState(
         // Computed here rather than left as a subtraction the browser does: the
         // rule for "available" is the server's, and M5-02 changed it.
         available: availableHeads(pool),
+        xp: pool.xp,
+        // Null for an empty pool, not zero (M9-02): zero reads as "these crew
+        // have learned nothing", which is a claim about a green crew force
+        // rather than about a pool with nobody in it.
+        xpPerHead: pool.headcount > 0 ? Math.round(pool.xp / pool.headcount) : null,
       })),
       conversions: conversions
         .filter((conversion) => conversion.crewBaseId === base.id)

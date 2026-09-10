@@ -91,6 +91,8 @@ function pool(over: Partial<CrewResponse['bases'][number]['pools'][number]> = {}
     reserve: 0,
     sick: 0,
     available: 4,
+    xp: 0,
+    xpPerHead: 0,
     ...over,
   };
 }

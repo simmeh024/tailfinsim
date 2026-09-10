@@ -23,6 +23,7 @@
     "world:seed": "node dist/seed-world.js",
     "demand:generate": "node dist/generate-demand.js",
     "data:timezones": "node dist/assign-timezones.js",
+    "data:difficulty": "node dist/rate-airport-difficulty.js",
     "admin": "node dist/admin-cli.js",
     "ops:status": "node dist/ops-status.js",
     "npc:seed": "node dist/seed-npcs.js"
