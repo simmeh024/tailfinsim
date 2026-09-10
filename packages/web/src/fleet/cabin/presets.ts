@@ -9,6 +9,7 @@
  * does not contain.
  */
 
+import a320neoPlan from './assets/plan/a320neo.png';
 import { seatsInLayout } from './catalogue';
 
 import type {
@@ -87,6 +88,13 @@ function a320neo(): CabinPreset {
     // so a premium-heavy build reads as heavier and shorter-legged than it.
     standard: { seats: 180, rangeNm: 3400, turnaroundMin: 39, cabinWeightKg: 3800 },
     cg: { minMac: 15, maxMac: 35, emptyMac: 25 },
+    // Photographic top-down render; seats land on the floor rect (image fractions).
+    backdrop: {
+      src: a320neoPlan,
+      w: 2005,
+      h: 784,
+      floor: { l: 0.215, r: 0.745, t: 0.31, b: 0.63 },
+    },
   };
   const config = new CabinBuilder('A320neo')
     .monument('galley', 'lavatory')
