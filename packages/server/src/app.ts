@@ -17,6 +17,7 @@ import Fastify, {
 
 import { healthResponseJsonSchema, versionResponseJsonSchema } from '@tailfin/shared';
 
+import { registerAcademyRoutes } from './academy/routes';
 import { registerAdminRoutes } from './admin/routes';
 import { registerAircraftRoutes } from './aircraft/routes';
 import { type AirlineCodeAllocationPolicy } from './airline/codes';
@@ -291,6 +292,7 @@ export async function buildApp({
   registerWorldRoutes(app, { db });
   // Crew, behind the same airline boundary (M5-01).
   registerCrewRoutes(app, { db });
+  registerAcademyRoutes(app, { db });
   registerOfficeRoutes(app, { db });
   registerAutomationRoutes(app, { db });
   registerGroundRoutes(app, { db });

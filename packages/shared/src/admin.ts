@@ -571,6 +571,9 @@ export const AdminCashMovementCause = z.enum([
   'hub_purchase',
   'hub_facility_opening',
   'hub_upkeep',
+  /** §10.1's training academy (M9-01): building it, and keeping it open. */
+  'academy_construction',
+  'academy_upkeep',
   'admin_adjustment',
   'flight_settlement',
   'disruption_cost',

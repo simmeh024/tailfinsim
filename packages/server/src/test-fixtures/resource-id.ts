@@ -252,6 +252,23 @@ export const RESOURCE_ID_SURFACES = [
     semantics: 'owner-scoped-resource',
   })),
   {
+    // M9-01. The crew base an academy is founded at — the same owned resource
+    // the crew writes above take, in the same position, and concealed the same
+    // way when it belongs to somebody else.
+    endpoint: 'POST /api/academies',
+    position: 'body',
+    field: 'crewBaseId',
+    semantics: 'owner-scoped-resource',
+  },
+  ...['POST /api/academies/:id/levels', 'POST /api/academies/:id/modules'].map(
+    (endpoint): ResourceIdSurface => ({
+      endpoint,
+      position: 'path',
+      field: 'id',
+      semantics: 'owner-scoped-resource',
+    }),
+  ),
+  {
     endpoint: 'player-airline context',
     position: 'header',
     field: 'x-tailfin-world-id',

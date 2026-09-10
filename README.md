@@ -26,6 +26,7 @@ wall-clock time, that never pauses.
   [`docs/belly-cargo.md`](docs/belly-cargo.md) ·
   [`docs/fuel-pricing.md`](docs/fuel-pricing.md) ·
   [`docs/ground-handling.md`](docs/ground-handling.md) ·
+  [`docs/training-academy.md`](docs/training-academy.md) ·
   [`docs/hubs.md`](docs/hubs.md) ·
   [`docs/world-renderer.md`](docs/world-renderer.md)
 - **Deployment & DNS:** [`docs/deploy.md`](docs/deploy.md) ·
@@ -227,6 +228,18 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   trades a per-turn fee for a fixed cost that does not shrink when the schedule does. The term
   and the payroll are the Worker's, so both bite on dev only — see
   [`docs/ground-handling.md`](docs/ground-handling.md), including why there is no web UI yet.
+- **A training academy that gates a ceiling and grants no boost.** §10.1's academy is built at
+  a crew base and climbs five levels, each unlocking a higher rank an airline may train, a
+  higher research tier it may later reach, and more of the finite training slots crew occupy
+  while they are in a classroom. Modules go in independently — a CBT suite, a cabin mock-up,
+  fixed-base and per-family full-flight simulators — and together they decide whether a type
+  conversion is trained in-house at a fraction of the market rate or simply bought in, which is
+  all the academy does to conversion: it is a discount and a ceiling, never a gate. Levelling
+  the building grants no performance bonus of any kind; that is the research and the boosts,
+  which are not built. Construction takes weeks of the world's calendar and no amount of money
+  shortens it, and both the commissioning and the monthly upkeep are the Worker's, so both bite
+  on dev only. See [`docs/training-academy.md`](docs/training-academy.md), including which
+  modules are priced but inert and why the design doc names two different academies.
 - **Fuel that costs what the station charges.** Every airport prices its own Jet A-1: a
   commodity factor for its region, an into-plane fee that scales with how hard the field is to
   fuel, and a per-station spread fixed for the life of the world. A sector out of a Gulf hub

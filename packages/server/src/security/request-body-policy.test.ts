@@ -39,6 +39,8 @@ import {
   PurchaseHubRequest,
   SignContractRequest,
   StartCrewConversionInput,
+  BuildAcademyModuleInput,
+  FoundAcademyInput,
   UpdateOwnAirlineInput,
   WorldConfig,
 } from '@tailfin/shared';
@@ -135,6 +137,16 @@ const STRICT_WRITE_CONTRACTS = [
     endpoint: 'PUT /api/crew/policies',
     schema: SetCrewPoliciesInput,
     payload: { crewBaseId: UUID_A, payBand: 'market' },
+  },
+  {
+    endpoint: 'POST /api/academies',
+    schema: FoundAcademyInput,
+    payload: { crewBaseId: UUID_A },
+  },
+  {
+    endpoint: 'POST /api/academies/:id/modules',
+    schema: BuildAcademyModuleInput,
+    payload: { kind: 'cbt_suite' },
   },
   {
     endpoint: 'POST /api/office/hires',
@@ -297,6 +309,11 @@ const COVERED_WRITE_ENDPOINTS = [
   'POST /api/airlines/code-availability',
   'POST /api/auth/logout',
   'POST /api/auth/logout-all',
+  'POST /api/academies',
+  'POST /api/academies/:id/modules',
+  // M9-01. The level to build is the *next* one and nothing else, so the upgrade
+  // reads no body — the academy is in the path and the ladder decides the rest.
+  'POST /api/academies/:id/levels',
   'POST /api/crew/bases',
   'POST /api/crew/conversions',
   'POST /api/crew/hires',

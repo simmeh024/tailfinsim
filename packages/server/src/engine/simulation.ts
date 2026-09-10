@@ -2,6 +2,7 @@ import { asc, ne } from 'drizzle-orm';
 
 import { gameTime, horizonFrom, type WorldClock } from '@tailfin/sim';
 
+import { completeDueAcademyBuilds, runAcademyUpkeep } from '../academy/store';
 import { deliverDueAircraftOrders } from '../aircraft/acquisition';
 import { sweepMaintenance } from '../aircraft/maintenance';
 import { refreshUsedAircraftMarket } from '../aircraft/used-market';
@@ -116,6 +117,10 @@ export interface TickReport {
   crewErrors: number;
   /** M5-04 follow-up. Airlines whose social media specialist dripped reputation this run. */
   reputationGrants: number;
+  /** M9-01. Academy levels and modules whose build finished this run. */
+  academyBuildsCompleted: number;
+  /** M9-01. Airlines billed for a month of academy upkeep. */
+  academyUpkeepPaid: number;
   /** M5-06. Ground contracts whose term ran out and were lapsed this run. */
   groundContractsExpired: number;
   /** M5-06. Of those, how many closed short of their committed departures. */
@@ -205,6 +210,10 @@ export interface SimulationEngineOptions {
   payGround?: typeof runGroundPayroll;
   /** M7-04. Bills App. B.5's monthly hub and facility fees. */
   billHubs?: typeof billHubUpkeep;
+  /** M9-01. Commissions §10.1 academy levels and modules whose build is due. */
+  completeAcademyBuilds?: typeof completeDueAcademyBuilds;
+  /** M9-01. Bills the month's academy upkeep. */
+  billAcademies?: typeof runAcademyUpkeep;
   /** M8-07. Charges §13.4's per-game-day interest on every active loan. */
   accrueInterest?: typeof accrueLoanInterest;
   /** M8-07. Moves §13.5's default ladder, and applies the rung it lands on. */
@@ -362,6 +371,20 @@ export interface EngineSnapshot {
   hubFeesBilled: number;
   hubFeesMinor: number;
   hubErrors: number;
+  /**
+   * M9-01. §10.1 academy levels and modules commissioned, and upkeep billed.
+   *
+   * Two counters and one error total, and the pair matters: builds finishing
+   * with no upkeep ever billed is a world whose academies all opened this month,
+   * while both at zero on a world that has founded one is a worker that is not
+   * running. Without a worker an academy is charged its capital, never finishes,
+   * never teaches and never charges rent — a building site that reads as a slow
+   * build rather than as a missing process.
+   */
+  academyBuildsCompleted: number;
+  academyUpkeepPaid: number;
+  academyUpkeepMinor: number;
+  academyErrors: number;
   /**
    * M8-07. Game days of §13.4 interest charged since start, and what was paid.
    *
@@ -541,6 +564,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     expireGround = expireGroundContracts,
     payGround = runGroundPayroll,
     billHubs = billHubUpkeep,
+    completeAcademyBuilds = completeDueAcademyBuilds,
+    billAcademies = runAcademyUpkeep,
     accrueInterest = accrueLoanInterest,
     reviewDefaults = reviewWorldDefaults,
     materialise = materialiseWorld,
@@ -584,6 +609,10 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let groundVolumeShortfallMinor = 0;
   let groundPayrollBilled = 0;
   let groundErrors = 0;
+  let academyBuildsCompleted = 0;
+  let academyUpkeepPaid = 0;
+  let academyUpkeepMinor = 0;
+  let academyErrors = 0;
   let hubFeesBilled = 0;
   let hubFeesMinor = 0;
   let hubErrors = 0;
@@ -637,6 +666,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     let tickGroundExpired = 0;
     let tickGroundShortfalls = 0;
     let tickGroundPaid = 0;
+    let tickAcademyBuilds = 0;
+    let tickAcademyUpkeepPaid = 0;
     let tickHubFeesBilled = 0;
     let tickFlightsMaterialised = 0;
     let tickAlertsSwept = 0;
@@ -943,6 +974,44 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       }
 
       /*
+       * §10.1's training academies (M9-01), on this world's game clock like the
+       * sweeps above it — ADR-0026, which names academy construction among the
+       * spans it settles onto the world's calendar.
+       *
+       * Two sweeps in this order and not the other. A level commissioned this
+       * tick should be charged upkeep from the month it opened, and billing
+       * before commissioning would give it a free month; the reverse costs
+       * nothing, because upkeep bills the month that has *closed*.
+       *
+       * Isolated like every sweep above. A build that could not be commissioned
+       * this tick is commissioned the next, and the building stands finished and
+       * unopened a second longer — cosmetic rather than money lost.
+       */
+      try {
+        const built = await completeAcademyBuilds(db, entry.id, gameTime(entry.clock, now()));
+        tickAcademyBuilds += built.levelsCommissioned + built.modulesInstalled;
+        if (built.levelsCommissioned > 0 || built.modulesInstalled > 0) {
+          log?.info?.(
+            `[${entry.name}] academies: ${String(built.levelsCommissioned)} level(s) ` +
+              `commissioned, ${String(built.modulesInstalled)} module(s) installed`,
+          );
+        }
+
+        const upkeep = await billAcademies(db, entry.id, gameTime(entry.clock, now()));
+        tickAcademyUpkeepPaid += upkeep.airlinesBilled;
+        academyUpkeepMinor += upkeep.totalMinor;
+        if (upkeep.airlinesBilled > 0) {
+          log?.info?.(
+            `[${entry.name}] academy upkeep: ${String(upkeep.airlinesBilled)} airline(s), ` +
+              `${String(Math.round(upkeep.totalMinor / 100))}`,
+          );
+        }
+      } catch (error) {
+        academyErrors += 1;
+        log?.warn?.(`[${entry.name}] academy sweep failed: ${String(error)}`);
+      }
+
+      /*
        * §13.4's interest and §13.5's default ladder (M8-07), on the world's game
        * clock like every sweep above.
        *
@@ -1115,6 +1184,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     groundContractsExpired += tickGroundExpired;
     groundVolumeShortfalls += tickGroundShortfalls;
     groundPayrollBilled += tickGroundPaid;
+    academyBuildsCompleted += tickAcademyBuilds;
+    academyUpkeepPaid += tickAcademyUpkeepPaid;
     hubFeesBilled += tickHubFeesBilled;
     flightsMaterialised += tickFlightsMaterialised;
     alertsSwept += tickAlertsSwept;
@@ -1150,6 +1221,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       groundContractsExpired: tickGroundExpired,
       groundVolumeShortfalls: tickGroundShortfalls,
       groundPayrollBilled: tickGroundPaid,
+      academyBuildsCompleted: tickAcademyBuilds,
+      academyUpkeepPaid: tickAcademyUpkeepPaid,
       hubFeesBilled: tickHubFeesBilled,
       interestDaysCharged: tickInterestDays,
       defaultEscalations: tickDefaultEscalations,
@@ -1237,6 +1310,10 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         hubFeesBilled,
         hubFeesMinor,
         hubErrors,
+        academyBuildsCompleted,
+        academyUpkeepPaid,
+        academyUpkeepMinor,
+        academyErrors,
         interestDaysCharged,
         interestPaidMinor,
         arrearsMinor,

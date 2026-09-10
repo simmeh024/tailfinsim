@@ -52,6 +52,8 @@ export * from './npc';
 
 export * from './crew';
 
+export * from './academy';
+
 export * from './ground';
 
 export * from './service';

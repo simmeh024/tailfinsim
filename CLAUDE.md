@@ -422,6 +422,41 @@ the month it opened would make the amount depend on when the tick ran and AIR-06
 guard would then throw instead of no-op. `docs/hubs.md` has the boundary, including the two
 App. B.5 facilities deliberately not built and why.
 
+**The training academy is a worker story where the missing process looks like patience
+(M9-01).** §10.1's academy is built at a **crew base**, levels 1–5, with modules inside it, and
+both sweeps are the worker's: `completeDueAcademyBuilds` commissions a level or installs a
+module whose build is due, `runAcademyUpkeep` bills the month that closed. **Production has no
+worker**, so there an academy is charged its capital and then **never finishes, never teaches
+and never charges rent** — a permanent building site, which reads as a long build rather than
+as a missing process. `academyBuildsCompleted`, `academyUpkeepPaid`, `academyUpkeepMinor` and
+`academyErrors` are the counters, and the pair matters: builds finishing with nothing ever
+billed is a world whose academies all opened this month; both at zero on a world that has
+founded one is a worker that is not running. Builds are commissioned **before** upkeep is
+billed, because upkeep bills the month that has closed and the other order would give a level
+commissioned this tick a free month.
+
+Four things there worth not undoing. **Construction runs on the world's clock, and §10.1 says
+"real weeks".** ADR-0026 names academy construction among the unbuilt spans it settles, and a
+building at a crew base teaching this world's crew cannot make the exchange-rate argument; the
+acceptance criterion that sentence served — _build time cannot be shortened with money_ — is
+kept **structurally**, because no rush cost, balance lever, field or endpoint exists that moves
+`construction_ready_at` closer. **Level 0 is a building site, not a level**: nothing is
+permitted at 0, so there is no state where the money has gone and the capability arrived early.
+**The academy is a discount and a ceiling, never a gate** — §10.1's _"a base without one can
+only hire pre-qualified crew at market rates"_ is a price, so a base with no academy converts
+crew exactly as M5-01 shipped it and an academy buys a cheaper rate and a rank ceiling; turning
+it into a gate would strip a capability from every airline in every existing world on the
+deploy that shipped it. And **the slot count is a query, not a column** — `sum(heads)` over the
+`in_training` conversions pointing at the academy — because a counter would have to be reset on
+a world reset (ADR-0005), the same argument the used market makes.
+
+**§21 and §10.1 disagree about where an academy is built, and this followed §10.1.** M7-04
+already shipped a `hub_facility` of kind `training_academy` with an opening cost and an annual
+fee, from §21's _"unlocked per hub"_ list. It gates nothing in M9-01 and was left exactly as it
+was: making it a prerequisite would invent a rule neither section states and would deny an
+academy to every airline whose crew base is not at a hub. `docs/training-academy.md` records
+the conflict; it is also on the issue.
+
 **`FLIGHT_DEPART` has a handler as of M5-02, and that was a decision.** `handlers.ts` had said
 for two milestones that inventing a departure would be _"the accidental decision ADR-0019's
 boundary exists to prevent"_, and that remains true of an accidental one. M5-02's _"legality is

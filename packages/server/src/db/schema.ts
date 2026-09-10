@@ -559,6 +559,10 @@ export const cashMovementCause = pgEnum('cash_movement_cause', [
   'ground_volume_shortfall',
   /** Monthly payroll for a station the airline handles itself (§9.3). */
   'ground_self_handling_payroll',
+  /** §10.1's capital: a training academy level, or a module inside one (M9-01). */
+  'academy_construction',
+  /** What the buildings cost every month once they are teaching (§10.1). */
+  'academy_upkeep',
   'admin_adjustment',
   'flight_settlement',
   'disruption_cost',
@@ -3353,6 +3357,205 @@ export const crewPool = pgTable(
   ],
 );
 
+/**
+ * A build inside §10.1: going up, or finished and teaching.
+ *
+ * Two states and no third. There is no `cancelled`: §10.1 gives construction a
+ * capital cost and a duration and no way back, and a status nobody can reach
+ * would be a mechanic sitting in the schema looking load-bearing — the same
+ * argument `hub_facility` makes for having no `closed_at`.
+ */
+export const academyBuildStatus = pgEnum('academy_build_status', [
+  'under_construction',
+  'operational',
+]);
+export type AcademyBuildStatusValue = (typeof academyBuildStatus.enumValues)[number];
+
+/** §10.1's seven modules. The shared `AcademyModuleKind` is the mirror of this. */
+export const academyModuleKind = pgEnum('academy_module_kind', [
+  'cbt_suite',
+  'cabin_service_mockup',
+  'emergency_drill',
+  'fixed_base_sim',
+  'full_flight_sim',
+  'ground_ops_bay',
+  'dispatch_lab',
+]);
+export type AcademyModuleKindValue = (typeof academyModuleKind.enumValues)[number];
+
+/**
+ * A training academy at a crew base (M9-01, §10.1).
+ *
+ * ## At a crew base, and the conflict that has to be named
+ *
+ * §10.1 opens *"Built at a crew base. One academy per base"*, and M9-01's issue
+ * repeats it. §21's facility list says instead that an academy is *"unlocked per
+ * hub"*, and M7-04 built that: `hub_facility` already has a `training_academy`
+ * kind with an opening cost and an annual fee. The two statements disagree, and
+ * this table follows §10.1 — the section M9-01 cites, and the specific one.
+ *
+ * The `hub_facility` row is left exactly as M7-04 shipped it and gates nothing
+ * here. Making it a prerequisite would invent a rule neither section states, and
+ * would strip the academy from every airline whose crew base is not at a hub.
+ * See `docs/training-academy.md`; the conflict is recorded on the issue.
+ *
+ * ## Every instant on this row is **game** time
+ *
+ * §10.1 says construction takes *real* weeks. [ADR-0026](../../../../docs/adr/0026-in-world-spans-are-game-time.md)
+ * names academy construction among the unbuilt spans it settles, and settles it
+ * the other way: a span inside a world runs on the world's clock unless it is
+ * genuinely a real-world quantity in the way an exchange rate is. A building at
+ * a crew base, staffed and teaching this world's crew, is not — and TIME-01's
+ * finding about factory orders applies unchanged, that a wall clock here would
+ * make a 4× world specifically and only worse at building academies.
+ *
+ * The acceptance criterion that sentence existed to serve is kept and is
+ * stronger for being structural: **nothing shortens a build**. There is no rush
+ * cost, no balance lever and no endpoint that moves `construction_ready_at`
+ * closer, so the rule holds by absence rather than by a check somebody could
+ * later relax.
+ *
+ * So `construction_started_at`, `construction_ready_at` and
+ * `academy_module.ready_at` are game instants like `crew_conversion.completes_at`,
+ * and the worker's commissioning sweep compares them against
+ * `gameTime(clock, now())`. `created_at` stays real, like every `created_at`.
+ *
+ * ## Level 0 is a building site, not a level
+ *
+ * A row is written when the player commissions level 1, with `level = 0` and
+ * `pending_level = 1`. Nothing is permitted at 0 — not a rank, not a research
+ * tier, not a training slot — which is the third acceptance criterion holding
+ * automatically: there is no state in which the money has been taken and the
+ * capability has arrived early.
+ */
+export const academy = pgTable(
+  'academy',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    /** §10.1's *"one academy per base"*, enforced by the unique below. */
+    crewBaseId: uuid('crew_base_id')
+      .notNull()
+      .references(() => crewBase.id, { onDelete: 'cascade' }),
+
+    /** The commissioned level, 0-5. **0 means nothing is operational yet.** */
+    level: integer('level').notNull().default(0),
+    /** The level being built toward, or null when nothing is under construction. */
+    pendingLevel: integer('pending_level'),
+
+    /** Both **game** time (ADR-0026). Null together with `pending_level`. */
+    constructionStartedAt: timestamp('construction_started_at', { withTimezone: true }),
+    constructionReadyAt: timestamp('construction_ready_at', { withTimezone: true }),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('academy_crew_base_key').on(t.crewBaseId),
+    index('academy_airline_idx').on(t.airlineId),
+    /*
+     * The worker's claim: this world's academies whose construction is due.
+     * Partial, because the overwhelming majority of rows are finished buildings
+     * that the sweep must not have to read past.
+     */
+    index('academy_due_idx')
+      .on(t.worldId, t.constructionReadyAt)
+      .where(sql`pending_level IS NOT NULL`),
+    check('academy_level_range', sql`${t.level} >= 0 AND ${t.level} <= 5`),
+    /*
+     * One level at a time, and always the next one. §10.1's ladder is climbed,
+     * not jumped: without this a client could commission level 5 directly and
+     * pay one level's price for four levels of ceiling.
+     */
+    check(
+      'academy_pending_level_is_next',
+      sql`${t.pendingLevel} IS NULL
+          OR (${t.pendingLevel} = ${t.level} + 1 AND ${t.pendingLevel} <= 5)`,
+    ),
+    /*
+     * A build is a target and two instants together, or it is not a build. Any
+     * half of it would be a row the sweep could neither finish nor recognise —
+     * the same shape `airframe_in_check_has_terms` guards for a running check.
+     */
+    check(
+      'academy_construction_terms',
+      sql`(${t.pendingLevel} IS NULL
+             AND ${t.constructionStartedAt} IS NULL
+             AND ${t.constructionReadyAt} IS NULL)
+          OR (${t.pendingLevel} IS NOT NULL
+             AND ${t.constructionStartedAt} IS NOT NULL
+             AND ${t.constructionReadyAt} IS NOT NULL
+             AND ${t.constructionReadyAt} > ${t.constructionStartedAt})`,
+    ),
+  ],
+);
+
+/**
+ * A module inside an academy (§10.1).
+ *
+ * *"Modules determine **what** you can train; academy level determines **how
+ * far**."* Built independently of each other and of the level, each with its own
+ * capital cost, real-week build and monthly upkeep.
+ *
+ * `family` is set for `full_flight_sim` and null for everything else — §10.1
+ * names the full-flight sim *"per aircraft family"* and no other module that
+ * way, because a simulator is one aeroplane's cockpit and the rest are rooms.
+ * Text rather than a foreign key, for the reason `crew_pool.family` is: a family
+ * is a property of several types rather than a table, and an installed simulator
+ * must survive a catalogue version that no longer lists the type it was bought
+ * for.
+ *
+ * Uniqueness is two partial indexes rather than one constraint, because
+ * PostgreSQL treats NULLs as distinct and a single `(academy, kind, family)`
+ * unique would happily allow six CBT suites.
+ */
+export const academyModule = pgTable(
+  'academy_module',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    academyId: uuid('academy_id')
+      .notNull()
+      .references(() => academy.id, { onDelete: 'cascade' }),
+
+    kind: academyModuleKind('kind').notNull(),
+    /** The aircraft family, for `full_flight_sim` only. */
+    family: text('family'),
+
+    status: academyBuildStatus('status').notNull().default('under_construction'),
+
+    /** All three **game** time, like the academy's own (ADR-0026). */
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    readyAt: timestamp('ready_at', { withTimezone: true }).notNull(),
+    installedAt: timestamp('installed_at', { withTimezone: true }),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('academy_module_kind_key')
+      .on(t.academyId, t.kind)
+      .where(sql`family IS NULL`),
+    uniqueIndex('academy_module_family_key')
+      .on(t.academyId, t.kind, t.family)
+      .where(sql`family IS NOT NULL`),
+    // The worker's claim: modules whose fit-out is due.
+    index('academy_module_due_idx').on(t.status, t.readyAt),
+    check(
+      'academy_module_family_matches_kind',
+      sql`(${t.kind} = 'full_flight_sim') = (${t.family} IS NOT NULL)`,
+    ),
+    check('academy_module_ready_after_start', sql`${t.readyAt} > ${t.startedAt}`),
+    check(
+      'academy_module_installed_matches_status',
+      sql`(${t.status} = 'operational' AND ${t.installedAt} IS NOT NULL)
+          OR (${t.status} = 'under_construction' AND ${t.installedAt} IS NULL)`,
+    ),
+  ],
+);
+
 export const crewConversionStatus = pgEnum('crew_conversion_status', [
   'in_training',
   'completed',
@@ -3392,6 +3595,23 @@ export const crewConversion = pgTable(
 
     status: crewConversionStatus('status').notNull().default('in_training'),
 
+    /**
+     * The academy that trained this course in-house, or **null for a course
+     * bought in** (M9-01, §10.1).
+     *
+     * One column carrying one fact rather than a boolean beside it: a course is
+     * in-house exactly when an academy carried it, and two columns could
+     * disagree. It is also the slot ledger — §10.1's finite training slots are
+     * `sum(heads)` over the `in_training` rows pointing here, which needs no
+     * counter column and therefore nothing for ADR-0005's world reset to forget
+     * to clear.
+     *
+     * Null on every row written before M9-01, which reads correctly as what
+     * those courses were: outsourced at the market rate, because there were no
+     * academies.
+     */
+    academyId: uuid('academy_id').references(() => academy.id, { onDelete: 'set null' }),
+
     /** Both game time. */
     startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
     completesAt: timestamp('completes_at', { withTimezone: true }).notNull(),
@@ -3401,6 +3621,8 @@ export const crewConversion = pgTable(
   },
   (t) => [
     index('crew_conversion_base_idx').on(t.crewBaseId),
+    // The slot count: courses running at one academy right now.
+    index('crew_conversion_academy_idx').on(t.academyId, t.status),
     // The worker's claim query: due, and not yet dealt with.
     index('crew_conversion_due_idx').on(t.status, t.completesAt),
     check('crew_conversion_heads_positive', sql`${t.heads} > 0`),
