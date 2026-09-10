@@ -15,12 +15,16 @@ import {
   fragmentation,
   gameTime,
   requiredComplement,
+  trainingRoute,
   type CrewPool,
+  type TrainingAcademyState,
   type WorldClock,
 } from '@tailfin/sim';
 
 import { moveAirlineCash } from '../airline/cash';
 import {
+  academy,
+  academyModule,
   aircraftType,
   airframe,
   crewBase,
@@ -693,7 +697,8 @@ export async function startCrewConversion(
 ): Promise<CrewResult<{ conversionId: string; completesAt: Date }>> {
   if (input.fromFamily === input.toFamily) return { ok: false, refusal: 'same_family' };
 
-  const balance = await crewBalance(db, input.worldId);
+  const economy = await loadWorldEconomyConfig(db, input.worldId);
+  const balance = economy.crew;
   const clock = await worldClock(db, input.worldId);
   const now = gameTime(clock, new Date());
   const completesAt = new Date(now.getTime() + balance.conversion.durationDays * 86_400_000);
@@ -708,6 +713,29 @@ export async function startCrewConversion(
       const base = bases[0];
       if (!base) return { ok: false, refusal: 'base_absent' as const };
       if (base.status !== 'open') return { ok: false, refusal: 'base_closed' as const };
+
+      /*
+       * Where this course is trained, and therefore what it costs (M9-01,
+       * §10.1). An academy at this base with the right module and a free slot
+       * trains it in-house *"at a fraction of the cost of outsourcing"*;
+       * otherwise the course is bought in at the market rate, which is exactly
+       * what M5-01 always did.
+       *
+       * The academy is a **discount and a ceiling, never a gate**: §10.1's
+       * *"a base without one can only hire pre-qualified crew at market rates"*
+       * is a price, not a refusal, and making it a refusal would silently strip
+       * conversion from every airline in every existing world on the deploy that
+       * shipped it. See `sim/academy/training.ts`, which argues it at length.
+       */
+      const state = await academyStateFor(tx, input.crewBaseId);
+      const route = trainingRoute({
+        academy: state,
+        rank: input.rank,
+        toFamily: input.toFamily,
+        heads: input.heads,
+        outsourcedPerHeadMinor: balance.conversion.costPerHeadMinor,
+        balance: economy.academy,
+      });
 
       /*
        * `FOR UPDATE` and a re-read, rather than trusting the count the caller saw.
@@ -740,7 +768,7 @@ export async function startCrewConversion(
       const conversionId = randomUUID();
       const movement = await moveAirlineCash(tx, {
         airlineId: input.airlineId,
-        amountMinor: -(balance.conversion.costPerHeadMinor * input.heads),
+        amountMinor: -(route.costPerHeadMinor * input.heads),
         cause: 'crew_conversion',
         reference: conversionId,
         occurredAt: now,
@@ -759,6 +787,9 @@ export async function startCrewConversion(
         toFamily: input.toFamily,
         rank: input.rank,
         heads: input.heads,
+        // Null when the course was bought in — which is what makes the column
+        // the slot ledger as well as the record of where it was taught.
+        academyId: route.mode === 'in_house' && state !== null ? state.id : null,
         startedAt: now,
         completesAt,
       });
@@ -769,6 +800,48 @@ export async function startCrewConversion(
     if (error instanceof InsufficientFunds) return { ok: false, refusal: 'insufficient_funds' };
     throw error;
   }
+}
+
+/**
+ * The base's academy as `trainingRoute` needs to see it, or null if it has none.
+ *
+ * Read inside the caller's transaction so the slot count cannot move between
+ * the check and the insert: two courses started at once would otherwise each
+ * see the same free slots and together overfill the academy — the same race
+ * `FOR UPDATE` on the pool exists to stop one line below.
+ *
+ * `slotsInUse` is `sum(heads)` rather than a row count, because §10.1's slots
+ * hold crew and a course of ten heads occupies ten of them.
+ */
+async function academyStateFor(
+  tx: Database,
+  crewBaseId: string,
+): Promise<(TrainingAcademyState & { id: string }) | null> {
+  const rows = await tx
+    .select({ id: academy.id, level: academy.level })
+    .from(academy)
+    .where(eq(academy.crewBaseId, crewBaseId))
+    .limit(1)
+    .for('update');
+  const row = rows[0];
+  if (!row) return null;
+
+  const modules = await tx
+    .select({ kind: academyModule.kind, family: academyModule.family })
+    .from(academyModule)
+    .where(and(eq(academyModule.academyId, row.id), eq(academyModule.status, 'operational')));
+
+  const [used] = await tx
+    .select({ heads: sql<number>`coalesce(sum(${crewConversion.heads}), 0)::int` })
+    .from(crewConversion)
+    .where(and(eq(crewConversion.academyId, row.id), eq(crewConversion.status, 'in_training')));
+
+  return {
+    id: row.id,
+    level: row.level,
+    modules,
+    slotsInUse: Number(used?.heads ?? 0),
+  };
 }
 
 /**

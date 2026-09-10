@@ -92,12 +92,22 @@ function categoryForCause(cause: CashMovementCause): LedgerCategory {
       return 'aircraft_purchase';
     case 'maintenance_check':
       return 'maintenance';
+    /*
+     * §10.1's training academy is in here too, capital and upkeep alike. §14.1's
+     * rule is that a figure must be interrogable rather than that every cause
+     * needs a category of its own: a player asking *"what did crew cost me"*
+     * wants the training buildings in that answer, and the `cause` on the
+     * movement is what separates them when they ask which — the same argument
+     * the three ground handling causes make below.
+     */
     case 'crew_base_opening':
     case 'crew_hiring':
     case 'crew_conversion':
     case 'crew_payroll':
     case 'crew_base_overhead':
     case 'crew_positioning':
+    case 'academy_construction':
+    case 'academy_upkeep':
       return 'crew';
     case 'office_salary':
       return 'office_salary';

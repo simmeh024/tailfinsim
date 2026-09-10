@@ -48,6 +48,7 @@ export * from './aircraft-asset';
 export * from './aircraft-runtime';
 export * from './used-market';
 export * from './maintenance';
+export * from './academy';
 export * from './crew';
 export * from './fleet';
 export * from './livery';

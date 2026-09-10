@@ -131,6 +131,13 @@ costs 12.5× a lounge at a small one, automatically.
 `heavy_check` requires `maintenance_line` first — App. B.5's own ordering (_"maintenance line,
 **then** heavy check capability"_). Nothing else gates a facility beyond having the cash.
 
+`training_academy` here is **not** §10.1's training academy, and the two must not be confused.
+This one is App. B.5's per-hub unlock: an opening cost, an annual fee and no mechanic behind
+it. §10.1's academy is a separate thing at a **crew base**, with levels, modules and a rank
+ceiling, and M9-01 built it — see [`training-academy.md`](training-academy.md), which records
+why the design doc says both and which one the code follows. Holding this facility neither
+grants nor gates that academy.
+
 Both prices are **pinned on the `hub_facility` row** at purchase, for the same reason the hub's
 tier is: a retune must not re-price something already bought.
 

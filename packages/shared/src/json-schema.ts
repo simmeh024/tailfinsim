@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { AcademiesResponse } from './academy';
 import {
   AdminAuditResponse,
   AdminCreateEconomyConfigResponse,
@@ -181,6 +182,7 @@ export const bookCheckResponseJsonSchema = z.toJSONSchema(BookCheckResponse);
 export const adminRequeueEventsResponseJsonSchema = z.toJSONSchema(AdminRequeueEventsResponse);
 export const worldClockJsonSchema = z.toJSONSchema(WorldClock);
 export const crewResponseJsonSchema = z.toJSONSchema(CrewResponse);
+export const academiesResponseJsonSchema = z.toJSONSchema(AcademiesResponse);
 export const automationStateResponseJsonSchema = z.toJSONSchema(AutomationStateResponse);
 export const groundStationResponseJsonSchema = z.toJSONSchema(GroundStationResponse);
 export const groundContractsResponseJsonSchema = z.toJSONSchema(GroundContractsResponse);

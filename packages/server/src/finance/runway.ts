@@ -129,20 +129,23 @@ function classifyCause(cause: CashMovementCause): CauseRole {
     // Reproduced exactly by a commitment below. Counting these in the rate as
     // well would bill the airline's payroll and interest twice over. App. B.5's
     // monthly hub fee is here for exactly that reason: `commitmentsFor` rebuilds
-    // it from the hubs the airline holds.
+    // it from the hubs the airline holds, and §10.1's academy upkeep the same
+    // way from the academies it holds.
     case 'crew_payroll':
     case 'crew_base_overhead':
     case 'office_salary':
     case 'ground_self_handling_payroll':
     case 'loan_interest':
     case 'hub_upkeep':
+    case 'academy_upkeep':
       return 'projected';
 
     /*
      * Capital and financing. Each is a real movement and none is a rate — a hub
-     * and its facilities included, because a $25M flagship inside the window
-     * would otherwise imply a burn that reports a healthy airline as having days
-     * to live, which is the exact failure this class exists to prevent.
+     * and its facilities included, and an academy level or module for the same
+     * reason, because a $25M flagship inside the window would otherwise imply a
+     * burn that reports a healthy airline as having days to live, which is the
+     * exact failure this class exists to prevent.
      */
     case 'airline_founding':
     case 'airline_rebrand':
@@ -152,6 +155,7 @@ function classifyCause(cause: CashMovementCause): CauseRole {
     case 'crew_base_opening':
     case 'crew_hiring':
     case 'crew_conversion':
+    case 'academy_construction':
     case 'office_expansion':
     case 'executive_floor':
     case 'executive_office':

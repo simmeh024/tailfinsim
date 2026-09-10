@@ -3357,6 +3357,214 @@ export const SHIPPED_CREDIT_BALANCE = {
   },
 } as const satisfies z.input<typeof CreditBalance>;
 
+// ---------------------------------------------------------------------------
+// The training academy — §10.1 (M9-01)
+// ---------------------------------------------------------------------------
+
+/**
+ * What an academy costs, how long it takes and how many crew fit through it.
+ *
+ * ## Money and time only
+ *
+ * The §10.1 *table* — which rank a level may train, which research tier it makes
+ * reachable — is design and lives in `academy.ts`'s `ACADEMY_LEVELS`. This object
+ * is the half a world may retune without redesigning the ladder: prices, real
+ * weeks, monthly upkeep, slot counts and the in-house discount. Keeping the two
+ * apart is the same split §22.3 and §22.5 draw between a fare change and an
+ * aerodynamics change, and it means a `cash_movement` can always say which of
+ * the two explained its amount.
+ *
+ * ## `buildWeeks` cannot be bought down, and that is a rule rather than a unit
+ *
+ * §10.1's third acceptance criterion is that *build time cannot be shortened
+ * with money*. So there is deliberately **no** rush cost, no multiplier and no
+ * field a payment could move — the criterion is held by the absence of a lever
+ * rather than by a check.
+ *
+ * The weeks are the **world's** (ADR-0026), not the wall clock §10.1's prose
+ * asks for. That ADR names academy construction among the unbuilt spans it
+ * settles: a span inside a world is on the world's clock unless it is genuinely
+ * a real-world quantity, and a building at a crew base teaching the world's crew
+ * is not. Money still cannot shorten it; world speed can, exactly as world speed
+ * shortens every other span a player waits through.
+ */
+export const AcademyLevelBalance = z
+  .object({
+    /** One-off capital, charged when construction starts. */
+    capitalCostMinor: MinorUnits.positive(),
+    /** Weeks of the world's calendar (ADR-0026). No lever shortens it. */
+    buildWeeks: z.number().int().positive().max(520),
+    /** Fixed monthly upkeep once the level is commissioned. */
+    monthlyUpkeepMinor: MinorUnits.nonnegative(),
+    /** Crew who may be in training at once. §10.1's finite throughput. */
+    trainingSlots: z.number().int().nonnegative(),
+  })
+  .strict();
+export type AcademyLevelBalance = z.infer<typeof AcademyLevelBalance>;
+
+export const AcademyModuleBalance = z
+  .object({
+    capitalCostMinor: MinorUnits.positive(),
+    buildWeeks: z.number().int().positive().max(520),
+    monthlyUpkeepMinor: MinorUnits.nonnegative(),
+  })
+  .strict();
+export type AcademyModuleBalance = z.infer<typeof AcademyModuleBalance>;
+
+function byAcademyLevel<T extends z.ZodType>(value: T) {
+  return z.object({ 1: value, 2: value, 3: value, 4: value, 5: value }).strict();
+}
+
+function byAcademyModule<T extends z.ZodType>(value: T) {
+  return z
+    .object({
+      cbt_suite: value,
+      cabin_service_mockup: value,
+      emergency_drill: value,
+      fixed_base_sim: value,
+      full_flight_sim: value,
+      ground_ops_bay: value,
+      dispatch_lab: value,
+    })
+    .strict();
+}
+
+export const AcademyBalance = z
+  .object({
+    levels: byAcademyLevel(AcademyLevelBalance),
+    modules: byAcademyModule(AcademyModuleBalance),
+    /**
+     * What an in-house conversion costs, as a fraction of `crew.conversion`'s
+     * outsourced price.
+     *
+     * §10.1's *"a fraction of the cost of outsourcing"*, made into the numbers
+     * that sentence implies. Three rates rather than one, because §10.1 lists
+     * the fixed-base sim and the full-flight sim as separate modules and the
+     * ladder means nothing if they charge the same:
+     *
+     *   - `fixedBaseSim` — procedures training. Cheaper than outsourcing.
+     *   - `fullFlightSim` — the target family's own simulator, and the best rate
+     *     available. This is the number the sentence is about.
+     *   - `cabinMockup` — the cabin ladder's equivalent.
+     *
+     * Strictly below 1: an in-house course dearer than buying it in would make
+     * the whole building a liability, and no world should be able to express
+     * that by accident.
+     */
+    inHouseConversionRate: z
+      .object({
+        fixedBaseSim: z.number().gt(0).lt(1),
+        fullFlightSim: z.number().gt(0).lt(1),
+        cabinMockup: z.number().gt(0).lt(1),
+      })
+      .strict(),
+  })
+  .strict();
+export type AcademyBalance = z.infer<typeof AcademyBalance>;
+
+/**
+ * The shipped academy balance.
+ *
+ * ## What the prices are scaled against
+ *
+ * §10.1's own sentence is the specification: *"A level 5 academy at a base with
+ * 12 aircraft is a money pit; at a 90-aircraft hub it's the best investment in
+ * the game. Deciding when you're big enough is the interesting question."* A
+ * price table only makes that question interesting if the crossover sits
+ * somewhere a real airline reaches, so the anchors are three numbers already in
+ * this file:
+ *
+ *   - **`crew.base.openingCostMinor` is 3,000,000** and a base's monthly
+ *     overhead is 500,000. A Training Room costs about two-thirds of the base it
+ *     stands on, which is a decision rather than a formality.
+ *   - **A narrowbody A-check is 1,800,000.** Level 5's monthly upkeep is a few
+ *     of those — an unmistakable drain on a small airline and a rounding error
+ *     on a large one, which is the shape §10.1's sentence asks for.
+ *   - **A conversion is 200,000 a head outsourced.** At level 5's 60 slots and
+ *     the full-flight sim's 0.25 rate, an academy running near capacity saves
+ *     around 9,000,000 a fortnight — so a Centre of Excellence covers its upkeep
+ *     only if it is actually *used*, and idle slots are the money pit.
+ *
+ * The capital ladder is roughly ×2.7 a level and upkeep ×2.3, so the last two
+ * levels are where the interesting question bites. Build time grows with it: a
+ * Training Room is up in a game month, a Centre of Excellence takes most of a
+ * game year — on the flagship world's 2× clock, twenty real weeks. The largest
+ * investment in §10 cannot be hurried by any amount of money.
+ *
+ * Slots are the other half of the ladder: level 1 trains four at a time, level 5
+ * sixty. Throughput, not permission, is most of what a large airline is buying
+ * at the top.
+ *
+ * Defaulted, for the reason `SHIPPED_NPC_BALANCE` records.
+ */
+export const SHIPPED_ACADEMY_BALANCE = {
+  levels: {
+    1: {
+      capitalCostMinor: 2_000_000,
+      // Four game weeks. A fit-out, not a construction project.
+      buildWeeks: 4,
+      monthlyUpkeepMinor: 150_000,
+      trainingSlots: 4,
+    },
+    2: {
+      capitalCostMinor: 5_000_000,
+      buildWeeks: 8,
+      monthlyUpkeepMinor: 350_000,
+      trainingSlots: 10,
+    },
+    3: {
+      capitalCostMinor: 14_000_000,
+      buildWeeks: 16,
+      monthlyUpkeepMinor: 800_000,
+      trainingSlots: 20,
+    },
+    4: {
+      capitalCostMinor: 40_000_000,
+      buildWeeks: 28,
+      monthlyUpkeepMinor: 2_000_000,
+      trainingSlots: 36,
+    },
+    5: {
+      capitalCostMinor: 110_000_000,
+      // Forty game weeks. The longest wait in the game, and unbuyable.
+      buildWeeks: 40,
+      monthlyUpkeepMinor: 4_500_000,
+      trainingSlots: 60,
+    },
+  },
+  modules: {
+    // The cheapest room, and the one every in-house course needs. Priced so that
+    // an academy is never worth commissioning without it.
+    cbt_suite: { capitalCostMinor: 600_000, buildWeeks: 2, monthlyUpkeepMinor: 40_000 },
+    cabin_service_mockup: {
+      capitalCostMinor: 2_400_000,
+      buildWeeks: 6,
+      monthlyUpkeepMinor: 120_000,
+    },
+    emergency_drill: { capitalCostMinor: 3_200_000, buildWeeks: 8, monthlyUpkeepMinor: 180_000 },
+    fixed_base_sim: { capitalCostMinor: 9_000_000, buildWeeks: 12, monthlyUpkeepMinor: 450_000 },
+    // Per family, and the most expensive thing inside the building — a real
+    // full-motion simulator costs more than the room it stands in. This is what
+    // makes fleet commonality pay a second time: one sim serves one family.
+    full_flight_sim: {
+      capitalCostMinor: 30_000_000,
+      buildWeeks: 20,
+      monthlyUpkeepMinor: 1_200_000,
+    },
+    ground_ops_bay: { capitalCostMinor: 4_000_000, buildWeeks: 10, monthlyUpkeepMinor: 200_000 },
+    dispatch_lab: { capitalCostMinor: 5_000_000, buildWeeks: 10, monthlyUpkeepMinor: 250_000 },
+  },
+  inHouseConversionRate: {
+    // Procedures training in-house: a little over half the outsourced price.
+    fixedBaseSim: 0.55,
+    // §10.1's "a fraction of the cost". A quarter, and the reason to own the sim.
+    fullFlightSim: 0.25,
+    // A cabin conversion is cheaper to buy in than a pilot's, so the mock-up
+    // saves proportionally less than a simulator does.
+    cabinMockup: 0.45,
+  },
+} as const satisfies z.input<typeof AcademyBalance>;
+
 export const EconomyConfig = z
   .object({
     version: EconomyConfigVersion,
@@ -3410,6 +3618,11 @@ export const EconomyConfig = z
     // And once more (M8-06): §13's credit tiers and the three limits on what an
     // airline may borrow.
     credit: CreditBalance.default(SHIPPED_CREDIT_BALANCE),
+    // And once more (M9-01): §10.1's training academy. Every `v1` row written
+    // before it reads back the shipped prices, so a world pinned to one keeps
+    // pricing flights and founding airlines — which is the whole point of the
+    // rule, and the failure M3-12 shipped by forgetting it.
+    academy: AcademyBalance.default(SHIPPED_ACADEMY_BALANCE),
   })
   .strict();
 export type EconomyConfig = z.infer<typeof EconomyConfig>;
