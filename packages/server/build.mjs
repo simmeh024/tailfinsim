@@ -12,7 +12,7 @@ import { build } from 'esbuild';
  * (`moduleResolution: bundler` cannot emit runnable Node output) — see
  * ADR-0001. This is the compiler for the server package.
  *
- * Thirteen entry points, and CI asserts every one of them lands in `dist`:
+ * Fourteen entry points, and CI asserts every one of them lands in `dist`:
  *   main.js             the web process
  *   worker.js           the simulation engine (OPS-08) — one build, one stamp
  *   migrate.js          a one-off run by the deploy script before main starts
@@ -26,6 +26,7 @@ import { build } from 'esbuild';
  *   generate-demand.js  App. A.2's demand pools for a world (M3-01)
  *   seed-npcs.js        populates a world with incumbent carriers (M3-12)
  *   assign-timezones.js what the local clock reads at each airport (M3-04a)
+ *   rate-airport-difficulty.js  how hard each field is to fly into (M9-02)
  */
 await build({
   entryPoints: [
@@ -42,6 +43,7 @@ await build({
     'src/generate-demand.ts',
     'src/seed-npcs.ts',
     'src/assign-timezones.ts',
+    'src/rate-airport-difficulty.ts',
   ],
   outdir: 'dist',
   bundle: true,

@@ -14,6 +14,8 @@ import {
 import { airport, crewBase, crewDutyPeriod, crewPool } from '../db/schema';
 import { loadWorldEconomyConfig } from '../economy/loader';
 
+import { xpAfterDeparture } from './xp-store';
+
 import type { Database } from '../db/client';
 
 /**
@@ -233,6 +235,7 @@ async function applyMoraleEffects(
       unavailable: crewPool.unavailable,
       onDuty: crewPool.onDuty,
       reserve: crewPool.reserve,
+      xp: crewPool.xp,
     })
     .from(crewPool)
     .where(eq(crewPool.crewBaseId, crewBaseId));
@@ -264,6 +267,19 @@ async function applyMoraleEffects(
         headcount: remaining,
         // A reserve who resigns is no longer standby either.
         reserve: Math.min(pool.reserve, remaining),
+        /*
+         * The leavers take their share of section 10.2's XP with them (M9-02).
+         *
+         * `crew_pool.xp` is a pool total and the readout a player sees is XP per
+         * head, so a resignation that left the XP behind would make the
+         * survivors look *better* for having lost colleagues — an airline
+         * treating its crew badly would watch its remaining crew improve as they
+         * quit, which inverts section 9.2's whole delayed bill.
+         *
+         * Pro rata, because with no individuals there is no way to know whether
+         * the leavers were the experienced ones.
+         */
+        xp: xpAfterDeparture(pool.xp, pool.headcount, quitting),
         sick: offSick,
         sickUntil: offSick > 0 ? new Date(now.getTime() + balance.sicknessDays * 86_400_000) : null,
         updatedAt: now,

@@ -45,6 +45,7 @@
     "data:classify": "pnpm --filter @tailfin/server data:classify",
     "data:catchment": "pnpm --filter @tailfin/server data:catchment",
     "data:timezones": "pnpm --filter @tailfin/server data:timezones",
+    "data:difficulty": "pnpm --filter @tailfin/server data:difficulty",
     "data:distances": "pnpm --filter @tailfin/server data:distances",
     "world:seed": "pnpm --filter @tailfin/server world:seed",
     "demand:generate": "pnpm --filter @tailfin/server demand:generate",

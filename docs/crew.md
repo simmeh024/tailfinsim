@@ -563,3 +563,132 @@ The pool table gained two columns and the page gained a board:
 - **On duty**, the board, answers _where are my crew_, which before M5-02 the game could not
   answer at all. Still no person on it: a row is a **set**, a head count on one aeroplane.
   A set stopped away from base is marked `hotel` in words rather than in colour (App. H.7).
+
+## Crew XP: the network shapes the crew (M9-02, §10.2)
+
+Every completed flight teaches the crew who flew it.
+
+```
+XP = base(sector length) × typeFactor × difficultyMultiplier
+```
+
+§10.2's point is comparative rather than absolute: _"grinding easy domestic hops levels crew
+slowly. A pilot who flies your hard winter northern network becomes measurably better than one
+who doesn't. **Your route network shapes your crew, not just your balance sheet.**"_
+
+### It goes to a pool, because there is still nobody to give it to
+
+M5-01's rule stands: no crew member rows, and the player never touches an individual. §10.2
+says XP goes to _"every crew member aboard"_, and the two reconcile through the duty period.
+The flight names the `crew_duty_period` that operated it; the period holds the **rank
+breakdown actually taken from the pools**; each of those pools receives `xpPerHead × heads`.
+So every head aboard genuinely earns the same amount, and the total lands on `crew_pool.xp` —
+exactly where that table said it should when M5-01 wrote _"individual hours and proficiency are
+M9; if one arrives it should hang off this rather than replace it."_
+
+The readout is **XP per head**, and it behaves correctly in both directions. Hiring adds heads
+and no XP, so the average falls — a base that doubles its headcount really does have a greener
+crew force. Leavers take their share with them: `reviewCrewMorale` removes XP pro rata when
+crew resign, because a resignation that left the XP behind would make the survivors look
+_better_ for having lost colleagues, which inverts §9.2's whole delayed bill.
+
+`xpPerHead` is **null for an empty pool, not zero** — zero reads as "these crew have learned
+nothing", a claim about a green crew force rather than about a pool with nobody in it.
+
+### The complement is read, never recomputed
+
+`crew_duty_period.complement` is the JSON the dispatcher wrote when it took the heads.
+Recomputing which ranks flew from today's pools would credit a rank that has since been hired
+into and miss one that has shrunk — the same reason `releaseComplement` reads it rather than
+deriving it.
+
+### The difficulty multiplier
+
+`1 + Σ(terms)`, capped. **Adding** rather than multiplying, because multiplying would make a
+hard night landing at a hard field in weather worth an unbounded amount; §10.4's philosophy is
+that a ladder has a ceiling, and the cap is what makes _"the hardest sector in the game is
+worth three ordinary ones"_ a sentence with an answer.
+
+Every one of §10.2's five bullets is here and nothing else is:
+
+| Term               | Source                         | Shipped weight        |
+| ------------------ | ------------------------------ | --------------------- |
+| Arrival airport    | `airport.difficulty`, 0–1      | ×0.6                  |
+| Departure airport  | `airport.difficulty`, 0–1      | ×0.3                  |
+| Weather at arrival | M2-09's `landingChallenge`     | ×0.25                 |
+| Night landing      | arrival field's **local** hour | +0.12                 |
+| Disruption handled | delay / air return / diversion | +0.08 / +0.25 / +0.35 |
+| Long-haul          | ramped 2,000 → 5,000 nm        | up to +0.3            |
+| Oceanic            | different continents (a proxy) | +0.2                  |
+| **Ceiling**        |                                | ×3.0                  |
+
+`landingChallenge`, not `weatherSeverity`, and the weather module says why: severity asks
+whether the operation survives, challenge asks what the crew learned. A gale that cancels the
+flight teaches nobody anything — and never reaches settlement, because a cancellation never
+settles. **This is the first server consumer of M2-09's weather model**; it was built
+deterministic per station-day precisely so a question like this could be re-answered later, and
+until now nothing asked.
+
+Long-haul is a **difficulty** term rather than a base one because that is where §10.2's bullet
+list puts it. The base is linear in distance, so a long sector earns more twice over: more base
+and a bigger multiplier.
+
+`crossesContinents` is a **proxy** for §10.2's oceanic crossing, named as one. Deciding whether
+a great-circle track actually crosses open water needs coastline geometry the game does not
+carry; two continents is right for the North Atlantic, the Pacific and the Kangaroo route, and
+wrong for Istanbul–Cairo, which is short enough that the long-haul term leaves it near nothing
+anyway.
+
+The night window is deliberately **not** `crew.duty.woclStartHour`. The WOCL is a body-clock
+fatigue window at 02:00–06:00; night flying is a visual-conditions question from dusk to dawn.
+Reusing one for the other would tie a regulatory limit to a progression rate.
+
+### Airport difficulty is data
+
+`pnpm data:difficulty` writes `airport.difficulty` (0–1) with a `difficulty_basis` audit trail,
+the same discipline `tier_basis` established. Two of §10.2's four airport terms are **derived**
+from imported geometry — a short runway and a high field — and the other two, slope and
+terrain or a steep approach, are **seeded** from
+`packages/server/data/reference/airport-difficulty.csv`, because OurAirports carries neither.
+
+The stored value is `max(derived, seeded)`. The list can therefore only ever raise a rating,
+never lower it, and a field that is short _and_ high _and_ terrain-constrained is not counted
+three times past the top of a scale other airports are measured against.
+
+**Null means never rated, not easy.** A world whose job has not run pays flat XP rather than
+XP against a guessed rating, and the distinction is the same one `crew_base.morale` draws
+between _never reviewed_ and _nothing_. Unknown geometry contributes nothing for the same
+reason: 308 scheduled-service airports have no runway rows at all, and treating "we were not
+told" as "3,000 ft" would rate a third of Africa as harder than Innsbruck.
+
+The job exits non-zero when a reference entry matches no airport — a typo in an ICAO code is
+otherwise invisible, since the entry simply never applies while the file goes on claiming it
+does. The ratings are still written.
+
+### Deterministic, and it has to be
+
+_"XP is deterministic given the flight and its conditions."_ Nothing in the chain draws a
+random number or reads a clock: the distance and the aeroplane are stored facts, the airport
+rating comes from a reproducible job, and the weather is M2-09's seeded per-station-day model.
+So a replay awards the same XP, and _"why did that flight earn 209?"_ has an answer — the
+itemised factors are written onto `flight_result.breakdown` under `crewXp`, which is already
+the settlement's audit trail. A row per flight per rank would be the highest-volume table in
+the schema for a question nobody queries in aggregate.
+
+### Another worker story
+
+XP is awarded inside `settleArrivedFlight`, after the `flight_result` insert has proved the
+arrival is not a replay — the same position and reason as `accrueFlightHours`. Settlement is
+the `FLIGHT_ARRIVE` handler, so **production, which has no worker, awards no XP at all** and
+every pool reads 0 for ever. That looks like a brand-new airline rather than a missing process,
+the same trap as everything else in §9 and §10. There is no counter of its own: XP is a side
+effect of an arrival, so `flightsMaterialised` and the queue depth are what to look at.
+
+### Not built
+
+**Nothing spends XP.** Levels, personal skill trees, named crew and Training Captains are
+M9-03 and M9-04; this milestone accumulates the currency they will spend, and deliberately
+stops there. **No page shows it either** — `xp` and `xpPerHead` are on `GET /api/crew`'s pool
+rows and no client consumer reads them yet, which is named here rather than left to be
+discovered later (CLAUDE.md's own warning that a closed issue is not evidence a player can
+reach a feature).

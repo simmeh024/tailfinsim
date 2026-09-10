@@ -569,8 +569,8 @@ freshly deployed box has an empty database and a running server that can serve a
 page and nothing else.
 
 Each job below is a bundled entry point under `packages/server/dist`, so the deploy above
-has to have run first. **The dependency order matters**; the timezone assignment is the one
-independent branch after airports.
+has to have run first. **The dependency order matters**; the timezone assignment and the
+difficulty rating are the two independent branches after airports.
 
 ```bash
 cd /srv/tailfin/packages/server
@@ -579,23 +579,27 @@ sudo -u tailfin pnpm data:airports    # ~86,000 aerodromes from OurAirports (M1-
 sudo -u tailfin pnpm data:classify    # tiers over the ~4,400 with scheduled service (M1-02)
 sudo -u tailfin pnpm data:catchment   # population and the wealth/tourism/business indices (M1-03)
 sudo -u tailfin pnpm data:timezones   # IANA timezone and UTC offset per airport (M3-04a)
+sudo -u tailfin pnpm data:difficulty  # how hard each field is to fly into (M9-02)
 sudo -u tailfin pnpm data:distances   # the packed great-circle matrix (M1-04)
 sudo -u tailfin pnpm world:seed       # the flagship world from config (M1-09)
 sudo -u tailfin pnpm demand:generate <worldId>   # App. A.2's demand pools (M3-01)
 sudo -u tailfin pnpm npc:seed <worldId>          # seeded incumbent carriers (M3-12)
 ```
 
-The first five are global reference data and are shared by every world — geography does not
+The first six are global reference data and are shared by every world — geography does not
 vary, and era worlds filter this set by opening and closing date rather than owning a copy of
 it. `data:timezones` needs only the airport import and may run alongside the classification and
-catchment steps. `demand:generate` and `npc:seed` are per world; NPC carriers choose their
-initial networks from the generated demand pools, so seed them last.
+catchment steps; `data:difficulty` needs the airports and their runways, so it may too.
+`demand:generate` and `npc:seed` are per world; NPC carriers choose their initial networks
+from the generated demand pools, so seed them last.
 
 Re-run `demand:generate` only deliberately: retuning `k` or `α` means regenerating, and it
 takes `--regenerate` to clear first. Without that flag a re-run is a no-op, which is the safe
 default — changing a coefficient and re-running without clearing would leave a world holding
 a mixture of two economies. `data:timezones` is independently safe to re-run and updates its
-derived values in place.
+derived values in place, and so is `data:difficulty` — it exits 3 when a reference entry
+matched no airport, having still written every rating, so read the warning rather than
+treating the exit code as a failure.
 
 `npc:seed` is idempotent by presence: a world that already has NPC airlines is left alone.
 

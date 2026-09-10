@@ -1,0 +1,92 @@
+icao,rating,reason,note
+# Known difficult airports (§10.2, M9-02).
+#
+# WHY THIS FILE EXISTS. Two of §10.2's four airport difficulty terms are already
+# in the imported data and are derived rather than listed: a **short** runway is
+# `runway.length_ft`, and a **high-altitude** field is `airport.elevation_ft`.
+# The other two are not in OurAirports at all. Whether a runway is **sloped**,
+# and whether an approach is **terrain-constrained** or **steep**, are facts
+# about the geography around the field and the procedures flown into it, and no
+# column upstream carries either.
+#
+# So the rule stays uniform and computed — see `data/difficulty/rating.ts` — and
+# the two facts it cannot see arrive here, the same split `airport-tiers.csv`
+# already makes between derived runway geometry and seeded hub status.
+#
+# HOW IT COMBINES. The stored rating is `max(derived, seeded)`. This list can
+# therefore only ever raise an airport's difficulty, never lower it, and a field
+# that is both short and terrain-constrained is not counted twice. The audit
+# trail on `airport.difficulty_basis` records both numbers and which one won.
+#
+# WHAT A RATING MEANS. 0.0 is an ordinary field on a flat plain. 1.0 is the
+# hardest thing a line pilot is ever asked to do. The scale is judgement, and it
+# is deliberately reviewable in one file rather than scattered through code.
+#
+#   0.30-0.45  demanding but routine — a steep approach, a bit of terrain
+#   0.50-0.70  special crew qualification territory in the real world
+#   0.75-1.00  the famous ones: Lukla, Paro, Courchevel
+#
+# ICAO rather than IATA, unlike the tier lists. Every operational reference in
+# this schema keys on `airport.icao_code` (see `crew_base.airport_icao` and the
+# eleven others), and several airports here have no IATA code at all.
+#
+# COVERAGE IS NOT THE GOAL. This is a seed of the well-known cases, not an
+# attempt at every hard field on earth. An airport absent from it is rated on
+# its geometry alone, which is a fair answer rather than a wrong one.
+
+# --- The famous ones -------------------------------------------------------
+VNLK,1.00,terrain,"Lukla (Tenzing-Hillary) — 527 m sloped strip at 2860 m against a mountain face"
+VQPR,0.95,terrain,"Paro — Himalayan valley; a handful of pilots in the world are certified"
+LFLJ,0.90,slope,"Courchevel altiport — 537 m at an 18.6% gradient"
+LFHM,0.85,slope,"Megève altiport — short sloped mountain strip"
+LSGS,0.60,terrain,"Sion — Rhône valley, terrain on both sides"
+LSZA,0.60,terrain,"Lugano — 6.65° approach, mountains"
+LOWI,0.60,terrain,"Innsbruck — Inn valley, circling approach, downdraughts"
+LOWS,0.45,terrain,"Salzburg — alpine terrain on approach"
+EGLC,0.50,steep_approach,"London City — 5.5° approach, 1508 m runway, special certification"
+TNCM,0.45,steep_approach,"Princess Juliana — famously low threshold over Maho Beach"
+LPMA,0.65,terrain,"Madeira Cristiano Ronaldo — wind shear, table runway, special certification"
+LPFL,0.55,terrain,"Flores — Atlantic island, terrain and weather"
+SBRJ,0.45,terrain,"Santos Dumont — short urban runway between the bay and the hills"
+NZQN,0.55,terrain,"Queenstown — mountains, one-way approaches"
+MDST,0.35,terrain,"Santiago Cibao — hill terrain"
+MHTG,0.75,terrain,"Toncontín — the 45° bank on short final; short runway in a bowl"
+TFFJ,0.85,terrain,"Saint Barthélemy — descent over a hillside onto 650 m"
+
+# --- High-altitude fields (derived elevation also fires; listed where the ----
+# --- approach adds something the elevation alone does not) ------------------
+SLLP,0.80,terrain,"El Alto La Paz — 4062 m; performance and terrain together"
+SEQM,0.55,terrain,"Quito Mariscal Sucre — 2400 m in an Andean valley"
+SKBO,0.45,terrain,"Bogotá El Dorado — 2548 m, surrounded by high terrain"
+MMMX,0.50,terrain,"Mexico City Benito Juárez — 2230 m in a bowl"
+SPZO,0.70,terrain,"Cusco — 3310 m, valley approach, morning-only in practice"
+VNKT,0.60,terrain,"Kathmandu — 1338 m, Himalayan approach and departure"
+FTTJ,0.30,terrain,"N'Djamena — heat and altitude performance"
+
+# --- The winter north. §10.2's own example — "a pilot who flies your hard ---
+# --- winter northern network becomes measurably better" — and the reason ----
+# --- these are here rather than left to the weather model alone: darkness, ---
+# --- contaminated runways and terrain are properties of the field. ----------
+BGSF,0.70,terrain,"Kangerlussuaq — Greenland fjord approach, extreme cold"
+BGGH,0.75,terrain,"Nuuk — short runway, terrain, Arctic weather"
+BGJN,0.75,terrain,"Ilulissat — 845 m gravel-era strip inside the Arctic Circle"
+BGKK,0.80,terrain,"Kulusuk — remote east Greenland, terrain and ice"
+BIIS,0.75,terrain,"Ísafjörður — descent into a fjord with a turn on short final"
+BIAR,0.45,terrain,"Akureyri — Eyjafjörður valley approach"
+ENSB,0.60,terrain,"Svalbard Longyearbyen — northernmost scheduled field; polar night"
+ENHF,0.55,terrain,"Hammerfest — short runway on an Arctic hillside"
+ENAT,0.45,terrain,"Alta — Arctic winter operations"
+ENTC,0.35,terrain,"Tromsø — Arctic, terrain on approach"
+ENBO,0.35,terrain,"Bodø — Arctic coast, crosswinds"
+ENVA,0.30,terrain,"Trondheim Værnes — winter operations"
+ENGM,0.25,terrain,"Oslo Gardermoen — routine, but a real winter operation"
+ESNQ,0.35,terrain,"Kiruna — Arctic Sweden"
+EFKT,0.35,terrain,"Kittilä — Finnish Lapland, deep winter"
+EFIV,0.35,terrain,"Ivalo — northernmost Finnish field"
+CYFB,0.55,terrain,"Iqaluit — Arctic Canada, no alternates nearby"
+CYRB,0.65,terrain,"Resolute Bay — high Arctic"
+PASY,0.70,terrain,"Shemya — Aleutian weather and isolation"
+PADK,0.65,terrain,"Adak — Aleutian crosswinds and fog"
+PAJN,0.55,terrain,"Juneau — mountain approach in the Alaskan panhandle"
+UHMM,0.45,terrain,"Magadan — Siberian winter operations"
+UEEE,0.45,terrain,"Yakutsk — extreme cold"

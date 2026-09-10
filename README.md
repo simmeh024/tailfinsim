@@ -228,6 +228,18 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   trades a per-turn fee for a fixed cost that does not shrink when the schedule does. The term
   and the payroll are the Worker's, so both bite on dev only — see
   [`docs/ground-handling.md`](docs/ground-handling.md), including why there is no web UI yet.
+- **Crew who get better at what you actually make them fly.** Every completed flight awards
+  §10.2's XP to the crew aboard: a base figure from the sector length, a type factor from the
+  aeroplane's weight, and a difficulty multiplier built from how hard the fields are, the
+  weather they landed in, whether it was dark, whether they flew a diversion, and how far and
+  how oceanic the sector was. A hard winter northern network levels crew measurably faster
+  than easy domestic hops, which is the whole point — your route network shapes your crew, not
+  just your balance sheet. Airport difficulty is **data**: `pnpm data:difficulty` derives a
+  rating from runway length and elevation and raises it from a committed list of the famously
+  hard fields, with an audit trail on every row. Every input is a stored or reproducible fact,
+  so an old arrival re-derives the same XP and the factors that made it are written onto the
+  flight result. Nothing spends it yet — levels and skill trees are M9-03. See
+  [`docs/crew.md`](docs/crew.md).
 - **A training academy that gates a ceiling and grants no boost.** §10.1's academy is built at
   a crew base and climbs five levels, each unlocking a higher rank an airline may train, a
   higher research tier it may later reach, and more of the finite training slots crew occupy
