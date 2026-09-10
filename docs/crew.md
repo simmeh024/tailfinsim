@@ -665,6 +665,13 @@ The job exits non-zero when a reference entry matches no airport — a typo in a
 otherwise invisible, since the entry simply never applies while the file goes on claiming it
 does. The ratings are still written.
 
+**Measured on dev**, against the full OurAirports import on 2026-09-10: 85,915 airports rated,
+all 47 reference entries matched. Restricted to the 4,369 with **scheduled service** — the only
+ones a flight can reach — the distribution is 69% ordinary, 15% demanding, 16% hard and 0.5%
+extreme, mean 0.151. That is the shape §10.2 needs: an easy domestic hop is the default and
+hard flying is a deliberate choice. The full set looks far harder (35% in the hard band) because
+it is mostly tiny unscheduled strips with 2,000 ft runways, which no flight will ever use.
+
 ### Deterministic, and it has to be
 
 _"XP is deterministic given the flight and its conditions."_ Nothing in the chain draws a
