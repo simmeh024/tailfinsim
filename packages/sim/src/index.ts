@@ -63,3 +63,6 @@ export * from './statistics';
 
 /** §14.5's alert rules and their deduplication (M8-13). */
 export * from './alerts';
+
+/** §12.1's belly cargo: what fits, and what a lane pays for it (M8-15). */
+export * from './cargo';

@@ -40,7 +40,32 @@ import { handledEventTypes } from './handlers';
  */
 
 const DUE = new Date('2024-10-01T00:00:00.000Z');
-const REAL_NOW = new Date('2026-08-21T12:00:00.000Z');
+
+/**
+ * The real instant at which a world created *now* reads {@link DUE} on its own
+ * game clock.
+ *
+ * Derived rather than written down, and that is a bug fix rather than a tidy-up.
+ * It used to be the literal `2026-08-21T12:00:00.000Z`, which worked only while
+ * the real world's clock stayed close enough to it: `createWorld` sets
+ * `launch_date` to the real now, the drain below runs the clock at `1×`, so
+ * game-now is `epoch + (realNow − launchDate)` — and with `DUE` nineteen days
+ * *before* the flagship epoch, a hard-coded `realNow` nineteen days before the
+ * launch date left about nineteen days of slack. That slack ran out on
+ * **2026-09-09 at 12:00 UTC**: CI was green at 02:39 the same morning and the
+ * queued event stopped being due that afternoon, so `drained.unsupported` came
+ * back `0` and the assertion failed with nothing in the diff to explain it.
+ *
+ * A test whose correctness depends on today's date is a test that fails for
+ * somebody who did not break it, which is the trap CLAUDE.md's verification
+ * section is mostly about. So this is computed from the world's own epoch: the
+ * event is due **by construction**, at any real date, for ever.
+ */
+function realNowFor(world: { epoch: Date; launchDate: Date }, dueAt: Date): Date {
+  // `speedMultiplier` is 1 at the call site, so a game-time offset from the epoch
+  // is the same offset in real time from the launch date.
+  return new Date(world.launchDate.getTime() + (dueAt.getTime() - world.epoch.getTime()));
+}
 
 function queued(
   type: WorldEventType,
@@ -356,7 +381,7 @@ describeDb('asking a real queue what is actionable', () => {
       handle.db,
       worldId,
       { epoch: row.epoch, launchDate: row.launchDate, speedMultiplier: 1 },
-      REAL_NOW,
+      realNowFor(row, DUE),
       registry,
     );
 

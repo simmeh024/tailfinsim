@@ -7,6 +7,7 @@ import type {
   FareWaterfallResponse,
   HubConnectionsResponse,
   RepeatPattern,
+  RouteCargoResponse,
   RouteCompetitionResponse,
   RoutePerformanceResponse,
   ScheduleView,
@@ -241,6 +242,20 @@ export async function fetchCompetition(routeId: string): Promise<RouteCompetitio
     throw new Error(`GET /api/routes/${routeId}/competition failed with ${String(status)}`);
   }
   return body as RouteCompetitionResponse;
+}
+
+/**
+ * What this route's hold is worth, and which limit is stopping it (§12.1, §12.2).
+ *
+ * Decision support, never a gate: it says what a flight *would* carry, so it
+ * answers on a world with no worker and changes nothing about what one loads.
+ */
+export async function fetchRouteCargo(routeId: string): Promise<RouteCargoResponse> {
+  const { status, body } = await json(`/api/routes/${routeId}/cargo`);
+  if (status !== 200) {
+    throw new Error(`GET /api/routes/${routeId}/cargo failed with ${String(status)}`);
+  }
+  return body as RouteCargoResponse;
 }
 
 /** How well your hub banks for connections — a timing read over materialised flights (§7.4). */

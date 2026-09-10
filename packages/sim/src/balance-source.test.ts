@@ -17,6 +17,7 @@ import {
   DEFAULT_ITINERARY,
   DEFAULT_LOGIT,
   DEFAULT_MODULATION,
+  DEFAULT_CARGO,
   DEFAULT_NPC,
   DEFAULT_SCHED_FIT,
   DEFAULT_SERVICE,
@@ -125,6 +126,7 @@ const BALANCE_EXPORTS = [
     'economy/fare-floor.ts',
   ],
   ['DEFAULT_NPC', DEFAULT_NPC, ECONOMY_CONFIG_V1.npc, 'npc/carrier.ts'],
+  ['DEFAULT_CARGO', DEFAULT_CARGO, ECONOMY_CONFIG_V1.cargo, 'cargo/lane.ts'],
   ['DEFAULT_SERVICE', DEFAULT_SERVICE, ECONOMY_CONFIG_V1.service, 'service/bands.ts'],
   ['DEFAULT_CREDIT', DEFAULT_CREDIT, ECONOMY_CONFIG_V1.credit, 'finance/credit.ts'],
 ] as const;
@@ -187,5 +189,18 @@ describe('what is deliberately still a literal', () => {
     // `flight_result` can no longer say which of the two explained it.
     const source = readFileSync(join(SIM_SRC, 'flight/fuel.ts'), 'utf8');
     expect(source).not.toContain('ECONOMY_CONFIG_V1');
+  });
+
+  it('leaves the belly capacity model out of the economy too (M8-15)', () => {
+    // The same split, one milestone later and easier to get wrong, because
+    // `cargo/lane.ts` next door *is* economy. What fits in a hold is the §22.5
+    // catalogue — MTOW, OEW, structural payload, hold volume, passenger and bag
+    // planning weights — and what a tonne earns is §22.3's. A world must be able
+    // to retune a freight rate without re-issuing its aircraft catalogue.
+    const source = readFileSync(join(SIM_SRC, 'cargo/belly.ts'), 'utf8');
+    expect(source).not.toContain('ECONOMY_CONFIG_V1');
+    // Freight density is the one economy value it consumes, and it arrives as an
+    // argument rather than as an import, which is what keeps that true.
+    expect(source).toContain('freightDensityKgPerM3: number');
   });
 });

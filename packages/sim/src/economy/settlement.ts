@@ -157,12 +157,22 @@ export interface SettlementConfig {
    */
   ancillaryPerPassengerMinor: number;
   /**
-   * Belly cargo yield per tonne (§12.1).
+   * Belly cargo yield per tonne (§12.1), for a flight with no resolved lane.
    *
-   * **Not calibrated.** §13.4's example carries no freight, so there is no
-   * anchor for this one and it is an estimate at short-haul belly rates. M12
-   * owns cargo pricing properly; treat this as a placeholder that produces a
-   * plausible number rather than a defended one.
+   * **Superseded per flight, and kept deliberately.** M8-15 made yield a property
+   * of the lane and the direction (§12.2), so a settled flight normally bills
+   * `SettlementInputs.cargoRatePerTonneMinor` and this is what applies when no
+   * lane could be resolved — a flight whose scheduled destination row has gone
+   * (a world reset mid-flight), or a test that wants a cargo line without
+   * two airports' catchment indices. It stays in the config rather than moving to
+   * `EconomyConfig.cargo` because `economy_config` rows are immutable: every `v1`
+   * settlement written before M8-15 was billed at this number, and moving it
+   * would leave those rows unexplainable.
+   *
+   * **Not calibrated.** §13.4's worked example carries no freight, so there is no
+   * anchor for it, and `EconomyConfig.cargo.baseRatePerTonneMinor` is anchored to
+   * this same figure so that the lane model arriving moved no world's money on
+   * its own. Both produce a plausible number rather than a defended one.
    */
   cargoRatePerTonneMinor: number;
 
@@ -245,6 +255,22 @@ export interface SettlementInputs {
   load: FlightLoad;
   /** Belly freight in kilograms, from `flight.cargo_kg`. */
   cargoKg: number;
+  /**
+   * What a tonne of this flight's freight earned, minor units (M8-15, §12.2).
+   *
+   * Optional, and absent means *"no lane was resolved"* — which falls back to
+   * `config.cargoRatePerTonneMinor`, the single world-wide figure this settlement
+   * has billed since M2-06. That fallback is not decoration: an arrival whose
+   * scheduled destination has been deleted under it still has to settle,
+   * and a test that only cares about the cargo line should not
+   * have to invent two airports' catchment indices to get one.
+   *
+   * Supplied, never derived here. §12.2's rate is a property of the *lane and the
+   * direction* — `cargoLane` in `cargo/lane.ts` owns it — and a settlement that
+   * recomputed it from airports it does not have would be the second number for
+   * one fact that CONTRIBUTING invariant 4 exists to prevent.
+   */
+  cargoRatePerTonneMinor?: number;
   /** From M2-05. Supplies block time, which crew and maintenance are charged against. */
   block: BlockTimeResult;
   /** From M2-05. Already money, in **major** units — converted here, once. */
@@ -434,12 +460,19 @@ export function settleFlight(
     });
   }
 
-  const cargoMinor = roundMinor(cargoTonnes * config.cargoRatePerTonneMinor);
+  // The lane's own rate when one was resolved, and the world-wide figure when
+  // not. Written to the detail line either way, because after a retune the only
+  // thing that can explain an old settlement is the rate it was billed at
+  // (invariant 4) — and a lane rate and a fallback rate are different claims
+  // about the same flight.
+  const cargoRatePerTonneMinor = inputs.cargoRatePerTonneMinor ?? config.cargoRatePerTonneMinor;
+  assertNonNegative(cargoRatePerTonneMinor, 'Cargo rate');
+  const cargoMinor = roundMinor(cargoTonnes * cargoRatePerTonneMinor);
   if (cargoMinor > 0) {
     revenue.push({
       source: 'cargo',
       amountMinor: cargoMinor,
-      detail: `${round(cargoTonnes, 2)} t of belly freight at ${money(config.cargoRatePerTonneMinor)} a tonne.`,
+      detail: `${round(cargoTonnes, 2)} t of belly freight at ${money(cargoRatePerTonneMinor)} a tonne.`,
     });
   }
 

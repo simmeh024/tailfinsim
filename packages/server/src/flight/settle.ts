@@ -3,6 +3,8 @@ import { and, eq, sql } from 'drizzle-orm';
 import { CABIN_ORDER, FlightLoad } from '@tailfin/shared';
 import type { AirportFees, FlightDisruption } from '@tailfin/shared';
 import {
+  cargoLane,
+  type CargoLaneEndpoint,
   computeBlockTime,
   computeFuelBurn,
   computeFuelCost,
@@ -170,6 +172,32 @@ function disruptionOutcomeOf(disruption: FlightDisruption | null): DisruptionOut
 }
 
 /**
+ * The three §12.2 columns off an airport row, in the shape `cargoLane` wants.
+ *
+ * `business_index` and `wealth_index` are `numeric`, so the driver hands them
+ * over as strings; a `null` stays `null`, because an airport with no scheduled
+ * service has no catchment row and `cargoLane` treats that as unknown rather
+ * than as zero.
+ */
+function laneEndpointOf(row: {
+  catchmentPopulation: number | null;
+  businessIndex: string | null;
+  wealthIndex: string | null;
+}): CargoLaneEndpoint {
+  return {
+    catchmentPopulation: row.catchmentPopulation,
+    businessIndex: numericOrNull(row.businessIndex),
+    wealthIndex: numericOrNull(row.wealthIndex),
+  };
+}
+
+function numericOrNull(value: string | null): number | null {
+  if (value === null) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
  * Price an arrived flight, write its result, and move the airline's cash.
  *
  * `arrivedAt` is a **game-time** instant — the flight's on-blocks time — like
@@ -222,9 +250,19 @@ export async function settleArrivedFlight(
       continent: airport.continent,
       isoCountry: airport.isoCountry,
       tier: airport.tier,
+      // §12.2's trade proxy (M8-15), for the same reason: the lane's freight rate
+      // needs both ends' catchment and indices, and a second query for three
+      // columns already on the row would be a query per arrival.
+      catchmentPopulation: airport.catchmentPopulation,
+      businessIndex: airport.businessIndex,
+      wealthIndex: airport.wealthIndex,
     })
     .from(airport)
-    .where(sql`${airport.icaoCode} in (${row.originIcao}, ${arrivalIcao})`);
+    // The scheduled destination is in the list as well as the arrival airport, so
+    // a diverted flight can still be told what its freight was sold at. They are
+    // the same airport on every flight that arrived where it was aimed, and
+    // Postgres does not mind being asked twice.
+    .where(sql`${airport.icaoCode} in (${row.originIcao}, ${arrivalIcao}, ${row.destinationIcao})`);
 
   const origin = ends.find((a) => a.icao === row.originIcao);
   const arrival = ends.find((a) => a.icao === arrivalIcao);
@@ -328,6 +366,38 @@ export async function settleArrivedFlight(
   // than settle a flight for a plausible-looking wrong number.
   const load = FlightLoad.parse(JSON.parse(row.load));
 
+  /*
+   * What the hold earned, at this lane's own rate in this direction (M8-15, §12.2).
+   *
+   * The tonnage was decided at pushback and is on the row; only the yield is
+   * resolved here, because yield is a property of the *lane* and the lane is a
+   * pair of airports this transaction already has. Every other rate on this
+   * settlement is resolved the same way and for the same reason — one economy
+   * config, read through the world's pin, with `settlement_version` recording
+   * which one billed the flight (invariant 4).
+   *
+   * **Priced on the lane the freight was sold on, not the one flown.** A
+   * diversion is settled to where the aeroplane actually went for every *cost*,
+   * because that is what the airline incurred (§8.4) — but the shipper bought
+   * carriage to the scheduled destination, so the rate and the sector length are
+   * the sold lane's. On a flight that arrived where it was aimed these are the
+   * same pair and the same distance.
+   *
+   * `undefined` when the scheduled destination's row has gone, which falls the
+   * settlement back to the world-wide figure rather than failing an arrival over
+   * a freight rate. See `SettlementConfig.cargoRatePerTonneMinor`.
+   */
+  const soldTo = ends.find((a) => a.icao === row.destinationIcao);
+  const cargoRatePerTonneMinor =
+    soldTo === undefined
+      ? undefined
+      : cargoLane(
+          laneEndpointOf(origin),
+          laneEndpointOf(soldTo),
+          haversineNm(origin.lat, origin.lon, soldTo.lat, soldTo.lon),
+          economy.cargo,
+        ).ratePerTonneMinor;
+
   const settlement = settleFlight(
     {
       // A ferry settles to all cost and no revenue, and `settleFlight` refuses
@@ -335,6 +405,7 @@ export async function settleArrivedFlight(
       kind: row.kind,
       load,
       cargoKg: row.cargoKg,
+      cargoRatePerTonneMinor,
       block,
       fuelCost,
       aircraft: { maxTakeoffWeightT: airframe.maxTakeoffWeightT },

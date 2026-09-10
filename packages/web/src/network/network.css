@@ -609,6 +609,30 @@
   width: 60px;
 }
 
+/* --------------------------------------------------------------------- cargo */
+
+.net-cargo-table td,
+.net-cargo-table th {
+  vertical-align: middle;
+}
+
+/* The bar column takes whatever is left, so the three limits are comparable at
+   a glance — which is the whole point of showing all three (§12.1). */
+.net-cargo-table td:last-child {
+  width: 40%;
+}
+
+.net-cargo-table td:last-child .net-meter {
+  width: 100%;
+}
+
+/* The binding limit is the answer, so its row is the one that reads first. */
+.net-cargo-table tr[data-binding='yes'] th,
+.net-cargo-table tr[data-binding='yes'] td {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
 /* --------------------------------------------------------------- performance */
 
 .net-performance {

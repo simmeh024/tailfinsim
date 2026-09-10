@@ -122,14 +122,19 @@ export const AircraftSpecDelta = z
      * Volume, not weight — §12's cargo system owns whether a consignment
      * physically fits, and `payload-range.ts` says so explicitly.
      *
-     * **Nothing consumes this yet, and that is now a scheduled gap rather than an
-     * open question.** It flows through `effective_spec` and out of the fleet API,
-     * where it is a number on a page. GAP-14 (#667) required its fate to be
-     * decided either way, and the 2026-09-07 cargo decision decided it: cargo is
-     * coming, so this is the capacity input CARGO-04
-     * (https://github.com/simmeh024/tailfinsim/issues/1090) consumes. Do not file
-     * it as a dead field, and do not remove the option — the buyer of a cargo door
-     * is buying something the freight domain will read.
+     * **Consumed since M8-15**, after two milestones of being a number on a page.
+     * It flowed through `effective_spec` and out of the fleet API and nothing read
+     * it; GAP-14 (#667) required its fate to be decided either way, and the
+     * 2026-09-07 cargo decision decided it stays. §12.1's belly capacity model
+     * (`packages/sim/src/cargo/belly.ts`) now multiplies the hold by it, resolved
+     * from the airframe's own `build_option_ids` against its own pinned catalogue
+     * version — so a tank ordered three years ago still costs hold space today,
+     * and the buyer of a cargo door gets some of it back.
+     *
+     * A **freighter's** main deck is still CARGO-05's, and a real per-type
+     * `bellyVolumeM3` to replace M8-15's proxy is still CARGO-04's
+     * (https://github.com/simmeh024/tailfinsim/issues/1090). Neither changes what
+     * this field means.
      */
     cargoVolumeFactor: z.number().positive().optional(),
     /** C.3's comfort charge. An **input to M6-09's score**, not a score. */

@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { FUEL_REGIONS, type FuelRegion } from './fuel';
 import { HANDLER_GRADES, type HandlerGrade } from './ground';
-import { MinorUnits, Month } from './primitives';
+import { MinorUnits, Month, NauticalMiles } from './primitives';
 
 /**
  * The economy, as data (M3-11, §22.3, App. A).
@@ -2275,6 +2275,169 @@ export const SHIPPED_HUB_BALANCE = {
   facilities: SHIPPED_HUB_FACILITIES,
 } as const satisfies z.input<typeof HubBalance>;
 
+// ---------------------------------------------------------------------------
+// Belly cargo — §12.1, §12.2, §12.7 (M8-15)
+// ---------------------------------------------------------------------------
+
+/**
+ * What a tonne of belly freight earns, and how much of it a lane offers.
+ *
+ * ## What is here, and what is deliberately not
+ *
+ * This section is **money and demand**. The arithmetic of how much freight
+ * physically fits is aircraft performance, not economy: it lives in
+ * `packages/sim`'s `cargo/belly.ts` beside `payload-range.ts` and is versioned by
+ * `world.aircraft_catalogue_version`, for the reason §22.3 and §22.5 are two pins
+ * rather than one — a fare change and an aerodynamics change must not share a
+ * number. Passenger and bag planning weights, hold volume and the takeoff
+ * exponent are therefore *not* in this object, and `balance-source.test.ts`
+ * already records that split for the payload/range model it shares them with.
+ *
+ * `freightDensityKgPerM3` is the one that looks like physics and is not. How many
+ * kilograms fill a cubic metre is a property of **what the market is shipping** —
+ * §12.3 puts e-commerce at *"medium yield, huge volume"* against dense general
+ * freight — so the commodity mix decides it, and the commodity mix is demand. It
+ * belongs to the economy, and retuning it changes which constraint binds without
+ * touching a single aeroplane.
+ *
+ * ## The boundary against the cargo domain
+ *
+ * §12.2 is explicit that cargo demand *"does not follow passenger demand"* — it
+ * follows trade, is severely directional, and has its own seasonality and its own
+ * airports. The 2026-09-07 cargo decision
+ * (https://github.com/simmeh024/tailfinsim/issues/1087) says the persisted pool
+ * that expresses all of that belongs to CARGO-03, and that M8-15 *"must not
+ * invent a cargo demand pool"*.
+ *
+ * So the coefficients below drive a **pure function over airport attributes the
+ * world already has** — `catchment_population`, `business_index` and
+ * `wealth_index` — and nothing is stored. That is enough for §12.1's belly
+ * channel, which is freight on an aeroplane that was going anyway; it is
+ * deliberately not enough for a freight *network*, and CARGO-03 replaces the
+ * tonnage source without touching the capacity model or the revenue line.
+ */
+export const CargoBalance = z
+  .object({
+    /**
+     * Yield per tonne on a balanced lane at the reference distance, minor units.
+     *
+     * Anchored to the figure `costs.settlement.cargoRatePerTonneMinor` has
+     * carried since M2-06, so a world's cargo revenue does not jump the day this
+     * section arrives. That figure was never calibrated against a published
+     * example — §13.4's worked route carries no freight — and this one inherits
+     * the same caveat: it produces a plausible number rather than a defended one.
+     */
+    baseRatePerTonneMinor: MinorUnits.nonnegative(),
+    /**
+     * How yield grows with sector length.
+     *
+     * Sub-linear, and that is the shape of the belly business: freight pays
+     * roughly per tonne-mile, so a long sector earns more per tonne — but far
+     * less than proportionally, because the buyer is comparing against sea
+     * freight the whole way. Zero would make distance irrelevant; 1 would make a
+     * transpacific tonne worth twenty short-haul ones.
+     */
+    distanceRateExponent: z.number().finite().min(0).max(1),
+    /** Sector length the base rate is quoted at. The distance term is 1 here. */
+    referenceDistanceNm: NauticalMiles,
+
+    /**
+     * Yield uplift on the headhaul at full imbalance, and the cut on the backhaul.
+     *
+     * §12.2: *"Asia→Europe headhaul runs full at high yield; the backhaul runs
+     * half-empty at a fraction of the rate"*, and it calls evaluating a cargo
+     * lane per leg *"the single most common real-world mistake"*. These two
+     * numbers are what makes that trap real — a fully imbalanced lane pays a
+     * third more out and about half back, so the round trip averages below the
+     * base rate and a player who priced the headhaul alone has mispriced the
+     * aeroplane.
+     *
+     * They are not symmetric, on purpose. Real backhaul rates fall further than
+     * headhaul rates rise, because the capacity is going home either way and the
+     * marginal alternative is flying it empty.
+     */
+    headhaulPremium: z.number().finite().min(0),
+    backhaulDiscount: z.number().finite().min(0).max(1),
+    /**
+     * Where "full imbalance" is, as a ratio of the two directions' trade mass.
+     *
+     * A lane three times heavier one way than the other gets the whole premium
+     * and the whole discount; beyond that nothing more happens. A cap rather than
+     * an asymptote, so the arithmetic cannot be driven somewhere strange by one
+     * airport carrying a freak index.
+     */
+    imbalanceCap: z.number().finite().gt(1),
+
+    /**
+     * Scale factor turning a lane's trade mass into tonnes offered per flight.
+     *
+     * The same job A.2's `k` does for passengers, and calibrated the same way —
+     * one anchor rather than several, because the rest is shape. **The anchor:
+     * two million people at index 1.0 at both ends offers about 8 t a flight**,
+     * which is a busy-but-ordinary European pair. A thin regional lane at 200,000
+     * people and index 0.8 falls to about a tonne, and a Hong Kong–Amsterdam-shaped
+     * pair rises past twenty — a real gradient, so a narrowbody's hold is the
+     * binding constraint on a trunk lane and the *demand* is the binding one on a
+     * thin one. Both halves matter: a coefficient that made freight unlimited
+     * everywhere would make the capacity model decorative.
+     *
+     * Per flight rather than per day, because belly capacity is bought by the
+     * aeroplane: a lane with more freight than one flight can lift simply fills
+     * every flight on it, which is what happens on a real trunk route. Frequency
+     * competing for one shared finite pool is a demand-pool property, and
+     * CARGO-03 owns it.
+     */
+    offeredTonnesK: z.number().finite().nonnegative(),
+    /**
+     * Sub-linear exponent on trade mass, mirroring A.2's α.
+     *
+     * The same reason the gravity model is sub-linear: doubling both ends of a
+     * lane does not double the freight moving along it, and a linear term makes
+     * the largest pairs absurd.
+     *
+     * It applies to **magnitude only**. The directional imbalance above is taken
+     * from the raw index ratio, because raising the direction to this power too
+     * crushed a genuine 1.9x trade asymmetry into 1.3x and quietly deleted
+     * section 12.2's *"severely"*. See `cargo/lane.ts`.
+     */
+    tradeMassExponent: z.number().finite().min(0).max(1),
+
+    /**
+     * How many kilograms of freight fill a cubic metre of hold.
+     *
+     * §12.6: *"Dense freight hits weight limits; e-commerce hits volume limits
+     * first. Both are real constraints."* 167 kg/m³ is the standard air-cargo
+     * chargeable-weight density — the figure the industry actually bills against
+     * — and it sits deliberately near the middle of §12.3's spread, so both
+     * constraints bind somewhere in the fleet rather than one always winning.
+     */
+    freightDensityKgPerM3: z.number().finite().positive(),
+  })
+  .strict();
+export type CargoBalance = z.infer<typeof CargoBalance>;
+
+export const SHIPPED_CARGO_BALANCE = {
+  // The M2-06 figure, unchanged, so this section arriving moves no world's money
+  // by itself. See the note above: not calibrated, and knowingly so.
+  baseRatePerTonneMinor: 30_000,
+  distanceRateExponent: 0.35,
+  // A medium-haul sector, matching the peak of A.2's passenger distance curve.
+  referenceDistanceNm: 700,
+
+  // A third more out, a little under half back. See the note above: the round
+  // trip is the thing that has to be priced.
+  headhaulPremium: 0.35,
+  backhaulDiscount: 0.45,
+  imbalanceCap: 3,
+
+  // Calibrated to the anchor above: a two-million/index-1.0 pair has a trade mass
+  // of (2e6 * 2e6) ^ 0.4 / 1e6 = 0.1098, and 73 * 0.1098 is 8.0 t a flight.
+  offeredTonnesK: 73,
+  tradeMassExponent: 0.4,
+
+  freightDensityKgPerM3: 167,
+} as const satisfies z.input<typeof CargoBalance>;
+
 /**
  * What ground handling costs (M5-06, §9.3).
  *
@@ -3232,6 +3395,11 @@ export const EconomyConfig = z
     // Defaulted for the same reason once more (M7-04): the hub purchase curve. Every
     // `v1` row written before it reads back the shipped App. B.5 prices.
     hubs: HubBalance.default(SHIPPED_HUB_BALANCE),
+    // Defaulted for the same reason once more (M8-15): §12.1's belly freight.
+    // Every `v1` row written before it reads back the shipped cargo balance, and
+    // a world pinned to one of those rows keeps pricing flights — which is the
+    // whole point of the rule.
+    cargo: CargoBalance.default(SHIPPED_CARGO_BALANCE),
     // Defaulted for the same reason once more (M5-06): what ground handling
     // costs. Every `v1` row written before it reads back the shipped money.
     ground: GroundBalance.default(SHIPPED_GROUND_BALANCE),
@@ -3539,6 +3707,7 @@ export const ECONOMY_CONFIG_V1: EconomyConfig = EconomyConfig.parse({
   crew: SHIPPED_CREW_BALANCE,
   socialMedia: SHIPPED_SOCIAL_MEDIA_BALANCE,
   hubs: SHIPPED_HUB_BALANCE,
+  cargo: SHIPPED_CARGO_BALANCE,
   ground: SHIPPED_GROUND_BALANCE,
 });
 

@@ -155,6 +155,7 @@ export const RESOURCE_ID_SURFACES = [
     'GET /api/routes/:routeId/flights',
     'GET /api/routes/:routeId/diagnosis',
     'GET /api/routes/:routeId/competition',
+    'GET /api/routes/:routeId/cargo',
     'POST /api/routes/:routeId/fares/preview',
     'DELETE /api/routes/:routeId',
     'PUT /api/routes/:routeId/active',
@@ -282,6 +283,18 @@ export const RESOURCE_ID_SURFACES = [
     position: 'query',
     field: 'rival',
     semantics: 'computed-selector',
+  },
+  {
+    // M8-15's belly readout can be asked about a *named* aeroplane rather than
+    // the default. An owned resource in a query string, not a selector: it is a
+    // real `airframe.id`, so it is scoped by airline and world in the same
+    // predicate and a foreign or malformed one reaches the endpoint's identical
+    // 404 (ADR-0020). Never classified as a selector, because UUID randomness is
+    // not an authorization control (SEC-07).
+    endpoint: 'GET /api/routes/:routeId/cargo airframeId',
+    position: 'query',
+    field: 'airframeId',
+    semantics: 'owner-scoped-resource',
   },
   {
     endpoint: 'POST /api/fleet/acquisitions',
