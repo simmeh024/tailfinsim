@@ -20,7 +20,6 @@ import {
 import { hireCrew, openCrewBase } from './store';
 import { xpAfterDeparture } from './xp-store';
 
-
 /**
  * §10.2's XP against a real database (M9-02).
  *
