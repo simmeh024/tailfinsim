@@ -382,6 +382,32 @@
     auto;
 }
 
+/* The embedded paint map uses external styles under the deployed CSP. */
+.livery-canvas [data-livery-blend-mode='normal'] {
+  mix-blend-mode: normal;
+}
+.livery-canvas [data-livery-blend-mode='multiply'] {
+  mix-blend-mode: multiply;
+}
+.livery-canvas [data-livery-blend-mode='screen'] {
+  mix-blend-mode: screen;
+}
+.livery-canvas [data-livery-blend-mode='overlay'] {
+  mix-blend-mode: overlay;
+}
+.livery-canvas [data-livery-blend-mode='darken'] {
+  mix-blend-mode: darken;
+}
+.livery-canvas [data-livery-blend-mode='lighten'] {
+  mix-blend-mode: lighten;
+}
+.livery-canvas [data-livery-blend-mode='color'] {
+  mix-blend-mode: color;
+}
+.livery-canvas [data-livery-blend-mode='luminosity'] {
+  mix-blend-mode: luminosity;
+}
+
 .livery-canvas[data-view='fleet']::before {
   position: absolute;
   right: 0;

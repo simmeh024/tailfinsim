@@ -176,7 +176,11 @@ function maskAttributes(
  * children of its target zone. Text, logos, shapes and paths are intentionally ignored until
  * their owning milestones add renderers.
  */
-export function renderLiverySvg(templateSource: string, livery: LiveryDocument): string {
+export function renderLiverySvg(
+  templateSource: string,
+  livery: LiveryDocument,
+  options: { inlineStyles?: boolean } = {},
+): string {
   const template = compileTemplate(templateSource);
   const definitions: string[] = [];
   const paint: string[] = [];
@@ -198,8 +202,12 @@ export function renderLiverySvg(templateSource: string, livery: LiveryDocument):
       definitions.push(gradientMarkup(layer, zone.box, gradientId));
       fill = `url(#${gradientId})`;
     }
+    const blend =
+      options.inlineStyles === false
+        ? `data-livery-blend-mode="${attr(layer.blendMode)}"`
+        : `style="mix-blend-mode:${attr(layer.blendMode)}"`;
     paint.push(
-      `<g data-painted-layer="${attr(layer.id)}" data-painted-zone="${attr(layer.zone)}"${mask.data}${mask.markup} opacity="${String(layer.opacity)}" style="mix-blend-mode:${attr(layer.blendMode)}" pointer-events="none" fill="${attr(fill)}">${zone.geometry}</g>`,
+      `<g data-painted-layer="${attr(layer.id)}" data-painted-zone="${attr(layer.zone)}"${mask.data}${mask.markup} opacity="${String(layer.opacity)}" ${blend} pointer-events="none" fill="${attr(fill)}">${zone.geometry}</g>`,
     );
     rendered.set(layer.id, { geometry: zone.geometry, opacity: layer.opacity });
   }

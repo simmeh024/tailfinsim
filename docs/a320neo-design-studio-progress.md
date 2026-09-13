@@ -57,6 +57,10 @@ legacy compressed-model stages. The builder's grid column can shrink, its header
 wraps, and badges/hints stay inside the viewer when the shell's layers panel is
 open.
 
+The same regression caught inline blend styles in Paint map. Embedded paint
+maps now select blend modes through data attributes and the application CSS;
+standalone SVG output retains its self-contained inline styles by default.
+
 A synthetic textured-GLB browser regression is in the PR smoke suite. It applies
 the actual Caddy policy to the page, rejects texture/CSP/decoder errors, checks
 controls against the shell stage bounds, and returns from Paint map to the

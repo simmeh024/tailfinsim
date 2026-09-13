@@ -45,6 +45,28 @@ function withLayerMask(
 }
 
 describe('M6-03 side-profile livery renderer', () => {
+  it('preserves blend modes without inline styles in the embedded CSP-safe paint map', () => {
+    const state = createEditorHistory();
+    const template = aircraftLiveryTemplate(state.present.family, 'side')!;
+    const layers = state.present.document.layers.map((layer) => ({
+      ...layer,
+      blendMode: 'multiply' as const,
+    }));
+    const svg = parse(
+      renderLiverySvg(
+        template.source,
+        { ...state.present.document, layers },
+        { inlineStyles: false },
+      ),
+    );
+    const painted = [...svg.querySelectorAll('[data-painted-layer]')];
+    expect(painted).toHaveLength(layers.length);
+    for (const layer of painted) {
+      expect(layer.getAttribute('data-livery-blend-mode')).toBe('multiply');
+      expect(layer.hasAttribute('style')).toBe(false);
+    }
+  });
+
   it('paints base-fill layers in document order with opacity and blend mode', () => {
     let state = createEditorHistory();
     state = liveryEditorReducer(state, {

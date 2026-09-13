@@ -640,7 +640,7 @@ export function LiveryBuilder({
   const template = aircraftLiveryTemplate(snapshot.family, 'side');
   const renderedSvg = useMemo(() => {
     if (template === null) return null;
-    return renderLiverySvg(template.source, snapshot.document);
+    return renderLiverySvg(template.source, snapshot.document, { inlineStyles: false });
   }, [snapshot.document, template]);
 
   useLayoutEffect(() => {
