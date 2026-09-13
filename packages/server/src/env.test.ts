@@ -131,6 +131,16 @@ describe('loadEnv', () => {
     expect(() => loadEnv()).toThrow(/may only be configured when ENVIRONMENT_LABEL=dev/);
   });
 
+  it('permits the Design Studio progress export only on the explicitly labelled dev environment', () => {
+    vi.stubEnv('DATABASE_URL', VALID_URL);
+    vi.stubEnv('ENVIRONMENT_LABEL', 'dev');
+    vi.stubEnv('DEV_QUARANTINE_A320NEO_PROGRESS_GLB', '/private/a320neo-progress.glb');
+    expect(loadEnv().devQuarantineA320neoProgressGlb).toBe('/private/a320neo-progress.glb');
+
+    vi.stubEnv('ENVIRONMENT_LABEL', 'production');
+    expect(() => loadEnv()).toThrow(/may only be configured when ENVIRONMENT_LABEL=dev/);
+  });
+
   it('rejects an unrecognised environment label', () => {
     vi.stubEnv('DATABASE_URL', VALID_URL);
     vi.stubEnv('ENVIRONMENT_LABEL', 'staging');

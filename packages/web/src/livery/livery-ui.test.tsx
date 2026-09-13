@@ -36,6 +36,51 @@ afterEach(() => {
 });
 
 describe('M6-03 livery builder UI', () => {
+  it('opens model progress when dev identity arrives and keeps draft edits across preview modes', () => {
+    const storage = new MemoryStorage();
+    const view = render(
+      <LiveryBuilder storageKey="progress" airlineName="Review Air" storage={storage} />,
+    );
+    expect(screen.queryByRole('button', { name: 'Model progress' })).not.toBeInTheDocument();
+    view.rerender(
+      <LiveryBuilder
+        storageKey="progress"
+        airlineName="Review Air"
+        storage={storage}
+        developmentPreview
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Model progress' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(
+      screen.getByRole('group', { name: 'A320neo latest aircraft model with sample livery' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tail detail' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Paint map' }));
+    const hex = screen.getByLabelText('Primary colour hex');
+    fireEvent.change(hex, { target: { value: '#123456' } });
+    fireEvent.blur(hex);
+    const saved = storage.getItem('progress');
+    fireEvent.click(screen.getByRole('button', { name: '3D preview' }));
+    expect(
+      screen.getByRole('img', {
+        name: 'A320neo quarantined semantic livery authoring review model',
+      }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Model progress' }));
+    expect(screen.getByLabelText('Primary colour hex')).toHaveValue('#123456FF');
+    expect(storage.getItem('progress')).toBe(saved);
+    fireEvent.change(screen.getByLabelText('Aircraft family'), { target: { value: 'A380' } });
+    expect(screen.queryByRole('button', { name: 'Model progress' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '3D preview' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    view.unmount();
+  });
+
   it('edits all layer-list properties and restores the autosaved draft after remount', () => {
     const storage = new MemoryStorage();
     const view = render(

@@ -64,7 +64,7 @@ interface EyeDropperWindow extends Window {
 }
 
 type AutosaveState = 'saving' | 'saved' | 'failed';
-type PreviewMode = 'fleet' | 'paint-map';
+type PreviewMode = 'fleet' | 'paint-map' | 'model-progress';
 
 function formatZone(zone: string): string {
   return zone
@@ -620,7 +620,7 @@ export function LiveryBuilder({
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(
     history.present.document.layers.at(-1)?.id ?? null,
   );
-  const [previewMode, setPreviewMode] = useState<PreviewMode>('fleet');
+  const [requestedPreviewMode, setPreviewMode] = useState<PreviewMode>('model-progress');
   const [toolsOpen, setToolsOpen] = useState(initiallyShowTools);
   const [newZone, setNewZone] = useState<LiveryZone>('fuselage');
   const [newMode, setNewMode] = useState<BaseFillMode>('solid');
@@ -628,6 +628,11 @@ export function LiveryBuilder({
   const [notice, setNotice] = useState('');
   const { selection, select, clear, panelBody } = useContextSelection();
   const snapshot = history.present;
+  const modelProgressAvailable = developmentPreview && snapshot.family === 'A320neo';
+  const previewMode =
+    requestedPreviewMode === 'model-progress' && !modelProgressAvailable
+      ? 'fleet'
+      : requestedPreviewMode;
 
   const selectedLayer =
     snapshot.document.layers.find((layer) => layer.id === selectedLayerId) ?? null;
@@ -740,6 +745,15 @@ export function LiveryBuilder({
           </select>
         </label>
         <div className="livery-builder__preview-switch" aria-label="Aircraft preview mode">
+          {modelProgressAvailable && (
+            <button
+              type="button"
+              aria-pressed={previewMode === 'model-progress'}
+              onClick={() => setPreviewMode('model-progress')}
+            >
+              Model progress
+            </button>
+          )}
           <button
             type="button"
             aria-pressed={previewMode === 'fleet'}
@@ -958,18 +972,23 @@ export function LiveryBuilder({
           <div className="livery-canvas__measure">
             <span>{snapshot.family}</span>
             <span className="figure">
-              {previewMode === 'fleet'
-                ? developmentPreview && snapshot.family === 'A320neo'
-                  ? 'True 3D dev review'
-                  : 'Material preview'
-                : '1200 × 400 paint map'}
+              {previewMode === 'model-progress'
+                ? 'Latest aircraft model'
+                : previewMode === 'fleet'
+                  ? developmentPreview && snapshot.family === 'A320neo'
+                    ? 'True 3D dev review'
+                    : 'Material preview'
+                  : '1200 × 400 paint map'}
             </span>
           </div>
-          {previewMode === 'fleet' ? (
+          {previewMode !== 'paint-map' ? (
             developmentPreview && snapshot.family === 'A320neo' ? (
               <DevelopmentAircraftPreview
+                key={previewMode}
                 layers={snapshot.document.layers}
-                source="quarantine-authoring"
+                source={
+                  previewMode === 'model-progress' ? 'model-progress' : 'quarantine-authoring'
+                }
                 fallback={
                   <FleetAircraftPreview
                     family={snapshot.family}
@@ -990,11 +1009,13 @@ export function LiveryBuilder({
             />
           )}
           <p className="livery-canvas__caption">
-            {previewMode === 'fleet'
-              ? developmentPreview && snapshot.family === 'A320neo'
-                ? 'Semantic authoring model · whole-surface fills and gradients live · quarantine only; paint map remains canonical'
-                : 'Fleet render · illustrative material preview · paint map remains canonical'
-              : 'Exact zone clipping · canonical side-profile authoring'}
+            {previewMode === 'model-progress'
+              ? 'Latest aircraft model and sample livery. Use 3D preview or Paint map to review your draft.'
+              : previewMode === 'fleet'
+                ? developmentPreview && snapshot.family === 'A320neo'
+                  ? 'Semantic authoring model · whole-surface fills and gradients live · quarantine only; paint map remains canonical'
+                  : 'Fleet render · illustrative material preview · paint map remains canonical'
+                : 'Exact zone clipping · canonical side-profile authoring'}
           </p>
         </div>
 

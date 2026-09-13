@@ -221,6 +221,13 @@ export interface ServerEnv {
    */
   devQuarantineA320neoLiveryAuthoringGlb?: string;
 
+  /**
+   * Operator-provisioned A320neo Design Studio progress export for a dev-only
+   * visual review. It remains outside the runtime registry and is never a
+   * fleet, livery, or publication asset.
+   */
+  devQuarantineA320neoProgressGlb?: string;
+
   /** Absolute origin this instance is reached on. The OAuth redirect URI is derived from it. */
   publicOrigin: string;
 
@@ -354,6 +361,12 @@ export function loadEnv(): ServerEnv {
       'DEV_QUARANTINE_A320NEO_LIVERY_AUTHORING_GLB may only be configured when ENVIRONMENT_LABEL=dev.',
     );
   }
+  const devQuarantineA320neoProgressGlb = optionalUndefined('DEV_QUARANTINE_A320NEO_PROGRESS_GLB');
+  if (devQuarantineA320neoProgressGlb !== undefined && environmentLabel !== 'dev') {
+    throw new Error(
+      'DEV_QUARANTINE_A320NEO_PROGRESS_GLB may only be configured when ENVIRONMENT_LABEL=dev.',
+    );
+  }
 
   const googleClientId = optionalUndefined('GOOGLE_CLIENT_ID');
   const googleClientSecret = optionalUndefined('GOOGLE_CLIENT_SECRET');
@@ -430,6 +443,7 @@ export function loadEnv(): ServerEnv {
     corsAllowedOrigins,
     devQuarantineA320neoRecoveryGlb,
     devQuarantineA320neoLiveryAuthoringGlb,
+    devQuarantineA320neoProgressGlb,
     publicOrigin,
     googleClientId,
     googleClientSecret,

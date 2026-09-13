@@ -636,6 +636,18 @@ policies and named port/starboard registration and tail-logo safe-area anchors. 
 livery GLB export in the same run, adds the matching named anchor nodes to that authoring GLB, and
 does not write `assets/aircraft/`, a manifest, a registry entry or a fleet binding.
 
+### Quarantined Design Studio progress export
+
+The reviewed Design Studio progress GLB is available only for dev visual review through the
+explicit `GET /api/dev/assets/aircraft/quarantine-a320neo-progress.glb` bridge when an operator
+sets `DEV_QUARANTINE_A320NEO_PROGRESS_GLB` on an `ENVIRONMENT_LABEL=dev` process. The route reads
+the provisioned immutable file once at boot and returns `private, no-store` with `nosniff`; a
+missing file or any non-dev environment has no route. The current review source is
+`aircraft-anchors-v4.glb` (SHA-256
+`b7b2bf6cc1adb6e1df06948b00e70682f74701f7012c080a70c009f28ac19fcc`, about 2.86 MB).
+It is review-only: it must not enter `assets/aircraft/`, the runtime registry, a fleet path, or a
+publication workflow.
+
 ## Pinned strategy and vendor evidence
 
 The planning observation is dated 2026-08-28. Four untextured T2 candidates cost 5 credits each;

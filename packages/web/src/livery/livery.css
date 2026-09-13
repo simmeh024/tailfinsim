@@ -547,6 +547,25 @@
   z-index: 2;
 }
 
+.livery-true-preview__reset,
+.livery-true-preview__tail {
+  padding: 0.4rem 0.65rem;
+  border: 1px solid var(--text-muted);
+  border-radius: 0.25rem;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.livery-true-preview__tail {
+  position: absolute;
+  z-index: 3;
+  top: calc(var(--space-3) + 2.75rem);
+  right: var(--space-3);
+  background: color-mix(in srgb, var(--bg-scrim) 88%, transparent);
+}
+
 .livery-true-preview__loading {
   inset: 50% auto auto 50%;
   margin: 0;

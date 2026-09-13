@@ -367,6 +367,10 @@ export async function buildApp({
     env.environmentLabel,
     env.devQuarantineA320neoLiveryAuthoringGlb,
   );
+  const devQuarantineA320neoProgress = readDevQuarantineAircraftArtifact(
+    env.environmentLabel,
+    env.devQuarantineA320neoProgressGlb,
+  );
 
   app.get(
     '/api/version',
@@ -441,6 +445,22 @@ export async function buildApp({
             // This explicit endpoint is a dev-only visual-review bridge. It
             // cannot be discovered through the aircraft registry or fleet APIs.
             .send(devQuarantineA320neoLiveryAuthoring),
+      );
+    }
+    if (devQuarantineA320neoProgress !== null) {
+      app.get(
+        '/api/dev/assets/aircraft/quarantine-a320neo-progress.glb',
+        { logLevel: 'warn' },
+        async (_request, reply) =>
+          reply
+            .code(200)
+            .type('model/gltf-binary')
+            .header('cache-control', 'private, no-store')
+            .header('content-length', String(devQuarantineA320neoProgress.byteLength))
+            .header('x-content-type-options', 'nosniff')
+            // This explicit endpoint is a dev-only Design Studio review
+            // bridge. It has no registry, fleet, livery, or publication path.
+            .send(devQuarantineA320neoProgress),
       );
     }
   }
