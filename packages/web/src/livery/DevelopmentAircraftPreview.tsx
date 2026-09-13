@@ -29,13 +29,18 @@ export const A320NEO_QUARANTINE_LIVERY_AUTHORING_STAGES = [
   { level: 0, url: '/api/dev/assets/aircraft/quarantine-a320neo-livery-authoring.glb' },
 ] as const;
 
+export const A320NEO_MODEL_PROGRESS_STAGES = [
+  { level: 0, url: '/api/dev/assets/aircraft/quarantine-a320neo-progress.glb' },
+] as const;
+
 /** Kept deliberately small for dev review; canonical runtime atlases remain a separate gate. */
 export const A320NEO_DEV_LIVERY_TEXTURE_SIZE = 512;
 
 type DevelopmentModelStage =
   | (typeof A320NEO_DEV_MODEL_STAGES)[number]
   | (typeof A320NEO_QUARANTINE_RECOVERY_STAGES)[number]
-  | (typeof A320NEO_QUARANTINE_LIVERY_AUTHORING_STAGES)[number];
+  | (typeof A320NEO_QUARANTINE_LIVERY_AUTHORING_STAGES)[number]
+  | (typeof A320NEO_MODEL_PROGRESS_STAGES)[number];
 type DevelopmentLod = DevelopmentModelStage['level'];
 
 const MATERIAL_ZONE = Object.freeze({
@@ -290,6 +295,7 @@ interface PreviewRuntime {
   readonly renderer: WebGLRenderer;
   readonly scene: Scene;
   readonly resetView: () => void;
+  readonly focusTail: () => void;
   readonly resizeObserver: ResizeObserver | null;
 }
 
@@ -323,22 +329,27 @@ export function DevelopmentAircraftPreview({
   layers: readonly LiveryLayer[];
   fallback: ReactNode;
   /** A recovered source or semantic authoring derivative for quarantine review only. */
-  source?: 'salvaged-candidate' | 'quarantine-recovery' | 'quarantine-authoring';
+  source?: 'salvaged-candidate' | 'quarantine-recovery' | 'quarantine-authoring' | 'model-progress';
 }): ReactNode {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const runtimeRef = useRef<PreviewRuntime | null>(null);
   const isQuarantineRecovery = source === 'quarantine-recovery';
   const isQuarantineAuthoring = source === 'quarantine-authoring';
-  const stages = isQuarantineRecovery
-    ? A320NEO_QUARANTINE_RECOVERY_STAGES
-    : isQuarantineAuthoring
-      ? A320NEO_QUARANTINE_LIVERY_AUTHORING_STAGES
-      : A320NEO_DEV_MODEL_STAGES;
+  const isModelProgress = source === 'model-progress';
+  const stages = isModelProgress
+    ? A320NEO_MODEL_PROGRESS_STAGES
+    : isQuarantineRecovery
+      ? A320NEO_QUARANTINE_RECOVERY_STAGES
+      : isQuarantineAuthoring
+        ? A320NEO_QUARANTINE_LIVERY_AUTHORING_STAGES
+        : A320NEO_DEV_MODEL_STAGES;
   const colors = useMemo(
     () =>
-      isQuarantineRecovery || isQuarantineAuthoring ? {} : a320neoDevelopmentMaterialColors(layers),
-    [isQuarantineAuthoring, isQuarantineRecovery, layers],
+      isModelProgress || isQuarantineRecovery || isQuarantineAuthoring
+        ? {}
+        : a320neoDevelopmentMaterialColors(layers),
+    [isModelProgress, isQuarantineAuthoring, isQuarantineRecovery, layers],
   );
   const colorsRef = useRef(colors);
   const layersRef = useRef(layers);
@@ -350,7 +361,7 @@ export function DevelopmentAircraftPreview({
     colorsRef.current = colors;
     layersRef.current = layers;
     const runtime = runtimeRef.current;
-    if (runtime === null) return;
+    if (runtime === null || isModelProgress) return;
     if (isQuarantineAuthoring) {
       runtime.applyAuthoringPaint(layers);
       return;
@@ -365,7 +376,7 @@ export function DevelopmentAircraftPreview({
       const color = colors[material.name];
       if (color !== undefined) material.color.set(color);
     });
-  }, [colors, isQuarantineAuthoring, layers]);
+  }, [colors, isModelProgress, isQuarantineAuthoring, layers]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -408,7 +419,7 @@ export function DevelopmentAircraftPreview({
         const controls = new OrbitControls(camera, canvas);
         pendingControls = controls;
         controls.enableDamping = true;
-        controls.enablePan = false;
+        controls.enablePan = isModelProgress;
         controls.dampingFactor = 0.065;
 
         const loader = new GLTFLoader();
@@ -468,7 +479,12 @@ export function DevelopmentAircraftPreview({
               originalMaterialColors.set(material, material.color.getHex());
             }
             material.envMapIntensity = 0.65;
-            if (!isQuarantineRecovery) {
+            if (isModelProgress && material.map !== null) {
+              // Keep the reviewed 4K atlas, its UV channel and all imported PBR values.
+              material.map.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 8);
+              material.map.needsUpdate = true;
+            }
+            if (!isQuarantineRecovery && !isModelProgress) {
               configureA320neoDevelopmentExteriorMaterial(material, THREE.DoubleSide);
               if (!isQuarantineAuthoring) {
                 const color = colorsRef.current[material.name];
@@ -496,17 +512,26 @@ export function DevelopmentAircraftPreview({
         const radius = Math.max(sphere.radius, 1);
         const resetView = (): void => {
           const distance = radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) / 1.25;
-          const direction = new THREE.Vector3(1.25, 0.62, 1.5).normalize();
+          const direction = new THREE.Vector3(1.25, 0.62, isModelProgress ? -1.5 : 1.5).normalize();
           camera.position.copy(sphere.center).addScaledVector(direction, distance);
-          camera.near = Math.max(0.05, distance / 100);
+          camera.near = isModelProgress ? 0.05 : Math.max(0.05, distance / 100);
           camera.far = distance * 8;
           camera.updateProjectionMatrix();
           controls.target.copy(sphere.center);
-          controls.minDistance = radius * 0.75;
+          controls.minDistance = radius * (isModelProgress ? 0.08 : 0.75);
           controls.maxDistance = radius * 5;
           controls.update();
         };
         resetView();
+
+        const focusTail = (): void => {
+          const anchor = model.getObjectByName('anchor-tail-logo-starboard');
+          if (anchor === undefined) return;
+          const target = anchor.getWorldPosition(new THREE.Vector3());
+          controls.target.copy(target);
+          camera.position.copy(target).add(new THREE.Vector3(14, 2.5, 5));
+          controls.update();
+        };
 
         const resize = (): void => {
           const width = Math.max(1, container.clientWidth);
@@ -533,6 +558,7 @@ export function DevelopmentAircraftPreview({
           renderer,
           scene,
           resetView,
+          focusTail,
           resizeObserver,
         };
         pendingControls = null;
@@ -593,13 +619,17 @@ export function DevelopmentAircraftPreview({
       disposeModel(runtime.model);
       runtime.renderer.dispose();
     };
-  }, [isQuarantineRecovery, stages]);
+  }, [isModelProgress, isQuarantineAuthoring, isQuarantineRecovery, stages]);
 
   if (state === 'failed') {
     return (
       <div className="livery-true-preview-fallback">
         {fallback}
-        <p role="alert">True 3D preview unavailable — showing the fleet render.</p>
+        <p role="alert">
+          {isModelProgress
+            ? 'Latest model unavailable — showing an illustrative fleet render.'
+            : 'True 3D preview unavailable — showing the fleet render.'}
+        </p>
       </div>
     );
   }
@@ -608,13 +638,15 @@ export function DevelopmentAircraftPreview({
     <div
       ref={containerRef}
       className="livery-true-preview"
-      role="img"
+      role={isModelProgress ? 'group' : 'img'}
       aria-label={
-        isQuarantineRecovery
-          ? 'A320neo quarantined source PBR review model'
-          : isQuarantineAuthoring
-            ? 'A320neo quarantined semantic livery authoring review model'
-            : 'A320neo interactive true 3D livery preview'
+        isModelProgress
+          ? 'A320neo latest aircraft model with sample livery'
+          : isQuarantineRecovery
+            ? 'A320neo quarantined source PBR review model'
+            : isQuarantineAuthoring
+              ? 'A320neo quarantined semantic livery authoring review model'
+              : 'A320neo interactive true 3D livery preview'
       }
       data-state={state}
       data-lod={lodLevel ?? 'fallback'}
@@ -628,28 +660,34 @@ export function DevelopmentAircraftPreview({
       {state === 'loading' && (
         <p className="livery-true-preview__loading" role="status">
           Loading{' '}
-          {isQuarantineRecovery
-            ? 'quarantine source PBR'
-            : isQuarantineAuthoring
-              ? 'quarantine semantic authoring model'
-              : 'true 3D A320neo'}
+          {isModelProgress
+            ? 'latest aircraft model'
+            : isQuarantineRecovery
+              ? 'quarantine source PBR'
+              : isQuarantineAuthoring
+                ? 'quarantine semantic authoring model'
+                : 'true 3D A320neo'}
           {progress === null ? '…' : ` · ${String(progress)}%`}
         </p>
       )}
       <div className="livery-true-preview__badges" aria-hidden="true">
         <span>
-          {isQuarantineRecovery
-            ? 'Source PBR review'
-            : isQuarantineAuthoring
-              ? 'Semantic paint-texture review'
-              : 'True 3D'}
+          {isModelProgress
+            ? 'Model progress · 13 Sep'
+            : isQuarantineRecovery
+              ? 'Source PBR review'
+              : isQuarantineAuthoring
+                ? 'Semantic paint-texture review'
+                : 'True 3D'}
         </span>
         <span>
-          {isQuarantineRecovery
-            ? 'Quarantine · not fleet eligible'
-            : isQuarantineAuthoring
-              ? 'Quarantine · livery binding not admitted'
-              : 'Dev review · licence pending'}
+          {isModelProgress
+            ? 'Reviewed aircraft · sample livery'
+            : isQuarantineRecovery
+              ? 'Quarantine · not fleet eligible'
+              : isQuarantineAuthoring
+                ? 'Quarantine · livery binding not admitted'
+                : 'Dev review · licence pending'}
         </span>
       </div>
       <button
@@ -660,12 +698,24 @@ export function DevelopmentAircraftPreview({
       >
         Reset view
       </button>
+      {isModelProgress && (
+        <button
+          type="button"
+          className="livery-true-preview__tail"
+          disabled={state !== 'ready'}
+          onClick={() => runtimeRef.current?.focusTail()}
+        >
+          Tail detail
+        </button>
+      )}
       <p className="livery-true-preview__hint">
-        {isQuarantineRecovery
-          ? 'Untouched recovered PBR · quarantine only · drag to orbit · scroll to zoom'
-          : isQuarantineAuthoring
-            ? 'Whole-surface fills and gradients are live · paint map remains canonical · drag to orbit · scroll to zoom'
-            : 'Drag to orbit · scroll to zoom'}
+        {isModelProgress
+          ? 'Drag to orbit · scroll to zoom · right-drag to pan'
+          : isQuarantineRecovery
+            ? 'Untouched recovered PBR · quarantine only · drag to orbit · scroll to zoom'
+            : isQuarantineAuthoring
+              ? 'Whole-surface fills and gradients are live · paint map remains canonical · drag to orbit · scroll to zoom'
+              : 'Drag to orbit · scroll to zoom'}
       </p>
     </div>
   );

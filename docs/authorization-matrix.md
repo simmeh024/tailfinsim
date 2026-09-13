@@ -133,6 +133,16 @@ carry disclosure tests; a public view never grants mutation rights over its back
 row. `/api/version` is public today. Future public airline profiles or rankings must establish
 their projection explicitly rather than weakening the private-resource rule.
 
+**Dev-only quarantined aircraft review exports** are deliberately outside the static route table:
+the recovery, livery-authoring, and Design Studio progress routes are registered only when the
+process has both `ENVIRONMENT_LABEL=dev` and its matching operator-provisioned absolute artifact
+path. They are unauthenticated only after that server-side environment gate; every other
+environment and an absent or stale provisioned file receive the ordinary public 404. Each route
+serves one named review-only GLB with `private, no-store` and `nosniff`, and none has a registry,
+fleet, livery, or publication binding. The static inventory enumerates its local configuration,
+where these optional routes are absent, so it cannot record conditional registrations as stable
+rows.
+
 Admin detail routes are permission-protected rather than player-owner-scoped. Guests and
 non-admins stop at 401/403 before lookup; an admitted admin can receive an entity-specific 404
 because that grant already authorizes the operational visibility.

@@ -706,6 +706,46 @@ describe('GET /api/version', () => {
     }
   });
 
+  it('serves a provisioned Design Studio progress export only from its explicit dev route', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tailfin-quarantine-progress-'));
+    const progressPath = join(directory, 'a320neo-progress.glb');
+    const progress = Buffer.from('glTF-test-progress');
+    writeFileSync(progressPath, progress);
+    const reviewApp = await buildApp({
+      env: {
+        ...testEnv,
+        environmentLabel: 'dev',
+        devQuarantineA320neoProgressGlb: progressPath,
+      },
+      db: databaseAlarm,
+    });
+    await reviewApp.ready();
+    try {
+      const response = await reviewApp.inject({
+        method: 'GET',
+        url: '/api/dev/assets/aircraft/quarantine-a320neo-progress.glb',
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toBe(progress.toString());
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(response.headers['x-content-type-options']).toBe('nosniff');
+
+      const unavailable = await devApp.inject({
+        method: 'GET',
+        url: '/api/dev/assets/aircraft/quarantine-a320neo-progress.glb',
+      });
+      expect(unavailable.statusCode).toBe(404);
+      const production = await productionApp.inject({
+        method: 'GET',
+        url: '/api/dev/assets/aircraft/quarantine-a320neo-progress.glb',
+      });
+      expect(production.statusCode).toBe(404);
+    } finally {
+      await reviewApp.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('reports the same start time across requests', async () => {
     // It is process start, not request time — a value that changed every call
     // would say nothing about whether the box restarted.
