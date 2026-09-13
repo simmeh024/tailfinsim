@@ -2,6 +2,7 @@
   position: absolute;
   inset: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   background: var(--bg-inset);
@@ -11,6 +12,7 @@
 .livery-builder__header {
   z-index: 4;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
   min-height: 4rem;
@@ -580,6 +582,8 @@
   top: var(--space-3);
   left: var(--space-3);
   display: flex;
+  flex-wrap: wrap;
+  max-width: calc(100% - 7rem);
   gap: var(--space-2);
   pointer-events: none;
 }
@@ -609,6 +613,8 @@
   right: var(--space-3);
   bottom: var(--space-3);
   margin: 0;
+  max-width: calc(100% - 2 * var(--space-3));
+  text-align: right;
   color: var(--text-muted);
   font-size: var(--text-xs);
   pointer-events: none;

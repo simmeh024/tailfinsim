@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LiveryLayer, LiveryZone } from '@tailfin/shared';
 
 import { layerPrimaryColor } from './editor-model';
+import { embeddedGltfImages } from './embedded-gltf-images';
 
 import type { ReactNode } from 'react';
 import type {
@@ -388,11 +389,10 @@ export function DevelopmentAircraftPreview({
 
     void (async () => {
       try {
-        const [THREE, { OrbitControls }, { GLTFLoader }, { MeshoptDecoder }] = await Promise.all([
+        const [THREE, { OrbitControls }, { GLTFLoader }] = await Promise.all([
           import('three'),
           import('three/examples/jsm/controls/OrbitControls.js'),
           import('three/examples/jsm/loaders/GLTFLoader.js'),
-          import('three/examples/jsm/libs/meshopt_decoder.module.js'),
         ]);
         if (cancelled) return;
 
@@ -423,7 +423,14 @@ export function DevelopmentAircraftPreview({
         controls.dampingFactor = 0.065;
 
         const loader = new GLTFLoader();
-        loader.setMeshoptDecoder(MeshoptDecoder);
+        if (stages === A320NEO_DEV_MODEL_STAGES) {
+          const { MeshoptDecoder } =
+            await import('three/examples/jsm/libs/meshopt_decoder.module.js');
+          loader.setMeshoptDecoder(MeshoptDecoder);
+        }
+        loader.register((parser) =>
+          embeddedGltfImages(parser, new THREE.TextureLoader(parser.options.manager)),
+        );
         const applyAuthoringPaint = (
           model: Object3D,
           layersToBake: readonly LiveryLayer[],

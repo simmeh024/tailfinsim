@@ -42,3 +42,23 @@ including front quarter and complete-fin close-up. Deployment uses
 checks its normal post-deploy smoke and the public GLB's hash. Previous dev code
 was `b5573e0`; the progress environment key was previously absent. Restore that
 code with the dev deploy wrapper and remove only this key if rolling back.
+
+## Enforced-CSP follow-up
+
+Signed-in review of build 880 found that embedded GLB paint images failed under
+the deployed CSP, leaving a white aircraft despite a successful geometry load.
+The uncompressed progress path also unnecessarily imported the WebAssembly
+meshopt decoder. A standalone viewer without CSP had not exposed these failures.
+
+The viewer now reads embedded image buffer views into data URIs and uses Three's
+HTML-image texture loader. This uses the existing `img-src data:` allowance;
+the Caddy policy remains unchanged. The meshopt module is loaded only by the
+legacy compressed-model stages. The builder's grid column can shrink, its header
+wraps, and badges/hints stay inside the viewer when the shell's layers panel is
+open.
+
+A synthetic textured-GLB browser regression is in the PR smoke suite. It applies
+the actual Caddy policy to the page, rejects texture/CSP/decoder errors, checks
+controls against the shell stage bounds, and returns from Paint map to the
+model. The real reviewed aircraft was also inspected in a compiled local viewer
+under the enforced policy, at the live editor's constrained width.
