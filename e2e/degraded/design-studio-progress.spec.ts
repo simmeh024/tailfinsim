@@ -1,4 +1,109 @@
+import { readFileSync } from 'node:fs';
+
 import { expect, test } from '@playwright/test';
+
+const ENFORCED_CSP = /\{\$TAILFIN_CSP_HEADER[^}]*\}\s+"([^"]+)"/.exec(
+  readFileSync(new URL('../../deploy/Caddyfile', import.meta.url), 'utf8'),
+)?.[1];
+if (ENFORCED_CSP === undefined) throw new Error('Deployed CSP policy not found.');
+
+/** A real GLB: one textured triangle with a bufferView-backed, opaque magenta PNG. */
+function texturedTriangleGlb(): Buffer {
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z/D/PwAG/gL+DHWJ3gAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  const positions = Buffer.alloc(36);
+  [
+    [-1, -1, 0],
+    [1, -1, 0],
+    [0, 1, 0],
+  ]
+    .flat()
+    .forEach((value, index) => positions.writeFloatLE(value, index * 4));
+  const texcoords = Buffer.alloc(24);
+  [
+    [0, 0],
+    [1, 0],
+    [0.5, 1],
+  ]
+    .flat()
+    .forEach((value, index) => texcoords.writeFloatLE(value, index * 4));
+  // The progress view starts from negative Z, so this winding faces its camera.
+  const indices = Buffer.from([0, 0, 2, 0, 1, 0]);
+  const binary = Buffer.concat([positions, texcoords, indices, Buffer.alloc(2), png]);
+  const json = Buffer.from(
+    JSON.stringify({
+      asset: { version: '2.0' },
+      buffers: [{ byteLength: binary.length }],
+      bufferViews: [
+        { buffer: 0, byteOffset: 0, byteLength: positions.length, target: 34962 },
+        {
+          buffer: 0,
+          byteOffset: positions.length,
+          byteLength: texcoords.length,
+          target: 34962,
+        },
+        {
+          buffer: 0,
+          byteOffset: positions.length + texcoords.length,
+          byteLength: indices.length,
+          target: 34963,
+        },
+        {
+          buffer: 0,
+          byteOffset: positions.length + texcoords.length + indices.length + 2,
+          byteLength: png.length,
+        },
+      ],
+      accessors: [
+        {
+          bufferView: 0,
+          componentType: 5126,
+          count: 3,
+          type: 'VEC3',
+          min: [-1, -1, 0],
+          max: [1, 1, 0],
+        },
+        { bufferView: 1, componentType: 5126, count: 3, type: 'VEC2' },
+        { bufferView: 2, componentType: 5123, count: 3, type: 'SCALAR' },
+      ],
+      images: [{ bufferView: 3, mimeType: 'image/png' }],
+      textures: [{ source: 0 }],
+      materials: [{ pbrMetallicRoughness: { baseColorTexture: { index: 0 } } }],
+      meshes: [
+        {
+          primitives: [{ attributes: { POSITION: 0, TEXCOORD_0: 1 }, indices: 2, material: 0 }],
+        },
+      ],
+      nodes: [{ mesh: 0 }],
+      scenes: [{ nodes: [0] }],
+      scene: 0,
+    }),
+  );
+  const jsonPadding = (4 - (json.length % 4)) % 4;
+  const binaryPadding = (4 - (binary.length % 4)) % 4;
+  const totalLength = 12 + 8 + json.length + jsonPadding + 8 + binary.length + binaryPadding;
+  const header = Buffer.alloc(12);
+  header.writeUInt32LE(0x46546c67, 0);
+  header.writeUInt32LE(2, 4);
+  header.writeUInt32LE(totalLength, 8);
+  const jsonHeader = Buffer.alloc(8);
+  jsonHeader.writeUInt32LE(json.length + jsonPadding, 0);
+  jsonHeader.writeUInt32LE(0x4e4f534a, 4);
+  const binaryHeader = Buffer.alloc(8);
+  binaryHeader.writeUInt32LE(binary.length + binaryPadding, 0);
+  binaryHeader.writeUInt32LE(0x004e4942, 4);
+  return Buffer.concat([
+    header,
+    jsonHeader,
+    json,
+    Buffer.alloc(jsonPadding, 0x20),
+    binaryHeader,
+    binary,
+    Buffer.alloc(binaryPadding),
+  ]);
+}
 
 const OWN_AIRLINE = {
   airline: {
@@ -85,5 +190,69 @@ test.describe('Design Studio model progress review', () => {
         .filter({ hasText: 'Latest model unavailable — showing an illustrative fleet render.' }),
     ).toBeVisible();
     await expect(page.getByRole('button', { name: 'Layers 4', exact: true })).toBeVisible();
+  });
+
+  test('loads embedded texture data under the enforced CSP and keeps controls inside the stage @smoke', async ({
+    page,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on('pageerror', (error) => consoleErrors.push(error.message));
+    page.on('console', (message) => {
+      if (message.type() === 'error') consoleErrors.push(message.text());
+    });
+    await page.route('**/design', async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({
+        response,
+        headers: { ...response.headers(), 'content-security-policy': ENFORCED_CSP },
+      });
+    });
+    await page.route('**/api/version', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(DEV_VERSION) }),
+    );
+    await page.route('**/api/airlines/me', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(OWN_AIRLINE) }),
+    );
+    await page.route('**/api/dev/assets/aircraft/quarantine-a320neo-progress.glb', (route) =>
+      route.fulfill({ contentType: 'model/gltf-binary', body: texturedTriangleGlb() }),
+    );
+
+    await page.goto('/design');
+
+    const stage = page.getByRole('group', {
+      name: 'A320neo latest aircraft model with sample livery',
+    });
+    await expect(stage).toHaveAttribute('data-state', 'ready');
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Reset view', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Tail detail', exact: true })).toBeEnabled();
+
+    const [stageBox, resetBox, tailBox] = await Promise.all([
+      page.locator('#stage').boundingBox(),
+      page.getByRole('button', { name: 'Reset view', exact: true }).boundingBox(),
+      page.getByRole('button', { name: 'Tail detail', exact: true }).boundingBox(),
+    ]);
+    expect(stageBox).not.toBeNull();
+    expect(resetBox).not.toBeNull();
+    expect(tailBox).not.toBeNull();
+    for (const control of [resetBox!, tailBox!]) {
+      expect(control.x).toBeGreaterThanOrEqual(stageBox!.x);
+      expect(control.y).toBeGreaterThanOrEqual(stageBox!.y);
+      expect(control.x + control.width).toBeLessThanOrEqual(stageBox!.x + stageBox!.width);
+      expect(control.y + control.height).toBeLessThanOrEqual(stageBox!.y + stageBox!.height);
+    }
+
+    const paintMap = page.getByRole('button', { name: 'Paint map', exact: true });
+    await paintMap.click();
+    await expect(paintMap).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: 'Model progress', exact: true }).click();
+    await expect(stage).toHaveAttribute('data-state', 'ready');
+    expect(
+      consoleErrors.filter((message) =>
+        /content security policy|blob:|wasm|couldn't load texture|texture.*(?:error|fail)/i.test(
+          message,
+        ),
+      ),
+    ).toEqual([]);
   });
 });

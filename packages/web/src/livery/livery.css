@@ -2,6 +2,7 @@
   position: absolute;
   inset: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   background: var(--bg-inset);
@@ -11,6 +12,7 @@
 .livery-builder__header {
   z-index: 4;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
   min-height: 4rem;
@@ -380,6 +382,32 @@
     auto;
 }
 
+/* The embedded paint map uses external styles under the deployed CSP. */
+.livery-canvas [data-livery-blend-mode='normal'] {
+  mix-blend-mode: normal;
+}
+.livery-canvas [data-livery-blend-mode='multiply'] {
+  mix-blend-mode: multiply;
+}
+.livery-canvas [data-livery-blend-mode='screen'] {
+  mix-blend-mode: screen;
+}
+.livery-canvas [data-livery-blend-mode='overlay'] {
+  mix-blend-mode: overlay;
+}
+.livery-canvas [data-livery-blend-mode='darken'] {
+  mix-blend-mode: darken;
+}
+.livery-canvas [data-livery-blend-mode='lighten'] {
+  mix-blend-mode: lighten;
+}
+.livery-canvas [data-livery-blend-mode='color'] {
+  mix-blend-mode: color;
+}
+.livery-canvas [data-livery-blend-mode='luminosity'] {
+  mix-blend-mode: luminosity;
+}
+
 .livery-canvas[data-view='fleet']::before {
   position: absolute;
   right: 0;
@@ -580,6 +608,8 @@
   top: var(--space-3);
   left: var(--space-3);
   display: flex;
+  flex-wrap: wrap;
+  max-width: calc(100% - 7rem);
   gap: var(--space-2);
   pointer-events: none;
 }
@@ -609,6 +639,8 @@
   right: var(--space-3);
   bottom: var(--space-3);
   margin: 0;
+  max-width: calc(100% - 2 * var(--space-3));
+  text-align: right;
   color: var(--text-muted);
   font-size: var(--text-xs);
   pointer-events: none;
