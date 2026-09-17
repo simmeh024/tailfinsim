@@ -3691,6 +3691,128 @@ export const crewConversion = pgTable(
   ],
 );
 
+/**
+ * A named crew member — §10.2's *"sanctioned exception"* to pools (M9-03).
+ *
+ * ## Why this table exists at all, when M5-01 refused one
+ *
+ * `crew_pool`'s own comment says *"the player interacts with pool sizes and
+ * never with individuals"*, and adds: *"Individual hours and proficiency are M9;
+ * if one arrives it should hang off this rather than replace it."* This is that
+ * arrival, and it hangs off the pool rather than replacing it — every pool row,
+ * every complement, every duty period and every payroll is untouched.
+ *
+ * §10 argues for the exception and the argument is worth keeping here:
+ *
+ * > *"§9.1 warned against managing individuals. This is the sanctioned
+ * > exception, and it works because it's **opt-in and inverted** — you're not
+ * > forced to roster people one by one, you *choose* to invest in specific
+ * > pilots because the payoff is a named, measurable asset."*
+ *
+ * So an airline that never opens the roster board plays exactly the game it
+ * played before, and nothing in dispatch, legality or payroll reads this table.
+ *
+ * ## A member emerges from a pool and never leaves it
+ *
+ * The naming sweep mints a row when a pool's XP **per head** crosses
+ * `crew.skills.namedFromLevel`, and one more each level above it, never more
+ * than the pool has heads. So a named member is one of that pool's crew, not an
+ * extra body: `crew_pool.headcount` still counts them and nothing here adds to
+ * an airline's capacity.
+ *
+ * `xp` here and `crew_pool.xp` are **two different measurements and both are
+ * right**. The pool's is the base's aggregate experience, which is what dilutes
+ * when you hire and falls when people leave. A member's is one person's, copied
+ * from the pool's per-head average at the moment they were named and accruing on
+ * its own afterwards — and it is the one that decides their level and therefore
+ * their skill points.
+ *
+ * ## `(crew_base_id, ordinal)` is the identity
+ *
+ * `ordinal` is the per-base count of members named before this one, and it is
+ * what the name is drawn from: `crewNameFor(worldSeed, crewBaseId, ordinal)` is
+ * deterministic, so a replay of a world's history produces the same roster. The
+ * unique constraint is therefore also the race guard — two workers sweeping the
+ * same pool would compute the same ordinal and the second insert is refused,
+ * rather than producing two people with the same name.
+ */
+export const crewMember = pgTable(
+  'crew_member',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    crewBaseId: uuid('crew_base_id')
+      .notNull()
+      .references(() => crewBase.id, { onDelete: 'cascade' }),
+
+    /** The pool this member belongs to, by its own `(family, rank)` key. */
+    family: text('family').notNull(),
+    rank: crewRank('rank').notNull(),
+
+    /** Given name and surname. Generated once from the world seed, then fixed. */
+    name: text('name').notNull(),
+    /** The per-base draw this name came from. See the table comment. */
+    ordinal: integer('ordinal').notNull(),
+
+    /**
+     * This person's own XP, and the level it buys.
+     *
+     * `level` is stored rather than derived on read, because the skill points a
+     * member has been granted are a function of the highest level they have
+     * ever reached — and a retune of the XP curve must not retroactively take
+     * away points somebody has already spent.
+     */
+    xp: bigint('xp', { mode: 'number' }).notNull().default(0),
+    level: integer('level').notNull().default(1),
+
+    /**
+     * Points spent, by branch, as JSON: `{"performance_fuel": 3, ...}`.
+     *
+     * JSON text like `crew_duty_period.complement` and `flight.load`, and for
+     * the same reason: nothing queries inside it, the shape is a closed set
+     * validated by `SkillPoints` at both boundaries, and seven columns that are
+     * almost always zero would be a worse table.
+     */
+    skillPoints: text('skill_points').notNull().default('{}'),
+
+    /**
+     * §10.2's *"visible history"* — hours, sectors and incidents handled.
+     *
+     * Counted from the moment of naming rather than backfilled from the pool: a
+     * pool's hours belong to everyone who has ever been in it, and attributing
+     * them to the first person to be named would be a fiction the interface
+     * would then show as fact.
+     */
+    careerBlockMinutes: integer('career_block_minutes').notNull().default(0),
+    careerSectors: integer('career_sectors').notNull().default(0),
+    careerIncidents: integer('career_incidents').notNull().default(0),
+    /** Families flown, as a JSON array, in the order they were acquired. */
+    careerFamilies: text('career_families').notNull().default('[]'),
+
+    /** Game time, like every in-world instant (ADR-0026). */
+    namedAt: timestamp('named_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('crew_member_base_ordinal_key').on(t.crewBaseId, t.ordinal),
+    index('crew_member_airline_idx').on(t.airlineId),
+    // The XP award's lookup: the members of the pools a flight drew from.
+    index('crew_member_pool_idx').on(t.crewBaseId, t.family, t.rank),
+    check('crew_member_level_positive', sql`${t.level} >= 1`),
+    check('crew_member_xp_nonneg', sql`${t.xp} >= 0`),
+    check('crew_member_ordinal_nonneg', sql`${t.ordinal} >= 0`),
+    check(
+      'crew_member_career_nonneg',
+      sql`${t.careerBlockMinutes} >= 0 AND ${t.careerSectors} >= 0 AND ${t.careerIncidents} >= 0`,
+    ),
+  ],
+);
+
 export const crewDutyStatus = pgEnum('crew_duty_status', ['open', 'resting', 'closed']);
 
 /**

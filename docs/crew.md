@@ -699,3 +699,165 @@ stops there. **No page shows it either** — `xp` and `xpPerHead` are on `GET /a
 rows and no client consumer reads them yet, which is named here rather than left to be
 discovered later (CLAUDE.md's own warning that a closed issue is not evidence a player can
 reach a feature).
+
+---
+
+## Named crew and personal skill trees (M9-03, §10.2)
+
+§9.1 said never to manage individuals. §10 names itself the exception:
+
+> _"§9.1 warned against managing individuals. This is the sanctioned exception, and it works
+> because it's **opt-in and inverted** — you're not forced to roster people one by one, you
+> *choose* to invest in specific pilots because the payoff is a named, measurable asset. Micro
+> here is a reward, not a tax."_
+
+So M9-03 is where an individual finally arrives. Everything else about crew is unchanged:
+hiring, complements, duty, rest, conversions, morale and payroll all still work in counts, and
+an airline that never opens the roster board plays exactly the game it played before.
+
+### A member emerges from a pool and never leaves it
+
+The worker's naming sweep mints a `crew_member` when a pool's XP **per head** crosses
+`crew.skills.namedFromLevel` — eight levels in on the shipped balance, roughly six weeks of an
+easy network or four of a hard one. One more is named per level above the threshold, never more
+than the pool has heads.
+
+A named member is **one of that pool's crew**, not an extra body. `crew_pool.headcount` still
+counts them, nothing about capacity changes, and no dispatch, legality or payroll query reads
+the table.
+
+`crew_member.xp` and `crew_pool.xp` are two different measurements and both are right. The
+pool's is the base's aggregate experience — it dilutes when you hire and falls when people
+leave (M9-02). A member's is one person's, copied from the per-head average at the moment they
+were named and accruing on its own afterwards, and it is the one that decides their level and
+therefore their points.
+
+### The approximation, stated
+
+The game does not track **which individual flew which sector**. Dispatch commits a count, and
+M5-01's whole design is that it never commits a person. So a named member is credited for the
+flights their pool flew, at the rate every head aboard earned — which over-credits somebody who
+would in reality have been rostered on only some of them.
+
+The alternative is assigning individuals to duty periods, which is the rostering interface §9.1
+exists to prevent. This is the honest cost of the pool model and it is recorded here rather
+than left to be discovered from the numbers.
+
+### The names are deterministic
+
+`crewNameFor(worldSeed, crewBaseId, ordinal)`. A member's name is drawn from the world's own
+seed rather than at insert time, so a replay of a world's history produces the same roster —
+and two workers racing to name the same base compute the same ordinal, so
+`crew_member_base_ordinal_key` refuses the loser rather than producing two people with the same
+name. `ordinal` is per **base**, not per pool, so one base's roster is one sequence.
+
+### The branches
+
+| Branch               | Ladder      | §10.4 ceiling it feeds | Family-bound |
+| -------------------- | ----------- | ---------------------- | ------------ |
+| Performance & Fuel   | flight deck | fuel burn              | no           |
+| Handling & Safety    | flight deck | incident rate          | no           |
+| Command & Leadership | flight deck | turnaround time        | no           |
+| **Type Mastery**     | flight deck | maintenance cost       | **yes**      |
+| Service              | cabin       | turnaround time        | no           |
+| Safety               | cabin       | incident rate          | no           |
+| Leadership           | cabin       | turnaround time        | no           |
+
+Two of §10.2's mappings needed a decision, and both are reasoned where they are written.
+**Type Mastery feeds maintenance cost** — §10.2 promises "big bonuses" for deep proficiency on
+one family and does not say which quantity, and fuel and turnaround were already spoken for;
+putting a second branch on either would make the choice between them arithmetic rather than
+character. **Service feeds turnaround, not demand** — §10.4 forbids a boost that makes an
+airline _more attractive_, and App. D's service execution is band-capped and belongs there, so
+a cabin crew who work well together clear and reset a cabin faster instead.
+
+Two of §10.4's six ceilings are deliberately unreachable from a skill point. `blockTime` is
+taxi and routing efficiency, which §10.3 puts under research doctrine rather than under a
+person; `serviceCost` is App. D's, for the reason above.
+
+### Skill effects go through the capped pool, structurally
+
+§10.4's first non-negotiable rule is that stacking academy + research + personal skill +
+Training Captain never exceeds the ceiling. M9-03's first acceptance criterion is the same
+sentence from the other end, and it is held by the **shape of the code** rather than by a
+check: `skillBoosts` returns `EfficiencyBoost`es, `stackAirlineSkills` puts them through
+`stackEfficiencyBoosts`, and there is deliberately no function anywhere that hands out an
+uncapped multiplier. A caller cannot apply a skill effect without going past the cap, because
+nothing gives one out.
+
+Stacking is multiplicative, so two veterans each worth 4% give 7.84% rather than 8% — §10.4's
+"diminishing returns before the cap" — and the ceiling clamps whatever is left.
+
+One fully specialised veteran reaches **about half** of each ceiling on the shipped balance.
+That is deliberate: three of §10.4's four sources have not shipped, and a curve that let one
+airline's crew fill a ceiling would leave M9-01's doctrine, M9-04's Training Captains and
+M9-05's research with nothing to give.
+
+**This is also the first thing in the game that supplies a boost at all.** `computeBlockTime`,
+`computeFuelBurn`, `turnaroundMinutes` and `rollDisruption` have all taken a
+`readonly EfficiencyBoost[]` since M2-04, and every caller passed `[]`. `settleArrivedFlight`
+now passes the airline's Performance & Fuel stack into `computeFuelBurn`, and records what it
+was worth on `flight_result.breakdown.crewFuelBoost` so §14.1's "a figure explains itself"
+holds. The other three consumers are still unwired; they are M9-04's and M9-05's to reach.
+
+### Type Mastery and the fleet
+
+> _"Deep proficiency on one family; big bonuses, **lost if you sell that fleet**."_
+
+The airline's operated families are read from `airframe` joined to `aircraft_type` — what the
+**airline** flies, not what its crew could fly, because an airline that sold every A320 still
+has A320-rated crew and that is exactly the case the criterion is about. A repossessed airframe
+does not count (§13.5).
+
+The points are **kept, not refunded**. §10.2 says the bonus is _lost_; a refund would make
+selling a fleet a free respec and turn Type Mastery's whole trade into a temporary
+inconvenience. Buy the family back and they work again. The roster response carries
+`typeMasteryActive` so the page can say which it is rather than showing a silent zero.
+
+### What M9-03 deliberately did not build
+
+- **No respec.** §10.2 calls the points "mostly irreversible" and the honest reading is a
+  one-way door. If one ever arrives it should cost something and be its own issue.
+- **No way to retire or dismiss a named member.** They are one of the pool's heads, and the
+  pool's own attrition removes heads; tying a resignation to a _specific_ named person would
+  need the roster assignment §9.1 exists to prevent.
+- **No portrait.** §10.5 asks for one. There is no asset pipeline for pictures of people — the
+  livery and aircraft pipelines are for aeroplanes — so inventing one would be a VIS-shaped
+  decision taken inside a crew page.
+- **No notable flights.** §10.2's career history asks for "hours, types, notable flights,
+  incidents handled"; three of the four are here. Nothing in the game decides what makes a
+  flight notable, and inventing a rule for it would be a §18-shaped decision.
+- **Not on a public airline profile.** The second acceptance criterion asks for named crew on
+  "the roster board and the public airline profile". The board is built; **there is no public
+  airline profile** — no route, no projection, no page — so there is nothing to put them on.
+  Building one would be a new public projection with its own authorization-matrix row and
+  threat-model entry, which is a larger decision than a crew milestone should take. Recorded on
+  the issue; the wire shape is already public-safe when a profile arrives.
+
+### This is a worker story
+
+`nameEligibleCrew` runs per world on the game clock, beside the academy sweeps. **Production
+has no worker**, so no crew are ever named there and the roster board stays empty for ever —
+which reads as an airline whose crew are not good enough yet rather than as a missing process.
+
+`crewNamed` and `crewNamingErrors` are the counters, and the first one cannot tell the two
+apart on its own: zero is the _expected_ reading for weeks, because §10.2 puts the threshold
+eight levels in. `academyBuildsCompleted` and the queue depth beside it are what separate a
+quiet world from a stopped one.
+
+The sweep is idempotent **without a watermark**: the target count is a pure function of the
+pool's current XP and headcount, so a second run computes the same number and inserts nothing.
+ADR-0005's world reset therefore has nothing extra to clear — the same argument the used market
+makes for having no "last generated" column.
+
+### The API
+
+| Route                              | What it does                                       |
+| ---------------------------------- | -------------------------------------------------- |
+| `GET /api/crew/roster`             | Named crew, the tree, and what the roster is worth |
+| `POST /api/crew/roster/:id/skills` | Spend one point into one branch                    |
+
+Owner-scoped by resolution; a foreign, absent or malformed member id all receive the identical
+`404 member_absent` (ADR-0020). One point per request, deliberately: §10.2 calls a point
+"mostly irreversible", and a bulk allocation makes a mis-click expensive in a way a single
+spend does not.

@@ -35,6 +35,7 @@ import {
 import { SESSION_COOKIE } from './auth/session';
 import { registerAutomationRoutes } from './automation/routes';
 import { readBuildInfo } from './build-info';
+import { registerRosterRoutes } from './crew/roster-routes';
 import { registerCrewRoutes } from './crew/routes';
 import { registerCurrencyRoutes } from './currency/routes';
 import { type DatabaseHandle } from './db/client';
@@ -292,6 +293,7 @@ export async function buildApp({
   registerWorldRoutes(app, { db });
   // Crew, behind the same airline boundary (M5-01).
   registerCrewRoutes(app, { db });
+  registerRosterRoutes(app, { db });
   registerAcademyRoutes(app, { db });
   registerOfficeRoutes(app, { db });
   registerAutomationRoutes(app, { db });

@@ -1,11 +1,12 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
-import type { CrewXpBalance } from '@tailfin/shared';
+import type { CrewSkillBalance, CrewXpBalance } from '@tailfin/shared';
 import { flightXp, type FlightXp, type Weather, type XpDisruption } from '@tailfin/sim';
 
 import { crewDutyPeriod, crewPool, crewRank, type CrewRankValue } from '../db/schema';
 
 import { parseComplement } from './duty-store';
+import { creditNamedCrew } from './roster';
 
 import type { Database } from '../db/client';
 
@@ -57,6 +58,8 @@ const CREW_RANKS = new Set<string>(crewRank.enumValues);
 export interface FlightXpFacts {
   /** The duty period that operated the flight. Null on a flight with no crew. */
   crewDutyPeriodId: string | null;
+  /** Block minutes flown, for a named member's career history (M9-03). */
+  blockMinutes: number;
   distanceNm: number;
   maxTakeoffWeightT: number;
   arrivalDifficulty: number | null;
@@ -90,6 +93,7 @@ export async function awardFlightXp(
   tx: Database,
   facts: FlightXpFacts,
   balance: CrewXpBalance,
+  skills?: CrewSkillBalance,
 ): Promise<XpAward | null> {
   if (facts.crewDutyPeriodId === null) return null;
 
@@ -170,6 +174,34 @@ export async function awardFlightXp(
     heads: byRank.get(row.rank) ?? 0,
     xp: xp.xpPerHead * (byRank.get(row.rank) ?? 0),
   }));
+
+  /*
+   * And the named individuals drawn from those pools (M9-03, §10.2).
+   *
+   * After the pools, and in the same transaction: a named member is one of the
+   * pool's heads, so their XP and the pool's must move together or a replay
+   * would credit one and not the other. `creditNamedCrew` records the
+   * approximation the pool model forces — the game does not know *which*
+   * individual flew, so every named member of a pool that flew is credited.
+   *
+   * `skills` is optional only so a caller that has already loaded the economy
+   * need not load it twice; omitting it skips the individual credit rather than
+   * guessing at a curve.
+   */
+  if (skills !== undefined) {
+    await creditNamedCrew(
+      tx,
+      {
+        crewBaseId: period.crewBaseId,
+        family: period.family,
+        ranks,
+        xpPerHead: xp.xpPerHead,
+        blockMinutes: facts.blockMinutes,
+        handledDisruption: facts.disruption !== 'none',
+      },
+      skills,
+    );
+  }
 
   return {
     xp,

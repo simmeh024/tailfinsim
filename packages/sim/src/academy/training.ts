@@ -5,7 +5,9 @@ import {
   type CrewRank,
 } from '@tailfin/shared';
 
-import { academyPermitsRank, academyTrainingSlots, crewLadderOf } from './levels';
+import { crewLadderOf } from '../crew/pools';
+
+import { academyPermitsRank, academyTrainingSlots } from './levels';
 
 /**
  * Where a type conversion is trained, and what it therefore costs (M9-01, §10.1).

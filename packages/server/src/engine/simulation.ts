@@ -3,6 +3,7 @@ import { asc, ne } from 'drizzle-orm';
 import { gameTime, horizonFrom, type WorldClock } from '@tailfin/sim';
 
 import { completeDueAcademyBuilds, runAcademyUpkeep } from '../academy/store';
+import { nameEligibleCrew } from '../crew/roster';
 import { deliverDueAircraftOrders } from '../aircraft/acquisition';
 import { sweepMaintenance } from '../aircraft/maintenance';
 import { refreshUsedAircraftMarket } from '../aircraft/used-market';
@@ -117,6 +118,8 @@ export interface TickReport {
   crewErrors: number;
   /** M5-04 follow-up. Airlines whose social media specialist dripped reputation this run. */
   reputationGrants: number;
+  /** M9-03. Crew who crossed §10.2's threshold and were named this run. */
+  crewNamed: number;
   /** M9-01. Academy levels and modules whose build finished this run. */
   academyBuildsCompleted: number;
   /** M9-01. Airlines billed for a month of academy upkeep. */
@@ -212,6 +215,8 @@ export interface SimulationEngineOptions {
   billHubs?: typeof billHubUpkeep;
   /** M9-01. Commissions §10.1 academy levels and modules whose build is due. */
   completeAcademyBuilds?: typeof completeDueAcademyBuilds;
+  /** M9-03. Names the crew who have crossed §10.2's level threshold. */
+  nameCrew?: typeof nameEligibleCrew;
   /** M9-01. Bills the month's academy upkeep. */
   billAcademies?: typeof runAcademyUpkeep;
   /** M8-07. Charges §13.4's per-game-day interest on every active loan. */
@@ -385,6 +390,16 @@ export interface EngineSnapshot {
   academyUpkeepPaid: number;
   academyUpkeepMinor: number;
   academyErrors: number;
+  /**
+   * M9-03. Crew named since start, and sweeps that threw.
+   *
+   * Zero on a world whose crew have not yet earned it is the *expected*
+   * reading — §10.2 puts the threshold eight levels in — so this one cannot be
+   * told from a missing worker on its own. `academyBuildsCompleted` and the
+   * queue depth beside it are what separate the two.
+   */
+  crewNamed: number;
+  crewNamingErrors: number;
   /**
    * M8-07. Game days of §13.4 interest charged since start, and what was paid.
    *
@@ -566,6 +581,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     billHubs = billHubUpkeep,
     completeAcademyBuilds = completeDueAcademyBuilds,
     billAcademies = runAcademyUpkeep,
+    nameCrew = nameEligibleCrew,
     accrueInterest = accrueLoanInterest,
     reviewDefaults = reviewWorldDefaults,
     materialise = materialiseWorld,
@@ -609,6 +625,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let groundVolumeShortfallMinor = 0;
   let groundPayrollBilled = 0;
   let groundErrors = 0;
+  let crewNamed = 0;
+  let crewNamingErrors = 0;
   let academyBuildsCompleted = 0;
   let academyUpkeepPaid = 0;
   let academyUpkeepMinor = 0;
@@ -666,6 +684,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     let tickGroundExpired = 0;
     let tickGroundShortfalls = 0;
     let tickGroundPaid = 0;
+    let tickCrewNamed = 0;
     let tickAcademyBuilds = 0;
     let tickAcademyUpkeepPaid = 0;
     let tickHubFeesBilled = 0;
@@ -1012,6 +1031,30 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       }
 
       /*
+       * §10.2's named crew (M9-03), on this world's game clock. A pool whose
+       * crew have earned it produces a named individual, and one more per level
+       * above the threshold.
+       *
+       * Idempotent without a watermark: the target count is a pure function of
+       * the pool's current XP and headcount, so a second run computes the same
+       * number and inserts nothing — and ADR-0005's world reset has nothing
+       * extra to clear.
+       *
+       * Isolated like the sweeps above. Crew who could not be named this tick
+       * are named the next; nobody loses XP for the delay.
+       */
+      try {
+        const named = await nameCrew(db, entry.id, gameTime(entry.clock, now()));
+        tickCrewNamed += named.named;
+        if (named.named > 0) {
+          log?.info?.(`[${entry.name}] crew: ${String(named.named)} newly named`);
+        }
+      } catch (error) {
+        crewNamingErrors += 1;
+        log?.warn?.(`[${entry.name}] crew naming sweep failed: ${String(error)}`);
+      }
+
+      /*
        * §13.4's interest and §13.5's default ladder (M8-07), on the world's game
        * clock like every sweep above.
        *
@@ -1184,6 +1227,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     groundContractsExpired += tickGroundExpired;
     groundVolumeShortfalls += tickGroundShortfalls;
     groundPayrollBilled += tickGroundPaid;
+    crewNamed += tickCrewNamed;
     academyBuildsCompleted += tickAcademyBuilds;
     academyUpkeepPaid += tickAcademyUpkeepPaid;
     hubFeesBilled += tickHubFeesBilled;
@@ -1221,6 +1265,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       groundContractsExpired: tickGroundExpired,
       groundVolumeShortfalls: tickGroundShortfalls,
       groundPayrollBilled: tickGroundPaid,
+      crewNamed: tickCrewNamed,
       academyBuildsCompleted: tickAcademyBuilds,
       academyUpkeepPaid: tickAcademyUpkeepPaid,
       hubFeesBilled: tickHubFeesBilled,
@@ -1314,6 +1359,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         academyUpkeepPaid,
         academyUpkeepMinor,
         academyErrors,
+        crewNamed,
+        crewNamingErrors,
         interestDaysCharged,
         interestPaidMinor,
         arrearsMinor,

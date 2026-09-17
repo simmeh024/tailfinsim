@@ -485,6 +485,54 @@ without an injection point _"the same sector in different weather"_ is not somet
 can arrange. `docs/crew.md` has the model, the term table and what M9-02 deliberately did not
 build — which is anything that **spends** XP.
 
+**Named crew are M9-03's exception to "pools, never people", and the first thing in the game
+that supplies a boost.** §10.2 calls itself _"the sanctioned exception"_ to §9.1, so a
+`crew_member` row exists — but only by **emerging from a pool** once its XP per head crosses
+§10.2's threshold, and nothing about hiring, complements, duty, conversions or payroll reads the
+table. An airline that never opens the roster board plays the game it played before.
+
+`nameEligibleCrew` is the sweep, per world on the game clock beside the academy's. **Production
+has no worker**, so no crew are ever named there and the roster stays empty for ever — which
+reads as crew who are not good enough yet rather than as a missing process. `crewNamed` and
+`crewNamingErrors` are the counters, and `crewNamed` at zero **cannot tell the two apart on its
+own**: zero is the expected reading for weeks, because the threshold is eight levels in.
+
+Six things worth not undoing. **`crew_member.xp` and `crew_pool.xp` are two different
+measurements and both are right** — the pool's is the base's aggregate, which dilutes on hiring
+and falls on resignation; a member's is one person's, copied from the per-head average when they
+were named and accruing alone, and it is the one that decides their points. **The game does not
+know which individual flew**, so a named member is credited for the flights their pool flew;
+that over-credits, and the alternative is the rostering interface §9.1 exists to prevent — the
+approximation is recorded in `docs/crew.md` rather than left to be found in the numbers.
+**Names come from the world seed** (`crewNameFor(seed, baseId, ordinal)`), so a replay produces
+the same roster and two workers racing compute the same ordinal — `crew_member_base_ordinal_key`
+refuses the loser rather than minting a duplicate person. **The sweep needs no watermark**: the
+target count is a pure function of the pool's XP and headcount, so ADR-0005's reset has nothing
+to clear, the same argument the used market makes. **Type Mastery's points are kept, never
+refunded** when the fleet goes — §10.2 says the bonus is _lost_, and a refund would make selling
+a fleet a free respec; buy the family back and they work again. And **there is no respec and no
+way to dismiss a named member**, both for reasons written at the top of `crew/roster.ts`.
+
+**§10.4's boost pipeline had four consumers and no supplier until now.** `computeBlockTime`,
+`computeFuelBurn`, `turnaroundMinutes` and `rollDisruption` have taken a
+`readonly EfficiencyBoost[]` since M2-04 and every caller passed `[]`. `settleArrivedFlight` now
+passes the airline's Performance & Fuel stack into `computeFuelBurn` and records what it was
+worth on `flight_result.breakdown.crewFuelBoost`. The other three are still unwired — M9-04's
+Training Captains and M9-05's research reach them. The acceptance criterion that skill effects
+_"feed the same capped boost pool as research, never a separate uncapped one"_ is held by the
+shape of the code: `skillBoosts` returns boosts, `stackAirlineSkills` puts them through
+`stackEfficiencyBoosts`, and **nothing anywhere hands out an uncapped multiplier**, so a caller
+cannot apply one without passing the cap. One fully specialised veteran reaches about half a
+ceiling on the shipped balance, deliberately, because three of §10.4's four sources have not
+shipped.
+
+**M9-03's second acceptance criterion is half-built, and the half is named.** _"Named crew appear
+on the roster board and the public airline profile"_ — the board is built on the Crew page;
+**there is no public airline profile at all**, no route and no projection. Building one would be
+a new public projection needing its own authorization-matrix row and ADR-0012 entry, which is a
+larger decision than a crew milestone should take. It is on the issue, and the wire shape is
+already public-safe for whenever a profile arrives.
+
 **§21 and §10.1 disagree about where an academy is built, and this followed §10.1.** M7-04
 already shipped a `hub_facility` of kind `training_academy` with an opening cost and an annual
 fee, from §21's _"unlocked per hub"_ list. It gates nothing in M9-01 and was left exactly as it

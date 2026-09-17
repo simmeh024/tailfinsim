@@ -1,3 +1,4 @@
+import { FlightDeckRank } from '@tailfin/shared';
 import type { CrewRegulationBalance } from '@tailfin/shared';
 
 import { coversRank, requiredComplement, type Complement, type CrewRank } from './complement';
@@ -163,4 +164,16 @@ export function fragmentation(pools: readonly CrewPool[]): FragmentationReport {
     largestFamilyAvailable,
     strandedHeads: totalAvailable - largestFamilyAvailable,
   };
+}
+
+/**
+ * Which of §9.2's two ladders a rank is on. Every `CrewRank` is on exactly one.
+ *
+ * Here rather than beside any one caller: the academy asks it to read §10.1's
+ * rank ceiling, the XP model asks it to pick a training provider, and the skill
+ * trees ask it to decide which branches a member may spend in. It is a property
+ * of the rank, so it belongs with the pools.
+ */
+export function crewLadderOf(rank: CrewRank): 'flight_deck' | 'cabin' {
+  return (FlightDeckRank.options as readonly string[]).includes(rank) ? 'flight_deck' : 'cabin';
 }

@@ -1,6 +1,8 @@
 import type {
   ApiError,
   CrewResponse,
+  CrewRosterResponse,
+  SkillBranch,
   HireCrewInput,
   OpenCrewBaseInput,
   SetCrewPoliciesInput,
@@ -125,4 +127,58 @@ export function setCrewReserve(input: SetCrewReserveInput): Promise<CrewOutcome>
  */
 export function setCrewPolicies(input: SetCrewPoliciesInput): Promise<CrewOutcome> {
   return send('/api/crew/policies', input, 'PUT');
+}
+
+/**
+ * The roster board's half (M9-03, §10.2).
+ *
+ * Separate from `fetchCrew` because they answer different questions and a page
+ * may want one without the other: the crew state is pools and coverage, the
+ * roster is the named individuals drawn from them. Folding them into one
+ * response would make every Crew page load pay for a table most airlines have
+ * not populated yet.
+ */
+function isRosterResponse(value: unknown): value is CrewRosterResponse {
+  if (typeof value !== 'object' || value === null) return false;
+  const body = value as Record<string, unknown>;
+  return Array.isArray(body.members) && Array.isArray(body.boosts);
+}
+
+export async function fetchRoster(): Promise<CrewRosterResponse | null> {
+  const response = await fetch('/api/crew/roster', {
+    headers: { accept: 'application/json' },
+    credentials: 'same-origin',
+  });
+  if (!response.ok) return null;
+  const payload: unknown = await response.json();
+  return isRosterResponse(payload) ? payload : null;
+}
+
+export type RosterOutcome =
+  { ok: true; state: CrewRosterResponse } | { ok: false; refusal: CrewFailure };
+
+/** Spend one point. Returns the whole board, for the reason every crew write does. */
+export async function allocateSkillPoint(
+  memberId: string,
+  branch: SkillBranch,
+): Promise<RosterOutcome> {
+  const response = await fetch(`/api/crew/roster/${encodeURIComponent(memberId)}/skills`, {
+    method: 'POST',
+    headers: { accept: 'application/json', 'content-type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ branch }),
+  });
+  const payload: unknown = await response.json();
+  if (response.status === 200 && isRosterResponse(payload)) {
+    return { ok: true, state: payload };
+  }
+  const error = payload as Partial<ApiError>;
+  return {
+    ok: false,
+    refusal: {
+      status: response.status,
+      code: error.code ?? 'unknown',
+      message: error.message ?? 'Could not spend that point',
+    },
+  };
 }

@@ -240,6 +240,18 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   so an old arrival re-derives the same XP and the factors that made it are written onto the
   flight result. Nothing spends it yet — levels and skill trees are M9-03. See
   [`docs/crew.md`](docs/crew.md).
+- **Crew who earn a name, and a skill tree you choose for them.** §9.1 says never to manage
+  individuals; §10.2 is the sanctioned exception, and it is opt-in. Crew stay counts in a pool
+  until one crosses a level threshold, at which point a named person emerges from it with their
+  own experience, a career history and points to spend — four branches for a pilot, three for
+  cabin crew. The points make the airline **cheaper and faster, never more popular**: each one
+  feeds one of the design's six efficiency ceilings, stacked with diminishing returns and hard
+  capped, so a veteran airline is leaner rather than unbeatable. Type Mastery is the trade —
+  the biggest bonus, and it goes inert the moment you sell the fleet it was earned on, points
+  kept rather than refunded. Naming is the Worker's, so it bites on dev only, and the names
+  come from the world's seed so a replay produces the same roster. See
+  [`docs/crew.md`](docs/crew.md), including why there is no respec and no public profile to put
+  anybody on yet.
 - **A training academy that gates a ceiling and grants no boost.** §10.1's academy is built at
   a crew base and climbs five levels, each unlocking a higher rank an airline may train, a
   higher research tier it may later reach, and more of the finite training slots crew occupy
