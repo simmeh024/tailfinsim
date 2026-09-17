@@ -14,6 +14,8 @@ import {
   type ResearchTier,
 } from '@tailfin/shared';
 
+import { crewLadderOf } from '../crew/pools';
+
 /**
  * What an academy level permits, and what it costs (M9-01, §10.1).
  *
@@ -36,10 +38,12 @@ import {
 const FLIGHT_DECK_ORDER: readonly CrewRank[] = FlightDeckRank.options;
 const CABIN_ORDER: readonly CrewRank[] = CabinRank.options;
 
-/** Which ladder a rank is on. Every `CrewRank` is on exactly one. */
-export function crewLadderOf(rank: CrewRank): 'flight_deck' | 'cabin' {
-  return FLIGHT_DECK_ORDER.includes(rank) ? 'flight_deck' : 'cabin';
-}
+/*
+ * `crewLadderOf` lived here until M9-03 and now lives in `crew/pools.ts`, which
+ * is where a fact about a *rank* belongs — the academy is one of several things
+ * that ask the question, not its owner. Re-exported through the package index,
+ * so no caller outside `packages/sim` noticed the move.
+ */
 
 /**
  * May an academy at this level train up to this rank?

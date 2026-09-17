@@ -2152,6 +2152,141 @@ export const SHIPPED_CREW_XP_BALANCE = {
   nightToHour: 6,
 } as const satisfies z.input<typeof CrewXpBalance>;
 
+/**
+ * What a level costs and what a point is worth (M9-03, §10.2, §10.4).
+ *
+ * The §10.2 *table* — which branches exist, which ladder may spend in them and
+ * which of §10.4's ceilings each one feeds — is design and lives in
+ * `crew-skills.ts`. This is the half a world may retune: the XP curve, how many
+ * points a level grants, how deep a branch goes, and how much a single point
+ * removes.
+ *
+ * ## Why `fractionPerPoint` is small, and must stay small
+ *
+ * §10.4 puts a hard ceiling on every quantity — fuel burn at −8%, turnaround at
+ * −20% — and says why in a sentence worth keeping in front of anyone tempted to
+ * raise one: *"a year-one player must never face an unbeatable wall of stacked
+ * veteran bonuses."* Skill points are only one of four sources that will
+ * eventually stack into those ceilings (academy doctrine, research, Training
+ * Captains are the others), so a single airline's crew must not fill a ceiling
+ * on their own. These numbers are chosen so a **fully specialised veteran crew
+ * reaches roughly half** of each ceiling, leaving the rest for the three
+ * milestones that have not shipped.
+ *
+ * The clamp is not here: `stackEfficiencyBoosts` applies it, and it would hold
+ * even if these numbers were absurd. What these numbers decide is whether the
+ * cap is reached by a reasonable airline or only by an unreasonable one.
+ */
+export const CrewSkillBalance = z
+  .object({
+    /**
+     * XP for the first level, and the growth per level after it.
+     *
+     * Geometric rather than linear, so the early levels arrive quickly and the
+     * late ones are a real commitment — which is what makes §10.2's *"you
+     * choose to invest in specific pilots"* a decision rather than a formality.
+     */
+    baseLevelXp: z.number().int().positive(),
+    levelXpGrowth: z.number().gt(1),
+    /** No level above this, however much a crew fly. */
+    maxLevel: z.number().int().positive().max(100),
+    /** Skill points granted per level gained. */
+    pointsPerLevel: z.number().int().positive(),
+    /**
+     * The level at which a pool's crew start emerging as named individuals
+     * (§10.2's *"crew who cross a level threshold"*).
+     *
+     * Above 1 on purpose: naming every head on hire would make the roster board
+     * a list of everyone, which is §9.1's *"managing individuals"* failure
+     * arriving through the back door. A named member has to have earned it.
+     */
+    namedFromLevel: z.number().int().positive(),
+    /** Points a single branch will accept. Beyond it, spend elsewhere. */
+    maxPointsPerBranch: z.number().int().positive(),
+    /**
+     * What one point removes, per branch, before stacking and before §10.4's
+     * ceiling.
+     *
+     * Type Mastery is the largest — §10.2 promises *"big bonuses"* — and it is
+     * also the only one that can be lost, which is the trade.
+     */
+    fractionPerPoint: z
+      .object({
+        performance_fuel: z.number().gt(0).lt(1),
+        handling_safety: z.number().gt(0).lt(1),
+        command_leadership: z.number().gt(0).lt(1),
+        type_mastery: z.number().gt(0).lt(1),
+        service: z.number().gt(0).lt(1),
+        safety: z.number().gt(0).lt(1),
+        leadership: z.number().gt(0).lt(1),
+      })
+      .strict(),
+  })
+  .strict();
+export type CrewSkillBalance = z.infer<typeof CrewSkillBalance>;
+
+/**
+ * The shipped skill curve.
+ *
+ * ## What the numbers are scaled against
+ *
+ * M9-02's XP is the anchor. An easy 250 nm domestic hop pays about **128 XP** a
+ * head; the same sector flown into a hard field in winter weather at night pays
+ * about **209**. So a crew flying four sectors a day earn roughly 500-800 XP a
+ * day, and:
+ *
+ *   - **Level 2 at 1,200 XP** is two days of easy flying — fast enough that the
+ *     mechanic is visible in a player's first week.
+ *   - **Level 8, where naming starts, is about 34,000 XP** — six or seven weeks
+ *     of an easy network, or four of a hard one. That is the gap §10.2 is about:
+ *     *"a pilot who flies your hard winter northern network becomes measurably
+ *     better than one who doesn't"*, made into a date on which somebody gets a
+ *     name.
+ *   - **Level 20 is the ceiling**, at roughly 2.4M XP — years of a large
+ *     operation, and deliberately out of reach of a first season.
+ *
+ * ## Where the ceilings end up
+ *
+ * At `maxPointsPerBranch` of 5 and the fractions below, one fully specialised
+ * pilot reaches 5 × 0.008 = 4% fuel burn before stacking. §10.4's fuel ceiling
+ * is 8%, so **one veteran gets halfway and a second gets most of the rest** —
+ * diminishing returns doing the work `stackEfficiencyBoosts` was written for.
+ * The remaining headroom belongs to M9-04's Training Captains, M9-05's research
+ * and M9-01's academy doctrine, none of which is built.
+ *
+ * Defaulted, for the reason `SHIPPED_NPC_BALANCE` records.
+ */
+export const SHIPPED_CREW_SKILL_BALANCE = {
+  // ~1,200 XP for level 2: two days of easy sectors.
+  baseLevelXp: 1_200,
+  // 1.32^n: level 8 at ~34K, level 14 at ~230K, level 20 at ~2.4M.
+  levelXpGrowth: 1.32,
+  maxLevel: 20,
+  pointsPerLevel: 1,
+  // Eight levels in, so a named member is a genuine veteran rather than anyone
+  // who has flown a fortnight.
+  namedFromLevel: 8,
+  maxPointsPerBranch: 5,
+  fractionPerPoint: {
+    // 5 points → 4% fuel, against §10.4's 8% ceiling.
+    performance_fuel: 0.008,
+    // 5 points → 7.5% incident rate, against a 30% ceiling: the widest ceiling
+    // in §10.4, and the one with the most room for research to fill later.
+    handling_safety: 0.015,
+    // 5 points → 5% turnaround, against 20%.
+    command_leadership: 0.01,
+    // "Big bonuses": 5 points → 6% maintenance against a 12% ceiling, and the
+    // only branch that can be lost outright.
+    type_mastery: 0.012,
+    // Cabin branches are worth less per point than the flight deck's, because a
+    // cabin complement is several heads to a flight deck's two — so the same
+    // fraction per point would make a cabin crew's contribution dominate.
+    service: 0.005,
+    safety: 0.008,
+    leadership: 0.004,
+  },
+} as const satisfies z.input<typeof CrewSkillBalance>;
+
 export const CrewBalance = z
   .object({
     regulation: CrewRegulationBalance,
@@ -2168,6 +2303,8 @@ export const CrewBalance = z
     morale: CrewMoraleBalance.default(SHIPPED_CREW_MORALE_BALANCE),
     /** Defaulted, for the reason `duty` is (M9-02): §10.2's XP curve. */
     xp: CrewXpBalance.default(SHIPPED_CREW_XP_BALANCE),
+    /** Defaulted, for the reason `xp` is (M9-03): §10.2's personal skill trees. */
+    skills: CrewSkillBalance.default(SHIPPED_CREW_SKILL_BALANCE),
     /**
      * Monthly salary per head, by rank.
      *
@@ -2265,6 +2402,7 @@ export const SHIPPED_CREW_BALANCE = {
   duty: SHIPPED_CREW_DUTY_BALANCE,
   morale: SHIPPED_CREW_MORALE_BALANCE,
   xp: SHIPPED_CREW_XP_BALANCE,
+  skills: SHIPPED_CREW_SKILL_BALANCE,
 } as const satisfies z.input<typeof CrewBalance>;
 
 /**

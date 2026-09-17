@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import type { CrewRank, CrewResponse } from '@tailfin/shared';
+import type { CrewRank, CrewResponse, CrewRosterResponse, SkillBranch } from '@tailfin/shared';
 
 import { useContextSelection } from '../shell/context-selection';
 import { useWorldClock } from '../world/useWorldClock';
 
 import {
+  allocateSkillPoint,
   fetchCrew,
+  fetchRoster,
   hireCrew,
   openCrewBase,
   setCrewPolicies,
@@ -25,6 +27,7 @@ import { CrewCoverage, coverageKey } from './CrewCoverage';
 import { CrewKpiStrip } from './CrewKpiStrip';
 import { CrewMorale } from './CrewMorale';
 import { CREW_RANK_LABEL, CrewRoleBanner } from './CrewRoleBanner';
+import { CrewRoster } from './CrewRoster';
 import { FleetCommonality } from './FleetCommonality';
 import { TrainingPipeline } from './TrainingPipeline';
 
@@ -96,6 +99,19 @@ export function CrewPage(): ReactNode {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [openAction, setOpenAction] = useState<CrewActionKind | null>(null);
 
+  /*
+   * The roster is fetched separately from the crew state (M9-03).
+   *
+   * Two requests rather than one payload, because they answer different
+   * questions and most airlines have an empty roster for weeks: folding the
+   * named crew into `/api/crew` would make every load pay for a table that is
+   * usually empty. A failure of one must not blank the other, which is why this
+   * has its own `failed` flag rather than sharing `load`.
+   */
+  const [roster, setRoster] = useState<CrewRosterResponse | null>(null);
+  const [rosterState, setRosterState] = useState<'loading' | 'ready' | 'failed'>('loading');
+  const [spending, setSpending] = useState<string | null>(null);
+
   const { inGameTime } = useWorldClock();
   const { select, clear } = useContextSelection();
 
@@ -111,6 +127,35 @@ export function CrewPage(): ReactNode {
     return () => {
       live = false;
     };
+  }, []);
+
+  useEffect(() => {
+    let live = true;
+    void fetchRoster()
+      .then((value) => {
+        if (!live) return;
+        setRoster(value);
+        setRosterState(value === null ? 'failed' : 'ready');
+      })
+      .catch(() => {
+        if (live) setRosterState('failed');
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const spendPoint = useCallback((memberId: string, branch: SkillBranch) => {
+    setSpending(memberId);
+    void allocateSkillPoint(memberId, branch)
+      .then((outcome) => {
+        // A refusal leaves the board exactly as it was: the closed `CrewSkillRefusal`
+        // set describes known state, so the page has nothing to re-render.
+        if (outcome.ok) setRoster(outcome.state);
+      })
+      .finally(() => {
+        setSpending(null);
+      });
   }, []);
 
   /*
@@ -351,6 +396,14 @@ export function CrewPage(): ReactNode {
       />
 
       <TrainingPipeline crew={crew} inGameTime={inGameTime} />
+
+      <CrewRoster
+        roster={roster}
+        loading={rosterState === 'loading'}
+        failed={rosterState === 'failed'}
+        onSpend={spendPoint}
+        pendingMemberId={spending}
+      />
 
       <HowCrewWork />
     </div>

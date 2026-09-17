@@ -110,6 +110,9 @@ const READ_ONLY_GET_ROUTES = [
   // next build would cost. Quoting holds nothing — no reservation, no row — so a
   // refresh re-quotes rather than repeating anything. The builds are the POSTs.
   '/api/academies',
+  // M9-03. A read: the roster board and what its points are worth. The spend is
+  // the POST beside it.
+  '/api/crew/roster',
   // M7-04. Both are reads. `candidates` prices what a hub *would* cost and holds
   // nothing — no quote row, no reservation — so a refresh re-quotes rather than
   // repeating anything. The purchase is the POST.

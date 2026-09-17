@@ -14,13 +14,14 @@ import {
   type AcademyLevel,
 } from '@tailfin/shared';
 
+import { crewLadderOf } from '../crew/pools';
+
 import {
   academyMonthlyUpkeep,
   academyPermitsRank,
   academyResearchTier,
   academyTrainingSlots,
   buildCompletesAt,
-  crewLadderOf,
   levelBalance,
   nextAcademyLevel,
 } from './levels';

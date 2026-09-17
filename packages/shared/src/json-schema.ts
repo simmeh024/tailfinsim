@@ -52,6 +52,7 @@ import {
 import { AutomationStateResponse } from './automation';
 import { CreditStandingResponse } from './credit';
 import { CrewResponse } from './crew';
+import { CrewRosterResponse } from './crew-skills';
 import { ExecutiveDashboardResponse } from './dashboard';
 import { ExecutiveFloorState } from './executive';
 import { CashRunwayResponse, FinancePnlResponse } from './finance';
@@ -182,6 +183,7 @@ export const bookCheckResponseJsonSchema = z.toJSONSchema(BookCheckResponse);
 export const adminRequeueEventsResponseJsonSchema = z.toJSONSchema(AdminRequeueEventsResponse);
 export const worldClockJsonSchema = z.toJSONSchema(WorldClock);
 export const crewResponseJsonSchema = z.toJSONSchema(CrewResponse);
+export const crewRosterResponseJsonSchema = z.toJSONSchema(CrewRosterResponse);
 export const academiesResponseJsonSchema = z.toJSONSchema(AcademiesResponse);
 export const automationStateResponseJsonSchema = z.toJSONSchema(AutomationStateResponse);
 export const groundStationResponseJsonSchema = z.toJSONSchema(GroundStationResponse);

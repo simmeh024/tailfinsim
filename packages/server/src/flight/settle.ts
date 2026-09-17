@@ -31,6 +31,7 @@ import {
   type FlightAirframeBasis,
 } from '../aircraft/performance';
 import { moveAirlineCash } from '../airline/cash';
+import { airlineSkillBoosts } from '../crew/roster';
 import { awardFlightXp } from '../crew/xp-store';
 import { airport, flight, flightResult, route, world } from '../db/schema';
 import { type PinnedEconomyConfig } from '../economy/config';
@@ -375,7 +376,40 @@ export async function settleArrivedFlight(
       : marketAt(fuelCtx, uplift, economy));
 
   const block = computeBlockTime(distanceNm, airframe.cruiseSpeedKt, profile);
-  const burn = computeFuelBurn(block, { cruiseBurnTPerNm: airframe.cruiseBurnTPerNm });
+  /*
+   * §10.4's efficiency boosts, and the **first thing in the game that supplies
+   * one** (M9-03). Every consumer — this one, `computeBlockTime`,
+   * `turnaroundMinutes`, `rollDisruption` — has taken a `readonly
+   * EfficiencyBoost[]` since M2-04 and every caller passed `[]`.
+   *
+   * The airline's named crew are what fills it: §10.2's Performance & Fuel
+   * branch reduces fuel burn, stacked multiplicatively across the roster and
+   * clamped to §10.4's ceiling by `stackEfficiencyBoosts` — never by anything
+   * here. That is M9-03's first acceptance criterion, and it is held by the
+   * shape of the call rather than by a promise: this passes boosts *through* the
+   * capped stack, and there is no uncapped path to pass them down instead.
+   *
+   * Resolved per settlement rather than snapshotted on the flight, and that is a
+   * deliberate difference from the handling factor above it. Handling is a
+   * *contract* the player can switch mid-flight, so billing it live moved the
+   * bill; a crew's skill points are earned and spent, never switched, and a
+   * point spent while the aeroplane was airborne is a fact about the airline
+   * that was true when it took off. The cost of being wrong here is a fraction
+   * of a percent on one sector.
+   *
+   * A world whose roster is empty gets `[]` and the arithmetic below is
+   * unchanged, which is every world until crew are named.
+   */
+  const skills = await airlineSkillBoosts(tx, {
+    worldId: row.worldId,
+    airlineId: row.airlineId,
+  });
+
+  const burn = computeFuelBurn(
+    block,
+    { cruiseBurnTPerNm: airframe.cruiseBurnTPerNm },
+    skills.boosts.fuelBurn,
+  );
   const fuelCost = computeFuelCost(burn.tonnes, market, resolveStation(row.originIcao));
 
   /*
@@ -502,6 +536,17 @@ export async function settleArrivedFlight(
         costs: settlement.costs,
         distanceNm,
         fuelTonnes: burn.tonnes,
+        /*
+         * What §10.4's fuel boost took off this flight, and whether the ceiling
+         * clipped it (M9-03). Recorded because §14.1 asks a figure to explain
+         * itself: without it, "why did this sector burn less than that one?"
+         * has no answer once a roster has changed.
+         */
+        crewFuelBoost: {
+          fraction: skills.stacked.fuelBurn.fraction,
+          capped: skills.stacked.fuelBurn.capped,
+          contributors: skills.contributors.fuelBurn,
+        },
         loadFactor: settlement.loadFactor,
         /*
          * Which aeroplane, and under which catalogue (IMPROVE-02).
@@ -709,6 +754,7 @@ export async function settleArrivedFlight(
     tx,
     {
       crewDutyPeriodId: row.crewDutyPeriodId,
+      blockMinutes: block.blockMinutes,
       distanceNm,
       maxTakeoffWeightT: airframe.maxTakeoffWeightT,
       arrivalDifficulty: arrival.difficulty,
@@ -723,6 +769,7 @@ export async function settleArrivedFlight(
         origin.continent !== arrival.continent,
     },
     economy.crew.xp,
+    economy.crew.skills,
   );
 
   /*

@@ -39,6 +39,7 @@ import {
   PurchaseHubRequest,
   SignContractRequest,
   StartCrewConversionInput,
+  AllocateSkillPointInput,
   BuildAcademyModuleInput,
   FoundAcademyInput,
   UpdateOwnAirlineInput,
@@ -142,6 +143,11 @@ const STRICT_WRITE_CONTRACTS = [
     endpoint: 'POST /api/academies',
     schema: FoundAcademyInput,
     payload: { crewBaseId: UUID_A },
+  },
+  {
+    endpoint: 'POST /api/crew/roster/:id/skills',
+    schema: AllocateSkillPointInput,
+    payload: { branch: 'performance_fuel' },
   },
   {
     endpoint: 'POST /api/academies/:id/modules',
@@ -311,6 +317,7 @@ const COVERED_WRITE_ENDPOINTS = [
   'POST /api/auth/logout-all',
   'POST /api/academies',
   'POST /api/academies/:id/modules',
+  'POST /api/crew/roster/:id/skills',
   // M9-01. The level to build is the *next* one and nothing else, so the upgrade
   // reads no body — the academy is in the path and the ladder decides the rest.
   'POST /api/academies/:id/levels',

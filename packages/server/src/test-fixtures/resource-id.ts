@@ -269,6 +269,14 @@ export const RESOURCE_ID_SURFACES = [
     }),
   ),
   {
+    // M9-03. A named crew member is an owned resource like any other: scoped by
+    // the resolved airline in the query, and concealed as 404 when it is not.
+    endpoint: 'POST /api/crew/roster/:id/skills',
+    position: 'path',
+    field: 'id',
+    semantics: 'owner-scoped-resource',
+  },
+  {
     endpoint: 'player-airline context',
     position: 'header',
     field: 'x-tailfin-world-id',
