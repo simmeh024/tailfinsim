@@ -3,7 +3,6 @@ import { asc, ne } from 'drizzle-orm';
 import { gameTime, horizonFrom, type WorldClock } from '@tailfin/sim';
 
 import { completeDueAcademyBuilds, runAcademyUpkeep } from '../academy/store';
-import { nameEligibleCrew } from '../crew/roster';
 import { deliverDueAircraftOrders } from '../aircraft/acquisition';
 import { sweepMaintenance } from '../aircraft/maintenance';
 import { refreshUsedAircraftMarket } from '../aircraft/used-market';
@@ -11,6 +10,7 @@ import { sweepWorldAlerts } from '../alerts/evaluate';
 import { returnRestedCrew, standDownIdleCrew } from '../crew/duty-store';
 import { returnSickCrew, reviewCrewMorale } from '../crew/morale';
 import { runCrewPayroll } from '../crew/payroll';
+import { nameEligibleCrew } from '../crew/roster';
 import { completeDueConversions } from '../crew/store';
 import { type FxRateSource } from '../currency/fx-source';
 import { type Database } from '../db/client';
