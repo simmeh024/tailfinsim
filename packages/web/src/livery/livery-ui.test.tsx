@@ -170,6 +170,8 @@ describe('M6-03 livery builder UI', () => {
     expect(document.querySelector('[data-testid="panel-host"] .livery-layers')).not.toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Take over context' }));
 
+    expect(document.querySelector('.livery-builder')).toHaveAttribute('data-hide-context', 'false');
+
     expect(screen.getByRole('button', { name: 'Show layers 3' })).toHaveAttribute(
       'aria-expanded',
       'false',

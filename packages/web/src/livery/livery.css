@@ -10,8 +10,8 @@
 }
 
 /* The studio owns its layer visibility; an empty context panel adds no value. */
-.shell:has(.livery-builder[data-layers='closed']) > .panel,
-.shell:has(.livery-builder[data-layers='closed']) > .panel__reopen {
+.shell:has(.livery-builder[data-hide-context='true']) > .panel,
+.shell:has(.livery-builder[data-hide-context='true']) > .panel__reopen {
   display: none;
 }
 

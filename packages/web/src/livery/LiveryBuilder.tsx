@@ -791,6 +791,7 @@ export function LiveryBuilder({
       className="livery-builder"
       aria-label="Livery builder"
       data-layers={layersOpen ? 'open' : 'closed'}
+      data-hide-context={!layersOpen && (selection === null || panelIsOurs)}
     >
       <header className="livery-builder__header">
         <div className="livery-builder__identity">
