@@ -79,7 +79,22 @@ export type CostSource =
    * did last year?"* — and an era charge buried in the airport total is a
    * number nobody can act on.
    */
-  | 'restrictions';
+  | 'restrictions'
+  /**
+   * What this turn's **stand** cost, when it was not on a lease (M7-06, App. B.6).
+   *
+   * The note above says `gate` is absent because it is a period cost, and that
+   * stays true of a **lease**: a leased stand is due whether the aeroplane flies
+   * or not, and `billGateLeases` charges it monthly. This is the other column of
+   * App. B.6's contract table — *"common use: per-turn fee"* — which is caused by
+   * the flight and stops entirely if it does not operate. So it is here for the
+   * reason that note demands, that somebody decided a flight causes it, and not
+   * because a report wanted the columns to add up.
+   *
+   * Zero on every flight whose airline leases a stand at the origin, which is
+   * what makes the lease worth buying at volume.
+   */
+  | 'stand';
 
 /** One line of the bill, and the sentence that explains it. */
 export interface SettlementLine {
@@ -323,6 +338,16 @@ export interface SettlementInputs {
    * consumer yet — the same state `quality` is in, and stated rather than hidden.
    */
   handlingPriceFactor?: number;
+  /**
+   * What the departure turn's **stand** cost, when the airline leases none
+   * (M7-06, App. B.6).
+   *
+   * `resolveStands` in the server produces it from the airline's holdings at the
+   * **origin** — the station this turn is worked at. Zero, and absent, when a
+   * lease covers the turn: the stand has already been paid for monthly and
+   * charging it again here would bill it twice.
+   */
+  standTurnFeeMinor?: number;
 }
 
 /** Order for display, so a readout is stable and a test can prove each is reachable. */
@@ -334,6 +359,7 @@ export const COST_SOURCES: readonly CostSource[] = [
   'airport',
   'handling',
   'restrictions',
+  'stand',
 ];
 
 /** Cabin classes in cabin order, so a breakdown reads front to back. */
@@ -529,6 +555,24 @@ export function settleFlight(
         ? '.'
         : `, at ${round(handlingFactor, 2)}× for how this station is handled.`),
   });
+
+  /*
+   * App. B.6's walk-up stand (M7-06). Only a line when there is something to
+   * charge, for the same reason the restriction line below is conditional: an
+   * airline that leases its stand has already paid for it monthly, and a zero row
+   * telling it about a fee it is not paying is noise on the one screen §14 wants
+   * to be readable.
+   */
+  const standMinor = roundMinor(inputs.standTurnFeeMinor ?? 0);
+  if (standMinor > 0) {
+    costs.push({
+      source: 'stand',
+      amountMinor: standMinor,
+      detail:
+        `Walk-up stand at the origin: ${money(standMinor)} for this turn. ` +
+        'A lease here would replace it with a monthly fee.',
+    });
+  }
 
   // §7.2b's era restrictions (M4-02). Only a line when there is something to
   // charge — an unrestricted type should not carry a zero row telling a player

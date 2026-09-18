@@ -20,6 +20,7 @@ import { accrueLoanInterest } from '../finance/interest';
 import { expireGroundContracts } from '../ground/contracts';
 import { runGroundPayroll } from '../ground/payroll';
 import { billHubUpkeep } from '../hub/upkeep';
+import { billGateLeases, withdrawIdleStands } from '../network/gate-upkeep';
 import { reviewNpcCarriers } from '../npc/operate';
 import { runOfficePayroll } from '../office/payroll';
 import { reviewSocialMediaReputation } from '../office/reputation';
@@ -132,6 +133,9 @@ export interface TickReport {
   groundPayrollBilled: number;
   /** M7-04. Airlines billed this run for the hubs and facilities they hold. */
   hubFeesBilled: number;
+  /** M7-06. Airlines billed for stand leases, and leases taken back for disuse. */
+  gateFeesBilled: number;
+  gateLeasesWithdrawn: number;
   /** M8-07. Game days of §13.4 interest charged across every loan this run. */
   interestDaysCharged: number;
   /** M8-07. Ladder rungs descended, and airlines that cleared their arrears. */
@@ -213,6 +217,8 @@ export interface SimulationEngineOptions {
   payGround?: typeof runGroundPayroll;
   /** M7-04. Bills App. B.5's monthly hub and facility fees. */
   billHubs?: typeof billHubUpkeep;
+  billGates?: typeof billGateLeases;
+  sweepIdleStands?: typeof withdrawIdleStands;
   /** M9-01. Commissions §10.1 academy levels and modules whose build is due. */
   completeAcademyBuilds?: typeof completeDueAcademyBuilds;
   /** M9-03. Names the crew who have crossed §10.2's level threshold. */
@@ -376,6 +382,20 @@ export interface EngineSnapshot {
   hubFeesBilled: number;
   hubFeesMinor: number;
   hubErrors: number;
+  /**
+   * M7-06. App. B.6's stand leases: billed, and taken back under the floor.
+   *
+   * The same two questions as the hub counters above, with a sharper second one.
+   * Without a worker neither the monthly fee nor the use-it-or-lose-it floor ever
+   * runs, so an exclusive lease over every gate at a flagship is a **free,
+   * permanent** blockade of every rival — generous balance for the one airline
+   * that is denying the resource to everybody else. `gateFeesBilled` rising with
+   * `gateLeasesWithdrawn` at zero is the healthy reading.
+   */
+  gateFeesBilled: number;
+  gateFeesMinor: number;
+  gateLeasesWithdrawn: number;
+  gateErrors: number;
   /**
    * M9-01. §10.1 academy levels and modules commissioned, and upkeep billed.
    *
@@ -579,6 +599,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     expireGround = expireGroundContracts,
     payGround = runGroundPayroll,
     billHubs = billHubUpkeep,
+    billGates = billGateLeases,
+    sweepIdleStands = withdrawIdleStands,
     completeAcademyBuilds = completeDueAcademyBuilds,
     billAcademies = runAcademyUpkeep,
     nameCrew = nameEligibleCrew,
@@ -634,6 +656,10 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let hubFeesBilled = 0;
   let hubFeesMinor = 0;
   let hubErrors = 0;
+  let gateFeesBilled = 0;
+  let gateFeesMinor = 0;
+  let gateLeasesWithdrawn = 0;
+  let gateErrors = 0;
   let interestDaysCharged = 0;
   let interestPaidMinor = 0;
   let arrearsMinor = 0;
@@ -688,6 +714,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     let tickAcademyBuilds = 0;
     let tickAcademyUpkeepPaid = 0;
     let tickHubFeesBilled = 0;
+    let tickGateFeesBilled = 0;
+    let tickGateLeasesWithdrawn = 0;
     let tickFlightsMaterialised = 0;
     let tickAlertsSwept = 0;
     let tickAlertsRaised = 0;
@@ -993,6 +1021,48 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       }
 
       /*
+       * App. B.6's stand leases (M7-06), on the world's game clock beside the hub
+       * fees above — a stand costs a fixed sum to hold whether or not anything
+       * parked on it, which is what makes holding one a decision.
+       *
+       * Billed first, then the floor. That order is load-bearing for the same
+       * reason the academy's is, inverted: a lease withdrawn this tick should
+       * still be charged for the month it was held, and sweeping first would let
+       * an airline hold a stand through a month for nothing by losing it on the
+       * first tick of the next.
+       *
+       * Two try blocks rather than one, so a billing failure does not also stop
+       * the floor and hand a hoarder a free month.
+       */
+      try {
+        const billed = await billGates(db, entry.id, gameTime(entry.clock, now()));
+        tickGateFeesBilled += billed.airlinesBilled;
+        gateFeesMinor += billed.totalMinor;
+        if (billed.airlinesBilled > 0) {
+          log?.info?.(
+            `[${entry.name}] gate leases: ${String(billed.airlinesBilled)} airline(s), ` +
+              `${String(Math.round(billed.totalMinor / 100))}`,
+          );
+        }
+      } catch (error) {
+        gateErrors += 1;
+        log?.warn?.(`[${entry.name}] gate lease billing failed: ${String(error)}`);
+      }
+
+      try {
+        const swept = await sweepIdleStands(db, entry.id, gameTime(entry.clock, now()));
+        tickGateLeasesWithdrawn += swept.withdrawn;
+        if (swept.withdrawn > 0) {
+          log?.info?.(
+            `[${entry.name}] gate floor: ${String(swept.withdrawn)} lease(s) withdrawn for disuse`,
+          );
+        }
+      } catch (error) {
+        gateErrors += 1;
+        log?.warn?.(`[${entry.name}] gate utilisation sweep failed: ${String(error)}`);
+      }
+
+      /*
        * §10.1's training academies (M9-01), on this world's game clock like the
        * sweeps above it — ADR-0026, which names academy construction among the
        * spans it settles onto the world's calendar.
@@ -1231,6 +1301,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     academyBuildsCompleted += tickAcademyBuilds;
     academyUpkeepPaid += tickAcademyUpkeepPaid;
     hubFeesBilled += tickHubFeesBilled;
+    gateFeesBilled += tickGateFeesBilled;
+    gateLeasesWithdrawn += tickGateLeasesWithdrawn;
     flightsMaterialised += tickFlightsMaterialised;
     alertsSwept += tickAlertsSwept;
     alertsRaised += tickAlertsRaised;
@@ -1269,6 +1341,8 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       academyBuildsCompleted: tickAcademyBuilds,
       academyUpkeepPaid: tickAcademyUpkeepPaid,
       hubFeesBilled: tickHubFeesBilled,
+      gateFeesBilled: tickGateFeesBilled,
+      gateLeasesWithdrawn: tickGateLeasesWithdrawn,
       interestDaysCharged: tickInterestDays,
       defaultEscalations: tickDefaultEscalations,
       defaultCures: tickDefaultCures,
@@ -1355,6 +1429,10 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         hubFeesBilled,
         hubFeesMinor,
         hubErrors,
+        gateFeesBilled,
+        gateFeesMinor,
+        gateLeasesWithdrawn,
+        gateErrors,
         academyBuildsCompleted,
         academyUpkeepPaid,
         academyUpkeepMinor,

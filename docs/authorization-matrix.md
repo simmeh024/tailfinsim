@@ -39,6 +39,16 @@ which a resource nobody can attribute cannot be. Nothing commercial is disclosed
 fares, utilisation or intent — and the write endpoints stay owner-scoped. ADR-0025's amendment
 records the reasoning.
 
+**Stand holdings are the same projection, for a stronger reason (M7-06).**
+`GET /api/airports/:icao/gates` returns every airline holding a stand at that airport — id, name,
+IATA code, and which of App. B.6's contracts they hold — with the same limited fields and the same
+`isYou` flag. The stronger reason is that an **exclusive** lease denies the stand to everybody else,
+and a denial nobody can attribute is indistinguishable from a bug: App. B.7 states the intent
+outright — _"you can see exactly who holds what, which makes gate competition legible and
+personal"_. What a rival's lease **cost** is not disclosed, and neither is their utilisation: the
+`utilisation` block is null on every stand but the caller's own, because how busy an airline's gates
+are is a commercial fact about its schedule. ADR-0029 records the reasoning.
+
 Persisted logo JSON does not grant authority. An unsupported logo format uses the default
 emblem in airline projections without changing the stored source or owner. After the normal
 owner/active-airline guards, an explicit logo replacement or clear on an incompatible build
@@ -306,6 +316,9 @@ must compare with Fastify's route table. One method/path pair appears in each ro
 | `GET /api/airports/:icao/slots`                     | `requireAirline`; **world-wide holdings, holders named** (see below)         | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
 | `POST /api/airports/:icao/slots/:band`              | `requireActiveAirline`; holding scoped by resolved owner; public airport id  | 401   | 409 without an owned airline         | Allow when active                        | Same as player/owner        |
 | `DELETE /api/airports/:icao/slots/:band`            | `requireActiveAirline`; holding scoped by resolved owner; public airport id  | 401   | 409 without an owned airline         | Allow when active                        | Same as player/owner        |
+| `GET /api/airports/:icao/gates`                     | `requireAirline`; **world-wide holdings, holders named** (see above)         | 401   | 409 without an owned airline         | Allow                                    | Same as player/owner        |
+| `POST /api/airports/:icao/gates`                    | `requireActiveAirline`; lease scoped by resolved owner; public airport id    | 401   | 409 without an owned airline         | Allow when active                        | Same as player/owner        |
+| `DELETE /api/airports/:icao/gates/:position`        | `requireActiveAirline`; lease scoped by resolved owner; public stand label   | 401   | 409 without an owned airline         | Allow when active                        | Same as player/owner        |
 
 <!-- AUTHORIZATION_MATRIX_END -->
 

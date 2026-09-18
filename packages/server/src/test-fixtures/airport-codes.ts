@@ -58,6 +58,7 @@ export const AIRPORT_CODE_NAMESPACES = {
   'network/connections-db': 'E',
   'network/operating-fleet': 'O',
   'network/performance-db': 'F',
+  'network/gates-db': 'V',
   'network/slots-db': 'G',
   'npc/npc': 'H',
   'schedule/lifecycle': 'I',

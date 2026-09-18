@@ -80,6 +80,7 @@ const READ_ONLY_GET_ROUTES = [
   '/api/airlines/founding-airports',
   '/api/airlines/founding-options',
   '/api/airlines/me',
+  '/api/airports/:icao/gates',
   '/api/airports/:icao/slots',
   '/api/alerts',
   '/api/automation',

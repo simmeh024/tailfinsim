@@ -54,6 +54,7 @@ import {
 import { readLandingStats } from './landing-stats';
 import { createEconomicsProvider } from './network/economics';
 import { registerNetworkRoutes } from './network/routes';
+import { registerGateRoutes } from './network/gate-routes';
 import { registerSlotRoutes } from './network/slot-routes';
 import { registerOfficeRoutes } from './office/routes';
 import { registerScheduleRoutes } from './schedule/routes';
@@ -286,6 +287,9 @@ export async function buildApp({
   // half of it is real.
   registerNetworkRoutes(app, { db, economicsFor: createEconomicsProvider(db.db) });
   registerSlotRoutes(app, { db });
+  // App. B.8's other half: a slot is permission to move, a stand is somewhere to
+  // park, and M7-06 makes the second one real (App. B.6).
+  registerGateRoutes(app, { db });
   registerScheduleRoutes(app, { db, economicsFor: createEconomicsProvider(db.db) });
   registerAircraftRoutes(app, { db });
   // The world's own clock. Behind the same airline boundary, because which world

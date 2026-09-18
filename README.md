@@ -28,6 +28,7 @@ wall-clock time, that never pauses.
   [`docs/ground-handling.md`](docs/ground-handling.md) ·
   [`docs/training-academy.md`](docs/training-academy.md) ·
   [`docs/hubs.md`](docs/hubs.md) ·
+  [`docs/gates-and-stands.md`](docs/gates-and-stands.md) ·
   [`docs/world-renderer.md`](docs/world-renderer.md)
 - **Deployment & DNS:** [`docs/deploy.md`](docs/deploy.md) ·
   [`deploy/README.md`](deploy/README.md)

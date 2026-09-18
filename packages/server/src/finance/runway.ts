@@ -124,6 +124,15 @@ function classifyCause(cause: CashMovementCause): CauseRole {
      * is M4-06's model, not this one's. The window smooths what it can.
      */
     case 'maintenance_check':
+    /*
+     * App. B.6's stand leases (M7-06). A **rate**, not `projected`, and the
+     * difference from `hub_upkeep` directly above is the whole reason the two
+     * classes exist: `commitmentsFor` rebuilds a hub fee from the hubs an airline
+     * holds and has no equivalent for a stand, so classifying a lease as covered
+     * by a commitment would remove it from the projection altogether and predict
+     * an airline richer than it is.
+     */
+    case 'gate_lease':
       return 'rate';
 
     // Reproduced exactly by a commitment below. Counting these in the rate as

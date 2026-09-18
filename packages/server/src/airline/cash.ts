@@ -127,6 +127,14 @@ function categoryForCause(cause: CashMovementCause): LedgerCategory {
       return 'hub_purchase';
     case 'hub_upkeep':
       return 'hub_facility';
+    /*
+     * App. B.6's stand leases (M7-06). Not `airport_slot`, and not folded into
+     * `ground_handling` either: a stand is rented from the airport authority, a
+     * turn is worked by a handler, and §9.3's grade choice is answerable only if
+     * the two are separable in the P&L.
+     */
+    case 'gate_lease':
+      return 'gate_lease';
     case 'office_expansion':
     case 'executive_floor':
     case 'executive_office':

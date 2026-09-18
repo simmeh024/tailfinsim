@@ -57,6 +57,7 @@ export * from './livery-resources';
 export * from './network';
 export * from './alerts';
 export * from './slots';
+export * from './gates';
 export * from './automation';
 export * from './ground';
 export * from './hub';

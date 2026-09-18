@@ -17,3 +17,4 @@ export * from './settlement';
 export * from './disruption-cost';
 export * from './fare-floor';
 export * from './hub-cost';
+export * from './gate-cost';

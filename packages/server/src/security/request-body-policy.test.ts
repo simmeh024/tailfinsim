@@ -347,6 +347,10 @@ const COVERED_WRITE_ENDPOINTS = [
   // Airport slots (M7-05): the band is in the path, so neither write reads a body.
   'POST /api/airports/:icao/slots/:band',
   'DELETE /api/airports/:icao/slots/:band',
+  // Airport stands (M7-06): the lease carries a body (which stand, which
+  // contract, the quoted fee); the release names the stand in the path.
+  'POST /api/airports/:icao/gates',
+  'DELETE /api/airports/:icao/gates/:position',
   'POST /api/routes',
   'POST /api/schedules',
   'PUT /api/schedules/:id',

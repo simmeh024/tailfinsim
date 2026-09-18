@@ -571,6 +571,8 @@ export const cashMovementCause = pgEnum('cash_movement_cause', [
   'loan_draw',
   /** §13.4's per-game-day drain, and the arrears it leaves when cash is short. */
   'loan_interest',
+  /** App. B.6's annual stand leases, billed a month at a time (M7-06). */
+  'gate_lease',
 ]);
 export type CashMovementCause = (typeof cashMovementCause.enumValues)[number];
 
@@ -606,6 +608,15 @@ export const ledgerCategory = pgEnum('ledger_category', [
   'hub_purchase',
   /** App. B.5's recurring hub and facility fees — operating cost, unlike the above (M7-04). */
   'hub_facility',
+  /**
+   * App. B.6's stands: a monthly instalment of a lease, or a walk-up turn (M7-06).
+   *
+   * Deliberately not `airport_slot`. App. B.8's whole point is that a slot and a
+   * gate are different scarce resources bought for different reasons, and an
+   * airline reading one line for both could not tell which of the two its money
+   * went on — which is the question the section exists to make askable.
+   */
+  'gate_lease',
   'other',
 ]);
 export type LedgerCategory = (typeof ledgerCategory.enumValues)[number];
@@ -1892,6 +1903,131 @@ export const slotHolding = pgTable(
     check('slot_holding_band_range', sql`${t.band} >= 0 AND ${t.band} <= 23`),
   ],
 );
+
+/**
+ * App. B.6's five stand types, and the three ways to hold one (M7-06).
+ *
+ * Mirrors `StandKind` and `GateContract` in `@tailfin/shared`, which is where the
+ * vocabulary is declared — the economy config keys off them and the client renders
+ * them, so a sixth stand kind is one edit there and an `ALTER TYPE … ADD VALUE`
+ * here, which is expand-safe.
+ */
+export const standKind = pgEnum('stand_kind', [
+  'contact_gate',
+  'remote_stand',
+  'overnight_parking',
+  'cargo_stand',
+  'maintenance_stand',
+]);
+
+export const gateContract = pgEnum('gate_contract', ['common_use', 'preferential', 'exclusive']);
+
+/**
+ * One airline's lease on one stand at one airport (M7-06, App. B.6).
+ *
+ * ## A holding is never `common_use`, and the check says so
+ *
+ * App. B.6's common-use column has no lease at all behind it: *"per-turn fee,
+ * first come, and you can be bumped at peak"*. So a common-use turn is billed
+ * where the turn is settled and leaves no row here, and the check constraint
+ * stops one being written — a `common_use` holding would be a reservation of a
+ * thing the design says reserves nothing, and it would be counted as a holder
+ * against the exclusivity rules below.
+ *
+ * The enum keeps the value because the *price table* needs all three: the client
+ * is shown what a walk-up turn costs beside what a lease costs, which is the
+ * comparison App. B.6's contract table exists to provoke.
+ *
+ * ## The position is the airport's, not the airline's
+ *
+ * `position` is a stand label — `A7`, `R3`, `P12` — generated deterministically
+ * from the airport's tier by `network/gates.ts`, not stored per airport. An
+ * airport's apron is structural scarcity like its slot level or its runway, and
+ * the same argument `slot_holding` makes applies: it prices nothing, so it is a
+ * documented constant rather than an `EconomyConfig` coefficient or a hundred
+ * thousand rows of reference data nobody would ever edit.
+ *
+ * ## The prices are pinned
+ *
+ * `annual_fee_minor` is what the lease was sold at, for the reason
+ * `hub_facility` pins its fee: a retune of the economy must not silently
+ * re-price a lease somebody already signed, and a monthly bill has to be
+ * explicable from the row that caused it.
+ */
+export const gateHolding = pgTable(
+  'gate_holding',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+
+    /** The airport, by ICAO — the same reference shape `slot_holding` uses. */
+    airportIcao: text('airport_icao')
+      .notNull()
+      .references(() => airport.icaoCode),
+
+    /** The stand itself: `A7`, `R3`, `P12`. Stable for an airport of a given tier. */
+    position: text('position').notNull(),
+    kind: standKind('kind').notNull(),
+    contract: gateContract('contract').notNull(),
+
+    /** What this lease was sold at, minor units a year. Pinned — see above. */
+    annualFeeMinor: bigint('annual_fee_minor', { mode: 'number' }).notNull(),
+
+    /**
+     * Game time the lease began — the anchor the monthly fee is billed from and
+     * the utilisation floor's grace period is measured from.
+     *
+     * Game time rather than `created_at`'s wall clock, for ADR-0026's reason and
+     * `airline_hub.opened_at`'s: a world reset moves it with everything else, and
+     * a world at 4x bills twice as often in real time as one at 2x.
+     */
+    leasedAt: timestamp('leased_at', { withTimezone: true }).notNull(),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One lease per airline per stand: leasing is idempotent, and a second row
+    // would bill the same stand twice.
+    unique('gate_holding_world_airport_position_airline_key').on(
+      t.worldId,
+      t.airportIcao,
+      t.position,
+      t.airlineId,
+    ),
+    // Drawing an airport's stand picture reads by world + airport.
+    index('gate_holding_world_airport_idx').on(t.worldId, t.airportIcao),
+    // Billing and the utilisation sweep read an airline's whole estate.
+    index('gate_holding_world_airline_idx').on(t.worldId, t.airlineId),
+    check('gate_holding_contract_is_a_lease', sql`${t.contract} <> 'common_use'`),
+    /*
+     * App. B.6's exclusivity, as a constraint rather than only as a check in the
+     * handler: at most one airline may hold any one stand exclusively.
+     *
+     * The handler still refuses the wider case — an exclusive lease over a stand
+     * somebody else holds preferentially, and a preferential lease over one
+     * somebody holds exclusively — because that is a rule about two different
+     * rows and no index expresses it. What this stops is the narrow race the
+     * handler cannot: two exclusive leases arriving on the same stand at once,
+     * each reading a snapshot in which the other does not exist.
+     *
+     * Partial, so it constrains nothing about preferential leases. That makes it
+     * one of the indexes `ON CONFLICT` **cannot** infer from target columns
+     * alone, which is why `leaseStand` selects and inserts rather than upserting.
+     */
+    uniqueIndex('gate_holding_one_exclusive_per_stand_idx')
+      .on(t.worldId, t.airportIcao, t.position)
+      .where(sql`${t.contract} = 'exclusive'`),
+  ],
+);
+
+export type GateHoldingRow = typeof gateHolding.$inferSelect;
+export type NewGateHoldingRow = typeof gateHolding.$inferInsert;
 
 export const flightPhase = pgEnum('flight_phase', [
   'scheduled',

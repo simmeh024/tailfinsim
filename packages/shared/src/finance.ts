@@ -46,6 +46,16 @@ export const LedgerCategory = z.enum([
   'hub_purchase',
   /** App. B.5's recurring hub and facility fees — an operating cost, and in the P&L. */
   'hub_facility',
+  /**
+   * App. B.6's stands: a monthly instalment of a lease, or a walk-up turn (M7-06).
+   *
+   * Deliberately its own line rather than folded into `airport_slot`. App. B.8's
+   * whole point is that a slot and a gate are different scarce resources bought
+   * for different reasons, and an airline reading one figure for both could not
+   * tell which of the two its money went on — which is the question the section
+   * exists to make askable.
+   */
+  'gate_lease',
   'other',
 ]);
 export type LedgerCategory = z.infer<typeof LedgerCategory>;

@@ -38,6 +38,7 @@ import { type PinnedEconomyConfig } from '../economy/config';
 import { loadWorldFuelContext, marketAt, stationFor } from '../economy/fuel';
 import { loadWorldEconomyConfig } from '../economy/loader';
 import { handlingArrangementFor, handlingPriceBalanceOf } from '../ground/contracts';
+import { resolveStand } from '../network/gates';
 
 import type { Database } from '../db/client';
 import type { EventHandler } from '../sim/event-queue';
@@ -428,6 +429,28 @@ export async function settleArrivedFlight(
    * by resolving the arrangement now; the origin's tier is passed in because it
    * has already been read above.
    */
+  /*
+   * App. B.6's stand, at the **origin** — the station this turn was worked at
+   * (M7-06). Zero when the airline leases a stand there: that lease is a period
+   * cost billed monthly by `billGateLeases`, and charging it again per turn would
+   * bill it twice. Non-zero is the walk-up, which the flight genuinely causes.
+   *
+   * Resolved live rather than snapshotted at departure, unlike the handling
+   * factor above, and the difference is real: a handler is a contract the player
+   * can switch mid-flight, while the stand fee is the airport's published rate
+   * for a stand the airline demonstrably does not hold. Leasing one mid-flight
+   * makes the next turn free, not this one — and re-deriving an old arrival gives
+   * the same answer, which is what `settleArrivedFlight` promises.
+   */
+  const standFeeMinor = (
+    await resolveStand(
+      tx,
+      { id: row.airlineId, worldId: row.worldId },
+      row.originIcao,
+      economy.gates,
+    )
+  ).turnFeeMinor;
+
   const handlingFactor =
     row.handlingPriceFactor ??
     handlingPriceFactor(
@@ -493,6 +516,7 @@ export async function settleArrivedFlight(
       originFees: resolveFees(row.originIcao),
       destinationFees: resolveFees(arrivalIcao),
       handlingPriceFactor: handlingFactor,
+      standTurnFeeMinor: standFeeMinor,
     },
     config,
   );
@@ -631,7 +655,9 @@ export async function settleArrivedFlight(
                     ? ('airport_slot' as const)
                     : line.source === 'handling'
                       ? ('ground_handling' as const)
-                      : ('airport_slot' as const),
+                      : line.source === 'stand'
+                        ? ('gate_lease' as const)
+                        : ('airport_slot' as const),
           counterparty:
             line.source === 'fuel'
               ? 'fuel_supplier'
@@ -643,7 +669,9 @@ export async function settleArrivedFlight(
                     ? 'airport'
                     : line.source === 'handling'
                       ? 'ground_handler'
-                      : 'regulator',
+                      : line.source === 'stand'
+                        ? 'airport authority'
+                        : 'regulator',
           flightId: row.id,
           routeId: routeRow?.id,
           aircraftId: row.airframeId,

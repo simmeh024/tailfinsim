@@ -422,6 +422,35 @@ the month it opened would make the amount depend on when the tick ran and AIR-06
 guard would then throw instead of no-op. `docs/hubs.md` has the boundary, including the two
 App. B.5 facilities deliberately not built and why.
 
+**A stand lease is a worker story where the missing process is generous to the wrong
+airline (M7-06).** App. B.6 makes gates the most contested resource at a flagship and counters
+hoarding with a use-it-or-lose-it floor; `billGateLeases` charges the monthly instalment and
+`withdrawIdleStands` takes back a stand below it, both on the world's game clock. **Production
+has no worker**, so there a lease is signed once and then held **free and for ever** — and an
+exclusive lease over every gate at a flagship becomes a costless, permanent blockade of every
+rival. Like the hub fee above it that reads as generous balance rather than as a fault, and worse,
+because the airline it is generous to is the one denying a resource to everybody else.
+`gateFeesBilled`, `gateFeesMinor`, `gateLeasesWithdrawn` and `gateErrors` are the counters, and
+`gateFeesBilled` rising with `gateLeasesWithdrawn` at zero is the healthy reading. The
+**requirement** has the same shape from the other side: it is read off `flight` rows, so on a
+production world it is zero — and `sampledGameDate` is null rather than a date, which is the only
+thing separating _"nothing is scheduled through here"_ from _"you need no gates"_.
+
+Four things there worth not undoing. **A `gate_holding` is never `common_use`** — App. B.6's
+common-use column reserves nothing, so it writes no row and is billed at the flight that caused
+it; a check constraint refuses one, and the enum keeps the value only because the price table
+shows all three side by side. **The apron is computed from the airport's tier**, not stored, for
+the reason `slot_holding`'s per-band capacity is — it prices nothing, so the balance payload is
+the wrong home and a hundred thousand rows of stand reference data is a dataset nobody could
+check. **The requirement is capped at the peak concurrency**, because App. B.6's own worked
+example contradicts its own formula at one aircraft (`ceil(1 × 1.2)` is 2, the table says 1) and
+a gate no aeroplane could ever be on is a bill rather than headroom. And **the utilisation floor
+is 5%, below the worked example's 12%**, because the appendix calls that 12% gate the correct
+answer for a first hub — a floor that withdrew it would punish exactly the player it is teaching.
+[`docs/gates-and-stands.md`](docs/gates-and-stands.md) has the mechanism and
+[ADR-0029](docs/adr/0029-gates-and-stands.md) the decisions, including which figures of App. B.6's
+growth table reproduce and which do not.
+
 **The training academy is a worker story where the missing process looks like patience
 (M9-01).** §10.1's academy is built at a **crew base**, levels 1–5, with modules inside it, and
 both sweeps are the worker's: `completeDueAcademyBuilds` commissions a level or installs a
