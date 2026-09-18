@@ -1,5 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import { useState, type ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
+
+import { ContextSelectionProvider, useContextSelection } from '../shell/context-selection';
 
 import { LiveryBuilder } from './LiveryBuilder';
 
@@ -35,7 +38,82 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
+function ContextPanelHost({ children }: { children: ReactNode }): ReactNode {
+  const [open, setOpen] = useState(true);
+  const { selection, attachPanelBody } = useContextSelection();
+
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(false)}>
+        Dismiss shell panel
+      </button>
+      {open && selection !== null && <div data-testid="panel-host" ref={attachPanelBody} />}
+      {children}
+    </>
+  );
+}
+
+function renderInContext(builder: ReactNode) {
+  return render(
+    <ContextSelectionProvider>
+      <ContextPanelHost>{builder}</ContextPanelHost>
+    </ContextSelectionProvider>,
+  );
+}
+
 describe('M6-03 livery builder UI', () => {
+  it('keeps Layers closed for the model-progress view until the player opens it', () => {
+    renderInContext(
+      <LiveryBuilder
+        storageKey="model-progress-layers"
+        airlineName="Review Air"
+        storage={new MemoryStorage()}
+        developmentPreview
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Show layers 3' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(document.querySelector('.livery-layers')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show layers 3' }));
+    expect(screen.getByRole('button', { name: 'Hide layers 3' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    expect(document.querySelector('[data-testid="panel-host"] .livery-layers')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide layers 3' }));
+    expect(screen.getByRole('button', { name: 'Show layers 3' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(document.querySelector('.livery-layers')).toBeNull();
+  });
+
+  it('does not move Layers inline when the shell panel is dismissed', () => {
+    const storage = new MemoryStorage();
+    renderInContext(
+      <LiveryBuilder storageKey="dismiss-layers" airlineName="Review Air" storage={storage} />,
+    );
+
+    expect(document.querySelector('[data-testid="panel-host"] .livery-layers')).not.toBeNull();
+    fireEvent.change(screen.getByLabelText('Primary colour hex'), { target: { value: '#123456' } });
+    fireEvent.blur(screen.getByLabelText('Primary colour hex'));
+    expect(storage.getItem('dismiss-layers')).toContain('#123456FF');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss shell panel' }));
+    expect(document.querySelector('[data-testid="panel-host"]')).toBeNull();
+    expect(document.querySelector('.livery-layers')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Show layers 3' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(storage.getItem('dismiss-layers')).toContain('#123456FF');
+  });
+
   it('opens model progress when dev identity arrives and keeps draft edits across preview modes', () => {
     const storage = new MemoryStorage();
     const view = render(
@@ -54,6 +132,10 @@ describe('M6-03 livery builder UI', () => {
       'aria-pressed',
       'true',
     );
+    expect(screen.getByRole('button', { name: 'Show layers 3' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
     expect(
       screen.getByRole('group', { name: 'A320neo latest aircraft model with sample livery' }),
     ).toBeInTheDocument();
@@ -65,13 +147,16 @@ describe('M6-03 livery builder UI', () => {
     const saved = storage.getItem('progress');
     fireEvent.click(screen.getByRole('button', { name: '3D preview' }));
     expect(
-      screen.getByRole('img', {
+      screen.getByRole('group', {
         name: 'A320neo quarantined semantic livery authoring review model',
       }),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Model progress' }));
-    expect(screen.getByLabelText('Primary colour hex')).toHaveValue('#123456FF');
+    expect(screen.queryByLabelText('Primary colour hex')).not.toBeInTheDocument();
     expect(storage.getItem('progress')).toBe(saved);
+    fireEvent.click(screen.getByRole('button', { name: 'Paint map' }));
+    expect(screen.getByLabelText('Primary colour hex')).toHaveValue('#123456FF');
+    fireEvent.click(screen.getByRole('button', { name: 'Model progress' }));
     fireEvent.change(screen.getByLabelText('Aircraft family'), { target: { value: 'A380' } });
     expect(screen.queryByRole('button', { name: 'Model progress' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '3D preview' })).toHaveAttribute(

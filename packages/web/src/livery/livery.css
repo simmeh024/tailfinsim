@@ -9,6 +9,12 @@
   text-align: left;
 }
 
+/* The studio owns its layer visibility; an empty context panel adds no value. */
+.shell:has(.livery-builder[data-layers='closed']) > .panel,
+.shell:has(.livery-builder[data-layers='closed']) > .panel__reopen {
+  display: none;
+}
+
 .livery-builder__header {
   z-index: 4;
   display: flex;
@@ -360,6 +366,7 @@
 .livery-canvas {
   position: relative;
   display: grid;
+  grid-column: 2;
   container-type: size;
   min-width: 0;
   min-height: 0;
@@ -516,8 +523,11 @@
 .livery-true-preview {
   position: relative;
   z-index: 1;
-  width: min(96%, 142cqh, 82rem);
-  aspect-ratio: 3 / 2;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
@@ -531,6 +541,30 @@
   box-shadow:
     0 2rem 4rem var(--bg-scrim),
     inset 0 1px var(--border-strong);
+}
+
+.livery-true-preview__viewport {
+  position: relative;
+  grid-row: 2;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.livery-true-preview__toolbar {
+  grid-row: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.livery-true-preview__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 .livery-true-preview canvas {
@@ -567,10 +601,7 @@
   cursor: grabbing;
 }
 
-.livery-true-preview__loading,
-.livery-true-preview__hint,
-.livery-true-preview__badges,
-.livery-true-preview__reset {
+.livery-true-preview__loading {
   position: absolute;
   z-index: 2;
 }
@@ -587,10 +618,6 @@
 }
 
 .livery-true-preview__tail {
-  position: absolute;
-  z-index: 3;
-  top: calc(var(--space-3) + 2.75rem);
-  right: var(--space-3);
   background: color-mix(in srgb, var(--bg-scrim) 88%, transparent);
 }
 
@@ -605,13 +632,9 @@
 }
 
 .livery-true-preview__badges {
-  top: var(--space-3);
-  left: var(--space-3);
   display: flex;
   flex-wrap: wrap;
-  max-width: calc(100% - 7rem);
   gap: var(--space-2);
-  pointer-events: none;
 }
 
 .livery-true-preview__badges span {
@@ -630,17 +653,14 @@
 }
 
 .livery-true-preview__reset {
-  top: var(--space-3);
-  right: var(--space-3);
   background: color-mix(in srgb, var(--bg-scrim) 88%, transparent);
 }
 
 .livery-true-preview__hint {
-  right: var(--space-3);
-  bottom: var(--space-3);
+  grid-row: 3;
   margin: 0;
-  max-width: calc(100% - 2 * var(--space-3));
-  text-align: right;
+  padding: var(--space-2);
+  text-align: center;
   color: var(--text-muted);
   font-size: var(--text-xs);
   pointer-events: none;
@@ -695,6 +715,24 @@
   color: var(--text-muted);
   font-size: var(--text-xs);
   text-align: center;
+}
+
+/* Keep review controls and copy outside the model, including short panels. */
+.livery-canvas:has(.livery-true-preview) {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.livery-canvas:has(.livery-true-preview) .livery-canvas__measure,
+.livery-canvas:has(.livery-true-preview) .livery-canvas__caption {
+  position: static;
+  width: 100%;
+}
+
+.livery-true-preview__actions button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .livery-layers-inline {
@@ -924,7 +962,6 @@
     transform: none;
   }
 
-  .livery-true-preview,
   .livery-true-preview-fallback {
     width: min(96%, 142cqh);
   }

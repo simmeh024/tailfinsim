@@ -5,6 +5,7 @@ import {
   useLayoutEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
@@ -622,6 +623,12 @@ export function LiveryBuilder({
   );
   const [requestedPreviewMode, setPreviewMode] = useState<PreviewMode>('model-progress');
   const [toolsOpen, setToolsOpen] = useState(initiallyShowTools);
+  // The development model is intentionally the first view for a new A320neo draft.
+  // Keep that narrow review surface clear until the player explicitly asks to edit
+  // the layer stack; ordinary fleet/paint-map authoring still starts with it visible.
+  const [layersOpen, setLayersOpen] = useState(
+    () => !(developmentPreview && history.present.family === 'A320neo'),
+  );
   const [newZone, setNewZone] = useState<LiveryZone>('fuselage');
   const [newMode, setNewMode] = useState<BaseFillMode>('solid');
   const [autosave, setAutosave] = useState<AutosaveState>('saving');
@@ -633,6 +640,10 @@ export function LiveryBuilder({
     requestedPreviewMode === 'model-progress' && !modelProgressAvailable
       ? 'fleet'
       : requestedPreviewMode;
+  const panelIsOurs = selection?.kind === 'livery-draft' && selection.id === storageKey;
+  const panelWasHosted = useRef(false);
+  const panelIsOursRef = useRef(panelIsOurs);
+  const layersVisibilityChosen = useRef(false);
 
   const selectedLayer =
     snapshot.document.layers.find((layer) => layer.id === selectedLayerId) ?? null;
@@ -685,20 +696,65 @@ export function LiveryBuilder({
     return () => window.removeEventListener('keydown', handleHistoryShortcut);
   }, []);
 
-  const openLayerPanel = useCallback(() => {
+  const showLayerPanel = useCallback(() => {
     select({
       kind: 'livery-draft',
       id: storageKey,
       title: 'Livery layers',
       subtitle: 'Autosaved local draft',
       body: null,
+      onClear: () => setLayersOpen(false),
     });
   }, [select, storageKey]);
 
   useEffect(() => {
-    openLayerPanel();
-    return clear;
-  }, [clear, openLayerPanel]);
+    if (layersOpen) showLayerPanel();
+  }, [layersOpen, showLayerPanel]);
+
+  useEffect(() => {
+    if (
+      modelProgressAvailable &&
+      previewMode === 'model-progress' &&
+      !layersVisibilityChosen.current
+    ) {
+      setLayersOpen(false);
+    }
+  }, [modelProgressAvailable, previewMode]);
+
+  useEffect(() => {
+    panelIsOursRef.current = panelIsOurs;
+  }, [panelIsOurs]);
+
+  useEffect(() => {
+    if (panelIsOurs && panelBody !== null) {
+      panelWasHosted.current = true;
+      return;
+    }
+    // A null host after our portal was mounted means the shell panel was dismissed.
+    // Close Layers too, so its inline fallback cannot cover the aircraft workspace.
+    if (panelIsOurs && panelWasHosted.current) {
+      panelWasHosted.current = false;
+      setLayersOpen(false);
+      clear();
+    }
+  }, [clear, panelBody, panelIsOurs]);
+
+  useEffect(
+    () => () => {
+      if (panelIsOursRef.current) clear();
+    },
+    [clear],
+  );
+
+  const toggleLayerPanel = () => {
+    layersVisibilityChosen.current = true;
+    if (layersOpen) {
+      setLayersOpen(false);
+      if (panelIsOurs) clear();
+      return;
+    }
+    setLayersOpen(true);
+  };
 
   const addLayer = () => {
     const id = nextBaseLayerId(snapshot.document);
@@ -722,10 +778,12 @@ export function LiveryBuilder({
       onSelect={setSelectedLayerId}
     />
   );
-  const panelIsOurs = selection?.kind === 'livery-draft' && selection.id === storageKey;
-
   return (
-    <section className="livery-builder" aria-label="Livery builder">
+    <section
+      className="livery-builder"
+      aria-label="Livery builder"
+      data-layers={layersOpen ? 'open' : 'closed'}
+    >
       <header className="livery-builder__header">
         <div className="livery-builder__identity">
           <span className="livery-builder__eyebrow">Design studio</span>
@@ -787,8 +845,14 @@ export function LiveryBuilder({
             ↷ Redo
           </button>
         </div>
-        <button type="button" className="livery-builder__layers" onClick={openLayerPanel}>
-          Layers <span className="figure">{snapshot.document.layers.length}</span>
+        <button
+          type="button"
+          className="livery-builder__layers"
+          onClick={toggleLayerPanel}
+          aria-expanded={layersOpen}
+        >
+          {layersOpen ? 'Hide layers' : 'Show layers'}{' '}
+          <span className="figure">{snapshot.document.layers.length}</span>
         </button>
         <p className="livery-builder__autosave" data-state={autosave} aria-live="polite">
           {autosave === 'saved'
@@ -800,173 +864,175 @@ export function LiveryBuilder({
       </header>
 
       <div className="livery-builder__workspace" data-tools={toolsOpen ? 'open' : 'closed'}>
-        <aside className="livery-tools" aria-label="Base fill tools">
-          <button
-            type="button"
-            className="livery-tools__toggle"
-            onClick={() => setToolsOpen((open) => !open)}
-            aria-expanded={toolsOpen}
-          >
-            <span aria-hidden="true">{toolsOpen ? '‹' : '›'}</span>
-            <span>{toolsOpen ? 'Hide tools' : 'Show tools'}</span>
-          </button>
-          {toolsOpen && (
-            <div className="livery-tools__body">
-              <section className="livery-tool-section">
-                <div className="livery-tool-section__heading">
-                  <h2>Add base fill</h2>
-                  <span>Zone paint</span>
-                </div>
-                <label>
-                  <span>Zone</span>
-                  <select
-                    value={newZone}
-                    onChange={(event) => setNewZone(LiveryZone.parse(event.target.value))}
+        {previewMode !== 'model-progress' && (
+          <aside className="livery-tools" aria-label="Base fill tools">
+            <button
+              type="button"
+              className="livery-tools__toggle"
+              onClick={() => setToolsOpen((open) => !open)}
+              aria-expanded={toolsOpen}
+            >
+              <span aria-hidden="true">{toolsOpen ? '‹' : '›'}</span>
+              <span>{toolsOpen ? 'Hide tools' : 'Show tools'}</span>
+            </button>
+            {toolsOpen && (
+              <div className="livery-tools__body">
+                <section className="livery-tool-section">
+                  <div className="livery-tool-section__heading">
+                    <h2>Add base fill</h2>
+                    <span>Zone paint</span>
+                  </div>
+                  <label>
+                    <span>Zone</span>
+                    <select
+                      value={newZone}
+                      onChange={(event) => setNewZone(LiveryZone.parse(event.target.value))}
+                    >
+                      {LiveryZone.options.map((zone) => (
+                        <option key={zone} value={zone}>
+                          {formatZone(zone)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Fill</span>
+                    <select
+                      value={newMode}
+                      onChange={(event) => setNewMode(event.target.value as BaseFillMode)}
+                    >
+                      {BASE_FILL_MODES.map((mode) => (
+                        <option key={mode} value={mode}>
+                          {modeLabel(mode)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="livery-tools__add"
+                    onClick={addLayer}
+                    disabled={snapshot.document.layers.length >= 100}
                   >
-                    {LiveryZone.options.map((zone) => (
-                      <option key={zone} value={zone}>
-                        {formatZone(zone)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  <span>Fill</span>
-                  <select
-                    value={newMode}
-                    onChange={(event) => setNewMode(event.target.value as BaseFillMode)}
-                  >
-                    {BASE_FILL_MODES.map((mode) => (
-                      <option key={mode} value={mode}>
-                        {modeLabel(mode)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  className="livery-tools__add"
-                  onClick={addLayer}
-                  disabled={snapshot.document.layers.length >= 100}
-                >
-                  + Add fill layer
-                </button>
-              </section>
+                    + Add fill layer
+                  </button>
+                </section>
 
-              <section className="livery-tool-section">
-                <div className="livery-tool-section__heading">
-                  <h2>Selected fill</h2>
-                  <span>{selectedLayer?.name ?? 'None'}</span>
-                </div>
-                {selectedLayer === null || selectedMode === null ? (
-                  <p className="livery-tools__empty">Select a base-fill layer from Layers.</p>
-                ) : (
-                  <>
-                    <label>
-                      <span>Mode</span>
-                      <select
-                        value={selectedMode}
-                        disabled={selectedLayer.locked}
-                        onChange={(event) =>
-                          dispatch({
-                            type: 'layer.mode',
-                            id: selectedLayer.id,
-                            mode: event.target.value as BaseFillMode,
-                          })
-                        }
-                        aria-label="Selected fill mode"
-                      >
-                        {BASE_FILL_MODES.map((mode) => (
-                          <option key={mode} value={mode}>
-                            {modeLabel(mode)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <ColorEditor
-                      label="Primary colour"
-                      color={layerPrimaryColor(selectedLayer)}
-                      disabled={selectedLayer.locked}
-                      paletteFull={snapshot.document.palette.length >= 16}
-                      onChange={(color) =>
-                        dispatch({ type: 'layer.primary', id: selectedLayer.id, color })
-                      }
-                      onAddPalette={(color) => dispatch({ type: 'palette.add', color })}
-                      onNotice={setNotice}
-                    />
-                    {selectedMode !== 'solid' && (
+                <section className="livery-tool-section">
+                  <div className="livery-tool-section__heading">
+                    <h2>Selected fill</h2>
+                    <span>{selectedLayer?.name ?? 'None'}</span>
+                  </div>
+                  {selectedLayer === null || selectedMode === null ? (
+                    <p className="livery-tools__empty">Select a base-fill layer from Layers.</p>
+                  ) : (
+                    <>
+                      <label>
+                        <span>Mode</span>
+                        <select
+                          value={selectedMode}
+                          disabled={selectedLayer.locked}
+                          onChange={(event) =>
+                            dispatch({
+                              type: 'layer.mode',
+                              id: selectedLayer.id,
+                              mode: event.target.value as BaseFillMode,
+                            })
+                          }
+                          aria-label="Selected fill mode"
+                        >
+                          {BASE_FILL_MODES.map((mode) => (
+                            <option key={mode} value={mode}>
+                              {modeLabel(mode)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                       <ColorEditor
-                        label="Secondary colour"
-                        color={layerSecondaryColor(selectedLayer)}
+                        label="Primary colour"
+                        color={layerPrimaryColor(selectedLayer)}
                         disabled={selectedLayer.locked}
                         paletteFull={snapshot.document.palette.length >= 16}
                         onChange={(color) =>
-                          dispatch({ type: 'layer.secondary', id: selectedLayer.id, color })
+                          dispatch({ type: 'layer.primary', id: selectedLayer.id, color })
                         }
                         onAddPalette={(color) => dispatch({ type: 'palette.add', color })}
                         onNotice={setNotice}
                       />
-                    )}
-                    {selectedMode === 'split' && (
-                      <label className="livery-tools__split">
-                        <span>Split position</span>
-                        <input
-                          type="range"
-                          min="0.05"
-                          max="0.95"
-                          step="0.01"
-                          value={layerSplit(selectedLayer)}
+                      {selectedMode !== 'solid' && (
+                        <ColorEditor
+                          label="Secondary colour"
+                          color={layerSecondaryColor(selectedLayer)}
                           disabled={selectedLayer.locked}
-                          onChange={(event) =>
-                            dispatch({
-                              type: 'layer.split',
-                              id: selectedLayer.id,
-                              split: Number(event.target.value),
-                            })
+                          paletteFull={snapshot.document.palette.length >= 16}
+                          onChange={(color) =>
+                            dispatch({ type: 'layer.secondary', id: selectedLayer.id, color })
                           }
+                          onAddPalette={(color) => dispatch({ type: 'palette.add', color })}
+                          onNotice={setNotice}
                         />
-                        <output className="figure">
-                          {Math.round(layerSplit(selectedLayer) * 100)}%
-                        </output>
-                      </label>
-                    )}
-                  </>
-                )}
-              </section>
+                      )}
+                      {selectedMode === 'split' && (
+                        <label className="livery-tools__split">
+                          <span>Split position</span>
+                          <input
+                            type="range"
+                            min="0.05"
+                            max="0.95"
+                            step="0.01"
+                            value={layerSplit(selectedLayer)}
+                            disabled={selectedLayer.locked}
+                            onChange={(event) =>
+                              dispatch({
+                                type: 'layer.split',
+                                id: selectedLayer.id,
+                                split: Number(event.target.value),
+                              })
+                            }
+                          />
+                          <output className="figure">
+                            {Math.round(layerSplit(selectedLayer) * 100)}%
+                          </output>
+                        </label>
+                      )}
+                    </>
+                  )}
+                </section>
 
-              <section className="livery-tool-section">
-                <div className="livery-tool-section__heading">
-                  <h2>Brand palette</h2>
-                  <span>{snapshot.document.palette.length} / 16</span>
-                </div>
-                <div className="livery-palette" aria-label="Saved brand palette">
-                  {snapshot.document.palette.map((color) => (
-                    <button
-                      key={color}
-                      type="button"
-                      style={{ '--livery-swatch': color.slice(0, 7) } as CSSProperties}
-                      onClick={() => {
-                        if (selectedLayer !== null) {
-                          dispatch({ type: 'layer.primary', id: selectedLayer.id, color });
-                        }
-                      }}
-                      disabled={selectedLayer === null || selectedLayer.locked}
-                      aria-label={`Use ${color}`}
-                      title={color}
-                    />
-                  ))}
-                </div>
-                <p className="livery-tools__notice" aria-live="polite">
-                  {notice}
+                <section className="livery-tool-section">
+                  <div className="livery-tool-section__heading">
+                    <h2>Brand palette</h2>
+                    <span>{snapshot.document.palette.length} / 16</span>
+                  </div>
+                  <div className="livery-palette" aria-label="Saved brand palette">
+                    {snapshot.document.palette.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        style={{ '--livery-swatch': color.slice(0, 7) } as CSSProperties}
+                        onClick={() => {
+                          if (selectedLayer !== null) {
+                            dispatch({ type: 'layer.primary', id: selectedLayer.id, color });
+                          }
+                        }}
+                        disabled={selectedLayer === null || selectedLayer.locked}
+                        aria-label={`Use ${color}`}
+                        title={color}
+                      />
+                    ))}
+                  </div>
+                  <p className="livery-tools__notice" aria-live="polite">
+                    {notice}
+                  </p>
+                </section>
+
+                <p className="livery-tools__boundary">
+                  M6-03 is base paint. Text, logos and vector shapes arrive in the next tools.
                 </p>
-              </section>
-
-              <p className="livery-tools__boundary">
-                M6-03 is base paint. Text, logos and vector shapes arrive in the next tools.
-              </p>
-            </div>
-          )}
-        </aside>
+              </div>
+            )}
+          </aside>
+        )}
 
         <div className="livery-canvas" data-family={snapshot.family} data-view={previewMode}>
           <div className="livery-canvas__measure">
@@ -1019,12 +1085,10 @@ export function LiveryBuilder({
           </p>
         </div>
 
-        {(!panelIsOurs || panelBody === null) && (
-          <aside className="livery-layers-inline">{layerPanel}</aside>
-        )}
+        {layersOpen && !panelIsOurs && <aside className="livery-layers-inline">{layerPanel}</aside>}
       </div>
 
-      {panelIsOurs && panelBody !== null && createPortal(layerPanel, panelBody)}
+      {layersOpen && panelIsOurs && panelBody !== null && createPortal(layerPanel, panelBody)}
     </section>
   );
 }
