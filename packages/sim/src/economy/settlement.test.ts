@@ -177,9 +177,13 @@ describe('settleFlight', () => {
       // What the previous assertion used to cover incidentally. Each source in
       // the enum has to be producible by some input, or it should not be there.
       const restricted = settleFlight(inputs({ restrictionSurchargeMinor: 1_000 }));
+      // App. B.6's walk-up stand (M7-06): charged only when the airline leases
+      // none at the origin, so it needs an input of its own like the above.
+      const walkUp = settleFlight(inputs({ standTurnFeeMinor: 25_200 }));
       const charged = new Set([
         ...settleFlight(inputs()).costs.map((l) => l.source),
         ...restricted.costs.map((l) => l.source),
+        ...walkUp.costs.map((l) => l.source),
       ]);
       expect([...charged].sort()).toEqual([...COST_SOURCES].sort());
     });

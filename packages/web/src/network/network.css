@@ -1398,6 +1398,14 @@
   font-size: var(--text-sm);
 }
 
+/* Airport stands (M7-06) — the two lease buttons sit side by side, and wrap
+   rather than widening the row on a narrow screen. */
+.net-gates__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 /* Airport slots (M7-05) — the band grid's picker and claim/release button. */
 .net-slots__pick {
   margin-left: auto;

@@ -264,12 +264,20 @@ Two things make the difference visible rather than silent:
 
 ## Named as absent rather than invented
 
-**`gate lease expiring`** — nothing in the game leases a gate. A `slot_holding`
-(M7-05) is a per-band operating right with **no term at all**, so there is no
-countdown to run. The expiring commitment a player actually has is a §9.3
-handling contract, and §9.3 asks for that alert in its own words —
-`ground_contract_expiring` is here, and its sentence says _contract_ rather than
-_lease_ so it cannot be mistaken for the thing that does not exist. See
+**`gate lease expiring`** — still absent, but no longer for the reason it was.
+Until M7-06 nothing in the game leased a gate: a `slot_holding` (M7-05) is a
+per-band operating right with **no term at all**, so there was no countdown to
+run. There are leases now — `gate_holding`, App. B.6, billed monthly — and a
+stand is lost to the **utilisation floor** rather than to a term expiring, so the
+countdown this alert would need still does not exist. What a player would
+genuinely want warning about is a stand about to fall through the floor, which is
+a different rule with a different sentence and is deliberately not M7-06's work.
+See [`gates-and-stands.md`](gates-and-stands.md).
+
+The expiring commitment a player actually has remains a §9.3 handling contract,
+and §9.3 asks for that alert in its own words — `ground_contract_expiring` is
+here, and its sentence says _contract_ rather than _lease_ so it cannot be
+mistaken for the stand lease beside it. See
 [`ground-handling.md`](ground-handling.md).
 
 **`event announced affecting your network`** — `world_event` is the flight

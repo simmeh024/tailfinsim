@@ -1,10 +1,12 @@
 import type {
+  AirportGatesResponse,
   AirportSlotsResponse,
   CabinClass,
   CreateScheduleResponse,
   FarePreviewResponse,
   FareTable,
   FareWaterfallResponse,
+  GateContract,
   HubConnectionsResponse,
   RepeatPattern,
   RouteCargoResponse,
@@ -405,4 +407,52 @@ export function claimSlot(icao: string, band: number): Promise<SlotChange> {
 /** Release a departure band you hold. */
 export function releaseSlot(icao: string, band: number): Promise<SlotChange> {
   return mutateSlot(icao, band, 'DELETE');
+}
+
+/* -- Gates and stands (M7-06, App. B.6) -------------------------------------- */
+
+/** One airport's stands: who holds what, what you hold, and what you need. */
+export async function fetchAirportGates(icao: string): Promise<AirportGatesResponse> {
+  const { status, body } = await json(`/api/airports/${icao}/gates`);
+  if (status !== 200) {
+    throw new Error(`GET /api/airports/${icao}/gates failed with ${String(status)}`);
+  }
+  return body as AirportGatesResponse;
+}
+
+/** The outcome of leasing or releasing a stand: the fresh airport, or why not. */
+export type GateChange = { ok: true; gates: AirportGatesResponse } | { ok: false; reason: string };
+
+/**
+ * Take a stand, echoing back the fee that was on screen.
+ *
+ * The echo is the server's guard, not a formality: a rival's exclusive lease or
+ * an economy retune can move what is on offer between the page rendering and the
+ * button being pressed, and the answer then is a re-quote rather than a charge
+ * the player never saw.
+ */
+export async function leaseStand(
+  icao: string,
+  position: string,
+  contract: GateContract,
+  expectedAnnualFeeMinor: number,
+): Promise<GateChange> {
+  const { status, body } = await json(`/api/airports/${icao}/gates`, {
+    method: 'POST',
+    body: JSON.stringify({ position, contract, expectedAnnualFeeMinor }),
+  });
+  if (status === 200) return { ok: true, gates: body as AirportGatesResponse };
+  // A refusal is the server's considered answer and belongs on screen, not thrown.
+  const message = (body as { message?: string }).message;
+  return { ok: false, reason: message ?? 'That stand could not be leased.' };
+}
+
+/** Give a stand back. */
+export async function releaseStand(icao: string, position: string): Promise<GateChange> {
+  const { status, body } = await json(`/api/airports/${icao}/gates/${position}`, {
+    method: 'DELETE',
+  });
+  if (status === 200) return { ok: true, gates: body as AirportGatesResponse };
+  const message = (body as { message?: string }).message;
+  return { ok: false, reason: message ?? 'That stand could not be released.' };
 }

@@ -31,6 +31,7 @@ import { loadWorldEconomyConfig } from '../economy/loader';
 import { handlingArrangementFor } from '../ground/contracts';
 import { absoluteFromLocal, loadAirportOffsets } from '../network/airport-time';
 import { primeEconomicsScope, type RouteEconomicsScope } from '../network/economics';
+import { resolveStands } from '../network/gates';
 import { openRoute } from '../network/open-route';
 import { resolveLegSlots } from '../network/slots';
 
@@ -380,11 +381,9 @@ export function placeLegs(
  *
  * ## What is live here, and what is not
  *
- * The handler is the only input that varies. Everything else `computeTurnaround`
- * takes stays the stand-in it already was, and deliberately:
+ * The handler and the **stand** vary; everything else `computeTurnaround` takes
+ * stays the stand-in it already was, and deliberately:
  *
- *   - **the stand is `contact`**, because there is no gate allocation to ask
- *     (App. B.6's remote-stand penalty has nothing to trigger it yet);
  *   - **congestion is 1**, because §3.3's airport busyness is not modelled;
  *   - **no boosts**, because §10.4's ladder has nothing wired to a schedule;
  *   - **the seat term is zero** — `seats` is passed equal to `referenceSeats`.
@@ -392,6 +391,21 @@ export function placeLegs(
  *     comparing an airframe's real seat count against it would be inventing a
  *     balance number rather than wiring one. When the catalogue carries §7.1's
  *     per-type turnaround baseline, that is where this changes.
+ *
+ * ## The stand is live as of M7-06
+ *
+ * This comment said for two milestones that the stand was hard-coded to
+ * `contact` because *"there is no gate allocation to ask"*. There is now:
+ * `resolveStands` answers what the airline actually parks on at each station, and
+ * App. B.6's +10–12 minutes finally has something that triggers it.
+ *
+ * The consequence to know, because it is visible and was not there before: an
+ * airline with no lease at a station where **every contact gate is already
+ * leased** turns eleven minutes slower there, and will see that the next time it
+ * saves a rotation. That is App. B.6's *"first come, and you can be bumped at
+ * peak"*, and it is the reason a lease is worth buying at a contested airport
+ * rather than merely cheaper at volume. At a quiet airport with spare gates
+ * nothing changes at all, which is most airports and every new world.
  *
  * ## It is fixed when the schedule is written
  *
@@ -416,6 +430,7 @@ export async function turnaroundResolver(
   if (stations.length === 0) return () => DEFAULT_TURNAROUND_MINUTES;
 
   const economy = await loadWorldEconomyConfig(db, own.worldId);
+  const stands = await resolveStands(db, own, stations, economy.gates);
   const minutes = new Map<string, number>();
 
   for (const icao of stations) {
@@ -428,7 +443,10 @@ export async function turnaroundResolver(
         referenceSeats: 1,
       },
       {
-        stand: 'contact',
+        // App. B.6's stand, resolved from what this airline holds here (M7-06).
+        // A leased contact gate or a spare one turns at the baseline; a remote
+        // stand costs the bussing time `computeTurnaround` has priced since M2-04.
+        stand: stands.get(icao)?.standType ?? 'contact',
         vendor: { speedFactor: handlingProfile(arrangement).speedFactor },
         cabinOptionMinutes: 0,
         serviceMinutes: 0,

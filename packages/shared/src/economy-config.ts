@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { FUEL_REGIONS, type FuelRegion } from './fuel';
+import { GATE_CONTRACTS, STAND_KINDS, type GateContract, type StandKind } from './gates';
 import { HANDLER_GRADES, type HandlerGrade } from './ground';
 import { MinorUnits, Month, NauticalMiles } from './primitives';
 
@@ -2613,6 +2614,159 @@ export const SHIPPED_HUB_BALANCE = {
 } as const satisfies z.input<typeof HubBalance>;
 
 // ---------------------------------------------------------------------------
+// Gates and stands — App. B.6 (M7-06)
+// ---------------------------------------------------------------------------
+
+/**
+ * What a stand costs to hold, and what a walk-up turn costs instead.
+ *
+ * App. B.6's cost column is relative rather than absolute — *"remote stand ~35%
+ * of contact"*, *"overnight parking cheap"*, *"cargo medium"* — and its worked
+ * example is the one place it puts money on the table:
+ *
+ * > `1 × contact gate, preferential lease  $18,000/mo`
+ * > `1 × overnight parking position         $2,200/mo`
+ *
+ * So the schema is one price per airport tier for the thing the doc quotes — a
+ * **preferentially leased contact gate** — and every other stand and contract is
+ * a multiplier on it. That is not a shortcut: it makes *"remote is 35% of
+ * contact"* the definition rather than a second table that can drift out of step
+ * with the first, in exactly the way `hubs.facilities` prices a facility as a
+ * fraction of its tier base.
+ *
+ * ## Why the contract, not the stand, is where the conflict is priced
+ *
+ * App. B.6 calls the contract table *"where the shared-world conflict lives"*,
+ * and the numbers say why. An exclusive lease costs 2.5× a preferential one and
+ * buys **nothing operationally** — the same aeroplane parks on the same stand at
+ * the same turn time. What the 1.5× premium buys is that nobody else can have it.
+ * A player who cannot see that in the price will read exclusivity as a better
+ * gate rather than as a denial, and it is not.
+ */
+export const GateBalance = z
+  .object({
+    /**
+     * A preferentially leased **contact gate**, per year, by airport tier.
+     *
+     * Flagship is App. B.6's own $18,000 a month. The others fall away by roughly
+     * a third a tier, which is what keeps a second hub at a medium airport a real
+     * alternative to a second gate at a flagship — the choice §8.2 wants a player
+     * to have to make.
+     */
+    contactGateAnnualFeeMinor: z
+      .object({
+        flagship: MinorUnits.nonnegative(),
+        large: MinorUnits.nonnegative(),
+        medium: MinorUnits.nonnegative(),
+        small: MinorUnits.nonnegative(),
+        regional: MinorUnits.nonnegative(),
+      })
+      .strict(),
+    /**
+     * What each kind of stand costs relative to a contact gate.
+     *
+     * App. B.6's cost column, transcribed. `contact_gate` is 1 by definition —
+     * it is what the fee above is quoted for — and the schema does not pin it
+     * there, because a world that wants jet bridges to be the cheap option should
+     * be able to say so without the type refusing.
+     */
+    standFactor: z
+      .object(
+        Object.fromEntries(STAND_KINDS.map((kind) => [kind, z.number().nonnegative()])) as Record<
+          StandKind,
+          z.ZodNumber
+        >,
+      )
+      .strict(),
+    /**
+     * What each contract costs relative to a preferential lease.
+     *
+     * `common_use` is **zero**, and that is the mechanic rather than an omission:
+     * a common-use stand is not leased at all, it is paid for a turn at a time
+     * through {@link GateBalance.commonUseTurnFeeFraction}. An airline that flies
+     * through a station twice a week should not be holding a lease there, and
+     * pricing the walk-up as an annual fee would have hidden that.
+     */
+    contractFactor: z
+      .object(
+        Object.fromEntries(
+          GATE_CONTRACTS.map((contract) => [contract, z.number().nonnegative()]),
+        ) as Record<GateContract, z.ZodNumber>,
+      )
+      .strict(),
+    /**
+     * One common-use turn, as a fraction of a **month** of the same stand's lease.
+     *
+     * The crossover is the whole point of the number, so it is worth stating
+     * where it lands: at 0.014 a flagship contact turn costs $252 against
+     * $18,000 a month, so a lease starts paying at about **71 turns a month** —
+     * two and a half a day. App. B.6's worked example flies three a day and is
+     * shown holding a preferential lease, which is the right side of that line
+     * and only just, which is what makes the first hub's 12% utilisation feel
+     * like a decision rather than an obvious one.
+     */
+    commonUseTurnFeeFraction: z.number().nonnegative(),
+  })
+  .strict();
+export type GateBalance = z.infer<typeof GateBalance>;
+
+/**
+ * The shipped gate money (M7-06, App. B.6).
+ *
+ * Defaulted, for the reason `SHIPPED_NPC_BALANCE` records at length: rows in
+ * `economy_config` are immutable and parsed on the way out against today's
+ * schema, so a required new section makes every payload written before it
+ * unparseable — and a world pinned to that version could then not price a flight.
+ *
+ * The three figures worth arguing about, and what they were reasoned from:
+ *
+ *   - **`contactGateAnnualFeeMinor.flagship` $216,000.** App. B.6's $18,000 a
+ *     month, times twelve. It is the only absolute gate price the doc states and
+ *     everything else here is anchored to it.
+ *   - **`standFactor.overnight_parking` 0.122.** Chosen to reproduce the other
+ *     figure the worked example states: 0.122 × $216,000 ÷ 12 is $2,196 a month
+ *     against the doc's $2,200. Not a round number, deliberately — a round 0.1
+ *     would have quietly re-priced the one example a player can check the game
+ *     against.
+ *   - **`contractFactor.exclusive` 2.5.** App. B.6's *"~2.5× preferential"*. It
+ *     buys no operational advantage whatever, which is stated in
+ *     {@link GateBalance} and is the reason the multiplier has to be visible.
+ */
+export const SHIPPED_GATE_BALANCE = {
+  contactGateAnnualFeeMinor: {
+    flagship: 21_600_000,
+    large: 13_200_000,
+    medium: 7_200_000,
+    small: 3_600_000,
+    regional: 1_800_000,
+  },
+  standFactor: {
+    contact_gate: 1,
+    // App. B.6: "~35% of contact". Bus boarding is a step and a driver, not a
+    // jet bridge and a pier.
+    remote_stand: 0.35,
+    // "Cheap" — and calibrated to the worked example's $2,200 a month.
+    overnight_parking: 0.122,
+    // "Medium". A freight stand needs the apron and the loaders but none of the
+    // terminal, so it sits between a remote stand and a contact gate.
+    cargo_stand: 0.6,
+    // "Tied to hangar". This is the **apron** in front of one; the hangar itself
+    // is `hubs.facilities.maintenance_line`, and charging for it here would bill
+    // an airline twice for one building.
+    maintenance_stand: 0.5,
+  },
+  contractFactor: {
+    // Not leased at all — paid per turn. See the field's note.
+    common_use: 0,
+    // The doc quotes its prices for a preferential lease, so this is 1 by
+    // construction and the others are relative to it.
+    preferential: 1,
+    exclusive: 2.5,
+  },
+  commonUseTurnFeeFraction: 0.014,
+} as const satisfies z.input<typeof GateBalance>;
+
+// ---------------------------------------------------------------------------
 // Belly cargo — §12.1, §12.2, §12.7 (M8-15)
 // ---------------------------------------------------------------------------
 
@@ -3960,6 +4114,9 @@ export const EconomyConfig = z
     // pricing flights and founding airlines — which is the whole point of the
     // rule, and the failure M3-12 shipped by forgetting it.
     academy: AcademyBalance.default(SHIPPED_ACADEMY_BALANCE),
+    // And once more (M7-06): App. B.6's stands and the three ways to hold one.
+    // Every `v1` row written before it reads back the shipped gate money.
+    gates: GateBalance.default(SHIPPED_GATE_BALANCE),
   })
   .strict();
 export type EconomyConfig = z.infer<typeof EconomyConfig>;

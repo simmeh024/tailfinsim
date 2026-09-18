@@ -51,6 +51,7 @@ const CAUSE_LABEL: Record<AdminCashMovementCause, string> = {
   flight_settlement: 'Flight settlement',
   loan_draw: 'Loan drawn',
   loan_interest: 'Loan interest',
+  gate_lease: 'Gate lease',
   migration_opening_balance: 'Migration opening balance',
 };
 

@@ -8,6 +8,7 @@ import { StateBlock } from '../ui/StateBlock';
 import { useUnsavedGuard } from '../ui/unsaved';
 
 import { closeRoute, fetchRoutes, fetchSchedules, setRouteActive, type RouteSummary } from './api';
+import { AirportGatesView } from './planner/AirportGatesView';
 import { AirportSlotsView } from './planner/AirportSlotsView';
 import { liveEconomics } from './planner/analysis';
 import { CargoTab } from './planner/CargoTab';
@@ -53,7 +54,7 @@ import './network.css';
  */
 
 type Tab = 'overview' | 'schedule' | 'pricing' | 'competition' | 'cargo' | 'performance';
-type View = 'route' | 'fleet' | 'connections' | 'slots';
+type View = 'route' | 'fleet' | 'connections' | 'slots' | 'gates';
 type RouteSort = 'name' | 'profit' | 'load' | 'distance';
 
 const SORTS: readonly { value: RouteSort; label: string }[] = [
@@ -378,6 +379,10 @@ export function NetworkPage(): ReactNode {
             { value: 'fleet', label: 'Fleet schedule' },
             { value: 'connections', label: 'Connections' },
             { value: 'slots', label: 'Slots' },
+            // App. B.8's other half. Two views rather than one, because they are
+            // two different scarce resources and the doc's whole point is that a
+            // player who conflates them has made the classic new-player mistake.
+            { value: 'gates', label: 'Gates' },
           ]}
         />
       </header>
@@ -480,7 +485,9 @@ export function NetworkPage(): ReactNode {
         </aside>
 
         <div className="net-main">
-          {view === 'slots' ? (
+          {view === 'gates' ? (
+            <AirportGatesView airports={operatedAirports} />
+          ) : view === 'slots' ? (
             <AirportSlotsView airports={operatedAirports} />
           ) : view === 'connections' ? (
             <HubConnectionsView />

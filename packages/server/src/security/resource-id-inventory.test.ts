@@ -39,6 +39,14 @@ const NON_UUID_PATH_IDENTIFIERS = [
   'GET /api/airports/:icao/slots',
   'POST /api/airports/:icao/slots/:band',
   'DELETE /api/airports/:icao/slots/:band',
+  // Airport stands (M7-06): `:icao` is a public airport identifier and
+  // `:position` a public stand label (`A7`, `R3`) from an inventory computed from
+  // the airport's tier — not an owned resource and never a secret, because App.
+  // B.7 makes seeing who holds which stand the point. The holding is scoped to
+  // the session's airline, exactly like the slot endpoints above.
+  'GET /api/airports/:icao/gates',
+  'POST /api/airports/:icao/gates',
+  'DELETE /api/airports/:icao/gates/:position',
 ] as const;
 
 const BODY_UUID_CONTRACTS = [
