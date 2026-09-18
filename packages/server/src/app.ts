@@ -53,8 +53,8 @@ import {
 } from './landing-page';
 import { readLandingStats } from './landing-stats';
 import { createEconomicsProvider } from './network/economics';
-import { registerNetworkRoutes } from './network/routes';
 import { registerGateRoutes } from './network/gate-routes';
+import { registerNetworkRoutes } from './network/routes';
 import { registerSlotRoutes } from './network/slot-routes';
 import { registerOfficeRoutes } from './office/routes';
 import { registerScheduleRoutes } from './schedule/routes';
