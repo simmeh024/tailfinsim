@@ -40,12 +40,25 @@ afterEach(() => {
 
 function ContextPanelHost({ children }: { children: ReactNode }): ReactNode {
   const [open, setOpen] = useState(true);
-  const { selection, attachPanelBody } = useContextSelection();
+  const { selection, attachPanelBody, select } = useContextSelection();
 
   return (
     <>
       <button type="button" onClick={() => setOpen(false)}>
         Dismiss shell panel
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          select({
+            kind: 'test-context',
+            id: 'replacement',
+            title: 'Replacement context',
+            body: null,
+          })
+        }
+      >
+        Take over context
       </button>
       {open && selection !== null && <div data-testid="panel-host" ref={attachPanelBody} />}
       {children}
@@ -58,6 +71,23 @@ function renderInContext(builder: ReactNode) {
     <ContextSelectionProvider>
       <ContextPanelHost>{builder}</ContextPanelHost>
     </ContextSelectionProvider>,
+  );
+}
+
+function DelayedDevelopmentPreview(): ReactNode {
+  const [developmentPreview, setDevelopmentPreview] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setDevelopmentPreview(true)}>
+        Enable dev identity
+      </button>
+      <LiveryBuilder
+        storageKey="delayed-development-preview"
+        airlineName="Review Air"
+        storage={new MemoryStorage()}
+        developmentPreview={developmentPreview}
+      />
+    </>
   );
 }
 
@@ -112,6 +142,40 @@ describe('M6-03 livery builder UI', () => {
       'false',
     );
     expect(storage.getItem('dismiss-layers')).toContain('#123456FF');
+  });
+
+  it('clears its context selection when delayed dev identity closes Layers', () => {
+    renderInContext(<DelayedDevelopmentPreview />);
+
+    expect(document.querySelector('[data-testid="panel-host"] .livery-layers')).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Enable dev identity' }));
+
+    expect(screen.getByRole('button', { name: 'Show layers 3' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(document.querySelector('[data-testid="panel-host"]')).toBeNull();
+    expect(document.querySelector('.livery-layers')).toBeNull();
+  });
+
+  it('closes Layers when another context selection takes over the hosted panel', () => {
+    renderInContext(
+      <LiveryBuilder
+        storageKey="replaced-layers"
+        airlineName="Review Air"
+        storage={new MemoryStorage()}
+      />,
+    );
+
+    expect(document.querySelector('[data-testid="panel-host"] .livery-layers')).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Take over context' }));
+
+    expect(screen.getByRole('button', { name: 'Show layers 3' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(document.querySelector('.livery-layers')).toBeNull();
+    expect(document.querySelector('.livery-layers-inline')).toBeNull();
   });
 
   it('opens model progress when dev identity arrives and keeps draft edits across preview modes', () => {

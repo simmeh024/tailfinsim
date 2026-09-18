@@ -226,7 +226,8 @@ test.describe('Design Studio model progress review', () => {
     const stage = page.getByRole('group', {
       name: 'A320neo latest aircraft model with sample livery',
     });
-    await expect(stage).toHaveAttribute('data-state', 'ready');
+    // CI uses software WebGL; allow its first environment shader compilation.
+    await expect(stage).toHaveAttribute('data-state', 'ready', { timeout: 15_000 });
     await expect(page.getByRole('alert')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Reset view', exact: true })).toBeEnabled();
     await expect(page.getByRole('button', { name: 'Tail detail', exact: true })).toBeEnabled();
@@ -266,7 +267,7 @@ test.describe('Design Studio model progress review', () => {
     await paintMap.click();
     await expect(paintMap).toHaveAttribute('aria-pressed', 'true');
     await page.getByRole('button', { name: 'Model progress', exact: true }).click();
-    await expect(stage).toHaveAttribute('data-state', 'ready');
+    await expect(stage).toHaveAttribute('data-state', 'ready', { timeout: 15_000 });
     expect(
       consoleErrors.filter((message) =>
         /content security policy|blob:|wasm|couldn't load texture|texture.*(?:error|fail)/i.test(

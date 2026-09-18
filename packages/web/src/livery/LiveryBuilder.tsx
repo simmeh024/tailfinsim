@@ -718,8 +718,9 @@ export function LiveryBuilder({
       !layersVisibilityChosen.current
     ) {
       setLayersOpen(false);
+      if (panelIsOurs) clear();
     }
-  }, [modelProgressAvailable, previewMode]);
+  }, [clear, modelProgressAvailable, panelIsOurs, previewMode]);
 
   useEffect(() => {
     panelIsOursRef.current = panelIsOurs;
@@ -728,6 +729,13 @@ export function LiveryBuilder({
   useEffect(() => {
     if (panelIsOurs && panelBody !== null) {
       panelWasHosted.current = true;
+      return;
+    }
+    // A different context selection displaced an already-hosted layer panel.
+    // Let that surface keep the panel instead of rendering Layers inline.
+    if (!panelIsOurs && panelWasHosted.current) {
+      panelWasHosted.current = false;
+      setLayersOpen(false);
       return;
     }
     // A null host after our portal was mounted means the shell panel was dismissed.
@@ -1085,7 +1093,9 @@ export function LiveryBuilder({
           </p>
         </div>
 
-        {layersOpen && !panelIsOurs && <aside className="livery-layers-inline">{layerPanel}</aside>}
+        {layersOpen && !panelWasHosted.current && (!panelIsOurs || panelBody === null) && (
+          <aside className="livery-layers-inline">{layerPanel}</aside>
+        )}
       </div>
 
       {layersOpen && panelIsOurs && panelBody !== null && createPortal(layerPanel, panelBody)}

@@ -428,7 +428,9 @@ export function DevelopmentAircraftPreview({
           const room = new RoomEnvironment();
           const generator = new THREE.PMREMGenerator(renderer);
           try {
-            studioEnvironment = generator.fromScene(room, 0.04);
+            // Broad studio reflections do not need the default 256px cube.
+            // Halve each face to reduce startup work on integrated/software GPUs.
+            studioEnvironment = generator.fromScene(room, 0.04, 0.1, 100, { size: 128 });
             scene.environment = studioEnvironment.texture;
             scene.environmentIntensity = 0.8;
           } finally {
