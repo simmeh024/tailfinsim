@@ -226,6 +226,10 @@ describeDb('settling an arrived flight', () => {
       'maintenance',
       'airport',
       'handling',
+      // M7-06: this airline leases no stand at the origin, so it pays App. B.6's
+      // walk-up turn fee. The line is absent — not zero — once it holds a lease
+      // there, which is what makes a lease worth buying at volume.
+      'stand',
     ]);
     expect(breakdown.costs.reduce((s, c) => s + c.amountMinor, 0)).toBe(row.costMinor);
     // Distance came from the airports' own coordinates, not from a constant.
