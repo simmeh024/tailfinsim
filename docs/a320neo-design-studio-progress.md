@@ -90,3 +90,17 @@ Regression coverage includes draft preservation, panel dismissal and reopening,
 neutral material restoration, and a 430px-wide enforced-CSP browser review with
 controls outside the model viewport. No new geometry or asset admission is
 included in this viewer quality pass.
+
+## Inspection controls
+
+Model progress offers repeatable overview, port, starboard, nose, rear, top and
+tail views. The top view keeps the nose at the top of the viewport. Each preset
+fits the actual mesh to the available workspace; tail detail frames the fin.
+Selecting a preset clears residual orbit motion so repeated selections give the
+same view. Reset view returns to the overview.
+
+Labelled zoom buttons support keyboard and touch use alongside the existing
+pointer controls. Orbiting, panning or zooming changes the selector to Custom
+view and preserves that camera when the workspace resizes. Selecting a preset
+restores automatic fitting. These controls apply to Model progress; draft paint
+and the reviewed GLB remain unchanged.
