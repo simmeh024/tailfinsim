@@ -168,15 +168,18 @@ test.describe('Design Studio model progress review', () => {
         .filter({ hasText: 'Latest model unavailable — showing an illustrative fleet render.' }),
     ).toBeVisible();
 
-    const showTools = page.getByRole('button', { name: 'Show tools', exact: true });
-    if (await showTools.isVisible()) await showTools.click();
-    await page.getByRole('button', { name: '+ Add fill layer', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Layers 4', exact: true })).toBeVisible();
-    await expect(page.getByLabel('Rename Fuselage base').last()).toBeVisible();
-
     const paintMap = page.getByRole('button', { name: 'Paint map', exact: true });
     await paintMap.click();
     await expect(paintMap).toHaveAttribute('aria-pressed', 'true');
+    const showTools = page.getByRole('button', { name: 'Show tools', exact: true });
+    if (await showTools.isVisible()) await showTools.click();
+    await page.getByRole('button', { name: '+ Add fill layer', exact: true }).click();
+    const showLayers = page.getByRole('button', { name: 'Show layers 4', exact: true });
+    await expect(showLayers).toBeVisible();
+    await showLayers.click();
+    await expect(page.getByRole('button', { name: 'Hide layers 4', exact: true })).toBeVisible();
+    await expect(page.getByLabel('Rename Fuselage base').last()).toBeVisible();
+
     await expect(
       page.getByText('Exact zone clipping · canonical side-profile authoring'),
     ).toBeVisible();
@@ -189,12 +192,13 @@ test.describe('Design Studio model progress review', () => {
         .getByRole('alert')
         .filter({ hasText: 'Latest model unavailable — showing an illustrative fleet render.' }),
     ).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Layers 4', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Hide layers 4', exact: true })).toBeVisible();
   });
 
-  test('loads embedded texture data under the enforced CSP and keeps controls inside the stage @smoke', async ({
+  test('loads embedded texture data under the enforced CSP with controls outside the canvas @smoke', async ({
     page,
   }) => {
+    await page.setViewportSize({ width: 430, height: 900 });
     const consoleErrors: string[] = [];
     page.on('pageerror', (error) => consoleErrors.push(error.message));
     page.on('console', (message) => {
@@ -222,31 +226,48 @@ test.describe('Design Studio model progress review', () => {
     const stage = page.getByRole('group', {
       name: 'A320neo latest aircraft model with sample livery',
     });
-    await expect(stage).toHaveAttribute('data-state', 'ready');
+    // CI uses software WebGL; allow its first environment shader compilation.
+    await expect(stage).toHaveAttribute('data-state', 'ready', { timeout: 15_000 });
     await expect(page.getByRole('alert')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Reset view', exact: true })).toBeEnabled();
     await expect(page.getByRole('button', { name: 'Tail detail', exact: true })).toBeEnabled();
 
-    const [stageBox, resetBox, tailBox] = await Promise.all([
-      page.locator('#stage').boundingBox(),
+    const [viewportBox, canvasBox, resetBox, tailBox] = await Promise.all([
+      page.locator('.livery-true-preview__viewport').boundingBox(),
+      page.locator('.livery-canvas').boundingBox(),
       page.getByRole('button', { name: 'Reset view', exact: true }).boundingBox(),
       page.getByRole('button', { name: 'Tail detail', exact: true }).boundingBox(),
     ]);
-    expect(stageBox).not.toBeNull();
+    expect(viewportBox).not.toBeNull();
+    expect(canvasBox).not.toBeNull();
     expect(resetBox).not.toBeNull();
     expect(tailBox).not.toBeNull();
     for (const control of [resetBox!, tailBox!]) {
-      expect(control.x).toBeGreaterThanOrEqual(stageBox!.x);
-      expect(control.y).toBeGreaterThanOrEqual(stageBox!.y);
-      expect(control.x + control.width).toBeLessThanOrEqual(stageBox!.x + stageBox!.width);
-      expect(control.y + control.height).toBeLessThanOrEqual(stageBox!.y + stageBox!.height);
+      expect(control.x).toBeGreaterThanOrEqual(canvasBox!.x);
+      expect(control.x + control.width).toBeLessThanOrEqual(canvasBox!.x + canvasBox!.width);
+      expect(
+        control.y + control.height <= viewportBox!.y ||
+          control.y >= viewportBox!.y + viewportBox!.height,
+      ).toBe(true);
     }
+
+    const showLayers = page.getByRole('button', { name: 'Show layers 3', exact: true });
+    await expect(showLayers).toBeVisible();
+    await showLayers.click();
+    await expect(page.locator('.livery-layers')).toHaveCount(1);
+    await expect(page.locator('.livery-layers-inline')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Hide layers 3', exact: true }).click();
+    await expect(page.locator('.livery-layers')).toHaveCount(0);
+    await expect(page.locator('.livery-layers-inline')).toHaveCount(0);
+    const closedCanvasBox = await page.locator('.livery-canvas').boundingBox();
+    expect(closedCanvasBox).not.toBeNull();
+    expect(closedCanvasBox!.height).toBeGreaterThan(200);
 
     const paintMap = page.getByRole('button', { name: 'Paint map', exact: true });
     await paintMap.click();
     await expect(paintMap).toHaveAttribute('aria-pressed', 'true');
     await page.getByRole('button', { name: 'Model progress', exact: true }).click();
-    await expect(stage).toHaveAttribute('data-state', 'ready');
+    await expect(stage).toHaveAttribute('data-state', 'ready', { timeout: 15_000 });
     expect(
       consoleErrors.filter((message) =>
         /content security policy|blob:|wasm|couldn't load texture|texture.*(?:error|fail)/i.test(

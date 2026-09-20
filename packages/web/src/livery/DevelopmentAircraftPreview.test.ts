@@ -1,5 +1,5 @@
 import { DoubleSide, FrontSide, MeshStandardMaterial, Texture } from 'three';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { LiveryColor, LiveryDocument, type LiveryLayer } from '@tailfin/shared';
 
@@ -10,6 +10,7 @@ import {
   a320neoAuthoringBakedLayerIds,
   a320neoDevelopmentMaterialColors,
   configureA320neoDevelopmentExteriorMaterial,
+  setA320neoAuthoringTexture,
 } from './DevelopmentAircraftPreview';
 import { createBaseFillLayer } from './editor-model';
 
@@ -40,6 +41,26 @@ function fill(overrides: Partial<LiveryLayer> = {}): LiveryLayer {
 }
 
 describe('A320neo dev material preview', () => {
+  it('restores the neutral stabiliser finish and recompiles when its last paint is removed', () => {
+    const material = new MeshStandardMaterial({
+      name: 'mat-horizontal-stabilisers',
+      color: 0xaab0b8,
+    });
+    const neutral = material.color.getHex();
+    const texture = new Texture();
+    const dispose = vi.spyOn(texture, 'dispose');
+    setA320neoAuthoringTexture(material, texture, neutral);
+    expect(material.color.getHex()).toBe(0xffffff);
+    expect(material.map).toBe(texture);
+    const paintedVersion = material.version;
+    setA320neoAuthoringTexture(material, null, neutral);
+    expect(material.color.getHex()).toBe(neutral);
+    expect(material.map).toBeNull();
+    expect(material.version).toBeGreaterThan(paintedVersion);
+    expect(dispose).toHaveBeenCalledOnce();
+    material.dispose();
+  });
+
   it('loads the smallest model first and upgrades through all three LODs', () => {
     expect(A320NEO_DEV_MODEL_STAGES).toEqual([
       { level: 2, url: '/api/dev/assets/aircraft/aircraft-lod2.glb' },

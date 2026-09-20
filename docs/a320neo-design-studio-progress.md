@@ -7,8 +7,10 @@ editing remains available through **3D preview** and **Paint map**; changing the
 view does not change the saved draft. Other families and non-dev environments
 keep the existing preview.
 
-**Tail detail** targets the starboard tail-logo anchor. Reset restores the front
-quarter view. Orbit, close zoom and right-drag pan support surface inspection.
+**Tail detail** frames the complete fin from starboard. Reset restores the front
+quarter view. Both views fit the actual mesh vertices to the viewport, retaining
+the whole subject when the panel changes size. Orbit, close zoom and right-drag
+pan support surface inspection; resizing preserves a manually adjusted view.
 An unavailable model reports a fallback explicitly rather than presenting the
 illustrative fleet image as current progress.
 
@@ -66,3 +68,25 @@ the actual Caddy policy to the page, rejects texture/CSP/decoder errors, checks
 controls against the shell stage bounds, and returns from Paint map to the
 model. The real reviewed aircraft was also inspected in a compiled local viewer
 under the enforced policy, at the live editor's constrained width.
+
+## Studio quality pass
+
+The progress viewer now uses a locally generated studio environment for soft
+reflections and clearer glass, paint and engine surfaces. It retains the reviewed
+GLB's geometry, UVs and material parameters. The temporary environment resources
+are disposed when switching views or unmounting the editor.
+
+Controls and labels sit outside the WebGL viewport, which uses the available
+workspace instead of a small fixed-aspect card. Model progress starts with layers
+and paint tools out of the way. Show/Hide layers is a real toggle; dismissing the
+shell panel no longer recreates its layer list over the model. A closed layer list
+also hides the empty context panel within Design Studio only.
+
+In the separate draft 3D preview, removing the last applicable paint layer now
+restores the imported neutral material colour and refreshes the material shader.
+The progress model remains the sample livery, not a live draft-paint compositor.
+
+Regression coverage includes draft preservation, panel dismissal and reopening,
+neutral material restoration, and a 430px-wide enforced-CSP browser review with
+controls outside the model viewport. No new geometry or asset admission is
+included in this viewer quality pass.

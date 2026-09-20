@@ -8,11 +8,14 @@ import { embeddedGltfImages } from './embedded-gltf-images';
 import type { ReactNode } from 'react';
 import type {
   MeshStandardMaterial,
+  Mesh,
   Object3D,
   PerspectiveCamera,
   Scene,
   Side,
+  Texture,
   WebGLRenderer,
+  WebGLRenderTarget,
 } from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three/examples/jsm/controls/OrbitControls.js';
 
@@ -54,6 +57,19 @@ const MATERIAL_ZONE = Object.freeze({
 } satisfies Readonly<Record<string, LiveryZone>>);
 
 const WINDOW_MATERIALS = new Set(['mat-cockpit-glass', 'mat-cabin-windows']);
+
+/** Restore the authored neutral finish when the last applicable paint layer is hidden. */
+export function setA320neoAuthoringTexture(
+  material: MeshStandardMaterial,
+  texture: Texture | null,
+  neutralColor: number,
+): void {
+  const previous = material.map;
+  material.map = texture;
+  material.color.setHex(texture === null ? neutralColor : 0xffffff);
+  material.needsUpdate = true;
+  if (previous !== texture) previous?.dispose();
+}
 
 function materialZoneLayers(
   materialName: string,
@@ -386,6 +402,7 @@ export function DevelopmentAircraftPreview({
     let cancelled = false;
     let pendingControls: OrbitControlsType | null = null;
     let pendingRenderer: WebGLRenderer | null = null;
+    let studioEnvironment: WebGLRenderTarget | null = null;
 
     void (async () => {
       try {
@@ -404,6 +421,23 @@ export function DevelopmentAircraftPreview({
         renderer.toneMappingExposure = 0.8;
 
         const scene = new THREE.Scene();
+        if (isModelProgress) {
+          const { RoomEnvironment } =
+            await import('three/examples/jsm/environments/RoomEnvironment.js');
+          if (cancelled) return;
+          const room = new RoomEnvironment();
+          const generator = new THREE.PMREMGenerator(renderer);
+          try {
+            // Broad studio reflections do not need the default 256px cube.
+            // Halve each face to reduce startup work on integrated/software GPUs.
+            studioEnvironment = generator.fromScene(room, 0.04, 0.1, 100, { size: 128 });
+            scene.environment = studioEnvironment.texture;
+            scene.environmentIntensity = 0.8;
+          } finally {
+            room.dispose();
+            generator.dispose();
+          }
+        }
         scene.add(new THREE.HemisphereLight(0xddeeff, 0x344252, 1.25));
         const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
         keyLight.position.set(-18, 30, 24);
@@ -431,6 +465,7 @@ export function DevelopmentAircraftPreview({
         loader.register((parser) =>
           embeddedGltfImages(parser, new THREE.TextureLoader(parser.options.manager)),
         );
+        const neutralMaterialColors = new Map<MeshStandardMaterial, number>();
         const applyAuthoringPaint = (
           model: Object3D,
           layersToBake: readonly LiveryLayer[],
@@ -443,11 +478,12 @@ export function DevelopmentAircraftPreview({
             if (painted.has(material)) return;
             painted.add(material);
             const source = bakeA320neoAuthoringMaterialCanvas(material.name, layersToBake);
-            const previous = material.map;
             if (source === null) {
-              material.map = null;
-              material.color.set(0xffffff);
-              previous?.dispose();
+              setA320neoAuthoringTexture(
+                material,
+                null,
+                neutralMaterialColors.get(material) ?? 0xffffff,
+              );
               return;
             }
             const texture = new THREE.CanvasTexture(source);
@@ -457,9 +493,11 @@ export function DevelopmentAircraftPreview({
             texture.channel = 1;
             texture.generateMipmaps = true;
             texture.needsUpdate = true;
-            material.map = texture;
-            material.color.set(0xffffff);
-            previous?.dispose();
+            setA320neoAuthoringTexture(
+              material,
+              texture,
+              neutralMaterialColors.get(material) ?? 0xffffff,
+            );
           });
         };
         const loadStage = async (
@@ -484,6 +522,7 @@ export function DevelopmentAircraftPreview({
             if (!material?.isMeshStandardMaterial) return;
             if (!originalMaterialColors.has(material)) {
               originalMaterialColors.set(material, material.color.getHex());
+              neutralMaterialColors.set(material, material.color.getHex());
             }
             material.envMapIntensity = 0.65;
             if (isModelProgress && material.map !== null) {
@@ -517,7 +556,52 @@ export function DevelopmentAircraftPreview({
         const bounds = new THREE.Box3().setFromObject(model);
         const sphere = bounds.getBoundingSphere(new THREE.Sphere());
         const radius = Math.max(sphere.radius, 1);
+        let framedView: 'overview' | 'tail' | null = 'overview';
+        // Fit the actual mesh in both screen axes. The empty corners of an
+        // aircraft's bounding box otherwise leave excessive space around it.
+        const frameBounds = (
+          viewObject: Object3D,
+          direction: InstanceType<typeof THREE.Vector3>,
+        ): void => {
+          const viewBounds = new THREE.Box3().setFromObject(viewObject);
+          const target = viewBounds.getCenter(new THREE.Vector3());
+          direction.normalize();
+          const right = new THREE.Vector3().crossVectors(camera.up, direction).normalize();
+          const up = new THREE.Vector3().crossVectors(direction, right);
+          const tanY = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+          const tanX = tanY * camera.aspect;
+          let distance = 1;
+          const corner = new THREE.Vector3();
+          viewObject.traverse((object) => {
+            const mesh = object as Mesh;
+            if (!mesh.isMesh) return;
+            const positions = mesh.geometry.getAttribute('position');
+            for (let index = 0; index < positions.count; index += 1) {
+              corner
+                .fromBufferAttribute(positions, index)
+                .applyMatrix4(mesh.matrixWorld)
+                .sub(target);
+              distance = Math.max(
+                distance,
+                corner.dot(direction) +
+                  1.12 *
+                    Math.max(Math.abs(corner.dot(right)) / tanX, Math.abs(corner.dot(up)) / tanY),
+              );
+            }
+          });
+          camera.position.copy(target).addScaledVector(direction, distance);
+          camera.near = 0.05;
+          camera.far = Math.max(radius * 12, distance * 4);
+          camera.updateProjectionMatrix();
+          controls.target.copy(target);
+          controls.update();
+        };
         const resetView = (): void => {
+          framedView = 'overview';
+          if (isModelProgress) {
+            frameBounds(model, new THREE.Vector3(1.25, 0.62, -1.5));
+            return;
+          }
           const distance = radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) / 1.25;
           const direction = new THREE.Vector3(1.25, 0.62, isModelProgress ? -1.5 : 1.5).normalize();
           camera.position.copy(sphere.center).addScaledVector(direction, distance);
@@ -529,16 +613,18 @@ export function DevelopmentAircraftPreview({
           controls.maxDistance = radius * 5;
           controls.update();
         };
-        resetView();
-
         const focusTail = (): void => {
-          const anchor = model.getObjectByName('anchor-tail-logo-starboard');
-          if (anchor === undefined) return;
-          const target = anchor.getWorldPosition(new THREE.Vector3());
-          controls.target.copy(target);
-          camera.position.copy(target).add(new THREE.Vector3(14, 2.5, 5));
-          controls.update();
+          const fin = model.getObjectByName('tail_fin');
+          if (fin === undefined) return;
+          framedView = 'tail';
+          frameBounds(fin, new THREE.Vector3(14, 2.5, 5));
         };
+
+        controls.minDistance = radius * (isModelProgress ? 0.08 : 0.75);
+        controls.maxDistance = radius * 12;
+        controls.addEventListener('start', () => {
+          framedView = null;
+        });
 
         const resize = (): void => {
           const width = Math.max(1, container.clientWidth);
@@ -546,11 +632,16 @@ export function DevelopmentAircraftPreview({
           renderer.setSize(width, height, false);
           camera.aspect = width / height;
           camera.updateProjectionMatrix();
+          if (isModelProgress && framedView !== null) {
+            if (framedView === 'tail') focusTail();
+            else resetView();
+          }
         };
         const resizeObserver =
           typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize);
         resizeObserver?.observe(container);
         resize();
+        if (!isModelProgress) resetView();
 
         renderer.setAnimationLoop(() => {
           controls.update();
@@ -602,6 +693,8 @@ export function DevelopmentAircraftPreview({
           }
         }
       } catch {
+        studioEnvironment?.dispose();
+        studioEnvironment = null;
         pendingControls?.dispose();
         pendingRenderer?.dispose();
         pendingControls = null;
@@ -612,6 +705,8 @@ export function DevelopmentAircraftPreview({
 
     return () => {
       cancelled = true;
+      studioEnvironment?.dispose();
+      studioEnvironment = null;
       const runtime = runtimeRef.current;
       runtimeRef.current = null;
       if (runtime === null) {
@@ -643,9 +738,8 @@ export function DevelopmentAircraftPreview({
 
   return (
     <div
-      ref={containerRef}
       className="livery-true-preview"
-      role={isModelProgress ? 'group' : 'img'}
+      role="group"
       aria-label={
         isModelProgress
           ? 'A320neo latest aircraft model with sample livery'
@@ -658,63 +752,69 @@ export function DevelopmentAircraftPreview({
       data-state={state}
       data-lod={lodLevel ?? 'fallback'}
     >
-      {state === 'loading' && (
-        <div className="livery-true-preview__fallback" aria-hidden="true">
-          {fallback}
-        </div>
-      )}
-      <canvas ref={canvasRef} aria-hidden="true" data-visible={state === 'ready'} />
-      {state === 'loading' && (
-        <p className="livery-true-preview__loading" role="status">
-          Loading{' '}
-          {isModelProgress
-            ? 'latest aircraft model'
-            : isQuarantineRecovery
-              ? 'quarantine source PBR'
-              : isQuarantineAuthoring
-                ? 'quarantine semantic authoring model'
-                : 'true 3D A320neo'}
-          {progress === null ? '…' : ` · ${String(progress)}%`}
-        </p>
-      )}
-      <div className="livery-true-preview__badges" aria-hidden="true">
-        <span>
-          {isModelProgress
-            ? 'Model progress · 13 Sep'
-            : isQuarantineRecovery
-              ? 'Source PBR review'
-              : isQuarantineAuthoring
-                ? 'Semantic paint-texture review'
-                : 'True 3D'}
-        </span>
-        <span>
-          {isModelProgress
-            ? 'Reviewed aircraft · sample livery'
-            : isQuarantineRecovery
-              ? 'Quarantine · not fleet eligible'
-              : isQuarantineAuthoring
-                ? 'Quarantine · livery binding not admitted'
-                : 'Dev review · licence pending'}
-        </span>
+      <div ref={containerRef} className="livery-true-preview__viewport">
+        {state === 'loading' && (
+          <div className="livery-true-preview__fallback" aria-hidden="true">
+            {fallback}
+          </div>
+        )}
+        <canvas ref={canvasRef} aria-hidden="true" data-visible={state === 'ready'} />
+        {state === 'loading' && (
+          <p className="livery-true-preview__loading" role="status">
+            Loading{' '}
+            {isModelProgress
+              ? 'latest aircraft model'
+              : isQuarantineRecovery
+                ? 'quarantine source PBR'
+                : isQuarantineAuthoring
+                  ? 'quarantine semantic authoring model'
+                  : 'true 3D A320neo'}
+            {progress === null ? '…' : ` · ${String(progress)}%`}
+          </p>
+        )}
       </div>
-      <button
-        type="button"
-        className="livery-true-preview__reset"
-        disabled={state !== 'ready'}
-        onClick={() => runtimeRef.current?.resetView()}
-      >
-        Reset view
-      </button>
-      {isModelProgress && (
-        <button
-          type="button"
-          className="livery-true-preview__tail"
-          disabled={state !== 'ready'}
-          onClick={() => runtimeRef.current?.focusTail()}
-        >
-          Tail detail
-        </button>
-      )}
+      <div className="livery-true-preview__toolbar">
+        <div className="livery-true-preview__badges">
+          <span>
+            {isModelProgress
+              ? 'Model progress'
+              : isQuarantineRecovery
+                ? 'Source PBR review'
+                : isQuarantineAuthoring
+                  ? 'Semantic paint-texture review'
+                  : 'True 3D'}
+          </span>
+          <span>
+            {isModelProgress
+              ? 'Sample livery'
+              : isQuarantineRecovery
+                ? 'Quarantine · not fleet eligible'
+                : isQuarantineAuthoring
+                  ? 'Quarantine · livery binding not admitted'
+                  : 'Dev review · licence pending'}
+          </span>
+        </div>
+        <div className="livery-true-preview__actions" aria-label="Aircraft views">
+          <button
+            type="button"
+            className="livery-true-preview__reset"
+            disabled={state !== 'ready'}
+            onClick={() => runtimeRef.current?.resetView()}
+          >
+            Reset view
+          </button>
+          {isModelProgress && (
+            <button
+              type="button"
+              className="livery-true-preview__tail"
+              disabled={state !== 'ready'}
+              onClick={() => runtimeRef.current?.focusTail()}
+            >
+              Tail detail
+            </button>
+          )}
+        </div>
+      </div>
       <p className="livery-true-preview__hint">
         {isModelProgress
           ? 'Drag to orbit · scroll to zoom · right-drag to pan'
