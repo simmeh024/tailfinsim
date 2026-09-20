@@ -76,7 +76,7 @@ function texturedTriangleGlb(): Buffer {
           primitives: [{ attributes: { POSITION: 0, TEXCOORD_0: 1 }, indices: 2, material: 0 }],
         },
       ],
-      nodes: [{ mesh: 0 }],
+      nodes: [{ mesh: 0, name: 'tail_fin' }],
       scenes: [{ nodes: [0] }],
       scene: 0,
     }),
@@ -232,17 +232,41 @@ test.describe('Design Studio model progress review', () => {
     await expect(page.getByRole('button', { name: 'Reset view', exact: true })).toBeEnabled();
     await expect(page.getByRole('button', { name: 'Tail detail', exact: true })).toBeEnabled();
 
-    const [viewportBox, canvasBox, resetBox, tailBox] = await Promise.all([
+    const inspectionView = page.getByRole('combobox', { name: 'Inspection view' });
+    await expect(inspectionView).toHaveValue('overview');
+    for (const view of ['port', 'starboard', 'nose', 'rear', 'top', 'tail']) {
+      await inspectionView.selectOption(view);
+      await expect(inspectionView).toHaveValue(view);
+    }
+    await inspectionView.selectOption('nose');
+    const modelCanvas = stage.locator('canvas');
+    const beforeZoom = await modelCanvas.screenshot();
+    const zoomIn = page.getByRole('button', { name: 'Zoom in', exact: true });
+    await zoomIn.focus();
+    await page.keyboard.press('Enter');
+    await expect(inspectionView).toHaveValue('custom');
+    await expect.poll(async () => (await modelCanvas.screenshot()).equals(beforeZoom)).toBe(false);
+    await page.getByRole('button', { name: 'Zoom out', exact: true }).click();
+    await page.getByRole('button', { name: 'Tail detail', exact: true }).click();
+    await expect(inspectionView).toHaveValue('tail');
+    await page.getByRole('button', { name: 'Reset view', exact: true }).click();
+    await expect(inspectionView).toHaveValue('overview');
+
+    const [viewportBox, canvasBox, resetBox, tailBox, selectBox, zoomBox] = await Promise.all([
       page.locator('.livery-true-preview__viewport').boundingBox(),
       page.locator('.livery-canvas').boundingBox(),
       page.getByRole('button', { name: 'Reset view', exact: true }).boundingBox(),
       page.getByRole('button', { name: 'Tail detail', exact: true }).boundingBox(),
+      inspectionView.boundingBox(),
+      page.getByRole('group', { name: 'Aircraft zoom' }).boundingBox(),
     ]);
     expect(viewportBox).not.toBeNull();
     expect(canvasBox).not.toBeNull();
     expect(resetBox).not.toBeNull();
     expect(tailBox).not.toBeNull();
-    for (const control of [resetBox!, tailBox!]) {
+    expect(selectBox).not.toBeNull();
+    expect(zoomBox).not.toBeNull();
+    for (const control of [resetBox!, tailBox!, selectBox!, zoomBox!]) {
       expect(control.x).toBeGreaterThanOrEqual(canvasBox!.x);
       expect(control.x + control.width).toBeLessThanOrEqual(canvasBox!.x + canvasBox!.width);
       expect(
@@ -252,10 +276,12 @@ test.describe('Design Studio model progress review', () => {
     }
 
     const showLayers = page.getByRole('button', { name: 'Show layers 3', exact: true });
+    await zoomIn.click();
     await expect(showLayers).toBeVisible();
     await showLayers.click();
     await expect(page.locator('.livery-layers')).toHaveCount(1);
     await expect(page.locator('.livery-layers-inline')).toHaveCount(0);
+    await expect(inspectionView).toHaveValue('custom');
     await page.getByRole('button', { name: 'Hide layers 3', exact: true }).click();
     await expect(page.locator('.livery-layers')).toHaveCount(0);
     await expect(page.locator('.livery-layers-inline')).toHaveCount(0);
@@ -268,6 +294,7 @@ test.describe('Design Studio model progress review', () => {
     await expect(paintMap).toHaveAttribute('aria-pressed', 'true');
     await page.getByRole('button', { name: 'Model progress', exact: true }).click();
     await expect(stage).toHaveAttribute('data-state', 'ready', { timeout: 15_000 });
+    await expect(inspectionView).toHaveValue('overview');
     expect(
       consoleErrors.filter((message) =>
         /content security policy|blob:|wasm|couldn't load texture|texture.*(?:error|fail)/i.test(
