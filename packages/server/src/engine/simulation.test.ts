@@ -547,6 +547,11 @@ describe('crew conversions on the tick', () => {
     const engine = createSimulationEngine({
       db,
       handlers: {},
+      // Fixed, so the game instant below is arithmetic rather than a range. This
+      // test used to run on the real clock and assert only that the instant fell
+      // in the epoch's year -- true until game time reached 2025, which at 2x
+      // was 2026-09-23T12:00Z, and false on every run after it.
+      now: () => new Date('2026-08-21T12:00:00.000Z'),
       listWorlds: () => Promise.resolve(worldsFixture('Flagship')),
       drain: () => Promise.resolve(drainResult(0)),
       completeConversions,
@@ -556,11 +561,12 @@ describe('crew conversions on the tick', () => {
     await engine.runOnce();
 
     // A fortnight of training is a span in the world's calendar, so the instant
-    // handed to the sweep has to be the world's, not the operating system's.
+    // handed to the sweep has to be the world's, not the operating system's:
+    // three and a half real days after launch, at 2x, is seven game days after
+    // the epoch -- 2024-10-27, not the 2026-08-21 the engine is ticking on.
     const at = completeConversions.mock.calls[0]?.[2];
     if (at === undefined) throw new Error('the sweep was never called');
-    expect(at.getTime()).toBeGreaterThanOrEqual(clock.epoch.getTime());
-    expect(at.getFullYear()).toBe(clock.epoch.getFullYear());
+    expect(at.toISOString()).toBe('2024-10-27T00:00:00.000Z');
   });
 
   it('keeps draining when the crew sweep throws', async () => {
