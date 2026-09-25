@@ -139,8 +139,14 @@ test.describe('administrator console', () => {
     await expect(row).toContainText(seeded!.speedMultiplier.toFixed(2) + '×');
     await expect(row).toContainText(seeded!.inGameDate.slice(0, 10));
     await expect(row).toContainText(String(seeded!.pendingEvents));
-    await expect(page.getByText(TICK_LABEL[seededHealth!.tick], { exact: true })).toBeVisible();
-    await expect(page.getByText(seededHealth!.tickDetail, { exact: true })).toBeVisible();
+    // The tick label and detail describe a state rather than a world, so any other
+    // idle world shows the same words. Only the test order kept this unscoped
+    // version passing: the next test creates such a world.
+    const card = page.locator('.health').filter({
+      has: page.getByText(FIXTURE_WORLD, { exact: true }),
+    });
+    await expect(card.getByText(TICK_LABEL[seededHealth!.tick], { exact: true })).toBeVisible();
+    await expect(card.getByText(seededHealth!.tickDetail, { exact: true })).toBeVisible();
   });
 
   test('creates a disposable world and records it in the audit log', async ({ page }) => {

@@ -1211,6 +1211,14 @@ specification` (42P10) — which reads like a missing index rather than an incom
 - **A file:line in a document rots, and quietly.** `docs/roadmap-dependencies.md` pinned the
   traffic-rights literal at `open-route.ts:191`; it was at 206 a fortnight later, and the
   wrong line points at plausible unrelated code rather than failing. Cite the symbol.
+- **A test that lets the real date reach a game-clock assertion is a time bomb.** Twice in
+  September 2026 a green test went red with nothing in any diff. `handler-preflight.test.ts`
+  hard-coded a real instant against a world whose `launch_date` is the real now, and expired
+  on the 9th. `engine/simulation.test.ts` built the engine without `now` and asserted the game
+  year, and expired on the 23rd — inside `Tests`, a required check, so every pull request went
+  red with it. Inject `now`, derive instants from the world's own epoch, and assert an exact
+  game instant rather than a range that merely holds today. Before believing such a failure is
+  yours, `grep` the test for `new Date('20` and for an engine built without `now:`.
 
 ---
 
