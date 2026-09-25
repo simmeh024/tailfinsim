@@ -113,9 +113,29 @@ airlines for new commitments. Restricted and ceased refusals use the stable
 | Put `worldId` in every request body                  | GET has no body, and repeating body parsing gives every handler another chance to implement it.                                   |
 | Return an empty success for every no-airline request | Mutations and operational reads would lose their stable prerequisite refusal; only AIR-08's typed discovery response is nullable. |
 
+## Addendum, 2026-09-25: one airline per player until the picker exists
+
+The single-airline fallback above assumed the client could not end up with a second airline.
+It could: the founding desk offered every open world the player had not joined, and
+`POST /api/airlines` accepted the founding — after which no request from the web client
+resolved, because it sends no header. Every airline endpoint answered
+`409 active_world_required`, and nothing in the client could recover.
+
+Until the player-facing world picker exists, founding therefore **refuses a second airline in
+any world** with `409 airline_founded_elsewhere`, and the desk marks the other open worlds
+`founded-elsewhere`. It counts ceased airlines and airlines in archived worlds, exactly as the
+resolver does, because a second row of any kind produces the same lockout. The player row is
+locked inside the founding transaction, since the world lock alone cannot serialise two
+foundings in two different worlds.
+
+`foundAirline`'s `allowSeveralWorlds` exists only so the ownership and resource-id suites keep
+exercising the header surface a picker will use. Remove the refusal in the change that ships
+the picker, not before.
+
 ## Revisit when
 
 - the player-facing world picker is built, to make the header explicit in the client API
-  helper rather than relying on the single-airline fallback; or
+  helper rather than relying on the single-airline fallback — and to lift the one-airline
+  rule in the addendum above; or
 - public archived-world browsing needs a context distinct from the player's operational
   airline.
