@@ -167,6 +167,34 @@ describeDb('dispatching crew', () => {
     return { fixture, hub, away, crewBaseId, airframeId: acquired.airframe.id };
   }
 
+  /**
+   * A second ATR for the same airline, delivered to the same hub.
+   *
+   * A departure for an airframe id that does not exist is refused before any
+   * pool is read — `loadContext` finds no aeroplane and answers `no_crew` — so a
+   * test that wants to prove the *pool* ran dry needs a second aeroplane that is
+   * real. The first version of the two tests below used a random id, and passed
+   * whatever the pool arithmetic did.
+   */
+  async function leaseAnother(setup: Awaited<ReturnType<typeof crewedAirline>>): Promise<string> {
+    const acquired = await acquireAircraft(
+      db.db,
+      { id: setup.fixture.airline.id, worldId: setup.fixture.world.id, status: 'active' },
+      {
+        requestId: randomUUID(),
+        kind: 'lease',
+        typeDesignation: 'ATR 72-600',
+        deliveryAirportIcao: setup.hub.icao,
+      },
+      setup.fixture.world.launchDate,
+    );
+    if (!acquired.ok || acquired.airframe === null) throw new Error('Second lease did not deliver');
+    return acquired.airframe.id;
+  }
+
+  /** What dispatch says when the base's pools cannot staff the cabin. */
+  const POOL_RAN_DRY = /^No rested crew rated on the ATR 72 are available/;
+
   /** A one-hour hop, departing at a civilised local hour. */
   function request(
     setup: Awaited<ReturnType<typeof crewedAirline>>,
@@ -268,16 +296,48 @@ describeDb('dispatching crew', () => {
     // nobody left, which is the arithmetic §9.2's fragmentation argument rests
     // on — crew are not fungible with themselves either.
     const setup = await crewedAirline({ captains: 1 });
+    const secondAirframeId = await leaseAnother(setup);
     await dispatchCrew(db.db, request(setup, { departAt: morning() }));
 
     const second = await dispatchCrew(db.db, {
       ...request(setup, { departAt: morning() }),
       // A different aeroplane, so it does not find the open period.
-      airframeId: randomUUID(),
+      airframeId: secondAirframeId,
     });
     expect(second.status).toBe('cancel');
     if (second.status !== 'cancel') return;
     expect(second.cause).toBe('no_crew');
+    expect(second.reason).toMatch(POOL_RAN_DRY);
+  });
+
+  it('does not roster crew who are off sick, and cancels rather than throwing', async () => {
+    // Two captains, one of them off sick: one aeroplane can still go and a second
+    // has nobody. Dispatch used to count a free head as headcount minus classroom
+    // minus on duty and never subtracted `sick`, so it committed the sick captain
+    // as well — and `crew_pool_sick_within_headcount` refused the write in the
+    // middle of a departure. A throwing FLIGHT_DEPART is marked failed for good,
+    // so the flight stayed `scheduled` for ever, neither flown nor cancelled.
+    const setup = await crewedAirline();
+    const secondAirframeId = await leaseAnother(setup);
+    await db.db
+      .update(crewPool)
+      .set({ sick: 1, sickUntil: morning(7) })
+      .where(and(eq(crewPool.crewBaseId, setup.crewBaseId), eq(crewPool.rank, 'captain')));
+
+    const first = await dispatchCrew(db.db, request(setup, { departAt: morning() }));
+    expect(first.status).toBe('go');
+
+    const second = await dispatchCrew(db.db, {
+      ...request(setup, { departAt: morning() }),
+      airframeId: secondAirframeId,
+    });
+    expect(second.status).toBe('cancel');
+    if (second.status !== 'cancel') return;
+    expect(second.cause).toBe('no_crew');
+    expect(second.reason).toMatch(POOL_RAN_DRY);
+
+    const captains = await poolOf(setup.crewBaseId, 'captain');
+    expect(captains?.onDuty).toBe(1);
   });
 
   /**

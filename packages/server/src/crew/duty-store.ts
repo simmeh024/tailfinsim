@@ -205,9 +205,11 @@ export interface CommitInput {
  */
 export async function commitComplement(db: Database, input: CommitInput): Promise<boolean> {
   for (const slot of input.slots) {
-    const available = input.fromReserve
-      ? sql`least(${crewPool.reserve}, ${crewPool.headcount} - ${crewPool.unavailable} - ${crewPool.onDuty})`
-      : sql`${crewPool.headcount} - ${crewPool.unavailable} - ${crewPool.onDuty}`;
+    // The arithmetic `crew_pool_sick_within_headcount` enforces: a head in a
+    // classroom, already on duty or off sick cannot be committed again. Without
+    // `sick` here this guard passed and the constraint refused the write instead.
+    const free = sql`${crewPool.headcount} - ${crewPool.unavailable} - ${crewPool.onDuty} - ${crewPool.sick}`;
+    const available = input.fromReserve ? sql`least(${crewPool.reserve}, ${free})` : free;
 
     const updated = await db
       .update(crewPool)
