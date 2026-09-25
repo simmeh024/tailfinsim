@@ -123,6 +123,41 @@ function formatConverted(
   }
 }
 
+/**
+ * A USD minor amount as the plain number a player types into a money field:
+ * converted into the active display currency, at that currency's own decimals,
+ * with no symbol and no grouping — `110.40`, `17900`.
+ *
+ * The input side of this module's rule. A field pre-filled with a *formatted*
+ * figure (`$120.00`, `€1,234.00`) cannot be read back as a number: the pricing
+ * tab once did exactly that, and every cabin it pre-filled was silently dropped
+ * from the fares it saved.
+ */
+export function usdMinorToInput(usdMinor: number): string {
+  const { code, rateByCode } = state;
+  const major = convertUsdMinor(usdMinor, rateByCode.get(code) ?? RATE_SCALE) / 100;
+  return major.toFixed(currencyMeta(code)?.decimals ?? 2);
+}
+
+/**
+ * What a player typed into a money field, in the active display currency, as
+ * USD minor units — or `undefined` for anything that is not a plain,
+ * non-negative decimal number.
+ *
+ * The one conversion back towards USD in the client, and it exists only so a
+ * player can type in the currency the figures around the field are shown in.
+ * Rounded to the nearest USD minor unit, so a value `usdMinorToInput` produced
+ * comes back as the amount it started from.
+ */
+export function inputToUsdMinor(input: string): number | undefined {
+  const trimmed = input.trim();
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) return undefined;
+  const value = Number(trimmed);
+  if (!Number.isFinite(value)) return undefined;
+  const rateE6 = state.rateByCode.get(state.code) ?? RATE_SCALE;
+  return Math.round((value * 100 * RATE_SCALE) / rateE6);
+}
+
 /** The active currency's symbol, for a compact figure that assembles its own text. */
 export function activeSymbol(): string {
   return currencyMeta(state.code)?.symbol ?? '$';

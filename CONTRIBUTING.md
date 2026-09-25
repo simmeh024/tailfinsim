@@ -718,6 +718,10 @@ in `@tailfin/shared`; the default is USD), and the client converts USD minor uni
 the render boundary using a rate from `currency_rate`. No stored or computed value is ever in
 anything but USD, so `flight_result` immutability and the ledger are untouched. Do not convert
 money anywhere but the display edge, and keep the admin console in USD — it audits the economy.
+A money **field** is the same edge in the other direction: it shows `usdMinorToInput`'s plain
+number in the display currency and sends `inputToUsdMinor`'s USD minor units, both from
+`currency/display.ts`. Never pre-fill a field with a formatted figure — `$120.00` does not read
+back as a number, and the pricing tab once deleted every fare it had pre-filled that way.
 
 **Units:** nautical miles for distance, feet for altitude, kilograms for weight — consistent
 across sim, API and UI. Non-money continuous quantities (latitude, `great_circle_nm`, block

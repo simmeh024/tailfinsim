@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { FareWaterfallResponse, FarePreviewResponse, SetFaresResponse } from '@tailfin/shared';
 
+import { setDisplayCurrency } from '../currency/display';
+
 import { NetworkPage } from './NetworkPage';
 
 /**
@@ -158,6 +160,7 @@ function stubWaterfall(
 function stub(
   save: SetFaresResponse = { ok: true, fares: ROUTE.fares },
   opened: { ok: boolean } & Record<string, unknown> = OPENED,
+  routes: readonly (typeof ROUTE)[] = [ROUTE],
 ) {
   const calls: string[] = [];
   vi.stubGlobal(
@@ -215,7 +218,7 @@ function stub(
         });
       }
       if (url === '/api/routes') {
-        return Promise.resolve({ status: 200, json: () => Promise.resolve({ routes: [ROUTE] }) });
+        return Promise.resolve({ status: 200, json: () => Promise.resolve({ routes }) });
       }
       if (url.endsWith('/fares/preview')) {
         return Promise.resolve({ status: 200, json: () => Promise.resolve(PREVIEW) });
@@ -230,6 +233,31 @@ function stub(
     }),
   );
   return calls;
+}
+
+/**
+ * Every JSON body the page sends, for asserting on *what* it asked the server.
+ *
+ * Wraps whichever fetch stub is in place. The pricing tests used to assert only
+ * that a request was made, which is how a Save that deleted every cabin the
+ * player had not retyped went unnoticed: the request was made, with `{}` in it.
+ */
+function recordBodies(): (method: string, url: string) => unknown[] {
+  const inner = globalThis.fetch;
+  const sent: { method: string; url: string; body: unknown }[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: unknown, init?: RequestInit) => {
+      sent.push({
+        method: init?.method ?? 'GET',
+        url: String(input),
+        body: typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined,
+      });
+      return inner(input as RequestInfo, init);
+    }),
+  );
+  return (method, url) =>
+    sent.filter((entry) => entry.method === method && entry.url === url).map((e) => e.body);
 }
 
 /** Wait for the route to load, then open its Pricing tab. */
@@ -255,6 +283,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   window.history.pushState({}, '', '/');
+  setDisplayCurrency('USD', []);
 });
 
 describe('the pricing tab', () => {
@@ -359,6 +388,111 @@ describe('the pricing tab', () => {
       expect(screen.getByLabelText('Economy fare')).toBeEnabled();
     });
     expect(screen.queryByLabelText('First fare')).toBeNull();
+  });
+
+  /*
+   * `PUT /fares` replaces the whole table, so a cabin the page leaves out is a
+   * cabin it deletes. The fields were pre-filled with the formatted figure
+   * (`$120.00`), which reads back as NaN — so every cabin the player did not
+   * retype was left out, and Save deleted its fare while saying "Saved.".
+   */
+  describe('what Save sends', () => {
+    async function openLoaded(): Promise<void> {
+      render(<NetworkPage />);
+      await openPricing();
+      await vi.advanceTimersByTimeAsync(500);
+      await waitFor(() => {
+        expect(screen.getByLabelText('Economy fare')).toBeEnabled();
+      });
+    }
+
+    it('pre-fills each cabin as a number it can send back', async () => {
+      stub();
+      await openLoaded();
+      expect(screen.getByLabelText('Economy fare')).toHaveValue('120.00');
+      expect(screen.getByLabelText('Business fare')).toHaveValue('300.00');
+    });
+
+    it('keeps every fare it was shown, not only the ones retyped', async () => {
+      stub();
+      const bodies = recordBodies();
+      await openLoaded();
+
+      fireEvent.change(screen.getByLabelText('Economy fare'), { target: { value: '99' } });
+      fireEvent.click(screen.getByRole('button', { name: /save fares/i }));
+
+      await waitFor(() => {
+        expect(bodies('PUT', '/api/routes/route-1/fares')).toEqual([
+          { fares: { business: 30_000, economy: 9_900 } },
+        ]);
+      });
+    });
+
+    it('will not save a field it cannot read, and says so', async () => {
+      stub();
+      const bodies = recordBodies();
+      await openLoaded();
+
+      fireEvent.change(screen.getByLabelText('Economy fare'), { target: { value: '$99' } });
+      expect(screen.getByLabelText('Economy fare')).toHaveAttribute('aria-invalid', 'true');
+      expect(screen.getByText(/plain number, without a currency sign/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /save fares/i })).toBeDisabled();
+
+      fireEvent.click(screen.getByRole('button', { name: /save fares/i }));
+      await vi.advanceTimersByTimeAsync(500);
+      expect(bodies('PUT', '/api/routes/route-1/fares')).toEqual([]);
+    });
+
+    it('reads the fields in the display currency and saves USD minor units', async () => {
+      setDisplayCurrency('EUR', [
+        {
+          code: 'EUR',
+          name: 'Euro',
+          symbol: '€',
+          decimals: 2,
+          rateE6: 900_000,
+          refreshedAt: '2026-09-01T00:00:00.000Z',
+          top: true,
+        },
+      ]);
+      stub();
+      const bodies = recordBodies();
+      await openLoaded();
+
+      // $120.00 at 0.9 is €108.00, beside a market average shown in euros too.
+      expect(screen.getByLabelText('Economy fare')).toHaveValue('108.00');
+      expect(screen.getByRole('columnheader', { name: 'Your fare (EUR)' })).toBeInTheDocument();
+
+      fireEvent.change(screen.getByLabelText('Economy fare'), { target: { value: '90.00' } });
+      fireEvent.click(screen.getByRole('button', { name: /save fares/i }));
+
+      // €90.00 is $100.00; business was not touched and goes back exactly.
+      await waitFor(() => {
+        expect(bodies('PUT', '/api/routes/route-1/fares')).toEqual([
+          { fares: { business: 30_000, economy: 10_000 } },
+        ]);
+      });
+    });
+
+    it('does not carry one route’s draft onto the next', async () => {
+      const other = {
+        ...ROUTE,
+        id: 'route-2',
+        originIcao: 'EGLL',
+        destinationIcao: 'LFPG',
+        fares: { business: 50_000, economy: 20_000 },
+      };
+      stub(undefined, undefined, [ROUTE, other]);
+      await openLoaded();
+
+      fireEvent.change(screen.getByLabelText('Economy fare'), { target: { value: '99' } });
+      fireEvent.click(screen.getByRole('button', { name: /EGLL/ }));
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Economy fare')).toHaveValue('200.00');
+      });
+      expect(screen.getByLabelText('Business fare')).toHaveValue('500.00');
+    });
   });
 });
 
