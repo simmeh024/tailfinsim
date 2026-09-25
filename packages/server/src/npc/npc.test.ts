@@ -387,6 +387,82 @@ describeDb('NPC carriers', () => {
       expect(opened?.basis.incumbents).toBe(0);
     });
 
+    /*
+     * A review day is thousands of engine ticks long — twelve real hours at 2x —
+     * and the engine calls the review on every one. It used to run on every one:
+     * nothing recorded that it had, and the review is not idempotent, so a route
+     * losing money "four reviews running" closed in four seconds and the entry
+     * budget was spent once a tick rather than once a week.
+     */
+    describe('once per review day', () => {
+      /** A monopoly world, so the first review has something to enter. */
+      async function reviewableWorld(): Promise<{ worldId: string; epoch: Date }> {
+        const worldId = await makeWorld();
+        await makeMarket(worldId, 2_400);
+        await seedNpcCarriers(db.db, worldId);
+        await db.db.delete(route).where(eq(route.worldId, worldId));
+        await db.db.delete(npcDecision).where(eq(npcDecision.worldId, worldId));
+        const epoch = (
+          await db.db.select({ epoch: world.epoch }).from(world).where(eq(world.id, worldId))
+        )[0]!.epoch;
+        return { worldId, epoch };
+      }
+
+      async function footprint(worldId: string): Promise<{ routes: number; decisions: number }> {
+        const [routes] = await db.db
+          .select({ n: sql<string>`count(*)` })
+          .from(route)
+          .where(eq(route.worldId, worldId));
+        const [decisions] = await db.db
+          .select({ n: sql<string>`count(*)` })
+          .from(npcDecision)
+          .where(eq(npcDecision.worldId, worldId));
+        return { routes: Number(routes?.n ?? 0), decisions: Number(decisions?.n ?? 0) };
+      }
+
+      const at = (epoch: Date, days: number, hours = 0) =>
+        new Date(epoch.getTime() + days * 86_400_000 + hours * 3_600_000);
+
+      it('reviews once, however many ticks the day holds', async () => {
+        const { worldId, epoch } = await reviewableWorld();
+
+        const first = await reviewNpcCarriers(db.db, worldId, at(epoch, 28));
+        expect(first.reviewed).toBe(true);
+        expect(first.entered).toBeGreaterThan(0);
+        const afterFirst = await footprint(worldId);
+
+        // Later the same review day, as the next tick and the one after it.
+        for (const hours of [0, 1, 6, 23]) {
+          const again = await reviewNpcCarriers(db.db, worldId, at(epoch, 28, hours));
+          expect(again.reviewed).toBe(false);
+          expect(again.entered).toBe(0);
+          expect(again.logged).toBe(0);
+        }
+        expect(await footprint(worldId)).toEqual(afterFirst);
+      });
+
+      it('reviews again on the next review day', async () => {
+        const { worldId, epoch } = await reviewableWorld();
+        expect((await reviewNpcCarriers(db.db, worldId, at(epoch, 28))).reviewed).toBe(true);
+        expect((await reviewNpcCarriers(db.db, worldId, at(epoch, 35))).reviewed).toBe(true);
+      });
+
+      it('starts afresh when the world is reset', async () => {
+        // ADR-0005: a reset moves `launch_date` to now and leaves the epoch, so
+        // the new timeline's review days repeat the old one's game days. The
+        // claim is keyed by the launch date, so the new timeline's first review
+        // day is not mistaken for one already spent.
+        const { worldId, epoch } = await reviewableWorld();
+        expect((await reviewNpcCarriers(db.db, worldId, at(epoch, 28))).reviewed).toBe(true);
+
+        await db.db
+          .update(world)
+          .set({ launchDate: new Date(Date.UTC(2031, 0, 1)) })
+          .where(eq(world.id, worldId));
+        expect((await reviewNpcCarriers(db.db, worldId, at(epoch, 28))).reviewed).toBe(true);
+      });
+    });
+
     it('does nothing on a day that is not a review day', async () => {
       const worldId = await makeWorld();
       await makeMarket(worldId);
