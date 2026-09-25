@@ -457,27 +457,38 @@ export async function drawLoan(
     }
 
     const rateBps = instrumentRateBps(before.tier, request.instrument, economy.credit);
-    await tx.insert(loan).values({
-      worldId: own.worldId,
-      airlineId: own.id,
-      instrument: request.instrument,
-      principalMinor: request.principalMinor,
-      outstandingMinor: request.principalMinor,
-      annualRateBps: rateBps,
-      termMonths: economy.credit.tiers[before.tier].termMonths,
-      tierAtDraw: before.tier,
-      status: 'active',
-      securedAirframeId: request.securedAirframeId ?? null,
-      drawnAt: gameNow,
-    });
+    const [drawn] = await tx
+      .insert(loan)
+      .values({
+        worldId: own.worldId,
+        airlineId: own.id,
+        instrument: request.instrument,
+        principalMinor: request.principalMinor,
+        outstandingMinor: request.principalMinor,
+        annualRateBps: rateBps,
+        termMonths: economy.credit.tiers[before.tier].termMonths,
+        tierAtDraw: before.tier,
+        status: 'active',
+        securedAirframeId: request.securedAirframeId ?? null,
+        drawnAt: gameNow,
+      })
+      .returning({ id: loan.id });
+    if (!drawn) throw new Error(`Loan insert for airline ${own.id} returned no row`);
 
-    await moveAirlineCash(tx, {
+    // Keyed by the loan, because AIR-06's `(cause, reference)` is unique across
+    // the whole table. The instrument and rate were the key once, which let
+    // exactly one draw per instrument and rate exist in the database; every later
+    // one, by anybody, collided with it. `interest:<loanId>:…` keys the same way.
+    const movement = await moveAirlineCash(tx, {
       airlineId: own.id,
       amountMinor: request.principalMinor,
       cause: 'loan_draw',
-      reference: `${request.instrument} at ${String(rateBps)}bps`,
+      reference: `loan:${drawn.id}`,
       occurredAt: gameNow,
     });
+    if (movement.status !== 'applied') {
+      throw new Error(`Loan ${drawn.id} was written but its draw did not move cash`);
+    }
 
     return { ok: true as const, standing: await readCreditStanding(tx, own) };
   });
