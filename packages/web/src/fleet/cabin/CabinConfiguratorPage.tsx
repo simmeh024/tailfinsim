@@ -28,7 +28,7 @@ import { Inspector } from './Inspector';
 import { sectionsOf } from './layout';
 import { CABIN_PRESETS, cloneConfig, presetFor } from './presets';
 import { SummaryBar } from './SummaryBar';
-import { CABIN_CLASS_META, MONUMENT_KINDS } from './types';
+import { CABIN_CLASS_META, isCabinConfig, MONUMENT_KINDS } from './types';
 
 import type { Constraint, ConstraintStatus } from './analysis';
 import type { CabinConfig } from './types';
@@ -44,9 +44,10 @@ function loadDraft(type: string): CabinConfig | null {
   try {
     const raw = window.localStorage.getItem(draftKey(type));
     if (raw === null) return null;
-    const parsed = JSON.parse(raw) as CabinConfig;
-    if (!Array.isArray(parsed.elements)) return null;
-    return parsed;
+    const parsed: unknown = JSON.parse(raw);
+    // A draft this build cannot draw falls back to the preset rather than
+    // crashing the page; see `isCabinConfig`.
+    return isCabinConfig(parsed) ? parsed : null;
   } catch {
     return null;
   }

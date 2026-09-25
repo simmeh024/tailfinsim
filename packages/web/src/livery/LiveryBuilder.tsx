@@ -14,6 +14,7 @@ import { useOutletContext } from 'react-router';
 import { LiveryBlendMode, LiveryZone, type LiveryLayer } from '@tailfin/shared';
 
 import { useContextSelection } from '../shell/context-selection';
+import { StateBlock } from '../ui/StateBlock';
 import { useBuildInfo } from '../version/BuildBadge';
 
 import { DevelopmentAircraftPreview } from './DevelopmentAircraftPreview';
@@ -925,6 +926,9 @@ export function LiveryBuilder({
                   >
                     + Add fill layer
                   </button>
+                  {history.refused !== undefined && (
+                    <StateBlock kind="refused">{history.refused}</StateBlock>
+                  )}
                 </section>
 
                 <section className="livery-tool-section">

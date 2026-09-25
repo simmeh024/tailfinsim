@@ -114,6 +114,37 @@ describe('M6-03 livery editor history', () => {
     expectUndoable(state, { type: 'layer.remove', id: addedId });
   });
 
+  it('refuses an edit that would outgrow the document, instead of throwing', () => {
+    // The reducer runs during render, so a throw here unmounted the whole app.
+    // The page allows a hundred layers and about forty-five fit under the cap.
+    let state = createEditorHistory();
+    let refusedAfter: number | null = null;
+    for (let index = 0; index < 100 && refusedAfter === null; index += 1) {
+      const before = state.present;
+      state = liveryEditorReducer(state, {
+        type: 'layer.add',
+        id: nextBaseLayerId(state.present.document),
+        name: `Fill ${String(index)}`,
+        zone: 'engine_nacelles',
+        mode: 'split',
+        primary: DEFAULT_PRIMARY_COLOR,
+        secondary: DEFAULT_SECONDARY_COLOR,
+      });
+      if (state.refused !== undefined) {
+        refusedAfter = index;
+        expect(state.present).toBe(before);
+      }
+    }
+    expect(refusedAfter).not.toBeNull();
+    expect(state.refused).toMatch(/20 KB size limit/);
+
+    // The next edit that fits clears the notice.
+    const last = state.present.document.layers.at(-1);
+    if (!last) throw new Error('no layers');
+    state = liveryEditorReducer(state, { type: 'layer.remove', id: last.id });
+    expect(state.refused).toBeUndefined();
+  });
+
   it('invalidates redo after a new mutation and caps retained history', () => {
     let state = createEditorHistory();
     for (let index = 0; index < 120; index += 1) {

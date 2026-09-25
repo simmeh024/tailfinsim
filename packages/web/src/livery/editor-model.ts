@@ -1,6 +1,7 @@
 import {
   LIVERY_DOCUMENT_FORMAT,
   LIVERY_DOCUMENT_FORMAT_VERSION,
+  LIVERY_DOCUMENT_MAX_BYTES,
   LiveryColor,
   LiveryDocument,
   LiveryDocumentV1,
@@ -28,6 +29,11 @@ export interface LiveryEditorHistory {
   past: readonly LiveryEditorSnapshot[];
   present: LiveryEditorSnapshot;
   future: readonly LiveryEditorSnapshot[];
+  /**
+   * Why the last edit was not applied, until another one is. Set when an edit
+   * would have made the document invalid — in practice, past the size limit.
+   */
+  refused?: string;
 }
 
 export type LiveryEditorAction =
@@ -448,7 +454,25 @@ export function liveryEditorReducer(
     };
   }
 
-  const present = mutateSnapshot(state.present, action);
+  let present: LiveryEditorSnapshot;
+  try {
+    present = mutateSnapshot(state.present, action);
+  } catch {
+    /*
+     * A reducer runs during render, so a throw here unmounted the whole app.
+     * `LiveryDocument.parse` refuses a document at the size cap, and the page
+     * allows a hundred layers when about forty-five fit: the forty-sixth "Add"
+     * blanked the screen. An edit that would make the document invalid is
+     * refused instead, and the design stays as it was.
+     */
+    return {
+      ...state,
+      refused:
+        'That change was not applied: the design would no longer be valid, most often ' +
+        `because it has reached the ${String(LIVERY_DOCUMENT_MAX_BYTES / 1_024)} KB size ` +
+        'limit. Remove a layer to make room.',
+    };
+  }
   if (sameSnapshot(present, state.present)) return state;
   return {
     past: [...state.past, state.present].slice(-LIVERY_HISTORY_LIMIT),

@@ -7,6 +7,7 @@ import { CurrencyProvider } from './currency/CurrencyProvider';
 import { fetchFoundingOptions } from './founding/api';
 import { AppShell } from './shell/AppShell';
 import { ThemeProvider } from './theme/ThemeProvider';
+import { PageErrorBoundary } from './ui/PageErrorBoundary';
 import { StateBlock } from './ui/StateBlock';
 
 import type { ReactNode } from 'react';
@@ -131,9 +132,16 @@ function RouteFallback(): ReactNode {
   );
 }
 
-/** A full-screen route: its own Suspense boundary, because the shell is not there to hold one. */
+/**
+ * A full-screen route: its own Suspense and error boundaries, because the shell is
+ * not there to hold them.
+ */
 function FullScreen({ children }: { children: ReactNode }): ReactNode {
-  return <Suspense fallback={<RouteFallback />}>{children}</Suspense>;
+  return (
+    <PageErrorBoundary>
+      <Suspense fallback={<RouteFallback />}>{children}</Suspense>
+    </PageErrorBoundary>
+  );
 }
 
 /**
