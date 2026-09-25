@@ -69,6 +69,15 @@ controls against the shell stage bounds, and returns from Paint map to the
 model. The real reviewed aircraft was also inspected in a compiled local viewer
 under the enforced policy, at the live editor's constrained width.
 
+That regression needs a WebGL2 context. On the GPU-less CI runner Chromium
+(SwiftShader) and WebKit render in software, but Firefox does not: it blocklists
+WebGL2 there (`AllowWebgl2:false`), and with `webgl.force-enabled` it finds no GL
+driver (`FEATURE_FAILURE_WEBGL_EXHAUSTED_DRIVERS`). Without a context the viewer
+correctly shows its fallback, which the missing-model test covers in every
+browser. So Firefox skips the regression where it has no context — the nightly
+job — and runs it where it has one, such as a machine with a GPU. Chromium and
+WebKit never skip it: a missing context there means something changed.
+
 ## Studio quality pass
 
 The progress viewer now uses a locally generated studio environment for soft
