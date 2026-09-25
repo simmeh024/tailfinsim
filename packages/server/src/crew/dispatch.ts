@@ -311,22 +311,26 @@ async function poolsAtBase(db: Database, crewBaseId: string): Promise<CrewPool[]
       headcount: crewPool.headcount,
       unavailable: crewPool.unavailable,
       onDuty: crewPool.onDuty,
-      reserve: crewPool.reserve,
+      sick: crewPool.sick,
     })
     .from(crewPool)
     .where(eq(crewPool.crewBaseId, crewBaseId));
 
   /*
    * `unavailable` is what `checkComplement` subtracts, and at dispatch time
-   * "cannot be rostered" means in a classroom *or* already working. Folding
-   * `onDuty` in here rather than teaching the pure model about duty keeps
-   * `packages/sim` ignorant of a concept it has no rows for.
+   * "cannot be rostered" means in a classroom, already working *or* off sick.
+   * Folding `onDuty` and `sick` in here rather than teaching the pure model about
+   * duty keeps `packages/sim` ignorant of concepts it has no rows for.
+   *
+   * `sick` was left out once: dispatch then committed heads who were off sick,
+   * and `crew_pool_sick_within_headcount` refused the write in the middle of a
+   * departure — a throw that fails the event for good and strands the flight.
    */
   return rows.map((row) => ({
     family: row.family,
     rank: row.rank,
     headcount: row.headcount,
-    unavailable: row.unavailable + row.onDuty,
+    unavailable: row.unavailable + row.onDuty + row.sick,
   }));
 }
 
@@ -339,13 +343,15 @@ async function reservePoolsAtBase(db: Database, crewBaseId: string): Promise<Cre
       headcount: crewPool.headcount,
       unavailable: crewPool.unavailable,
       onDuty: crewPool.onDuty,
+      sick: crewPool.sick,
       reserve: crewPool.reserve,
     })
     .from(crewPool)
     .where(eq(crewPool.crewBaseId, crewBaseId));
 
   return rows.map((row) => {
-    const free = Math.max(0, row.headcount - row.unavailable - row.onDuty);
+    // A standby head who is off sick is no more on standby than on the line.
+    const free = Math.max(0, row.headcount - row.unavailable - row.onDuty - row.sick);
     const usable = Math.min(row.reserve, free);
     // Expressed as a pool of exactly the usable reserve heads, so the same
     // `checkComplement` answers both questions without a second code path.
