@@ -575,6 +575,13 @@ would be absurd; a game minute moves the terminator a quarter of a degree agains
 seven tenths, so the bucket is invisible. At the flagship 2× that is a rebuild every thirty
 real seconds — what the wall-clock version already cost.
 
+**The reading is one `Date` per second, not one per render.** The hook keeps it in state and
+replaces it on the one-second tick and on each sync, so a consumer may put it in an effect's
+dependencies. It used to be computed during render, and the renderer's selection effect —
+which depends on it and publishes to the shell's context — then re-rendered the map without
+end for as long as anything was selected. `selection.test.tsx` runs the clock and fails the
+map at 500 renders, so that loop fails fast rather than hanging the suite.
+
 A player who has not founded an airline has no world, so the endpoint answers 409 and the chip
 does not render. Shading falls back to wall-clock time there: it is the only time available,
 and a globe with no terminator is worse than one that is an approximation.

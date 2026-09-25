@@ -56,9 +56,26 @@ interface Anchor {
   transitMs: number;
 }
 
+/** The world time at a monotonic instant, by the arithmetic in the header above. */
+function readAt(anchor: Anchor, monotonicNow: number): Date {
+  const realElapsedMs = monotonicNow - anchor.monotonicAtSync + anchor.transitMs;
+  return new Date(anchor.inGameMs + anchor.speedMultiplier * realElapsedMs);
+}
+
 export function useWorldClock(): WorldClockReading {
   const [anchor, setAnchor] = useState<Anchor | null>(null);
-  const [, setTick] = useState(0);
+  /*
+   * The reading itself lives in state, so it is a new object once a second and
+   * not on every render.
+   *
+   * It used to be computed during render — `new Date(...)` each time — so every
+   * consumer received a fresh object on every render. The world map keeps it in
+   * an effect's dependencies, and that effect publishes the selection to the
+   * shell, whose context re-renders the map: a loop that pinned a core for as
+   * long as anything on the map stayed selected, and rebuilt every aircraft layer
+   * on every animation frame besides.
+   */
+  const [reading, setReading] = useState<Date | null>(null);
   const cancelled = useRef(false);
 
   const sync = useCallback(async () => {
@@ -82,7 +99,7 @@ export function useWorldClock(): WorldClockReading {
     if (cancelled.current || clock === null) return;
 
     const receivedAt = performance.now();
-    setAnchor({
+    const next: Anchor = {
       inGameMs: Date.parse(clock.inGameTime),
       speedMultiplier: clock.speedMultiplier,
       monotonicAtSync: receivedAt,
@@ -93,7 +110,9 @@ export function useWorldClock(): WorldClockReading {
        * it arrives, and the correction costs nothing.
        */
       transitMs: (receivedAt - sentAt) / 2,
-    });
+    };
+    setAnchor(next);
+    setReading(readAt(next, receivedAt));
   }, []);
 
   useEffect(() => {
@@ -106,21 +125,19 @@ export function useWorldClock(): WorldClockReading {
     };
   }, [sync]);
 
-  // One re-render a second, which is what a clock showing minutes needs to change
-  // on time without being visibly late. It does not cost a layer rebuild: the
-  // renderer buckets this to the in-game minute before the day/night field sees
-  // it, so deck.gl only hears from it when the minute actually changes.
+  // One new reading a second, which is what a clock showing minutes needs to
+  // change on time without being visibly late — and the only time its identity
+  // changes, so a consumer may keep it in an effect's dependencies. It does not
+  // cost the terminator a layer rebuild: the renderer buckets this to the
+  // in-game minute before the day/night field sees it.
   useEffect(() => {
     if (anchor === null) return;
-    const timer = globalThis.setInterval(() => setTick((n) => n + 1), 1000);
+    const timer = globalThis.setInterval(() => {
+      setReading(readAt(anchor, performance.now()));
+    }, 1000);
     return () => globalThis.clearInterval(timer);
   }, [anchor]);
 
-  if (anchor === null) return { inGameTime: null, speedMultiplier: null };
-
-  const realElapsedMs = performance.now() - anchor.monotonicAtSync + anchor.transitMs;
-  return {
-    inGameTime: new Date(anchor.inGameMs + anchor.speedMultiplier * realElapsedMs),
-    speedMultiplier: anchor.speedMultiplier,
-  };
+  if (anchor === null || reading === null) return { inGameTime: null, speedMultiplier: null };
+  return { inGameTime: reading, speedMultiplier: anchor.speedMultiplier };
 }

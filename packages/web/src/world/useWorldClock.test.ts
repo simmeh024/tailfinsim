@@ -103,6 +103,32 @@ describe('useWorldClock', () => {
     expect(elapsedGameMs).toBeLessThan(610_000);
   });
 
+  it('keeps one reading between ticks, so it can sit in an effect’s dependencies', async () => {
+    respondWith(CLOCK);
+    const { result, rerender } = renderHook(() => useWorldClock());
+    await waitFor(() => {
+      expect(result.current.inGameTime).not.toBeNull();
+    });
+
+    /*
+     * The same object, not merely an equal one. The reading used to be made
+     * during render, so every render handed out a new `Date` — and the world map
+     * keeps it in an effect's dependencies, where that meant the effect ran on
+     * every render and re-rendered the map, for as long as anything was selected.
+     */
+    const reading = result.current.inGameTime;
+    rerender();
+    rerender();
+    expect(result.current.inGameTime).toBe(reading);
+
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+      await Promise.resolve();
+    });
+    expect(result.current.inGameTime).not.toBe(reading);
+    expect(result.current.inGameTime?.getTime() ?? 0).toBeGreaterThan(reading?.getTime() ?? 0);
+  });
+
   it('reports nothing for a player with no world, rather than throwing', async () => {
     // 409 is what the airline boundary answers before anyone has founded.
     respondWith({ code: 'active_world_required', message: 'no' }, 409);

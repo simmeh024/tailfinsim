@@ -25,13 +25,48 @@ interface CapturedDeckProps {
   layers: (Layer | false)[];
 }
 
-const deckCapture = vi.hoisted(() => ({ props: undefined as CapturedDeckProps | undefined }));
+const deckCapture = vi.hoisted(() => ({
+  props: undefined as CapturedDeckProps | undefined,
+  renders: 0,
+  /**
+   * More renders than any honest test makes. A render loop passes it within
+   * milliseconds, and throwing stops the loop: without the ceiling that loop
+   * starved the event loop, and the test hung until the job timed out instead
+   * of failing.
+   */
+  ceiling: 500,
+}));
 
 vi.mock('@deck.gl/react', () => ({
   default: (props: CapturedDeckProps) => {
     deckCapture.props = props;
+    deckCapture.renders += 1;
+    if (deckCapture.renders > deckCapture.ceiling) {
+      throw new Error(`The map re-rendered ${String(deckCapture.ceiling)} times: a render loop`);
+    }
     return null;
   },
+}));
+
+/**
+ * The world clock, off unless a test turns it on.
+ *
+ * Every other test here runs with no clock, as before; the one that needs the
+ * clock *running* sets a reading. That test is the case the suite could not see:
+ * with no clock the renderer falls back to a clock state that moves once a
+ * minute, so the render loop a running clock caused never started in a test.
+ */
+const clockCapture = vi.hoisted(() => ({
+  reading: null as null | {
+    worldId: string;
+    serverTime: string;
+    inGameTime: string;
+    speedMultiplier: number;
+  },
+}));
+
+vi.mock('./clock-api', () => ({
+  fetchWorldClock: () => Promise.resolve(clockCapture.reading),
 }));
 
 const HEATHROW: WorldAirport = {
@@ -146,6 +181,38 @@ beforeEach(() => {
   localStorage.clear();
   localStorage.setItem(WORLD_PROJECTION_STORAGE_KEY, 'flat');
   deckCapture.props = undefined;
+  deckCapture.renders = 0;
+  clockCapture.reading = null;
+});
+
+describe('with the world clock running', () => {
+  it('publishes a selection without re-rendering the map on every render', async () => {
+    clockCapture.reading = {
+      worldId: '00000000-0000-4000-8000-000000000001',
+      serverTime: '2026-09-24T12:00:00.000Z',
+      inGameTime: '2024-10-01T09:00:00.000Z',
+      speedMultiplier: 2,
+    };
+    await renderWorld();
+    // Let the clock's sync land, so the renderer is on the running clock.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    clickAirport(HEATHROW);
+    expect(screen.getByTestId('panel-title')).toHaveTextContent('London Heathrow');
+
+    /*
+     * A tenth of a second, which the one-second clock tick does not reach. The
+     * selection effect used to depend on a `Date` made fresh on every render and
+     * published to the shell's context, which re-rendered the map, which made a
+     * new `Date`: in that window the map re-rendered without end.
+     */
+    const before = deckCapture.renders;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+    expect(deckCapture.renders - before).toBeLessThan(5);
+  });
 });
 
 describe('selecting an airport', () => {
