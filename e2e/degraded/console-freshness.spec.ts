@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+const FIXTURE_WORLD = 'E2E Fixture World';
+
 function apiPath(url: string): string {
   return new URL(url).pathname;
 }
@@ -64,9 +66,17 @@ test.describe('console freshness under API failures', () => {
     const health = (await (await initialHealth).json()) as {
       worlds: { name: string; tickDetail: string }[];
     };
-    const world = health.worlds.find((entry) => entry.name === 'E2E Fixture World');
+    const world = health.worlds.find((entry) => entry.name === FIXTURE_WORLD);
     expect(world).toBeDefined();
-    await expect(page.getByText(world!.tickDetail, { exact: true })).toBeVisible();
+    // Scoped to the fixture world's own card. The tick detail describes a state,
+    // not a world, so every idle world shows the same sentence -- and
+    // `admin/console.spec.ts` creates a second idle world in this database before
+    // this file runs. Unscoped, strict mode found two matches and this test
+    // failed every night from the day it was written.
+    const card = page.locator('.health').filter({
+      has: page.getByText(FIXTURE_WORLD, { exact: true }),
+    });
+    await expect(card.getByText(world!.tickDetail, { exact: true })).toBeVisible();
 
     let intercepted = 0;
     await page.route('**/api/admin/worlds/health', async (route) => {
@@ -93,7 +103,7 @@ test.describe('console freshness under API failures', () => {
     await expect(
       page.getByText(/The last refresh failed; the figures above are older than they look/i),
     ).toBeVisible();
-    await expect(page.getByText(world!.tickDetail, { exact: true })).toBeVisible();
+    await expect(card.getByText(world!.tickDetail, { exact: true })).toBeVisible();
     expect(intercepted).toBe(1);
   });
 
