@@ -340,7 +340,14 @@ export function FoundingPage(): ReactNode {
 
         {noAvailableWorld && (
           <div className="founding__load-error" role="status">
-            <p>There is no open world in which this account can found another airline.</p>
+            {options.memberships.length > 0 ? (
+              <p>
+                You already run an airline. Tailfin cannot yet switch between worlds, so it keeps
+                one airline per player: a second would lock you out of both.
+              </p>
+            ) : (
+              <p>There is no open world in which this account can found another airline.</p>
+            )}
             {options.memberships.length > 0 && <Link to="/world">Return to your airline</Link>}
           </div>
         )}
@@ -440,6 +447,9 @@ export function FoundingPage(): ReactNode {
                         {entry.name}
                         {entry.availability === 'full' ? ' — full' : ''}
                         {entry.availability === 'already-founded' ? ' — already joined' : ''}
+                        {entry.availability === 'founded-elsewhere'
+                          ? ' — one airline per player'
+                          : ''}
                       </option>
                     ))}
                   </select>

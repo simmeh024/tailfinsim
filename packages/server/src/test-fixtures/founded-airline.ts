@@ -202,15 +202,23 @@ export function createFoundedAirlineFixtureHarness(db: Database): FoundedAirline
             );
           }
 
-          const result = await foundAirline(db, selectedPlayer.id, {
-            worldId: selectedWorld.id,
-            name,
-            iataCode,
-            icaoCode,
-            callsign: options.callsign ?? `FIXTURE ${tag}`,
-            baseCountry: options.baseCountry ?? 'NL',
-            hubIdent: selectedHub.ident,
-          });
+          const result = await foundAirline(
+            db,
+            selectedPlayer.id,
+            {
+              worldId: selectedWorld.id,
+              name,
+              iataCode,
+              icaoCode,
+              callsign: options.callsign ?? `FIXTURE ${tag}`,
+              baseCountry: options.baseCountry ?? 'NL',
+              hubIdent: selectedHub.ident,
+            },
+            // The ownership and resource-id suites give one player airlines in two
+            // worlds on purpose: that is the `x-tailfin-world-id` surface they test,
+            // and the one a world picker will use once the client has one.
+            { allowSeveralWorlds: true },
+          );
 
           if (result.ok) {
             owned.airlineId = result.airline.id;

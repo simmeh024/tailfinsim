@@ -402,6 +402,116 @@ describeDb('founding an airline', () => {
     });
   });
 
+  /*
+   * One airline per player until the client can pick a world. ADR-0010 resolves
+   * a request without a world header only while the player has exactly one
+   * airline, and the web client sends no header — so a second airline, in any
+   * world, answered every airline endpoint with `409 active_world_required`.
+   */
+  describe('one airline per player, until a world picker exists', () => {
+    async function airlinesOf(playerId: string): Promise<string[]> {
+      const rows = await db.db
+        .select({ worldId: airline.worldId })
+        .from(airline)
+        .where(eq(airline.playerId, playerId));
+      return rows.map((row) => row.worldId);
+    }
+
+    it('refuses an airline in a second world, and writes nothing there', async () => {
+      const first = await makeWorld();
+      const second = await makeWorld();
+      const hubIdent = await makeHub();
+      const playerId = await makePlayer();
+      expect((await foundAirline(db.db, playerId, input(first, hubIdent))).ok).toBe(true);
+
+      expect(await foundAirline(db.db, playerId, input(second, hubIdent))).toEqual({
+        ok: false,
+        kind: 'founded-elsewhere',
+        worldId: first,
+      });
+      expect(await airlinesOf(playerId)).toEqual([first]);
+    });
+
+    it('counts a ceased airline, because the context resolver counts it too', async () => {
+      const first = await makeWorld();
+      const second = await makeWorld();
+      const hubIdent = await makeHub();
+      const playerId = await makePlayer();
+      const founded = await foundAirline(db.db, playerId, input(first, hubIdent));
+      if (!founded.ok) throw new Error(`first founding refused: ${founded.kind}`);
+      await transitionAirlineStatus(
+        db.db,
+        founded.airline.id,
+        { to: 'ceased', reason: 'test cessation' },
+        new Date('2026-08-21T12:00:00.000Z'),
+      );
+
+      expect(await foundAirline(db.db, playerId, input(second, hubIdent))).toMatchObject({
+        ok: false,
+        kind: 'founded-elsewhere',
+      });
+    });
+
+    it('lets one of two simultaneous foundings in different worlds through', async () => {
+      // Each founding locks only its own world row, so the player row is what
+      // has to serialise them; without it both could pass the check.
+      const first = await makeWorld();
+      const second = await makeWorld();
+      const hubIdent = await makeHub();
+      const playerId = await makePlayer();
+
+      const results = await Promise.all([
+        foundAirline(db.db, playerId, input(first, hubIdent)),
+        foundAirline(db.db, playerId, input(second, hubIdent)),
+      ]);
+      expect(results.filter((result) => result.ok)).toHaveLength(1);
+      expect(results.filter((result) => !result.ok)).toEqual([
+        expect.objectContaining({ ok: false, kind: 'founded-elsewhere' }),
+      ]);
+      expect(await airlinesOf(playerId)).toHaveLength(1);
+    });
+
+    it('says so on the founding desk and refuses over HTTP', async () => {
+      const first = await makeWorld();
+      const second = await makeWorld();
+      const hubIdent = await makeHub();
+      const playerId = await makePlayer();
+      expect((await foundAirline(db.db, playerId, input(first, hubIdent))).ok).toBe(true);
+
+      const app = await buildApp({ env, db });
+      try {
+        const cookie = await cookieFor(playerId);
+        const options = AirlineFoundingOptionsResponse.parse(
+          (
+            await app.inject({
+              method: 'GET',
+              url: '/api/airlines/founding-options',
+              headers: { cookie },
+            })
+          ).json(),
+        );
+        expect(options.worlds.find((entry) => entry.id === first)?.availability).toBe(
+          'already-founded',
+        );
+        expect(options.worlds.find((entry) => entry.id === second)?.availability).toBe(
+          'founded-elsewhere',
+        );
+
+        const response = await app.inject({
+          method: 'POST',
+          url: '/api/airlines',
+          headers: { cookie },
+          payload: input(second, hubIdent),
+        });
+        expect(response.statusCode).toBe(409);
+        expect(response.json()).toMatchObject({ code: 'airline_founded_elsewhere' });
+        expect(await airlinesOf(playerId)).toEqual([first]);
+      } finally {
+        await app.close();
+      }
+    });
+  });
+
   it.each(['staging', 'locked', 'archived'] as const)(
     'refuses a %s world and says which status it has',
     async (status) => {

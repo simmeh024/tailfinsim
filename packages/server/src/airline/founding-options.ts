@@ -89,11 +89,15 @@ export async function listAirlineFoundingOptions(
         throw new Error(`World ${row.id} pins unknown economy config ${row.economyConfigVersion}`);
       }
       const airlines = airlinesByWorld.get(row.id) ?? 0;
+      // Any airline counts, ceased or in an archived world: ADR-0010's resolver
+      // counts every one, and a second of any kind locks the player out of both.
       const availability = ownedWorlds.has(row.id)
         ? ('already-founded' as const)
-        : row.playerCap !== null && airlines >= row.playerCap
-          ? ('full' as const)
-          : ('available' as const);
+        : memberships.length > 0
+          ? ('founded-elsewhere' as const)
+          : row.playerCap !== null && airlines >= row.playerCap
+            ? ('full' as const)
+            : ('available' as const);
 
       return {
         id: row.id,

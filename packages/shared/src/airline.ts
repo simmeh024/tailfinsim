@@ -220,7 +220,14 @@ export const AirlineFoundingWorld = z.object({
   freeHubAllowance: z.number().int().nonnegative(),
   playerCap: z.number().int().positive().nullable(),
   airlines: z.number().int().nonnegative(),
-  availability: z.enum(['available', 'already-founded', 'full']),
+  /**
+   * `founded-elsewhere`: the player already has an airline in another world.
+   * ADR-0010 resolves a request to the player's airline without a world header
+   * only while there is exactly one, and the client has no world picker to send
+   * that header — so a second airline would answer every airline endpoint with
+   * `409 active_world_required`. One airline per player, until the picker exists.
+   */
+  availability: z.enum(['available', 'already-founded', 'founded-elsewhere', 'full']),
 });
 export type AirlineFoundingWorld = z.infer<typeof AirlineFoundingWorld>;
 

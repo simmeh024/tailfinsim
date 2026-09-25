@@ -1,4 +1,4 @@
-import { and, count, eq } from 'drizzle-orm';
+import { and, count, eq, ne } from 'drizzle-orm';
 
 import {
   INITIAL_AIRLINE_REPUTATION,
@@ -12,7 +12,7 @@ import {
 import { gameTime } from '@tailfin/sim';
 
 import { type Database } from '../db/client';
-import { airline, airlineHub, airport, world } from '../db/schema';
+import { airline, airlineHub, airport, player, world } from '../db/schema';
 import { loadEconomyConfig } from '../economy/loader';
 
 import { moveAirlineCash } from './cash';
@@ -41,6 +41,15 @@ export interface FoundAirlineDependencies extends AirlineIdentityModerationDepen
    * opening balance dated where it put the world's calendar.
    */
   now?: () => Date;
+  /**
+   * Whether this player may hold airlines in more than one world.
+   *
+   * Refused by default: the client has no world picker to send ADR-0010's
+   * `x-tailfin-world-id`, so a second airline would lock the player out of both.
+   * Only test fixtures allow it, because the ownership and resource-id suites
+   * exercise exactly the multi-world header surface a picker will use.
+   */
+  allowSeveralWorlds?: boolean;
 }
 
 export type FoundAirlineResult =
@@ -71,7 +80,13 @@ export type FoundAirlineResult =
       alternatives: string[];
       advisory: AirlineCodeAvailabilityAdvisory;
     }
-  | { ok: false; kind: 'already-founded'; worldId: string };
+  | { ok: false; kind: 'already-founded'; worldId: string }
+  /**
+   * The player already has an airline in another world. One per player until a
+   * world picker exists: ADR-0010 resolves an airline without a world header only
+   * while there is exactly one, so a second would lock the player out of both.
+   */
+  | { ok: false; kind: 'founded-elsewhere'; worldId: string };
 
 /** Walk through Drizzle's wrapper to the Postgres constraint that actually fired. */
 function constraintName(error: unknown): string | null {
@@ -141,6 +156,36 @@ export async function foundAirline(
       }
       if (selectedWorld.status !== 'open') {
         return { ok: false, kind: 'world-not-open', status: selectedWorld.status };
+      }
+
+      /*
+       * One airline per player, until the client can say which world it means.
+       *
+       * ADR-0010 resolves a request to the player's airline without a world
+       * header only while there is exactly one, and the client has no world
+       * picker to send that header. A second airline — in any world, even beside
+       * a ceased one, which the resolver counts too — therefore turned every
+       * airline endpoint into `409 active_world_required` and locked the player
+       * out of both. The founding desk offered it anyway.
+       *
+       * The player row is locked first because the world lock above cannot
+       * serialise this: two foundings in two different worlds lock two different
+       * world rows, and both would pass the check below.
+       */
+      if (dependencies.allowSeveralWorlds !== true) {
+        await tx
+          .select({ id: player.id })
+          .from(player)
+          .where(eq(player.id, playerId))
+          .for('update');
+        const elsewhere = await tx
+          .select({ worldId: airline.worldId })
+          .from(airline)
+          .where(and(eq(airline.playerId, playerId), ne(airline.worldId, selectedWorld.id)))
+          .limit(1);
+        if (elsewhere[0]) {
+          return { ok: false, kind: 'founded-elsewhere', worldId: elsewhere[0].worldId };
+        }
       }
 
       // The world's own economy, read through its pin rather than from a code

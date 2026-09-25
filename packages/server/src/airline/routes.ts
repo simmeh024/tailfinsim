@@ -103,6 +103,13 @@ async function sendRefusal(reply: FastifyReply, result: Exclude<FoundAirlineResu
         code: 'airline_already_founded',
         message: 'You already own an airline in this world',
       });
+    case 'founded-elsewhere':
+      return reply.code(409).send({
+        code: 'airline_founded_elsewhere',
+        message:
+          'You already have an airline in another world. Tailfin runs one airline per ' +
+          'player until it can switch between worlds.',
+      });
   }
 }
 

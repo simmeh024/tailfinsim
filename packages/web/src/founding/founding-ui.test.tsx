@@ -84,6 +84,7 @@ const AVAILABLE_CODES: AirlineCodeAvailabilityResponse = {
 interface StubOptions {
   codes?: AirlineCodeAvailabilityResponse;
   foundingRefusal?: { status: number; body: unknown };
+  options?: AirlineFoundingOptionsResponse;
 }
 
 function answer(status: number, body: unknown) {
@@ -102,7 +103,9 @@ function stubApi(settings: StubOptions = {}) {
       const url = String(input);
       if (url === '/api/me') return answer(200, SIGNED_IN);
       if (url === '/api/version') return answer(503, {});
-      if (url === '/api/airlines/founding-options') return answer(200, OPTIONS);
+      if (url === '/api/airlines/founding-options') {
+        return answer(200, settings.options ?? OPTIONS);
+      }
       if (url.startsWith('/api/airlines/founding-airports')) {
         return answer(200, {
           airports: url.includes('?q=') ? [FLAGSHIP] : [MEDIUM],
@@ -196,6 +199,30 @@ afterEach(() => {
 });
 
 describe('the founding desk', () => {
+  it('explains, rather than offers, a second airline to a player who has one', async () => {
+    // The client sends no world header, so a second airline would answer every
+    // airline endpoint with 409 and lock the player out of both (ADR-0010).
+    stubApi({
+      options: {
+        memberships: [{ id: '33333333-4444-4555-8666-777777777777', worldId: WORLD_ID }],
+        worlds: [
+          { ...OPTIONS.worlds[0]!, availability: 'already-founded' },
+          {
+            ...OPTIONS.worlds[0]!,
+            id: '55555555-6666-4777-8888-999999999999',
+            name: 'Second world',
+            availability: 'founded-elsewhere',
+          },
+        ],
+      },
+    });
+    await renderAt();
+
+    expect(await screen.findByText(/one airline per player/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Return to your airline' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Found airline' })).not.toBeInTheDocument();
+  });
+
   it('routes a signed-in player with no airline to the no-menu cold open', async () => {
     stubApi();
     await renderAt('/');
