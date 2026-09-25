@@ -1,9 +1,9 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { moveAirlineCash } from '../airline/cash';
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { airline, creditStanding, loan } from '../db/schema';
+import { airline, cashMovement, creditStanding, loan } from '../db/schema';
 import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixture,
@@ -113,6 +113,45 @@ describeDb('credit standing and drawing a loan', () => {
       .from(airline)
       .where(eq(airline.id, fixture.airline.id));
     expect(Number(airlineRow?.cash ?? 0)).toBe(before + 20_000_000);
+  });
+
+  /*
+   * The draw's cash movement used to be keyed `"<instrument> at <rate>bps"`, and
+   * AIR-06's `(cause, reference)` key is unique across the whole table -- so the
+   * first working-capital draw at the startup rate anywhere in the database was
+   * the only one there could ever be. Every later one at that rate, by any airline
+   * in any world, found that movement, failed `assertSameCause` and answered 500.
+   * Keying it by the loan makes it unique per obligation, which is what it records.
+   */
+  it('lets two airlines draw the same instrument at the same rate', async () => {
+    const first = await fixtures.create();
+    const second = await fixtures.create();
+
+    for (const fixture of [first, second]) {
+      const outcome = await drawLoan(db.db, own(fixture), {
+        instrument: 'working_capital',
+        principalMinor: 10_000_000,
+      });
+      expect(outcome.ok).toBe(true);
+    }
+
+    for (const fixture of [first, second]) {
+      const [drawn] = await db.db
+        .select({ id: loan.id, annualRateBps: loan.annualRateBps })
+        .from(loan)
+        .where(eq(loan.airlineId, fixture.airline.id));
+      expect(drawn?.annualRateBps).toBe(1_700);
+      // Keyed by the loan it paid out, so the movement and the obligation join.
+      const movements = await db.db
+        .select({ reference: cashMovement.reference, amountMinor: cashMovement.amountMinor })
+        .from(cashMovement)
+        .where(
+          and(eq(cashMovement.airlineId, fixture.airline.id), eq(cashMovement.cause, 'loan_draw')),
+        );
+      expect(movements).toEqual([
+        { reference: `loan:${drawn?.id ?? ''}`, amountMinor: 10_000_000 },
+      ]);
+    }
   });
 
   it('refuses more than the founder facility allows', async () => {
