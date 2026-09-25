@@ -28,6 +28,23 @@ afterEach(() => {
 });
 
 describe('CabinConfiguratorPage', () => {
+  it('falls back to the preset when a stored draft is one this build cannot draw', () => {
+    // A preview branch's monument, say. The page indexes its tables by `kind`, so
+    // this draft used to throw during render — and, while it stayed stored, on
+    // every visit to the page.
+    window.localStorage.setItem(
+      'tailfin.cabin.draft.A320neo',
+      JSON.stringify({
+        typeDesignation: 'A320neo',
+        version: 1,
+        elements: [{ kind: 'bar_cart', id: 'new-1' }],
+      }),
+    );
+    renderAt('A320neo');
+    expect(screen.getByRole('heading', { level: 1, name: 'A320neo' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Row 1,/ })).toBeInTheDocument();
+  });
+
   it('opens on the requested type with its certified ceiling', () => {
     renderAt('A320neo');
     expect(screen.getByRole('heading', { level: 1, name: 'A320neo' })).toBeInTheDocument();

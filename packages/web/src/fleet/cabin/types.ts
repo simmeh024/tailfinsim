@@ -88,6 +88,43 @@ export interface CabinConfig {
   elements: CabinElement[];
 }
 
+/** An aisle layout: groups of seats between aisles, `3-3`, `1-2-1`. */
+const SEAT_LAYOUT = /^\d+(-\d+)*$/;
+
+function isCabinElement(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false;
+  const element = value as Record<string, unknown>;
+  if (typeof element.id !== 'string' || element.id === '') return false;
+  if (element.kind !== 'seats') return MONUMENT_KINDS.includes(element.kind as MonumentKind);
+  return (
+    CABIN_CLASSES.includes(element.cabinClass as CabinClass) &&
+    typeof element.productId === 'string' &&
+    typeof element.seatLayout === 'string' &&
+    SEAT_LAYOUT.test(element.seatLayout) &&
+    typeof element.pitchIn === 'number' &&
+    Number.isFinite(element.pitchIn) &&
+    element.pitchIn > 0 &&
+    typeof element.isExitRow === 'boolean'
+  );
+}
+
+/**
+ * Whether stored JSON is a cabin this build can draw.
+ *
+ * A draft lives in `localStorage` across deploys — including a preview branch's
+ * that knew a monument or class this build does not — and the page indexes its
+ * tables by `kind` and `cabinClass` and splits `seatLayout` unguarded. One
+ * unknown value therefore threw during render; with no error boundary that
+ * blanked the whole app, and because the draft stayed stored, on every visit.
+ */
+export function isCabinConfig(value: unknown): value is CabinConfig {
+  if (typeof value !== 'object' || value === null) return false;
+  const config = value as Record<string, unknown>;
+  if (typeof config.typeDesignation !== 'string') return false;
+  if (typeof config.version !== 'number' || !Number.isFinite(config.version)) return false;
+  return Array.isArray(config.elements) && config.elements.every(isCabinElement);
+}
+
 /**
  * The immutable facts about the airframe the cabin is fitted to. Supplied by the
  * preset (a stand-in for the type spec + catalogue) and never edited here.
