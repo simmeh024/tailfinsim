@@ -21,7 +21,7 @@
     "@tailfin/shared": "workspace:*",
     "gltf-validator": "2.0.0-dev.3.10",
     "meshoptimizer": "^1.2.0",
-    "sharp": "^0.35.3",
+    "sharp": "^0.35.4",
     "three": "^0.185.1",
     "watlas": "1.0.1",
     "zod": "^4.4.3"
