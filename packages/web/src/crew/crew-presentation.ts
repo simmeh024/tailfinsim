@@ -235,7 +235,7 @@ export function familyCoverage(crew: CrewResponse): readonly FamilyCoverage[] {
   const training = new Map<string, number>();
   for (const base of crew.bases) {
     for (const pool of base.pools) {
-      const key = `${pool.family} ${pool.rank}`;
+      const key = `${pool.family}\u0000${pool.rank}`;
       training.set(key, (training.get(key) ?? 0) + pool.unavailable);
     }
   }
@@ -247,7 +247,7 @@ export function familyCoverage(crew: CrewResponse): readonly FamilyCoverage[] {
       rank: row.rank,
       required: row.required,
       available: row.available,
-      inTraining: training.get(`${row.family} ${row.rank}`) ?? 0,
+      inTraining: training.get(`${row.family}\u0000${row.rank}`) ?? 0,
       delta: row.delta,
       status: row.delta < 0 ? 'short' : row.delta === 0 ? 'exact' : 'surplus',
     });
