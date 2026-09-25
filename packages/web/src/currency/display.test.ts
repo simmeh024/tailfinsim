@@ -2,7 +2,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import type { CurrencyRateView } from '@tailfin/shared';
 
-import { activeCurrency, compactUsdMinor, formatUsdMinor, setDisplayCurrency } from './display';
+import {
+  activeCurrency,
+  compactUsdMinor,
+  formatUsdMinor,
+  inputToUsdMinor,
+  setDisplayCurrency,
+  usdMinorToInput,
+} from './display';
 
 /**
  * The display-currency formatter (M8-02).
@@ -67,6 +74,49 @@ describe('formatUsdMinor', () => {
     setDisplayCurrency('ZZZ', RATES);
     // Unsupported code resolves to USD.
     expect(activeCurrency()).toBe('USD');
+  });
+});
+
+/*
+ * A money field's two directions. A field pre-filled with a *formatted* figure
+ * cannot be read back — the pricing tab once pre-filled `$120.00` and dropped
+ * every cabin the player did not retype — so the field holds a plain number in
+ * the display currency, and what is typed there comes back as USD minor units.
+ */
+describe('money fields', () => {
+  it('shows a plain number in the display currency, at its own decimals', () => {
+    setDisplayCurrency('USD', RATES);
+    expect(usdMinorToInput(123_456)).toBe('1234.56');
+    setDisplayCurrency('EUR', RATES);
+    expect(usdMinorToInput(12_000)).toBe('108.00');
+    setDisplayCurrency('JPY', RATES);
+    expect(usdMinorToInput(12_000)).toBe('18000');
+  });
+
+  it('reads a typed number back as USD minor units', () => {
+    setDisplayCurrency('USD', RATES);
+    expect(inputToUsdMinor('99')).toBe(9_900);
+    expect(inputToUsdMinor(' 120.5 ')).toBe(12_050);
+    setDisplayCurrency('EUR', RATES);
+    expect(inputToUsdMinor('90.00')).toBe(10_000);
+  });
+
+  it('refuses anything that is not a plain non-negative number', () => {
+    setDisplayCurrency('USD', RATES);
+    for (const typed of ['', '$120.00', '1,234.00', '-5', '12abc', '.5', '1e3']) {
+      expect(inputToUsdMinor(typed)).toBeUndefined();
+    }
+  });
+
+  it('round-trips what it shows, in every test currency', () => {
+    for (const code of ['USD', 'EUR', 'JPY']) {
+      setDisplayCurrency(code, RATES);
+      for (const usdMinor of [0, 1, 99, 12_000, 30_000, 123_457, 9_999_999]) {
+        // JPY shows whole yen, which is finer than a US cent, so it comes back
+        // exactly as well.
+        expect(inputToUsdMinor(usdMinorToInput(usdMinor))).toBe(usdMinor);
+      }
+    }
   });
 });
 

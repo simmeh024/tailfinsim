@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { CABIN_ORDER } from '@tailfin/shared';
 import type {
@@ -10,6 +10,7 @@ import type {
   WaterfallSegment,
 } from '@tailfin/shared';
 
+import { activeCurrency, inputToUsdMinor, usdMinorToInput } from '../../currency/display';
 import { Button } from '../../ui/Button';
 import { StateBlock } from '../../ui/StateBlock';
 import {
@@ -33,15 +34,17 @@ import type { ReactNode } from 'react';
  * Every number still comes from the server; this package has no economics in it
  * (invariant 1, and ESLint refuses the client an import of `@tailfin/sim`). The
  * only change from before is where it lives: its own tab, not the whole page.
+ *
+ * ## The fields are in the display currency, and the table is replaced whole
+ *
+ * `PUT /fares` replaces the route's whole fare table, so every cabin the page
+ * does not send is a cabin it deletes. The fields therefore hold a plain number
+ * in the player's display currency — the currency of the market average and the
+ * floor beside them — and a cabin the player has not touched sends its stored
+ * fare exactly rather than a round trip through that currency. They were once
+ * pre-filled with the *formatted* figure (`$120.00`), which reads back as NaN, so
+ * every cabin the player did not retype was dropped and Save deleted its fare.
  */
-
-function toMinor(input: string): number | undefined {
-  const trimmed = input.trim();
-  if (trimmed === '') return undefined;
-  const value = Number(trimmed);
-  if (!Number.isFinite(value) || value < 0) return undefined;
-  return Math.round(value * 100);
-}
 
 const CABIN_LABEL: Record<CabinClass, string> = {
   first: 'First',
@@ -55,15 +58,19 @@ function Position({
   draft,
   onChange,
   violation,
+  unreadable,
 }: {
   position: CabinMarketPosition;
   draft: string;
   onChange: (value: string) => void;
   violation: FareFloorViolation | undefined;
+  /** The field holds something that is not a number, so it cannot be sent. */
+  unreadable: boolean;
 }): ReactNode {
   const { cabin } = position;
+  const describedBy = unreadable ? `unreadable-${cabin}` : violation ? `floor-${cabin}` : undefined;
   return (
-    <tr className={violation ? 'fares__row fares__row--refused' : 'fares__row'}>
+    <tr className={violation || unreadable ? 'fares__row fares__row--refused' : 'fares__row'}>
       <th scope="row" className="fares__cabin">
         {CABIN_LABEL[cabin]}
         <span className="fares__seats">
@@ -79,13 +86,18 @@ function Position({
             inputMode="decimal"
             value={draft}
             disabled={position.seats === 0}
-            aria-invalid={violation !== undefined}
-            aria-describedby={violation ? `floor-${cabin}` : undefined}
+            aria-invalid={violation !== undefined || unreadable}
+            aria-describedby={describedBy}
             onChange={(event) => {
               onChange(event.target.value);
             }}
           />
         </label>
+        {unreadable && (
+          <span id={`unreadable-${cabin}`} className="fares__violation" role="alert">
+            Enter the fare as a plain number, without a currency sign.
+          </span>
+        )}
       </td>
       <td className="figure">{major(position.marketAverageMinor)}</td>
       <td className="figure">
@@ -274,31 +286,68 @@ function Waterfall({ route }: { route: RouteSummary }): ReactNode {
   );
 }
 
-export function PricingTab({ route }: { route: RouteSummary }): ReactNode {
-  const [draft, setDraft] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      CABIN_ORDER.map((cabin) => [
-        cabin,
-        route.fares[cabin] === undefined ? '' : major(route.fares[cabin]),
-      ]),
-    ),
+/** The stored fares as the fields show them: plain numbers in the display currency. */
+function fieldsFor(fares: FareTable): Record<string, string> {
+  return Object.fromEntries(
+    CABIN_ORDER.map((cabin) => [
+      cabin,
+      fares[cabin] === undefined ? '' : usdMinorToInput(fares[cabin]),
+    ]),
   );
+}
+
+export function PricingTab({
+  route,
+  onSaved,
+}: {
+  route: RouteSummary;
+  /**
+   * The table the server now holds, so the page's copy of the route follows it.
+   * Without it, reopening the tab showed the fares from before the save, and
+   * saving again put them back.
+   */
+  onSaved?: (fares: FareTable) => void;
+}): ReactNode {
+  const stored = useMemo(() => fieldsFor(route.fares), [route.fares]);
+  const [draft, setDraft] = useState<Record<string, string>>(() => stored);
   const [preview, setPreview] = useState<FarePreviewResponse | null>(null);
   const [violations, setViolations] = useState<FareFloorViolation[]>([]);
   const [saved, setSaved] = useState(false);
   const [failed, setFailed] = useState(false);
   const [why, setWhy] = useState(false);
 
-  const proposed = useCallback((): FareTable => {
+  /**
+   * The table a Save would send, and the cabins whose field cannot be read.
+   *
+   * A field left as it was shown sends the stored fare itself: converting it to
+   * the display currency and back could move it by a cent, and a Save must not
+   * reprice a cabin nobody touched. An emptied field sends nothing, which is how
+   * a player withdraws a cabin's fare.
+   */
+  const proposal = useMemo(() => {
     const fares: FareTable = {};
+    const unreadable: CabinClass[] = [];
     for (const cabin of CABIN_ORDER) {
-      const minor = toMinor(draft[cabin] ?? '');
-      if (minor !== undefined) fares[cabin] = minor;
+      const text = draft[cabin] ?? '';
+      if (text.trim() === '') continue;
+      const kept = route.fares[cabin];
+      if (kept !== undefined && text === stored[cabin]) {
+        fares[cabin] = kept;
+        continue;
+      }
+      const minor = inputToUsdMinor(text);
+      if (minor === undefined) unreadable.push(cabin);
+      else fares[cabin] = minor;
     }
-    return fares;
-  }, [draft]);
+    return { fares, unreadable };
+  }, [draft, route.fares, stored]);
+
+  const proposed = useCallback((): FareTable => proposal.fares, [proposal]);
+  const blocked = proposal.unreadable.length > 0;
 
   useEffect(() => {
+    // A preview without an unreadable cabin would price a table nobody asked for.
+    if (blocked) return;
     const timer = setTimeout(() => {
       void (async () => {
         try {
@@ -312,15 +361,17 @@ export function PricingTab({ route }: { route: RouteSummary }): ReactNode {
     return () => {
       clearTimeout(timer);
     };
-  }, [route.id, proposed]);
+  }, [route.id, proposed, blocked]);
 
   const onSave = async () => {
+    if (blocked) return;
     setSaved(false);
     try {
       const result = await saveFares(route.id, proposed());
       if (result.ok) {
         setViolations([]);
         setSaved(true);
+        onSaved?.(result.fares);
       } else {
         setViolations(result.violations);
       }
@@ -343,7 +394,7 @@ export function PricingTab({ route }: { route: RouteSummary }): ReactNode {
         <thead>
           <tr>
             <th scope="col">Cabin</th>
-            <th scope="col">Your fare</th>
+            <th scope="col">Your fare ({activeCurrency()})</th>
             <th scope="col">Market avg</th>
             <th scope="col">vs market</th>
             <th scope="col">Floor</th>
@@ -361,6 +412,7 @@ export function PricingTab({ route }: { route: RouteSummary }): ReactNode {
                 setSaved(false);
               }}
               violation={violationFor(position.cabin)}
+              unreadable={proposal.unreadable.includes(position.cabin)}
             />
           ))}
         </tbody>
@@ -407,7 +459,7 @@ export function PricingTab({ route }: { route: RouteSummary }): ReactNode {
       )}
 
       <div className="fares__actions">
-        <Button variant="primary" onClick={() => void onSave()}>
+        <Button variant="primary" disabled={blocked} onClick={() => void onSave()}>
           Save fares
         </Button>
         <button

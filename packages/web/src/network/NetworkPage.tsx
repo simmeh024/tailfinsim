@@ -574,7 +574,21 @@ export function NetworkPage(): ReactNode {
                     />
                   </>
                 )}
-                {tab === 'pricing' && <PricingTab route={currentPlan.route} />}
+                {tab === 'pricing' && (
+                  <PricingTab
+                    // Keyed by route: its fields are a draft of *this* route's fares,
+                    // and without a key switching routes kept the old route's draft
+                    // on screen, where Save would write it to the new one.
+                    key={currentPlan.route.id}
+                    route={currentPlan.route}
+                    onSaved={(fares) => {
+                      const savedId = currentPlan.route.id;
+                      setRoutes((current) =>
+                        (current ?? []).map((r) => (r.id === savedId ? { ...r, fares } : r)),
+                      );
+                    }}
+                  />
+                )}
                 {tab === 'competition' && <CompetitionTab routeId={currentPlan.route.id} />}
                 {tab === 'cargo' && <CargoTab routeId={currentPlan.route.id} />}
                 {tab === 'performance' && <PerformanceTab routeId={currentPlan.route.id} />}
