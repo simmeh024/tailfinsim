@@ -197,7 +197,24 @@ test.describe('Design Studio model progress review', () => {
 
   test('loads embedded texture data under the enforced CSP with controls outside the canvas @smoke', async ({
     page,
+    browserName,
   }) => {
+    // Everything below needs a real WebGL2 context. On a GPU-less CI runner Chromium
+    // (SwiftShader) and WebKit render in software; Firefox does neither. It blocklists
+    // WebGL2 there (`AllowWebgl2:false`), and forced past the blocklist it finds no GL
+    // driver to fall back on. Without a context the preview correctly shows its fallback,
+    // which the test above covers, so Firefox skips this one rather than failing every
+    // night. Only Firefox: in the other two a missing context means something changed.
+    // The string form, as in `foundation.spec.ts`: e2e specs have no DOM lib.
+    const hasWebGL2 = await page.evaluate<boolean>(`(() => {
+      const context = document.createElement('canvas').getContext('webgl2');
+      context?.getExtension('WEBGL_lose_context')?.loseContext();
+      return context !== null;
+    })()`);
+    test.skip(
+      browserName === 'firefox' && !hasWebGL2,
+      'Firefox has no WebGL2 context here; the fallback is covered by the previous test.',
+    );
     await page.setViewportSize({ width: 430, height: 900 });
     const consoleErrors: string[] = [];
     page.on('pageerror', (error) => consoleErrors.push(error.message));
