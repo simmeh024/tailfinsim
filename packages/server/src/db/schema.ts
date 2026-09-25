@@ -2738,6 +2738,40 @@ export const npcDecision = pgTable(
 export type NpcDecisionRow = typeof npcDecision.$inferSelect;
 export type NewNpcDecisionRow = typeof npcDecision.$inferInsert;
 
+/**
+ * One row per NPC review that has run: the claim that makes the review weekly.
+ *
+ * `reviewDue` says whether a game day is a review day, and at 2x a review day
+ * lasts twelve real hours — about 43,000 engine ticks. The review is not
+ * idempotent: it counts consecutive losing reviews, moves fares toward a target
+ * and spends a per-review budget of entries. With nothing recording that it had
+ * run, it ran on every one of those ticks, so a route losing money for "four
+ * reviews running" closed in four seconds. The review now inserts this row
+ * first, in the same transaction as everything it writes, and goes on only if
+ * the insert won.
+ *
+ * Keyed by `launch_date` as well as the game day, so ADR-0005's reset needs no
+ * change and nobody has to remember it: a reset moves `launch_date` to now, and
+ * the first review day of the new timeline has a key no earlier row can hold.
+ * That is the property `reviewDue`'s "no stored last-reviewed column" was
+ * protecting, kept rather than traded away.
+ */
+export const npcReviewClaim = pgTable(
+  'npc_review_claim',
+  {
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    /** The world's `launch_date` when the review ran: the timeline it belongs to. */
+    launchDate: timestamp('launch_date', { withTimezone: true }).notNull(),
+    /** Whole **game** days since the epoch — the review day this claims. */
+    gameDay: integer('game_day').notNull(),
+    /** Real time, so an operator can correlate a review with a worker log line. */
+    claimedAt: timestamp('claimed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.worldId, t.launchDate, t.gameDay] })],
+);
+
 // ---------------------------------------------------------------------------
 // aircraft_type — the versioned catalogue (M4-01, App. C.1–C.2, §22.5)
 // ---------------------------------------------------------------------------

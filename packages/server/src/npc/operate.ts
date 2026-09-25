@@ -17,7 +17,7 @@ import {
 } from '@tailfin/sim';
 
 import { type Database } from '../db/client';
-import { airline, route, world } from '../db/schema';
+import { airline, npcReviewClaim, route, world } from '../db/schema';
 import { type PinnedEconomyConfig } from '../economy/config';
 import { loadEconomyConfig } from '../economy/loader';
 
@@ -84,11 +84,39 @@ function gameDaysSinceEpoch(epoch: Date, gameNow: Date): number {
  * purpose: a column would have to be reset when a world resets (ADR-0005), and
  * forgetting that would leave a freshly reset world believing it had reviewed
  * yesterday. The clock cannot forget.
+ *
+ * It answers which *day* is a review day, and a review day is thousands of ticks
+ * long — twelve real hours at 2x. On its own it let the review run on every one
+ * of them. `claimReviewDay` is the other half, and it is keyed by the world's
+ * launch date so the argument above still holds.
  */
 export function reviewDue(epoch: Date, gameNow: Date, intervalDays: number): boolean {
   const days = gameDaysSinceEpoch(epoch, gameNow);
   if (days < 0) return false;
   return days % Math.max(1, Math.round(intervalDays)) === 0;
+}
+
+/**
+ * Claim this review day for this world, or learn that its review has run.
+ *
+ * Called inside the review's own transaction, so a review that throws rolls its
+ * claim back with everything else it wrote and is tried again on the next tick
+ * — the retry the engine promises. Two workers racing through a handover both
+ * reach the insert; the second waits on the first's uncommitted row and then
+ * finds nothing to claim.
+ */
+async function claimReviewDay(
+  tx: Database,
+  worldId: string,
+  launchDate: Date,
+  gameDay: number,
+): Promise<boolean> {
+  const claimed = await tx
+    .insert(npcReviewClaim)
+    .values({ worldId, launchDate, gameDay })
+    .onConflictDoNothing()
+    .returning({ worldId: npcReviewClaim.worldId });
+  return claimed.length > 0;
 }
 
 interface Carrier {
@@ -97,10 +125,11 @@ interface Carrier {
 }
 
 /**
- * Review every NPC carrier in one world.
+ * Review every NPC carrier in one world, once per review day.
  *
  * Returns without doing anything when the world is not due, which is the common
- * case — the engine ticks far more often than a carrier reviews.
+ * case — the engine ticks far more often than a carrier reviews — and when this
+ * review day's review has already run.
  */
 export async function reviewNpcCarriers(
   db: Database,
@@ -118,7 +147,11 @@ export async function reviewNpcCarriers(
   };
 
   const worlds = await db
-    .select({ epoch: world.epoch, economyConfigVersion: world.economyConfigVersion })
+    .select({
+      epoch: world.epoch,
+      launchDate: world.launchDate,
+      economyConfigVersion: world.economyConfigVersion,
+    })
     .from(world)
     .where(eq(world.id, worldId))
     .limit(1);
@@ -138,8 +171,25 @@ export async function reviewNpcCarriers(
   const active = carriers.flatMap((c): Carrier[] =>
     c.archetype === null ? [] : [{ id: c.id, archetype: c.archetype }],
   );
+  // Before the claim, so a world seeded with carriers later on a review day is
+  // still reviewed that day rather than finding the day already spent.
   if (active.length === 0) return empty;
 
+  const gameDay = gameDaysSinceEpoch(target.epoch, gameNow);
+  return db.transaction(async (tx) => {
+    if (!(await claimReviewDay(tx, worldId, target.launchDate, gameDay))) return empty;
+    return reviewCarriers(tx, worldId, gameNow, economy, active);
+  });
+}
+
+/** One review of every carrier, inside the transaction that claimed it. */
+async function reviewCarriers(
+  db: Database,
+  worldId: string,
+  gameNow: Date,
+  economy: PinnedEconomyConfig,
+  active: readonly Carrier[],
+): Promise<NpcReviewResult> {
   const decisions: PendingDecision[] = [];
   let entered = 0;
   let exited = 0;

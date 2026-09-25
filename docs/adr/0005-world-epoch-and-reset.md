@@ -167,6 +167,7 @@ settles it.
 | `world_event`                                       | **deleted**           | `fire_at` is a game-time instant on the old timeline. Rescheduling onto the new one would be guessing at intent, and the guess would be invisible when it was wrong.                                  |
 | `player`                                            | **kept**              | An airline is a player's presence in _one world_, not the account. Signing in afterwards works and finds no airline. §22.10's anonymise-not-delete rule is about erasing a person, which this is not. |
 | `admin_audit`                                       | **kept**              | Append-only, enforced by trigger. A reset is a thing that happened and the log of it survives the thing it describes.                                                                                 |
+| `npc_review_claim`                                  | **kept, inert**       | Keyed by `launch_date`, which the reset moves, so no claim from the old timeline can match a review day on the new one. Clearing it would be a step a reset could forget; this way it needs none.     |
 | `airport`, `runway`, `catchment`, `dataset_version` | **untouched**         | Global reference data (M1-01), not world state. Re-importing 86,000 airports to rewind a clock would be absurd.                                                                                       |
 
 `airline.player_id` is `ON DELETE RESTRICT` precisely so deleting airlines has to be a
