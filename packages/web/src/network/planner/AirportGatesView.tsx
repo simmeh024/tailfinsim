@@ -10,6 +10,7 @@ import type {
 } from '@tailfin/shared';
 
 import { StateBlock } from '../../ui/StateBlock';
+import { AirportMapLink } from '../../world/AirportMapLink';
 import { fetchAirportGates, leaseStand, releaseStand } from '../api';
 
 import { Chip, major, StatTile } from './ui';
@@ -318,6 +319,16 @@ export function AirportGatesView({ airports }: { airports: readonly string[] }):
               {String(Math.ceil(data.leaseBreakevenTurnsPerMonth))} turns a month
             </span>
           </div>
+
+          {/*
+            The same stands, drawn (M7-07, App. B.7): who holds which pier, with
+            the aircraft on them. A table answers "what does this cost me"; the
+            airport map answers "where is everybody", and B.7's point is that
+            gate competition should be legible as a picture.
+          */}
+          <p className="net-panel__hint">
+            <AirportMapLink icao={data.icao}>Open on the airport map</AirportMapLink>
+          </p>
 
           <Requirement requirement={data.requirement} />
 

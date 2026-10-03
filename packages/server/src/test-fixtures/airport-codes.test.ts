@@ -35,12 +35,14 @@ describe('test airport identities', () => {
     for (const letter of letters) expect(letter).toMatch(/^[A-Z0-9]$/);
   });
 
-  it('mints codes the database will accept', () => {
-    // `airport_icao_code_format`: exactly four of [A-Z0-9].
+  it('mints codes the database and the order contract will both accept', () => {
+    // `airport_icao_code_format` admits four of [A-Z0-9]; an aircraft order's
+    // `deliveryAirportIcao` admits only four letters. A digit namespace that
+    // minted `Q0AA` could not take delivery of an aeroplane (M7-07).
     for (const namespace of namespaces) {
       const next = createAirportIdentities(namespace);
       for (let i = 0; i < 30; i += 1) {
-        expect(next().icaoCode).toMatch(/^[A-Z0-9]{4}$/);
+        expect(next().icaoCode).toMatch(/^[A-Z]{4}$/);
       }
     }
   });

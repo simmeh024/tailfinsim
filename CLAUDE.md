@@ -451,6 +451,15 @@ answer for a first hub — a floor that withdrew it would punish exactly the pla
 [ADR-0029](docs/adr/0029-gates-and-stands.md) the decisions, including which figures of App. B.6's
 growth table reproduce and which do not.
 
+**The airport map (M7-07) is drawn from flights only the worker produces.** `GET
+/api/airports/:icao/apron` finds the aeroplanes on stand, the runway movements and your stands' days
+in `flight` rows, so on a node with no worker the apron is empty and the runways are quiet — which
+reads as **a quiet airport rather than a missing process**; the stands and their holders still show.
+The stand each aeroplane is drawn on is a **display rule** (`assignApronStands`), computed per read
+and stored nowhere, because the game stores no gate assignment (App. B.7 files it post-MVP). Do not
+start persisting it to make the picture "stable": it is already deterministic, and a stored
+position would be a second source of truth the turnaround never reads.
+
 **The training academy is a worker story where the missing process looks like patience
 (M9-01).** §10.1's academy is built at a **crew base**, levels 1–5, with modules inside it, and
 both sweeps are the worker's: `completeDueAcademyBuilds` commissions a level or installs a

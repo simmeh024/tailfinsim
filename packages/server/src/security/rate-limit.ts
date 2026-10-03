@@ -128,6 +128,10 @@ const REPORT_ROUTES = new Set([
   '/api/routes/:routeId/cargo',
   '/api/airlines/founding-airports',
   '/api/world/airports',
+  // M7-07's airport map: the gates picture and its measured day, plus every
+  // aeroplane on the ground here, which reads the world's departed flights to
+  // find each airframe's latest. The world map's cost, at one airport.
+  '/api/airports/:icao/apron',
 ]);
 
 /**

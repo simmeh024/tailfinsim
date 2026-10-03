@@ -28,7 +28,7 @@ App. B.6's table, with what each one actually does in the game.
 | **Contact gate**      | `A1`… | 1 (the quoted price)   | baseline                        |
 | **Remote stand**      | `R1`… | 0.35                   | **+11 min** — passengers bussed |
 | **Overnight parking** | `P1`… | 0.122                  | n/a — nobody is aboard          |
-| **Cargo stand**       | `C1`… | 0.6                    | §12's process, not a turn       |
+| **Cargo stand**       | `F1`… | 0.6                    | §12's process, not a turn       |
 | **Maintenance stand** | `M1`… | 0.5                    | n/a                             |
 
 Only the first two are turnarounds and only they change how long one takes. The `+11 min` is the
@@ -39,6 +39,16 @@ M7-06 is the first thing that ever triggers it.
 and a 20-stand remote apron, a regional field has 2 and 3. Contact gates are lettered by pier in
 twelves (`A1`–`A12`, then `B1`), because that is how an airport numbers them and because App.
 B.7's map draws piers.
+
+**Every label is unique at every tier, and that is checked rather than hoped.** A stand is
+addressed by its label alone, so no non-gate prefix may be a letter a pier can reach. Cargo was
+`C` until M7-07 found that a flagship's 48 contact gates run piers A–D: pier C's `C1`–`C8` and the
+eight cargo stands shared labels, and a flagship cargo stand could never be leased. Cargo is now
+**`F`** (freight) — the earliest reserved letter, so piers may run A–E, sixty contact gates — and
+`gates.ts` refuses to load an inventory where a pier would reach a reserved letter.
+**No migration came with the change**: a lease row naming `C1`–`C8` at a flagship always resolved
+to pier C's contact gate, because the kind is the first inventory match and gates come first, and
+it still does.
 
 ## The three contracts
 
@@ -199,13 +209,119 @@ want it exclusively and somebody is already on it), `409 fee_changed` (the quote
 `422 not_leasable` (common use is paid per turn), `404` for an airport or a stand that does not
 exist.
 
+## The airport map (M7-07)
+
+App. B.7's schematic — _"zoom from the world map into any airport you operate at"_ — reads one
+endpoint, built entirely from facts this subsystem and the flight table already hold. The map is a
+way of **seeing** gates, slots and turns that already decide money; it decides nothing itself.
+
+| Route                           | What                                                                 |
+| ------------------------------- | -------------------------------------------------------------------- |
+| `GET /api/airports/:icao/apron` | the gates answer, aeroplanes on stand, runways, movements, your days |
+
+- **`gates`** is `GET /api/airports/:icao/gates`, embedded unchanged, so the map and the gates panel
+  cannot disagree. Leasing from the map is the existing `POST`/`DELETE`, whose answer is that half.
+- **`aircraft`** are every carrier's aeroplanes on the ground here: an airframe whose **latest
+  departed flight landed here** — at its destination, or here by diversion — and that has not left
+  since. Keyed by the flight that brought it. `departsAt` and `nextDestinationIcao` come from its
+  next not-yet-departed, not-cancelled flight out of here scheduled after it landed. An airframe
+  that has never flown is not drawn, even at its delivery airport — a delivery is not a flight.
+- **`size`** is the catalogue's class: turboprop and regional jets are `regional`, `narrowbody` is
+  `narrowbody`, both widebody classes are `widebody`. Wingspan code alone cannot do it — the ATR 72,
+  the E190-E2 and the A320neo are all code C. A **freighter** is drawn as a passenger type of the
+  same family (the 777F as a 777), or by wingspan code when it has none (the 747-8F).
+- **`runways`** are the import's open runways, helipads left out. `headingDeg` is the lower
+  designator times ten (`09/27` → 90°, `18L/36R` → 180°): the designator's **magnetic** bearing
+  rounded to 10°, a schematic orientation rather than a survey heading, and null when no end is a
+  number.
+- **`movements`** are landings and take-offs within **30 game minutes** of now — the actual instant
+  where there is one, the estimate or schedule for one still due, cancelled flights never.
+- **`standDays`** are **your** turn stands' days: the very turns their utilisation is measured from.
+  `assignStands` now carries each turn's flights through the colouring, and the gates answer's
+  utilisation and this list are two readings of **one** colouring — not a second pass that could
+  disagree with the percentage beside it. A turn's `departsAt` is its arrival plus the measured
+  interval, so an overnight reads as the hours it was counted for.
+
+### What the player sees
+
+The schematic is `packages/web/src/airport/` — an SVG floor plan, so it is the same picture on the
+globe and the flat map, and the world map's zoom hands off into it
+([`world-renderer.md`](world-renderer.md) has the four bands and the hand-off).
+
+- **Topology from the inventory, geometry stylised.** A terminal with one pier per gate letter, odd
+  gates down the left of a pier and even down the right, numbered outward; the cargo area and the
+  maintenance hangar to one side, the remote apron, its overflow and overnight parking to the
+  other; runways below the apron along their headings, near-parallel ones drawn as a set, with a
+  de-icing pad by each threshold. With no runway data a `09/27` is drawn and labelled _assumed_.
+  Runways are shortened to about half the apron's size — at true scale they dwarf it. `layout.ts`
+  is pure and its tests hold that every stand is placed exactly once and nothing overlaps, on
+  every tier's real inventory.
+- **Who holds what, legibly.** Your stands are filled in your colour, a rival's are muted with the
+  holder named on hover and focus, unleased stands are outlines, and an exclusive lease carries a
+  corner notch. Every stand is a focusable button whose accessible name says the same.
+- **Your airline, visible.** Aeroplanes on stand are top-down silhouettes scaled by `size` and
+  filled with their airline's colour — the colour, not a rendered livery; the contract carries no
+  livery. Five rings each (bags, cleaning, catering, fuelling, boarding) tick with the world clock
+  through `turnaroundProgress`, which shares out the **real** modelled turn, so every ring
+  finishes when the turn does. Movements within two game minutes run along the runway.
+- **Interactions.** A stand opens its panel: holders, your contract, the walk-up fee and, for your
+  stands, the day's turns and utilisation with a warning below the floor. **Lease and release on
+  the map** go through the gates `POST`/`DELETE`, echoing the quoted fee, with the house two-step
+  confirm before a release. Your aeroplane opens its own panel; a rival's names itself on hover.
+  The **utilisation heat** toggle shades your stands from idle (below the floor) to jammed (85% of
+  the operating day or more — a display threshold, not a balance number).
+- **Leaving.** Zooming out past the fitted view — through a short overscroll so one wheel notch
+  does not throw the player out — or the back control returns to the world map on this airport.
+  The picture re-reads every sixty real seconds and keeps the last good one if a read fails; the
+  endpoint's `report` rate-limit budget is sixty a minute, so polling faster is not an option.
+
+### Where each aeroplane is drawn
+
+**The game stores no gate assignment.** App. B.7 files _"gate assignment as an optimisation
+puzzle"_ under post-MVP, and nothing in the operation reads which stand an aeroplane is on — a turn
+is priced by `resolveStands` from what the airline **holds**. So `standPosition` is a **display
+rule**, computed fresh on every read by `assignApronStands` in `@tailfin/sim`, and written to agree
+with the model it illustrates:
+
+1. Aeroplanes in arrival order, ties broken by key — the same apron draws the same way every time.
+2. **Your measured turn first.** An aeroplane whose current turn M7-06's measurement put on one of
+   its airline's stands is drawn there, so the gate's rotation and the picture agree.
+3. **Every airline onto its own stands before any walk-up** — contact gates before remote stands,
+   exclusive before preferential. A preferential holder outranks a walk-up (App. B.6).
+4. **A walk-up only onto a stand nobody holds**, because `resolveStands` counts every leased
+   contact gate as gone for a walk-up — a rival's preferential gate is not spare.
+5. **No departure within four game hours** (longer than any modelled turn) means **parked**:
+   overnight parking, then the remote apron, never a contact gate.
+6. A freighter tries a cargo stand first. **Null** when nothing fits.
+
+M7-06's greedy colouring is not reused for this, deliberately: it places a day of _intervals_ onto
+_anonymous_ stands, while the apron places aeroplanes that all overlap _now_ onto _named_ stands
+with owners. What is reused is its answer, through rule 2.
+
+### What is private
+
+The projection the world map already makes. `WorldMapFlight` names every airborne aeroplane's
+airline, colour, registration and type to every player; naming the same aeroplanes on the ground
+adds nothing. Two things stay private: **`flightId`** is your own aeroplane's next departure and
+null for every rival, and **`standDays`** lists only your stands — a rival's rotation and
+utilisation are as private here as on the gates page. Colour is `airlineMapColour(logo, icao)`,
+the world map's own call, so a carrier is one colour on the globe and on the apron.
+
+### It is a worker story
+
+The aeroplanes, the movements and your stands' days are all read off `flight` rows, which only the
+worker creates and moves. On a node with no worker nothing ever lands or leaves, so the apron is
+empty and the runways are quiet — which reads as **a quiet airport rather than a missing process**.
+The stands and who holds them are HTTP state and show everywhere.
+
 ## What M7-06 deliberately did not build
 
-- **The airport map.** App. B.7's 2D schematic with liveries on stand and a utilisation heat
-  overlay is M7-07. The API it needs — the whole apron, per position, with holders — is what this
-  milestone returns.
+- **The airport map.** App. B.7's 2D schematic is M7-07, and its server half is built — see
+  [The airport map](#the-airport-map-m7-07), and the schematic and the world-map zoom into it
+  ([What the player sees](#what-the-player-sees)).
 - **Gate assignment.** App. B.7 files _"gate assignment as an optimisation puzzle"_ under
-  post-MVP, and the greedy colouring here is a measurement device, not a policy.
+  post-MVP, and the greedy colouring here is a measurement device, not a policy. The airport map's
+  `standPosition` (M7-07) is a display rule over the same holdings and is stored nowhere.
 - **Subleasing to other players.** App. B.8's trading row, deferred to MARKET with slot trading.
 - **Towing between waves.** The appendix's own calibration note suggests it as the thing that
   would stop the model overstating flagship-hub gate needs. It trades cheap tugs for expensive

@@ -126,6 +126,7 @@ describe('which budget an endpoint is counted against', () => {
       '/api/routes/:routeId/competition',
       '/api/airlines/founding-airports',
       '/api/world/airports',
+      '/api/airports/:icao/apron',
     ]) {
       expect(rateLimitClassFor('GET', url), `${url} left the report class`).toBe('report');
       expect(registered.has(url), `${url} is classified but not registered`).toBe(true);

@@ -44,10 +44,14 @@
 /**
  * One character per suite that invents airports.
  *
- * Letters first; **digits since M9-06**, when the alphabet ran out. A digit is as
- * good as a letter here — `airport_icao_code_format` admits `[A-Z0-9]{4}`, and
- * the leading `Q` that keeps test rows clear of real ICAO codes is unchanged —
- * so `Q0AA` is as safe as `QAAA`.
+ * Letters first; **digits since M9-06**, when the alphabet ran out. A digit
+ * namespace mints its codes under **`X`** rather than `Q`, with the digit spelled
+ * as a letter — `0` is `XA…`, `1` is `XB…` — so every minted code is four
+ * **letters**. `airport_icao_code_format` would admit `Q0AA`, but the aircraft
+ * order contract does not (`deliveryAirportIcao` is `[A-Z]{4}`, as a real ICAO
+ * location indicator is), and M7-07's suite was the first digit namespace to
+ * deliver an aeroplane to one of its airports. `X`, like `Q`, begins no real ICAO
+ * location indicator, so the reason for `Q` below holds for it unchanged.
  *
  * Keyed by the suite's path so the mapping is greppable from either direction,
  * and asserted distinct in `airport-codes.test.ts` — a duplicate here would put
@@ -81,6 +85,7 @@ export const AIRPORT_CODE_NAMESPACES = {
   'research/store': 'Z',
   'research/routes': 'Y',
   'research/doctrine': '0',
+  'network/apron-db': '1',
 } as const;
 
 export type AirportCodeNamespace = keyof typeof AIRPORT_CODE_NAMESPACES;
@@ -122,8 +127,11 @@ const SOURCE_ID_BASE = 50_000_000;
 export function createAirportIdentities(
   namespace: AirportCodeNamespace,
 ): () => TestAirportIdentity {
-  const letter = AIRPORT_CODE_NAMESPACES[namespace];
+  const letter: string = AIRPORT_CODE_NAMESPACES[namespace];
   const index = Object.keys(AIRPORT_CODE_NAMESPACES).indexOf(namespace);
+  // A letter namespace is `Q<letter>`; a digit one is `X<digit as a letter>`, so
+  // every code is four letters (see `AIRPORT_CODE_NAMESPACES`).
+  const prefix = /^\d$/.test(letter) ? `X${LETTERS[Number(letter)] ?? 'A'}` : `Q${letter}`;
   let serial = 0;
 
   return () => {
@@ -134,7 +142,7 @@ export function createAirportIdentities(
           'namespace holds. Give it a second namespace rather than letting the codes wrap.',
       );
     }
-    const icaoCode = `Q${letter}${LETTERS[Math.floor(n / LETTERS.length)] ?? 'A'}${LETTERS[n % LETTERS.length] ?? 'A'}`;
+    const icaoCode = `${prefix}${LETTERS[Math.floor(n / LETTERS.length)] ?? 'A'}${LETTERS[n % LETTERS.length] ?? 'A'}`;
     return {
       icaoCode,
       ident: `TEST-${icaoCode}`,

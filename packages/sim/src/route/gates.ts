@@ -406,17 +406,25 @@ export interface StandAssignment extends StandOccupancy {
  * stands and leaves the last ones visibly idle, which is exactly the reading the
  * player needs before giving one back.
  */
-export function assignStands(occupancies: readonly StandOccupancy[]): StandAssignment[] {
+export function assignStands<T extends StandOccupancy>(
+  occupancies: readonly T[],
+): (T & { standIndex: number })[] {
   assertOccupancies(occupancies);
-  const ordered = [...occupancies]
-    .map((it, index) => ({ ...it, index }))
-    .sort((a, b) => a.on - b.on || a.off - b.off || a.index - b.index);
+  const ordered = occupancies
+    .map((it, index) => ({ it, index }))
+    .sort((a, b) => a.it.on - b.it.on || a.it.off - b.it.off || a.index - b.index);
 
   /** When each stand next becomes free. */
   const freeAt: number[] = [];
-  const placed: StandAssignment[] = [];
+  const placed: (T & { standIndex: number })[] = [];
 
-  for (const it of ordered) {
+  /*
+   * Generic over the occupancy so a caller's own facts ride through the
+   * colouring untouched (M7-07): the airport map shows *which* turn sits on
+   * which gate, and that has to be this assignment's answer rather than a second
+   * colouring that could disagree with the utilisation printed beside it.
+   */
+  for (const { it } of ordered) {
     let standIndex = freeAt.findIndex((at) => at <= it.on);
     if (standIndex === -1) {
       standIndex = freeAt.length;
@@ -424,7 +432,7 @@ export function assignStands(occupancies: readonly StandOccupancy[]): StandAssig
     } else {
       freeAt[standIndex] = it.off;
     }
-    placed.push({ on: it.on, off: it.off, standIndex });
+    placed.push({ ...it, standIndex });
   }
 
   return placed;
@@ -462,10 +470,26 @@ export function standUtilisation(
   standCount?: number,
   windowMinutes: number = OPERATING_DAY_MINUTES,
 ): StandUtilisation[] {
+  return utilisationOfAssignment(assignStands(occupancies), standCount, windowMinutes);
+}
+
+/**
+ * {@link standUtilisation} for an assignment the caller already holds.
+ *
+ * The airport map (M7-07) needs both halves of one answer — which turns sit on
+ * which stand, and how busy that leaves each one — and colouring twice to get
+ * them would be two answers that merely happen to agree. So the caller colours
+ * once with {@link assignStands} and measures the result here; the gates page's
+ * own `standUtilisation` is this function on the same colouring.
+ */
+export function utilisationOfAssignment(
+  placed: readonly StandAssignment[],
+  standCount?: number,
+  windowMinutes: number = OPERATING_DAY_MINUTES,
+): StandUtilisation[] {
   if (!Number.isFinite(windowMinutes) || windowMinutes <= 0) {
     throw new Error(`A utilisation window must be positive minutes, got ${String(windowMinutes)}`);
   }
-  const placed = assignStands(occupancies);
   const used = placed.reduce((max, it) => Math.max(max, it.standIndex + 1), 0);
   const stands = Math.max(used, standCount ?? 0);
 
@@ -509,17 +533,51 @@ export function standOccupancies(
   arrivals: readonly number[],
   departures: readonly number[],
 ): StandOccupancy[] {
-  const outbound = [...departures].sort((a, b) => a - b);
-  const occupancies: StandOccupancy[] = [];
+  return pairStandTurns(
+    arrivals.map((minute) => ({ minute })),
+    departures.map((minute) => ({ minute })),
+  ).map(({ on, off }) => ({ on, off }));
+}
 
-  for (const on of [...arrivals].sort((a, b) => a - b)) {
-    const next = outbound.find((at) => at >= on);
+/** One arrival paired with the departure that ends its stay, as {@link standOccupancies} pairs them. */
+export interface PairedStandTurn<A, D> extends StandOccupancy {
+  arrival: A;
+  /**
+   * The departure that ends the stay, or null when the rotation never leaves
+   * again. For an overnight this is the day's *first* departure, standing in for
+   * tomorrow's — which is why `off` is past midnight.
+   */
+  departure: D | null;
+}
+
+/**
+ * {@link standOccupancies}, carrying the caller's own facts on each end.
+ *
+ * The same pairing, kept in one place: `standOccupancies` is this with bare
+ * minutes. The airport map (M7-07) shows each turn's registration and where it
+ * came from and went next, and those have to belong to the very turns the gate's
+ * utilisation is measured from — so the facts ride the pairing rather than being
+ * matched back to it afterwards.
+ */
+export function pairStandTurns<A extends { minute: number }, D extends { minute: number }>(
+  arrivals: readonly A[],
+  departures: readonly D[],
+): PairedStandTurn<A, D>[] {
+  // `Array.prototype.sort` is stable, so equal minutes keep the caller's order.
+  const outbound = [...departures].sort((a, b) => a.minute - b.minute);
+  const turns: PairedStandTurn<A, D>[] = [];
+
+  for (const arrival of [...arrivals].sort((a, b) => a.minute - b.minute)) {
+    const on = arrival.minute;
+    const nextIndex = outbound.findIndex((departure) => departure.minute >= on);
+    const next = nextIndex === -1 ? undefined : outbound[nextIndex];
     // Nothing left today: the aircraft stays until tomorrow's first departure,
     // or until the end of the day if the rotation never resumes.
-    const off = next ?? (outbound[0] ?? on) + MINUTES_PER_DAY;
-    occupancies.push({ on, off });
-    if (next !== undefined) outbound.splice(outbound.indexOf(next), 1);
+    const first = outbound[0];
+    const off = next?.minute ?? (first?.minute ?? on) + MINUTES_PER_DAY;
+    turns.push({ on, off, arrival, departure: next ?? first ?? null });
+    if (next !== undefined) outbound.splice(nextIndex, 1);
   }
 
-  return occupancies;
+  return turns;
 }
