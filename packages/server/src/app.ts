@@ -57,6 +57,7 @@ import { registerGateRoutes } from './network/gate-routes';
 import { registerNetworkRoutes } from './network/routes';
 import { registerSlotRoutes } from './network/slot-routes';
 import { registerOfficeRoutes } from './office/routes';
+import { registerResearchRoutes } from './research/routes';
 import { registerScheduleRoutes } from './schedule/routes';
 import { rateLimitOptions } from './security/rate-limit';
 import { registerServiceRoutes } from './service/routes';
@@ -299,6 +300,9 @@ export async function buildApp({
   registerCrewRoutes(app, { db });
   registerRosterRoutes(app, { db });
   registerAcademyRoutes(app, { db });
+  // §10.3's research tree (M9-05), behind the same boundary as the academies
+  // whose levels decide which of its tiers are open.
+  registerResearchRoutes(app, { db });
   registerOfficeRoutes(app, { db });
   registerAutomationRoutes(app, { db });
   registerGroundRoutes(app, { db });

@@ -39,6 +39,7 @@ import { loadWorldFuelContext, marketAt, stationFor } from '../economy/fuel';
 import { loadWorldEconomyConfig } from '../economy/loader';
 import { handlingArrangementFor, handlingPriceBalanceOf } from '../ground/contracts';
 import { resolveStand } from '../network/gates';
+import { accrueResearchPoints } from '../research/points';
 
 import type { Database } from '../db/client';
 import type { EventHandler } from '../sim/event-queue';
@@ -826,6 +827,20 @@ export async function settleArrivedFlight(
       })
       .where(eq(flightResult.flightId, row.id));
   }
+
+  // §10.3's research points (M9-05): Σ(academy levels) × quality × block hours ÷
+  // scaling factor. After the replay guard, so they accrue once — and the only
+  // way points are ever earned. Recorded on the breakdown even at zero.
+  await accrueResearchPoints(
+    tx,
+    {
+      flightId: row.id,
+      airlineId: row.airlineId,
+      worldId: row.worldId,
+      blockMinutes: block.blockMinutes,
+    },
+    economy.research.pointsFormula,
+  );
 
   // The flight's own arrival. `actualArrival` is only written if it is not
   // already set — a diversion or an air return records its own arrival, and this

@@ -563,6 +563,12 @@ export const cashMovementCause = pgEnum('cash_movement_cause', [
   'academy_construction',
   /** What the buildings cost every month once they are teaching (§10.1). */
   'academy_upkeep',
+  /**
+   * The cash half of a §10.3 research node's price (M9-05). Always a debit: the
+   * points half is spent from `research_account`, and nothing turns this cause
+   * — or any other — into points.
+   */
+  'research',
   'admin_adjustment',
   'flight_settlement',
   'disruption_cost',
@@ -1553,6 +1559,14 @@ export const SERVER_OWNED_FINANCIAL_FIELDS = [
   'entitlements',
   'paymentStatus',
   'orderStatus',
+  /*
+   * §10.3: "You cannot buy RP." Research points are earned by settled flights
+   * and nothing else (M9-05), so no request contract may carry a count of them —
+   * every strict write contract is tested against these names.
+   */
+  'researchPoints',
+  'earnedMilli',
+  'spentMilli',
 ] as const;
 
 /**
@@ -3785,6 +3799,135 @@ export const academyModule = pgTable(
     ),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// Research — §10.3's "Operational Doctrine" (M9-05)
+// ---------------------------------------------------------------------------
+
+/**
+ * An airline's research points: what it has earned and what it has spent.
+ *
+ * ## Milli-points, as integers
+ *
+ * §10.3's formula is a rate over flight hours, so a 50-minute sector at a
+ * Training Room earns about a tenth of a point. Stored as a float, the sum
+ * would depend on the order flights settled in; rounded to whole points, the
+ * tenth would vanish and a small airline would earn nothing at all — exactly
+ * the airline the formula is meant to be slow for rather than to stop. So the
+ * account is two integer counts of thousandths, and the balance is their
+ * difference.
+ *
+ * ## Earned and spent, never a balance column
+ *
+ * Two monotonic counts rather than one balance that goes up and down, so the
+ * table can say what it has been told: `earned_milli` only ever rises, and
+ * only in `research/points.ts`'s settlement accrual; `spent_milli` only ever
+ * rises, and only when a project starts. The CHECK below makes "spent more
+ * than was earned" a state Postgres refuses rather than one the writer has to
+ * remember to avoid — and nothing anywhere writes `earned_milli` from cash,
+ * which is §10.3's *"you cannot buy RP"* held by the shape of the code. A
+ * source-scan test (`research/no-purchase.test.ts`) holds that shape.
+ *
+ * No row until the airline first earns a point. A missing row reads as zero.
+ * `updated_at` is the wall-clock audit stamp; points have no game instant of
+ * their own — each was earned by a flight, and `flight_result.breakdown`
+ * records which.
+ */
+export const researchAccount = pgTable(
+  'research_account',
+  {
+    airlineId: uuid('airline_id')
+      .primaryKey()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+
+    /** Thousandths of a research point, ever earned. Only settlement raises it. */
+    earnedMilli: bigint('earned_milli', { mode: 'number' }).notNull().default(0),
+    /** Thousandths of a research point, ever spent on projects. */
+    spentMilli: bigint('spent_milli', { mode: 'number' }).notNull().default(0),
+
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check(
+      'research_account_earned_range',
+      sql`${t.earnedMilli} >= 0 AND ${t.earnedMilli} <= 9007199254740991`,
+    ),
+    check('research_account_spent_nonneg', sql`${t.spentMilli} >= 0`),
+    check('research_account_spent_within_earned', sql`${t.spentMilli} <= ${t.earnedMilli}`),
+  ],
+);
+
+export type ResearchAccountRow = typeof researchAccount.$inferSelect;
+
+/**
+ * One node an airline has researched or is researching (§10.3).
+ *
+ * ## No status column, because completion is lazy
+ *
+ * A project is complete exactly when the world's clock has reached
+ * `completes_at` — `isResearchComplete` in `@tailfin/sim`. There is no sweep
+ * that flips a status and so nothing a missing worker could leave undone: on a
+ * node with no worker, research still finishes on time. It also leaves nothing
+ * for ADR-0005's world reset to forget, the argument the used market makes for
+ * having no "last generated" column.
+ *
+ * ## One project at a time is a rule of the writer, held by a lock
+ *
+ * Which project is "running" depends on the game clock, so no constraint can
+ * express it. The start request takes `research_account`'s row lock before it
+ * reads the projects, which serialises every start for an airline; the unique
+ * key below is the backstop that a node is researched once.
+ *
+ * `node_id` is text, validated against `ResearchNodeId` at the boundary, for
+ * the reason `crew_pool.family` is text: the tree is design that may grow a
+ * node, and a Postgres enum would make that a migration.
+ *
+ * `started_at` and `completes_at` are **game** time (ADR-0026), like the
+ * academy's construction dates. The price is copied onto the row as it was
+ * charged, so a retune that makes a node dearer cannot change what this
+ * airline is shown to have paid. `created_at` stays real.
+ */
+export const researchProject = pgTable(
+  'research_project',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => world.id, { onDelete: 'cascade' }),
+    airlineId: uuid('airline_id')
+      .notNull()
+      .references(() => airline.id, { onDelete: 'cascade' }),
+
+    nodeId: text('node_id').notNull(),
+
+    /** Both **game** time (ADR-0026). */
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    completesAt: timestamp('completes_at', { withTimezone: true }).notNull(),
+
+    /** What was spent, as it was charged. Whole points. */
+    researchPoints: integer('research_points').notNull(),
+    cashCostMinor: bigint('cash_cost_minor', { mode: 'number' }).notNull(),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // A node is researched once, and the key's leading column serves the
+    // per-airline read the tree makes on every request.
+    unique('research_project_airline_node_key').on(t.airlineId, t.nodeId),
+    check('research_project_points_positive', sql`${t.researchPoints} > 0`),
+    check('research_project_cash_positive', sql`${t.cashCostMinor} > 0`),
+    check('research_project_completes_after_start', sql`${t.completesAt} > ${t.startedAt}`),
+    check(
+      'research_project_node_not_blank',
+      sql`char_length(${t.nodeId}) > 0 AND ${t.nodeId} = btrim(${t.nodeId})`,
+    ),
+  ],
+);
+
+export type ResearchProjectRow = typeof researchProject.$inferSelect;
 
 export const crewConversionStatus = pgEnum('crew_conversion_status', [
   'in_training',
