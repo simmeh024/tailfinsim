@@ -13,6 +13,8 @@ import {
 } from '@tailfin/shared';
 import {
   type AircraftCapability,
+  appliedBoosts,
+  type EfficiencyBoost,
   computeBlockTime,
   DEFAULT_FLIGHT_PROFILE,
   computeTurnaround,
@@ -27,6 +29,7 @@ import {
 } from '@tailfin/sim';
 
 import { airframe, route, schedule, world } from '../db/schema';
+import { resolveAirlineEfficiency } from '../economy/efficiency';
 import { loadWorldEconomyConfig } from '../economy/loader';
 import { handlingArrangementFor } from '../ground/contracts';
 import { absoluteFromLocal, loadAirportOffsets } from '../network/airport-time';
@@ -34,6 +37,7 @@ import { primeEconomicsScope, type RouteEconomicsScope } from '../network/econom
 import { resolveStands } from '../network/gates';
 import { openRoute } from '../network/open-route';
 import { resolveLegSlots } from '../network/slots';
+import { worldGameNow } from '../world/game-now';
 
 import { readSchedule } from './read';
 import {
@@ -327,6 +331,12 @@ export function placeLegs(
   cruiseSpeedKt: number,
   offsets: ReadonlyMap<string, number> = new Map(),
   turnaroundFor: (icao: string) => number = () => DEFAULT_TURNAROUND_MINUTES,
+  /**
+   * §10.4's block-time reduction, as the airline's resolved boost (M9-06): taxi
+   * and routing efficiency shortens the planned block, so a rotation authored by
+   * a lean airline turns more sectors a day. Absent is none.
+   */
+  blockBoosts: readonly EfficiencyBoost[] = [],
 ): LegInput[] {
   const placed: LegInput[] = [];
   let earliest = 0;
@@ -335,7 +345,8 @@ export function placeLegs(
     // is a plan rather than a settlement — the precise block time is recomputed at
     // arrival. `computeBlockTime` returns a fractional figure, so round it here.
     const blockMinutes = Math.round(
-      computeBlockTime(leg.greatCircleNm, cruiseSpeedKt, DEFAULT_FLIGHT_PROFILE).blockMinutes,
+      computeBlockTime(leg.greatCircleNm, cruiseSpeedKt, DEFAULT_FLIGHT_PROFILE, blockBoosts)
+        .blockMinutes,
     );
     /*
      * The turn happens where the aeroplane lands, so it is the **destination's**
@@ -385,7 +396,9 @@ export function placeLegs(
  * stays the stand-in it already was, and deliberately:
  *
  *   - **congestion is 1**, because §3.3's airport busyness is not modelled;
- *   - **no boosts**, because §10.4's ladder has nothing wired to a schedule;
+ *   - **boosts are the caller's** (M9-06): §10.4's turnaround reduction, the
+ *     airline's resolved figure, so Command & Leadership points, Training
+ *     Captains and Turnaround & Ground doctrine shorten the planned turn;
  *   - **the seat term is zero** — `seats` is passed equal to `referenceSeats`.
  *     `DEFAULT_TURNAROUND_MINUTES` is quoted at no published reference cabin, so
  *     comparing an airframe's real seat count against it would be inventing a
@@ -425,6 +438,7 @@ export async function turnaroundResolver(
   db: Database,
   own: ResolvedPlayerAirline,
   legs: readonly ResolvedLeg[],
+  boosts: readonly EfficiencyBoost[] = [],
 ): Promise<(icao: string) => number> {
   const stations = [...new Set(legs.map((leg) => leg.destinationIcao))];
   if (stations.length === 0) return () => DEFAULT_TURNAROUND_MINUTES;
@@ -451,7 +465,7 @@ export async function turnaroundResolver(
         cabinOptionMinutes: 0,
         serviceMinutes: 0,
         congestionFactor: 1,
-        boosts: [],
+        boosts,
       },
     );
     // Whole minutes: `schedule_leg.turnaround_minutes` is an integer column, and
@@ -460,6 +474,34 @@ export async function turnaroundResolver(
   }
 
   return (icao) => minutes.get(icao) ?? DEFAULT_TURNAROUND_MINUTES;
+}
+
+/**
+ * The airline's resolved block-time and turnaround boosts at the moment it
+ * authors a rotation (M9-06).
+ *
+ * Resolved once per save, like the handler and the stand above: the plan is
+ * stored, so a doctrine researched later shortens the turns of a rotation the
+ * next time it is saved, and a lapsing one lengthens them the same way. The
+ * editor shows the figure it saved, which is the plan crew legality is checked
+ * against — rather than a timing that moves underneath the player.
+ */
+async function planBoosts(
+  db: Database,
+  own: ResolvedPlayerAirline,
+  gameNow: Date,
+): Promise<{ block: EfficiencyBoost[]; turnaround: EfficiencyBoost[] }> {
+  const economy = await loadWorldEconomyConfig(db, own.worldId);
+  const { resolved } = await resolveAirlineEfficiency(
+    db,
+    { worldId: own.worldId, airlineId: own.id },
+    gameNow,
+    economy,
+  );
+  return {
+    block: appliedBoosts(resolved.blockTime),
+    turnaround: appliedBoosts(resolved.turnaroundTime),
+  };
 }
 
 /** The variable cost and distance of each leg, surfaced for the player (§14). */
@@ -557,6 +599,7 @@ export async function authorSchedule(
   own: ResolvedPlayerAirline,
   request: CreateScheduleRequest,
   economicsFor: RouteEconomicsProvider,
+  now: Date = new Date(),
 ): Promise<AuthorScheduleResult> {
   const spec = await loadOwnedAirframeSpec(db, own, request.airframeId);
   if (spec === null) return { status: 'unknown_airframe' };
@@ -570,11 +613,13 @@ export async function authorSchedule(
     db,
     prepared.legs.map((leg) => leg.originIcao),
   );
+  const boosts = await planBoosts(db, own, await worldGameNow(db, own.worldId, now));
   const placed = placeLegs(
     prepared.legs,
     spec.cruiseSpeedKt,
     offsets,
-    await turnaroundResolver(db, own, prepared.legs),
+    await turnaroundResolver(db, own, prepared.legs, boosts.turnaround),
+    boosts.block,
   );
   const result = await createSchedule(
     db,
@@ -682,11 +727,13 @@ export async function editSchedule(
     db,
     prepared.legs.map((leg) => leg.originIcao),
   );
+  const boosts = await planBoosts(db, own, gameNow);
   const placed = placeLegs(
     prepared.legs,
     spec.cruiseSpeedKt,
     offsets,
-    await turnaroundResolver(db, own, prepared.legs),
+    await turnaroundResolver(db, own, prepared.legs, boosts.turnaround),
+    boosts.block,
   );
   const outcome = await replaceScheduleLegs(
     db,

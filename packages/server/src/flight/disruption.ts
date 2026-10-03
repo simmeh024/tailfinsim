@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 
 import {
   applicableOutcome,
+  appliedBoosts,
   deriveRng,
   groundVendorRisk,
   handlingProfile,
@@ -12,6 +13,7 @@ import {
 
 import { airframeTechnicalRisk } from '../aircraft/maintenance';
 import { world } from '../db/schema';
+import { resolveAirlineEfficiency } from '../economy/efficiency';
 import { loadWorldEconomyConfig } from '../economy/loader';
 import { handlingArrangementFor } from '../ground/contracts';
 
@@ -58,6 +60,12 @@ export async function rollGroundDisruption(
     airframeId: string;
     airlineId: string;
     originIcao: string;
+    /**
+     * The departure's **game** instant (M9-06). Doctrine is read at it, so a
+     * lapsing Safety & Reliability node protects this departure at the
+     * strength it has today rather than the strength it had when researched.
+     */
+    at: Date;
   },
 ): Promise<DisruptionRoll | null> {
   const [worldRow] = await db
@@ -90,8 +98,27 @@ export async function rollGroundDisruption(
   );
   const groundVendor = groundVendorRisk(handlingProfile(arrangement));
 
+  /*
+   * §10.4's incident-rate reduction (M9-06): Handling & Safety points, Training
+   * Captains and Safety & Reliability doctrine, resolved together and capped at
+   * −30%. `rollDisruption` applies it to the chance of anything happening, not
+   * to the severity of what does — training stops incidents; it does not make a
+   * closed airport reopen sooner.
+   */
+  const efficiency = await resolveAirlineEfficiency(
+    db,
+    { worldId: input.worldId, airlineId: input.airlineId },
+    input.at,
+    economy,
+  );
+
   const rng = deriveRng(worldRow.seed, 'disruption', input.flightId);
-  const roll = rollDisruption(rng, { ...NO_RISK, technical, groundVendor });
+  const roll = rollDisruption(rng, {
+    ...NO_RISK,
+    technical,
+    groundVendor,
+    boosts: appliedBoosts(efficiency.resolved.incidentRate),
+  });
   if (roll === null) return null;
 
   // On the stand: an air return or a diversion cannot happen to an aeroplane that

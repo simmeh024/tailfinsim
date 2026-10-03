@@ -1,0 +1,128 @@
+/* §10.4's six efficiency quantities against their ceilings (M9-06). */
+
+.efficiency {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+/* The same panel title as the research page's other panels, which this one sits between. */
+.efficiency__header h2 {
+  margin: 0;
+  font-size: var(--text-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.efficiency__lede {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.efficiency__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.efficiency__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.efficiency__heading {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.efficiency__figure {
+  font-family: var(--font-figures);
+}
+
+.efficiency__bar {
+  height: 0.5rem;
+  overflow: hidden;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.efficiency__fill {
+  display: flex;
+  height: 100%;
+}
+
+.efficiency__segment,
+.efficiency__swatch {
+  background: var(--accent);
+}
+
+.efficiency__segment[data-source='trainingCaptains'],
+.efficiency__swatch[data-source='trainingCaptains'] {
+  /* A shade of the accent: --brand is reserved for the mark (tokens.css). */
+  background: var(--accent-hover);
+}
+
+.efficiency__segment[data-source='doctrine'],
+.efficiency__swatch[data-source='doctrine'] {
+  background: var(--status-ontime);
+}
+
+.efficiency__row[data-capped='true'] .efficiency__bar {
+  border-color: var(--border-strong);
+}
+
+.efficiency__summary {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.efficiency__sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.efficiency__sources li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.efficiency__swatch {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+}
+
+.efficiency__note {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.efficiency__note p {
+  margin: 0;
+}

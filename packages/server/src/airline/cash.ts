@@ -122,6 +122,7 @@ function categoryForCause(cause: CashMovementCause): LedgerCategory {
     case 'academy_upkeep':
     case 'training_captain':
     case 'research':
+    case 'research_upkeep':
       return 'crew';
     case 'office_salary':
       return 'office_salary';

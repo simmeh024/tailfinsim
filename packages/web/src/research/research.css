@@ -547,3 +547,100 @@
   padding-top: var(--space-2);
   border-top: 1px solid var(--border-subtle);
 }
+
+/* ----------------------------------------------------------- doctrine ---- */
+
+/*
+ * A researched node's funding and strength (M9-06). The trend carries a glyph
+ * and a sentence as well as a hue, so lapsing reads without colour.
+ */
+.doctrine {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+
+.doctrine p {
+  margin: 0;
+}
+
+.doctrine__funded {
+  font-weight: 600;
+}
+
+.doctrine__strength {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.doctrine__bar {
+  flex: 1;
+  block-size: 0.5rem;
+  overflow: hidden;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.doctrine__fill {
+  display: block;
+  block-size: 100%;
+  background: var(--status-ontime);
+}
+
+.doctrine[data-trend='lapsing'] .doctrine__fill,
+.doctrine[data-trend='lapsed'] .doctrine__fill {
+  background: var(--status-delayed);
+}
+
+.doctrine__percent {
+  white-space: nowrap;
+}
+
+.doctrine__trend[data-trend='full'] {
+  color: var(--status-ontime);
+}
+
+.doctrine__trend[data-trend='lapsing'],
+.doctrine__trend[data-trend='lapsed'] {
+  color: var(--status-delayed);
+}
+
+.doctrine__effects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.doctrine__effects li {
+  padding: 0 var(--space-2);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.doctrine__action,
+.doctrine__confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.doctrine__confirm {
+  padding: var(--space-2);
+  background: var(--status-cancelled-quiet);
+  border-radius: var(--radius-sm);
+}
+
+.doctrine__confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}

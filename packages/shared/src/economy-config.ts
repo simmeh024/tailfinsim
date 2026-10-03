@@ -4272,6 +4272,57 @@ export const ResearchNodeBalance = z
 export type ResearchNodeBalance = z.infer<typeof ResearchNodeBalance>;
 
 /**
+ * §10.4's third rule, as balance (M9-06): *"Academies and research carry
+ * ongoing cost. Doctrine lapses if you stop funding it — advantages must be
+ * maintained, not just banked."*
+ *
+ * A completed node costs a monthly upkeep while it is funded, and the player
+ * may stop funding it. It then lapses linearly over `lapseWeeks` and, once
+ * funded again, recovers over `recoveryWeeks` — both **game** weeks (ADR-0026),
+ * so a world at 4× lapses four times as fast in real time, exactly as it
+ * researched four times as fast.
+ */
+export const ResearchUpkeepBalance = z
+  .object({
+    /**
+     * Monthly upkeep as a fraction of the cash the node cost, charged on the
+     * price actually paid (`research_project.cash_cost_minor`) so a retune of
+     * node prices does not reprice doctrine already held.
+     */
+    monthlyFractionOfCashCost: z.number().min(0).max(1),
+    /** Game weeks from full strength to nothing once funding stops. */
+    lapseWeeks: z.number().positive().max(520),
+    /** Game weeks from nothing back to full strength once funding resumes. */
+    recoveryWeeks: z.number().positive().max(520),
+  })
+  .strict();
+export type ResearchUpkeepBalance = z.infer<typeof ResearchUpkeepBalance>;
+
+/**
+ * The shipped upkeep.
+ *
+ * **5% of the node's price a month** — a tier-1 node $1.5K, a tier-2 node $5K,
+ * and the whole released tree (twelve nodes) about $39K: a Centre of
+ * Excellence's monthly upkeep, and the anchor is deliberate, because §10.4 puts
+ * academies and research in one sentence. Well under what the doctrine saves an
+ * airline that flies — a tier-1 fuel node on a small fleet is worth tens of
+ * thousands a month — so funding it is the right call for an airline with
+ * cash, and stopping it is a real lever for one without.
+ *
+ * **Eight game weeks to lapse, four to recover.** Long enough that a lean month
+ * does not wipe out years of doctrine, short enough that *"maintained, not just
+ * banked"* bites within a season; recovery is quicker because a routine the
+ * crews half remember comes back faster than it was forgotten.
+ *
+ * Defaulted, for the reason `SHIPPED_NPC_BALANCE` records.
+ */
+export const SHIPPED_RESEARCH_UPKEEP_BALANCE = {
+  monthlyFractionOfCashCost: 0.05,
+  lapseWeeks: 8,
+  recoveryWeeks: 4,
+} as const satisfies z.input<typeof ResearchUpkeepBalance>;
+
+/**
  * §10.3's research balance: the point formula and every node's terms.
  *
  * `nodes` is keyed by every `ResearchNodeId` — a record over an enum key is
@@ -4301,6 +4352,12 @@ export const ResearchBalance = z
   .object({
     pointsFormula: ResearchPointsFormula,
     nodes: z.record(ResearchNodeId, ResearchNodeBalance),
+    /**
+     * Defaulted (M9-06), for the reason every section is: a `research` payload
+     * written before upkeep existed still parses, and reads back the shipped
+     * upkeep.
+     */
+    upkeep: ResearchUpkeepBalance.default(SHIPPED_RESEARCH_UPKEEP_BALANCE),
   })
   .strict()
   .superRefine((balance, ctx) => {
@@ -4580,6 +4637,7 @@ export const SHIPPED_RESEARCH_BALANCE = {
       effects: {},
     },
   },
+  upkeep: SHIPPED_RESEARCH_UPKEEP_BALANCE,
 } as const satisfies z.input<typeof ResearchBalance>;
 
 export const EconomyConfig = z

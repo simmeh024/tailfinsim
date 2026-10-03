@@ -24,6 +24,7 @@ import { billGateLeases, withdrawIdleStands } from '../network/gate-upkeep';
 import { reviewNpcCarriers } from '../npc/operate';
 import { runOfficePayroll } from '../office/payroll';
 import { reviewSocialMediaReputation } from '../office/reputation';
+import { runResearchUpkeep } from '../research/doctrine';
 import { materialiseWorld } from '../schedule/store';
 import {
   drainDueEvents,
@@ -125,6 +126,8 @@ export interface TickReport {
   academyBuildsCompleted: number;
   /** M9-01. Airlines billed for a month of academy upkeep. */
   academyUpkeepPaid: number;
+  /** M9-06. Airlines billed for a month of research doctrine upkeep. */
+  researchUpkeepPaid: number;
   /** M5-06. Ground contracts whose term ran out and were lapsed this run. */
   groundContractsExpired: number;
   /** M5-06. Of those, how many closed short of their committed departures. */
@@ -225,6 +228,8 @@ export interface SimulationEngineOptions {
   nameCrew?: typeof nameEligibleCrew;
   /** M9-01. Bills the month's academy upkeep. */
   billAcademies?: typeof runAcademyUpkeep;
+  /** M9-06. Bills the month's research doctrine upkeep. */
+  billResearch?: typeof runResearchUpkeep;
   /** M8-07. Charges §13.4's per-game-day interest on every active loan. */
   accrueInterest?: typeof accrueLoanInterest;
   /** M8-07. Moves §13.5's default ladder, and applies the rung it lands on. */
@@ -410,6 +415,18 @@ export interface EngineSnapshot {
   academyUpkeepPaid: number;
   academyUpkeepMinor: number;
   academyErrors: number;
+  /**
+   * M9-06. §10.4's doctrine upkeep billed, and sweeps that threw.
+   *
+   * Zero is the expected reading on a world where nobody has completed a node,
+   * which is every world for weeks — so this cannot tell a quiet world from a
+   * stopped worker on its own; `academyBuildsCompleted` and the queue depth beside
+   * it are what separate the two. Without a worker doctrine is never billed (and,
+   * because settlement is the worker's too, never applied either).
+   */
+  researchUpkeepPaid: number;
+  researchUpkeepMinor: number;
+  researchErrors: number;
   /**
    * M9-03. Crew named since start, and sweeps that threw.
    *
@@ -603,6 +620,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     sweepIdleStands = withdrawIdleStands,
     completeAcademyBuilds = completeDueAcademyBuilds,
     billAcademies = runAcademyUpkeep,
+    billResearch = runResearchUpkeep,
     nameCrew = nameEligibleCrew,
     accrueInterest = accrueLoanInterest,
     reviewDefaults = reviewWorldDefaults,
@@ -653,6 +671,9 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let academyUpkeepPaid = 0;
   let academyUpkeepMinor = 0;
   let academyErrors = 0;
+  let researchUpkeepPaid = 0;
+  let researchUpkeepMinor = 0;
+  let researchErrors = 0;
   let hubFeesBilled = 0;
   let hubFeesMinor = 0;
   let hubErrors = 0;
@@ -713,6 +734,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     let tickCrewNamed = 0;
     let tickAcademyBuilds = 0;
     let tickAcademyUpkeepPaid = 0;
+    let tickResearchUpkeepPaid = 0;
     let tickHubFeesBilled = 0;
     let tickGateFeesBilled = 0;
     let tickGateLeasesWithdrawn = 0;
@@ -1101,6 +1123,30 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       }
 
       /*
+       * §10.4's doctrine upkeep (M9-06), on this world's game clock: the month
+       * that has just closed, billed once, for every completed research node that
+       * was funded at any point of it. The academy upkeep's shape exactly —
+       * attempted every tick, idempotent by AIR-06's reference.
+       *
+       * Its own try, not the academy's: a failed research bill must not stop a
+       * level being commissioned, nor the other way round.
+       */
+      try {
+        const research = await billResearch(db, entry.id, gameTime(entry.clock, now()));
+        tickResearchUpkeepPaid += research.airlinesBilled;
+        researchUpkeepMinor += research.totalMinor;
+        if (research.airlinesBilled > 0) {
+          log?.info?.(
+            `[${entry.name}] doctrine upkeep: ${String(research.airlinesBilled)} airline(s), ` +
+              `${String(Math.round(research.totalMinor / 100))}`,
+          );
+        }
+      } catch (error) {
+        researchErrors += 1;
+        log?.warn?.(`[${entry.name}] research upkeep sweep failed: ${String(error)}`);
+      }
+
+      /*
        * §10.2's named crew (M9-03), on this world's game clock. A pool whose
        * crew have earned it produces a named individual, and one more per level
        * above the threshold.
@@ -1300,6 +1346,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     crewNamed += tickCrewNamed;
     academyBuildsCompleted += tickAcademyBuilds;
     academyUpkeepPaid += tickAcademyUpkeepPaid;
+    researchUpkeepPaid += tickResearchUpkeepPaid;
     hubFeesBilled += tickHubFeesBilled;
     gateFeesBilled += tickGateFeesBilled;
     gateLeasesWithdrawn += tickGateLeasesWithdrawn;
@@ -1340,6 +1387,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       crewNamed: tickCrewNamed,
       academyBuildsCompleted: tickAcademyBuilds,
       academyUpkeepPaid: tickAcademyUpkeepPaid,
+      researchUpkeepPaid: tickResearchUpkeepPaid,
       hubFeesBilled: tickHubFeesBilled,
       gateFeesBilled: tickGateFeesBilled,
       gateLeasesWithdrawn: tickGateLeasesWithdrawn,
@@ -1437,6 +1485,9 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         academyUpkeepPaid,
         academyUpkeepMinor,
         academyErrors,
+        researchUpkeepPaid,
+        researchUpkeepMinor,
+        researchErrors,
         crewNamed,
         crewNamingErrors,
         interestDaysCharged,

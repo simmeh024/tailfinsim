@@ -2,3 +2,4 @@
 export * from './points';
 export * from './tree';
 export * from './doctrine';
+export * from './lapse';

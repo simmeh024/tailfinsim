@@ -47,6 +47,12 @@ const NON_UUID_PATH_IDENTIFIERS = [
   'GET /api/airports/:icao/gates',
   'POST /api/airports/:icao/gates',
   'DELETE /api/airports/:icao/gates/:position',
+  // Doctrine funding (M9-06): `:nodeId` is one of §10.3's 24 catalogue nodes, a
+  // public selector like `:system` above. What it addresses — this airline's
+  // project on that node — is resolved from the session, and a malformed id, a
+  // node never researched and another airline's progress all receive the
+  // identical 404 (`research/routes.test.ts`).
+  'PUT /api/research/projects/:nodeId/funding',
 ] as const;
 
 const BODY_UUID_CONTRACTS = [

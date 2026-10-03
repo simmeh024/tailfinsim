@@ -7,6 +7,7 @@ import {
   type AcademyLevelDefinition,
   ResearchTier,
 } from './academy';
+import { EfficiencyQuantityReadout } from './efficiency';
 import { MinorUnits, Timestamp } from './primitives';
 import { ResearchBranch, ResearchEffectTarget, ResearchNodeId } from './research';
 
@@ -94,6 +95,31 @@ export const ResearchEffectView = z
   .strict();
 export type ResearchEffectView = z.infer<typeof ResearchEffectView>;
 
+/**
+ * A completed node's standing as doctrine (M9-06, §10.4's third rule).
+ *
+ * > *"**Upkeep.** Academies and research carry ongoing cost. Doctrine lapses if
+ * > you stop funding it — advantages must be maintained, not just banked."*
+ *
+ * `strength` is what the node is worth right now, 0–1, and every effect on the
+ * node is applied at that fraction. It falls over game weeks once funding stops
+ * and climbs back once it resumes; `settlesAt` is the game instant it stops
+ * moving, so the page can say *"fully lapsed in three game weeks"* rather than
+ * leave a slope to be extrapolated.
+ */
+export const DoctrineView = z
+  .object({
+    funded: z.boolean(),
+    /** 0–1: the share of the node's effect in force at `gameNow`. */
+    strength: z.number().min(0).max(1),
+    /** What funding it costs a game month. Billed only while funded. */
+    monthlyUpkeepMinor: MinorUnits.nonnegative(),
+    /** Game time the strength reaches 1 (funded) or 0 (not). Null when already there. */
+    settlesAt: Timestamp.nullable(),
+  })
+  .strict();
+export type DoctrineView = z.infer<typeof DoctrineView>;
+
 export const ResearchNodeView = z
   .object({
     id: ResearchNodeId,
@@ -126,6 +152,8 @@ export const ResearchNodeView = z
     startedAt: Timestamp.nullable(),
     /** Game time. Complete exactly when the world's clock has passed it. */
     completesAt: Timestamp.nullable(),
+    /** Null until the node is complete; then its funding and current strength (M9-06). */
+    doctrine: DoctrineView.nullable(),
   })
   .strict();
 export type ResearchNodeView = z.infer<typeof ResearchNodeView>;
@@ -192,6 +220,24 @@ export const ResearchResponse = z
       .object({ nodeId: ResearchNodeId, startedAt: Timestamp, completesAt: Timestamp })
       .strict()
       .nullable(),
+    /**
+     * §10.4's six efficiency quantities as the airline stands now, every source
+     * resolved together against the world's ceilings (M9-06): crew skills,
+     * Training Captains and this tree's doctrine at its current strength.
+     */
+    efficiency: z.array(EfficiencyQuantityReadout).length(6),
+    /**
+     * The crew XP bonus the Crew Development branch adds, at its current
+     * strength, and the cap it shares with Training Captains (M9-04). Doctrine
+     * alone never exceeds `cap`; together with Training Captains neither does
+     * the sum.
+     */
+    crewXp: z
+      .object({
+        doctrine: z.number().min(0),
+        cap: z.number().min(0).max(1),
+      })
+      .strict(),
     /** The world's game clock when this was read, for countdowns in game time. */
     gameNow: Timestamp,
   })
@@ -200,3 +246,17 @@ export type ResearchResponse = z.infer<typeof ResearchResponse>;
 
 export const StartResearchInput = z.object({ nodeId: ResearchNodeId }).strict();
 export type StartResearchInput = z.infer<typeof StartResearchInput>;
+
+/**
+ * Funding a completed node, or stopping (M9-06). A level, not a toggle: two tabs
+ * that both send `false` leave it unfunded rather than flipping it twice.
+ */
+export const SetDoctrineFundingInput = z.object({ funded: z.boolean() }).strict();
+export type SetDoctrineFundingInput = z.infer<typeof SetDoctrineFundingInput>;
+
+/** Why a funding change is refused. A node never researched is a 404, not a refusal. */
+export const DoctrineFundingRefusal = z.enum([
+  /** Still being researched: there is no doctrine to fund yet. */
+  'not_complete',
+]);
+export type DoctrineFundingRefusal = z.infer<typeof DoctrineFundingRefusal>;

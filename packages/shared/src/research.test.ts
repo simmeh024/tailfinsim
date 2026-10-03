@@ -166,7 +166,15 @@ describe('EconomyConfig.research', () => {
   it('has no field a payment could use to shorten a build or buy a point', () => {
     // §10.3: "You cannot buy RP. You cannot rush it." Held by absence: the only
     // fields are the formula, and per node a price, a wait and an effect.
-    expect(Object.keys(SHIPPED).sort()).toEqual(['nodes', 'pointsFormula']);
+    expect(Object.keys(SHIPPED).sort()).toEqual(['nodes', 'pointsFormula', 'upkeep']);
+    // M9-06's upkeep: what a completed doctrine costs to keep, and how fast it
+    // lapses and recovers. A cost and two periods — none of them turns money into
+    // points or makes a build shorter.
+    expect(Object.keys(SHIPPED.upkeep).sort()).toEqual([
+      'lapseWeeks',
+      'monthlyFractionOfCashCost',
+      'recoveryWeeks',
+    ]);
     expect(Object.keys(SHIPPED.pointsFormula).sort()).toEqual([
       'academyStaffQuality',
       'scalingFactorHours',

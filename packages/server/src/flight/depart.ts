@@ -194,6 +194,7 @@ export async function departFlight(
       airframeId: row.airframeId,
       airlineId: row.airlineId,
       originIcao: row.originIcao,
+      at,
     });
     if (disruption !== null) {
       return applyGroundDisruption(db, row, at, disruption);

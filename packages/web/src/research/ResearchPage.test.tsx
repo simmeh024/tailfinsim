@@ -4,10 +4,14 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   ACADEMY_LEVELS,
+  EFFICIENCY_QUANTITIES,
   RESEARCH_BRANCH_DEFINITIONS,
   ResearchResponse,
   academyLevelForResearchTier,
   researchNodesInBranch,
+  type DoctrineView,
+  type EfficiencyQuantity,
+  type EfficiencyQuantityReadout,
   type ResearchNodeId,
   type ResearchNodeView,
 } from '@tailfin/shared';
@@ -27,7 +31,11 @@ import { ResearchPage, ResearchView } from './ResearchPage';
  *     being shown a bare zero (§10.3, *"size alone doesn't buy competence"*);
  *   - **the start is two clicks and posts exactly `{ nodeId }`**, and the
  *     response replaces the page's state;
- *   - **a 409 is shown in words**, whichever field the server names the code in.
+ *   - **a 409 is shown in words**, whichever field the server names the code in;
+ *   - **§10.4 is on the page** (M9-06): the efficiency readout and the crew XP
+ *     line are mounted, and every researched node says whether it is funded,
+ *     how strong it is and which way it is moving — with stopping a two-click
+ *     decision that says what it costs, and resuming one click.
  *
  * Every fixture goes through `ResearchResponse.parse`, so a fixture that drifts
  * from the wire contract fails here loudly rather than testing a shape the
@@ -47,7 +55,27 @@ interface NodeOverride {
   startRefusal?: ResearchNodeView['startRefusal'];
   startedAt?: string | null;
   completesAt?: string | null;
+  /** Defaults to funded and at full strength on a complete node, null on any other. */
+  doctrine?: DoctrineView | null;
 }
+
+/** A complete node's doctrine when the test does not say: funded, settled at full strength. */
+const FULL_DOCTRINE: DoctrineView = {
+  funded: true,
+  strength: 1,
+  monthlyUpkeepMinor: 1_200_000,
+  settlesAt: null,
+};
+
+/** §10.4's ceilings, as the shipped economy states them. */
+const CEILINGS: Record<EfficiencyQuantity, number> = {
+  fuelBurn: 0.08,
+  turnaroundTime: 0.2,
+  blockTime: 0.04,
+  maintenanceCost: 0.12,
+  incidentRate: 0.3,
+  serviceCost: 0.15,
+};
 
 interface FixtureOptions {
   /** The highest commissioned academy level. 0 for none. */
@@ -58,6 +86,8 @@ interface FixtureOptions {
   academyLevelSum?: number;
   nodes?: Partial<Record<ResearchNodeId, NodeOverride>>;
   active?: { nodeId: ResearchNodeId; startedAt: string; completesAt: string } | null;
+  efficiency?: Partial<Record<EfficiencyQuantity, Partial<EfficiencyQuantityReadout>>>;
+  crewXp?: { doctrine: number; cap: number };
 }
 
 /**
@@ -83,6 +113,7 @@ function fixture(options: FixtureOptions = {}): ResearchResponse {
             ? ('prerequisite' as const)
             : null;
       const override = options.nodes?.[node.id];
+      const status = override?.status ?? (startRefusal === null ? 'available' : 'locked');
       return {
         id: node.id,
         branch: node.branch,
@@ -101,12 +132,18 @@ function fixture(options: FixtureOptions = {}): ResearchResponse {
           buildWeeks: 2 * node.tier,
         },
         released: node.released,
-        status: override?.status ?? (startRefusal === null ? 'available' : 'locked'),
+        status,
         requiredAcademyLevel: required.level,
         requiredAcademyName: required.name,
         startRefusal: override === undefined ? startRefusal : (override.startRefusal ?? null),
         startedAt: override?.startedAt ?? null,
         completesAt: override?.completesAt ?? null,
+        doctrine:
+          override?.doctrine === undefined
+            ? status === 'complete'
+              ? FULL_DOCTRINE
+              : null
+            : override.doctrine,
       };
     }),
   }));
@@ -126,6 +163,16 @@ function fixture(options: FixtureOptions = {}): ResearchResponse {
     academy: { highestLevel: academyLevel, researchTier: researchTier ?? null },
     branches,
     active: options.active ?? null,
+    efficiency: EFFICIENCY_QUANTITIES.map((quantity) => ({
+      quantity,
+      ceiling: CEILINGS[quantity],
+      uncapped: 0,
+      fraction: 0,
+      capped: false,
+      bySource: { skills: 0, trainingCaptains: 0, doctrine: 0 },
+      ...options.efficiency?.[quantity],
+    })),
+    crewXp: options.crewXp ?? { doctrine: 0, cap: 0.6 },
     gameNow: gameInstant(0),
   });
 }
@@ -272,7 +319,7 @@ describe('the tree', () => {
 
     const done = card('Cost-index SOP');
     expect(within(done).getByText('Researched')).toBeInTheDocument();
-    expect(within(done).queryByRole('button')).toBeNull();
+    expect(within(done).queryByRole('button', { name: 'Start research' })).toBeNull();
     expect(done).toHaveAttribute('data-status', 'complete');
 
     const next = card('Continuous descent approach');
@@ -600,5 +647,353 @@ describe('room for M9-06', () => {
       within(card('Cost-index SOP')).getByText('Doctrine strength for Cost-index SOP'),
     ).toBeInTheDocument();
     expect(screen.getAllByRole('article')).toHaveLength(24);
+  });
+});
+
+describe('efficiency and doctrine (M9-06)', () => {
+  /** The doctrine footer on a researched node, by its accessible name. */
+  function doctrine(name: string): HTMLElement {
+    return within(card(name)).getByRole('group', { name: `${name} doctrine` });
+  }
+
+  it('mounts the efficiency readout between the points and the tree, with §10.4 in words', async () => {
+    stubFetch(() => ({
+      status: 200,
+      body: fixture({
+        efficiency: {
+          fuelBurn: {
+            uncapped: 0.015,
+            fraction: 0.015,
+            bySource: { skills: 0, trainingCaptains: 0, doctrine: 0.015 },
+          },
+        },
+      }),
+    }));
+    renderPage();
+    const tree = await screen.findByRole('region', { name: 'Doctrine tree' });
+
+    const readout = screen.getByRole('region', { name: 'Operational efficiency' });
+    expect(within(readout).getAllByRole('meter')).toHaveLength(6);
+    expect(within(readout).getByText('−1.5% of a −8.0% ceiling.')).toBeInTheDocument();
+    // §10.4: cheaper and faster, never more popular.
+    expect(within(readout).getByText(/never more popular/)).toBeInTheDocument();
+
+    const points = screen.getByRole('region', { name: 'Research points' });
+    expect(points.compareDocumentPosition(readout) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(readout.compareDocumentPosition(tree) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // §10.4's third rule, where the doctrine lives.
+    expect(within(tree).getByText(/maintained, not\s+banked/)).toBeInTheDocument();
+  });
+
+  it('states the Crew Development XP bonus and the cap it shares', async () => {
+    stubFetch(() => ({ status: 200, body: fixture({ crewXp: { doctrine: 0.094, cap: 0.6 } }) }));
+    renderPage();
+    const readout = await screen.findByRole('region', { name: 'Operational efficiency' });
+    expect(
+      within(readout).getByText(
+        'Crew Development doctrine: +9.4% crew XP (shares a 60% cap with Training Captains)',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('says plainly when the Crew Development doctrine adds nothing', async () => {
+    stubFetch(() => ({ status: 200, body: fixture() }));
+    renderPage();
+    const readout = await screen.findByRole('region', { name: 'Operational efficiency' });
+    expect(
+      within(readout).getByText(/Crew Development doctrine: no crew XP bonus in force/),
+    ).toBeInTheDocument();
+  });
+
+  it('shows a funded doctrine at full strength, and only on researched nodes', async () => {
+    stubFetch(() => ({
+      status: 200,
+      body: fixture({
+        nodes: { cost_index_sop: { status: 'complete', completesAt: gameInstant(-3) } },
+      }),
+    }));
+    renderPage();
+    await screen.findByRole('region', { name: 'Doctrine tree' });
+
+    const footer = doctrine('Cost-index SOP');
+    expect(footer).toHaveTextContent('Funded · $12,000 a game month');
+    expect(within(footer).getByRole('meter')).toHaveAttribute('aria-valuenow', '100');
+    expect(within(footer).getByText('Strength 100%')).toBeInTheDocument();
+    expect(within(footer).getByText('Full strength')).toBeInTheDocument();
+    expect(within(footer).getByText('−1.5% fuel burn of −1.5%')).toBeInTheDocument();
+    expect(within(footer).getByRole('button', { name: 'Stop funding' })).toBeEnabled();
+
+    // A node with no doctrine has no footer at all.
+    expect(screen.getAllByRole('group', { name: / doctrine$/ })).toHaveLength(1);
+  });
+
+  it('counts a lapsing doctrine down in game weeks, at its current strength', async () => {
+    stubFetch(() => ({
+      status: 200,
+      body: fixture({
+        nodes: {
+          cost_index_sop: {
+            status: 'complete',
+            completesAt: gameInstant(-40),
+            doctrine: {
+              funded: false,
+              strength: 0.6,
+              monthlyUpkeepMinor: 1_200_000,
+              settlesAt: gameInstant(21),
+            },
+          },
+        },
+      }),
+    }));
+    renderPage();
+    await screen.findByRole('region', { name: 'Doctrine tree' });
+
+    const footer = doctrine('Cost-index SOP');
+    expect(footer).toHaveTextContent('Not funded · upkeep $12,000 a game month when funded');
+    expect(within(footer).getByRole('meter')).toHaveAttribute('aria-valuenow', '60');
+    expect(within(footer).getByText('Lapsing — fully lapsed in 3 game weeks')).toBeInTheDocument();
+    expect(within(footer).getByText('−0.9% fuel burn of −1.5%')).toBeInTheDocument();
+    expect(within(footer).getByRole('button', { name: 'Resume funding' })).toBeEnabled();
+  });
+
+  it('counts a recovering doctrine up to full strength', async () => {
+    stubFetch(() => ({
+      status: 200,
+      body: fixture({
+        nodes: {
+          efficient_conversion: {
+            status: 'complete',
+            completesAt: gameInstant(-40),
+            doctrine: {
+              funded: true,
+              strength: 0.4,
+              monthlyUpkeepMinor: 900_000,
+              settlesAt: gameInstant(14),
+            },
+          },
+        },
+      }),
+    }));
+    renderPage();
+    await screen.findByRole('region', { name: 'Doctrine tree' });
+
+    const footer = doctrine('Efficient conversion');
+    expect(
+      within(footer).getByText('Recovering — full strength in 2 game weeks'),
+    ).toBeInTheDocument();
+    expect(within(footer).getByText('+2% crew XP of +5%')).toBeInTheDocument();
+    expect(within(footer).getByText('Strength 40%')).toBeInTheDocument();
+  });
+
+  it('says a fully lapsed doctrine is worth nothing, and how to rebuild it', async () => {
+    stubFetch(() => ({
+      status: 200,
+      body: fixture({
+        nodes: {
+          cost_index_sop: {
+            status: 'complete',
+            completesAt: gameInstant(-90),
+            doctrine: {
+              funded: false,
+              strength: 0,
+              monthlyUpkeepMinor: 1_200_000,
+              settlesAt: null,
+            },
+          },
+        },
+      }),
+    }));
+    renderPage();
+    await screen.findByRole('region', { name: 'Doctrine tree' });
+
+    const footer = doctrine('Cost-index SOP');
+    expect(within(footer).getByRole('meter')).toHaveAttribute('aria-valuenow', '0');
+    expect(
+      within(footer).getByText('Fully lapsed — resume funding to rebuild it'),
+    ).toBeInTheDocument();
+    expect(within(footer).getByText('None of −1.5% fuel burn')).toBeInTheDocument();
+  });
+
+  it('stops funding only after a confirm that says what it costs, and sends { funded: false }', async () => {
+    const lapsing = fixture({
+      nodes: {
+        cost_index_sop: {
+          status: 'complete',
+          completesAt: gameInstant(-3),
+          doctrine: {
+            funded: false,
+            strength: 1,
+            monthlyUpkeepMinor: 1_200_000,
+            settlesAt: gameInstant(28),
+          },
+        },
+      },
+    });
+    const fetchMock = stubFetch((_url, init) =>
+      init?.method === 'PUT'
+        ? { status: 200, body: lapsing }
+        : {
+            status: 200,
+            body: fixture({
+              nodes: { cost_index_sop: { status: 'complete', completesAt: gameInstant(-3) } },
+            }),
+          },
+    );
+    renderPage();
+    await screen.findByRole('region', { name: 'Doctrine tree' });
+
+    fireEvent.click(
+      within(doctrine('Cost-index SOP')).getByRole('button', { name: 'Stop funding' }),
+    );
+    const confirm = within(card('Cost-index SOP')).getByRole('group', {
+      name: 'Confirm stopping Cost-index SOP',
+    });
+    expect(confirm).toHaveTextContent('This month’s $12,000 upkeep is still owed.');
+    expect(confirm).toHaveTextContent('the advantage decays over game weeks');
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false);
+    const confirmButton = within(confirm).getByRole('button', {
+      name: 'Confirm — stop funding Cost-index SOP',
+    });
+    expect(confirmButton).toHaveFocus();
+
+    fireEvent.click(confirmButton);
+    expect(
+      await within(card('Cost-index SOP')).findByText('Lapsing — fully lapsed in 4 game weeks'),
+    ).toBeInTheDocument();
+
+    const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
+    expect(put?.[0]).toBe('/api/research/projects/cost_index_sop/funding');
+    expect(put?.[1]?.body).toBe('{"funded":false}');
+    expect(
+      within(doctrine('Cost-index SOP')).getByRole('button', { name: 'Resume funding' }),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps funding on Keep, sending nothing', async () => {
+    const fetchMock = stubFetch(() => ({
+      status: 200,
+      body: fixture({
+        nodes: { cost_index_sop: { status: 'complete', completesAt: gameInstant(-3) } },
+      }),
+    }));
+    renderPage();
+    await screen.findByRole('region', { name: 'Doctrine tree' });
+
+    fireEvent.click(
+      within(doctrine('Cost-index SOP')).getByRole('button', { name: 'Stop funding' }),
+    );
+    fireEvent.click(
+      within(doctrine('Cost-index SOP')).getByRole('button', { name: 'Keep funding' }),
+    );
+
+    expect(
+      within(doctrine('Cost-index SOP')).getByRole('button', { name: 'Stop funding' }),
+    ).toHaveFocus();
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false);
+  });
+
+  it('resumes funding in one click, sending { funded: true }', async () => {
+    const lapsed: DoctrineView = {
+      funded: false,
+      strength: 0,
+      monthlyUpkeepMinor: 1_200_000,
+      settlesAt: null,
+    };
+    const recovering: DoctrineView = { ...lapsed, funded: true, settlesAt: gameInstant(28) };
+    const fetchMock = stubFetch((_url, init) => ({
+      status: 200,
+      body: fixture({
+        nodes: {
+          boarding_sop: {
+            status: 'complete',
+            completesAt: gameInstant(-90),
+            doctrine: init?.method === 'PUT' ? recovering : lapsed,
+          },
+        },
+      }),
+    }));
+    renderPage();
+    await screen.findByRole('region', { name: 'Doctrine tree' });
+
+    fireEvent.click(
+      within(doctrine('Boarding SOP')).getByRole('button', { name: 'Resume funding' }),
+    );
+    expect(
+      await within(card('Boarding SOP')).findByText('Recovering — full strength in 4 game weeks'),
+    ).toBeInTheDocument();
+
+    const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
+    expect(put?.[0]).toBe('/api/research/projects/boarding_sop/funding');
+    expect(put?.[1]?.body).toBe('{"funded":true}');
+  });
+
+  it('shows a 409 in words on the node', async () => {
+    const fetchMock = stubFetch((_url, init) =>
+      init?.method === 'PUT'
+        ? { status: 409, body: { code: 'not_complete', message: 'Still being researched' } }
+        : {
+            status: 200,
+            body: fixture({
+              nodes: { cost_index_sop: { status: 'complete', completesAt: gameInstant(-3) } },
+            }),
+          },
+    );
+    renderPage();
+    await screen.findByRole('region', { name: 'Doctrine tree' });
+
+    fireEvent.click(
+      within(doctrine('Cost-index SOP')).getByRole('button', { name: 'Stop funding' }),
+    );
+    fireEvent.click(
+      within(card('Cost-index SOP')).getByRole('button', {
+        name: 'Confirm — stop funding Cost-index SOP',
+      }),
+    );
+
+    expect(await within(doctrine('Cost-index SOP')).findByRole('alert')).toHaveTextContent(
+      'Not changed. Cost-index SOP is still being researched, so there is no doctrine to fund until it completes.',
+    );
+    // Still funded as far as the page knows, and the control is back.
+    expect(
+      within(doctrine('Cost-index SOP')).getByRole('button', { name: 'Stop funding' }),
+    ).toBeEnabled();
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/research')).toHaveLength(1);
+  });
+
+  it('holds every other write while a funding change is in flight', async () => {
+    stubFetch((_url, init) =>
+      init?.method === 'PUT'
+        ? 'pending'
+        : {
+            status: 200,
+            body: fixture({
+              nodes: {
+                cost_index_sop: {
+                  status: 'complete',
+                  completesAt: gameInstant(-3),
+                  doctrine: {
+                    funded: false,
+                    strength: 0.5,
+                    monthlyUpkeepMinor: 1_200_000,
+                    settlesAt: gameInstant(14),
+                  },
+                },
+              },
+            }),
+          },
+    );
+    renderPage();
+    await screen.findByRole('region', { name: 'Doctrine tree' });
+
+    fireEvent.click(
+      within(doctrine('Cost-index SOP')).getByRole('button', { name: 'Resume funding' }),
+    );
+
+    expect(
+      within(doctrine('Cost-index SOP')).getByRole('button', { name: 'Resuming…' }),
+    ).toBeDisabled();
+    expect(
+      within(card('Boarding SOP')).getByRole('button', { name: 'Start research' }),
+    ).toBeDisabled();
   });
 });

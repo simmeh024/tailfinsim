@@ -41,7 +41,7 @@ import { loadEconomyConfig } from '../economy/loader';
 import { loadAirportOffsets, localFromAbsolute } from '../network/airport-time';
 
 import { loadCatalogueVersion, type PinnedCatalogueVersion } from './catalogue';
-import { stateOf } from './maintenance';
+import { checkCostAfterEfficiency, maintenanceCostFraction, stateOf } from './maintenance';
 
 /**
  * The fleet an airline owns (M4-07, App. C.6).
@@ -405,6 +405,8 @@ interface RowContext {
   clock: WorldClock;
   gameNow: Date;
   economyMaintenance: MaintenanceBalance;
+  /** §10.4's maintenance-cost reduction, so a quoted check is the price charged (M9-06). */
+  maintenanceCostFraction: number;
   catalogue: PinnedCatalogueVersion;
   locationIcao: string | null;
   blockHours: number;
@@ -453,7 +455,7 @@ function maintenanceView(row: AirframeRow, context: RowContext): MaintenanceAirf
         binding: t.binding,
         usedFraction: t.usedFraction,
         due: t.due,
-        costMinor: terms.costMinor,
+        costMinor: checkCostAfterEfficiency(terms.costMinor, context.maintenanceCostFraction),
         downtimeDays: terms.downtimeDays,
       };
     }),
@@ -546,15 +548,18 @@ interface FleetContext {
   clock: WorldClock;
   gameNow: Date;
   economyMaintenance: MaintenanceBalance;
+  /** §10.4's maintenance-cost reduction now, so a quoted check is the price charged (M9-06). */
+  maintenanceCostFraction: number;
   catalogues: Map<string, PinnedCatalogueVersion>;
 }
 
 async function fleetContext(
   db: Database,
-  worldId: string,
+  own: { id: string; worldId: string },
   rows: readonly AirframeRow[],
   now: Date,
 ): Promise<FleetContext> {
+  const worldId = own.worldId;
   const worlds = await db
     .select({
       epoch: world.epoch,
@@ -575,10 +580,12 @@ async function fleetContext(
   }
 
   const clock = clockOf(worldRow);
+  const gameNow = gameTime(clock, now);
   return {
     clock,
-    gameNow: gameTime(clock, now),
+    gameNow,
     economyMaintenance: economy.maintenance,
+    maintenanceCostFraction: await maintenanceCostFraction(db, own, gameNow, economy),
     catalogues,
   };
 }
@@ -612,7 +619,7 @@ export async function listFleet(
 
   if (rows.length === 0) return { airframes: [] };
 
-  const context = await fleetContext(db, own.worldId, rows, now);
+  const context = await fleetContext(db, own, rows, now);
   const windowStart = new Date(context.gameNow.getTime() - UTILISATION_WINDOW_DAYS * MS_PER_DAY);
 
   const [locations, flown, assignments] = await Promise.all([
@@ -633,6 +640,7 @@ export async function listFleet(
       clock: context.clock,
       gameNow: context.gameNow,
       economyMaintenance: context.economyMaintenance,
+      maintenanceCostFraction: context.maintenanceCostFraction,
       catalogue,
       locationIcao: locations.get(row.id) ?? null,
       blockHours: flown.get(row.id) ?? 0,
@@ -697,7 +705,7 @@ export async function airframeDetail(
   const row = rows[0];
   if (!row) return null;
 
-  const context = await fleetContext(db, own.worldId, [row], now);
+  const context = await fleetContext(db, own, [row], now);
   const catalogue = context.catalogues.get(row.catalogueVersion);
   if (catalogue === undefined) return null;
 
@@ -717,6 +725,7 @@ export async function airframeDetail(
     clock: context.clock,
     gameNow: context.gameNow,
     economyMaintenance: context.economyMaintenance,
+    maintenanceCostFraction: context.maintenanceCostFraction,
     catalogue,
     locationIcao: locations.get(row.id) ?? null,
     blockHours: flown.get(row.id) ?? 0,

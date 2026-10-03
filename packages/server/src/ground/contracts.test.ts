@@ -193,6 +193,9 @@ describeDb('ground contracts', () => {
           airframeId: randomUUID(), // no airframe row: technical risk 0, so only the handler moves the odds
           airlineId: a.airline.id,
           originIcao: icao,
+          // Doctrine is read at this instant; this airline holds none, so any
+          // instant gives the same roll.
+          at: new Date(),
         });
         if (roll !== null) disrupted.add(flightId);
       }

@@ -578,6 +578,8 @@ export const AdminCashMovementCause = z.enum([
   'training_captain',
   /** §10.3's research project (M9-05): the cash half of a node's price. */
   'research',
+  /** §10.4's doctrine upkeep (M9-06): a month of the research the airline keeps funded. */
+  'research_upkeep',
   'admin_adjustment',
   'flight_settlement',
   'disruption_cost',

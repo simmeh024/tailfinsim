@@ -15,8 +15,10 @@ import {
 } from '@tailfin/sim';
 
 import { demandPool, route, routeGroup, routeGroupMember, world } from '../db/schema';
+import { resolveAirlineEfficiency } from '../economy/efficiency';
 import { loadEconomyConfig } from '../economy/loader';
 import { canonicalPair } from '../network/economics';
+import { worldGameNow } from '../world/game-now';
 
 import { resolveProductScore } from './product-score';
 
@@ -182,9 +184,31 @@ export async function previewPayback(
   db: Database,
   own: ResolvedPlayerAirline,
   request: ServicePaybackRequest,
+  now: Date = new Date(),
 ): Promise<ServicePaybackResponse> {
   const economy = await loadEconomyConfig(db, await economyVersionOf(db, own.worldId));
   const priced = await priceableRoutes(db, own, request.routeGroupId);
+
+  /*
+   * §10.4's service-cost reduction (M9-06): Service & Cabin doctrine, resolved
+   * with every other source and capped at −15%. It lowers what the package
+   * **costs** an airline to deliver and nothing else — the product score below
+   * is computed from the package and the crew's execution exactly as before,
+   * because §10.4 is explicit that *"a veteran airline is leaner, not more
+   * attractive."*
+   *
+   * App. D's per-passenger cost is not billed at settlement yet (M8-03 left it
+   * as decision support), so this figure is where the reduction reaches the
+   * player today: the configurator's cost, net and payback.
+   */
+  const efficiency = await resolveAirlineEfficiency(
+    db,
+    { worldId: own.worldId, airlineId: own.id },
+    await worldGameNow(db, own.worldId, now),
+    economy,
+  );
+  const leaner = (costPerPaxMinor: number): number =>
+    Math.round(costPerPaxMinor * (1 - efficiency.resolved.serviceCost.fraction));
 
   /*
    * The execution behind the score. Read from the sample route's origin so the
@@ -212,7 +236,13 @@ export async function previewPayback(
   const cabin: CabinClass = request.cabin ?? 'economy';
   const cabins = CABIN_ORDER.filter((entry) => request.content.perClass[entry] !== undefined).map(
     (entry) => {
-      const economics = packageEconomics(economy.service, request.content, entry);
+      const listed = packageEconomics(economy.service, request.content, entry);
+      const costPerPaxMinor = leaner(listed.costPerPaxMinor);
+      const economics = {
+        ...listed,
+        costPerPaxMinor,
+        netPerPaxMinor: listed.revenuePerPaxMinor - costPerPaxMinor,
+      };
       const withPackage = productScoreForPackage(economy.service, {
         content: request.content,
         cabin: entry,
@@ -238,7 +268,11 @@ export async function previewPayback(
   );
 
   const priced_ = cabins.find((entry) => entry.cabin === cabin);
-  const economics = packageEconomics(economy.service, request.content, cabin);
+  const listedEconomics = packageEconomics(economy.service, request.content, cabin);
+  const economics = {
+    ...listedEconomics,
+    costPerPaxMinor: leaner(listedEconomics.costPerPaxMinor),
+  };
   const productDelta = priced_?.productDelta ?? 0;
 
   const rows = servicePayback(

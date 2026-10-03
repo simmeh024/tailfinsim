@@ -13,6 +13,7 @@ import { createAirportIdentities } from '../test-fixtures/airport-codes';
 import { makeAuthedTestEnv } from '../test-fixtures/env';
 import { createOwnershipTestSuite, type OwnershipTestSuite } from '../test-fixtures/ownership';
 import { ABSENT_RESOURCE_UUID, MALFORMED_RESOURCE_IDS } from '../test-fixtures/resource-id';
+import { worldGameNow } from '../world/game-now';
 
 import { accrueResearchPoints } from './points';
 
@@ -236,6 +237,126 @@ describeDb('the research endpoints', () => {
       expect(response.json<{ code: string }>().code).toBe(code);
     }
     expect(await standing(suite.airlineA.airline.id)).toEqual(before);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Doctrine funding (M9-06)
+  // ---------------------------------------------------------------------------
+
+  /** A project on `nodeId`, already complete, written directly. */
+  async function completed(fixture: FoundedAirlineFixture, nodeId: 'line_efficiency') {
+    // From the world's own clock: game time can be decades from the wall clock.
+    const gameNow = await worldGameNow(db.db, fixture.world.id);
+    const longAgo = new Date(gameNow.getTime() - 400 * 24 * 60 * 60 * 1_000);
+    await db.db.insert(researchProject).values({
+      worldId: fixture.world.id,
+      airlineId: fixture.airline.id,
+      nodeId,
+      startedAt: new Date(longAgo.getTime() - 3 * 7 * 24 * 60 * 60 * 1_000),
+      completesAt: longAgo,
+      researchPoints: ECONOMY_CONFIG_V1.research.nodes[nodeId].researchPoints,
+      cashCostMinor: ECONOMY_CONFIG_V1.research.nodes[nodeId].cashCostMinor,
+    });
+  }
+
+  async function funding(airlineId: string) {
+    return db.db
+      .select({
+        nodeId: researchProject.nodeId,
+        funded: researchProject.funded,
+        changedAt: researchProject.fundingChangedAt,
+      })
+      .from(researchProject)
+      .where(eq(researchProject.airlineId, airlineId));
+  }
+
+  const fundingUrl = (nodeId: string) => `/api/research/projects/${nodeId}/funding`;
+
+  it('refuses a guest a funding change', async () => {
+    const response = await suite.app.inject({
+      method: 'PUT',
+      url: fundingUrl('cost_index_sop'),
+      payload: { funded: false },
+    });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('refuses to fund a doctrine still being researched', async () => {
+    const before = await funding(suite.airlineA.airline.id);
+    const response = await suite.as(
+      { actor: 'playerA', worldId: suite.worldMain.id },
+      { method: 'PUT', url: fundingUrl('cost_index_sop'), payload: { funded: false } },
+    );
+    expect(response.statusCode).toBe(409);
+    expect(response.json<{ code: string }>().code).toBe('not_complete');
+    expect(await funding(suite.airlineA.airline.id)).toEqual(before);
+  });
+
+  it('stops funding a completed doctrine and answers with the whole tree', async () => {
+    await completed(suite.airlineA, 'line_efficiency');
+    const response = await suite.as(
+      { actor: 'playerA', worldId: suite.worldMain.id },
+      { method: 'PUT', url: fundingUrl('line_efficiency'), payload: { funded: false } },
+    );
+    expect(response.statusCode).toBe(200);
+    const body = ResearchResponse.parse(response.json());
+    const node = body.branches
+      .flatMap((branch) => branch.nodes)
+      .find((row) => row.id === 'line_efficiency');
+    expect(node?.doctrine?.funded).toBe(false);
+    expect(node?.doctrine?.strength).toBeCloseTo(1, 6);
+    expect(node?.doctrine?.settlesAt).not.toBeNull();
+    expect(body.efficiency).toHaveLength(6);
+  });
+
+  it('conceals every node that is not the caller’s project behind one 404', async () => {
+    const ownerBefore = await funding(suite.airlineA.airline.id);
+    const cases: { actor: 'playerA' | 'playerB'; worldId: string; nodeId: string }[] = [
+      // Malformed ids, and a UUID where a node belongs.
+      ...MALFORMED_RESOURCE_IDS.map((nodeId) => ({
+        actor: 'playerA' as const,
+        worldId: suite.worldMain.id,
+        nodeId: encodeURIComponent(nodeId),
+      })),
+      { actor: 'playerA', worldId: suite.worldMain.id, nodeId: ABSENT_RESOURCE_UUID },
+      // A real node this airline never researched.
+      { actor: 'playerA', worldId: suite.worldMain.id, nodeId: 'parallel_servicing' },
+      // Another player's completed doctrine, in the same world.
+      { actor: 'playerB', worldId: suite.worldMain.id, nodeId: 'line_efficiency' },
+      // The same player, in a world where they have no such project.
+      { actor: 'playerA', worldId: suite.worldOther.id, nodeId: 'line_efficiency' },
+    ];
+    const bodies = new Set<string>();
+    for (const target of cases) {
+      const response = await suite.as(
+        { actor: target.actor, worldId: target.worldId },
+        { method: 'PUT', url: fundingUrl(target.nodeId), payload: { funded: true } },
+      );
+      expect(response.statusCode, target.nodeId).toBe(404);
+      bodies.add(response.body);
+    }
+    expect([...bodies]).toEqual([
+      JSON.stringify({ code: 'project_absent', message: 'No such research project' }),
+    ]);
+    // And the owner's doctrine did not move.
+    expect(await funding(suite.airlineA.airline.id)).toEqual(ownerBefore);
+  });
+
+  it('accepts `funded` and nothing else in the body', async () => {
+    const before = await funding(suite.airlineA.airline.id);
+    for (const payload of [
+      {},
+      { funded: 'yes' },
+      { funded: true, strength: 1 },
+      { funded: null },
+    ]) {
+      const response = await suite.as(
+        { actor: 'playerA', worldId: suite.worldMain.id },
+        { method: 'PUT', url: fundingUrl('line_efficiency'), payload },
+      );
+      expect(response.statusCode, JSON.stringify(payload)).toBe(400);
+    }
+    expect(await funding(suite.airlineA.airline.id)).toEqual(before);
   });
 
   it('scopes the tree to the world the request names', async () => {

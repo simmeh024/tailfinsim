@@ -50,6 +50,7 @@
 import { CABIN_ORDER, ECONOMY_CONFIG_V1 } from '@tailfin/shared';
 import type { AirportFees, FlightKind, FlightLoad } from '@tailfin/shared';
 
+import { EFFICIENCY_CEILINGS, type EfficiencyBoost, stackEfficiencyBoosts } from './boosts';
 import { minorFromMajor, roundMinor, sumMinor } from './money';
 
 import type { FuelCostResult } from './fuel-price';
@@ -348,6 +349,17 @@ export interface SettlementInputs {
    * charging it again here would bill it twice.
    */
   standTurnFeeMinor?: number;
+  /**
+   * §10.4's maintenance-cost reduction, as the airline's resolved boost (M9-06).
+   *
+   * Applied to the per-block-hour reserve this flight accrues against future
+   * checks, through `stackEfficiencyBoosts` against §10.4's −12% ceiling like
+   * every other efficiency boost. The caller hands over what
+   * `resolveEfficiencyBoosts` decided; absent is no boost, which is every flight
+   * before M9-06 and every airline without the doctrine, skill or Training
+   * Captain that earns one.
+   */
+  maintenanceBoosts?: readonly EfficiencyBoost[];
 }
 
 /** Order for display, so a readout is stable and a test can prove each is reachable. */
@@ -521,13 +533,22 @@ export function settleFlight(
     detail: `${round(blockHours, 2)} block hours at ${money(config.crewCostPerBlockHourMinor)} an hour.`,
   });
 
-  const maintenanceMinor = roundMinor(blockHours * config.maintenanceCostPerBlockHourMinor);
+  const maintenanceBoost = stackEfficiencyBoosts(
+    inputs.maintenanceBoosts ?? [],
+    EFFICIENCY_CEILINGS.maintenanceCost,
+  );
+  const maintenanceMinor = roundMinor(
+    blockHours * config.maintenanceCostPerBlockHourMinor * (1 - maintenanceBoost.fraction),
+  );
   costs.push({
     source: 'maintenance',
     amountMinor: maintenanceMinor,
     detail:
       `${round(blockHours, 2)} block hours accrued at ${money(config.maintenanceCostPerBlockHourMinor)} ` +
-      `an hour against future checks.`,
+      `an hour against future checks` +
+      (maintenanceBoost.fraction > 0
+        ? `, less ${round(maintenanceBoost.fraction * 100, 2)}% for maintenance efficiency.`
+        : '.'),
   });
 
   const landingMinor = roundMinor(aircraft.maxTakeoffWeightT * destinationFees.landingPerTonne);

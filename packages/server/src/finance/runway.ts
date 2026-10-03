@@ -130,9 +130,15 @@ function classifyCause(cause: CashMovementCause): CauseRole {
      * no equivalent for a stand, so classifying a lease as covered by a
      * commitment would drop it from the projection altogether and predict an
      * airline richer than it is.
+     *
+     * §10.4's doctrine upkeep (M9-06) is a monthly bill for whatever the airline
+     * keeps funded, observed in the burn like a stand lease rather than rebuilt
+     * as a commitment: funding is a lever the player moves month to month, so
+     * the last window's bill is the honest projection of the next.
      */
     case 'maintenance_check':
     case 'gate_lease':
+    case 'research_upkeep':
       return 'rate';
 
     // Reproduced exactly by a commitment below. Counting these in the rate as

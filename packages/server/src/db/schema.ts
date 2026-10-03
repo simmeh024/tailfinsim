@@ -574,6 +574,12 @@ export const cashMovementCause = pgEnum('cash_movement_cause', [
    * price of returning one to the line. Referenced `<memberId>:training_captain:<n>`.
    */
   'training_captain',
+  /**
+   * A month of §10.4's doctrine upkeep (M9-06), for every completed research
+   * node that was funded at any point of it. Referenced
+   * `research_upkeep:<airlineId>:<YYYY-MM>`.
+   */
+  'research_upkeep',
   'admin_adjustment',
   'flight_settlement',
   'disruption_cost',
@@ -3916,12 +3922,36 @@ export const researchProject = pgTable(
     researchPoints: integer('research_points').notNull(),
     cashCostMinor: bigint('cash_cost_minor', { mode: 'number' }).notNull(),
 
+    /**
+     * §10.4's upkeep (M9-06): *"Doctrine lapses if you stop funding it."*
+     *
+     * Three facts written when funding last changed, from which the doctrine's
+     * strength at any later instant is a pure function (`doctrineStrength` in
+     * `@tailfin/sim`). Nothing ticks the strength down, so the decay is true
+     * whether or not anything runs, and a replay of an old arrival reads the
+     * strength it had then.
+     *
+     * `funding_changed_at` is **game** time and **null means never changed** —
+     * funded since the node completed, at full strength, which is every row
+     * written before M9-06 and every node nobody has touched since. Reading it
+     * as "changed at `completes_at`" is what makes the default correct without
+     * a backfill. The strength is stored in **per-mille** so the column is an
+     * integer and the arithmetic replays exactly.
+     */
+    funded: boolean('funded').notNull().default(true),
+    fundingChangedAt: timestamp('funding_changed_at', { withTimezone: true }),
+    strengthAtChangePermille: integer('strength_at_change_permille').notNull().default(1000),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     // A node is researched once, and the key's leading column serves the
     // per-airline read the tree makes on every request.
     unique('research_project_airline_node_key').on(t.airlineId, t.nodeId),
+    check(
+      'research_project_strength_range',
+      sql`${t.strengthAtChangePermille} >= 0 AND ${t.strengthAtChangePermille} <= 1000`,
+    ),
     check('research_project_points_positive', sql`${t.researchPoints} > 0`),
     check('research_project_cash_positive', sql`${t.cashCostMinor} > 0`),
     check('research_project_completes_after_start', sql`${t.completesAt} > ${t.startedAt}`),

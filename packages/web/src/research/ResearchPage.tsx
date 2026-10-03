@@ -13,14 +13,18 @@ import {
 import { Button } from '../ui/Button';
 import { StateBlock } from '../ui/StateBlock';
 
-import { fetchResearch, startResearch } from './api';
+import { fetchResearch, setDoctrineFunding, startResearch, type FundingFailure } from './api';
+import { DoctrineFooter } from './DoctrineFooter';
+import { EfficiencyReadout } from './EfficiencyReadout';
 import {
   academyRequirement,
   accrualExplanation,
+  crewXpInWords,
   formatGameDate,
   formatHours,
   formatPoints,
   formatStaffQuality,
+  fundingFailureInWords,
   gameDaysRemaining,
   nodeById,
   progressFraction,
@@ -63,16 +67,32 @@ import './research.css';
  * turns codes into sentences and instants into countdowns; it never works out
  * whether a node may start.
  *
- * ## Room for M9-06
+ * ## What the tree buys, and what keeps it (M9-06)
  *
- * {@link ResearchView} takes a `readout` slot — §10.4's six quantities against
- * their ceilings — between the points and the tree, and a per-node `nodeFooter`
- * for doctrine strength and funding. Both render nothing until something passes
- * them, so the efficiency work adds a panel rather than rewriting this one.
+ * §10.4: *"Boosts are **operational efficiency**, never demand or money
+ * directly. They make you cheaper and faster, not more popular."* The
+ * efficiency readout sits between the points and the tree — the `readout` slot
+ * of {@link ResearchView} — showing the six quantities every source together
+ * has reduced, against the ceilings that stop a veteran airline becoming a wall,
+ * with the crew XP the Crew Development branch adds and the cap it shares with
+ * Training Captains.
+ *
+ * §10.4's third rule is on each researched node, in the card's footer slot:
+ * *"Doctrine lapses if you stop funding it — advantages must be maintained, not
+ * just banked."* So a completed node shows its upkeep, its strength and which
+ * way it is moving, with the control that changes it.
  */
 
 type Load =
   { state: 'loading' } | { state: 'ready'; value: ResearchResponse | null } | { state: 'failed' };
+
+/** What went wrong on the last funding change, and on which node. */
+interface FundingFailureState {
+  nodeId: ResearchNodeId;
+  kind: 'refused' | 'broken';
+  /** Null when the request never completed. */
+  failure: FundingFailure | null;
+}
 
 /** What went wrong on the last start, and on which node. Rendered in words against current state. */
 interface StartFailure {
@@ -87,6 +107,9 @@ export function ResearchPage(): ReactNode {
   const [confirming, setConfirming] = useState<ResearchNodeId | null>(null);
   const [pending, setPending] = useState<ResearchNodeId | null>(null);
   const [failure, setFailure] = useState<StartFailure | null>(null);
+  const [stopConfirming, setStopConfirming] = useState<ResearchNodeId | null>(null);
+  const [fundingPending, setFundingPending] = useState<ResearchNodeId | null>(null);
+  const [fundingFailure, setFundingFailure] = useState<FundingFailureState | null>(null);
 
   const reload = useCallback(() => {
     setLoad({ state: 'loading' });
@@ -149,6 +172,34 @@ export function ResearchPage(): ReactNode {
       });
   }, []);
 
+  /**
+   * Fund a doctrine or stop (M9-06).
+   *
+   * Success replaces the state, as a start does. A refusal is **not** followed
+   * by a re-read, unlike a start's: the only refusal is a node still being
+   * researched, which a tree that drew a funding control cannot be showing, and
+   * a re-read that removed the control would take the explanation with it.
+   */
+  const changeFunding = useCallback((nodeId: ResearchNodeId, funded: boolean) => {
+    setFundingPending(nodeId);
+    setFundingFailure(null);
+    void setDoctrineFunding(nodeId, { funded })
+      .then((outcome) => {
+        if (outcome.ok) {
+          setLoad({ state: 'ready', value: outcome.state });
+          return;
+        }
+        setFundingFailure({ nodeId, kind: 'refused', failure: outcome.failure });
+      })
+      .catch(() => {
+        setFundingFailure({ nodeId, kind: 'broken', failure: null });
+      })
+      .finally(() => {
+        setFundingPending(null);
+        setStopConfirming(null);
+      });
+  }, []);
+
   return (
     <div className="research">
       {/*
@@ -178,9 +229,32 @@ export function ResearchPage(): ReactNode {
           setConfirming(null);
         }}
         onConfirmStart={start}
+        funding={{
+          confirming: stopConfirming,
+          pending: fundingPending,
+          failure: fundingFailure,
+          onRequestStop: (nodeId) => {
+            setFundingFailure(null);
+            setStopConfirming(nodeId);
+          },
+          onCancelStop: () => {
+            setStopConfirming(null);
+          },
+          onChange: changeFunding,
+        }}
       />
     </div>
   );
+}
+
+/** The doctrine footer's state and callbacks, carried through the body in one piece. */
+interface FundingControls {
+  confirming: ResearchNodeId | null;
+  pending: ResearchNodeId | null;
+  failure: FundingFailureState | null;
+  onRequestStop: (nodeId: ResearchNodeId) => void;
+  onCancelStop: () => void;
+  onChange: (nodeId: ResearchNodeId, funded: boolean) => void;
 }
 
 function ResearchBody({
@@ -192,6 +266,7 @@ function ResearchBody({
   onRequestStart,
   onCancelStart,
   onConfirmStart,
+  funding,
 }: {
   load: Load;
   reload: () => void;
@@ -201,6 +276,7 @@ function ResearchBody({
   onRequestStart: (nodeId: ResearchNodeId) => void;
   onCancelStart: () => void;
   onConfirmStart: (nodeId: ResearchNodeId) => void;
+  funding: FundingControls;
 }): ReactNode {
   if (load.state === 'loading') {
     return <StateBlock kind="loading">Reading your research…</StateBlock>;
@@ -229,17 +305,64 @@ function ResearchBody({
   }
 
   const research = load.value;
+  // One write at a time across the page: a start and a funding change both
+  // replace the whole state, and two in flight would race to be the last word.
+  const busy = pending !== null || funding.pending !== null;
   return (
     <ResearchView
       research={research}
       confirming={confirming}
       pending={pending}
+      busy={busy}
       failureFor={(node) => failureInWords(failure, node, research)}
       onRequestStart={onRequestStart}
       onCancelStart={onCancelStart}
       onConfirmStart={onConfirmStart}
+      readout={
+        <EfficiencyReadout
+          quantities={research.efficiency}
+          note={<p className="research-crew-xp">{crewXpInWords(research.crewXp)}</p>}
+        />
+      }
+      nodeFooter={(node) =>
+        node.doctrine === null ? null : (
+          <DoctrineFooter
+            node={node}
+            doctrine={node.doctrine}
+            gameNow={research.gameNow}
+            busy={busy}
+            confirming={funding.confirming === node.id}
+            pending={funding.pending === node.id}
+            onRequestStop={() => {
+              funding.onRequestStop(node.id);
+            }}
+            onCancelStop={funding.onCancelStop}
+            onConfirmStop={() => {
+              funding.onChange(node.id, false);
+            }}
+            onResume={() => {
+              funding.onChange(node.id, true);
+            }}
+            failure={fundingFailureFor(funding.failure, node)}
+          />
+        )
+      }
     />
   );
+}
+
+function fundingFailureFor(
+  state: FundingFailureState | null,
+  node: ResearchNodeView,
+): { kind: 'refused' | 'broken'; message: string } | null {
+  if (state?.nodeId !== node.id) return null;
+  return {
+    kind: state.kind,
+    message:
+      state.failure === null
+        ? 'The request did not complete, so whether funding changed is unknown. Reload the page to see.'
+        : fundingFailureInWords(state.failure, node),
+  };
 }
 
 function failureInWords(
@@ -263,13 +386,15 @@ export interface ResearchViewProps {
   confirming: ResearchNodeId | null;
   /** The node whose start request is in flight, if any. */
   pending: ResearchNodeId | null;
+  /** Any write in flight, start or funding. Defaults to a start being in flight. */
+  busy?: boolean;
   failureFor: (node: ResearchNodeView) => { kind: 'refused' | 'broken'; message: string } | null;
   onRequestStart: (nodeId: ResearchNodeId) => void;
   onCancelStart: () => void;
   onConfirmStart: (nodeId: ResearchNodeId) => void;
-  /** M9-06: §10.4's efficiency readout, between the points and the tree. */
+  /** §10.4's efficiency readout, between the points and the tree (M9-06). */
   readout?: ReactNode;
-  /** M9-06: doctrine strength and funding, under each node's controls. */
+  /** Doctrine strength and funding, under each node's controls; null for none (M9-06). */
   nodeFooter?: (node: ResearchNodeView) => ReactNode;
 }
 
@@ -281,6 +406,7 @@ export function ResearchView({
   research,
   confirming,
   pending,
+  busy = pending !== null,
   failureFor,
   onRequestStart,
   onCancelStart,
@@ -304,7 +430,9 @@ export function ResearchView({
           </h2>
           <p className="research-panel__sub">
             Six branches, four tiers. Each node needs the tier before it in its branch researched
-            first, and an academy at the level its tier names.
+            first, and an academy at the level its tier names. A researched node is doctrine you
+            keep by funding it: stop, and its advantage lapses over game weeks — maintained, not
+            banked.
           </p>
         </div>
 
@@ -339,7 +467,7 @@ export function ResearchView({
                         <ResearchNodeCard
                           node={node}
                           research={research}
-                          busy={pending !== null}
+                          busy={busy}
                           confirming={confirming === node.id}
                           pending={pending === node.id}
                           onRequestStart={() => {

@@ -887,7 +887,11 @@ export async function airlineSkillBoosts(
   own: RosterOwner,
 ): Promise<CrewBoostSources> {
   const economy = await loadWorldEconomyConfig(db, own.worldId);
-  const [rows, families] = await Promise.all([readMembers(db, own), operatedFamilies(db, own)]);
+  // In turn, not together: settlement calls this inside its transaction, and a
+  // transaction is one connection — concurrent queries on it are queued by the
+  // driver with a deprecation warning rather than run in parallel.
+  const rows = await readMembers(db, own);
+  const families = await operatedFamilies(db, own);
   return crewBoostSources(
     rows.map(rosterCrewOf),
     families,
