@@ -803,9 +803,11 @@ were worth on `flight_result.breakdown.crewFuelBoost` so §14.1's "a figure expl
 holds. Since M9-04 the roster is two of §10.4's sources — line crew under `skills`, Training
 Captains at their reduced line value under `trainingCaptains` — resolved together once by
 `resolveEfficiencyBoosts` against the world's ceiling; `crewFuelBoost.bySource` says how much of
-the figure each was worth alone. The other three consumers are still unwired; M9-06 wires them
-through the same resolver — and M9-05's research, which computes its doctrine as a third boost
-source and leaves applying it to M9-06.
+the figure each was worth alone. **Since M9-06 every consumer is wired** — fuel, block time and
+the maintenance reserve at settlement, the incident roll at departure, the planned turn and block
+in a saved rotation, a check's price and App. D's service cost — through
+`resolveAirlineEfficiency`, which adds M9-05's research doctrine as the third source and resolves
+all three once against the world's ceilings. See [`research.md`](research.md).
 
 ### Type Mastery and the fleet
 
@@ -1033,8 +1035,11 @@ the queue depth are what to look at.
 ### What M9-04 deliberately did not build
 
 - **Promotion.** A designation, not a rank change; see above.
-- **Research's `in_house_training_captains` node** (Crew Development, tier 4, unreleased) and
-  `doctrineXpFraction`. The cap already covers doctrine; M9-05 and M9-06 supply the number.
+- **Research's `in_house_training_captains` node** (Crew Development, tier 4, unreleased).
+  The released Crew Development doctrine arrived in M9-06 as `doctrineXpFraction`: settlement
+  passes its current strength into the award, the flight deck's bonus is
+  `min(maxXpBonus, Training Captains + doctrine)`, and the cabin — which no Training Captain
+  trains — gets `min(maxXpBonus, doctrine)` through the same function, so the cap holds for both.
 - **A per-crew pairing.** Training Captains cover a base and family, not particular crews,
   because the game does not know which pilots flew together.
 - **A salary for the designation.** Payroll reads pools, and a designated Captain stays in the

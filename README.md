@@ -284,8 +284,11 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   cash and weeks of the world's calendar, one project at a time, and nothing shortens the wait.
   Tiers 3 and 4 are shown, priced and locked with the academy they need stated plainly; the MVP
   ships tiers 1–2. Completion needs no Worker, but points accrue in settlement, so on production
-  every airline sits at zero. Doctrine is computed as a capped §10.4 boost source and is not yet
-  applied to flights (M9-06). See [`docs/research.md`](docs/research.md).
+  every airline sits at zero. Since M9-06 completed doctrine is applied — skills, Training
+  Captains and doctrine resolved together against §10.4's ceilings and read by fuel, block time,
+  maintenance, incident rate, turnaround and service cost — and costs a monthly upkeep; stop
+  funding a node and it lapses over game weeks. A test proves no boost reaches the demand model.
+  See [`docs/research.md`](docs/research.md).
 - **Fuel that costs what the station charges.** Every airport prices its own Jet A-1: a
   commodity factor for its region, an into-plane fee that scales with how hard the field is to
   fuel, and a per-station spread fixed for the life of the world. A sector out of a Gulf hub

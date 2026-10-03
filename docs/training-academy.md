@@ -17,7 +17,10 @@ disagree about current behaviour, this one describes what the code does.
 §10 states it twice and CLAUDE.md repeats it, because it is what makes §10 a progression
 system rather than a shop. Levelling the facility unlocks _which tiers of boost are
 researchable at all_; the research tree is M9-05 ([`research.md`](research.md)) and the boosts
-are M9-06, and neither is reachable by paying for a building.
+are M9-06, and neither is reachable by paying for a building. M9-06's resolver takes skills,
+Training Captains and doctrine as its three sources and **not** the academy — the building's
+whole contribution arrives through the tier it opens, the Training Captains it permits and the
+points its levels earn.
 
 Nothing in `packages/sim/src/academy` returns a multiplier, a coefficient or a percentage.
 A level yields three things and all three are permissions: a **rank ceiling**, a **research
@@ -313,7 +316,8 @@ client that had to refetch would show a stale purse for a frame.
   is no longer a ceiling nothing reads), and the **sum** of commissioned levels is the first term
   of §10.3's research-point formula. Both are permissions and rates, never a boost — the
   academy still grants nothing by itself.
-- **Any boost.** M9-06.
+- **Any boost.** Still none from the building itself: M9-06 applies §10.4's boosts from skills,
+  Training Captains and research doctrine, and the academy reaches them only as permission.
 - **Selling sim slots to other players.** §10.1 marks it post-MVP; MARKET-01 owns the contract
   primitive it would need.
 - **A web page.** The API is complete and there is no client consumer yet. CLAUDE.md's own

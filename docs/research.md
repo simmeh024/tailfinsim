@@ -223,14 +223,91 @@ side effect of an arrival, so `flightsMaterialised` and the queue depth are what
 
 ---
 
+## Doctrine applied, upkept and lapsing (M9-06, §10.4)
+
+> _"Boosts are **operational efficiency**, never demand or money directly. They make you
+> cheaper and faster, not more popular."_
+
+### One resolver, every source, every consumer
+
+`resolveAirlineEfficiency` (`server/src/economy/efficiency.ts`) gathers §10.4's three sources —
+named crew's skill points, Training Captains at their reduced line value (M9-04) and completed
+doctrine at its current strength — and hands them to `resolveEfficiencyBoosts` **together**,
+against the world's own ceilings. Stacking is multiplicative (diminishing returns before the
+cap) and the cap is applied once to the sum, so three sources each at the ceiling still give the
+ceiling. A seeded property test in `sim/economy/boost-resolver.test.ts` hunts for the stack that
+breaks it.
+
+Every consumer reads its quantity from that one resolution and is handed the resolved fraction
+as a single boost (`appliedBoosts`):
+
+| Quantity      | Ceiling | Consumer                                                               |
+| ------------- | ------- | ---------------------------------------------------------------------- |
+| fuel burn     | −8%     | `settleArrivedFlight` → `computeFuelBurn`                              |
+| block time    | −4%     | `settleArrivedFlight` (billed block) and `placeLegs` (the planned leg) |
+| maintenance   | −12%    | the settlement's per-block-hour reserve, and a check's price           |
+| incident rate | −30%    | the departure disruption roll                                          |
+| turnaround    | −20%    | `turnaroundResolver` (the planned turn)                                |
+| service cost  | −15%    | App. D's per-passenger cost in the service configurator                |
+
+Two consequences worth knowing. **The schedule is a plan**: block time and turns are fixed when a
+rotation is saved, like the handler and the stand, so new doctrine shortens a rotation the next
+time it is saved. And **App. D's service cost is not billed per flight** — M8-03 left it as
+decision support — so the service-cost reduction reaches the configurator's cost, net and
+payback, which is where that cost lives today.
+
+Crew Development doctrine is not one of the six: it adds to the **crew XP** rate, on every head
+aboard, capped together with the Training Captains' bonus under
+`crew.trainingCaptain.maxXpBonus` (M9-04), so the two can never sum past the cap.
+
+The academy is **not** a source, by §10's core rule: it gates the ceiling and never grants the
+boost. Its whole contribution arrives through the tier it opens, the Training Captains it permits
+and the points its levels earn.
+
+### Nothing reaches demand — held by a test, not a promise
+
+`server/src/economy/boost-isolation.test.ts` walks the source: every module in
+`sim/src/demand`, and every module that imports one of its functions or input types, must not
+name any of the boost machinery. Feeders are discovered rather than listed, so a new market-share
+readout is covered the day it is written. It was mutation-checked against a server feeder
+(`network/competition.ts`) and a sim one that only imports types (`npc/carrier.ts`). This is the
+acceptance criterion _"a test asserts no boost writes to any demand-model input"_.
+
+### Upkeep, and the lapse
+
+A completed node costs **5% of the price paid** a game month while it is funded
+(`research.upkeep.monthlyFractionOfCashCost`): $1.5K for a tier-1 node, $5K for tier 2, about
+$39K for the whole released tree — a Centre of Excellence's upkeep, on purpose. The player may
+stop funding a node (`PUT /api/research/projects/:nodeId/funding`, a level not a toggle). It then
+**lapses linearly over 8 game weeks** and, funded again, **recovers over 4** — so a stop and a
+restart cost a stretch of both, never a free reset. That is the acceptance criterion _"ceasing
+upkeep visibly decays the advantage over game weeks"_: the page shows each node's strength, the
+date it settles and its effects at that strength, the efficiency readout falls with it, and a
+flight is billed at the strength the doctrine had when it landed.
+
+The strength is a **pure function of three columns** written when funding last changed
+(`funded`, `funding_changed_at`, `strength_at_change_permille`). Nothing ticks it down, so the
+decay is true whether or not anything runs, and a replay reads the strength it had then. A null
+`funding_changed_at` means _funded since completion_, which is every row written before M9-06.
+
+The month is billed **in arrears**, once, for every node that was funded at any instant of it —
+so switching off on the last day does not escape that month — as one `research_upkeep` movement
+referenced `research_upkeep:<airlineId>:<YYYY-MM>`. A funding change bills any closed month
+**before** it records itself, which is what makes a month's facts final once it closes: the
+worker and the handler always compute the same bill.
+
+### The worker story, completed
+
+Upkeep is billed by `runResearchUpkeep`, the academy upkeep's shape exactly, on the world's game
+clock (`researchUpkeepPaid`, `researchUpkeepMinor`, `researchErrors`). **Production has no
+worker**, so there doctrine is never billed — and never applied either, because settlement and
+the disruption roll are the worker's too. The page still shows the lapse arithmetic and the
+schedule plan still reads the resolved turnaround, because those are not worker paths.
+
+---
+
 ## What M9-05 deliberately did not build
 
-- **Applying doctrine to flights.** `doctrineBoosts` in `@tailfin/sim` turns the complete nodes
-  into §10.4's `doctrine` source for `resolveEfficiencyBoosts`, and nothing reads it on a flight
-  yet. Wiring it into settlement is **M9-06**.
-- **Upkeep and lapse.** §10.4's third rule — _"Doctrine lapses if you stop funding it"_ — is
-  M9-06's. `doctrineBoosts` takes a `strength(nodeId)` parameter for exactly that and is called
-  at full strength today.
 - **Tiers 3 and 4.** Priced, shown and refused, with no effects (issue #92).
 - **Cancelling or refunding a project.** §10.3 gives a price and a wait and no way back.
 

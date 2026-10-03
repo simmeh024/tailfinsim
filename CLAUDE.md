@@ -548,9 +548,12 @@ way to dismiss a named member**, both for reasons written at the top of `crew/ro
 passes the airline's Performance & Fuel stack into `computeFuelBurn` and records what it was
 worth on `flight_result.breakdown.crewFuelBoost`. Since M9-04 the roster is two of §10.4's
 sources — line crew and Training Captains — resolved together once by
-`resolveEfficiencyBoosts` against the world's ceiling; the other three consumers are still
-unwired, M9-05's research doctrine is computed but not yet applied, and M9-06 reaches all of
-them through the same resolver. The acceptance criterion that skill
+`resolveEfficiencyBoosts` against the world's ceiling. **Since M9-06 every consumer is wired**
+through `resolveAirlineEfficiency` (`server/src/economy/efficiency.ts`), with research doctrine as
+the third source: fuel, block time and the maintenance reserve at settlement, the incident roll
+at departure, turn and block in a saved rotation's plan, a check's price, and App. D's service
+cost in the configurator (it is not billed per flight). `economy/boost-isolation.test.ts` fails
+if any module that feeds the demand model can name the machinery. The acceptance criterion that skill
 effects _"feed the same capped boost pool as research, never a separate uncapped one"_ is held
 by the shape of the code: `skillBoosts` returns boosts, the resolver stacks them with every
 other source, and **nothing anywhere hands out an uncapped multiplier**, so a caller cannot
@@ -604,6 +607,18 @@ counter of its own: points are a side effect of an arrival, like XP. Two things 
 `research/no-purchase.test.ts` scans the source to keep it that way — and **`research_account` is
 two monotonic integer milli-point counts**, never a float balance, so a short sector's tenth of a
 point survives. `docs/research.md` has the formula, the cost table and the design conflicts.
+
+**Doctrine upkeep is a fifth upkeep sweep, and the lapse is not one (M9-06).** A completed node
+costs a monthly upkeep while funded; `runResearchUpkeep` bills the closed game month in arrears,
+per airline, idempotent by `research_upkeep:<airlineId>:<YYYY-MM>` — the academy upkeep's shape —
+and `researchUpkeepPaid`, `researchUpkeepMinor` and `researchErrors` are the counters. Production
+has no worker, so doctrine is never billed there, and never applied either (settlement and the
+departure roll are the worker's). The **lapse** needs no sweep at all: strength is a pure function
+of `research_project.funded`, `funding_changed_at` and `strength_at_change_permille`, read at the
+instant that matters. Two things not to undo: **a null `funding_changed_at` means funded since
+completion**, which is what made the migration need no backfill; and **a funding change bills any
+closed month before it writes itself**, which is what makes a closed month's bill final — the
+worker and the handler can never compute two different bills for one month.
 
 **`FLIGHT_DEPART` has a handler as of M5-02, and that was a decision.** `handlers.ts` had said
 for two milestones that inventing a departure would be _"the accidental decision ADR-0019's
