@@ -61,6 +61,7 @@ export * from './network';
 export * from './alerts';
 export * from './slots';
 export * from './gates';
+export * from './apron';
 export * from './automation';
 export * from './ground';
 export * from './hub';
