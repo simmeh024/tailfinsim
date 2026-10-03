@@ -6009,6 +6009,25 @@ body {
   color: var(--text-secondary);
 }
 
+/* M9-04: the Training Captain decision on the pilot card — what it does, what
+   it costs, and the two-step confirmation that spends it. Ruled off from the
+   skill tree above it, like a form, because it is a different kind of choice:
+   a fee, not a point. */
+.crew-designation {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.crew-designation__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 .crew-filters {
   display: flex;
   flex-wrap: wrap;

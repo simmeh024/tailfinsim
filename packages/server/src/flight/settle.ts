@@ -3,6 +3,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { CABIN_ORDER, FlightLoad } from '@tailfin/shared';
 import type { AirportFees, FlightDisruption } from '@tailfin/shared';
 import {
+  appliedBoosts,
   cargoLane,
   type CargoLaneEndpoint,
   computeBlockTime,
@@ -17,6 +18,7 @@ import {
   type FuelStation,
   handlingPriceFactor,
   haversineNm,
+  resolveEfficiencyBoosts,
   type SettlementConfig,
   settleFlight,
   type Weather,
@@ -401,16 +403,25 @@ export async function settleArrivedFlight(
    *
    * A world whose roster is empty gets `[]` and the arithmetic below is
    * unchanged, which is every world until crew are named.
+   *
+   * Since M9-04 the roster is two sources — line crew, and Training Captains at
+   * their reduced line contribution — resolved together once by §10.4's
+   * resolver against the world's ceiling, and handed to the consumer as the
+   * single figure the resolver decided (`appliedBoosts`).
    */
-  const skills = await airlineSkillBoosts(tx, {
+  const crewBoosts = await airlineSkillBoosts(tx, {
     worldId: row.worldId,
     airlineId: row.airlineId,
   });
+  const fuelBoost = resolveEfficiencyBoosts(
+    { skills: crewBoosts.skills, trainingCaptains: crewBoosts.trainingCaptains },
+    economy.boosts.ceilings,
+  ).fuelBurn;
 
   const burn = computeFuelBurn(
     block,
     { cruiseBurnTPerNm: airframe.cruiseBurnTPerNm },
-    skills.boosts.fuelBurn,
+    appliedBoosts(fuelBoost),
   );
   const fuelCost = computeFuelCost(burn.tonnes, market, resolveStation(row.originIcao));
 
@@ -568,9 +579,17 @@ export async function settleArrivedFlight(
          * has no answer once a roster has changed.
          */
         crewFuelBoost: {
-          fraction: skills.stacked.fuelBurn.fraction,
-          capped: skills.stacked.fuelBurn.capped,
-          contributors: skills.contributors.fuelBurn,
+          fraction: fuelBoost.fraction,
+          capped: fuelBoost.capped,
+          contributors:
+            crewBoosts.contributors.skills.fuelBurn +
+            crewBoosts.contributors.trainingCaptains.fuelBurn,
+          // M9-04: each source alone and before the ceiling, so "how much of
+          // that was the Training Captains?" has an answer.
+          bySource: {
+            skills: fuelBoost.bySource.skills,
+            trainingCaptains: fuelBoost.bySource.trainingCaptains,
+          },
         },
         loadFactor: settlement.loadFactor,
         /*
@@ -796,9 +815,12 @@ export async function settleArrivedFlight(
         origin.continent !== null &&
         arrival.continent !== null &&
         origin.continent !== arrival.continent,
+      // M9-04: a Training Captain counts from the game instant they converted.
+      arrivedAt,
     },
     economy.crew.xp,
     economy.crew.skills,
+    economy.crew.trainingCaptain,
   );
 
   /*
@@ -823,6 +845,8 @@ export async function settleArrivedFlight(
             capped: xpAward.xp.capped,
             factors: xpAward.xp.factors,
             pools: xpAward.pools,
+            // M9-04: the Training Captain multiplier the flight deck earned under.
+            ...(xpAward.training === null ? {} : { training: xpAward.training }),
           })}::jsonb, true)::text`,
       })
       .where(eq(flightResult.flightId, row.id));

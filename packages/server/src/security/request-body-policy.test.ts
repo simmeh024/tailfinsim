@@ -327,6 +327,10 @@ const COVERED_WRITE_ENDPOINTS = [
   'POST /api/academies',
   'POST /api/academies/:id/modules',
   'POST /api/crew/roster/:id/skills',
+  // M9-04. The designation has no parameters: the member is in the path, and
+  // both directions read no body — a body could only carry something to ignore.
+  'POST /api/crew/roster/:id/training-captain',
+  'DELETE /api/crew/roster/:id/training-captain',
   // M9-01. The level to build is the *next* one and nothing else, so the upgrade
   // reads no body — the academy is in the path and the ladder decides the rest.
   'POST /api/academies/:id/levels',

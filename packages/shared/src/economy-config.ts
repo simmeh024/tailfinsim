@@ -2253,8 +2253,9 @@ export type CrewSkillBalance = z.infer<typeof CrewSkillBalance>;
  * pilot reaches 5 × 0.008 = 4% fuel burn before stacking. §10.4's fuel ceiling
  * is 8%, so **one veteran gets halfway and a second gets most of the rest** —
  * diminishing returns doing the work `stackEfficiencyBoosts` was written for.
- * The remaining headroom belongs to M9-04's Training Captains, M9-05's research
- * and M9-01's academy doctrine, none of which is built.
+ * The remaining headroom belongs to the other sources §10.4 stacks: M9-04's
+ * Training Captains (whose own points reach the line at
+ * `trainingCaptain.lineContributionFactor`) and M9-05's research doctrine.
  *
  * Defaulted, for the reason `SHIPPED_NPC_BALANCE` records.
  */
@@ -2289,6 +2290,144 @@ export const SHIPPED_CREW_SKILL_BALANCE = {
   },
 } as const satisfies z.input<typeof CrewSkillBalance>;
 
+/**
+ * What a Training Captain costs and what one is worth (M9-04, §10.2).
+ *
+ * > *"A max-level pilot can be converted to **Training Captain**: they stop
+ * > generating full revenue value and instead multiply XP gain for everyone they
+ * > fly with."*
+ *
+ * Which pilots may convert — flight deck, command rank, `skills.maxLevel`, an
+ * academy at their base that permits the `training_captain` rank — is design and
+ * lives in `@tailfin/sim`'s `trainingCaptainRefusal`, reading §10.1's ladder.
+ * This is the half a world may retune: the two fees, what a Training Captain
+ * still contributes to the line, how many pilots one can cover, and — the
+ * number the whole loop turns on — how far the XP multiplier may go.
+ *
+ * ## The cap is what makes it a loop rather than a runaway
+ *
+ * §10.2 draws the loop — *"hard routes → pilot XP → Training Captains → faster
+ * XP for everyone → deeper bench → harder routes"* — and the acceptance
+ * criterion asks that it **converge**. Two things make it:
+ *
+ *   - **Coverage saturates.** A Training Captain covers `crewsPerTrainingCaptain`
+ *     flight-deck heads; once a base's pilots are all covered, another one adds
+ *     nothing. More veterans cannot buy more than full coverage.
+ *   - **The bonus is clamped.** `maxXpBonus` is the hard ceiling on the
+ *     *combined* XP bonus — Training Captains plus the Crew Development
+ *     doctrine M9-05 adds — so no stacking of sources passes it. That is §10.4's
+ *     first rule (*"stacking … never exceeds the ceiling"*) applied to the XP
+ *     rate rather than to an operating cost.
+ *
+ * So XP per head per week is bounded by `base × (1 + maxXpBonus)`, a constant:
+ * a fully trained airline's crew level **linearly** faster, never
+ * exponentially. A compounding loop with no ceiling is the moat §10.4 warns
+ * about, arriving through the training department instead of the fuel bill.
+ *
+ * `xpBonusAtFullCoverage` is required to sit strictly below `maxXpBonus`, and
+ * the refinement says why: the cap is shared with research doctrine, and a
+ * Training Captain bonus that already filled it would leave the Crew
+ * Development branch nothing to give.
+ */
+export const TrainingCaptainBalance = z
+  .object({
+    /** The course: an instructor rating, charged once when the pilot converts. */
+    conversionCostMinor: MinorUnits.positive(),
+    /**
+     * Returning a Training Captain to the line — the acceptance criterion's
+     * *"reversible at a cost"*. A real price, not a refund: see
+     * `SHIPPED_TRAINING_CAPTAIN_BALANCE` for why it is the larger of the two.
+     */
+    reversionCostMinor: MinorUnits.positive(),
+    /**
+     * What a Training Captain's own skill points are still worth, 0–1.
+     *
+     * §10.2's *"they stop generating full revenue value"*. A Training Captain
+     * spends their duty training others and flies fewer sectors as the operating
+     * pilot, so the personal boosts their points buy — fuel discipline, faster
+     * turns, fewer incidents — reach the line at this fraction. 1 would make the
+     * conversion free; 0 would make it a retirement.
+     */
+    lineContributionFactor: z.number().min(0).max(1),
+    /** Flight-deck heads one Training Captain can cover at a base and family. */
+    crewsPerTrainingCaptain: z.number().int().positive(),
+    /** The XP bonus when a base and family's pilots are fully covered. */
+    xpBonusAtFullCoverage: z.number().gt(0).max(1),
+    /**
+     * The hard cap on the **combined** XP bonus — Training Captains and
+     * research doctrine together (§10.3's Crew Development branch, M9-05/06).
+     * At most 1, so the multiplier never more than doubles a sector's XP.
+     */
+    maxXpBonus: z.number().gt(0).max(1),
+  })
+  .strict()
+  .refine((v) => v.xpBonusAtFullCoverage < v.maxXpBonus, {
+    message:
+      'xpBonusAtFullCoverage must sit below maxXpBonus: the cap is shared with research doctrine, and Training Captains alone must not fill it',
+    path: ['xpBonusAtFullCoverage'],
+  });
+export type TrainingCaptainBalance = z.infer<typeof TrainingCaptainBalance>;
+
+/**
+ * The shipped Training Captain balance.
+ *
+ * ## What the numbers are scaled against
+ *
+ * Three figures already in this file:
+ *
+ *   - **A Captain costs 1,000,000 a month** (`crew.flightDeckSalaryMinor`).
+ *   - **An outsourced type conversion is 200,000 a head** (`crew.conversion`).
+ *   - **A level 5 academy's upkeep is 4,500,000 a month** — and a Training
+ *     Captain needs one at their base, so the building is the real price of
+ *     entry and the course fee sits beside it rather than dominating it.
+ *
+ * Against those:
+ *
+ *   - **The course is 2,000,000**: two months of a Captain's pay, ten outsourced
+ *     conversions, under half a month of the Centre of Excellence that makes it
+ *     possible. Noticeable for one pilot, trivial for a fleet — and the pilot
+ *     took years to reach the top level, so the fee is not what gates it.
+ *   - **Returning one to the line is 3,000,000** — half again the course. The
+ *     instructor rating is sunk and not refunded, the pilot needs line checks
+ *     and recurrent simulator time before flying as a line captain again, and
+ *     above all the round trip must not be cheap: a toggle that cost less than
+ *     the course would let an airline switch Training Captains on for a heavy
+ *     training month and off again for the line value, which turns a career
+ *     decision into a dial. §10.2 calls skill points *"mostly irreversible"*;
+ *     this is the same character, priced rather than forbidden, as the
+ *     criterion asks.
+ *   - **Line contribution 0.5.** A Training Captain flies roughly half their
+ *     sectors as the operating pilot, so their personal boosts reach the line at
+ *     half strength. A fully specialised veteran is worth about 4% fuel burn on
+ *     the line (`SHIPPED_CREW_SKILL_BALANCE`); converted, about 2%.
+ *   - **Twelve pilots per Training Captain.** A narrowbody needs about ten
+ *     flight-deck heads to fly a full schedule, so a 12-aircraft base carries
+ *     roughly 120 pilots and is fully covered by ten Training Captains — about
+ *     8% of its flight deck, inside the real-world band for training staff.
+ *   - **+50% XP at full coverage, capped at +60% combined.** Half again is a
+ *     visible change in how fast a base's crew level — a pool that took six
+ *     weeks to produce its first named pilot takes four — and the 0.1 of
+ *     headroom above it is what research doctrine may add. Nothing can make a
+ *     sector worth more than 1.6 of itself, which is the convergence criterion
+ *     in one number.
+ *
+ * Defaulted, for the reason `SHIPPED_NPC_BALANCE` records.
+ */
+export const SHIPPED_TRAINING_CAPTAIN_BALANCE = {
+  // Two months of a Captain's pay; ten outsourced conversions.
+  conversionCostMinor: 2_000_000,
+  // Half again the course: the rating is sunk, and the round trip must not be a dial.
+  reversionCostMinor: 3_000_000,
+  // Half their sectors flown as the operating pilot.
+  lineContributionFactor: 0.5,
+  // ~8% of a base's flight deck for full coverage.
+  crewsPerTrainingCaptain: 12,
+  // A base's pilots level half again as fast, fully covered.
+  xpBonusAtFullCoverage: 0.5,
+  // The combined ceiling; 0.1 of it is left for Crew Development doctrine.
+  maxXpBonus: 0.6,
+} as const satisfies z.input<typeof TrainingCaptainBalance>;
+
 export const CrewBalance = z
   .object({
     regulation: CrewRegulationBalance,
@@ -2307,6 +2446,8 @@ export const CrewBalance = z
     xp: CrewXpBalance.default(SHIPPED_CREW_XP_BALANCE),
     /** Defaulted, for the reason `xp` is (M9-03): §10.2's personal skill trees. */
     skills: CrewSkillBalance.default(SHIPPED_CREW_SKILL_BALANCE),
+    /** Defaulted, for the reason `xp` is (M9-04): §10.2's Training Captains. */
+    trainingCaptain: TrainingCaptainBalance.default(SHIPPED_TRAINING_CAPTAIN_BALANCE),
     /**
      * Monthly salary per head, by rank.
      *
@@ -2405,6 +2546,7 @@ export const SHIPPED_CREW_BALANCE = {
   morale: SHIPPED_CREW_MORALE_BALANCE,
   xp: SHIPPED_CREW_XP_BALANCE,
   skills: SHIPPED_CREW_SKILL_BALANCE,
+  trainingCaptain: SHIPPED_TRAINING_CAPTAIN_BALANCE,
 } as const satisfies z.input<typeof CrewBalance>;
 
 /**

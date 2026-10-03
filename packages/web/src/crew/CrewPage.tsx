@@ -13,6 +13,7 @@ import {
   openCrewBase,
   setCrewPolicies,
   setCrewReserve,
+  setTrainingCaptain,
   startCrewConversion,
   type CrewFailure,
 } from './api';
@@ -111,6 +112,12 @@ export function CrewPage(): ReactNode {
   const [roster, setRoster] = useState<CrewRosterResponse | null>(null);
   const [rosterState, setRosterState] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [spending, setSpending] = useState<string | null>(null);
+  /*
+   * A refused Training Captain change (M9-04). Kept, unlike a refused point
+   * spend, because this one has a reason the page could not have known in
+   * advance — the purse — and the card has to say so beside the button.
+   */
+  const [rosterRefusal, setRosterRefusal] = useState<CrewFailure | null>(null);
 
   const { inGameTime } = useWorldClock();
   const { select, clear } = useContextSelection();
@@ -152,6 +159,19 @@ export function CrewPage(): ReactNode {
         // A refusal leaves the board exactly as it was: the closed `CrewSkillRefusal`
         // set describes known state, so the page has nothing to re-render.
         if (outcome.ok) setRoster(outcome.state);
+      })
+      .finally(() => {
+        setSpending(null);
+      });
+  }, []);
+
+  const changeTrainingCaptain = useCallback((memberId: string, designate: boolean) => {
+    setSpending(memberId);
+    setRosterRefusal(null);
+    void setTrainingCaptain(memberId, designate)
+      .then((outcome) => {
+        if (outcome.ok) setRoster(outcome.state);
+        else setRosterRefusal(outcome.refusal);
       })
       .finally(() => {
         setSpending(null);
@@ -402,6 +422,8 @@ export function CrewPage(): ReactNode {
         loading={rosterState === 'loading'}
         failed={rosterState === 'failed'}
         onSpend={spendPoint}
+        onTrainingCaptain={changeTrainingCaptain}
+        refusal={rosterRefusal}
         pendingMemberId={spending}
       />
 

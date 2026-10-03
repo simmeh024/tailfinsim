@@ -569,6 +569,11 @@ export const cashMovementCause = pgEnum('cash_movement_cause', [
    * — or any other — into points.
    */
   'research',
+  /**
+   * §10.2's Training Captain (M9-04): the course fee on conversion, and the
+   * price of returning one to the line. Referenced `<memberId>:training_captain:<n>`.
+   */
+  'training_captain',
   'admin_adjustment',
   'flight_settlement',
   'disruption_cost',
@@ -4107,6 +4112,34 @@ export const crewMember = pgTable(
     /** Families flown, as a JSON array, in the order they were acquired. */
     careerFamilies: text('career_families').notNull().default('[]'),
 
+    /**
+     * §10.2's Training Captain designation (M9-04): when it took effect, or
+     * null for a line pilot.
+     *
+     * A **designation on the member, not a pool move.** The head stays in the
+     * `captain` pool it was named from — moving it to a `training_captain` pool
+     * would be a promotion, and nothing in the game promotes crew yet, and it
+     * would tangle a progression choice with the pool's duty and availability
+     * counters. Payroll, dispatch and legality read none of this.
+     *
+     * **Game time**, like every in-world instant (ADR-0026): the XP award counts
+     * a Training Captain only for a flight that arrived at or after this
+     * instant, on the same clock, so a flight that landed before the conversion
+     * and was settled after it is not retroactively trained.
+     */
+    trainingCaptainSince: timestamp('training_captain_since', { withTimezone: true }),
+    /**
+     * How many times the designation has changed hands — conversions and
+     * reversions both. The cash reference for the n-th change is
+     * `<memberId>:training_captain:<n>`, so a retried request replays AIR-06's
+     * identity rather than charging twice, and the round trip *convert, revert,
+     * convert* is three distinct movements rather than one reference reused.
+     *
+     * A counter rather than a history table because nothing asks for the
+     * history: the ledger already holds every change, dated and priced.
+     */
+    trainingCaptainChanges: integer('training_captain_changes').notNull().default(0),
+
     /** Game time, like every in-world instant (ADR-0026). */
     namedAt: timestamp('named_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -4122,6 +4155,23 @@ export const crewMember = pgTable(
     check(
       'crew_member_career_nonneg',
       sql`${t.careerBlockMinutes} >= 0 AND ${t.careerSectors} >= 0 AND ${t.careerIncidents} >= 0`,
+    ),
+    check('crew_member_training_captain_changes_nonneg', sql`${t.trainingCaptainChanges} >= 0`),
+    /*
+     * The designation and its counter cannot disagree: every conversion makes
+     * the count odd and every reversion makes it even again, so a Training
+     * Captain is exactly a member with an odd count. A writer that set one and
+     * forgot the other is refused here rather than leaving a member who holds
+     * the designation with a cash reference that says they never paid for it.
+     */
+    check(
+      'crew_member_training_captain_parity',
+      sql`(${t.trainingCaptainSince} IS NOT NULL) = (${t.trainingCaptainChanges} % 2 = 1)`,
+    ),
+    // §10.2's "max-level pilot": only the command ranks may hold it.
+    check(
+      'crew_member_training_captain_rank',
+      sql`${t.trainingCaptainSince} IS NULL OR ${t.rank} IN ('captain', 'training_captain')`,
     ),
   ],
 );

@@ -154,9 +154,11 @@ function classifyCause(cause: CashMovementCause): CauseRole {
      * and its facilities included, and an academy level or module for the same
      * reason, because a $25M flagship inside the window would otherwise imply a
      * burn that reports a healthy airline as having days to live, which is the
-     * exact failure this class exists to prevent. A research node (M9-05) is
-     * bought once and never recurs, so it is a one-off like the building whose
-     * points paid for it.
+     * exact failure this class exists to prevent. A Training Captain's course
+     * fee or reversion (M9-04) is one-off for the reason a conversion is: a
+     * decision about one pilot, not a cost of flying. A research node (M9-05)
+     * is bought once and never recurs, so it is a one-off like the building
+     * whose points paid for it.
      */
     case 'airline_founding':
     case 'airline_rebrand':
@@ -166,6 +168,7 @@ function classifyCause(cause: CashMovementCause): CauseRole {
     case 'crew_base_opening':
     case 'crew_hiring':
     case 'crew_conversion':
+    case 'training_captain':
     case 'academy_construction':
     case 'research':
     case 'office_expansion':

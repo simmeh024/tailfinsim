@@ -108,6 +108,9 @@ function categoryForCause(cause: CashMovementCause): LedgerCategory {
      * *"what has §10 cost me?"* would find the academy and not the research it
      * exists to produce. No category fits better: none of the maintenance, fuel
      * or handling lines is the cost of *learning* to spend less on them.
+     *
+     * A Training Captain's course fee and the price of returning one to the line
+     * (M9-04) are crew training by any reading, and join it on the same argument.
      */
     case 'crew_base_opening':
     case 'crew_hiring':
@@ -117,6 +120,7 @@ function categoryForCause(cause: CashMovementCause): LedgerCategory {
     case 'crew_positioning':
     case 'academy_construction':
     case 'academy_upkeep':
+    case 'training_captain':
     case 'research':
       return 'crew';
     case 'office_salary':

@@ -1,34 +1,45 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import {
+  BoostCeiling,
   SkillPoints,
   skillBranchDefinition,
   type AirlineBoostView,
-  type BoostCeiling,
   type CrewMemberView,
   type CrewRosterResponse,
   type CrewSkillBalance,
   type SkillBranch,
   type SkillBranchView,
   type CrewSkillRefusal,
+  type TrainingCaptainBalance,
+  type TrainingCoverageView,
 } from '@tailfin/shared';
 import {
   canSpendPoint,
+  crewBoostSources,
   crewNameFor,
+  isFlightDeckRank,
   levelForXp,
+  resolveEfficiencyBoosts,
   skillBoosts,
-  stackAirlineSkills,
+  trainingCaptainRefusal,
+  trainingXpMultiplier,
   treeFor,
   typeMasteryActive,
   unspentPoints,
   xpForLevel,
   xpToNextLevel,
+  type CrewBoostSources,
+  type RosterCrew,
   type SkilledCrew,
 } from '@tailfin/sim';
 
+import { moveAirlineCash } from '../airline/cash';
 import {
+  academy,
   aircraftType,
   airframe,
+  airline,
   crewBase,
   crewMember,
   crewPool,
@@ -36,6 +47,7 @@ import {
   type CrewRankValue,
 } from '../db/schema';
 import { loadWorldEconomyConfig } from '../economy/loader';
+import { worldGameNow } from '../world/game-now';
 
 import type { Database } from '../db/client';
 
@@ -53,6 +65,14 @@ import type { Database } from '../db/client';
  * Every read and write is scoped by the session-resolved airline (ADR-0020). A
  * member belonging to somebody else is not in the result set, so operating on
  * one is not a state a request can express.
+ *
+ * ## Training Captains (M9-04)
+ *
+ * §10.2's conversion lives here too, because it is a decision about one named
+ * member and nothing else: a **designation** on the row
+ * (`training_captain_since`), never a head moved between pools. The roster read
+ * carries each member's eligibility and the two prices, and a per-base readout
+ * of the XP multiplier the designations are buying.
  *
  * ## What is deliberately absent
  *
@@ -150,6 +170,8 @@ interface MemberRow {
   careerIncidents: number;
   careerFamilies: string;
   namedAt: Date;
+  /** Game time the Training Captain designation took effect, or null (M9-04). */
+  trainingCaptainSince: Date | null;
 }
 
 async function readMembers(db: Database, own: RosterOwner): Promise<MemberRow[]> {
@@ -168,6 +190,7 @@ async function readMembers(db: Database, own: RosterOwner): Promise<MemberRow[]>
       careerIncidents: crewMember.careerIncidents,
       careerFamilies: crewMember.careerFamilies,
       namedAt: crewMember.namedAt,
+      trainingCaptainSince: crewMember.trainingCaptainSince,
     })
     .from(crewMember)
     .where(and(eq(crewMember.worldId, own.worldId), eq(crewMember.airlineId, own.airlineId)))
@@ -183,12 +206,74 @@ function skilledOf(row: MemberRow): SkilledCrew {
   };
 }
 
+function rosterCrewOf(row: MemberRow): RosterCrew {
+  return { ...skilledOf(row), trainingCaptain: row.trainingCaptainSince !== null };
+}
+
+/**
+ * The commissioned level of the academy at each of the airline's crew bases.
+ *
+ * What `trainingCaptainRefusal` reads §10.1's *"own Training Captains"* against.
+ * A base absent from the map has no academy; a building site reads as level 0,
+ * which permits nothing. Scoped by the resolved airline like everything here, so
+ * another airline's Centre of Excellence at the same airport is not this
+ * airline's.
+ */
+async function academyLevelsByBase(db: Database, own: RosterOwner): Promise<Map<string, number>> {
+  const rows = await db
+    .select({ crewBaseId: academy.crewBaseId, level: academy.level })
+    .from(academy)
+    .where(and(eq(academy.worldId, own.worldId), eq(academy.airlineId, own.airlineId)));
+  return new Map(rows.map((row) => [row.crewBaseId, row.level] as const));
+}
+
+/**
+ * Flight-deck heads per base and family — what a Training Captain's coverage is
+ * measured against (M9-04).
+ *
+ * `crew_pool.headcount`, so a named member counts once, as the head they are.
+ * Every flight-deck rank counts, cadet to Training Captain: §10.2's
+ * *"everyone they fly with"* is the whole flight deck, and a Training Captain is
+ * one of the heads they cover.
+ */
+async function flightDeckHeadsByPool(
+  db: Database,
+  own: RosterOwner,
+): Promise<{ crewBaseId: string; family: string; heads: number }[]> {
+  const rows = await db
+    .select({
+      crewBaseId: crewPool.crewBaseId,
+      family: crewPool.family,
+      rank: crewPool.rank,
+      headcount: crewPool.headcount,
+    })
+    .from(crewPool)
+    .innerJoin(crewBase, eq(crewBase.id, crewPool.crewBaseId))
+    .where(and(eq(crewBase.worldId, own.worldId), eq(crewBase.airlineId, own.airlineId)));
+
+  const byKey = new Map<string, { crewBaseId: string; family: string; heads: number }>();
+  for (const row of rows) {
+    if (!isFlightDeckRank(row.rank)) continue;
+    const key = `${row.crewBaseId}|${row.family}`;
+    const entry = byKey.get(key) ?? { crewBaseId: row.crewBaseId, family: row.family, heads: 0 };
+    entry.heads += row.headcount;
+    byKey.set(key, entry);
+  }
+  return [...byKey.values()];
+}
+
 /** The whole roster board, in one response. */
 export async function readRoster(db: Database, own: RosterOwner): Promise<CrewRosterResponse> {
   const economy = await loadWorldEconomyConfig(db, own.worldId);
   const balance = economy.crew.skills;
+  const training = economy.crew.trainingCaptain;
 
-  const [rows, families] = await Promise.all([readMembers(db, own), operatedFamilies(db, own)]);
+  const [rows, families, academyLevels, deckHeads] = await Promise.all([
+    readMembers(db, own),
+    operatedFamilies(db, own),
+    academyLevelsByBase(db, own),
+    flightDeckHeadsByPool(db, own),
+  ]);
 
   const icaoByBase = new Map(
     (
@@ -201,6 +286,7 @@ export async function readRoster(db: Database, own: RosterOwner): Promise<CrewRo
 
   const members: CrewMemberView[] = rows.map((row) => {
     const crew = skilledOf(row);
+    const isTrainingCaptain = row.trainingCaptainSince !== null;
     return {
       id: row.id,
       name: row.name,
@@ -221,6 +307,16 @@ export async function readRoster(db: Database, own: RosterOwner): Promise<CrewRo
       },
       namedAt: row.namedAt.toISOString(),
       typeMasteryActive: typeMasteryActive(crew, families),
+      trainingCaptain: {
+        since: row.trainingCaptainSince?.toISOString() ?? null,
+        convertRefusal: trainingCaptainRefusal(
+          { rank: crew.rank, level: row.level, trainingCaptain: isTrainingCaptain },
+          academyLevels.get(row.crewBaseId) ?? null,
+          economy.crew,
+        ),
+        conversionCostMinor: training.conversionCostMinor,
+        reversionCostMinor: training.reversionCostMinor,
+      },
     };
   });
 
@@ -254,21 +350,25 @@ export async function readRoster(db: Database, own: RosterOwner): Promise<CrewRo
       };
     });
 
-  const stacked = stackAirlineSkills(
-    rows.map(skilledOf),
-    families,
-    balance,
+  /*
+   * What the roster is worth, through §10.4's resolver (M9-04). Line pilots and
+   * Training Captains are two sources, stacked together once against the
+   * world's ceilings — the same call the settlement makes, so the page and the
+   * fuel bill cannot disagree about what the crew are worth.
+   */
+  const sources = crewBoostSources(rows.map(rosterCrewOf), families, balance, training);
+  const resolved = resolveEfficiencyBoosts(
+    { skills: sources.skills, trainingCaptains: sources.trainingCaptains },
     economy.boosts.ceilings,
   );
-  const boosts: AirlineBoostView[] = (Object.keys(stacked.stacked) as BoostCeiling[]).map(
-    (ceiling) => ({
-      ceiling,
-      fraction: stacked.stacked[ceiling].fraction,
-      maxFraction: economy.boosts.ceilings[ceiling],
-      capped: stacked.stacked[ceiling].capped,
-      contributors: stacked.contributors[ceiling],
-    }),
-  );
+  const boosts: AirlineBoostView[] = BoostCeiling.options.map((ceiling) => ({
+    ceiling,
+    fraction: resolved[ceiling].fraction,
+    maxFraction: resolved[ceiling].ceiling,
+    capped: resolved[ceiling].capped,
+    contributors:
+      sources.contributors.skills[ceiling] + sources.contributors.trainingCaptains[ceiling],
+  }));
 
   return {
     members,
@@ -276,7 +376,69 @@ export async function readRoster(db: Database, own: RosterOwner): Promise<CrewRo
     boosts,
     operatedFamilies: families,
     namedFromLevel: balance.namedFromLevel,
+    maxLevel: balance.maxLevel,
+    trainingCoverage: trainingCoverage(rows, deckHeads, icaoByBase, training),
   };
+}
+
+/**
+ * §10.2's *"faster XP for everyone"*, per base and family, as the page shows it.
+ *
+ * The same `trainingXpMultiplier` the XP award applies, over the same two counts
+ * — designated Training Captains and flight-deck heads at the base on the
+ * family — so the readout is the multiplier the next arrival there will get
+ * rather than an estimate of it. Every Training Captain on the roster counts
+ * here: their `since` is the game instant they converted, which is never after
+ * the world's own now.
+ *
+ * Doctrine is zero until M9-05/M9-06 wire the Crew Development branch in; the
+ * cap below is already the cap on both.
+ */
+function trainingCoverage(
+  rows: readonly MemberRow[],
+  deckHeads: readonly { crewBaseId: string; family: string; heads: number }[],
+  icaoByBase: ReadonlyMap<string, string>,
+  balance: TrainingCaptainBalance,
+): TrainingCoverageView[] {
+  const keyed = new Map<
+    string,
+    { crewBaseId: string; family: string; heads: number; tcs: number }
+  >();
+  for (const pool of deckHeads) {
+    keyed.set(`${pool.crewBaseId}|${pool.family}`, { ...pool, tcs: 0 });
+  }
+  for (const row of rows) {
+    if (row.trainingCaptainSince === null) continue;
+    const key = `${row.crewBaseId}|${row.family}`;
+    const entry = keyed.get(key) ?? {
+      crewBaseId: row.crewBaseId,
+      family: row.family,
+      heads: 0,
+      tcs: 0,
+    };
+    entry.tcs += 1;
+    keyed.set(key, entry);
+  }
+
+  return [...keyed.values()]
+    .filter((entry) => entry.heads > 0 || entry.tcs > 0)
+    .map((entry) => {
+      const m = trainingXpMultiplier(
+        { trainingCaptains: entry.tcs, flightDeckHeads: entry.heads },
+        balance,
+      );
+      return {
+        crewBaseId: entry.crewBaseId,
+        airportIcao: icaoByBase.get(entry.crewBaseId) ?? '????',
+        family: entry.family,
+        trainingCaptains: entry.tcs,
+        flightDeckHeads: entry.heads,
+        coverage: m.coverage,
+        multiplier: m.multiplier,
+        capped: m.capped,
+      };
+    })
+    .sort((a, b) => a.airportIcao.localeCompare(b.airportIcao) || a.family.localeCompare(b.family));
 }
 
 /**
@@ -334,6 +496,175 @@ export async function allocateSkillPoint(
 
     return { ok: true, value: { spent } };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Training Captains (M9-04, §10.2)
+// ---------------------------------------------------------------------------
+
+/** Thrown inside the transaction to roll a fee back; never escapes this file. */
+class InsufficientFunds extends Error {}
+
+/**
+ * The AIR-06 reference for a member's n-th designation change.
+ *
+ * `n` is `training_captain_changes` after the change, so a conversion is always
+ * odd and a reversion always even, and *convert, revert, convert* is three
+ * distinct movements rather than one reference that would replay the first.
+ */
+export function trainingCaptainReference(memberId: string, change: number): string {
+  return `${memberId}:training_captain:${String(change)}`;
+}
+
+type DesignationChange = 'convert' | 'revert';
+
+/**
+ * Convert a named pilot to Training Captain, or return one to the line.
+ *
+ * One function for both directions because they are the same transaction with
+ * the sign of one column flipped: lock, check, charge, write. Two near-copies
+ * would be two chances for one of them to forget the lock.
+ *
+ * ## One transaction, and the lock order matters
+ *
+ * The designation and its fee are one transaction — a Training Captain who was
+ * never charged, or a charge for a conversion that did not happen, are both
+ * states the ledger could never explain. The airline row is locked **before**
+ * the member, which is the order `settleArrivedFlight` takes them in (its cash
+ * movement locks the airline, and its XP award then updates the member). The
+ * reverse order would let a conversion and an arrival each hold the lock the
+ * other wants.
+ *
+ * The member is then re-read `FOR UPDATE`, for the reason `allocateSkillPoint`
+ * gives: two clicks together would otherwise each pass a check made against the
+ * same stale row and charge the course twice.
+ *
+ * ## Game time
+ *
+ * `training_captain_since` and the movement's `occurred_at` are the world's
+ * instant (ADR-0026, TIME-02), read once so the two agree. The XP award compares
+ * `since` with a flight's arrival on the same clock.
+ */
+async function changeDesignation(
+  db: Database,
+  own: RosterOwner,
+  memberId: string,
+  direction: DesignationChange,
+): Promise<RosterResult<{ since: Date | null }>> {
+  const economy = await loadWorldEconomyConfig(db, own.worldId);
+  const balance = economy.crew.trainingCaptain;
+  const gameNow = await worldGameNow(db, own.worldId);
+
+  try {
+    return await db.transaction(async (tx) => {
+      await tx
+        .select({ id: airline.id })
+        .from(airline)
+        .where(eq(airline.id, own.airlineId))
+        .limit(1)
+        .for('update');
+
+      const [row] = await tx
+        .select({
+          id: crewMember.id,
+          crewBaseId: crewMember.crewBaseId,
+          rank: crewMember.rank,
+          level: crewMember.level,
+          trainingCaptainSince: crewMember.trainingCaptainSince,
+          trainingCaptainChanges: crewMember.trainingCaptainChanges,
+        })
+        .from(crewMember)
+        .where(
+          and(
+            eq(crewMember.id, memberId),
+            eq(crewMember.airlineId, own.airlineId),
+            eq(crewMember.worldId, own.worldId),
+          ),
+        )
+        .limit(1)
+        .for('update');
+      if (!row) return { ok: false, refusal: 'member_absent' as const };
+
+      const isTrainingCaptain = row.trainingCaptainSince !== null;
+      if (direction === 'convert') {
+        const [site] = await tx
+          .select({ level: academy.level })
+          .from(academy)
+          .where(and(eq(academy.crewBaseId, row.crewBaseId), eq(academy.airlineId, own.airlineId)))
+          .limit(1);
+        const refusal = trainingCaptainRefusal(
+          { rank: row.rank, level: row.level, trainingCaptain: isTrainingCaptain },
+          site?.level ?? null,
+          economy.crew,
+        );
+        if (refusal !== null) return { ok: false, refusal };
+      } else if (!isTrainingCaptain) {
+        return { ok: false, refusal: 'not_training_captain' as const };
+      }
+
+      const change = row.trainingCaptainChanges + 1;
+      const movement = await moveAirlineCash(tx, {
+        airlineId: own.airlineId,
+        amountMinor: -(direction === 'convert'
+          ? balance.conversionCostMinor
+          : balance.reversionCostMinor),
+        cause: 'training_captain',
+        reference: trainingCaptainReference(row.id, change),
+        occurredAt: gameNow,
+      });
+      // The academy's rule (M9-01): a fee the airline cannot pay is refused, and
+      // the throw rolls the movement back with everything else.
+      if (movement.movement.balanceAfterMinor < 0) throw new InsufficientFunds();
+
+      const since = direction === 'convert' ? gameNow : null;
+      await tx
+        .update(crewMember)
+        .set({ trainingCaptainSince: since, trainingCaptainChanges: change })
+        .where(eq(crewMember.id, row.id));
+
+      return { ok: true, value: { since } };
+    });
+  } catch (error) {
+    if (error instanceof InsufficientFunds) return { ok: false, refusal: 'insufficient_funds' };
+    throw error;
+  }
+}
+
+/**
+ * Make a named pilot a Training Captain (§10.2).
+ *
+ * > *"A max-level pilot can be converted to **Training Captain**: they stop
+ * > generating full revenue value and instead multiply XP gain for everyone they
+ * > fly with."*
+ *
+ * Charges `crew.trainingCaptain.conversionCostMinor`. The member stays one of
+ * their pool's heads — a designation, not a promotion — so payroll, dispatch and
+ * legality see no change; what changes is the XP their base's pilots earn and
+ * what their own skill points are worth on the line.
+ */
+export function convertToTrainingCaptain(
+  db: Database,
+  own: RosterOwner,
+  memberId: string,
+): Promise<RosterResult<{ since: Date | null }>> {
+  return changeDesignation(db, own, memberId, 'convert');
+}
+
+/**
+ * Return a Training Captain to the line — the acceptance criterion's
+ * *"reversible at a cost"*.
+ *
+ * Charges `crew.trainingCaptain.reversionCostMinor`, and refunds nothing: the
+ * course was taken and the rating is sunk. Their skill points are untouched and
+ * worth their face value again from the next settlement, and their base's XP
+ * multiplier loses their coverage from the next arrival.
+ */
+export function revertTrainingCaptain(
+  db: Database,
+  own: RosterOwner,
+  memberId: string,
+): Promise<RosterResult<{ since: Date | null }>> {
+  return changeDesignation(db, own, memberId, 'revert');
 }
 
 // ---------------------------------------------------------------------------
@@ -542,21 +873,26 @@ export async function creditNamedCrew(
 }
 
 /**
- * An airline's stacked skill boosts, for the flight model to price against.
+ * An airline's crew boosts, as §10.4's resolver takes them.
  *
  * The one place a settlement asks *"what are this airline's crew worth?"*.
- * Returns the **unstacked** entries per ceiling as well, so a caller that has
- * other sources to add — M9-04's Training Captains, M9-05's research — stacks
- * them together against one ceiling rather than applying two caps in series.
+ * Returns two **unstacked** sources — line crew under `skills`, Training
+ * Captains at their reduced line contribution under `trainingCaptains` (M9-04)
+ * — so the caller stacks them with everything else it holds (M9-05's research)
+ * in one `resolveEfficiencyBoosts` call against one ceiling, rather than
+ * applying two caps in series.
  */
-export async function airlineSkillBoosts(db: Database, own: RosterOwner) {
+export async function airlineSkillBoosts(
+  db: Database,
+  own: RosterOwner,
+): Promise<CrewBoostSources> {
   const economy = await loadWorldEconomyConfig(db, own.worldId);
   const [rows, families] = await Promise.all([readMembers(db, own), operatedFamilies(db, own)]);
-  return stackAirlineSkills(
-    rows.map(skilledOf),
+  return crewBoostSources(
+    rows.map(rosterCrewOf),
     families,
     economy.crew.skills,
-    economy.boosts.ceilings,
+    economy.crew.trainingCaptain,
   );
 }
 
