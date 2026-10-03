@@ -8,11 +8,13 @@ import {
   gateRequirement,
   OPERATING_DAY_MINUTES,
   overnightPositions,
+  pairStandTurns,
   peakConcurrency,
   percentileConcurrency,
   standOccupancies,
   standUtilisation,
   turnaroundStandOf,
+  utilisationOfAssignment,
   type StandOccupancy,
 } from './gates';
 
@@ -312,6 +314,53 @@ describe('building occupancies from a rotation', () => {
   it('holds the last arrival until tomorrow rather than dropping it', () => {
     const [overnight] = standOccupancies([1_160], [360]);
     expect(overnight).toEqual({ on: 1_160, off: 360 + 1_440 });
+  });
+
+  it('carries each end’s own facts through the same pairing (M7-07)', () => {
+    const turns = pairStandTurns(
+      [
+        { minute: 740, flight: 'in-2' },
+        { minute: 540, flight: 'in-1' },
+        { minute: 1_160, flight: 'in-3' },
+      ],
+      [
+        { minute: 800, flight: 'out-2' },
+        { minute: 560, flight: 'out-1' },
+      ],
+    );
+    expect(turns.map(({ on, off }) => ({ on, off }))).toEqual(
+      standOccupancies([740, 540, 1_160], [800, 560]),
+    );
+    expect(turns.map((turn) => [turn.arrival.flight, turn.departure?.flight ?? null])).toEqual([
+      ['in-1', 'out-1'],
+      ['in-2', 'out-2'],
+      // Nothing left today: tomorrow's first departure, which no departure here is.
+      ['in-3', null],
+    ]);
+  });
+
+  it('pairs an overnight with the day’s first departure standing in for tomorrow’s', () => {
+    const [overnight] = pairStandTurns([{ minute: 1_160 }], [{ minute: 360, flight: 'dawn' }]);
+    expect(overnight?.departure?.flight).toBe('dawn');
+    expect(overnight?.off).toBe(360 + 1_440);
+  });
+});
+
+describe('one colouring, two readings (M7-07)', () => {
+  it('lets a caller’s facts ride the assignment untouched', () => {
+    const placed = assignStands([
+      { on: 600, off: 640, tail: 'PH-ONE' },
+      { on: 610, off: 650, tail: 'PH-TWO' },
+    ]);
+    expect(placed.map((it) => [it.tail, it.standIndex])).toEqual([
+      ['PH-ONE', 0],
+      ['PH-TWO', 1],
+    ]);
+  });
+
+  it('measures an assignment exactly as standUtilisation does', () => {
+    const day = rollingHubOccupancies(8);
+    expect(utilisationOfAssignment(assignStands(day), 10)).toEqual(standUtilisation(day, 10));
   });
 });
 
