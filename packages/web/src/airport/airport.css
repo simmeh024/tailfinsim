@@ -1,0 +1,474 @@
+/*
+ * The airport map (M7-07, App. B.7).
+ *
+ * Every value is a theme token. The one colour that is not — an airline's own —
+ * arrives as data from the server and is set inline on the shapes it fills,
+ * because it is identity rather than theme: App. B.7's "your gates highlighted
+ * in your brand colours".
+ *
+ * Status is never hue alone (H.4, H.7): a stand's state is also its accessible
+ * name, the exclusive lease is a notch in the corner, and every heat band has a
+ * glyph and a percentage drawn on the stand itself.
+ */
+
+.airport-map {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  inline-size: 100%;
+  block-size: 100%;
+  min-block-size: 24rem;
+  padding: var(--space-3);
+  box-sizing: border-box;
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+
+.airport-map__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.airport-map__title h2 {
+  margin: 0;
+  font-family: var(--font-figures);
+  font-size: var(--text-lg);
+  color: var(--text-primary);
+}
+
+.airport-map__name {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.airport-map__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.airport-map__controls .btn[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* -------------------------------------------------------------- stage ---- */
+
+.apron {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-block-size: 0;
+}
+
+.apron__stage {
+  position: relative;
+  flex: 1;
+  min-block-size: 20rem;
+  overflow: hidden;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.apron__svg {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  min-block-size: 20rem;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+
+.apron__svg:active {
+  cursor: grabbing;
+}
+
+.apron__zoom {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-start: var(--space-2);
+  display: flex;
+  gap: var(--space-1);
+}
+
+/* ------------------------------------------------------------- ground ---- */
+
+.apron__ground {
+  fill: var(--bg-inset);
+}
+
+.apron__zone rect {
+  fill: var(--bg-raised);
+  stroke: var(--border-subtle);
+  stroke-width: 1;
+}
+
+.apron__building rect {
+  fill: var(--bg-panel);
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+}
+
+.apron__runway polygon {
+  fill: var(--border-strong);
+  stroke: var(--text-muted);
+  stroke-width: 1;
+}
+
+.apron__centreline {
+  stroke: var(--text-secondary);
+  stroke-width: 1.2;
+  stroke-dasharray: 10 8;
+}
+
+.apron__pad circle {
+  fill: none;
+  stroke: var(--text-secondary);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 2;
+}
+
+.apron__label {
+  fill: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: 11px;
+}
+
+.apron__label--centre {
+  text-anchor: middle;
+}
+
+.apron__label--pier {
+  text-anchor: middle;
+  font-weight: 600;
+  fill: var(--text-primary);
+}
+
+.apron__label--tiny {
+  font-size: 6px;
+}
+
+/* ------------------------------------------------------------- stands ---- */
+
+.apron-stand {
+  cursor: pointer;
+  outline: none;
+}
+
+.apron-stand__shape {
+  stroke-width: 1.2;
+}
+
+/* Yours: filled inline with your colour, edged so it holds on any ground. */
+.apron-stand[data-state='yours'] .apron-stand__shape {
+  stroke: var(--text-primary);
+}
+
+/* A rival's: muted, and named on hover or focus. */
+.apron-stand[data-state='rival'] .apron-stand__shape {
+  fill: var(--border-strong);
+  stroke: var(--text-muted);
+}
+
+/* Unleased: outline only. */
+.apron-stand[data-state='open'] .apron-stand__shape {
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-dasharray: 3 2;
+}
+
+.apron-stand__exclusive {
+  fill: var(--text-primary);
+}
+
+.apron-stand__label {
+  fill: var(--text-primary);
+  font-family: var(--font-figures);
+  font-size: 7px;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.apron-stand:hover .apron-stand__shape,
+.apron-stand:focus-visible .apron-stand__shape,
+.apron-stand[data-selected='true'] .apron-stand__shape {
+  stroke: var(--focus-ring);
+  stroke-width: 2.4;
+  stroke-dasharray: none;
+}
+
+/* The heat overlay, over your own stands only. */
+.apron-stand__heat {
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.apron-stand[data-heat='idle'] .apron-stand__heat {
+  fill: var(--status-delayed-quiet);
+  stroke: var(--status-delayed);
+}
+
+.apron-stand[data-heat='working'] .apron-stand__heat {
+  fill: var(--status-ontime-quiet);
+  stroke: var(--status-ontime);
+}
+
+.apron-stand[data-heat='jammed'] .apron-stand__heat {
+  fill: var(--status-cancelled-quiet);
+  stroke: var(--status-cancelled);
+}
+
+.apron-tip rect {
+  fill: var(--bg-base);
+  stroke: var(--border-strong);
+}
+
+.apron-tip text {
+  fill: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 9px;
+  text-anchor: middle;
+}
+
+/* ----------------------------------------------------------- aircraft ---- */
+
+.apron-aircraft__body {
+  stroke: var(--bg-base);
+  stroke-width: 3;
+}
+
+/* A rival's aeroplane lets the click through to the stand under it. */
+.apron-aircraft[data-yours='false'] {
+  pointer-events: none;
+}
+
+.apron-aircraft[data-yours='true'] {
+  cursor: pointer;
+  outline: none;
+}
+
+.apron-aircraft[data-yours='true']:focus-visible .apron-aircraft__body,
+.apron-aircraft[data-selected='true'] .apron-aircraft__body {
+  stroke: var(--focus-ring);
+}
+
+.apron-ring__track {
+  fill: var(--bg-base);
+  stroke: var(--border-strong);
+  stroke-width: 1.2;
+}
+
+.apron-ring__fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.2;
+}
+
+.apron-ring__fill[data-complete='true'] {
+  stroke: var(--status-ontime);
+}
+
+.apron__movement path {
+  stroke: var(--bg-base);
+  stroke-width: 3;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .apron__movement {
+    transition: transform 1s linear;
+  }
+}
+
+/* -------------------------------------------------------------- panel ---- */
+
+.apron-panel {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-end: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  inline-size: min(22rem, calc(100% - 2 * var(--space-2)));
+  max-block-size: calc(100% - 2 * var(--space-2));
+  overflow: auto;
+  box-sizing: border-box;
+  padding: var(--space-3);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+
+.apron-panel p,
+.apron-panel dl,
+.apron-panel ol,
+.apron-panel ul {
+  margin: 0;
+}
+
+.apron-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.apron-panel__title {
+  margin: 0;
+  font-family: var(--font-figures);
+  font-size: var(--text-base);
+}
+
+.apron-panel__sub,
+.apron-panel__hint {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.apron-panel__heading {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.apron-panel__facts {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.apron-panel__facts div {
+  display: grid;
+  grid-template-columns: 8rem 1fr;
+  gap: var(--space-2);
+}
+
+.apron-panel__facts dt {
+  color: var(--text-secondary);
+}
+
+.apron-panel__facts dd {
+  margin: 0;
+}
+
+.apron-panel__note {
+  padding-inline-start: var(--space-2);
+  border-inline-start: 3px solid var(--border-strong);
+}
+
+.apron-panel__day {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.apron-panel__turns,
+.apron-panel__rings {
+  padding-inline-start: var(--space-4);
+}
+
+.apron-panel__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.apron-panel__actions--row {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.apron-panel__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--status-cancelled-quiet);
+  border-radius: var(--radius-sm);
+}
+
+.apron-panel__link {
+  color: var(--accent);
+}
+
+/* ------------------------------------------------------------- legend ---- */
+
+.apron-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.apron-legend__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.apron-legend__list li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.apron-legend__swatch {
+  display: inline-block;
+  inline-size: 0.9rem;
+  block-size: 0.7rem;
+  border: 1px solid var(--text-muted);
+  border-radius: 2px;
+}
+
+.apron-legend__swatch[data-state='rival'] {
+  background: var(--border-strong);
+}
+
+.apron-legend__swatch[data-state='open'] {
+  border-style: dashed;
+}
+
+.apron-legend__swatch--exclusive {
+  position: relative;
+}
+
+.apron-legend__swatch--exclusive::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  border-block-start: 0.35rem solid var(--text-primary);
+  border-inline-start: 0.35rem solid transparent;
+}
+
+.apron-legend__swatch[data-heat='idle'] {
+  background: var(--status-delayed-quiet);
+  border-color: var(--status-delayed);
+}
+
+.apron-legend__swatch[data-heat='working'] {
+  background: var(--status-ontime-quiet);
+  border-color: var(--status-ontime);
+}
+
+.apron-legend__swatch[data-heat='jammed'] {
+  background: var(--status-cancelled-quiet);
+  border-color: var(--status-cancelled);
+}
+
+.apron-legend__rings {
+  letter-spacing: -0.1em;
+}
