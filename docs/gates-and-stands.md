@@ -199,13 +199,86 @@ want it exclusively and somebody is already on it), `409 fee_changed` (the quote
 `422 not_leasable` (common use is paid per turn), `404` for an airport or a stand that does not
 exist.
 
+## The airport map (M7-07)
+
+App. B.7's schematic — _"zoom from the world map into any airport you operate at"_ — reads one
+endpoint, built entirely from facts this subsystem and the flight table already hold. The map is a
+way of **seeing** gates, slots and turns that already decide money; it decides nothing itself.
+
+| Route                           | What                                                                 |
+| ------------------------------- | -------------------------------------------------------------------- |
+| `GET /api/airports/:icao/apron` | the gates answer, aeroplanes on stand, runways, movements, your days |
+
+- **`gates`** is `GET /api/airports/:icao/gates`, embedded unchanged, so the map and the gates panel
+  cannot disagree. Leasing from the map is the existing `POST`/`DELETE`, whose answer is that half.
+- **`aircraft`** are every carrier's aeroplanes on the ground here: an airframe whose **latest
+  departed flight landed here** — at its destination, or here by diversion — and that has not left
+  since. Keyed by the flight that brought it. `departsAt` and `nextDestinationIcao` come from its
+  next not-yet-departed, not-cancelled flight out of here scheduled after it landed. An airframe
+  that has never flown is not drawn, even at its delivery airport — a delivery is not a flight.
+- **`size`** is the catalogue's class: turboprop and regional jets are `regional`, `narrowbody` is
+  `narrowbody`, both widebody classes are `widebody`. Wingspan code alone cannot do it — the ATR 72,
+  the E190-E2 and the A320neo are all code C. A **freighter** is drawn as a passenger type of the
+  same family (the 777F as a 777), or by wingspan code when it has none (the 747-8F).
+- **`runways`** are the import's open runways, helipads left out. `headingDeg` is the lower
+  designator times ten (`09/27` → 90°, `18L/36R` → 180°): the designator's **magnetic** bearing
+  rounded to 10°, a schematic orientation rather than a survey heading, and null when no end is a
+  number.
+- **`movements`** are landings and take-offs within **30 game minutes** of now — the actual instant
+  where there is one, the estimate or schedule for one still due, cancelled flights never.
+- **`standDays`** are **your** turn stands' days: the very turns their utilisation is measured from.
+  `assignStands` now carries each turn's flights through the colouring, and the gates answer's
+  utilisation and this list are two readings of **one** colouring — not a second pass that could
+  disagree with the percentage beside it. A turn's `departsAt` is its arrival plus the measured
+  interval, so an overnight reads as the hours it was counted for.
+
+### Where each aeroplane is drawn
+
+**The game stores no gate assignment.** App. B.7 files _"gate assignment as an optimisation
+puzzle"_ under post-MVP, and nothing in the operation reads which stand an aeroplane is on — a turn
+is priced by `resolveStands` from what the airline **holds**. So `standPosition` is a **display
+rule**, computed fresh on every read by `assignApronStands` in `@tailfin/sim`, and written to agree
+with the model it illustrates:
+
+1. Aeroplanes in arrival order, ties broken by key — the same apron draws the same way every time.
+2. **Your measured turn first.** An aeroplane whose current turn M7-06's measurement put on one of
+   its airline's stands is drawn there, so the gate's rotation and the picture agree.
+3. **Every airline onto its own stands before any walk-up** — contact gates before remote stands,
+   exclusive before preferential. A preferential holder outranks a walk-up (App. B.6).
+4. **A walk-up only onto a stand nobody holds**, because `resolveStands` counts every leased
+   contact gate as gone for a walk-up — a rival's preferential gate is not spare.
+5. **No departure within four game hours** (longer than any modelled turn) means **parked**:
+   overnight parking, then the remote apron, never a contact gate.
+6. A freighter tries a cargo stand first. **Null** when nothing fits.
+
+M7-06's greedy colouring is not reused for this, deliberately: it places a day of _intervals_ onto
+_anonymous_ stands, while the apron places aeroplanes that all overlap _now_ onto _named_ stands
+with owners. What is reused is its answer, through rule 2.
+
+### What is private
+
+The projection the world map already makes. `WorldMapFlight` names every airborne aeroplane's
+airline, colour, registration and type to every player; naming the same aeroplanes on the ground
+adds nothing. Two things stay private: **`flightId`** is your own aeroplane's next departure and
+null for every rival, and **`standDays`** lists only your stands — a rival's rotation and
+utilisation are as private here as on the gates page. Colour is `airlineMapColour(logo, icao)`,
+the world map's own call, so a carrier is one colour on the globe and on the apron.
+
+### It is a worker story
+
+The aeroplanes, the movements and your stands' days are all read off `flight` rows, which only the
+worker creates and moves. On a node with no worker nothing ever lands or leaves, so the apron is
+empty and the runways are quiet — which reads as **a quiet airport rather than a missing process**.
+The stands and who holds them are HTTP state and show everywhere.
+
 ## What M7-06 deliberately did not build
 
-- **The airport map.** App. B.7's 2D schematic with liveries on stand and a utilisation heat
-  overlay is M7-07. The API it needs — the whole apron, per position, with holders — is what this
-  milestone returns.
+- **The airport map.** App. B.7's 2D schematic is M7-07, and its server half is built — see
+  [The airport map](#the-airport-map-m7-07). The world-map zoom and the schematic itself are the
+  client's.
 - **Gate assignment.** App. B.7 files _"gate assignment as an optimisation puzzle"_ under
-  post-MVP, and the greedy colouring here is a measurement device, not a policy.
+  post-MVP, and the greedy colouring here is a measurement device, not a policy. The airport map's
+  `standPosition` (M7-07) is a display rule over the same holdings and is stored nowhere.
 - **Subleasing to other players.** App. B.8's trading row, deferred to MARKET with slot trading.
 - **Towing between waves.** The appendix's own calibration note suggests it as the thing that
   would stop the model overstating flagship-hub gate needs. It trades cheap tugs for expensive
