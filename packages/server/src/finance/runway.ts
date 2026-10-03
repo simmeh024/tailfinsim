@@ -154,7 +154,9 @@ function classifyCause(cause: CashMovementCause): CauseRole {
      * and its facilities included, and an academy level or module for the same
      * reason, because a $25M flagship inside the window would otherwise imply a
      * burn that reports a healthy airline as having days to live, which is the
-     * exact failure this class exists to prevent.
+     * exact failure this class exists to prevent. A Training Captain's course
+     * fee or reversion (M9-04) is one-off for the reason a conversion is: a
+     * decision about one pilot, not a cost of flying.
      */
     case 'airline_founding':
     case 'airline_rebrand':
@@ -164,6 +166,7 @@ function classifyCause(cause: CashMovementCause): CauseRole {
     case 'crew_base_opening':
     case 'crew_hiring':
     case 'crew_conversion':
+    case 'training_captain':
     case 'academy_construction':
     case 'office_expansion':
     case 'executive_floor':

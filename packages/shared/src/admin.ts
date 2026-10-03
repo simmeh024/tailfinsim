@@ -574,6 +574,8 @@ export const AdminCashMovementCause = z.enum([
   /** §10.1's training academy (M9-01): building it, and keeping it open. */
   'academy_construction',
   'academy_upkeep',
+  /** §10.2's Training Captain (M9-04): the course fee, and the price of the way back. */
+  'training_captain',
   'admin_adjustment',
   'flight_settlement',
   'disruption_cost',

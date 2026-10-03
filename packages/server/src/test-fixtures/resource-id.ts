@@ -276,6 +276,17 @@ export const RESOURCE_ID_SURFACES = [
     field: 'id',
     semantics: 'owner-scoped-resource',
   },
+  // M9-04. The same member, in the same position, for the Training Captain
+  // designation both ways — and concealed the same way, before any fee moves.
+  ...[
+    'POST /api/crew/roster/:id/training-captain',
+    'DELETE /api/crew/roster/:id/training-captain',
+  ].map((endpoint): ResourceIdSurface => ({
+    endpoint,
+    position: 'path',
+    field: 'id',
+    semantics: 'owner-scoped-resource',
+  })),
   {
     endpoint: 'player-airline context',
     position: 'header',

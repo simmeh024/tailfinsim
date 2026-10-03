@@ -127,6 +127,20 @@ describe('a payload written before a section existed', () => {
     expect(parsed.hubs).toEqual(ECONOMY_CONFIG_V1.hubs);
   });
 
+  it('takes the shipped Training Captain balance when a pre-M9-04 crew section is read back', () => {
+    /*
+     * The same rule one level down (M9-04). Every `v1` row written before
+     * Training Captains existed carries a `crew` object without
+     * `trainingCaptain`; a required field there would make the whole payload
+     * unparseable, and a world pinned to it could not settle a flight.
+     */
+    const { trainingCaptain: _trainingCaptain, ...crewBefore } = ECONOMY_CONFIG_V1.crew;
+    const parsed = EconomyConfig.parse(
+      JSON.parse(JSON.stringify({ ...ECONOMY_CONFIG_V1, crew: crewBefore })),
+    );
+    expect(parsed.crew.trainingCaptain).toEqual(ECONOMY_CONFIG_V1.crew.trainingCaptain);
+  });
+
   it('takes the shipped hub fees when a payload has the curve but not the fees', () => {
     /*
      * The sharper version of the same rule, and the one that actually bites here.

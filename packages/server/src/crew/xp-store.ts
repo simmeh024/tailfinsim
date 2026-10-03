@@ -1,9 +1,17 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, lte, sql } from 'drizzle-orm';
 
-import type { CrewSkillBalance, CrewXpBalance } from '@tailfin/shared';
-import { flightXp, type FlightXp, type Weather, type XpDisruption } from '@tailfin/sim';
+import type { CrewSkillBalance, CrewXpBalance, TrainingCaptainBalance } from '@tailfin/shared';
+import {
+  flightXp,
+  isFlightDeckRank,
+  trainedXpPerHead,
+  trainingXpMultiplier,
+  type FlightXp,
+  type Weather,
+  type XpDisruption,
+} from '@tailfin/sim';
 
-import { crewDutyPeriod, crewPool, crewRank, type CrewRankValue } from '../db/schema';
+import { crewDutyPeriod, crewMember, crewPool, crewRank, type CrewRankValue } from '../db/schema';
 
 import { parseComplement } from './duty-store';
 import { creditNamedCrew } from './roster';
@@ -55,6 +63,11 @@ import type { Database } from '../db/client';
 /** The `crew_rank` enum's own values, for narrowing a rank read out of JSON. */
 const CREW_RANKS = new Set<string>(crewRank.enumValues);
 
+/** The flight-deck half of that enum — the ranks a Training Captain trains (M9-04). */
+const FLIGHT_DECK_RANKS: CrewRankValue[] = crewRank.enumValues.filter((rank) =>
+  isFlightDeckRank(rank),
+);
+
 export interface FlightXpFacts {
   /** The duty period that operated the flight. Null on a flight with no crew. */
   crewDutyPeriodId: string | null;
@@ -68,6 +81,30 @@ export interface FlightXpFacts {
   arrivalLocalHour: number | null;
   disruption: XpDisruption;
   crossesContinents: boolean;
+  /**
+   * The flight's on-blocks instant, **game time** (M9-04). A Training Captain
+   * counts towards this flight's multiplier only if their designation took
+   * effect at or before it — so a flight that landed before a conversion and
+   * was settled after it is not retroactively trained, and a replay of an old
+   * arrival re-derives the same multiplier.
+   */
+  arrivedAt: Date;
+}
+
+/**
+ * The Training Captain multiplier a flight's flight deck earned under, as
+ * recorded on `flight_result.breakdown.crewXp.training` (M9-04).
+ */
+export interface TrainingXpAward {
+  /** Designated Training Captains at the duty period's base, on its family. */
+  trainingCaptains: number;
+  /** Flight-deck heads there — what their coverage is measured against. */
+  flightDeckHeads: number;
+  coverage: number;
+  multiplier: number;
+  capped: boolean;
+  /** What each flight-deck head aboard earned, after the multiplier. */
+  flightDeckXpPerHead: number;
 }
 
 export interface XpAward {
@@ -79,6 +116,12 @@ export interface XpAward {
   totalXp: number;
   /** Per pool, for the audit trail on `flight_result.breakdown`. */
   pools: { rank: string; heads: number; xp: number }[];
+  /**
+   * The Training Captain multiplier the flight deck earned under (M9-04). Null
+   * when the caller passed no Training Captain balance, or no flight-deck rank
+   * flew — a training captain trains pilots, and cabin XP is unchanged.
+   */
+  training: TrainingXpAward | null;
 }
 
 /**
@@ -94,6 +137,7 @@ export async function awardFlightXp(
   facts: FlightXpFacts,
   balance: CrewXpBalance,
   skills?: CrewSkillBalance,
+  training?: TrainingCaptainBalance,
 ): Promise<XpAward | null> {
   if (facts.crewDutyPeriodId === null) return null;
 
@@ -150,9 +194,33 @@ export async function awardFlightXp(
     .filter((rank): rank is CrewRankValue => CREW_RANKS.has(rank));
   if (ranks.length === 0) return null;
   const byRank = new Map(slots.map((slot) => [slot.rank, slot.count] as const));
+
+  /*
+   * §10.2's Training Captains: *"multiply XP gain for everyone they fly with"*
+   * (M9-04). Read for the duty period's base and family — the pilots a Training
+   * Captain is rostered among, which is the finest grain the pool model knows —
+   * and applied to the **flight deck only**. A Training Captain trains pilots;
+   * the cabin's XP is the formula's, unchanged.
+   *
+   * Pools and named members alike get the multiplied figure, because a named
+   * member is one of the pool's heads and the two must move together.
+   */
+  const deckRanks = ranks.filter((rank) => isFlightDeckRank(rank));
+  const trainingAward =
+    training === undefined || deckRanks.length === 0
+      ? null
+      : await trainingFor(tx, period, facts.arrivedAt, xp.xpPerHead, training);
+  // A complement's rank is a JSON string; one the ladder does not know is not
+  // the flight deck's, so the cast cannot mistake it for one.
+  const xpPerHeadFor = (rank: string): number =>
+    trainingAward !== null && isFlightDeckRank(rank as CrewRankValue)
+      ? trainingAward.flightDeckXpPerHead
+      : xp.xpPerHead;
+
   const cases = sql.join(
     slots.map(
-      (slot) => sql`when ${crewPool.rank} = ${slot.rank} then ${xp.xpPerHead * slot.count}`,
+      (slot) =>
+        sql`when ${crewPool.rank} = ${slot.rank} then ${xpPerHeadFor(slot.rank) * slot.count}`,
     ),
     sql` `,
   );
@@ -172,7 +240,7 @@ export async function awardFlightXp(
   const pools = updated.map((row) => ({
     rank: row.rank,
     heads: byRank.get(row.rank) ?? 0,
-    xp: xp.xpPerHead * (byRank.get(row.rank) ?? 0),
+    xp: xpPerHeadFor(row.rank) * (byRank.get(row.rank) ?? 0),
   }));
 
   /*
@@ -187,20 +255,34 @@ export async function awardFlightXp(
    * `skills` is optional only so a caller that has already loaded the economy
    * need not load it twice; omitting it skips the individual credit rather than
    * guessing at a curve.
+   *
+   * Two calls when a Training Captain multiplier applies — the flight deck at
+   * the trained rate, the cabin at the formula's — and each member is credited
+   * by exactly one of them, because a member holds exactly one rank.
    */
   if (skills !== undefined) {
-    await creditNamedCrew(
-      tx,
-      {
-        crewBaseId: period.crewBaseId,
-        family: period.family,
-        ranks,
-        xpPerHead: xp.xpPerHead,
-        blockMinutes: facts.blockMinutes,
-        handledDisruption: facts.disruption !== 'none',
-      },
-      skills,
-    );
+    const cabinRanks = ranks.filter((rank) => !isFlightDeckRank(rank));
+    const groups =
+      trainingAward === null
+        ? [{ ranks, xpPerHead: xp.xpPerHead }]
+        : [
+            { ranks: deckRanks, xpPerHead: trainingAward.flightDeckXpPerHead },
+            { ranks: cabinRanks, xpPerHead: xp.xpPerHead },
+          ];
+    for (const group of groups) {
+      await creditNamedCrew(
+        tx,
+        {
+          crewBaseId: period.crewBaseId,
+          family: period.family,
+          ranks: group.ranks,
+          xpPerHead: group.xpPerHead,
+          blockMinutes: facts.blockMinutes,
+          handledDisruption: facts.disruption !== 'none',
+        },
+        skills,
+      );
+    }
   }
 
   return {
@@ -208,6 +290,70 @@ export async function awardFlightXp(
     heads: period.heads,
     totalXp: pools.reduce((total, pool) => total + pool.xp, 0),
     pools,
+    training: trainingAward,
+  };
+}
+
+/**
+ * The Training Captain multiplier at one base and family, for one arrival
+ * (M9-04, §10.2).
+ *
+ * Two counts and `trainingXpMultiplier`, nothing else — the same function the
+ * roster readout applies, so the page and the award cannot disagree:
+ *
+ *   - **Training Captains**: named members at the base on the family whose
+ *     designation took effect at or before `arrivedAt`. Game time on both sides
+ *     (ADR-0026), so the award is deterministic for the flight rather than
+ *     depending on when the worker got round to settling it.
+ *   - **Flight-deck heads**: `crew_pool.headcount` summed over the flight-deck
+ *     ranks there. A named member is one of those heads, so a Training Captain
+ *     counts once, as one of the pilots they cover.
+ *
+ * Doctrine is zero here until M9-06 wires research in; `trainingXpMultiplier`
+ * already caps the two together.
+ */
+async function trainingFor(
+  tx: Database,
+  period: { crewBaseId: string; family: string },
+  arrivedAt: Date,
+  xpPerHead: number,
+  balance: TrainingCaptainBalance,
+): Promise<TrainingXpAward> {
+  const [captains] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(crewMember)
+    .where(
+      and(
+        eq(crewMember.crewBaseId, period.crewBaseId),
+        eq(crewMember.family, period.family),
+        isNotNull(crewMember.trainingCaptainSince),
+        lte(crewMember.trainingCaptainSince, arrivedAt),
+      ),
+    );
+  const [deck] = await tx
+    .select({ heads: sql<number>`coalesce(sum(${crewPool.headcount}), 0)::int` })
+    .from(crewPool)
+    .where(
+      and(
+        eq(crewPool.crewBaseId, period.crewBaseId),
+        eq(crewPool.family, period.family),
+        inArray(crewPool.rank, FLIGHT_DECK_RANKS),
+      ),
+    );
+
+  // Aggregates come back through the driver's own parser; `Number` normalises
+  // at the boundary rather than trusting the `sql<number>` assertion.
+  const multiplier = trainingXpMultiplier(
+    { trainingCaptains: Number(captains?.count ?? 0), flightDeckHeads: Number(deck?.heads ?? 0) },
+    balance,
+  );
+  return {
+    trainingCaptains: Number(captains?.count ?? 0),
+    flightDeckHeads: Number(deck?.heads ?? 0),
+    coverage: multiplier.coverage,
+    multiplier: multiplier.multiplier,
+    capped: multiplier.capped,
+    flightDeckXpPerHead: trainedXpPerHead(xpPerHead, multiplier),
   };
 }
 

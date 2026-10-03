@@ -470,6 +470,13 @@
       "when": 1790343550889,
       "tag": "0066_npc_review_claim",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1790994752835,
+      "tag": "0067_training_captains",
+      "breakpoints": true
     }
   ]
 }

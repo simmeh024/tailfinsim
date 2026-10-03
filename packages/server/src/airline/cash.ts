@@ -98,7 +98,9 @@ function categoryForCause(cause: CashMovementCause): LedgerCategory {
      * needs a category of its own: a player asking *"what did crew cost me"*
      * wants the training buildings in that answer, and the `cause` on the
      * movement is what separates them when they ask which — the same argument
-     * the three ground handling causes make below.
+     * the three ground handling causes make below. A Training Captain's course
+     * fee and the price of returning one to the line (M9-04) are crew training
+     * by any reading, so they join it on the same argument.
      */
     case 'crew_base_opening':
     case 'crew_hiring':
@@ -108,6 +110,7 @@ function categoryForCause(cause: CashMovementCause): LedgerCategory {
     case 'crew_positioning':
     case 'academy_construction':
     case 'academy_upkeep':
+    case 'training_captain':
       return 'crew';
     case 'office_salary':
       return 'office_salary';
