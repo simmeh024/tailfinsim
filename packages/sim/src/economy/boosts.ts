@@ -22,7 +22,13 @@
  * kill persistent multiplayer games."*
  */
 
-import { ECONOMY_CONFIG_V1 } from '@tailfin/shared';
+import {
+  BOOST_SOURCES,
+  type BoostSource,
+  ECONOMY_CONFIG_V1,
+  EFFICIENCY_QUANTITIES,
+  type EfficiencyQuantity,
+} from '@tailfin/shared';
 
 /**
  * One boost from a research node, an academy doctrine, a Head of Ground Ops or a
@@ -94,4 +100,98 @@ export function stackEfficiencyBoosts(
   const combined = 1 - remaining;
   const capped = combined > ceiling;
   return { fraction: capped ? ceiling : combined, capped };
+}
+
+// ---------------------------------------------------------------------------
+// The central resolver (M9-06)
+// ---------------------------------------------------------------------------
+
+/** Unstacked boosts, by §10.4 quantity. A source hands one of these over. */
+export type BoostsByQuantity = Record<EfficiencyQuantity, EfficiencyBoost[]>;
+
+/** One source's contribution. A quantity it does not touch may be left out. */
+export type SourceBoosts = Partial<Record<EfficiencyQuantity, readonly EfficiencyBoost[]>>;
+
+/** No boosts on any quantity. */
+export function emptyBoosts(): BoostsByQuantity {
+  return {
+    fuelBurn: [],
+    turnaroundTime: [],
+    blockTime: [],
+    maintenanceCost: [],
+    incidentRate: [],
+    serviceCost: [],
+  };
+}
+
+/** A quantity once every source has been stacked and the ceiling applied. */
+export interface ResolvedEfficiency extends StackedBoosts {
+  quantity: EfficiencyQuantity;
+  /** The world's ceiling for this quantity. */
+  ceiling: number;
+  /** Every source stacked multiplicatively, before the ceiling. */
+  uncapped: number;
+  /** Each source's own stack, alone and before the ceiling, for the readout. */
+  bySource: Record<BoostSource, number>;
+  /** Every boost that went in, for anything that wants to itemise them. */
+  boosts: readonly EfficiencyBoost[];
+}
+
+export type ResolvedBoosts = Record<EfficiencyQuantity, ResolvedEfficiency>;
+
+/**
+ * Every source of §10.4 efficiency an airline holds, combined once.
+ *
+ * §10.4's first rule — *"Stacking academy + research + personal skill +
+ * Training Captain never exceeds the ceiling. Diminishing returns before the
+ * cap."* — applied in one place to every source at once. Stacking each source
+ * against the ceiling separately and then adding the results would let three
+ * sources each reach the cap and sum past it; that is the failure this function
+ * exists to make impossible, and the property test beside it hunts for.
+ *
+ * The academy is not a source here, by §10's own core rule — see `BoostSource`.
+ *
+ * `ceilings` is the world's own `EconomyConfig.boosts.ceilings`, so a retune
+ * moves the cap without a deploy.
+ */
+export function resolveEfficiencyBoosts(
+  sources: Partial<Record<BoostSource, SourceBoosts>>,
+  ceilings: Record<EfficiencyQuantity, number> = EFFICIENCY_CEILINGS,
+): ResolvedBoosts {
+  const resolved = {} as ResolvedBoosts;
+
+  for (const quantity of EFFICIENCY_QUANTITIES) {
+    const bySource = {} as Record<BoostSource, number>;
+    const all: EfficiencyBoost[] = [];
+
+    for (const source of BOOST_SOURCES) {
+      const own = sources[source]?.[quantity] ?? [];
+      // Alone and uncapped: what this source would be worth with nothing else
+      // held. A ceiling of 1 cannot clip a stack, which is always below 1.
+      bySource[source] = stackEfficiencyBoosts(own, 1).fraction;
+      all.push(...own);
+    }
+
+    const ceiling = ceilings[quantity];
+    const uncapped = stackEfficiencyBoosts(all, 1).fraction;
+    const stacked = stackEfficiencyBoosts(all, ceiling);
+    resolved[quantity] = { quantity, ceiling, uncapped, bySource, boosts: all, ...stacked };
+  }
+
+  return resolved;
+}
+
+/**
+ * The resolved fraction as the single boost a consumer should apply.
+ *
+ * `computeFuelBurn`, `computeBlockTime`, `turnaroundMinutes` and
+ * `rollDisruption` all take an `EfficiencyBoost[]` and stack it themselves.
+ * Handing them the resolved figure as one boost means they apply exactly what
+ * the resolver decided, rather than re-stacking the raw list against whatever
+ * ceiling they were written with.
+ */
+export function appliedBoosts(resolved: ResolvedEfficiency): EfficiencyBoost[] {
+  return resolved.fraction > 0
+    ? [{ id: `resolved:${resolved.quantity}`, fraction: resolved.fraction }]
+    : [];
 }
