@@ -64,6 +64,7 @@ const ROUTE_NAMES: readonly (readonly [string, string])[] = [
   ['/network', 'Network'],
   ['/finance', 'Finance'],
   ['/crew', 'Crew'],
+  ['/research', 'Research'],
   ['/headquarters', 'Headquarters'],
   ['/service', 'Service'],
   ['/c-suite', 'C-Suite'],

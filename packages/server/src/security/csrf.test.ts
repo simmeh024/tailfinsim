@@ -114,6 +114,10 @@ const READ_ONLY_GET_ROUTES = [
   // M9-03. A read: the roster board and what its points are worth. The spend is
   // the POST beside it.
   '/api/crew/roster',
+  // M9-05. A read: the research tree, the airline's points and what each node
+  // would cost. Completion is lazy, so reading the tree completes nothing — it
+  // only reports what the world's clock already says. The start is the POST.
+  '/api/research',
   // M7-04. Both are reads. `candidates` prices what a hub *would* cost and holds
   // nothing — no quote row, no reservation — so a refresh re-quotes rather than
   // repeating anything. The purchase is the POST.

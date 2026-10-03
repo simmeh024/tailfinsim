@@ -172,8 +172,9 @@ describe('layout', () => {
     const rail = screen.getByRole('navigation', { name: 'Main' });
     // Eight from App. H.4 and M5-04, plus M8-05's Service configurator,
     // M8-10's Dashboard — which leads the rail, because §14 calls the dashboard
-    // the game's main interface after the first week — and M8-13's Alerts.
-    expect(NAV_ITEMS).toHaveLength(12);
+    // the game's main interface after the first week — M8-13's Alerts, and
+    // M9-05's Research tree beside the crew who earn its points.
+    expect(NAV_ITEMS).toHaveLength(13);
     expect(NAV_ITEMS[0]?.to).toBe('/dashboard');
     // M8-12's operational dashboards sit beside the executive one: a player
     // asking "why was yesterday bad?" starts at the headline and goes there.
@@ -235,6 +236,7 @@ describe('routing', () => {
     ['/network', 'Network'],
     ['/finance', 'Finance'],
     ['/crew', 'Crew'],
+    ['/research', 'Research'],
     ['/headquarters', 'Headquarters'],
     ['/service', 'Service'],
     ['/design', 'Shell Air'],

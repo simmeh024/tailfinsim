@@ -54,6 +54,9 @@ export * from './crew';
 
 export * from './academy';
 
+/** §10.3's research points, tree and doctrine (M9-05). */
+export * from './research';
+
 export * from './ground';
 
 export * from './service';
