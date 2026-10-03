@@ -151,7 +151,12 @@ export const ApronRunway = z
     ident: z.string().min(1),
     lengthFt: z.number().int().positive().nullable(),
     widthFt: z.number().int().positive().nullable(),
-    /** True heading of the lower-numbered end, degrees. Null when the import has none. */
+    /**
+     * The lower-numbered end's designator × 10, degrees: `09/27` → 90. The import
+     * carries no surveyed heading, so this is the magnetic bearing rounded to 10° —
+     * enough to orient a schematic, and stated as such. Null when the designator is
+     * not numeric.
+     */
     headingDeg: z.number().min(0).lt(360).nullable(),
   })
   .strict();
