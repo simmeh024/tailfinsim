@@ -27,6 +27,7 @@ wall-clock time, that never pauses.
   [`docs/fuel-pricing.md`](docs/fuel-pricing.md) ·
   [`docs/ground-handling.md`](docs/ground-handling.md) ·
   [`docs/training-academy.md`](docs/training-academy.md) ·
+  [`docs/research.md`](docs/research.md) ·
   [`docs/hubs.md`](docs/hubs.md) ·
   [`docs/gates-and-stands.md`](docs/gates-and-stands.md) ·
   [`docs/world-renderer.md`](docs/world-renderer.md)
@@ -260,11 +261,21 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   fixed-base and per-family full-flight simulators — and together they decide whether a type
   conversion is trained in-house at a fraction of the market rate or simply bought in, which is
   all the academy does to conversion: it is a discount and a ceiling, never a gate. Levelling
-  the building grants no performance bonus of any kind; that is the research and the boosts,
-  which are not built. Construction takes weeks of the world's calendar and no amount of money
-  shortens it, and both the commissioning and the monthly upkeep are the Worker's, so both bite
-  on dev only. See [`docs/training-academy.md`](docs/training-academy.md), including which
-  modules are priced but inert and why the design doc names two different academies.
+  the building grants no performance bonus of any kind; that is the research below and the
+  boosts, which are not yet applied to flights. Construction takes weeks of the world's calendar
+  and no amount of money shortens it, and both the commissioning and the monthly upkeep are the
+  Worker's, so both bite on dev only. See
+  [`docs/training-academy.md`](docs/training-academy.md), including which modules are priced
+  but inert and why the design doc names two different academies.
+- **A research tree that size alone cannot buy.** §10.3's "Operational Doctrine": six branches
+  of four tiers, airline-wide. Research points are earned only by flying with academies — every
+  academy level earns a point per aircraft-day the fleet flies, so a ninety-aircraft airline
+  with no academy earns exactly none — and no path converts cash into them. A node costs points,
+  cash and weeks of the world's calendar, one project at a time, and nothing shortens the wait.
+  Tiers 3 and 4 are shown, priced and locked with the academy they need stated plainly; the MVP
+  ships tiers 1–2. Completion needs no Worker, but points accrue in settlement, so on production
+  every airline sits at zero. Doctrine is computed as a capped §10.4 boost source and is not yet
+  applied to flights (M9-06). See [`docs/research.md`](docs/research.md).
 - **Fuel that costs what the station charges.** Every airport prices its own Jet A-1: a
   commodity factor for its region, an into-plane fee that scales with how hard the field is to
   fuel, and a per-station spread fixed for the life of the world. A sector out of a Gulf hub

@@ -798,7 +798,8 @@ M9-05's research with nothing to give.
 `readonly EfficiencyBoost[]` since M2-04, and every caller passed `[]`. `settleArrivedFlight`
 now passes the airline's Performance & Fuel stack into `computeFuelBurn`, and records what it
 was worth on `flight_result.breakdown.crewFuelBoost` so §14.1's "a figure explains itself"
-holds. The other three consumers are still unwired; they are M9-04's and M9-05's to reach.
+holds. The other three consumers are still unwired; they are M9-04's and M9-06's to reach —
+M9-05's research computes its doctrine as a boost source and leaves applying it to M9-06.
 
 ### Type Mastery and the fleet
 
