@@ -58,6 +58,10 @@ const ROUTE_NAMES: readonly (readonly [string, string])[] = [
   ['/admin/system', 'System health · Admin'],
   ['/admin/audit', 'Audit log · Admin'],
   ['/admin', 'Admin console'],
+  // SURFACE-07: every destination is named, which `reachability.test.tsx` holds.
+  ['/dashboard', 'Dashboard'],
+  ['/operations', 'Operations'],
+  ['/alerts', 'Alerts'],
   ['/world', 'World'],
   ['/fleet/cabin', 'Cabin · Fleet'],
   ['/fleet', 'Fleet'],
@@ -71,6 +75,8 @@ const ROUTE_NAMES: readonly (readonly [string, string])[] = [
   ['/design', 'Design'],
   ['/board', 'Board'],
   ['/settings', 'Settings'],
+  ['/airline/logo', 'Logo studio'],
+  ['/airline', 'Your airline'],
   ['/found', 'Found your airline'],
   ['/login', 'Sign in'],
 ];
