@@ -7,7 +7,7 @@ import { ECONOMY_CONFIG_V1 } from '@tailfin/shared';
 import type { Weather } from '@tailfin/sim';
 
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { airport, crewDutyPeriod, crewPool, flight, flightResult } from '../db/schema';
+import { airport, crewDutyPeriod, crewMember, crewPool, flight, flightResult } from '../db/schema';
 import { settleArrivedFlight } from '../flight/settle';
 import { fixtureAirframe } from '../test-fixtures/airframe';
 import { createAirportIdentities } from '../test-fixtures/airport-codes';
@@ -42,6 +42,8 @@ if (!url) console.warn('\n  [crew/xp-store.test] DATABASE_URL not set — skippi
 const describeDb = url ? describe : describe.skip;
 
 const nextAirport = createAirportIdentities('crew/xp');
+const TRAINING = ECONOMY_CONFIG_V1.crew.trainingCaptain;
+const TRAINING_SKILLS = ECONOMY_CONFIG_V1.crew.skills;
 
 const DEPARTS = new Date('2026-01-15T06:00:00.000Z');
 /** Mid-afternoon UTC, so an unset timezone is not silently a night landing. */
@@ -130,6 +132,8 @@ describeDb('crew XP on settlement', () => {
     dest: string;
     captains: number;
     firstOfficers: number;
+    /** Cabin crew aboard as well (M9-04: a Training Captain must not touch their XP). */
+    cabinCrew?: number;
   }): Promise<{ flightId: string; crewBaseId: string; dutyPeriodId: string }> {
     const { fixture } = options;
     const opened = await openCrewBase(db.db, {
@@ -140,19 +144,24 @@ describeDb('crew XP on settlement', () => {
     if (!opened.ok) throw new Error(`could not open a base: ${opened.refusal}`);
     const crewBaseId = opened.value.crewBaseId;
 
+    const cabinCrew = options.cabinCrew ?? 0;
     for (const [rank, heads] of [
       ['captain', options.captains],
       ['first_officer', options.firstOfficers],
+      ['cabin_crew', cabinCrew],
     ] as const) {
-      const hired = await hireCrew(db.db, {
-        worldId: fixture.world.id,
-        airlineId: fixture.airline.id,
-        crewBaseId,
-        family: 'A320neo',
-        rank,
-        heads,
-      });
-      if (!hired.ok) throw new Error(`could not hire ${rank}: ${hired.refusal}`);
+      // In batches, because one hire is capped at the base's weekly capacity.
+      for (let left = heads; left > 0; left -= 12) {
+        const hired = await hireCrew(db.db, {
+          worldId: fixture.world.id,
+          airlineId: fixture.airline.id,
+          crewBaseId,
+          family: 'A320neo',
+          rank,
+          heads: Math.min(12, left),
+        });
+        if (!hired.ok) throw new Error(`could not hire ${rank}: ${hired.refusal}`);
+      }
     }
 
     const airframeId = randomUUID();
@@ -164,10 +173,11 @@ describeDb('crew XP on settlement', () => {
         airframeId,
         crewBaseId,
         family: 'A320neo',
-        heads: options.captains + options.firstOfficers,
+        heads: options.captains + options.firstOfficers + cabinCrew,
         complement: JSON.stringify([
           { rank: 'captain', count: options.captains },
           { rank: 'first_officer', count: options.firstOfficers },
+          ...(cabinCrew > 0 ? [{ rank: 'cabin_crew', count: cabinCrew }] : []),
         ]),
         reportAt: DEPARTS,
         locationIcao: options.origin,
@@ -484,6 +494,188 @@ describeDb('crew XP on settlement', () => {
     expect((await poolXp(nightFlight.crewBaseId)).get('captain') ?? 0).toBeGreaterThan(
       (await poolXp(dayFlight.crewBaseId)).get('captain') ?? 0,
     );
+  });
+
+  // -------------------------------------------------------------------------
+  // Training Captains (M9-04, §10.2)
+  // -------------------------------------------------------------------------
+
+  /**
+   * A named member, written directly. Not money — no trigger guards it — and the
+   * conversion itself has its own suite; what is under test here is what the
+   * settlement does with one.
+   */
+  async function namedMember(options: {
+    fixture: FoundedAirlineFixture;
+    crewBaseId: string;
+    rank: 'captain' | 'first_officer' | 'cabin_crew';
+    ordinal: number;
+    trainingCaptainSince?: Date;
+  }): Promise<string> {
+    const [row] = await db.db
+      .insert(crewMember)
+      .values({
+        worldId: options.fixture.world.id,
+        airlineId: options.fixture.airline.id,
+        crewBaseId: options.crewBaseId,
+        family: 'A320neo',
+        rank: options.rank,
+        name: `Test Member ${String(options.ordinal)}`,
+        ordinal: options.ordinal,
+        xp: 0,
+        level: TRAINING_SKILLS.maxLevel,
+        namedAt: DEPARTS,
+        trainingCaptainSince: options.trainingCaptainSince ?? null,
+        // The parity check: a designation is an odd number of changes.
+        trainingCaptainChanges: options.trainingCaptainSince === undefined ? 0 : 1,
+      })
+      .returning({ id: crewMember.id });
+    if (!row) throw new Error('no member');
+    return row.id;
+  }
+
+  async function memberXp(id: string): Promise<number> {
+    const [row] = await db.db
+      .select({ xp: crewMember.xp })
+      .from(crewMember)
+      .where(eq(crewMember.id, id));
+    return row?.xp ?? -1;
+  }
+
+  async function crewXpOf(flightId: string) {
+    const [result] = await db.db
+      .select({ breakdown: flightResult.breakdown })
+      .from(flightResult)
+      .where(eq(flightResult.flightId, flightId));
+    return (
+      JSON.parse(result?.breakdown ?? '{}') as {
+        crewXp?: {
+          xpPerHead: number;
+          totalXp: number;
+          pools: { rank: string; heads: number; xp: number }[];
+          training?: {
+            trainingCaptains: number;
+            flightDeckHeads: number;
+            coverage: number;
+            multiplier: number;
+            capped: boolean;
+            flightDeckXpPerHead: number;
+          };
+        };
+      }
+    ).crewXp;
+  }
+
+  it('multiplies the flight deck’s XP by its base’s Training Captains, and not the cabin’s', async () => {
+    const fixture = await fixtures.create();
+    const origin = await makeAirport({ latitude: 52.3086, longitude: 4.76389 });
+    const dest = await makeAirport({ latitude: 51.4706, longitude: -0.461941 });
+    // 2 captains + 22 first officers: 24 flight-deck heads, so one Training
+    // Captain covering twelve covers exactly half of them.
+    const { flightId, crewBaseId } = await crewedFlight({
+      fixture,
+      origin,
+      dest,
+      captains: 2,
+      firstOfficers: 22,
+      cabinCrew: 3,
+    });
+    const trainer = await namedMember({
+      fixture,
+      crewBaseId,
+      rank: 'captain',
+      ordinal: 0,
+      trainingCaptainSince: DEPARTS,
+    });
+    const linePilot = await namedMember({ fixture, crewBaseId, rank: 'first_officer', ordinal: 1 });
+    const cabinMember = await namedMember({ fixture, crewBaseId, rank: 'cabin_crew', ordinal: 2 });
+
+    await settle(flightId);
+
+    const crewXp = await crewXpOf(flightId);
+    const training = crewXp?.training;
+    expect(training?.trainingCaptains).toBe(1);
+    expect(training?.flightDeckHeads).toBe(24);
+    expect(training?.coverage).toBeCloseTo(0.5, 12);
+    expect(training?.multiplier).toBeCloseTo(1 + TRAINING.xpBonusAtFullCoverage / 2, 12);
+    expect(training?.capped).toBe(false);
+
+    const base = crewXp?.xpPerHead ?? 0;
+    const trained = Math.round(base * (training?.multiplier ?? 0));
+    expect(training?.flightDeckXpPerHead).toBe(trained);
+    expect(trained).toBeGreaterThan(base);
+
+    // Pools: the flight deck at the trained rate, the cabin at the formula's.
+    const pools = await poolXp(crewBaseId);
+    expect(pools.get('captain')).toBe(trained * 2);
+    expect(pools.get('first_officer')).toBe(trained * 22);
+    expect(pools.get('cabin_crew')).toBe(base * 3);
+    expect(crewXp?.totalXp).toBe(trained * 24 + base * 3);
+
+    // Named members alike: one of the pool's heads moves with the pool.
+    expect(await memberXp(trainer)).toBe(trained);
+    expect(await memberXp(linePilot)).toBe(trained);
+    expect(await memberXp(cabinMember)).toBe(base);
+  });
+
+  it('does not count a Training Captain designated after the flight landed', async () => {
+    const fixture = await fixtures.create();
+    const origin = await makeAirport({ latitude: 52.3086, longitude: 4.76389 });
+    const dest = await makeAirport({ latitude: 51.4706, longitude: -0.461941 });
+    const { flightId, crewBaseId } = await crewedFlight({
+      fixture,
+      origin,
+      dest,
+      captains: 2,
+      firstOfficers: 2,
+    });
+    // Converted a minute after on-blocks, settled afterwards: the flight was not
+    // trained, and a replay must not decide otherwise.
+    await namedMember({
+      fixture,
+      crewBaseId,
+      rank: 'captain',
+      ordinal: 0,
+      trainingCaptainSince: new Date(ARRIVES.getTime() + 60_000),
+    });
+
+    await settle(flightId);
+
+    const crewXp = await crewXpOf(flightId);
+    expect(crewXp?.training?.trainingCaptains).toBe(0);
+    expect(crewXp?.training?.multiplier).toBe(1);
+    expect((await poolXp(crewBaseId)).get('captain')).toBe((crewXp?.xpPerHead ?? 0) * 2);
+  });
+
+  it('stops at full coverage: a second Training Captain at a small base adds nothing', async () => {
+    const fixture = await fixtures.create();
+    const origin = await makeAirport({ latitude: 52.3086, longitude: 4.76389 });
+    const dest = await makeAirport({ latitude: 51.4706, longitude: -0.461941 });
+    const { flightId, crewBaseId } = await crewedFlight({
+      fixture,
+      origin,
+      dest,
+      captains: 2,
+      firstOfficers: 2,
+    });
+    for (const ordinal of [0, 1]) {
+      await namedMember({
+        fixture,
+        crewBaseId,
+        rank: 'captain',
+        ordinal,
+        trainingCaptainSince: DEPARTS,
+      });
+    }
+
+    await settle(flightId);
+
+    const training = (await crewXpOf(flightId))?.training;
+    expect(training?.trainingCaptains).toBe(2);
+    expect(training?.coverage).toBe(1);
+    // The full-coverage figure, below the shared cap — not twice anything.
+    expect(training?.multiplier).toBeCloseTo(1 + TRAINING.xpBonusAtFullCoverage, 12);
+    expect(training?.multiplier).toBeLessThanOrEqual(1 + TRAINING.maxXpBonus);
   });
 });
 

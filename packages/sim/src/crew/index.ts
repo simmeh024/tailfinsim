@@ -7,3 +7,5 @@ export * from './xp';
 /** §10.2's personal skill trees, and the named crew who hold them (M9-03). */
 export * from './names';
 export * from './skills';
+/** §10.2's Training Captains and the compounding loop they close (M9-04). */
+export * from './training-captain';

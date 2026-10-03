@@ -546,14 +546,37 @@ way to dismiss a named member**, both for reasons written at the top of `crew/ro
 `computeFuelBurn`, `turnaroundMinutes` and `rollDisruption` have taken a
 `readonly EfficiencyBoost[]` since M2-04 and every caller passed `[]`. `settleArrivedFlight` now
 passes the airline's Performance & Fuel stack into `computeFuelBurn` and records what it was
-worth on `flight_result.breakdown.crewFuelBoost`. The other three are still unwired — M9-04's
-Training Captains and M9-05's research reach them. The acceptance criterion that skill effects
-_"feed the same capped boost pool as research, never a separate uncapped one"_ is held by the
-shape of the code: `skillBoosts` returns boosts, `stackAirlineSkills` puts them through
-`stackEfficiencyBoosts`, and **nothing anywhere hands out an uncapped multiplier**, so a caller
-cannot apply one without passing the cap. One fully specialised veteran reaches about half a
-ceiling on the shipped balance, deliberately, because three of §10.4's four sources have not
-shipped.
+worth on `flight_result.breakdown.crewFuelBoost`. Since M9-04 the roster is two of §10.4's
+sources — line crew and Training Captains — resolved together once by
+`resolveEfficiencyBoosts` against the world's ceiling; the other three consumers are still
+unwired, M9-05's research doctrine is computed but not yet applied, and M9-06 reaches all of
+them through the same resolver. The acceptance criterion that skill
+effects _"feed the same capped boost pool as research, never a separate uncapped one"_ is held
+by the shape of the code: `skillBoosts` returns boosts, the resolver stacks them with every
+other source, and **nothing anywhere hands out an uncapped multiplier**, so a caller cannot
+apply one without passing the cap. One fully specialised veteran reaches about half a ceiling
+on the shipped balance, deliberately, so the other sources have something left to give.
+
+**Training Captains multiply XP only where arrivals settle (M9-04).** A max-level named Captain
+at a base whose academy permits the `training_captain` rank (§10.1's level 5) can be converted
+over HTTP, on any node, for `crew.trainingCaptain.conversionCostMinor`, and returned to the line
+for the larger `reversionCostMinor`. What a Training Captain _does_ — multiply the flight deck's
+XP at their base and family — happens inside `settleArrivedFlight`, so **production, which has no
+worker, never applies it**: a player there could pay for a training department that changes
+nothing, which reads as a weak mechanic rather than a missing process. No counter of its own;
+`breakdown.crewXp.training` on a settled flight is the proof it ran.
+
+Three things worth not undoing. **It is a designation, not a promotion** —
+`crew_member.training_captain_since` on a member who stays in the `captain` pool, because
+nothing in the game promotes and moving heads between rank pools would tangle a progression
+choice with dispatch, duty and payroll. **The multiplier is capped on the combined bonus**
+(`maxXpBonus`, shared with M9-05's Crew Development doctrine) and **coverage saturates**, which
+is what makes §10.2's compounding loop converge — a property test and a ten-year loop simulation
+in `sim/crew/training-captain.test.ts` hold it, and the schema refuses a balance whose
+Training Captains alone would fill the cap. And **`training_captain_changes` is the cash
+reference**, `<memberId>:training_captain:<n>`, with a CHECK holding it odd exactly when the
+designation is set — so a round trip is three distinct movements and a retried request replays
+AIR-06's identity rather than charging twice.
 
 **M9-03's second acceptance criterion is half-built, and the half is named.** _"Named crew appear
 on the roster board and the public airline profile"_ — the board is built on the Crew page;
@@ -568,6 +591,19 @@ fee, from §21's _"unlocked per hub"_ list. It gates nothing in M9-01 and was le
 was: making it a prerequisite would invent a rule neither section states and would deny an
 academy to every airline whose crew base is not at a hub. `docs/training-academy.md` records
 the conflict; it is also on the issue.
+
+**Research is half a worker story, and the half that is not is the trap (M9-05).** A research
+project completes **lazily** — it is complete exactly when the world's clock reaches
+`completes_at`, read on every request, with no sweep and no status column — so completion works
+on every node, production included. But **points accrue only in settlement**
+(`accrueResearchPoints`, called from `settleArrivedFlight` after the replay guard, and from
+nowhere else), and settlement is the worker's. So on production every airline sits at **0 RP for
+ever**, and the tree reads _"build an academy"_ or _"fly more"_ rather than _"no worker"_. No
+counter of its own: points are a side effect of an arrival, like XP. Two things not to undo:
+**nothing converts cash into points** — only `research/points.ts` writes `research_account`, and
+`research/no-purchase.test.ts` scans the source to keep it that way — and **`research_account` is
+two monotonic integer milli-point counts**, never a float balance, so a short sector's tenth of a
+point survives. `docs/research.md` has the formula, the cost table and the design conflicts.
 
 **`FLIGHT_DEPART` has a handler as of M5-02, and that was a decision.** `handlers.ts` had said
 for two milestones that inventing a departure would be _"the accidental decision ADR-0019's

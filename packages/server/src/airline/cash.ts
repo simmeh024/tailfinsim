@@ -99,6 +99,18 @@ function categoryForCause(cause: CashMovementCause): LedgerCategory {
      * wants the training buildings in that answer, and the `cause` on the
      * movement is what separates them when they ask which — the same argument
      * the three ground handling causes make below.
+     *
+     * §10.3's research too (M9-05). A doctrine is airline-wide **training** — a
+     * cost-index SOP, a boarding drill, a maintenance programme — rolled out by
+     * the academies that alone earn the points for it, and §11 lists *"crew
+     * salaries, training & hotelling"* as one cost. So it sits beside the
+     * buildings that teach it rather than in `other`, where a player asking
+     * *"what has §10 cost me?"* would find the academy and not the research it
+     * exists to produce. No category fits better: none of the maintenance, fuel
+     * or handling lines is the cost of *learning* to spend less on them.
+     *
+     * A Training Captain's course fee and the price of returning one to the line
+     * (M9-04) are crew training by any reading, and join it on the same argument.
      */
     case 'crew_base_opening':
     case 'crew_hiring':
@@ -108,6 +120,8 @@ function categoryForCause(cause: CashMovementCause): LedgerCategory {
     case 'crew_positioning':
     case 'academy_construction':
     case 'academy_upkeep':
+    case 'training_captain':
+    case 'research':
       return 'crew';
     case 'office_salary':
       return 'office_salary';

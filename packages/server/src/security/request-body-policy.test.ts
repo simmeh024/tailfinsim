@@ -39,6 +39,7 @@ import {
   PurchaseHubRequest,
   SignContractRequest,
   StartCrewConversionInput,
+  StartResearchInput,
   AllocateSkillPointInput,
   BuildAcademyModuleInput,
   FoundAcademyInput,
@@ -153,6 +154,14 @@ const STRICT_WRITE_CONTRACTS = [
     endpoint: 'POST /api/academies/:id/modules',
     schema: BuildAcademyModuleInput,
     payload: { kind: 'cbt_suite' },
+  },
+  {
+    // M9-05. A node from the fixed catalogue and nothing else: no points, no
+    // cash, no weeks — §10.3's "you cannot buy RP, you cannot rush it" as a
+    // request contract.
+    endpoint: 'POST /api/research/projects',
+    schema: StartResearchInput,
+    payload: { nodeId: 'cost_index_sop' },
   },
   {
     endpoint: 'POST /api/office/hires',
@@ -318,9 +327,14 @@ const COVERED_WRITE_ENDPOINTS = [
   'POST /api/academies',
   'POST /api/academies/:id/modules',
   'POST /api/crew/roster/:id/skills',
+  // M9-04. The designation has no parameters: the member is in the path, and
+  // both directions read no body — a body could only carry something to ignore.
+  'POST /api/crew/roster/:id/training-captain',
+  'DELETE /api/crew/roster/:id/training-captain',
   // M9-01. The level to build is the *next* one and nothing else, so the upgrade
   // reads no body — the academy is in the path and the ladder decides the rest.
   'POST /api/academies/:id/levels',
+  'POST /api/research/projects',
   'POST /api/crew/bases',
   'POST /api/crew/conversions',
   'POST /api/crew/hires',
@@ -489,6 +503,9 @@ describe('SEC-06 request-body policy', () => {
       'entitlements',
       'paymentStatus',
       'orderStatus',
+      'researchPoints',
+      'earnedMilli',
+      'spentMilli',
     ]);
 
     const all = [...Object.values(SENSITIVE_REQUEST_FIELDS).flat(), ...VIRTUAL_PRIVILEGE_FIELDS];

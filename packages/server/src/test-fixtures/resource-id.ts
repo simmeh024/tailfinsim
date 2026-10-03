@@ -276,6 +276,31 @@ export const RESOURCE_ID_SURFACES = [
     field: 'id',
     semantics: 'owner-scoped-resource',
   },
+  // M9-04. The same member, in the same position, for the Training Captain
+  // designation both ways — and concealed the same way, before any fee moves.
+  ...[
+    'POST /api/crew/roster/:id/training-captain',
+    'DELETE /api/crew/roster/:id/training-captain',
+  ].map((endpoint): ResourceIdSurface => ({
+    endpoint,
+    position: 'path',
+    field: 'id',
+    semantics: 'owner-scoped-resource',
+  })),
+  {
+    /*
+     * M9-05. One of §10.3's 24 research nodes. A **selector over the fixed
+     * catalogue**, not an owned resource: it names nothing a player has, so
+     * there is no another-player case to conceal — the progress it is read
+     * against is the session-resolved airline's own, and another airline's
+     * project on the same node is simply not in the query. An unknown id is a
+     * 400 from `StartResearchInput`'s closed enum, never a lookup.
+     */
+    endpoint: 'POST /api/research/projects',
+    position: 'body',
+    field: 'nodeId',
+    semantics: 'computed-selector',
+  },
   {
     endpoint: 'player-airline context',
     position: 'header',

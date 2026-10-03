@@ -1,11 +1,20 @@
 import { useState } from 'react';
 
-import type { CrewMemberView, CrewRosterResponse, SkillBranch } from '@tailfin/shared';
+import type {
+  CrewMemberView,
+  CrewRosterResponse,
+  SkillBranch,
+  TrainingCaptainRefusal,
+  TrainingCoverageView,
+} from '@tailfin/shared';
 
+import { formatUsdMinor } from '../currency/display';
+import { Button } from '../ui/Button';
 import { StateBlock } from '../ui/StateBlock';
 
 import { CREW_RANK_LABEL } from './CrewRoleBanner';
 
+import type { CrewFailure } from './api';
 import type { ReactNode } from 'react';
 
 /**
@@ -74,12 +83,43 @@ function percent(fraction: number): string {
   return `${(fraction * 100).toFixed(1)}%`;
 }
 
+/**
+ * Why *"Make Training Captain"* is not offered, in words a player can act on
+ * (M9-04). Null where saying anything would be noise: cabin crew never convert,
+ * and a Training Captain's card offers the way back instead.
+ *
+ * *"Centre of Excellence (academy level 5)"* is §10.1's own table — the level
+ * that names *"own Training Captains"* — rather than a balance number.
+ */
+export function convertRefusalText(
+  refusal: TrainingCaptainRefusal,
+  maxLevel: number,
+): string | null {
+  switch (refusal) {
+    case 'not_flight_deck':
+    case 'already_training_captain':
+      return null;
+    case 'not_command_rank':
+      return 'Only a Captain can become a Training Captain.';
+    case 'below_max_level':
+      return `Reaches level ${String(maxLevel)} first — only a top-level pilot can train others.`;
+    case 'no_academy':
+      return 'Needs a Centre of Excellence (academy level 5) at this base.';
+    case 'academy_level':
+      return 'Needs a Centre of Excellence (academy level 5) at this base — the academy here has not reached it yet.';
+  }
+}
+
 export interface CrewRosterProps {
   roster: CrewRosterResponse | null;
   loading: boolean;
   failed: boolean;
   onSpend: (memberId: string, branch: SkillBranch) => void;
-  /** The member whose spend is in flight, so its controls can be disabled. */
+  /** Make a member a Training Captain (`true`) or return them to the line (M9-04). */
+  onTrainingCaptain: (memberId: string, designate: boolean) => void;
+  /** The last Training Captain change the server refused, said on the card. */
+  refusal: CrewFailure | null;
+  /** The member whose change is in flight, so its controls can be disabled. */
   pendingMemberId: string | null;
 }
 
@@ -88,6 +128,8 @@ export function CrewRoster({
   loading,
   failed,
   onSpend,
+  onTrainingCaptain,
+  refusal,
   pendingMemberId,
 }: CrewRosterProps): ReactNode {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -159,7 +201,14 @@ export function CrewRoster({
                       {member.name}
                     </button>
                   </th>
-                  <td>{CREW_RANK_LABEL[member.rank]}</td>
+                  <td>
+                    {CREW_RANK_LABEL[member.rank]}
+                    {member.trainingCaptain.since !== null && (
+                      <span className="crew-tag">
+                        {member.rank === 'training_captain' ? 'designated' : 'Training Captain'}
+                      </span>
+                    )}
+                  </td>
                   <td>{member.airportIcao}</td>
                   <td>{member.family}</td>
                   <td className="figure">{member.level}</td>
@@ -180,12 +229,17 @@ export function CrewRoster({
               member={selected}
               operatedFamilies={roster.operatedFamilies}
               maxPoints={Math.max(1, ...roster.branches.map((branch) => branch.maxPoints))}
+              maxLevel={roster.maxLevel}
               onSpend={onSpend}
+              onTrainingCaptain={onTrainingCaptain}
+              refusal={refusal}
               pending={pendingMemberId === selected.id}
             />
           )}
         </div>
       )}
+
+      {roster.trainingCoverage.length > 0 && <TrainingCoverage rows={roster.trainingCoverage} />}
 
       <div className="crew-panel__head">
         <h3 className="crew-panel__title" id="crew-boosts-heading">
@@ -233,7 +287,10 @@ interface PilotCardProps {
   member: CrewMemberView;
   operatedFamilies: readonly string[];
   maxPoints: number;
+  maxLevel: number;
   onSpend: (memberId: string, branch: SkillBranch) => void;
+  onTrainingCaptain: (memberId: string, designate: boolean) => void;
+  refusal: CrewFailure | null;
   pending: boolean;
 }
 
@@ -242,7 +299,10 @@ function PilotCard({
   member,
   operatedFamilies,
   maxPoints,
+  maxLevel,
   onSpend,
+  onTrainingCaptain,
+  refusal,
   pending,
 }: PilotCardProps): ReactNode {
   const tree = CABIN_RANKS.has(member.rank) ? CABIN_TREE : PILOT_TREE;
@@ -336,6 +396,198 @@ function PilotCard({
           again.
         </p>
       )}
+
+      {/*
+        Keyed on the designation, so a confirmation half-way through does not
+        survive the change it was confirming — the card comes back closed.
+      */}
+      <TrainingCaptainDecision
+        key={`${member.id}:${member.trainingCaptain.since ?? 'line'}`}
+        member={member}
+        maxLevel={maxLevel}
+        onChange={onTrainingCaptain}
+        refusal={refusal}
+        pending={pending}
+      />
     </div>
+  );
+}
+
+interface TrainingCaptainDecisionProps {
+  member: CrewMemberView;
+  maxLevel: number;
+  onChange: (memberId: string, designate: boolean) => void;
+  refusal: CrewFailure | null;
+  pending: boolean;
+}
+
+/**
+ * §10.2's Training Captain, on the pilot card (M9-04).
+ *
+ * > *"A max-level pilot can be converted to **Training Captain**: they stop
+ * > generating full revenue value and instead multiply XP gain for everyone they
+ * > fly with."*
+ *
+ * Both directions cost money and the way back costs more, so both go through the
+ * two-step confirmation the rest of the client uses for a decision with a price:
+ * the first click states the price — of this step **and** of undoing it — and
+ * only the second spends it. When the action is closed the card says why, in
+ * words that point at the fix, rather than showing a disabled button that
+ * explains nothing.
+ */
+function TrainingCaptainDecision({
+  member,
+  maxLevel,
+  onChange,
+  refusal,
+  pending,
+}: TrainingCaptainDecisionProps): ReactNode {
+  const [confirming, setConfirming] = useState(false);
+  const standing = member.trainingCaptain;
+  const designated = standing.since !== null;
+
+  // Cabin crew never convert; a card that said so on every purser would be noise.
+  if (!designated && standing.convertRefusal === 'not_flight_deck') return null;
+
+  const conversion = formatUsdMinor(standing.conversionCostMinor);
+  const reversion = formatUsdMinor(standing.reversionCostMinor);
+  const closed =
+    !designated && standing.convertRefusal !== null
+      ? convertRefusalText(standing.convertRefusal, maxLevel)
+      : null;
+  const open = designated || standing.convertRefusal === null;
+
+  return (
+    <div className="crew-designation" aria-label="Training Captain">
+      {designated ? (
+        <p className="crew__note">
+          <span className="crew-tag">Training Captain</span> since{' '}
+          {(standing.since ?? '').slice(0, 10)}. Every pilot at {member.airportIcao} on the{' '}
+          {member.family} earns XP faster for it. Their own skill points count for less on the line,
+          because they fly fewer sectors as the operating pilot.
+        </p>
+      ) : open ? (
+        <p className="crew__note">
+          A top-level Captain can become a Training Captain: every pilot at {member.airportIcao} on
+          the {member.family} earns XP faster, and this pilot’s own skill points count for less on
+          the line.
+        </p>
+      ) : (
+        closed !== null && <p className="crew__note">{closed}</p>
+      )}
+
+      {open &&
+        (confirming ? (
+          <>
+            <p className="crew__note">
+              {designated
+                ? `Charges ${reversion} for line checks and recurrent training. The course fee is not refunded.`
+                : `Charges ${conversion} for the course now. Returning them to the line later costs ${reversion}.`}
+            </p>
+            <div className="crew-designation__actions">
+              <Button
+                variant={designated ? 'danger' : 'primary'}
+                size="sm"
+                disabled={pending}
+                onClick={() => {
+                  onChange(member.id, !designated);
+                }}
+              >
+                {designated ? 'Confirm — return to the line' : 'Confirm — make Training Captain'}
+              </Button>
+              <Button
+                variant="tertiary"
+                size="sm"
+                disabled={pending}
+                onClick={() => {
+                  setConfirming(false);
+                }}
+              >
+                Keep
+              </Button>
+            </div>
+          </>
+        ) : (
+          <div className="crew-designation__actions">
+            <Button
+              size="sm"
+              disabled={pending}
+              onClick={() => {
+                setConfirming(true);
+              }}
+            >
+              {designated
+                ? `Return to the line · ${reversion}`
+                : `Make Training Captain · ${conversion}`}
+            </Button>
+          </div>
+        ))}
+
+      {refusal !== null && <StateBlock kind="refused">{refusal.message}</StateBlock>}
+    </div>
+  );
+}
+
+/**
+ * The loop, made visible: what the Training Captains at each base are doing to
+ * its pilots' XP (M9-04).
+ *
+ * The multiplier is the one the next arrival there will be settled with — the
+ * server computes both from the same function — and the two tags say the thing
+ * a player most needs to hear: *another Training Captain here buys nothing*.
+ */
+function TrainingCoverage({ rows }: { rows: readonly TrainingCoverageView[] }): ReactNode {
+  return (
+    <>
+      <div className="crew-panel__head">
+        <h3 className="crew-panel__title" id="crew-training-heading">
+          Training Captains and pilot XP
+        </h3>
+        <p className="crew-panel__sub">
+          A Training Captain covers a share of a base’s pilots on their type, and the pilots they
+          cover earn XP faster. The bonus stops growing once everyone is covered, and never passes
+          its cap.
+        </p>
+      </div>
+      <table className="crew__table" aria-labelledby="crew-training-heading">
+        <thead>
+          <tr>
+            <th scope="col">Base</th>
+            <th scope="col">Type</th>
+            <th scope="col" className="figure">
+              Training Captains
+            </th>
+            <th scope="col" className="figure">
+              Pilots
+            </th>
+            <th scope="col" className="figure">
+              Covered
+            </th>
+            <th scope="col" className="figure">
+              Pilot XP
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={`${row.crewBaseId}:${row.family}`}>
+              <th scope="row">{row.airportIcao}</th>
+              <td>{row.family}</td>
+              <td className="figure">{row.trainingCaptains}</td>
+              <td className="figure">{row.flightDeckHeads}</td>
+              <td className="figure">{`${String(Math.round(row.coverage * 100))}%`}</td>
+              <td className="figure">
+                {`×${row.multiplier.toFixed(2)}`}
+                {row.capped ? (
+                  <span className="crew-tag crew-tag--short">at cap</span>
+                ) : (
+                  row.coverage >= 1 && <span className="crew-tag">fully covered</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
   );
 }

@@ -693,12 +693,14 @@ effect of an arrival, so `flightsMaterialised` and the queue depth are what to l
 
 ### Not built
 
-**Nothing spends XP.** Levels, personal skill trees, named crew and Training Captains are
-M9-03 and M9-04; this milestone accumulates the currency they will spend, and deliberately
-stops there. **No page shows it either** — `xp` and `xpPerHead` are on `GET /api/crew`'s pool
-rows and no client consumer reads them yet, which is named here rather than left to be
-discovered later (CLAUDE.md's own warning that a closed issue is not evidence a player can
-reach a feature).
+M9-02 accumulated the currency and deliberately stopped there; what spends it arrived later.
+M9-03's naming sweep reads a pool's XP per head to decide who is named, and named members level
+on their own XP (below). M9-04's Training Captains **multiply** the flight deck's share of every
+award at their base (see _Training Captains_ at the end of this document). Nothing else reads
+pool XP. **No page shows the pool figure either** — `xp` and `xpPerHead` are on
+`GET /api/crew`'s pool rows and no client consumer reads them yet, which is named here rather
+than left to be discovered later (CLAUDE.md's own warning that a closed issue is not evidence a
+player can reach a feature).
 
 ---
 
@@ -789,16 +791,21 @@ Stacking is multiplicative, so two veterans each worth 4% give 7.84% rather than
 "diminishing returns before the cap" — and the ceiling clamps whatever is left.
 
 One fully specialised veteran reaches **about half** of each ceiling on the shipped balance.
-That is deliberate: three of §10.4's four sources have not shipped, and a curve that let one
-airline's crew fill a ceiling would leave M9-01's doctrine, M9-04's Training Captains and
-M9-05's research with nothing to give.
+That is deliberate: when M9-03 shipped, three of §10.4's four sources had not, and a curve that
+let one airline's crew fill a ceiling would leave M9-04's Training Captains and M9-05's research
+with nothing to give.
 
 **This is also the first thing in the game that supplies a boost at all.** `computeBlockTime`,
 `computeFuelBurn`, `turnaroundMinutes` and `rollDisruption` have all taken a
 `readonly EfficiencyBoost[]` since M2-04, and every caller passed `[]`. `settleArrivedFlight`
-now passes the airline's Performance & Fuel stack into `computeFuelBurn`, and records what it
-was worth on `flight_result.breakdown.crewFuelBoost` so §14.1's "a figure explains itself"
-holds. The other three consumers are still unwired; they are M9-04's and M9-05's to reach.
+now passes the airline's Performance & Fuel points into `computeFuelBurn`, and records what they
+were worth on `flight_result.breakdown.crewFuelBoost` so §14.1's "a figure explains itself"
+holds. Since M9-04 the roster is two of §10.4's sources — line crew under `skills`, Training
+Captains at their reduced line value under `trainingCaptains` — resolved together once by
+`resolveEfficiencyBoosts` against the world's ceiling; `crewFuelBoost.bySource` says how much of
+the figure each was worth alone. The other three consumers are still unwired; M9-06 wires them
+through the same resolver — and M9-05's research, which computes its doctrine as a third boost
+source and leaves applying it to M9-06.
 
 ### Type Mastery and the fleet
 
@@ -852,12 +859,183 @@ makes for having no "last generated" column.
 
 ### The API
 
-| Route                              | What it does                                       |
-| ---------------------------------- | -------------------------------------------------- |
-| `GET /api/crew/roster`             | Named crew, the tree, and what the roster is worth |
-| `POST /api/crew/roster/:id/skills` | Spend one point into one branch                    |
+| Route                                          | What it does                                                    |
+| ---------------------------------------------- | --------------------------------------------------------------- |
+| `GET /api/crew/roster`                         | Named crew, the tree, what the roster is worth, and XP coverage |
+| `POST /api/crew/roster/:id/skills`             | Spend one point into one branch                                 |
+| `POST /api/crew/roster/:id/training-captain`   | Make a named pilot a Training Captain (M9-04)                   |
+| `DELETE /api/crew/roster/:id/training-captain` | Return a Training Captain to the line (M9-04)                   |
 
 Owner-scoped by resolution; a foreign, absent or malformed member id all receive the identical
 `404 member_absent` (ADR-0020). One point per request, deliberately: §10.2 calls a point
 "mostly irreversible", and a bulk allocation makes a mis-click expensive in a way a single
 spend does not.
+
+---
+
+## Training Captains (M9-04, §10.2)
+
+> _"A max-level pilot can be converted to **Training Captain**: they stop generating full
+> revenue value and instead multiply XP gain for everyone they fly with. This is the loop that
+> makes long-term investment pay:_
+>
+> _hard routes → pilot XP → Training Captains → faster XP for everyone → deeper bench → harder
+> routes"_
+
+§10.1 puts _"own Training Captains"_ at level 5, the Centre of Excellence. So a Training Captain
+is the meeting point of everything §10 has built so far: the academy grants the permission, XP
+makes the pilot, and the pilot is one of the named crew the roster board exists to invest in.
+
+### A designation, not a promotion
+
+A Training Captain is a **flag on a named member** — `crew_member.training_captain_since` — and
+not a head moved from the `captain` pool into a `training_captain` one. Two reasons:
+
+- **Nothing in the game promotes crew.** §10.1's rank ceiling says what an academy _may_ train,
+  and `training-academy.md` records promotion as unbuilt. Moving a head between rank pools would
+  be the first promotion mechanic in the game, built by accident inside a training feature.
+- **The pools do real work.** A pool's headcount, reserve, availability and duty counters are
+  what dispatch, legality and payroll read. Moving a head out of the `captain` pool mid-rotation
+  could strand a flight for want of a captain — a progression choice silently becoming an
+  operational one.
+
+So the member stays one of their pool's heads, flies as they did and is paid as they were.
+Payroll is unchanged. What the designation costs is a course fee and the line value it gives up,
+which is exactly the trade §10.2 describes.
+
+`training_captain` the **rank** is unaffected: it is still a rung on §9.2's complement ladder
+that a player can hire into at market rates, and a pilot hired at that rank who is named still
+has to be **designated** before they multiply anyone's XP. The rank is a pay grade; the
+designation is §10.2's mechanic.
+
+### Who may convert
+
+`trainingCaptainRefusal` in `@tailfin/sim` answers it, and the roster sends the answer per
+member so the card can say it before anybody clicks. **Most permanent first** — facts about the
+person before facts about the base — so a purser is told they never will rather than told to
+build an academy:
+
+| Refusal                    | Means                                                                    |
+| -------------------------- | ------------------------------------------------------------------------ |
+| `not_flight_deck`          | Cabin crew. §10.2 says _"pilot"_                                         |
+| `not_command_rank`         | Below Captain — a First Officer trains nobody to command                 |
+| `already_training_captain` | They are one; returning them to the line is the other action             |
+| `below_max_level`          | Below `crew.skills.maxLevel` — §10.2's _"max-level"_                     |
+| `no_academy`               | No commissioned academy at their crew base (a building site counts here) |
+| `academy_level`            | An academy that does not yet permit the `training_captain` rank          |
+
+The level-5 requirement is not written anywhere as a number: it is
+`academyPermitsRank(level, 'training_captain')` over §10.1's ladder, so a redesign of the ladder
+moves it without a second edit. A write adds two more: `not_training_captain` (returning a line
+pilot to the line) and `insufficient_funds`.
+
+### What it costs, and why the way back costs more
+
+| Balance (`crew.trainingCaptain`) | Shipped   | Scaled against                                        |
+| -------------------------------- | --------- | ----------------------------------------------------- |
+| `conversionCostMinor`            | 2,000,000 | Two months of a Captain's pay; ten outsourced courses |
+| `reversionCostMinor`             | 3,000,000 | Half again the course                                 |
+| `lineContributionFactor`         | 0.5       | Half their sectors flown as the operating pilot       |
+| `crewsPerTrainingCaptain`        | 12        | ~8% of a base's flight deck for full coverage         |
+| `xpBonusAtFullCoverage`          | 0.5       | A pool that took six weeks to name a pilot takes four |
+| `maxXpBonus`                     | 0.6       | The combined cap; 0.1 of it is left for research      |
+
+The acceptance criterion is _"conversion is reversible at a cost"_, and the cost is the larger of
+the two on purpose. The instructor rating is sunk and is not refunded; the pilot needs line
+checks and recurrent simulator time before flying as a line captain again; and above all **the
+round trip must not be cheap**, or an airline would switch Training Captains on for a heavy
+training month and off again for their line value — a career decision turned into a dial. §10.2
+calls skill points _"mostly irreversible"_; this is the same character, priced rather than
+forbidden.
+
+Both fees are one AIR-06 movement each, cause `training_captain`, ledger category `crew`,
+referenced `<memberId>:training_captain:<n>` where `n` is `training_captain_changes` after the
+change. So a conversion is always odd and a reversion always even, and _convert, revert,
+convert_ is three distinct movements rather than one reference that would replay the first. A
+CHECK holds the designation and the counter together (`since` is set exactly when the count is
+odd), and another refuses the designation on any rank but Captain or Training Captain.
+
+The designation, its fee and the member's counter are **one transaction**, with the airline
+locked before the member — the order a settlement takes them in, so a conversion and an arrival
+cannot each hold the lock the other wants.
+
+### The multiplier
+
+```
+coverage = heads ≤ 0 ? 0 : min(1, trainingCaptains × crewsPerTrainingCaptain ÷ flightDeckHeads)
+bonus    = min(maxXpBonus, xpBonusAtFullCoverage × coverage + doctrineXpFraction)
+XP       = base XP × (1 + bonus)      — flight deck only
+```
+
+**"Everyone they fly with", in a game with no rosters.** The game never decides which pilot flew
+which sector (M5-01: dispatch commits a count), so §10.2's sentence is read at the finest grain
+the game knows: a Training Captain's **base and family**, the set of pilots they are rostered
+among. The bonus there is proportional to how much of that flight deck the Training Captains can
+cover — the same pool-model approximation M9-03 records for a named member's own XP.
+
+**Coverage, not a count.** A bonus per Training Captain would make two of them at a ten-pilot
+outstation worth twice one, though one already covers everybody, and would make one worth as
+much at a 400-pilot hub as at that outstation. Coverage is what a training department provides.
+
+**The flight deck only.** A Training Captain trains pilots; the cabin's XP is the formula's,
+unchanged. Pools and named members alike get the multiplied figure, because a named member is one
+of their pool's heads and the two must move together.
+
+**Game time on both sides.** A Training Captain counts towards a flight only if their
+`training_captain_since` is at or before its arrival instant. A flight that landed before a
+conversion and was settled after it is not retroactively trained, and an old arrival re-derives
+the same multiplier.
+
+Every award records it on `flight_result.breakdown.crewXp.training` — `trainingCaptains`,
+`flightDeckHeads`, `coverage`, `multiplier`, `capped` and the trained `flightDeckXpPerHead` —
+so _"why did the first officers earn more on Tuesday?"_ has an answer. The roster carries the
+same figure per base and family in `trainingCoverage`, computed by the same function.
+
+### Why the loop converges
+
+The acceptance criterion: _"The XP multiplier is capped so the loop converges rather than runs
+away."_ Two properties make it, and `training-captain.test.ts` in `@tailfin/sim` proves both
+rather than asserting them:
+
+1. **Coverage saturates.** Once a base's pilots are all covered, another Training Captain adds
+   exactly nothing — property-tested over thousands of seeded random balances.
+2. **The bonus is capped**, and the cap is on the _combined_ bonus — Training Captains and the
+   Crew Development doctrine M9-05 adds — so no stack of sources passes it. The schema refuses a
+   balance whose full-coverage bonus would fill the cap alone, leaving research nothing to give.
+
+Together they bound XP per head per sector by `base × (1 + maxXpBonus)`, a constant. The same
+test file runs the loop itself — a base where **every** captain who reaches the top level
+converts the week they reach it — for ten simulated years, and shows the bench's weekly gain is
+bounded by that constant throughout: cumulative XP grows **linearly**, the multiplier rises while
+coverage grows and then holds still. Without the cap the loop would feed on its own output, which
+is the exponential §10.4 calls a moat.
+
+### What it is worth on the line
+
+§10.2: a Training Captain _"stop[s] generating full revenue value"_. Their skill points are still
+theirs — a converted Performance & Fuel veteran still flies a continuous descent — but they spend
+their duty training others, so what their points buy reaches the line at
+`lineContributionFactor`. They are §10.4's `trainingCaptains` source, resolved together with line
+crew by `resolveEfficiencyBoosts` against one ceiling. The **fractions** are scaled, not the
+points: return them to the line and the same points are worth their face value again.
+
+### Another worker story, with a new edge
+
+The conversion is an HTTP request and works on every node. **The multiplier lives in
+settlement**, which is the `FLIGHT_ARRIVE` handler — so on **production, which has no worker,
+it is never applied**. A player there can pay the course fee and convert a pilot (if one had
+ever been named, which also needs the worker) and the multiplier never touches anybody's XP,
+because nobody's XP moves at all. That reads as a training department that does nothing rather
+than as a missing process, the same trap as everything else in §9 and §10. There is no counter
+of its own, for M9-02's reason: it is a side effect of an arrival, so `flightsMaterialised` and
+the queue depth are what to look at.
+
+### What M9-04 deliberately did not build
+
+- **Promotion.** A designation, not a rank change; see above.
+- **Research's `in_house_training_captains` node** (Crew Development, tier 4, unreleased) and
+  `doctrineXpFraction`. The cap already covers doctrine; M9-05 and M9-06 supply the number.
+- **A per-crew pairing.** Training Captains cover a base and family, not particular crews,
+  because the game does not know which pilots flew together.
+- **A salary for the designation.** Payroll reads pools, and a designated Captain stays in the
+  Captain pool at a Captain's pay. The price is the course and the line value, not a raise.

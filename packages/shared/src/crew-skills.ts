@@ -222,6 +222,92 @@ export const CrewCareer = z
   .strict();
 export type CrewCareer = z.infer<typeof CrewCareer>;
 
+// ---------------------------------------------------------------------------
+// Training Captains (M9-04)
+// ---------------------------------------------------------------------------
+
+/**
+ * Why a named member may not be made a Training Captain (§10.2, §10.1).
+ *
+ * A closed set, because the page has to put the answer beside the thing that
+ * would change it — *"reaches level 20 first"* and *"needs a Centre of
+ * Excellence at this base"* are different decisions, one about time and one
+ * about money. Listed in the order `trainingCaptainRefusal` reports them, which
+ * is **most permanent first**: a purser will never convert, so telling them to
+ * build an academy would send the player after the wrong thing.
+ *
+ *   - `not_flight_deck` — §10.2's *"a max-level **pilot**"*. Cabin crew never.
+ *   - `not_command_rank` — a First Officer trains nobody to command. Captain or
+ *     Training Captain rank only, and nothing in the game promotes yet.
+ *   - `already_training_captain` — they are one; *"Return to the line"* is the
+ *     action, not this one.
+ *   - `below_max_level` — §10.2's *"max-level"*, read from
+ *     `crew.skills.maxLevel`. Time, and harder flying, fix it.
+ *   - `no_academy` — no commissioned academy at the member's crew base.
+ *   - `academy_level` — there is one, and it does not yet permit the
+ *     `training_captain` rank: §10.1 puts *"own Training Captains"* at level 5,
+ *     the Centre of Excellence. Read through `academyPermitsRank`, so a redesign
+ *     of the ladder moves this without a second edit.
+ */
+export const TrainingCaptainRefusal = z.enum([
+  'not_flight_deck',
+  'not_command_rank',
+  'already_training_captain',
+  'below_max_level',
+  'no_academy',
+  'academy_level',
+]);
+export type TrainingCaptainRefusal = z.infer<typeof TrainingCaptainRefusal>;
+
+/**
+ * A member's Training Captain standing, as the pilot card needs it.
+ *
+ * Both prices are sent whether or not the action is open, so the card can say
+ * what the round trip costs *before* the player commits to the first leg of it.
+ */
+export const TrainingCaptainView = z
+  .object({
+    /**
+     * Game time the designation took effect, or null for a line pilot. Game time
+     * like every in-world instant (ADR-0026): the XP award compares it with a
+     * flight's arrival on the same clock.
+     */
+    since: Timestamp.nullable(),
+    /** Null when *"Make Training Captain"* is open to this member right now. */
+    convertRefusal: TrainingCaptainRefusal.nullable(),
+    conversionCostMinor: z.number().int().positive(),
+    reversionCostMinor: z.number().int().positive(),
+  })
+  .strict();
+export type TrainingCaptainView = z.infer<typeof TrainingCaptainView>;
+
+/**
+ * One base and family's XP multiplier — §10.2's *"faster XP for everyone"*,
+ * and the readout that makes the loop's convergence visible.
+ *
+ * `coverage` reaching 1 and `capped` are the two ways the page can say the line
+ * it most needs to: *"another Training Captain here buys you nothing"*. Without
+ * them a player keeps converting veterans into a base that is already fully
+ * covered and wonders why the number stopped moving.
+ */
+export const TrainingCoverageView = z
+  .object({
+    crewBaseId: Uuid,
+    airportIcao: z.string().length(4),
+    family: z.string().min(1),
+    trainingCaptains: z.number().int().nonnegative(),
+    /** Flight-deck heads at this base on this family — what coverage is measured against. */
+    flightDeckHeads: z.number().int().nonnegative(),
+    /** 0–1: the share of those heads the Training Captains can cover. */
+    coverage: z.number().min(0).max(1),
+    /** What a flight-deck head's XP is multiplied by here, ≥ 1. */
+    multiplier: z.number().min(1).max(2),
+    /** True when the combined XP cap (`crew.trainingCaptain.maxXpBonus`) clipped the bonus. */
+    capped: z.boolean(),
+  })
+  .strict();
+export type TrainingCoverageView = z.infer<typeof TrainingCoverageView>;
+
 export const CrewMemberView = z
   .object({
     id: Uuid,
@@ -251,6 +337,8 @@ export const CrewMemberView = z
      * respec. Buy the family back and the points work again.
      */
     typeMasteryActive: z.boolean(),
+    /** §10.2's Training Captain designation, and whether it is open (M9-04). */
+    trainingCaptain: TrainingCaptainView,
   })
   .strict();
 export type CrewMemberView = z.infer<typeof CrewMemberView>;
@@ -309,6 +397,13 @@ export const CrewRosterResponse = z
     operatedFamilies: z.array(z.string().min(1)),
     /** The level at which a pool's crew start being named. */
     namedFromLevel: z.number().int().positive(),
+    /** The level a pilot must reach before converting to Training Captain (M9-04). */
+    maxLevel: z.number().int().positive(),
+    /**
+     * Every base and family that has pilots or Training Captains, with the XP
+     * multiplier the loop is giving it (M9-04).
+     */
+    trainingCoverage: z.array(TrainingCoverageView),
   })
   .strict();
 export type CrewRosterResponse = z.infer<typeof CrewRosterResponse>;
@@ -323,11 +418,22 @@ export type CrewRosterResponse = z.infer<typeof CrewRosterResponse>;
 export const AllocateSkillPointInput = z.object({ branch: SkillBranch }).strict();
 export type AllocateSkillPointInput = z.infer<typeof AllocateSkillPointInput>;
 
-/** The closed set of reasons a roster request is refused. */
+/**
+ * The closed set of reasons a roster request is refused.
+ *
+ * One set for the whole roster board rather than one per action, because every
+ * roster write shares the `404 member_absent` and the page reads the codes from
+ * one place. The Training Captain additions (M9-04) are the six eligibility
+ * reasons, plus the two only a write can meet: reverting somebody who is not a
+ * Training Captain, and a purse that cannot pay the fee.
+ */
 export const CrewSkillRefusal = z.enum([
   'member_absent',
   'no_unspent_points',
   'branch_wrong_ladder',
   'branch_full',
+  ...TrainingCaptainRefusal.options,
+  'not_training_captain',
+  'insufficient_funds',
 ]);
 export type CrewSkillRefusal = z.infer<typeof CrewSkillRefusal>;
