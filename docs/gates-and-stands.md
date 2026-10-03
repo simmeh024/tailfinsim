@@ -28,7 +28,7 @@ App. B.6's table, with what each one actually does in the game.
 | **Contact gate**      | `A1`… | 1 (the quoted price)   | baseline                        |
 | **Remote stand**      | `R1`… | 0.35                   | **+11 min** — passengers bussed |
 | **Overnight parking** | `P1`… | 0.122                  | n/a — nobody is aboard          |
-| **Cargo stand**       | `C1`… | 0.6                    | §12's process, not a turn       |
+| **Cargo stand**       | `F1`… | 0.6                    | §12's process, not a turn       |
 | **Maintenance stand** | `M1`… | 0.5                    | n/a                             |
 
 Only the first two are turnarounds and only they change how long one takes. The `+11 min` is the
@@ -39,6 +39,16 @@ M7-06 is the first thing that ever triggers it.
 and a 20-stand remote apron, a regional field has 2 and 3. Contact gates are lettered by pier in
 twelves (`A1`–`A12`, then `B1`), because that is how an airport numbers them and because App.
 B.7's map draws piers.
+
+**Every label is unique at every tier, and that is checked rather than hoped.** A stand is
+addressed by its label alone, so no non-gate prefix may be a letter a pier can reach. Cargo was
+`C` until M7-07 found that a flagship's 48 contact gates run piers A–D: pier C's `C1`–`C8` and the
+eight cargo stands shared labels, and a flagship cargo stand could never be leased. Cargo is now
+**`F`** (freight) — the earliest reserved letter, so piers may run A–E, sixty contact gates — and
+`gates.ts` refuses to load an inventory where a pier would reach a reserved letter.
+**No migration came with the change**: a lease row naming `C1`–`C8` at a flagship always resolved
+to pier C's contact gate, because the kind is the first inventory match and gates come first, and
+it still does.
 
 ## The three contracts
 

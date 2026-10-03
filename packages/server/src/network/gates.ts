@@ -137,13 +137,60 @@ const DEFAULT_TIER: AirportTier = 'regional';
 /** How many contact gates sit on one pier before the next letter starts. */
 const GATES_PER_PIER = 12;
 
+/**
+ * The letter every non-gate stand is labelled with.
+ *
+ * **None may be a letter a pier can reach**, because a stand is addressed by its
+ * label alone — a lease names a position, `kindOfPosition` takes the first match
+ * and the airport map keys stands by it. Cargo was `C` until M7-07 found that a
+ * flagship's 48 contact gates run piers A–D, so pier C's `C1`–`C8` and the eight
+ * cargo stands shared labels and the cargo stands could never be leased. `F` is
+ * freight, and the earliest reserved letter, so piers may run A–E — sixty contact
+ * gates — before a label collides; {@link assertStandLabelsDistinct} refuses to
+ * load an inventory that would.
+ *
+ * Lease rows written before the change that name `C1`–`C8` at a flagship always
+ * resolved to pier C's contact gate (first match), and still do: nothing that
+ * was held changes meaning, which is why no migration came with it.
+ */
 const PREFIX: Record<StandKind, string> = {
   contact_gate: '', // piers are lettered — see below
   remote_stand: 'R',
   overnight_parking: 'P',
-  cargo_stand: 'C',
+  cargo_stand: 'F',
   maintenance_stand: 'M',
 };
+
+/** The pier letters a run of contact gates uses: `A` for the first twelve, then `B`, … */
+function pierLetters(contactGates: number): string[] {
+  const piers = Math.ceil(contactGates / GATES_PER_PIER);
+  return Array.from({ length: piers }, (_, index) =>
+    String.fromCharCode('A'.charCodeAt(0) + index),
+  );
+}
+
+/**
+ * Every stand label at every tier is distinct — checked when this module loads.
+ *
+ * A collision is not a balance quirk to be caught by a review: it makes a stand
+ * unleasable and two stands indistinguishable on the map, silently. So a change
+ * to {@link INVENTORY_BY_TIER} or {@link PREFIX} that would let a pier letter
+ * reach a non-gate prefix fails at import, in every test and at server start,
+ * rather than in a player's lease.
+ */
+function assertStandLabelsDistinct(): void {
+  const reserved = new Set(Object.values(PREFIX).filter((prefix) => prefix !== ''));
+  for (const [tier, counts] of Object.entries(INVENTORY_BY_TIER)) {
+    const clash = pierLetters(counts.contact_gate).find((letter) => reserved.has(letter));
+    if (clash !== undefined) {
+      throw new Error(
+        `A ${tier} airport's ${String(counts.contact_gate)} contact gates reach pier ${clash}, ` +
+          `which is a non-gate stand prefix; stand labels would collide`,
+      );
+    }
+  }
+}
+assertStandLabelsDistinct();
 
 /**
  * Every stand at an airport of this tier, in order, labelled.

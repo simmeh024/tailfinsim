@@ -44,7 +44,7 @@ function apron(holdings: Record<string, ApronStandFacts['holders']> = {}): Apron
     stand('R1', 'remote_stand', holdings.R1),
     stand('R2', 'remote_stand', holdings.R2),
     stand('P1', 'overnight_parking', holdings.P1),
-    stand('C1', 'cargo_stand', holdings.C1),
+    stand('F1', 'cargo_stand', holdings.F1),
   ];
 }
 
@@ -129,7 +129,7 @@ describe('assignApronStands', () => {
 
   it('sends a freighter to a cargo stand first', () => {
     const placed = assignApronStands(apron(), [plane('box', US, { freighter: true })], NOW);
-    expect(placed.get('box')).toBe('C1');
+    expect(placed.get('box')).toBe('F1');
   });
 
   it('honours the stand M7-06’s measurement put this turn on', () => {
