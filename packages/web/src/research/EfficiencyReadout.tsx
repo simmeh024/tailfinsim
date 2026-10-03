@@ -25,11 +25,18 @@ import './efficiency.css';
  * be read as *"keep going"*.
  *
  * Every figure is the server's: the resolver decided it, and this only draws it.
+ *
+ * `note` is a line under the six rows for what belongs beside them without
+ * being one of them — the research page puts the Crew Development doctrine's
+ * crew XP bonus there, which is not a §10.4 quantity but shares a cap the same
+ * way.
  */
 export function EfficiencyReadout({
   quantities,
+  note,
 }: {
   quantities: readonly EfficiencyQuantityReadout[];
+  note?: ReactNode;
 }): ReactNode {
   return (
     <section className="efficiency" aria-labelledby="efficiency-heading">
@@ -45,6 +52,7 @@ export function EfficiencyReadout({
           <EfficiencyRow key={readout.quantity} readout={readout} />
         ))}
       </ul>
+      {note !== undefined && <div className="efficiency__note">{note}</div>}
     </section>
   );
 }

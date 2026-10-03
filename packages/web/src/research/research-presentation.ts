@@ -2,6 +2,7 @@ import {
   EFFICIENCY_QUANTITY_LABELS,
   RESEARCH_NODES,
   type ResearchEffectTarget,
+  type DoctrineView,
   type ResearchEffectView,
   type ResearchNodeId,
   type ResearchNodeView,
@@ -157,12 +158,17 @@ export function gameDaysRemaining(gameNow: string, completesAt: string): number 
 /** `3 game weeks, 2 game days remaining`, `5 game days remaining`, `Due to complete`. */
 export function remainingInWords(days: number): string {
   if (days <= 0) return 'Due to complete';
+  return `${durationInWords(days)} remaining`;
+}
+
+/** A positive span of game days: `2 game weeks, 4 game days`, `1 game week`, `5 game days`. */
+export function durationInWords(days: number): string {
   const weeks = Math.floor(days / 7);
   const rest = days % 7;
   const parts: string[] = [];
   if (weeks > 0) parts.push(formatGameWeeks(weeks));
   if (rest > 0) parts.push(`${String(rest)} game day${rest === 1 ? '' : 's'}`);
-  return `${parts.join(', ')} remaining`;
+  return parts.join(', ');
 }
 
 /** How far through a project is, 0–1, on the world's clock. Null when it cannot be said. */
@@ -278,4 +284,100 @@ export function accrualExplanation(research: ResearchResponse): string | null {
     return 'Your academies count, but nothing earned points over the last seven game days. Fleet flight hours are the other factor: points accrue as the fleet flies.';
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Doctrine (M9-06, §10.4's third rule)
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a completed node's strength is heading.
+ *
+ * §10.4: *"Doctrine lapses if you stop funding it — advantages must be
+ * maintained, not just banked."* Four states, because the player's question is
+ * different in each: at full strength it is *what does this cost me*, lapsing
+ * it is *how long have I got*, recovering it is *how long until it pays again*,
+ * and fully lapsed it is *what would it take to get it back*.
+ */
+export type DoctrineTrend = 'full' | 'recovering' | 'lapsing' | 'lapsed';
+
+export function doctrineTrend(doctrine: DoctrineView): DoctrineTrend {
+  if (doctrine.funded) return doctrine.settlesAt === null ? 'full' : 'recovering';
+  return doctrine.settlesAt === null ? 'lapsed' : 'lapsing';
+}
+
+/**
+ * The trend as a sentence, measured on the world's clock.
+ *
+ * `settlesAt` is when the strength stops moving — reaching 1 while funded, 0
+ * while not — so the time left is read straight off it rather than projected
+ * from a slope.
+ */
+export function doctrineTrendInWords(doctrine: DoctrineView, gameNow: string): string {
+  const trend = doctrineTrend(doctrine);
+  if (trend === 'full') return 'Full strength';
+  if (trend === 'lapsed') return 'Fully lapsed — resume funding to rebuild it';
+  const days = doctrine.settlesAt === null ? null : gameDaysRemaining(gameNow, doctrine.settlesAt);
+  if (trend === 'recovering') {
+    return days === null || days <= 0
+      ? 'Recovering — back to full strength now'
+      : `Recovering — full strength in ${durationInWords(days)}`;
+  }
+  return days === null || days <= 0
+    ? 'Lapsing — fully lapsed now'
+    : `Lapsing — fully lapsed in ${durationInWords(days)}`;
+}
+
+/** Strength as a whole percentage, `64%`. */
+export function formatStrength(strength: number): string {
+  return `${String(Math.round(strength * 100))}%`;
+}
+
+/**
+ * One effect at the strength it is in force: `−0.9% fuel burn of −1.5%`.
+ *
+ * The contract applies every effect on a node at its doctrine's strength, so the
+ * figure the airline is actually getting is the product, shown beside the full
+ * figure it would get funded and settled. At nothing it says so in words rather
+ * than printing `−0%`.
+ */
+export function effectAtStrength(effect: ResearchEffectView, strength: number): string {
+  const applied = effect.fraction * strength;
+  if (Number((applied * 100).toFixed(2)) === 0) return `None of ${effectInWords(effect)}`;
+  const sign = effect.target === 'crewXp' ? '+' : '−';
+  return `${effectInWords({ target: effect.target, fraction: applied })} of ${sign}${formatPercent(effect.fraction)}`;
+}
+
+/**
+ * The crew XP the Crew Development doctrine adds, and the cap it shares.
+ *
+ * Research's XP bonus and a Training Captain's draw on one cap (M9-04), which
+ * is what keeps §10.2's compounding loop from running away — so the line names
+ * the cap every time rather than letting the doctrine figure read as headroom.
+ */
+export function crewXpInWords(crewXp: ResearchResponse['crewXp']): string {
+  const cap = formatPercent(crewXp.cap);
+  if (crewXp.doctrine <= 0) {
+    return `Crew Development doctrine: no crew XP bonus in force. Its bonus shares a ${cap} cap with Training Captains.`;
+  }
+  return `Crew Development doctrine: +${formatPercent(crewXp.doctrine)} crew XP (shares a ${cap} cap with Training Captains)`;
+}
+
+/**
+ * Why a funding change was not made, as a sentence for the node.
+ *
+ * The one refusal is `not_complete`; a node the airline never researched is a
+ * 404, which the page can only reach through a stale tree, so it gets words too.
+ */
+export function fundingFailureInWords(
+  failure: { status: number; code: string; message: string },
+  node: Pick<ResearchNodeView, 'name'>,
+): string {
+  if (failure.code === 'not_complete') {
+    return `Not changed. ${node.name} is still being researched, so there is no doctrine to fund until it completes.`;
+  }
+  if (failure.status === 404) {
+    return `Not changed. Your airline has not researched ${node.name}, so it has no doctrine to fund.`;
+  }
+  return `Not changed. ${failure.message}`;
 }

@@ -41,11 +41,12 @@ import type { ReactNode } from 'react';
  * control and the server cannot disagree, except across a race — which the
  * page answers by showing the 409 and re-reading the tree.
  *
- * ## Room for M9-06
+ * ## The footer
  *
- * `footer` is where doctrine strength and its funding control go once §10.4's
- * upkeep exists. The card renders it last, under the start control, so adding
- * it moves nothing above.
+ * `footer` is where M9-06's doctrine strength and funding control go
+ * (`DoctrineFooter`). The card renders it last, under everything else, so it
+ * moved nothing above when it arrived — and renders nothing, not an empty
+ * bordered strip, for a node that has no doctrine yet.
  */
 
 const STATUS_WORDS: Record<ResearchNodeStatus, { glyph: string; label: string }> = {
@@ -71,7 +72,7 @@ export interface ResearchNodeCardProps {
   onConfirmStart: () => void;
   /** What went wrong the last time this node was started, already in words. */
   failure: { kind: 'refused' | 'broken'; message: string } | null;
-  /** M9-06's slot: doctrine strength and funding. Rendered last. */
+  /** M9-06's slot: doctrine strength and funding. Rendered last; null or absent renders nothing. */
   footer?: ReactNode;
 }
 
@@ -219,7 +220,9 @@ export function ResearchNodeCard({
         </StateBlock>
       )}
 
-      {footer !== undefined && <div className="research-node__footer">{footer}</div>}
+      {footer !== undefined && footer !== null && (
+        <div className="research-node__footer">{footer}</div>
+      )}
     </article>
   );
 }

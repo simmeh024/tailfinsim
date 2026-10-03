@@ -10,10 +10,13 @@
   border-radius: var(--radius-md);
 }
 
+/* The same panel title as the research page's other panels, which this one sits between. */
 .efficiency__header h2 {
   margin: 0;
-  font-size: var(--text-lg);
-  color: var(--text-primary);
+  font-size: var(--text-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
 }
 
 .efficiency__lede {
@@ -110,4 +113,15 @@
   width: 0.5rem;
   height: 0.5rem;
   border-radius: 50%;
+}
+
+.efficiency__note {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.efficiency__note p {
+  margin: 0;
 }

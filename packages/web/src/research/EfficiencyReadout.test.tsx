@@ -76,4 +76,14 @@ describe('EfficiencyReadout', () => {
     expect(meter.getAttribute('aria-valuemax')).toBe('8');
     expect(screen.getByText(/another boost here buys nothing/)).toBeTruthy();
   });
+
+  it('carries a note under the six rows when the page gives it one', () => {
+    render(
+      <EfficiencyReadout
+        quantities={quantities()}
+        note={<p>Crew Development doctrine: +2% crew XP</p>}
+      />,
+    );
+    expect(screen.getByText('Crew Development doctrine: +2% crew XP')).toBeTruthy();
+  });
 });
