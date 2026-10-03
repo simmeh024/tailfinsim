@@ -45,7 +45,7 @@
  * well as financially, and that is the whole point of the contract table.
  */
 
-import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 
 import type {
   AirportGatesResponse,
@@ -58,17 +58,18 @@ import type {
 } from '@tailfin/shared';
 import { STAND_KINDS } from '@tailfin/shared';
 import {
+  assignStands,
   belowUtilisationFloor,
   commonUseTurnFee,
   gateRequirement,
   leaseBreakevenTurnsPerMonth,
+  pairStandTurns,
   standAnnualFee,
-  standOccupancies,
-  standUtilisation,
+  utilisationOfAssignment,
   type StandOccupancy,
 } from '@tailfin/sim';
 
-import { airline, airport, flight, gateHolding } from '../db/schema';
+import { airframe, airline, airport, flight, gateHolding } from '../db/schema';
 import { loadWorldEconomyConfig } from '../economy/loader';
 import { worldGameNow } from '../world/game-now';
 
@@ -176,7 +177,8 @@ function kindOfPosition(tier: AirportTier | null, position: string): StandKind |
 
 /* -- Reading an airport ------------------------------------------------------ */
 
-interface AirportRow {
+export interface AirportRow {
+  id: string;
   icao: string;
   name: string;
   tier: AirportTier | null;
@@ -186,6 +188,7 @@ interface AirportRow {
 async function loadAirport(db: Database, icao: string): Promise<AirportRow | null> {
   const [row] = await db
     .select({
+      id: airport.id,
       icao: airport.icaoCode,
       name: airport.name,
       tier: airport.tier,
@@ -196,6 +199,7 @@ async function loadAirport(db: Database, icao: string): Promise<AirportRow | nul
     .limit(1);
   if (row?.icao == null) return null;
   return {
+    id: row.id,
     icao: row.icao,
     name: row.name,
     tier: row.tier,
@@ -253,9 +257,15 @@ const MINUTES_PER_DAY = 1_440;
  * which is what `sampledGameDate` exists to say out loud.
  *
  * Local minutes of the day at the airport, because a stand is a physical place
- * and its operating day is the local one. `standOccupancies` pairs each arrival
- * with the next departure and carries the last one past midnight, so an aeroplane
- * left overnight is one interval rather than two or none.
+ * and its operating day is the local one. `pairStandTurns` — `standOccupancies`
+ * with the facts carried — pairs each arrival with the next departure and carries
+ * the last one past midnight, so an aeroplane left overnight is one interval
+ * rather than two or none.
+ *
+ * Each interval keeps the flights it was built from (M7-07), so the airport map
+ * can list a gate's day by registration and route **from the very turns its
+ * utilisation is measured from**, rather than from a second reading of the
+ * schedule that could disagree with the percentage beside it.
  */
 async function occupanciesAt(
   db: Database,
@@ -263,19 +273,24 @@ async function occupanciesAt(
   airlineId: string,
   air: AirportRow,
   from: Date,
-): Promise<StandOccupancy[]> {
+): Promise<MeasuredTurn[]> {
   const until = new Date(from.getTime() + SAMPLE_WINDOW_MINUTES * 60_000);
   const offset = air.utcOffsetMinutes ?? 0;
 
   const rows = await db
     .select({
+      id: flight.id,
       airframeId: flight.airframeId,
+      registration: airframe.registration,
       originIcao: flight.originIcao,
       destinationIcao: flight.destinationIcao,
       departure: sql<Date>`coalesce(${flight.actualDeparture}, ${flight.scheduledDeparture})`,
       arrival: sql<Date>`coalesce(${flight.actualArrival}, ${flight.estimatedArrival})`,
     })
     .from(flight)
+    // LEFT, because `flight.airframe_id` carries no foreign key: a turn flown by
+    // an aeroplane since sold still happened, it just has no registration now.
+    .leftJoin(airframe, eq(airframe.id, flight.airframeId))
     .where(
       and(
         eq(flight.worldId, worldId),
@@ -283,39 +298,86 @@ async function occupanciesAt(
         gte(flight.scheduledDeparture, new Date(from.getTime() - MINUTES_PER_DAY * 60_000)),
         lt(flight.scheduledDeparture, until),
       ),
-    );
+    )
+    // A stable order, so the colouring's tie-break — input order — is the same
+    // on every read rather than whatever order Postgres happened to return.
+    .orderBy(asc(flight.scheduledDeparture), asc(flight.id));
 
-  /** Local minute of the day, 0–1439. The driver may hand back a string. */
-  const localMinute = (at: Date | string): number => {
-    const ms = at instanceof Date ? at.getTime() : Date.parse(String(at));
-    const minutes = Math.floor(ms / 60_000) + offset;
+  /** The instant as a Date. The driver may hand back a string for a raw `coalesce`. */
+  const instant = (at: Date | string): Date => (at instanceof Date ? at : new Date(String(at)));
+  /** Local minute of the day, 0–1439. */
+  const localMinute = (at: Date): number => {
+    const minutes = Math.floor(at.getTime() / 60_000) + offset;
     return ((minutes % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
   };
 
-  const arrivals = new Map<string, number[]>();
-  const departures = new Map<string, number[]>();
+  interface Arrival {
+    minute: number;
+    at: Date;
+    flightId: string;
+    fromIcao: string;
+  }
+  interface Departure {
+    minute: number;
+    toIcao: string;
+  }
+  const arrivals = new Map<string, Arrival[]>();
+  const departures = new Map<string, Departure[]>();
+  const registrationOf = new Map<string, string | null>();
   for (const row of rows) {
+    registrationOf.set(row.airframeId, row.registration);
     if (row.destinationIcao === air.icao) {
+      const at = instant(row.arrival);
       arrivals.set(row.airframeId, [
         ...(arrivals.get(row.airframeId) ?? []),
-        localMinute(row.arrival),
+        { minute: localMinute(at), at, flightId: row.id, fromIcao: row.originIcao },
       ]);
     }
     if (row.originIcao === air.icao) {
       departures.set(row.airframeId, [
         ...(departures.get(row.airframeId) ?? []),
-        localMinute(row.departure),
+        { minute: localMinute(instant(row.departure)), toIcao: row.destinationIcao },
       ]);
     }
   }
 
-  const occupancies: StandOccupancy[] = [];
+  const occupancies: MeasuredTurn[] = [];
   for (const airframeId of new Set([...arrivals.keys(), ...departures.keys()])) {
-    occupancies.push(
-      ...standOccupancies(arrivals.get(airframeId) ?? [], departures.get(airframeId) ?? []),
-    );
+    for (const turn of pairStandTurns(
+      arrivals.get(airframeId) ?? [],
+      departures.get(airframeId) ?? [],
+    )) {
+      occupancies.push({
+        on: turn.on,
+        off: turn.off,
+        airframeId,
+        registration: registrationOf.get(airframeId) ?? null,
+        arrivingFlightId: turn.arrival.flightId,
+        arrivedAt: turn.arrival.at,
+        fromIcao: turn.arrival.fromIcao,
+        toIcao: turn.departure?.toIcao ?? null,
+      });
+    }
   }
   return occupancies;
+}
+
+/**
+ * One turn as M7-06 measures a stand's day, with the flights it was built from.
+ *
+ * `on` and `off` are the local minutes the utilisation is computed from;
+ * everything else is what the airport map (M7-07) shows beside them.
+ */
+export interface MeasuredTurn extends StandOccupancy {
+  airframeId: string;
+  registration: string | null;
+  /** The flight that brought it — the same key the apron gives an aeroplane on the ground. */
+  arrivingFlightId: string;
+  /** Game time it came on blocks. */
+  arrivedAt: Date;
+  fromIcao: string;
+  /** Where the departure that ends the stay goes; null when the rotation never leaves. */
+  toIcao: string | null;
 }
 
 /* -- The airport picture ----------------------------------------------------- */
@@ -325,14 +387,35 @@ async function pictureOf(
   own: ResolvedPlayerAirline,
   air: AirportRow,
 ): Promise<AirportGatesResponse> {
+  return (await measuredPictureOf(db, own, air, await worldGameNow(db, own.worldId))).gates;
+}
+
+/**
+ * The gates answer, and the turns its utilisation was measured from.
+ *
+ * One colouring, read twice. `assignStands` places the airline's sampled day onto
+ * its own turn stands once; the per-stand utilisation is measured from that
+ * placement, and the airport map (M7-07) lists the very same turns beside it —
+ * so a gate's rotation and its percentage are two readings of one answer, not two
+ * answers that happen to agree today.
+ */
+export interface MeasuredAirportPicture {
+  gates: AirportGatesResponse;
+  /** Your turn stands' days, by position: the turns placed on each, in arrival order. */
+  turnsByPosition: Map<string, MeasuredTurn[]>;
+}
+
+async function measuredPictureOf(
+  db: Database,
+  own: ResolvedPlayerAirline,
+  air: AirportRow,
+  gameNow: Date,
+): Promise<MeasuredAirportPicture> {
   const economy = await loadWorldEconomyConfig(db, own.worldId);
   const gates = economy.gates;
   const tier = air.tier ?? DEFAULT_TIER;
 
-  const [held, gameNow] = await Promise.all([
-    holdingsAt(db, own.worldId, air.icao),
-    worldGameNow(db, own.worldId),
-  ]);
+  const held = await holdingsAt(db, own.worldId, air.icao);
   const occupancies = await occupanciesAt(db, own.worldId, own.id, air, gameNow);
 
   const holdersByPosition = new Map<string, StandHolder[]>();
@@ -359,9 +442,22 @@ async function pictureOf(
     .filter((row) => row.kind === 'contact_gate' || row.kind === 'remote_stand')
     .map((row) => row.position)
     .sort();
-  const utilisation = standUtilisation(occupancies, ownTurnStands.length);
+  const placed = assignStands(occupancies);
+  const utilisation = utilisationOfAssignment(placed, ownTurnStands.length);
   const utilisationByPosition = new Map(
     ownTurnStands.map((position, index) => [position, utilisation[index]]),
+  );
+  const turnsByPosition = new Map<string, MeasuredTurn[]>(
+    ownTurnStands.map((position, index) => [
+      position,
+      placed
+        .filter((turn) => turn.standIndex === index)
+        .sort(
+          (a, b) =>
+            a.arrivedAt.getTime() - b.arrivedAt.getTime() ||
+            a.arrivingFlightId.localeCompare(b.arrivingFlightId),
+        ),
+    ]),
   );
 
   const stands: AirportStand[] = standInventory(tier).map(({ position, kind }) => {
@@ -400,23 +496,26 @@ async function pictureOf(
   const requirement = requirementOf(occupancies, yourHoldings, gameNow);
 
   return {
-    icao: air.icao,
-    name: air.name,
-    tier,
-    stands,
-    requirement,
-    // From the pinned fee on each row, not from today's price: a lease is billed
-    // at what it was sold at, which is what makes a retune safe.
-    monthlyFeeMinor: yourHoldings.reduce(
-      (total, row) => total + Math.round(row.annualFeeMinor / 12),
-      0,
-    ),
-    leaseBreakevenTurnsPerMonth: leaseBreakevenTurnsPerMonth(
-      'contact_gate',
-      'preferential',
+    gates: {
+      icao: air.icao,
+      name: air.name,
       tier,
-      gates,
-    ),
+      stands,
+      requirement,
+      // From the pinned fee on each row, not from today's price: a lease is billed
+      // at what it was sold at, which is what makes a retune safe.
+      monthlyFeeMinor: yourHoldings.reduce(
+        (total, row) => total + Math.round(row.annualFeeMinor / 12),
+        0,
+      ),
+      leaseBreakevenTurnsPerMonth: leaseBreakevenTurnsPerMonth(
+        'contact_gate',
+        'preferential',
+        tier,
+        gates,
+      ),
+    },
+    turnsByPosition,
   };
 }
 
@@ -450,6 +549,25 @@ export async function readAirportGates(
   const air = await loadAirport(db, icao);
   if (air === null) return null;
   return pictureOf(db, own, air);
+}
+
+/**
+ * {@link readAirportGates} with the turns behind its utilisation, at a given
+ * game instant (M7-07).
+ *
+ * The airport map embeds the gates answer unchanged and lists your stands' days
+ * beside it, so it asks for both from one measurement. `gameNow` is the caller's
+ * so the whole map is read at one instant.
+ */
+export async function readMeasuredAirportPicture(
+  db: Database,
+  own: ResolvedPlayerAirline,
+  icao: string,
+  gameNow: Date,
+): Promise<(MeasuredAirportPicture & { airport: AirportRow }) | null> {
+  const air = await loadAirport(db, icao);
+  if (air === null) return null;
+  return { ...(await measuredPictureOf(db, own, air, gameNow)), airport: air };
 }
 
 /* -- Leasing and releasing --------------------------------------------------- */

@@ -81,6 +81,9 @@ const READ_ONLY_GET_ROUTES = [
   '/api/airlines/founding-options',
   '/api/airlines/me',
   '/api/airports/:icao/gates',
+  // M7-07. A read: the airport map's picture. It computes a display stand for
+  // each aeroplane on every request and stores none, so a refresh changes nothing.
+  '/api/airports/:icao/apron',
   '/api/airports/:icao/slots',
   '/api/alerts',
   '/api/automation',

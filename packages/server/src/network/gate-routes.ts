@@ -18,6 +18,7 @@ import { LeaseStandRequest } from '@tailfin/shared';
 import { resolvedAirlineOf } from '../airline/context';
 import { parseRequestBody } from '../http/request-body';
 
+import { readApron } from './apron';
 import { leaseStand, readAirportGates, releaseStand } from './gates';
 
 import type { DatabaseHandle } from '../db/client';
@@ -39,6 +40,26 @@ export function registerGateRoutes(app: FastifyInstance, { db }: GateRoutesOptio
         return reply.code(404).send({ code: 'not_found', message: 'No such airport' });
       }
       return reply.code(200).send(gates);
+    },
+  );
+
+  /**
+   * The airport map's whole picture (M7-07, App. B.7): the gates answer above
+   * embedded unchanged, the aeroplanes on the ground, runways, movements either
+   * side of now, and your own stands' days. Same boundary as the gates read —
+   * `:icao` is a public airport identifier, the airline comes from the session —
+   * and the same 404 for an airport that does not exist.
+   */
+  app.get<{ Params: { icao: string } }>(
+    '/api/airports/:icao/apron',
+    { onRequest: app.requireAirline },
+    async (request, reply) => {
+      const own = resolvedAirlineOf(request);
+      const apron = await readApron(db.db, own, request.params.icao.toUpperCase());
+      if (apron === null) {
+        return reply.code(404).send({ code: 'not_found', message: 'No such airport' });
+      }
+      return reply.code(200).send(apron);
     },
   );
 

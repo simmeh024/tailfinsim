@@ -47,6 +47,11 @@ const NON_UUID_PATH_IDENTIFIERS = [
   'GET /api/airports/:icao/gates',
   'POST /api/airports/:icao/gates',
   'DELETE /api/airports/:icao/gates/:position',
+  // The airport map (M7-07): the same public `:icao`, read the same way as the
+  // gates route it embeds. Nothing owned is addressed by the path — the asking
+  // airline comes from the session, and what is private on the map (your next
+  // flight ids, your stands' days) is selected by that airline, never by an id.
+  'GET /api/airports/:icao/apron',
   // Doctrine funding (M9-06): `:nodeId` is one of §10.3's 24 catalogue nodes, a
   // public selector like `:system` above. What it addresses — this airline's
   // project on that node — is resolved from the session, and a malformed id, a
