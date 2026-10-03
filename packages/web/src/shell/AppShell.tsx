@@ -98,6 +98,13 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { to: '/network', label: 'Network', glyph: '⤳' },
   { to: '/finance', label: 'Finance', glyph: '§' },
   { to: '/crew', label: 'Crew', glyph: '☰' },
+  /*
+   * M9-05's research tree, beside the crew it is earned by. §10.3's points come
+   * from academies at crew bases and the hours crews fly, and its Crew
+   * Development branch feeds crew XP — so a player deciding what to research
+   * has usually just been looking at their crew.
+   */
+  { to: '/research', label: 'Research', glyph: '⚗' },
   { to: '/headquarters', label: 'Headquarters', glyph: '⌂' },
   { to: '/service', label: 'Service', glyph: '☕' },
   { to: '/design', label: 'Design', glyph: '◆' },
