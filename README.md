@@ -322,7 +322,12 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   filtered texture, so the terminator is a smooth curve rather than a staircase of flat-shaded
   cells. The renderer belongs to that page and no other: it was a shell-wide backdrop, which
   meant every opaque page hid it while still paying for its WebGL context, and page content
-  took every drag aimed at the map. Its contract and performance policy are documented in
+  took every drag aimed at the map. Zoom runs continuously through §H.2's four bands — world,
+  region, terminal area, airport map: zooming in on an airport you operate at hands off into its
+  2D airport schematic, which grows out of the airport's point on the map and is the same floor
+  plan on the globe and the flat map; leaving it lands back on the world, centred on that
+  airport. Any airport opens from its detail panel, `/world?airport=ICAO` links straight to one,
+  and the back button leaves it. Its contract and performance policy are documented in
   [`docs/world-renderer.md`](docs/world-renderer.md).
 - **A deterministic 3D aircraft intake pipeline.** Licensed source GLBs pass the official glTF
   Validator plus Tailfin's transform, naming, material, UV, LOD, budget and no-external-resource

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AirportGatesResponse, AirportStand, StandKind } from '@tailfin/shared';
@@ -83,6 +84,20 @@ describe('AirportGatesView', () => {
     // §14 decision support: the crossover, so "you use it 12% of the time" is
     // actionable rather than merely true.
     expect(screen.getByText(/72 turns a month/)).toBeInTheDocument();
+  });
+
+  it('links the same stands to the airport map (M7-07)', async () => {
+    stub(() => ({ status: 200, body: airport() }));
+    render(
+      <MemoryRouter>
+        <AirportGatesView airports={['EHAM']} />
+      </MemoryRouter>,
+    );
+
+    const link = await screen.findByRole('link', { name: 'Open on the airport map' });
+    // The world page, opened on the schematic — §H.2's innermost band, not a
+    // page of its own.
+    expect(link).toHaveAttribute('href', '/world?airport=EHAM');
   });
 
   it("reports App. B.6's per-gate utilisation, and flags an idle one", async () => {

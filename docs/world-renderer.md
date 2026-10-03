@@ -78,6 +78,90 @@ controller's own bookkeeping mid-gesture.
 The visual projection change is a 180 ms CSS transition. Reduced-motion users inherit the
 global zero-duration motion tokens.
 
+## Zoom bands and the airport map (M7-07)
+
+> _"Zoom is continuous through four bands: **world → region → terminal area → airport map**
+> (App. B.7), where the airport view is always a stylised 2D schematic regardless of
+> projection — an apron is a floor plan, not a landscape."_ — §H.2
+
+The bands are explicit and pure, in `world/bands.ts`, so the renderer supplies facts and acts on
+the answer rather than deciding anything itself:
+
+| Band          | Camera zoom | A 1,200 px stage spans | Agrees with                                 |
+| ------------- | ----------- | ---------------------- | ------------------------------------------- |
+| world         | below 3.5   | a continent or more    | rival routes bundle into corridors below it |
+| region        | 3.5 – 8     | a country to a state   | every airport tier is drawn from 5.5        |
+| terminal area | 8 – 11.5    | ~200 km down to ~20 km | one city's airports                         |
+| airport map   | from 11.5   | one aerodrome          | the hand-off                                |
+
+The first three are ranges of the one camera both projections share. **The fourth is not a
+camera at all**: past 11.5 the world hands over to `AirportMapView`, a DOM schematic drawn over
+the canvas. That is what makes it _"regardless of projection"_ — nothing about it is deck.gl's,
+so it is the same floor plan whether the player was on the globe or the flat map a moment
+before. The camera's ceiling stays at 12; the last half-level is where the world finishes its
+approach behind the schematic.
+
+### Which zoom hands off
+
+`handoffTarget` needs all three of:
+
+1. **A zoom in** — the zoom rose, or the controller reports a zoom gesture whose zoom did not
+   fall (a scroll at the ceiling). A pan, inertia, a fly-out, a pinch out, and a camera a link or
+   a memory restored close in never hand off: opening a schematic because somebody _arrived_
+   close in would take the world away from a player who had not asked to leave it.
+2. **The airport band**, `AIRPORT_HANDOFF_ZOOM`.
+3. **An airport the player operates at** as the subject — the one under the pointer (a
+   scroll-zoom keeps that point fixed, so it is the aim), else the nearest operated airport
+   within 160 px of the stage centre. The distance is measured in Web Mercator pixels for
+   **both** projections, so the decision is a function of the camera and not of how it is drawn;
+   on the globe an airport away from the equator sits a little closer than Mercator says, so the
+   rule is if anything more generous there, never stricter.
+
+**"Any airport you operate at"** (App. B.7) is the player's hubs and both ends of every route
+they hold. That is also every airport where the client lets them lease a stand, because the
+Network page's Gates view lists route endpoints and nothing else — so a station where they hold
+stands is in the set by construction. The one case it misses is a stand still held after its
+last route closed; the overlay carries no stand list, and adding one to `/api/world/map` would
+be the fix if it matters. Every other airport — a rival's hub, a field being considered — opens
+from its detail panel's **Open airport map**, which takes any airport, and the panel says which
+of the two it is so a player who zoomed in and stayed on the world knows why.
+
+### The address is the source of truth
+
+`/world?airport=ICAO` open means the schematic is open — whether it got there by zooming, the
+detail panel, the Gates page's **Open on the airport map** link, or the back and forward
+buttons. All four are one code path in `WorldRenderer`, so they cannot disagree about where the
+camera ends up.
+
+- **Entering** pushes a history entry, unlike the camera's replaced ones: the airport map is a
+  place, so the back button should leave it, where a pan is not.
+- **Leaving** — `AirportMapView`'s `onExit` (its back control, or a zoom out past its widest
+  view), or the browser's back button — puts the world camera at `TERMINAL_EXIT_ZOOM` (10),
+  centred on the airport just left and with it selected. Inside the terminal area rather than at
+  its edge, so the next scroll tick does not re-open what the player just closed. When the
+  session pushed the entry, leaving pops it; when the map was opened from a link, leaving
+  rewrites the address instead, so it lands on the world rather than outside Tailfin.
+- **A link** opens the schematic on the first frame, and places the world camera on the airport
+  as soon as its position is known, so leaving lands there too.
+
+### Continuous, not a page change
+
+The schematic grows out of the airport's point on the stage (deck.gl's `project`, or the stage
+centre before deck has measured anything) with a CSS scale-and-fade, while the world camera flies
+in to its ceiling behind it — and shrinks back into the same point on the way out while the
+camera steps back. One constant, `AIRPORT_HANDOFF_MS` (420 ms), sets the camera's fly and the
+schematic's `animation-duration`, so the two land together. Longer than H.4's 150–200 ms for a
+control's feedback because it is a camera move, the family Recentre's 700 ms fly belongs to; zero
+for a reader who asked for less motion.
+
+While the schematic is open the world's HUD is hidden and its canvas is `aria-hidden`, the route
+shimmer's animation loop stops, and the world stops publishing to the context panel — the
+schematic publishes its own selection there, and the world's publisher re-runs every second with
+the clock, so left alone it would clear whatever the schematic had just put there. The band
+indicator in the control strip says which band the camera is in once that changes what the next
+zoom will do: nothing on the world and regional views, _"Terminal area · zoom in on one of your
+airports for its airport map"_ below the hand-off.
+
 ## Layers
 
 The baseline layers are, in draw order:

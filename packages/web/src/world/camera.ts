@@ -34,8 +34,9 @@ import type { MapViewState } from '@deck.gl/core';
 
 /** Mercator degenerates at the poles; 85 is the conventional stop short of it. */
 const MAX_LATITUDE = 85;
-const MIN_ZOOM = -0.5;
-const MAX_ZOOM = 12;
+/** The camera's floor and ceiling, shared by both projections and by `bands.ts`. */
+export const MIN_ZOOM = -0.5;
+export const MAX_ZOOM = 12;
 
 function clamp(value: number, low: number, high: number): number {
   return Math.min(high, Math.max(low, value));
