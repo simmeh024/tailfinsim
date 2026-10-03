@@ -68,7 +68,16 @@ Two cells needed a decision, and both are reasoned in `packages/shared/src/acade
   Anywhere else and a player could buy a widebody they were forbidden to crew.
 
 `cadet` is never a ceiling. §10.1 puts the cadet programme at level 5, which is a _source_ of
-cadets rather than a rank you convert someone up to; that is M9-04's.
+cadets rather than a rank you convert someone up to. It is still unbuilt: M9-04 built level 5's
+other entry, _"own Training Captains"_, and nothing yet supplies cadets.
+
+**Level 5's Training Captain ceiling is read (M9-04).** A named Captain at the top level may be
+designated a Training Captain only where the academy at their crew base permits the
+`training_captain` rank — `trainingCaptainRefusal` asks `academyPermitsRank(level,
+'training_captain')` rather than comparing with 5, so this table stays the one place the rule
+lives. It is still a permission and not a boost: the Centre of Excellence lets a pilot convert,
+and the XP multiplier comes from the Training Captains themselves. A building site at level 0
+reads as no academy. `docs/crew.md` has the mechanic.
 
 **Level 0 is a building site, not a level.** A row is written when the player commissions level
 1, with `level = 0` and `pending_level = 1`. Nothing is permitted at 0 — not a rank, not a
@@ -311,5 +320,7 @@ client that had to refetch would show a stale purse for a frame.
   back, the same as `hub_facility`. A `closed_at` nobody can reach would be a mechanic sitting
   in the schema looking load-bearing.
 - **Crew promotion.** The rank ceiling says what an academy _may_ train; nothing yet promotes a
-  head from First Officer to Captain. That is M9-02's XP and M9-03's skill trees, and the
-  ceiling is what they will read.
+  head from First Officer to Captain. M9-02's XP and M9-03's skill trees did not add it either,
+  and M9-04's Training Captain is deliberately a **designation** on a named member rather than a
+  move into the `training_captain` rank's pool, for exactly this reason — it would otherwise
+  have been the first promotion mechanic in the game, built by accident.

@@ -253,6 +253,16 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   come from the world's seed so a replay produces the same roster. See
   [`docs/crew.md`](docs/crew.md), including why there is no respec and no public profile to put
   anybody on yet.
+- **Training Captains, and a compounding loop that converges.** A top-level named Captain at a
+  base with a Centre of Excellence (academy level 5) can be made a Training Captain for a course
+  fee: every pilot at that base on that type then earns XP faster, while the Training Captain's
+  own skill points count for half on the line. More of them help until the base's pilots are
+  all covered and then add nothing, and the combined XP bonus is hard-capped, so the loop
+  speeds a bench up to a ceiling rather than running away. It is reversible at a price — and
+  the way back costs more than the course, so it is a decision rather than a dial. The roster
+  board shows the badge, the two-step confirmation with both prices, why a pilot cannot convert
+  yet, and the multiplier per base. The multiplier is applied when a flight settles, which is
+  the Worker's, so it bites on dev only. See [`docs/crew.md`](docs/crew.md).
 - **A training academy that gates a ceiling and grants no boost.** §10.1's academy is built at
   a crew base and climbs five levels, each unlocking a higher rank an airline may train, a
   higher research tier it may later reach, and more of the finite training slots crew occupy
