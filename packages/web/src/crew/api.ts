@@ -182,3 +182,41 @@ export async function allocateSkillPoint(
     },
   };
 }
+
+/**
+ * Make a named pilot a Training Captain, or return one to the line (M9-04,
+ * §10.2). `POST` designates and `DELETE` reverts; both are bodyless, because the
+ * member is in the path and the designation has no parameters. Returns the
+ * whole board: the change moves cash, the member's line value and the base's XP
+ * multiplier at once.
+ */
+export async function setTrainingCaptain(
+  memberId: string,
+  designate: boolean,
+): Promise<RosterOutcome> {
+  const response = await fetch(
+    `/api/crew/roster/${encodeURIComponent(memberId)}/training-captain`,
+    {
+      method: designate ? 'POST' : 'DELETE',
+      headers: { accept: 'application/json' },
+      credentials: 'same-origin',
+    },
+  );
+  const payload: unknown = await response.json();
+  if (response.status === 200 && isRosterResponse(payload)) {
+    return { ok: true, state: payload };
+  }
+  const error = payload as Partial<ApiError>;
+  return {
+    ok: false,
+    refusal: {
+      status: response.status,
+      code: error.code ?? 'unknown',
+      message:
+        error.message ??
+        (designate
+          ? 'Could not make them a Training Captain'
+          : 'Could not return them to the line'),
+    },
+  };
+}
