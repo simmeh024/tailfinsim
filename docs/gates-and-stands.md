@@ -242,6 +242,39 @@ way of **seeing** gates, slots and turns that already decide money; it decides n
   disagree with the percentage beside it. A turn's `departsAt` is its arrival plus the measured
   interval, so an overnight reads as the hours it was counted for.
 
+### What the player sees
+
+The schematic is `packages/web/src/airport/` — an SVG floor plan, so it is the same picture on the
+globe and the flat map, and the world map's zoom hands off into it
+([`world-renderer.md`](world-renderer.md) has the four bands and the hand-off).
+
+- **Topology from the inventory, geometry stylised.** A terminal with one pier per gate letter, odd
+  gates down the left of a pier and even down the right, numbered outward; the cargo area and the
+  maintenance hangar to one side, the remote apron, its overflow and overnight parking to the
+  other; runways below the apron along their headings, near-parallel ones drawn as a set, with a
+  de-icing pad by each threshold. With no runway data a `09/27` is drawn and labelled _assumed_.
+  Runways are shortened to about half the apron's size — at true scale they dwarf it. `layout.ts`
+  is pure and its tests hold that every stand is placed exactly once and nothing overlaps, on
+  every tier's real inventory.
+- **Who holds what, legibly.** Your stands are filled in your colour, a rival's are muted with the
+  holder named on hover and focus, unleased stands are outlines, and an exclusive lease carries a
+  corner notch. Every stand is a focusable button whose accessible name says the same.
+- **Your airline, visible.** Aeroplanes on stand are top-down silhouettes scaled by `size` and
+  filled with their airline's colour — the colour, not a rendered livery; the contract carries no
+  livery. Five rings each (bags, cleaning, catering, fuelling, boarding) tick with the world clock
+  through `turnaroundProgress`, which shares out the **real** modelled turn, so every ring
+  finishes when the turn does. Movements within two game minutes run along the runway.
+- **Interactions.** A stand opens its panel: holders, your contract, the walk-up fee and, for your
+  stands, the day's turns and utilisation with a warning below the floor. **Lease and release on
+  the map** go through the gates `POST`/`DELETE`, echoing the quoted fee, with the house two-step
+  confirm before a release. Your aeroplane opens its own panel; a rival's names itself on hover.
+  The **utilisation heat** toggle shades your stands from idle (below the floor) to jammed (85% of
+  the operating day or more — a display threshold, not a balance number).
+- **Leaving.** Zooming out past the fitted view — through a short overscroll so one wheel notch
+  does not throw the player out — or the back control returns to the world map on this airport.
+  The picture re-reads every sixty real seconds and keeps the last good one if a read fails; the
+  endpoint's `report` rate-limit budget is sixty a minute, so polling faster is not an option.
+
 ### Where each aeroplane is drawn
 
 **The game stores no gate assignment.** App. B.7 files _"gate assignment as an optimisation
@@ -284,8 +317,8 @@ The stands and who holds them are HTTP state and show everywhere.
 ## What M7-06 deliberately did not build
 
 - **The airport map.** App. B.7's 2D schematic is M7-07, and its server half is built — see
-  [The airport map](#the-airport-map-m7-07). The world-map zoom and the schematic itself are the
-  client's.
+  [The airport map](#the-airport-map-m7-07), and the schematic and the world-map zoom into it
+  ([What the player sees](#what-the-player-sees)).
 - **Gate assignment.** App. B.7 files _"gate assignment as an optimisation puzzle"_ under
   post-MVP, and the greedy colouring here is a measurement device, not a policy. The airport map's
   `standPosition` (M7-07) is a display rule over the same holdings and is stored nowhere.

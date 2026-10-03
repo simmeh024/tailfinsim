@@ -68,7 +68,8 @@ const PREFIX: Record<StandKind, string> = {
   contact_gate: '',
   remote_stand: 'R',
   overnight_parking: 'P',
-  cargo_stand: 'C',
+  // `F` since the fix that landed with M7-07: `C` collided with pier C at a flagship.
+  cargo_stand: 'F',
   maintenance_stand: 'M',
 };
 
@@ -132,8 +133,8 @@ function expectSound(
   layout: ApronLayout,
   stands: readonly { position: string; kind: StandKind }[],
 ): void {
-  // 1. Every stand exactly once. A stand is its kind and position together, because
-  //    M7-06's labels collide at a flagship (cargo `C1`–`C8` and pier C's gates).
+  // 1. Every stand exactly once. A stand is its kind and position together — the
+  //    labels are unique since cargo moved to `F`, but the map must not depend on it.
   const identity = (s: { kind: StandKind; position: string }) => `${s.kind}:${s.position}`;
   expect(layout.stands.map(identity).sort()).toEqual(stands.map(identity).sort());
   expect(new Set(layout.stands.map(identity)).size).toBe(layout.stands.length);
@@ -259,23 +260,31 @@ describe('layoutApron', () => {
     );
     expect(layout.stands.find((s) => s.position === 'R1')?.area).toBe('remote');
     expect(layout.stands.find((s) => s.position === 'P10')?.area).toBe('overnight');
-    expect(layout.stands.find((s) => s.position === 'C2')?.area).toBe('cargo');
+    expect(layout.stands.find((s) => s.position === 'F2')?.area).toBe('cargo');
     expect(layout.stands.find((s) => s.position === 'M1')?.area).toBe('maintenance');
     expect(layout.overflow).toHaveLength(2);
   });
 
-  it('draws both stands when two kinds share a label, as a flagship’s cargo and pier C do', () => {
+  it('gives a flagship’s cargo stands labels of their own, apart from pier C', () => {
+    // The collision this map found (cargo `C1`–`C8` against pier C's gates) is
+    // fixed on the server: cargo is `F` now, and every label is unique.
     const stands = inventory(INVENTORY.flagship!);
-    const labelled = stands.filter((s) => s.position === 'C3').map((s) => s.kind);
-    // The inventory as the server labels it today: a real collision, reported on #72.
-    expect(labelled.sort()).toEqual(['cargo_stand', 'contact_gate']);
+    expect(new Set(stands.map((s) => s.position)).size).toBe(stands.length);
     const layout = layoutApron({ stands, runways: [], overflowCount: 0 });
-    expect(
-      layout.stands
-        .filter((s) => s.position === 'C3')
-        .map((s) => s.area)
-        .sort(),
-    ).toEqual(['cargo', 'pier-C']);
+    expect(layout.stands.find((s) => s.position === 'C3')?.area).toBe('pier-C');
+    expect(layout.stands.find((s) => s.position === 'F3')?.area).toBe('cargo');
+  });
+
+  it('still draws both stands if two kinds ever share a label', () => {
+    // Defence in depth: the map keys a stand by kind and position, so a future
+    // labelling slip draws two stands rather than silently dropping one.
+    const stands = [
+      { position: 'C3', kind: 'contact_gate' as const },
+      { position: 'C3', kind: 'cargo_stand' as const },
+    ];
+    const layout = layoutApron({ stands, runways: [], overflowCount: 0 });
+    expectSound(layout, stands);
+    expect(layout.stands.map((s) => s.area).sort()).toEqual(['cargo', 'pier-C']);
   });
 
   it('places a stand it did not expect rather than dropping it', () => {

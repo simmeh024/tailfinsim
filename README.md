@@ -327,7 +327,9 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   2D airport schematic, which grows out of the airport's point on the map and is the same floor
   plan on the globe and the flat map; leaving it lands back on the world, centred on that
   airport. Any airport opens from its detail panel, `/world?airport=ICAO` links straight to one,
-  and the back button leaves it. Its contract and performance policy are documented in
+  and the back button leaves it. The schematic shows who holds every stand — yours in your colour —
+  your and your rivals' aeroplanes on stand with live turnaround rings, a utilisation heat overlay,
+  and leases and releases stands right on the map (M7-07). Its contract and performance policy are documented in
   [`docs/world-renderer.md`](docs/world-renderer.md).
 - **A deterministic 3D aircraft intake pipeline.** Licensed source GLBs pass the official glTF
   Validator plus Tailfin's transform, naming, material, UV, LOD, budget and no-external-resource

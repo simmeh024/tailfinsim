@@ -109,7 +109,7 @@ function gates(changes: Record<string, Partial<AirportStand>> = {}): AirportGate
     stand('A6', 'contact_gate'),
     ...['R1', 'R2', 'R3', 'R4'].map((p) => stand(p, 'remote_stand')),
     ...['P1', 'P2', 'P3', 'P4', 'P5', 'P6'].map((p) => stand(p, 'overnight_parking')),
-    stand('C1', 'cargo_stand'),
+    stand('F1', 'cargo_stand'),
     stand('M1', 'maintenance_stand'),
   ].map((row) => ({ ...row, ...changes[row.position] }));
   return {
