@@ -411,8 +411,9 @@ function PointsPanel({ research }: { research: ResearchResponse }): ReactNode {
         <p className="research-formula__yours">
           <span className="research-formula__label">Yours:</span> Σ academy levels{' '}
           <strong className="figure">{formula.academyLevelSum}</strong> × staff quality{' '}
-          <strong className="figure">{formatStaffQuality(formula.academyStaffQuality)}</strong> ×
-          (fleet flight hours ÷{' '}
+          <strong className="figure">{formatStaffQuality(formula.academyStaffQuality)}</strong> × (
+          <strong className="figure">{formatHours(formula.fleetFlightHoursPerDay)}</strong> fleet
+          flight hours a day ÷{' '}
           <strong className="figure">{formatHours(formula.scalingFactorHours)}</strong>)
         </p>
         <p className="research-formula__academy">

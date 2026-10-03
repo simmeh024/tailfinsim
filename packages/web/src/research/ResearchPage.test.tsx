@@ -54,6 +54,7 @@ interface FixtureOptions {
   academyLevel?: number;
   balance?: number;
   recentPerDay?: number;
+  fleetFlightHoursPerDay?: number;
   academyLevelSum?: number;
   nodes?: Partial<Record<ResearchNodeId, NodeOverride>>;
   active?: { nodeId: ResearchNodeId; startedAt: string; completesAt: string } | null;
@@ -120,6 +121,7 @@ function fixture(options: FixtureOptions = {}): ResearchResponse {
       academyLevelSum: options.academyLevelSum ?? academyLevel,
       academyStaffQuality: 1,
       scalingFactorHours: 1000,
+      fleetFlightHoursPerDay: options.fleetFlightHoursPerDay ?? 640,
     },
     academy: { highestLevel: academyLevel, researchTier: researchTier ?? null },
     branches,
@@ -298,7 +300,7 @@ describe('research points', () => {
       .getByText(/^Yours:/)
       .closest('p');
     expect(yours).toHaveTextContent(
-      'Yours: Σ academy levels 4 × staff quality 1.00 × (fleet flight hours ÷ 1,000 h)',
+      'Yours: Σ academy levels 4 × staff quality 1.00 × (640 h fleet flight hours a day ÷ 1,000 h)',
     );
     expect(within(panel).getByText(/cannot be bought/)).toBeInTheDocument();
     expect(within(panel).queryByText(/Nothing accrues/)).toBeNull();
@@ -316,6 +318,14 @@ describe('research points', () => {
     expect(within(panel).getByText(/Build a training academy/)).toBeInTheDocument();
     expect(within(panel).getByText(/Size alone does not buy competence/)).toBeInTheDocument();
     expect(within(panel).getByText(/No commissioned academy/)).toBeInTheDocument();
+    // The hours are there and the academies are not: the formula shows which factor is zero.
+    expect(
+      within(panel)
+        .getByText(/^Yours:/)
+        .closest('p'),
+    ).toHaveTextContent(
+      'Σ academy levels 0 × staff quality 1.00 × (640 h fleet flight hours a day',
+    );
 
     // And with no academy even tier 1 is locked, for the facility.
     expect(

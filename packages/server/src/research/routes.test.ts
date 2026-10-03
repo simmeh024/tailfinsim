@@ -140,11 +140,14 @@ describeDb('the research endpoints', () => {
     expect(response.statusCode).toBe(200);
     const body = ResearchResponse.parse(response.json());
     expect(body.points.balance).toBeCloseTo(150, 6);
-    expect(body.formula).toEqual({
+    const { fleetFlightHoursPerDay, ...terms } = body.formula;
+    expect(terms).toEqual({
       academyLevelSum: 1,
       academyStaffQuality: FORMULA.academyStaffQuality,
       scalingFactorHours: FORMULA.scalingFactorHours,
     });
+    // An observation over the last game week; the store test pins its value.
+    expect(fleetFlightHoursPerDay).toBeGreaterThanOrEqual(0);
     expect(body.academy).toEqual({ highestLevel: 1, researchTier: 1 });
     expect(body.branches.map((branch) => branch.nodes.length)).toEqual([4, 4, 4, 4, 4, 4]);
     expect(body.active).toBeNull();

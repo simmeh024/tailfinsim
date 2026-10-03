@@ -169,6 +169,13 @@ export const ResearchResponse = z
         academyLevelSum: z.number().int().min(0),
         academyStaffQuality: z.number().positive(),
         scalingFactorHours: z.number().positive(),
+        /**
+         * Block hours the fleet flew a day over the last seven game days — the
+         * third factor, observed the way `points.recentPerDay` is. Without it the
+         * formula shows two numbers and a name, and a large airline with no
+         * academy cannot see that its hours are large and its Σ is zero.
+         */
+        fleetFlightHoursPerDay: z.number().min(0),
       })
       .strict(),
     academy: z

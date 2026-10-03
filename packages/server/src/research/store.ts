@@ -128,13 +128,20 @@ async function cashOf(db: Database, airlineId: string): Promise<number> {
  * for an airline younger than a week, which understates a brand-new airline —
  * the safe direction, the same choice the cash runway makes.
  */
-async function recentPointsPerDay(db: Database, airlineId: string, gameNow: Date): Promise<number> {
+async function recentActivity(
+  db: Database,
+  airlineId: string,
+  gameNow: Date,
+): Promise<{ pointsPerDay: number; fleetHoursPerDay: number }> {
   const since = new Date(gameNow.getTime() - RECENT_WINDOW_DAYS * DAY_MS);
   const [row] = await db
     .select({
       total: sql<string | number | null>`coalesce(sum(
         (${flightResult.breakdown}::jsonb -> 'research' ->> 'points')::numeric
       ), 0)`,
+      // The formula's third factor over the same window, from the same rows: the
+      // block time settlement billed, which is the time the research accrued on.
+      blockSeconds: sql<string | number | null>`coalesce(sum(${flightResult.blockSeconds}), 0)`,
     })
     .from(flightResult)
     .where(
@@ -144,7 +151,10 @@ async function recentPointsPerDay(db: Database, airlineId: string, gameNow: Date
         lte(flightResult.settledAt, gameNow),
       ),
     );
-  return Number(row?.total ?? 0) / RECENT_WINDOW_DAYS;
+  return {
+    pointsPerDay: Number(row?.total ?? 0) / RECENT_WINDOW_DAYS,
+    fleetHoursPerDay: Number(row?.blockSeconds ?? 0) / 3_600 / RECENT_WINDOW_DAYS,
+  };
 }
 
 /** One node as the tree shows it. */
@@ -200,12 +210,12 @@ export async function readResearch(
   const balance = (await loadWorldEconomyConfig(db, own.worldId)).research;
   const gameNow = await worldGameNow(db, own.worldId, now);
 
-  const [position, account, projects, cashMinor, recentPerDay] = await Promise.all([
+  const [position, account, projects, cashMinor, recent] = await Promise.all([
     academyPosition(db, own.airlineId),
     readResearchAccount(db, own.airlineId),
     projectsOf(db, own.airlineId),
     cashOf(db, own.airlineId),
-    recentPointsPerDay(db, own.airlineId, gameNow),
+    recentActivity(db, own.airlineId, gameNow),
   ]);
 
   const complete = completeResearchNodeIds(projects, gameNow);
@@ -217,12 +227,13 @@ export async function readResearch(
     points: {
       balance: pointsBalance,
       earnedTotal: researchPointsFromMilli(account.earnedMilli),
-      recentPerDay,
+      recentPerDay: recent.pointsPerDay,
     },
     formula: {
       academyLevelSum: position.levelSum,
       academyStaffQuality: balance.pointsFormula.academyStaffQuality,
       scalingFactorHours: balance.pointsFormula.scalingFactorHours,
+      fleetFlightHoursPerDay: recent.fleetHoursPerDay,
     },
     academy: {
       highestLevel: position.highest,

@@ -271,6 +271,8 @@ describeDb('research against a real database', () => {
     const tree = ResearchResponse.parse(await readResearch(db.db, who.own, now));
     expect(tree.points).toEqual({ balance: 0, earnedTotal: 0, recentPerDay: 0 });
     expect(tree.formula.academyLevelSum).toBe(0);
+    // And the page can say why: the hours are there, the academies are not.
+    expect(tree.formula.fleetFlightHoursPerDay).toBeGreaterThan(0);
     expect(tree.academy).toEqual({ highestLevel: 0, researchTier: null });
     for (const node of tree.branches.flatMap((branch) => branch.nodes)) {
       expect(node.status, node.id).toBe('locked');
@@ -330,10 +332,17 @@ describeDb('research against a real database', () => {
     await settleOne(who, 9);
 
     let sum = 0;
-    for (const id of recent) sum += (await breakdownResearch(id)).research?.points ?? 0;
+    let seconds = 0;
+    for (const id of recent) {
+      const facts = await breakdownResearch(id);
+      sum += facts.research?.points ?? 0;
+      seconds += facts.blockSeconds;
+    }
 
     const tree = ResearchResponse.parse(await readResearch(db.db, who.own, now));
     expect(tree.points.recentPerDay).toBeCloseTo(sum / 7, 6);
+    // The formula's third factor, over the same window and the same rows.
+    expect(tree.formula.fleetFlightHoursPerDay).toBeCloseTo(seconds / 3_600 / 7, 6);
     expect(tree.points.earnedTotal).toBeGreaterThan(sum);
     expect(tree.formula.academyLevelSum).toBe(1);
   });
