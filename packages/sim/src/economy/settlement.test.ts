@@ -246,6 +246,25 @@ describe('settleFlight', () => {
       );
     });
 
+    it('takes §10.4’s maintenance boost off the reserve, and never past −12% (M9-06)', () => {
+      const maintenanceOf = (r: ReturnType<typeof settleFlight>) =>
+        r.costs.find((l) => l.source === 'maintenance')?.amountMinor ?? 0;
+      const plain = settleFlight(inputs());
+      const boosted = settleFlight(inputs({ maintenanceBoosts: [{ id: 'd', fraction: 0.05 }] }));
+      const absurd = settleFlight(inputs({ maintenanceBoosts: [{ id: 'd', fraction: 0.9 }] }));
+
+      // Within a minor unit: the reserve is rounded once, from the unrounded figure.
+      expect(Math.abs(maintenanceOf(boosted) - maintenanceOf(plain) * 0.95)).toBeLessThanOrEqual(1);
+      expect(Math.abs(maintenanceOf(absurd) - maintenanceOf(plain) * 0.88)).toBeLessThanOrEqual(1);
+      expect(boosted.costs.find((l) => l.source === 'maintenance')?.detail).toContain('5.00%');
+      // The other lines do not move: a maintenance doctrine is not a fuel saving.
+      for (const source of ['fuel', 'crew', 'airport', 'handling'] as const) {
+        expect(boosted.costs.find((l) => l.source === source)?.amountMinor).toBe(
+          plain.costs.find((l) => l.source === source)?.amountMinor,
+        );
+      }
+    });
+
     it('does not charge lease, gate or admin — they are not caused by the flight', () => {
       // The distinction the module is built around: a lease is due whether the
       // aircraft flies or is parked. Charging a share of it per sector would make
