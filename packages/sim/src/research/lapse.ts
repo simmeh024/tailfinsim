@@ -128,7 +128,7 @@ export function changeDoctrineFunding(
  * states held during it, so one of them was funded and the month is owed —
  * which is what stops a player escaping a month's bill by switching funding off
  * on its last day and on again on the next month's first. The caller bills every
- * closed month before it records a change (see `research/upkeep.ts`), so a
+ * closed month before it records a change (see the server's `research/upkeep.ts`), so a
  * change can never fall after the end of a month that has not been billed.
  */
 export function doctrineFundedDuring(

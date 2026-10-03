@@ -73,7 +73,8 @@
 
 .efficiency__segment[data-source='trainingCaptains'],
 .efficiency__swatch[data-source='trainingCaptains'] {
-  background: var(--brand);
+  /* A shade of the accent: --brand is reserved for the mark (tokens.css). */
+  background: var(--accent-hover);
 }
 
 .efficiency__segment[data-source='doctrine'],

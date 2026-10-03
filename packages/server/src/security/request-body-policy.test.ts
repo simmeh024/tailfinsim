@@ -39,6 +39,7 @@ import {
   PurchaseHubRequest,
   SignContractRequest,
   StartCrewConversionInput,
+  SetDoctrineFundingInput,
   StartResearchInput,
   AllocateSkillPointInput,
   BuildAcademyModuleInput,
@@ -162,6 +163,13 @@ const STRICT_WRITE_CONTRACTS = [
     endpoint: 'POST /api/research/projects',
     schema: StartResearchInput,
     payload: { nodeId: 'cost_index_sop' },
+  },
+  {
+    // M9-06. A level and nothing else: no strength, no date, no amount — the
+    // lapse and the upkeep are the server's arithmetic, never the client's.
+    endpoint: 'PUT /api/research/projects/:nodeId/funding',
+    schema: SetDoctrineFundingInput,
+    payload: { funded: false },
   },
   {
     endpoint: 'POST /api/office/hires',
@@ -335,6 +343,7 @@ const COVERED_WRITE_ENDPOINTS = [
   // reads no body — the academy is in the path and the ladder decides the rest.
   'POST /api/academies/:id/levels',
   'POST /api/research/projects',
+  'PUT /api/research/projects/:nodeId/funding',
   'POST /api/crew/bases',
   'POST /api/crew/conversions',
   'POST /api/crew/hires',

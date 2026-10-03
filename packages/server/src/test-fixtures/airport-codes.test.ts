@@ -31,7 +31,8 @@ describe('test airport identities', () => {
   it('gives every suite a namespace of its own', () => {
     const letters = Object.values(AIRPORT_CODE_NAMESPACES);
     expect(new Set(letters).size).toBe(letters.length);
-    for (const letter of letters) expect(letter).toMatch(/^[A-Z]$/);
+    // Letters, then digits once the alphabet ran out (M9-06).
+    for (const letter of letters) expect(letter).toMatch(/^[A-Z0-9]$/);
   });
 
   it('mints codes the database will accept', () => {

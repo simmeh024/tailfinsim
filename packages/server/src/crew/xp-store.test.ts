@@ -7,7 +7,15 @@ import { ECONOMY_CONFIG_V1 } from '@tailfin/shared';
 import type { Weather } from '@tailfin/sim';
 
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { airport, crewDutyPeriod, crewMember, crewPool, flight, flightResult } from '../db/schema';
+import {
+  airport,
+  crewDutyPeriod,
+  crewMember,
+  crewPool,
+  flight,
+  flightResult,
+  researchProject,
+} from '../db/schema';
 import { settleArrivedFlight } from '../flight/settle';
 import { fixtureAirframe } from '../test-fixtures/airframe';
 import { createAirportIdentities } from '../test-fixtures/airport-codes';
@@ -676,6 +684,58 @@ describeDb('crew XP on settlement', () => {
     // The full-coverage figure, below the shared cap — not twice anything.
     expect(training?.multiplier).toBeCloseTo(1 + TRAINING.xpBonusAtFullCoverage, 12);
     expect(training?.multiplier).toBeLessThanOrEqual(1 + TRAINING.maxXpBonus);
+  });
+
+  it('adds Crew Development doctrine to every head aboard, under the cap it shares (M9-06)', async () => {
+    const fixture = await fixtures.create();
+    const origin = await makeAirport({ latitude: 52.3086, longitude: 4.76389 });
+    const dest = await makeAirport({ latitude: 51.4706, longitude: -0.461941 });
+    const { flightId, crewBaseId } = await crewedFlight({
+      fixture,
+      origin,
+      dest,
+      captains: 2,
+      firstOfficers: 2,
+      cabinCrew: 3,
+    });
+    // One Training Captain fully covers four pilots.
+    await namedMember({
+      fixture,
+      crewBaseId,
+      rank: 'captain',
+      ordinal: 0,
+      trainingCaptainSince: DEPARTS,
+    });
+    // Both released Crew Development nodes, complete well before the flight.
+    const nodes = ECONOMY_CONFIG_V1.research.nodes;
+    for (const nodeId of ['efficient_conversion', 'cadet_pipeline'] as const) {
+      await db.db.insert(researchProject).values({
+        worldId: fixture.world.id,
+        airlineId: fixture.airline.id,
+        nodeId,
+        startedAt: new Date(DEPARTS.getTime() - 60 * 24 * 60 * 60 * 1_000),
+        completesAt: new Date(DEPARTS.getTime() - 30 * 24 * 60 * 60 * 1_000),
+        researchPoints: nodes[nodeId].researchPoints,
+        cashCostMinor: nodes[nodeId].cashCostMinor,
+      });
+    }
+    const doctrine =
+      (nodes.efficient_conversion.effects.crewXp ?? 0) + (nodes.cadet_pipeline.effects.crewXp ?? 0);
+    expect(doctrine).toBeGreaterThan(0);
+
+    await settle(flightId);
+
+    const crewXp = await crewXpOf(flightId);
+    const base = crewXp?.xpPerHead ?? 0;
+    // The flight deck: Training Captains and doctrine together, capped together.
+    const deckBonus = Math.min(TRAINING.maxXpBonus, TRAINING.xpBonusAtFullCoverage + doctrine);
+    expect(crewXp?.training?.multiplier).toBeCloseTo(1 + deckBonus, 12);
+    expect(crewXp?.training?.flightDeckXpPerHead).toBe(Math.round(base * (1 + deckBonus)));
+    // The cabin: no Training Captain trains it, but the doctrine reaches it.
+    const cabinBonus = Math.min(TRAINING.maxXpBonus, doctrine);
+    const cabin = Math.round(base * (1 + cabinBonus));
+    expect(cabin).toBeGreaterThan(base);
+    expect((await poolXp(crewBaseId)).get('cabin_crew')).toBe(cabin * 3);
   });
 });
 

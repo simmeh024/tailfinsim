@@ -9,6 +9,7 @@ import {
   researchNode,
   researchNodesInBranch,
   type AcademyCommissionedLevel,
+  type DoctrineView,
   type ResearchBalance,
   type ResearchNodeId,
   type ResearchNodeView,
@@ -26,9 +27,11 @@ import {
 
 import { moveAirlineCash } from '../airline/cash';
 import { academy, airline, flightResult, researchProject } from '../db/schema';
+import { efficiencyReadout, resolveAirlineEfficiency } from '../economy/efficiency';
 import { loadWorldEconomyConfig } from '../economy/loader';
 import { worldGameNow } from '../world/game-now';
 
+import { doctrineProjectsOf, doctrineViewOf } from './doctrine';
 import {
   debitResearchPoints,
   lockResearchAccount,
@@ -163,6 +166,7 @@ function nodeView(
   balance: ResearchBalance,
   state: ReturnType<typeof researchNodeState>,
   project: ResearchProjectFacts | undefined,
+  doctrine: DoctrineView | null,
 ): ResearchNodeView {
   const node = researchNode(id);
   const row = balance.nodes[id];
@@ -189,6 +193,7 @@ function nodeView(
     startRefusal: state.startRefusal,
     startedAt: project?.startedAt.toISOString() ?? null,
     completesAt: project?.completesAt.toISOString() ?? null,
+    doctrine,
   };
 }
 
@@ -207,8 +212,22 @@ export async function readResearch(
   own: ResearchOwner,
   now: Date = new Date(),
 ): Promise<ResearchResponse> {
-  const balance = (await loadWorldEconomyConfig(db, own.worldId)).research;
+  const economy = await loadWorldEconomyConfig(db, own.worldId);
+  const balance = economy.research;
   const gameNow = await worldGameNow(db, own.worldId, now);
+
+  /*
+   * §10.4 applied (M9-06): every source resolved together at the world's clock,
+   * and each complete node's doctrine standing. Read in turn — the resolver
+   * reads the roster and the projects itself — before the independent reads
+   * below run together on the pool.
+   */
+  const efficiency = await resolveAirlineEfficiency(db, own, gameNow, economy);
+  const doctrineByNode = new Map(
+    (await doctrineProjectsOf(db, own.airlineId)).map(
+      (project) => [project.nodeId, project] as const,
+    ),
+  );
 
   const [position, account, projects, cashMinor, recent] = await Promise.all([
     academyPosition(db, own.airlineId),
@@ -254,7 +273,13 @@ export async function readResearch(
           pointsBalance,
           cashMinor,
         });
-        return nodeView(node.id, balance, state, projectByNode.get(node.id));
+        return nodeView(
+          node.id,
+          balance,
+          state,
+          projectByNode.get(node.id),
+          doctrineViewOf(doctrineByNode.get(node.id), gameNow, balance),
+        );
       }),
     })),
     active:
@@ -265,6 +290,11 @@ export async function readResearch(
             startedAt: active.startedAt.toISOString(),
             completesAt: active.completesAt.toISOString(),
           },
+    efficiency: efficiencyReadout(efficiency.resolved),
+    crewXp: {
+      doctrine: efficiency.doctrineCrewXp,
+      cap: economy.crew.trainingCaptain.maxXpBonus,
+    },
     gameNow: gameNow.toISOString(),
   };
 }

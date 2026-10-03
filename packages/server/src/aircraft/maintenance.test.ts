@@ -3,13 +3,13 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { MaintenanceResponse } from '@tailfin/shared';
+import { ECONOMY_CONFIG_V1, MaintenanceResponse } from '@tailfin/shared';
 import { maintenanceStatus } from '@tailfin/sim';
 
 import { moveAirlineCash } from '../airline/cash';
 import { type ResolvedPlayerAirline } from '../airline/context';
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { airframe, airport, type WorldRow } from '../db/schema';
+import { airframe, airport, researchProject, type WorldRow } from '../db/schema';
 import { createSchedule } from '../schedule/store';
 import {
   createFoundedAirlineFixtureHarness,
@@ -233,6 +233,41 @@ describeDb('maintenance', () => {
       expect(row?.status).toBe('in_check');
       expect(row?.checkTier).toBe('a');
       expect(row?.checkCompletesAt).not.toBeNull();
+    });
+
+    it('charges less with maintenance doctrine, and quotes exactly what it charges (M9-06)', async () => {
+      const fixture = await fixtures.create();
+      const airframeId = await leaseAircraft(fixture);
+      await topUp(fixture, 5_000_000);
+      // Both released Maintenance nodes, complete a month before the booking.
+      const nodes = ECONOMY_CONFIG_V1.research.nodes;
+      for (const nodeId of ['line_efficiency', 'predictive_maintenance'] as const) {
+        await db.db.insert(researchProject).values({
+          worldId: fixture.world.id,
+          airlineId: fixture.airline.id,
+          nodeId,
+          startedAt: new Date(fixture.world.epoch.getTime() - 60 * DAY_MS),
+          completesAt: new Date(fixture.world.epoch.getTime() - 30 * DAY_MS),
+          researchPoints: nodes[nodeId].researchPoints,
+          cashCostMinor: nodes[nodeId].cashCostMinor,
+        });
+      }
+      const stacked =
+        1 -
+        (1 - (nodes.line_efficiency.effects.maintenanceCost ?? 0)) *
+          (1 - (nodes.predictive_maintenance.effects.maintenanceCost ?? 0));
+      const fraction = Math.min(stacked, ECONOMY_CONFIG_V1.boosts.ceilings.maintenanceCost);
+      const expected = Math.round(800_000 * (1 - fraction));
+
+      const at = atGameDay(fixture.world, 1);
+      const quoted = await fleetMaintenance(db.db, own(fixture), at);
+      expect(quoted.airframes[0]?.tiers.find((tier) => tier.tier === 'a')?.costMinor).toBe(
+        expected,
+      );
+
+      const booked = await bookCheck(db.db, own(fixture), airframeId, 'a', at);
+      expect(booked.ok && booked.costMinor).toBe(expected);
+      expect(expected).toBeLessThan(800_000);
     });
 
     it('refuses a second check while one is running', async () => {

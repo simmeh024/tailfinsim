@@ -125,12 +125,28 @@ describe('research points cannot be purchased through any path (issue #92, §10.
     }
   });
 
-  it('registers no research route beyond the read and the start', async () => {
+  it('registers no research route beyond the read, the start and doctrine funding', async () => {
     const research = (await collectRegisteredRoutes())
       .filter((route) => route.url.includes('research'))
       .map((route) => route.key)
       .sort();
-    expect(research).toEqual(['GET /api/research', 'POST /api/research/projects']);
+    expect(research).toEqual([
+      'GET /api/research',
+      'POST /api/research/projects',
+      // M9-06: funding a completed doctrine, or stopping. It pays upkeep in cash
+      // and lets the doctrine lapse or recover; it neither grants nor spends a
+      // single point — the next test holds its module to that.
+      'PUT /api/research/projects/:nodeId/funding',
+    ]);
+  });
+
+  it('keeps doctrine funding away from the points entirely (M9-06)', () => {
+    // Upkeep is cash for a doctrine already researched. If this module could
+    // touch the account, "fund the doctrine" would be one edit away from "buy
+    // the points".
+    expect(code('research/doctrine.ts')).not.toMatch(
+      /researchAccount|accrueResearchPoints|debitResearchPoints|earnedMilli|spentMilli/,
+    );
   });
 
   it('has no balance field that could turn money or time into points', () => {

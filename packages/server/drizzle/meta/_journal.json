@@ -484,6 +484,13 @@
       "when": 1791044537887,
       "tag": "0068_training_captains",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1791045694086,
+      "tag": "0069_doctrine_upkeep",
+      "breakpoints": true
     }
   ]
 }

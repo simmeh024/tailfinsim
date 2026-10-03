@@ -42,7 +42,12 @@
  */
 
 /**
- * One letter per suite that invents airports.
+ * One character per suite that invents airports.
+ *
+ * Letters first; **digits since M9-06**, when the alphabet ran out. A digit is as
+ * good as a letter here — `airport_icao_code_format` admits `[A-Z0-9]{4}`, and
+ * the leading `Q` that keeps test rows clear of real ICAO codes is unchanged —
+ * so `Q0AA` is as safe as `QAAA`.
  *
  * Keyed by the suite's path so the mapping is greppable from either direction,
  * and asserted distinct in `airport-codes.test.ts` — a duplicate here would put
@@ -75,6 +80,7 @@ export const AIRPORT_CODE_NAMESPACES = {
   'crew/roster-routes': 'X',
   'research/store': 'Z',
   'research/routes': 'Y',
+  'research/doctrine': '0',
 } as const;
 
 export type AirportCodeNamespace = keyof typeof AIRPORT_CODE_NAMESPACES;

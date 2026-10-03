@@ -1,6 +1,7 @@
 import { and, asc, eq, isNotNull, isNull, lte } from 'drizzle-orm';
 
 import {
+  type EconomyConfig,
   type MaintenanceProfile,
   type MaintenanceResponse,
   type MaintenanceAirframeView,
@@ -21,6 +22,7 @@ import {
 import { moveAirlineCash } from '../airline/cash';
 import { type Database } from '../db/client';
 import { airframe, world, type AirframeRow } from '../db/schema';
+import { resolveAirlineEfficiency } from '../economy/efficiency';
 import { loadEconomyConfig } from '../economy/loader';
 
 import { loadCatalogueVersion } from './catalogue';
@@ -84,6 +86,35 @@ export function stateOf(
   // columns won. Accrual writes both, so they only diverge if something else
   // updated the columns, and then the columns are the newer fact.
   return { ...parsed, totalHours: row.hours, totalCycles: row.cycles };
+}
+
+/**
+ * A check's price once §10.4's maintenance-cost reduction is applied (M9-06).
+ *
+ * `fraction` is the airline's resolved `maintenanceCost` — Type Mastery points,
+ * Training Captains and Maintenance doctrine, already clamped at the world's
+ * −12% ceiling by `resolveEfficiencyBoosts`. One function for the price quoted
+ * on the fleet and maintenance pages and the price charged at booking, so the
+ * two cannot disagree.
+ */
+export function checkCostAfterEfficiency(costMinor: number, fraction: number): number {
+  return Math.round(costMinor * (1 - fraction));
+}
+
+/** The airline's resolved maintenance-cost reduction at a game instant (M9-06). */
+export async function maintenanceCostFraction(
+  db: Database,
+  own: { id: string; worldId: string },
+  at: Date,
+  economy: Pick<EconomyConfig, 'boosts' | 'research'>,
+): Promise<number> {
+  const { resolved } = await resolveAirlineEfficiency(
+    db,
+    { worldId: own.worldId, airlineId: own.id },
+    at,
+    economy,
+  );
+  return resolved.maintenanceCost.fraction;
 }
 
 function isCheckTier(value: string | null): value is CheckTier {
@@ -251,10 +282,15 @@ async function bookCheckInTransaction(
     const completesAt = new Date(
       gameNow.getTime() + terms.downtimeDays * HOURS_PER_DAY * 3_600_000,
     );
+    // §10.4's maintenance-cost reduction at the instant the check is booked.
+    const costMinor = checkCostAfterEfficiency(
+      terms.costMinor,
+      await maintenanceCostFraction(tx, own, gameNow, economy),
+    );
 
     const movement = await moveAirlineCash(tx, {
       airlineId: own.id,
-      amountMinor: -terms.costMinor,
+      amountMinor: -costMinor,
       cause: 'maintenance_check',
       // `cause + reference` is a movement's identity, so the reference has to be
       // unique per booking. The airframe, tier and game instant together are:
@@ -268,10 +304,7 @@ async function bookCheckInTransaction(
     // Reading first would be a check against a number another transaction can
     // change between the read and the write.
     if (movement.movement.balanceAfterMinor < 0) {
-      throw new NotEnoughCash(
-        terms.costMinor,
-        movement.movement.balanceAfterMinor + terms.costMinor,
-      );
+      throw new NotEnoughCash(costMinor, movement.movement.balanceAfterMinor + costMinor);
     }
 
     await tx
@@ -279,7 +312,7 @@ async function bookCheckInTransaction(
       .set({ status: 'in_check', checkTier: tier, checkCompletesAt: completesAt })
       .where(eq(airframe.id, airframeId));
 
-    return { ok: true, tier, costMinor: terms.costMinor, completesAt } as const;
+    return { ok: true, tier, costMinor, completesAt } as const;
   });
 }
 
@@ -413,9 +446,15 @@ export async function sweepMaintenance(
 export async function fleetMaintenance(
   db: Database,
   own: { id: string; worldId: string },
+  now: Date = new Date(),
 ): Promise<MaintenanceResponse> {
   const worlds = await db
-    .select({ economyConfigVersion: world.economyConfigVersion })
+    .select({
+      economyConfigVersion: world.economyConfigVersion,
+      epoch: world.epoch,
+      launchDate: world.launchDate,
+      speedMultiplier: world.speedMultiplier,
+    })
     .from(world)
     .where(eq(world.id, own.worldId))
     .limit(1);
@@ -423,6 +462,13 @@ export async function fleetMaintenance(
   if (!worldRow) throw new Error(`No world ${own.worldId}`);
 
   const economy = await loadEconomyConfig(db, worldRow.economyConfigVersion);
+  // Quoted at the price a booking now would charge (M9-06).
+  const efficiency = await maintenanceCostFraction(
+    db,
+    own,
+    gameTime(clockOf(worldRow), now),
+    economy,
+  );
   const rows = await db
     .select()
     .from(airframe)
@@ -473,7 +519,7 @@ export async function fleetMaintenance(
           binding: t.binding,
           usedFraction: t.usedFraction,
           due: t.due,
-          costMinor: terms.costMinor,
+          costMinor: checkCostAfterEfficiency(terms.costMinor, efficiency),
           downtimeDays: terms.downtimeDays,
         };
       }),

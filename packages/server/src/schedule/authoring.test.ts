@@ -63,6 +63,22 @@ describe('placeLegs', () => {
     expect(leg?.turnaroundMinutes).toBe(DEFAULT_TURNAROUND_MINUTES);
   });
 
+  it('plans a shorter block for an airline with §10.4 block-time efficiency (M9-06)', () => {
+    const legs = [resolved('EGLL', 'LEBL', 620, 480)];
+    const plain = placeLegs(legs, CRUISE_KT)[0]?.blockMinutes ?? 0;
+    const lean = placeLegs(legs, CRUISE_KT, new Map(), undefined, [
+      { id: 'resolved:blockTime', fraction: 0.03 },
+    ])[0]?.blockMinutes;
+    expect(lean).toBe(
+      Math.round(
+        computeBlockTime(620, CRUISE_KT, DEFAULT_FLIGHT_PROFILE, [
+          { id: 'resolved:blockTime', fraction: 0.03 },
+        ]).blockMinutes,
+      ),
+    );
+    expect(lean).toBeLessThan(plain);
+  });
+
   it('places a later leg after the previous one lands and turns, same day', () => {
     const legs = placeLegs(
       [

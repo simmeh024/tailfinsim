@@ -89,6 +89,14 @@ export interface FlightXpFacts {
    * arrival re-derives the same multiplier.
    */
   arrivedAt: Date;
+  /**
+   * §10.3's Crew Development doctrine, as an XP fraction at its current strength
+   * (M9-06). Added to **every** head aboard — the branch is *"crew learn faster
+   * from every sector they fly"*, cabin as well as flight deck — and capped
+   * together with the Training Captains' bonus under `maxXpBonus`, so the two
+   * can never sum past it. Absent is none.
+   */
+  doctrineXpFraction?: number;
 }
 
 /**
@@ -105,6 +113,8 @@ export interface TrainingXpAward {
   capped: boolean;
   /** What each flight-deck head aboard earned, after the multiplier. */
   flightDeckXpPerHead: number;
+  /** The Crew Development doctrine fraction folded into the bonus (M9-06). */
+  doctrine: number;
 }
 
 export interface XpAward {
@@ -122,6 +132,11 @@ export interface XpAward {
    * flew — a training captain trains pilots, and cabin XP is unchanged.
    */
   training: TrainingXpAward | null;
+  /**
+   * What each **cabin** head earned after Crew Development doctrine (M9-06):
+   * the formula's figure when there is none. The flight deck's is on `training`.
+   */
+  cabinXpPerHead: number;
 }
 
 /**
@@ -206,16 +221,35 @@ export async function awardFlightXp(
    * member is one of the pool's heads and the two must move together.
    */
   const deckRanks = ranks.filter((rank) => isFlightDeckRank(rank));
+  const doctrine = facts.doctrineXpFraction ?? 0;
   const trainingAward =
     training === undefined || deckRanks.length === 0
       ? null
-      : await trainingFor(tx, period, facts.arrivedAt, xp.xpPerHead, training);
+      : await trainingFor(tx, period, facts.arrivedAt, xp.xpPerHead, training, doctrine);
+  /*
+   * The cabin's rate: no Training Captain trains cabin crew, but Crew
+   * Development doctrine reaches every head aboard (M9-06). Through the same
+   * `trainingXpMultiplier` with no captains, so the doctrine alone is capped by
+   * the same `maxXpBonus` it shares with them.
+   */
+  const cabinXpPerHead =
+    training === undefined || doctrine <= 0
+      ? xp.xpPerHead
+      : trainedXpPerHead(
+          xp.xpPerHead,
+          trainingXpMultiplier(
+            { trainingCaptains: 0, flightDeckHeads: 0, doctrineXpFraction: doctrine },
+            training,
+          ),
+        );
   // A complement's rank is a JSON string; one the ladder does not know is not
   // the flight deck's, so the cast cannot mistake it for one.
   const xpPerHeadFor = (rank: string): number =>
     trainingAward !== null && isFlightDeckRank(rank as CrewRankValue)
       ? trainingAward.flightDeckXpPerHead
-      : xp.xpPerHead;
+      : isFlightDeckRank(rank as CrewRankValue)
+        ? xp.xpPerHead
+        : cabinXpPerHead;
 
   const cases = sql.join(
     slots.map(
@@ -262,13 +296,10 @@ export async function awardFlightXp(
    */
   if (skills !== undefined) {
     const cabinRanks = ranks.filter((rank) => !isFlightDeckRank(rank));
-    const groups =
-      trainingAward === null
-        ? [{ ranks, xpPerHead: xp.xpPerHead }]
-        : [
-            { ranks: deckRanks, xpPerHead: trainingAward.flightDeckXpPerHead },
-            { ranks: cabinRanks, xpPerHead: xp.xpPerHead },
-          ];
+    const groups = [
+      { ranks: deckRanks, xpPerHead: trainingAward?.flightDeckXpPerHead ?? xp.xpPerHead },
+      { ranks: cabinRanks, xpPerHead: cabinXpPerHead },
+    ].filter((group) => group.ranks.length > 0);
     for (const group of groups) {
       await creditNamedCrew(
         tx,
@@ -291,6 +322,7 @@ export async function awardFlightXp(
     totalXp: pools.reduce((total, pool) => total + pool.xp, 0),
     pools,
     training: trainingAward,
+    cabinXpPerHead,
   };
 }
 
@@ -309,8 +341,8 @@ export async function awardFlightXp(
  *     ranks there. A named member is one of those heads, so a Training Captain
  *     counts once, as one of the pilots they cover.
  *
- * Doctrine is zero here until M9-06 wires research in; `trainingXpMultiplier`
- * already caps the two together.
+ * Crew Development doctrine arrives as `doctrineXpFraction` (M9-06), and
+ * `trainingXpMultiplier` caps the two together.
  */
 async function trainingFor(
   tx: Database,
@@ -318,6 +350,7 @@ async function trainingFor(
   arrivedAt: Date,
   xpPerHead: number,
   balance: TrainingCaptainBalance,
+  doctrineXpFraction: number,
 ): Promise<TrainingXpAward> {
   const [captains] = await tx
     .select({ count: sql<number>`count(*)::int` })
@@ -344,7 +377,11 @@ async function trainingFor(
   // Aggregates come back through the driver's own parser; `Number` normalises
   // at the boundary rather than trusting the `sql<number>` assertion.
   const multiplier = trainingXpMultiplier(
-    { trainingCaptains: Number(captains?.count ?? 0), flightDeckHeads: Number(deck?.heads ?? 0) },
+    {
+      trainingCaptains: Number(captains?.count ?? 0),
+      flightDeckHeads: Number(deck?.heads ?? 0),
+      doctrineXpFraction,
+    },
     balance,
   );
   return {
@@ -354,6 +391,7 @@ async function trainingFor(
     multiplier: multiplier.multiplier,
     capped: multiplier.capped,
     flightDeckXpPerHead: trainedXpPerHead(xpPerHead, multiplier),
+    doctrine: doctrineXpFraction,
   };
 }
 

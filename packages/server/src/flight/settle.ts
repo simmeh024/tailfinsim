@@ -18,7 +18,6 @@ import {
   type FuelStation,
   handlingPriceFactor,
   haversineNm,
-  resolveEfficiencyBoosts,
   type SettlementConfig,
   settleFlight,
   type Weather,
@@ -33,10 +32,10 @@ import {
   type FlightAirframeBasis,
 } from '../aircraft/performance';
 import { moveAirlineCash } from '../airline/cash';
-import { airlineSkillBoosts } from '../crew/roster';
 import { awardFlightXp } from '../crew/xp-store';
 import { airport, flight, flightResult, route, world } from '../db/schema';
 import { type PinnedEconomyConfig } from '../economy/config';
+import { resolveAirlineEfficiency } from '../economy/efficiency';
 import { loadWorldFuelContext, marketAt, stationFor } from '../economy/fuel';
 import { loadWorldEconomyConfig } from '../economy/loader';
 import { handlingArrangementFor, handlingPriceBalanceOf } from '../ground/contracts';
@@ -379,49 +378,46 @@ export async function settleArrivedFlight(
       ? { basePricePerTonne: economy.fuel.basePricePerTonne }
       : marketAt(fuelCtx, uplift, economy));
 
-  const block = computeBlockTime(distanceNm, airframe.cruiseSpeedKt, profile);
   /*
-   * §10.4's efficiency boosts, and the **first thing in the game that supplies
-   * one** (M9-03). Every consumer — this one, `computeBlockTime`,
-   * `turnaroundMinutes`, `rollDisruption` — has taken a `readonly
-   * EfficiencyBoost[]` since M2-04 and every caller passed `[]`.
+   * §10.4's efficiency, every source resolved once (M9-03, M9-04, M9-06).
    *
-   * The airline's named crew are what fills it: §10.2's Performance & Fuel
-   * branch reduces fuel burn, stacked multiplicatively across the roster and
-   * clamped to §10.4's ceiling by `stackEfficiencyBoosts` — never by anything
-   * here. That is M9-03's first acceptance criterion, and it is held by the
-   * shape of the call rather than by a promise: this passes boosts *through* the
-   * capped stack, and there is no uncapped path to pass them down instead.
+   * Named crew's skill points, Training Captains at their reduced line value and
+   * completed research at its doctrine strength, stacked together by
+   * `resolveEfficiencyBoosts` and clamped at the world's ceilings — never by
+   * anything here. Three of the six quantities are this flight's: **block
+   * time** (taxi and routing efficiency, so fewer block minutes billed), **fuel
+   * burn**, and the **maintenance** reserve accrued per block hour. Each
+   * consumer is handed the single figure the resolver decided (`appliedBoosts`),
+   * so there is no path that applies a boost the ceiling has not seen.
    *
-   * Resolved per settlement rather than snapshotted on the flight, and that is a
-   * deliberate difference from the handling factor above it. Handling is a
-   * *contract* the player can switch mid-flight, so billing it live moved the
-   * bill; a crew's skill points are earned and spent, never switched, and a
-   * point spent while the aeroplane was airborne is a fact about the airline
-   * that was true when it took off. The cost of being wrong here is a fraction
-   * of a percent on one sector.
+   * Doctrine is read at the **arrival** instant: a lapsing node is worth less
+   * next week than this one, and a replay of this arrival must read the
+   * strength it had when it landed. Skill points are read as they stand, for the
+   * reason this comment used to give at length: they are earned and spent,
+   * never switched, and a point spent while the aeroplane was airborne was true
+   * of the airline when it took off.
    *
-   * A world whose roster is empty gets `[]` and the arithmetic below is
-   * unchanged, which is every world until crew are named.
-   *
-   * Since M9-04 the roster is two sources — line crew, and Training Captains at
-   * their reduced line contribution — resolved together once by §10.4's
-   * resolver against the world's ceiling, and handed to the consumer as the
-   * single figure the resolver decided (`appliedBoosts`).
+   * An airline with no named crew and no research resolves to nothing, and the
+   * arithmetic below is unchanged — every airline until it has earned one.
    */
-  const crewBoosts = await airlineSkillBoosts(tx, {
-    worldId: row.worldId,
-    airlineId: row.airlineId,
-  });
-  const fuelBoost = resolveEfficiencyBoosts(
-    { skills: crewBoosts.skills, trainingCaptains: crewBoosts.trainingCaptains },
-    economy.boosts.ceilings,
-  ).fuelBurn;
+  const efficiency = await resolveAirlineEfficiency(
+    tx,
+    { worldId: row.worldId, airlineId: row.airlineId },
+    arrivedAt,
+    economy,
+  );
+  const boosts = efficiency.resolved;
 
+  const block = computeBlockTime(
+    distanceNm,
+    airframe.cruiseSpeedKt,
+    profile,
+    appliedBoosts(boosts.blockTime),
+  );
   const burn = computeFuelBurn(
     block,
     { cruiseBurnTPerNm: airframe.cruiseBurnTPerNm },
-    appliedBoosts(fuelBoost),
+    appliedBoosts(boosts.fuelBurn),
   );
   const fuelCost = computeFuelCost(burn.tonnes, market, resolveStation(row.originIcao));
 
@@ -529,6 +525,7 @@ export async function settleArrivedFlight(
       destinationFees: resolveFees(arrivalIcao),
       handlingPriceFactor: handlingFactor,
       standTurnFeeMinor: standFeeMinor,
+      maintenanceBoosts: appliedBoosts(boosts.maintenanceCost),
     },
     config,
   );
@@ -579,18 +576,30 @@ export async function settleArrivedFlight(
          * has no answer once a roster has changed.
          */
         crewFuelBoost: {
-          fraction: fuelBoost.fraction,
-          capped: fuelBoost.capped,
+          fraction: boosts.fuelBurn.fraction,
+          capped: boosts.fuelBurn.capped,
           contributors:
-            crewBoosts.contributors.skills.fuelBurn +
-            crewBoosts.contributors.trainingCaptains.fuelBurn,
-          // M9-04: each source alone and before the ceiling, so "how much of
-          // that was the Training Captains?" has an answer.
-          bySource: {
-            skills: fuelBoost.bySource.skills,
-            trainingCaptains: fuelBoost.bySource.trainingCaptains,
-          },
+            efficiency.crewContributors.skills.fuelBurn +
+            efficiency.crewContributors.trainingCaptains.fuelBurn,
+          // Each source alone and before the ceiling, so "how much of that was
+          // the Training Captains?" — or the doctrine — has an answer.
+          bySource: { ...boosts.fuelBurn.bySource },
         },
+        /*
+         * And the other two quantities this flight's bill read (M9-06), in the
+         * same shape: what was removed, whether the ceiling clipped it, and what
+         * each source was worth alone.
+         */
+        efficiency: Object.fromEntries(
+          (['blockTime', 'fuelBurn', 'maintenanceCost'] as const).map((quantity) => [
+            quantity,
+            {
+              fraction: boosts[quantity].fraction,
+              capped: boosts[quantity].capped,
+              bySource: { ...boosts[quantity].bySource },
+            },
+          ]),
+        ),
         loadFactor: settlement.loadFactor,
         /*
          * Which aeroplane, and under which catalogue (IMPROVE-02).
@@ -817,6 +826,9 @@ export async function settleArrivedFlight(
         origin.continent !== arrival.continent,
       // M9-04: a Training Captain counts from the game instant they converted.
       arrivedAt,
+      // M9-06: Crew Development doctrine, at its strength on arrival. Capped
+      // together with the Training Captains' bonus, never on its own.
+      doctrineXpFraction: efficiency.doctrineCrewXp,
     },
     economy.crew.xp,
     economy.crew.skills,
@@ -847,6 +859,9 @@ export async function settleArrivedFlight(
             pools: xpAward.pools,
             // M9-04: the Training Captain multiplier the flight deck earned under.
             ...(xpAward.training === null ? {} : { training: xpAward.training }),
+            // M9-06: Crew Development doctrine, and what it made a cabin head's XP.
+            doctrineXpFraction: efficiency.doctrineCrewXp,
+            cabinXpPerHead: xpAward.cabinXpPerHead,
           })}::jsonb, true)::text`,
       })
       .where(eq(flightResult.flightId, row.id));

@@ -6,7 +6,7 @@ import {
   doctrineFundedDuring,
   doctrineSettlesAt,
   doctrineStrength,
-} from './doctrine';
+} from './lapse';
 
 /**
  * §10.4's upkeep rule (M9-06): *"Doctrine lapses if you stop funding it"*, and

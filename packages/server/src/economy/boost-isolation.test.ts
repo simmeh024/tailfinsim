@@ -67,6 +67,30 @@ function demandExports(): { functions: string[]; types: string[] } {
 }
 
 /**
+ * Every name a module imports **from the simulation** through a named-import
+ * list, aliases resolved to the original: `@tailfin/sim` from the server, a
+ * `demand/` path from inside `sim`. The source matters — `db/schema` has a
+ * `demandPool` table that shares a name with a demand-model function, and
+ * importing a table is not depending on the model.
+ */
+function importedNames(source: string): string[] {
+  const names: string[] = [];
+  for (const match of source.matchAll(
+    /import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*['"](@tailfin\/sim|[^'"]*demand[^'"]*)['"]/g,
+  )) {
+    for (const part of (match[1] ?? '').split(',')) {
+      const name = part
+        .trim()
+        .replace(/^type\s+/, '')
+        .split(/\s+as\s+/)[0]
+        ?.trim();
+      if (name) names.push(name);
+    }
+  }
+  return names;
+}
+
+/**
  * Every name through which a boost travels. A module that feeds demand and
  * mentions none of these cannot pass a boost into it.
  */
@@ -110,16 +134,16 @@ describe('§10.4: no boost reaches the demand model', () => {
   });
 
   it('keeps it out of every module that feeds the demand model, too', () => {
-    // A feeder calls one of the model's functions, or builds one of its input
-    // types — `npc/carrier.ts` never calls the logit, it assembles the
+    // A feeder **imports** one of the model's functions or input types —
+    // `npc/carrier.ts` never calls the logit, it imports and assembles the
     // `ClassOperator` offers the logit is then run over, which is exactly the
-    // kind of input this rule protects.
-    const callsDemand = new RegExp(`\\b(${functions.join('|')})\\s*\\(`);
-    const namesDemandType = new RegExp(`\\b(${types.join('|')})\\b`);
+    // kind of input this rule protects. Imports rather than any occurrence: the
+    // model exports a type called `Place`, and a comment saying "place the legs"
+    // is not a dependency.
+    const demand = new Set([...functions, ...types]);
     const feeders = [...sourceFiles(simSrc), ...sourceFiles(serverSrc)].filter((file) => {
       if (file.startsWith(demandDir)) return false;
-      const source = readFileSync(file, 'utf8');
-      return callsDemand.test(source) || namesDemandType.test(source);
+      return importedNames(readFileSync(file, 'utf8')).some((name) => demand.has(name));
     });
 
     // The feeders this rule exists for, found rather than listed. If none is,
