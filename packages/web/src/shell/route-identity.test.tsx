@@ -72,6 +72,7 @@ describe('titleFor', () => {
     // product name is what makes a bookmark recognisable out of context.
     expect(titleFor('/fleet')).toBe('Fleet · Tailfin');
     expect(titleFor('/network')).toBe('Network · Tailfin');
+    expect(titleFor('/research')).toBe('Research · Tailfin');
   });
 
   it('matches by longest prefix, so an id needs no row of its own', () => {

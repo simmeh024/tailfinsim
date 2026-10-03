@@ -108,6 +108,9 @@ const OperationsPage = lazy(async () => ({
   default: (await import('./operations/OperationsPage')).OperationsPage,
 }));
 const BoardPage = lazy(async () => ({ default: (await import('./routes/Placeholder')).BoardPage }));
+const ResearchPage = lazy(async () => ({
+  default: (await import('./research/ResearchPage')).ResearchPage,
+}));
 const ServicePage = lazy(async () => ({
   default: (await import('./service/ServicePage')).ServicePage,
 }));
@@ -268,6 +271,8 @@ export function App(): ReactNode {
                 <Route path="network" element={<NetworkPage />} />
                 <Route path="finance" element={<FinancePage />} />
                 <Route path="crew" element={<CrewPage />} />
+                {/* §10.3's Operational Doctrine tree (M9-05). */}
+                <Route path="research" element={<ResearchPage />} />
                 <Route path="service" element={<ServicePage />} />
                 <Route path="headquarters" element={<HeadquartersPage />} />
                 <Route path="c-suite" element={<ExecutiveSuitePage />} />

@@ -549,7 +549,8 @@ passes the airline's Performance & Fuel stack into `computeFuelBurn` and records
 worth on `flight_result.breakdown.crewFuelBoost`. Since M9-04 the roster is two of §10.4's
 sources — line crew and Training Captains — resolved together once by
 `resolveEfficiencyBoosts` against the world's ceiling; the other three consumers are still
-unwired and M9-06 reaches them through the same resolver. The acceptance criterion that skill
+unwired, M9-05's research doctrine is computed but not yet applied, and M9-06 reaches all of
+them through the same resolver. The acceptance criterion that skill
 effects _"feed the same capped boost pool as research, never a separate uncapped one"_ is held
 by the shape of the code: `skillBoosts` returns boosts, the resolver stacks them with every
 other source, and **nothing anywhere hands out an uncapped multiplier**, so a caller cannot
@@ -590,6 +591,19 @@ fee, from §21's _"unlocked per hub"_ list. It gates nothing in M9-01 and was le
 was: making it a prerequisite would invent a rule neither section states and would deny an
 academy to every airline whose crew base is not at a hub. `docs/training-academy.md` records
 the conflict; it is also on the issue.
+
+**Research is half a worker story, and the half that is not is the trap (M9-05).** A research
+project completes **lazily** — it is complete exactly when the world's clock reaches
+`completes_at`, read on every request, with no sweep and no status column — so completion works
+on every node, production included. But **points accrue only in settlement**
+(`accrueResearchPoints`, called from `settleArrivedFlight` after the replay guard, and from
+nowhere else), and settlement is the worker's. So on production every airline sits at **0 RP for
+ever**, and the tree reads _"build an academy"_ or _"fly more"_ rather than _"no worker"_. No
+counter of its own: points are a side effect of an arrival, like XP. Two things not to undo:
+**nothing converts cash into points** — only `research/points.ts` writes `research_account`, and
+`research/no-purchase.test.ts` scans the source to keep it that way — and **`research_account` is
+two monotonic integer milli-point counts**, never a float balance, so a short sector's tenth of a
+point survives. `docs/research.md` has the formula, the cost table and the design conflicts.
 
 **`FLIGHT_DEPART` has a handler as of M5-02, and that was a decision.** `handlers.ts` had said
 for two milestones that inventing a departure would be _"the accidental decision ADR-0019's

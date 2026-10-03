@@ -1,6 +1,6 @@
 {
-  "id": "ae91b3fe-e258-43fc-9faa-73ab0fc0791c",
-  "prevId": "e393effc-4acf-4093-9df8-3a67924c36eb",
+  "id": "dfeb801e-343b-4e99-affc-b1f28f15827f",
+  "prevId": "ae91b3fe-e258-43fc-9faa-73ab0fc0791c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3696,6 +3696,19 @@
           "notNull": true,
           "default": "'[]'"
         },
+        "training_captain_since": {
+          "name": "training_captain_since",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "training_captain_changes": {
+          "name": "training_captain_changes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "named_at": {
           "name": "named_at",
           "type": "timestamp with time zone",
@@ -3808,6 +3821,18 @@
         "crew_member_career_nonneg": {
           "name": "crew_member_career_nonneg",
           "value": "\"crew_member\".\"career_block_minutes\" >= 0 AND \"crew_member\".\"career_sectors\" >= 0 AND \"crew_member\".\"career_incidents\" >= 0"
+        },
+        "crew_member_training_captain_changes_nonneg": {
+          "name": "crew_member_training_captain_changes_nonneg",
+          "value": "\"crew_member\".\"training_captain_changes\" >= 0"
+        },
+        "crew_member_training_captain_parity": {
+          "name": "crew_member_training_captain_parity",
+          "value": "(\"crew_member\".\"training_captain_since\" IS NOT NULL) = (\"crew_member\".\"training_captain_changes\" % 2 = 1)"
+        },
+        "crew_member_training_captain_rank": {
+          "name": "crew_member_training_captain_rank",
+          "value": "\"crew_member\".\"training_captain_since\" IS NULL OR \"crew_member\".\"rank\" IN ('captain', 'training_captain')"
         }
       },
       "isRLSEnabled": false
@@ -9023,6 +9048,7 @@
         "academy_construction",
         "academy_upkeep",
         "research",
+        "training_captain",
         "admin_adjustment",
         "flight_settlement",
         "disruption_cost",

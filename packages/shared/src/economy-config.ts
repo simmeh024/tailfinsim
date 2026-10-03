@@ -4,6 +4,7 @@ import { FUEL_REGIONS, type FuelRegion } from './fuel';
 import { GATE_CONTRACTS, STAND_KINDS, type GateContract, type StandKind } from './gates';
 import { HANDLER_GRADES, type HandlerGrade } from './ground';
 import { MinorUnits, Month, NauticalMiles } from './primitives';
+import { RESEARCH_NODES, ResearchEffectTarget, ResearchNodeId } from './research';
 
 /**
  * The economy, as data (M3-11, §22.3, App. A).
@@ -4198,6 +4199,389 @@ export const SHIPPED_ACADEMY_BALANCE = {
   },
 } as const satisfies z.input<typeof AcademyBalance>;
 
+// ---------------------------------------------------------------------------
+// Research — §10.3's "Operational Doctrine" (M9-05)
+// ---------------------------------------------------------------------------
+
+/**
+ * §10.3's research-point formula, with both of its free terms defined.
+ *
+ * ```
+ * RP/day = Σ(academy levels) × academyStaffQuality × (fleet flight hours ÷ scalingFactorHours)
+ * ```
+ *
+ * The design names the two terms and leaves them open, and issue #92 asks for
+ * them to be defined explicitly. So, what **one unit** of each means:
+ *
+ *   - **`scalingFactorHours`** is the flying that counts as one *aircraft-day*:
+ *     the block hours one aeroplane flies in an ordinary day. `fleet flight
+ *     hours ÷ scalingFactorHours` therefore reads as *"how many aircraft-days
+ *     of flying did the fleet do"*, and it is the only place an airline's size
+ *     enters the formula — multiplied by the academies, never on its own.
+ *   - **`academyStaffQuality`** is the research points **one academy level**
+ *     draws from **one aircraft-day** of flying. 1.0 is a standard instructor
+ *     body. It is one number for the whole world today, because nothing yet
+ *     makes one academy's instructors better than another's; if something
+ *     later does (pay, the way crew morale already works), it multiplies here,
+ *     per academy, without changing what the unit means.
+ *
+ * Only their product moves the rate. They are named apart anyway because they
+ * answer different questions: *how fast does this world research?* is
+ * `academyStaffQuality`, and *what is a day's flying for a world whose fleets
+ * are long-haul?* is `scalingFactorHours`.
+ *
+ * Flight hours are **block hours** — the figure the settlement already bills
+ * crew and maintenance against, so a point is earned on the same hours the
+ * airline paid for rather than on a second measurement of the same flight.
+ */
+export const ResearchPointsFormula = z
+  .object({
+    /** Research points per academy level per aircraft-day flown. 1.0 is standard. */
+    academyStaffQuality: z.number().positive(),
+    /** Block hours that make one aircraft-day of fleet flying. A day has 24 of them. */
+    scalingFactorHours: z.number().positive().max(24),
+  })
+  .strict();
+export type ResearchPointsFormula = z.infer<typeof ResearchPointsFormula>;
+
+/**
+ * What a doctrine removes from §10.4's quantities, or adds to the rate crew
+ * learn (`crewXp`). 0.015 is 1.5%. Before stacking and before the ceiling —
+ * `resolveEfficiencyBoosts` applies both, so these numbers decide *how soon* an
+ * airline reaches a ceiling, never whether it can pass one.
+ */
+export const ResearchEffectsBalance = z.partialRecord(ResearchEffectTarget, z.number().gt(0).lt(1));
+export type ResearchEffectsBalance = z.infer<typeof ResearchEffectsBalance>;
+
+/**
+ * One node's price, wait and effect. Every figure explicit for every node,
+ * tiers 3 and 4 included — issue #92's *"no placeholders"* — because those are
+ * shown and priced to the player even while they are refused.
+ */
+export const ResearchNodeBalance = z
+  .object({
+    /** Spent when the project starts. Never bought: no path converts cash into these. */
+    researchPoints: z.number().int().positive(),
+    /** Charged when the project starts, as a `research` cash movement. */
+    cashCostMinor: MinorUnits.positive(),
+    /** Weeks of the world's calendar (ADR-0026). No lever shortens it. */
+    buildWeeks: z.number().int().positive().max(520),
+    effects: ResearchEffectsBalance,
+  })
+  .strict();
+export type ResearchNodeBalance = z.infer<typeof ResearchNodeBalance>;
+
+/**
+ * §10.3's research balance: the point formula and every node's terms.
+ *
+ * `nodes` is keyed by every `ResearchNodeId` — a record over an enum key is
+ * exhaustive in zod 4, so a payload missing a node, or naming one the tree does
+ * not have, does not parse.
+ *
+ * ## The catalogue holds the effects to their targets
+ *
+ * Which quantity a node makes better is **design** (`RESEARCH_NODES[].targets`);
+ * how much is balance (here). The refinement below keeps the two from drifting:
+ * a released node's effect keys are exactly its targets, and an unreleased
+ * node has no effects at all. A retune therefore cannot give Boarding SOP a
+ * fuel effect — that would be a redesign of §10.3's table arriving through a
+ * balance row — nor quietly attach a number to a tier-4 node the release
+ * refuses to complete.
+ *
+ * ## `buildWeeks` cannot be bought down
+ *
+ * §10.3: *"You cannot buy RP. You cannot rush it."* Both halves hold by the
+ * absence of a lever, the way §10.1's academy construction does: there is no
+ * rush cost, no multiplier and no field a payment could move. The weeks are the
+ * **world's** (ADR-0026) rather than the *"real"* ones §10.3's prose says — a
+ * doctrine is rolled out to this world's crews and engineers, and on a world's
+ * clock is where every other span a player waits through runs.
+ */
+export const ResearchBalance = z
+  .object({
+    pointsFormula: ResearchPointsFormula,
+    nodes: z.record(ResearchNodeId, ResearchNodeBalance),
+  })
+  .strict()
+  .superRefine((balance, ctx) => {
+    for (const node of RESEARCH_NODES) {
+      const row = balance.nodes[node.id] as ResearchNodeBalance | undefined;
+      if (row === undefined) continue;
+      const keys = Object.keys(row.effects).sort();
+      const expected = node.released ? [...node.targets].sort() : [];
+      if (keys.join(',') !== expected.join(',')) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['nodes', node.id, 'effects'],
+          message: node.released
+            ? `${node.id} must have exactly the effects its catalogue entry targets (${expected.join(', ')}), got (${keys.join(', ')})`
+            : `${node.id} is not in this release and must have no effects, got (${keys.join(', ')})`,
+        });
+      }
+    }
+  });
+export type ResearchBalance = z.infer<typeof ResearchBalance>;
+
+/**
+ * The shipped research balance.
+ *
+ * ## The rate, at three sizes of airline
+ *
+ * `scalingFactorHours` is 8 — a short-haul aeroplane's ordinary day — and
+ * `academyStaffQuality` is 1, so **every academy level earns one point for every
+ * aircraft-day the fleet flies**:
+ *
+ * | Airline           | Fleet | Block h/day each | Σ levels           | RP/day |
+ * | ----------------- | ----- | ---------------- | ------------------ | ------ |
+ * | small             | 5     | 8                | 1 (Training Room)  | 5      |
+ * | mid               | 30    | 10               | 5                  | 187.5  |
+ * | large             | 90    | 12               | 12                 | 1,620  |
+ * | large, no academy | 90    | 12               | 0                  | 0      |
+ *
+ * The last row is §10.3's *"a big airline that never built academies generates
+ * almost none — size alone doesn't buy competence"*, and it is exactly none
+ * rather than almost: the fleet term is multiplied by the levels, never added
+ * to them.
+ *
+ * ## What a node costs, and which limit binds whom
+ *
+ * Priced by **tier**, not by branch. What a branch is worth depends on the
+ * network — a long-haul fleet values fuel, a short-haul one turnaround — and
+ * pricing one branch above another would make the choice arithmetic rather
+ * than character, the argument M9-03 made for skill branches.
+ *
+ * | Tier | Points | Cash   | Build (game weeks) | Needs                  |
+ * | ---- | ------ | ------ | ------------------ | ---------------------- |
+ * | 1    | 100    | $30K   | 3                  | Training Room          |
+ * | 2    | 600    | $100K  | 6                  | Flight Academy         |
+ * | 3    | 2,500  | $300K  | 10                 | Full-Flight Sim Centre |
+ * | 4    | 8,000  | $800K  | 16                 | Centre of Excellence   |
+ *
+ *   - **A small airline with a Training Room** earns tier 1's 100 points in
+ *     twenty game days: its first node is a three-week wait and a three-week
+ *     build — *"in weeks"*, as the issue asks. All six tier-1 nodes take about
+ *     four game months of points against eighteen weeks of builds, so a small
+ *     airline is bound by its **points**, which is what an academy is for.
+ *   - **A Flight Academy** (Σ 3, fifteen a day) funds a tier-2 node in forty
+ *     days.
+ *   - **A mid-sized airline** earns a tier-2 node in about three days and **a
+ *     large one** in nine hours. One project runs at a time, so both are bound
+ *     by the **build weeks** instead: the twelve released nodes take 54 game
+ *     weeks back to back however many points are banked. Size buys the points;
+ *     nothing buys the weeks.
+ *
+ * Cash is scaled against the academy that gates the tier: tier 1 is about one
+ * and a half Training Rooms ($20K), and tiers 2-4 each cost a little less than
+ * the building they need ($140K, $400K, $1.1M). A doctrine is a decision beside
+ * the building rather than a multiple of it — and the money is never the
+ * scarce thing, because the points are not for sale.
+ *
+ * ## What a node removes
+ *
+ * §10.4's ceilings are shared by every source, and M9-03's skills already reach
+ * about half of each with one fully specialised veteran. Research is sized so
+ * **a branch's two released tiers together fill about 40%** of its ceiling:
+ *
+ * | Quantity         | Ceiling | T1   | T2   | T1+T2 stacked | Share |
+ * | ---------------- | ------- | ---- | ---- | ------------- | ----- |
+ * | Fuel burn        | 8%      | 1.5% | 1.8% | 3.27%         | 41%   |
+ * | Block time       | 4%      | —    | 1.6% | 1.60%         | 40%   |
+ * | Turnaround time  | 20%     | 3.5% | 4.5% | 7.84%         | 39%   |
+ * | Incident rate    | 30%     | 5%   | 7%   | 11.65%        | 39%   |
+ * | Service cost     | 15%     | 2.5% | 3.5% | 5.91%         | 39%   |
+ * | Maintenance cost | 12%     | 2%   | 2.8% | 4.74%         | 40%   |
+ *
+ * Skills and research together then reach or pass most ceilings, and that is
+ * the intent rather than an accident: the resolver's multiplicative stacking is
+ * §10.4's *"diminishing returns before the cap"* and the ceiling clips the rest.
+ * What these numbers decide is that **no single source fills a ceiling alone**,
+ * so reaching §10.4's edge takes both people and doctrine — and the edge is
+ * still §10.4's, never further.
+ *
+ * Block time has only Continuous descent: §10.3 puts taxi and routing
+ * efficiency under doctrine, and the branch's tier-1 SOP is about cost index
+ * rather than minutes.
+ *
+ * **Crew Development's `crewXp` is a rate added to the XP crew earn**, not a
+ * cost removed: 4% and 6%, ten percent together — about a sixth of M9-04's
+ * combined XP cap, because the Training Captains §10.3 puts at this branch's
+ * own tier 4 are meant to own most of it.
+ *
+ * **Tiers 3 and 4 carry no effects** and are priced in full. They are shown,
+ * costed and refused with `not_released`; an effect on a node nobody can
+ * complete would be a promise the release does not keep, and several of them
+ * are capabilities nothing models yet.
+ *
+ * Defaulted, for the reason `SHIPPED_NPC_BALANCE` records.
+ */
+export const SHIPPED_RESEARCH_BALANCE = {
+  pointsFormula: {
+    // One point per academy level per aircraft-day: a standard instructor body.
+    academyStaffQuality: 1,
+    // An aircraft-day: a short-haul aeroplane's eight block hours.
+    scalingFactorHours: 8,
+  },
+  nodes: {
+    // Fuel & Performance --------------------------------------------------
+    cost_index_sop: {
+      researchPoints: 100,
+      cashCostMinor: 3_000_000,
+      buildWeeks: 3,
+      effects: { fuelBurn: 0.015 },
+    },
+    continuous_descent: {
+      researchPoints: 600,
+      cashCostMinor: 10_000_000,
+      buildWeeks: 6,
+      // The only block-time doctrine in the release: 1.6% of a 4% ceiling.
+      effects: { fuelBurn: 0.018, blockTime: 0.016 },
+    },
+    tankering_doctrine: {
+      researchPoints: 2_500,
+      cashCostMinor: 30_000_000,
+      buildWeeks: 10,
+      effects: {},
+    },
+    fleet_performance_optimisation: {
+      researchPoints: 8_000,
+      cashCostMinor: 80_000_000,
+      buildWeeks: 16,
+      effects: {},
+    },
+
+    // Turnaround & Ground -------------------------------------------------
+    boarding_sop: {
+      researchPoints: 100,
+      cashCostMinor: 3_000_000,
+      buildWeeks: 3,
+      effects: { turnaroundTime: 0.035 },
+    },
+    parallel_servicing: {
+      researchPoints: 600,
+      cashCostMinor: 10_000_000,
+      buildWeeks: 6,
+      effects: { turnaroundTime: 0.045 },
+    },
+    rapid_turn_certification: {
+      researchPoints: 2_500,
+      cashCostMinor: 30_000_000,
+      buildWeeks: 10,
+      effects: {},
+    },
+    sub_25_minute_turn: {
+      researchPoints: 8_000,
+      cashCostMinor: 80_000_000,
+      buildWeeks: 16,
+      effects: {},
+    },
+
+    // Safety & Reliability ------------------------------------------------
+    reporting_culture: {
+      researchPoints: 100,
+      cashCostMinor: 3_000_000,
+      buildWeeks: 3,
+      effects: { incidentRate: 0.05 },
+    },
+    predictive_fault_detection: {
+      researchPoints: 600,
+      cashCostMinor: 10_000_000,
+      buildWeeks: 6,
+      effects: { incidentRate: 0.07 },
+    },
+    etops_authority: {
+      researchPoints: 2_500,
+      cashCostMinor: 30_000_000,
+      buildWeeks: 10,
+      effects: {},
+    },
+    all_weather_cat_iiib: {
+      researchPoints: 8_000,
+      cashCostMinor: 80_000_000,
+      buildWeeks: 16,
+      effects: {},
+    },
+
+    // Service & Cabin -----------------------------------------------------
+    service_standards: {
+      researchPoints: 100,
+      cashCostMinor: 3_000_000,
+      buildWeeks: 3,
+      effects: { serviceCost: 0.025 },
+    },
+    signature_service: {
+      researchPoints: 600,
+      cashCostMinor: 10_000_000,
+      buildWeeks: 6,
+      effects: { serviceCost: 0.035 },
+    },
+    premium_ritual: {
+      researchPoints: 2_500,
+      cashCostMinor: 30_000_000,
+      buildWeeks: 10,
+      effects: {},
+    },
+    best_in_class_product: {
+      researchPoints: 8_000,
+      cashCostMinor: 80_000_000,
+      buildWeeks: 16,
+      effects: {},
+    },
+
+    // Crew Development ----------------------------------------------------
+    efficient_conversion: {
+      researchPoints: 100,
+      cashCostMinor: 3_000_000,
+      buildWeeks: 3,
+      // Added to the XP rate, under M9-04's combined cap.
+      effects: { crewXp: 0.04 },
+    },
+    cadet_pipeline: {
+      researchPoints: 600,
+      cashCostMinor: 10_000_000,
+      buildWeeks: 6,
+      effects: { crewXp: 0.06 },
+    },
+    fatigue_resilience: {
+      researchPoints: 2_500,
+      cashCostMinor: 30_000_000,
+      buildWeeks: 10,
+      effects: {},
+    },
+    in_house_training_captains: {
+      researchPoints: 8_000,
+      cashCostMinor: 80_000_000,
+      buildWeeks: 16,
+      effects: {},
+    },
+
+    // Maintenance ---------------------------------------------------------
+    line_efficiency: {
+      researchPoints: 100,
+      cashCostMinor: 3_000_000,
+      buildWeeks: 3,
+      effects: { maintenanceCost: 0.02 },
+    },
+    predictive_maintenance: {
+      researchPoints: 600,
+      cashCostMinor: 10_000_000,
+      buildWeeks: 6,
+      effects: { maintenanceCost: 0.028 },
+    },
+    reduced_aog: {
+      researchPoints: 2_500,
+      cashCostMinor: 30_000_000,
+      buildWeeks: 10,
+      effects: {},
+    },
+    in_house_heavy_checks: {
+      researchPoints: 8_000,
+      cashCostMinor: 80_000_000,
+      buildWeeks: 16,
+      effects: {},
+    },
+  },
+} as const satisfies z.input<typeof ResearchBalance>;
+
 export const EconomyConfig = z
   .object({
     version: EconomyConfigVersion,
@@ -4259,6 +4643,10 @@ export const EconomyConfig = z
     // And once more (M7-06): App. B.6's stands and the three ways to hold one.
     // Every `v1` row written before it reads back the shipped gate money.
     gates: GateBalance.default(SHIPPED_GATE_BALANCE),
+    // And once more (M9-05): §10.3's research points and every node's terms.
+    // Every `v1` row written before it reads back the shipped tree, so a world
+    // pinned to one keeps settling flights — settlement reads the formula.
+    research: ResearchBalance.default(SHIPPED_RESEARCH_BALANCE),
   })
   .strict();
 export type EconomyConfig = z.infer<typeof EconomyConfig>;

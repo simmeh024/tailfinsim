@@ -64,6 +64,7 @@ import { MaintenanceResponse, BookCheckResponse } from './maintenance';
 import { AdminNpcResponse } from './npc';
 import { OfficeStateResponse } from './office';
 import { OperationsDashboardResponse } from './operations';
+import { ResearchResponse } from './research-contract';
 import {
   RouteGroupsResponse,
   RouteGroupSummary,
@@ -185,6 +186,7 @@ export const worldClockJsonSchema = z.toJSONSchema(WorldClock);
 export const crewResponseJsonSchema = z.toJSONSchema(CrewResponse);
 export const crewRosterResponseJsonSchema = z.toJSONSchema(CrewRosterResponse);
 export const academiesResponseJsonSchema = z.toJSONSchema(AcademiesResponse);
+export const researchResponseJsonSchema = z.toJSONSchema(ResearchResponse);
 export const automationStateResponseJsonSchema = z.toJSONSchema(AutomationStateResponse);
 export const groundStationResponseJsonSchema = z.toJSONSchema(GroundStationResponse);
 export const groundContractsResponseJsonSchema = z.toJSONSchema(GroundContractsResponse);

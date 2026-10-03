@@ -474,8 +474,15 @@
     {
       "idx": 67,
       "version": "7",
-      "when": 1790994752835,
-      "tag": "0067_training_captains",
+      "when": 1790995082568,
+      "tag": "0067_research_tree",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1791044537887,
+      "tag": "0068_training_captains",
       "breakpoints": true
     }
   ]

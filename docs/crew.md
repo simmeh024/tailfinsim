@@ -804,7 +804,8 @@ holds. Since M9-04 the roster is two of §10.4's sources — line crew under `sk
 Captains at their reduced line value under `trainingCaptains` — resolved together once by
 `resolveEfficiencyBoosts` against the world's ceiling; `crewFuelBoost.bySource` says how much of
 the figure each was worth alone. The other three consumers are still unwired; M9-06 wires them
-through the same resolver.
+through the same resolver — and M9-05's research, which computes its doctrine as a third boost
+source and leaves applying it to M9-06.
 
 ### Type Mastery and the fleet
 
