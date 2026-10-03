@@ -10,12 +10,22 @@ import DeckGL, { type DeckGLRef } from '@deck.gl/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 
+import { AirportMapView } from '../airport/AirportMapView';
 import { fetchFleetAirframes, fetchFleetCatalogue } from '../fleet/api';
 import { useContextSelection } from '../shell/context-selection';
 import { useTheme } from '../theme/ThemeProvider';
 
 import { fetchWorldAirports } from './airports-api';
-import { clampViewState, focusViewState } from './camera';
+import {
+  airportMapFromSearch,
+  bandForZoom,
+  bandHint,
+  handoffTarget,
+  operatedAirportIcaos,
+  TERMINAL_EXIT_ZOOM,
+  type HandoffAirport,
+} from './bands';
+import { clampViewState, focusViewState, MAX_ZOOM } from './camera';
 import {
   flightPath,
   greatCirclePath,
@@ -133,6 +143,28 @@ const PLANE_ICON = 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.o
 /** How fast a plane crosses its whole route: ~1/26 per second, so a full pass is ~26s. */
 const PLANE_SPEED_PER_SECOND = 0.038;
 
+/**
+ * How long the hand-off between the world and an airport map takes, both ways
+ * (M7-07).
+ *
+ * One number for the camera's fly and the schematic's scale, so the two move as
+ * one gesture rather than the world arriving before the floor plan does. Longer
+ * than the 150–200 ms H.4 gives a control's feedback, because this is a camera
+ * move — the same family as Recentre's 700 ms fly — and a floor plan snapping in
+ * at control speed reads as a page change, which is the thing §H.2's
+ * *"continuous"* rules out. Zero for a reader who has asked for less motion.
+ */
+const AIRPORT_HANDOFF_MS = 420;
+
+/** The airport map over the world, and where on the stage it grew from. */
+interface AirportView {
+  icao: string;
+  /** The airport's screen position when the hand-off began, or null for the stage centre. */
+  origin: { x: number; y: number } | null;
+  /** True while it shrinks back into the world, before it unmounts. */
+  leaving: boolean;
+}
+
 export interface WorldRendererProps {
   routes?: readonly WorldRoute[];
 }
@@ -195,6 +227,38 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   const lastTouch = useRef<{ at: number; x: number; y: number } | null>(null);
   /** Whether a `?at=` link has been resolved; it happens once, like the frame. */
   const addressed = useRef(false);
+
+  /*
+   * The airport map (M7-07, §H.2's fourth band).
+   *
+   * **The address is the source of truth.** `?airport=EGLL` open means the
+   * schematic is open, whether it got there by zooming, by the detail panel's
+   * control, by a link from the Gates page or by the browser's back and forward
+   * buttons — so all four are one code path, below, rather than four that could
+   * disagree about where the camera ends up.
+   *
+   * `airportView` trails the address by one animation: it stays mounted while
+   * the schematic shrinks back into the world, after the address has already
+   * moved on.
+   */
+  const airportParam = useMemo(() => airportMapFromSearch(searchParams), [searchParams]);
+  const [airportView, setAirportView] = useState<AirportView | null>(() =>
+    airportParam === null ? null : { icao: airportParam, origin: null, leaving: false },
+  );
+  /** Whether this session pushed the history entry, so leaving can pop it rather than add one. */
+  const pushedAirport = useRef(false);
+  /** Where the next hand-off grows from; read once by the address effect. */
+  const pendingOrigin = useRef<{ x: number; y: number } | null>(null);
+  /** The airport the camera has been placed on for the open map, so it is placed once. */
+  const placedFor = useRef<string | null>(null);
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** The airport under the pointer, which a scroll-zoom is aimed at. */
+  const hoveredAirport = useRef<WorldAirport | null>(null);
+  /** The camera as last committed, for telling a zoom in from a zoom out. */
+  const viewStateRef = useRef(viewState);
+  useEffect(() => {
+    viewStateRef.current = viewState;
+  }, [viewState]);
 
   /*
    * `/world?at=EGLL` — the hand-written link.
@@ -310,6 +374,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   useEffect(
     () => () => {
       if (transitionTimer.current !== undefined) globalThis.clearTimeout(transitionTimer.current);
+      if (leaveTimer.current !== undefined) globalThis.clearTimeout(leaveTimer.current);
     },
     [],
   );
@@ -436,6 +501,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
    * is what clears the label — so there is no separate "leave" path to forget.
    */
   const onAirportHover = useCallback((airport: WorldAirport | null, at: HoverPoint) => {
+    hoveredAirport.current = airport;
     setHover(airport === null ? null : { label: airportLabel(airport), at });
   }, []);
 
@@ -791,7 +857,10 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
    * the route shimmer alone — which is exactly what WORLD-02 asked of it, that
    * it follow what is actually moving.
    */
-  const animating = !reducedMotion && visibility.routes && ownPaths.length > 0;
+  // And not behind an open airport map (M7-07): sixty layer rebuilds a second
+  // for a shimmer nobody can see under an opaque floor plan.
+  const animating =
+    !reducedMotion && visibility.routes && ownPaths.length > 0 && airportView === null;
 
   /*
    * Advance the phase each frame. `requestAnimationFrame` pauses itself when the
@@ -949,6 +1018,220 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     );
   }, [networkFrame, reducedMotion]);
 
+  // ---------------------------------------------------------------------------
+  // The airport map: §H.2's fourth band (M7-07)
+  // ---------------------------------------------------------------------------
+
+  /** The airports this player operates at — the ones a zoom hands off into. */
+  const operated = useMemo(
+    () => operatedAirportIcaos(map.hubs, map.routes),
+    [map.hubs, map.routes],
+  );
+
+  /**
+   * Everything a camera could be centred on, with a position.
+   *
+   * The served airports, and the player's hubs as well: a hub is always worth
+   * entering, and the airport list is a separate fetch that may not have
+   * arrived — or may not carry a small field the player has based at.
+   */
+  const handoffAirports = useMemo<HandoffAirport[]>(
+    () => [...airports, ...map.hubs.map((hub) => ({ icao: hub.icao, position: hub.position }))],
+    [airports, map.hubs],
+  );
+
+  /** Where an airport is, from whichever source knows it. */
+  const positionOf = useCallback(
+    (icao: string): LngLat | null => {
+      const known =
+        airports.find((entry) => entry.icao === icao) ?? map.hubs.find((hub) => hub.icao === icao);
+      if (known) return known.position;
+      for (const r of map.routes) {
+        if (r.originIcao === icao) return r.source;
+        if (r.destinationIcao === icao) return r.target;
+      }
+      return null;
+    },
+    [airports, map.hubs, map.routes],
+  );
+
+  /**
+   * Where a point is on the stage, so the schematic can grow out of the airport
+   * rather than out of the middle of the screen. Null when deck.gl has not
+   * measured anything, and the stage centre is used instead — which is where a
+   * camera-centred hand-off puts the airport anyway.
+   */
+  const screenPointOf = useCallback((position: LngLat): { x: number; y: number } | null => {
+    try {
+      const viewport = deckRef.current?.deck?.getViewports()[0];
+      if (!viewport) return null;
+      const [x, y] = viewport.project(position);
+      return Number.isFinite(x) && Number.isFinite(y) ? { x: x!, y: y! } : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  /**
+   * Open an airport's map: put it in the address, and let the address effect
+   * below do the rest.
+   *
+   * A **pushed** history entry, unlike the camera's replaced ones: the airport
+   * map is a place, so the back button should leave it — where a pan is not,
+   * and the back button walking a drag backwards is what the camera's
+   * `replace` exists to prevent.
+   */
+  const openAirportMap = useCallback(
+    (icao: string) => {
+      const position = positionOf(icao);
+      pendingOrigin.current = position === null ? null : screenPointOf(position);
+      pushedAirport.current = true;
+      const next = new URLSearchParams(searchParams);
+      next.set('airport', icao);
+      next.delete('at');
+      setSearchParams(next);
+    },
+    [positionOf, screenPointOf, searchParams, setSearchParams],
+  );
+
+  /**
+   * Leave the airport map — `AirportMapView`'s `onExit`.
+   *
+   * Back through history when this session pushed the entry, so the stack does
+   * not grow a second copy of the world page; by rewriting the address when the
+   * map was opened from a link, where going back would leave Tailfin.
+   */
+  const exitAirportMap = useCallback(() => {
+    if (pushedAirport.current) {
+      pushedAirport.current = false;
+      void navigate(-1);
+      return;
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete('airport');
+    setSearchParams(next, { replace: true });
+  }, [navigate, searchParams, setSearchParams]);
+
+  /**
+   * Put the world camera on an airport, animated unless the reader asked for
+   * less motion. False when the airport's position is not known yet.
+   */
+  const cameraOnto = useCallback(
+    (icao: string, zoom: number, animate: boolean): boolean => {
+      const position = positionOf(icao);
+      if (position === null) return false;
+      framed.current = true;
+      addressed.current = true;
+      setViewState((current) =>
+        clampViewState({
+          ...current,
+          longitude: position[0],
+          latitude: position[1],
+          zoom,
+          ...(animate && !reducedMotion
+            ? {
+                transitionDuration: AIRPORT_HANDOFF_MS,
+                transitionInterpolator: new FlyToInterpolator(),
+              }
+            : {}),
+        }),
+      );
+      return true;
+    },
+    [positionOf, reducedMotion],
+  );
+
+  /*
+   * Follow the address in and out of the airport map.
+   *
+   * **In**: the schematic mounts and scales up from where the airport was on
+   * the stage, while the world camera finishes its approach to the airport's
+   * ceiling behind it — one gesture, not a page change. The world's own
+   * selection is cleared, because the schematic publishes its own to the same
+   * context panel and two writers would fight over it.
+   *
+   * **Out** (the exit control, a zoom out past the schematic's widest view, or
+   * the browser's back button): the camera steps back to the middle of the
+   * terminal area centred on the airport just left, the airport is selected so
+   * the panel still says where you are, and the schematic shrinks back into it
+   * before it unmounts.
+   */
+  useEffect(() => {
+    if (airportParam !== null) {
+      if (airportView !== null && airportView.icao === airportParam && !airportView.leaving) return;
+      if (leaveTimer.current !== undefined) globalThis.clearTimeout(leaveTimer.current);
+      const origin = pendingOrigin.current;
+      pendingOrigin.current = null;
+      setAirportView({ icao: airportParam, origin, leaving: false });
+      setSelectedAirport(null);
+      setSelectedRoute(null);
+      setSelectedFlight(null);
+      setHover(null);
+      setShowPlaces(false);
+      // Before the schematic mounts, so whatever it publishes is not cleared.
+      clear();
+      placedFor.current = cameraOnto(airportParam, MAX_ZOOM, origin !== null) ? airportParam : null;
+      setAnnouncement(`Airport map: ${airportParam}.`);
+      return;
+    }
+
+    if (airportView === null || airportView.leaving) return;
+    pushedAirport.current = false;
+    placedFor.current = null;
+    const left = airportView.icao;
+    cameraOnto(left, TERMINAL_EXIT_ZOOM, true);
+    const airport = airports.find((entry) => entry.icao === left);
+    if (airport !== undefined) setSelectedAirport(airport);
+    setAnnouncement(`Back on the world map at ${left}.`);
+    if (reducedMotion) {
+      setAirportView(null);
+      return;
+    }
+    // Back into the stage centre, which is where the camera is putting the airport.
+    setAirportView({ ...airportView, origin: null, leaving: true });
+    leaveTimer.current = globalThis.setTimeout(() => setAirportView(null), AIRPORT_HANDOFF_MS);
+  }, [airportParam, airportView, airports, cameraOnto, reducedMotion, clear]);
+
+  /*
+   * A map opened by a link, before the airport list had arrived: put the world
+   * camera on the airport as soon as its position is known, so leaving lands the
+   * player on it rather than wherever the world happened to open.
+   */
+  useEffect(() => {
+    if (airportView === null || airportView.leaving || placedFor.current === airportView.icao) {
+      return;
+    }
+    if (cameraOnto(airportView.icao, MAX_ZOOM, false)) placedFor.current = airportView.icao;
+  }, [airportView, cameraOnto]);
+
+  /**
+   * Hand off into the airport map if this camera change has earned it.
+   *
+   * `bands.ts` decides; this only supplies the facts — the zoom before and
+   * after, the centre, the airport under the pointer — and acts on the answer.
+   * Never while a schematic is already open or leaving: the camera's own fly
+   * into the airport would otherwise re-open what is opening.
+   */
+  const considerHandoff = useCallback(
+    (next: MapViewState, zoomGesture: boolean) => {
+      if (airportView !== null) return;
+      const target = handoffTarget({
+        previousZoom: viewStateRef.current.zoom,
+        centre: [next.longitude, next.latitude],
+        zoom: next.zoom,
+        zoomGesture,
+        hovered: hoveredAirport.current,
+        airports: handoffAirports,
+        operated,
+      });
+      if (target !== null) openAirportMap(target.icao);
+    },
+    [airportView, handoffAirports, operated, openAirportMap],
+  );
+
+  const band = bandForZoom(viewState.zoom);
+  const hint = bandHint(band, operated.size);
+
   /*
    * Remember the view, and keep the address bar describing it.
    *
@@ -993,6 +1276,13 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
    * and the reason the bottom-right corner had four occupants.
    */
   useEffect(() => {
+    /*
+     * Not while an airport map is open (M7-07). The schematic publishes its own
+     * selection — a gate, an aircraft on stand — to this same panel, and this
+     * effect re-runs every second with the world clock: left alone it would
+     * clear whatever the schematic had just put there, once a second.
+     */
+    if (airportView !== null && !airportView.leaving) return;
     if (selectedAirport !== null) {
       const isHub = hubIcaos.has(selectedAirport.icao);
       select({
@@ -1006,8 +1296,10 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
             hubs={map.hubs}
             routes={routesThrough(selectedAirport.icao)}
             isHub={isHub}
+            operated={operated.has(selectedAirport.icao)}
             maxRangeNm={maxRangeNm}
             onPlanRoute={planRoute}
+            onOpenAirportMap={openAirportMap}
           />
         ),
         onClear: () => setSelectedAirport(null),
@@ -1038,15 +1330,18 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     }
     clear();
   }, [
+    airportView,
     selectedAirport,
     selectedRoute,
     selectedFlight,
     flightTime,
     hubIcaos,
+    operated,
     map.hubs,
     routesThrough,
     maxRangeNm,
     planRoute,
+    openAirportMap,
     select,
     clear,
   ]);
@@ -1220,9 +1515,12 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       const bounds = element.getBoundingClientRect();
       const coordinate = viewport.unproject([clientX - bounds.left, clientY - bounds.top]);
       if (!Number.isFinite(coordinate[0]) || !Number.isFinite(coordinate[1])) return;
-      setViewState((current) => focusViewState(current, [coordinate[0]!, coordinate[1]!]));
+      // A double-click is a zoom in on a point, so it may hand off as a scroll does.
+      const next = focusViewState(viewStateRef.current, [coordinate[0]!, coordinate[1]!]);
+      setViewState(next);
+      considerHandoff(next, true);
     },
-    [],
+    [considerHandoff],
   );
 
   const focusAtPointer = useCallback(
@@ -1258,10 +1556,13 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       data-quality={quality}
       data-atmosphere={viewState.zoom < ATMOSPHERE_MAX_ZOOM ? 'on' : 'off'}
       data-transitioning={transitioning}
+      data-band={airportView !== null && !airportView.leaving ? 'airport-map' : band}
       aria-label="Interactive world renderer"
     >
       <div
         className="world-renderer__canvas"
+        // Behind an open airport map the world is decoration, not a control.
+        aria-hidden={airportView !== null && !airportView.leaving ? true : undefined}
         role="application"
         aria-label={`${projection === 'globe' ? 'Globe' : 'Flat'} world map. Drag to move, scroll or pinch to zoom, and double tap to focus. Arrow keys pan; the Places list selects what is on the map.`}
         onDoubleClick={focusAtPointer}
@@ -1275,8 +1576,10 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
           // A few pixels of slack so the small airport dots are easy to click.
           pickingRadius={5}
           useDevicePixels={quality === 'full' ? true : 1}
-          onViewStateChange={({ viewState: next }) => {
+          onViewStateChange={({ viewState: next, interactionState }) => {
             setViewState(clampViewState(next));
+            // The unclamped zoom: a scroll at the ceiling still asks for more.
+            considerHandoff(next, interactionState?.isZooming === true);
           }}
           onError={() => setRendererFailed(true)}
           _onMetrics={observeMetrics}
@@ -1337,7 +1640,37 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
         {announcement}
       </p>
 
-      <div className="world-renderer__hud">
+      {/*
+       * The airport map: §H.2's fourth band (M7-07).
+       *
+       * A DOM schematic over the canvas rather than anything deck.gl draws, which
+       * is what makes it *"always a stylised 2D schematic regardless of
+       * projection"* — the same floor plan whether the world behind it is a
+       * globe or a flat map. It grows out of the airport's point on the stage
+       * while the camera finishes its approach, and shrinks back into it on the
+       * way out; the duration is set here, from the one constant the camera fly
+       * also uses, so the two cannot drift apart.
+       */}
+      {airportView !== null && (
+        <div
+          className="world-airport"
+          data-leaving={airportView.leaving}
+          style={{
+            transformOrigin:
+              airportView.origin === null
+                ? '50% 50%'
+                : `${String(airportView.origin.x)}px ${String(airportView.origin.y)}px`,
+            animationDuration: `${String(reducedMotion ? 0 : AIRPORT_HANDOFF_MS)}ms`,
+          }}
+        >
+          <AirportMapView icao={airportView.icao} onExit={exitAirportMap} />
+        </div>
+      )}
+
+      <div
+        className="world-renderer__hud"
+        hidden={airportView !== null && !airportView.leaving ? true : undefined}
+      >
         <WorldClockDisplay inGameTime={inGameTime} speedMultiplier={speedMultiplier} />
 
         <div className="world-renderer__controls">
@@ -1430,6 +1763,19 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
               Legend
             </button>
           </div>
+
+          {/*
+           * Which of §H.2's bands the camera is in, once it is close enough for
+           * the answer to change what a zoom will do (M7-07). The whole-world
+           * and regional views say nothing: there is nothing to hand off to
+           * from there, and a label that never changes the player's next move
+           * is chrome.
+           */}
+          {hint !== null && (
+            <p className="world-renderer__band" data-testid="world-band">
+              {hint}
+            </p>
+          )}
         </div>
 
         {showLegend && (

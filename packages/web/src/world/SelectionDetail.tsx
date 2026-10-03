@@ -1,5 +1,7 @@
 import { Link } from 'react-router';
 
+import { Button } from '../ui/Button';
+
 import { airportCodes } from './hover';
 import { bestHub } from './route-create';
 
@@ -35,9 +37,16 @@ export interface AirportDetailProps {
   routes: readonly WorldMapRoute[];
   /** Whether this airport is one of the player's own hubs. */
   isHub: boolean;
+  /**
+   * Whether the player operates here — a hub or a route end — which is when a
+   * zoom in would open the airport map by itself (M7-07).
+   */
+  operated: boolean;
   /** The fleet's longest range, or 0 with no aircraft. */
   maxRangeNm: number;
   onPlanRoute: (originIcao: string, destinationIcao: string) => void;
+  /** Open App. B.7's airport map for this airport (M7-07). */
+  onOpenAirportMap: (icao: string) => void;
 }
 
 function distance(nm: number): string {
@@ -49,8 +58,10 @@ export function AirportDetail({
   hubs,
   routes,
   isHub,
+  operated,
   maxRangeNm,
   onPlanRoute,
+  onOpenAirportMap,
 }: AirportDetailProps): ReactNode {
   const reach = isHub ? null : bestHub(airport.position, hubs, maxRangeNm);
   const alreadyFromHub =
@@ -113,6 +124,28 @@ export function AirportDetail({
       <Link to={`/network?to=${airport.icao}`} className="world-renderer__route-link">
         Open route planner
       </Link>
+
+      {/*
+        App. B.7's airport map, entered on purpose (M7-07). Any airport, not only
+        the ones the player operates at: zooming in hands off only for those, so
+        this is the way into a rival's hub or a field being considered. The
+        sentence beside it says which of the two this airport is, so a player
+        who zoomed all the way in and stayed on the world knows why.
+      */}
+      {/* Secondary: opening a route is this panel's task when there is one. */}
+      <Button
+        size="sm"
+        onClick={() => {
+          onOpenAirportMap(airport.icao);
+        }}
+      >
+        Open airport map
+      </Button>
+      <p className="world-renderer__route-muted">
+        {operated
+          ? 'You operate here — zooming in all the way opens the airport map too.'
+          : 'You do not operate here yet, so zooming in stays on the world map.'}
+      </p>
     </div>
   );
 }

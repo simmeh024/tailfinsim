@@ -627,6 +627,78 @@ body {
   color: var(--accent);
 }
 
+/*
+ * M7-07: which of §H.2's zoom bands the camera is in, once that changes what the
+ * next zoom will do. The control group's chrome without its buttons, so it reads
+ * as part of the same strip rather than as a notice.
+ */
+.world-renderer__band {
+  align-self: center;
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  backdrop-filter: blur(10px);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+/* `hidden` must win over the grid the HUD otherwise always is. */
+.world-renderer__hud[hidden] {
+  display: none;
+}
+
+/*
+ * The airport map over the world (M7-07, §H.2's fourth band).
+ *
+ * Opaque and above everything the world draws, because an apron is a floor plan
+ * and not a landscape: nothing of the globe or the flat map shows through it.
+ * It grows out of the airport's point on the stage — the inline
+ * `transform-origin` — and shrinks back into it; the inline `animation-duration`
+ * comes from the same constant as the camera's fly, so the two land together, and
+ * is zero for a reader who asked for less motion.
+ */
+.world-airport {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  overflow: auto;
+  background: var(--bg-inset);
+  animation-name: world-airport-in;
+  animation-timing-function: var(--ease);
+  animation-fill-mode: both;
+}
+
+.world-airport[data-leaving='true'] {
+  animation-name: world-airport-out;
+  pointer-events: none;
+}
+
+@keyframes world-airport-in {
+  from {
+    opacity: 0;
+    transform: scale(0.06);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes world-airport-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(0.06);
+  }
+}
+
 .world-renderer__performance,
 .world-renderer__failure {
   width: 100%;
