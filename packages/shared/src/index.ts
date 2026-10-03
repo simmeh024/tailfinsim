@@ -53,6 +53,7 @@ export * from './crew';
 export * from './crew-skills';
 export * from './efficiency';
 export * from './research';
+export * from './research-contract';
 export * from './fleet';
 export * from './livery';
 export * from './livery-resources';
