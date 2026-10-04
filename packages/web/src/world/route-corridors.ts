@@ -114,8 +114,13 @@ export function bundleCorridors(routes: readonly CorridorRoute[], gridDeg: numbe
 export function corridorGridForZoom(zoom: number, unbundleZoom = 3.5): number {
   if (zoom >= unbundleZoom) return 0;
   // ~12° cells on the whole-world view, tightening to ~3° as the camera approaches
-  // the un-bundle zoom. Linear in zoom is smooth enough for a step that only fires
-  // on a threshold crossing.
+  // the un-bundle zoom.
+  //
+  // **Whole degrees**, and that is what makes it "a step that only fires on a
+  // threshold crossing", which this comment always claimed. Unrounded, the grid
+  // changed on every frame of a scroll-zoom, and the corridor layer is memoised
+  // on it — so every rival route was re-bundled and the layer rebuilt sixty times
+  // a second for a change no reader could see.
   const t = Math.max(0, Math.min(1, zoom / unbundleZoom));
-  return 12 - 9 * t;
+  return Math.round(12 - 9 * t);
 }
