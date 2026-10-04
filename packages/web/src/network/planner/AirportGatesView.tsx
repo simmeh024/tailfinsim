@@ -9,6 +9,7 @@ import type {
   StandRequirement,
 } from '@tailfin/shared';
 
+import { Button } from '../../ui/Button';
 import { StateBlock } from '../../ui/StateBlock';
 import { AirportMapLink } from '../../world/AirportMapLink';
 import { fetchAirportGates, leaseStand, releaseStand } from '../api';
@@ -140,7 +141,13 @@ function Requirement({ requirement }: { requirement: StandRequirement }): ReactN
   );
 }
 
-/** One stand's row: who holds it, how busy it is for you, and what it costs. */
+/**
+ * One stand's row: who holds it, how busy it is for you, and what it costs.
+ *
+ * Releasing is two clicks, as it is on the airport map (UX pass, UX-08): giving
+ * a stand back ends a lease that may not be on offer again at the same price,
+ * and a one-click Release sat beside Lease buttons of the same weight.
+ */
 function StandRow({
   stand,
   busy,
@@ -153,6 +160,7 @@ function StandRow({
   onRelease: () => void;
 }): ReactNode {
   const yours = stand.yourContract !== null;
+  const [confirming, setConfirming] = useState(false);
   return (
     <tr>
       <th scope="row" className="figure">
@@ -183,31 +191,61 @@ function StandRow({
       </td>
       <td>
         {yours ? (
-          <button type="button" className="btn btn--ghost" disabled={busy} onClick={onRelease}>
-            Release
-          </button>
+          confirming ? (
+            <span className="net-gates__actions">
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={busy}
+                onClick={() => {
+                  setConfirming(false);
+                  onRelease();
+                }}
+              >
+                Confirm release
+              </Button>
+              <Button
+                variant="tertiary"
+                size="sm"
+                disabled={busy}
+                onClick={() => {
+                  setConfirming(false);
+                }}
+              >
+                Keep
+              </Button>
+            </span>
+          ) : (
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() => {
+                setConfirming(true);
+              }}
+            >
+              Release
+            </Button>
+          )
         ) : (
           <span className="net-gates__actions">
-            <button
-              type="button"
-              className="btn btn--ghost"
+            <Button
+              size="sm"
               disabled={busy || !stand.available}
               onClick={() => {
                 onLease('preferential');
               }}
             >
               Lease
-            </button>
-            <button
-              type="button"
-              className="btn btn--ghost"
+            </Button>
+            <Button
+              size="sm"
               disabled={busy || !stand.available || stand.holders.length > 0}
               onClick={() => {
                 onLease('exclusive');
               }}
             >
               Exclusive
-            </button>
+            </Button>
           </span>
         )}
       </td>
@@ -332,11 +370,7 @@ export function AirportGatesView({ airports }: { airports: readonly string[] }):
 
           <Requirement requirement={data.requirement} />
 
-          {notice !== null && (
-            <p className="page__note" role="alert">
-              {notice}
-            </p>
-          )}
+          {notice !== null && <StateBlock kind="refused">{notice}</StateBlock>}
 
           <label className="net-slots__pick">
             <span className="visually-hidden">Stand type</span>
@@ -355,32 +389,34 @@ export function AirportGatesView({ airports }: { airports: readonly string[] }):
             </select>
           </label>
 
-          <table className="admin__table net-comp-table">
-            <thead>
-              <tr>
-                <th scope="col">Stand</th>
-                <th scope="col">Held by</th>
-                <th scope="col">Your use</th>
-                <th scope="col">Cost</th>
-                <th scope="col" />
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((stand) => (
-                <StandRow
-                  key={stand.position}
-                  stand={stand}
-                  busy={busyStand === stand.position}
-                  onLease={(contract) => {
-                    void onChange(stand, contract);
-                  }}
-                  onRelease={() => {
-                    void onChange(stand, null);
-                  }}
-                />
-              ))}
-            </tbody>
-          </table>
+          <div className="net-table-scroll" role="region" aria-label="Stands" tabIndex={0}>
+            <table className="admin__table net-comp-table">
+              <thead>
+                <tr>
+                  <th scope="col">Stand</th>
+                  <th scope="col">Held by</th>
+                  <th scope="col">Your use</th>
+                  <th scope="col">Cost</th>
+                  <th scope="col" />
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((stand) => (
+                  <StandRow
+                    key={stand.position}
+                    stand={stand}
+                    busy={busyStand === stand.position}
+                    onLease={(contract) => {
+                      void onChange(stand, contract);
+                    }}
+                    onRelease={() => {
+                      void onChange(stand, null);
+                    }}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
 
           <p className="net-panel__hint">
             A slot is permission to move; a stand is somewhere to park. You need both. An exclusive
