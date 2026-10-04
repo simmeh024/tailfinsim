@@ -984,6 +984,21 @@
 
 /* Narrow screens: let the columns stack and the stage lead. */
 @media (max-width: 60rem) {
+  /*
+   * The toolbar wraps rather than running off the right edge (UX pass, UX-09).
+   * At 390px Compare, Undo, Redo and **Save config** were off-screen and out of
+   * reach — the builder could be used on a phone and not saved from one.
+   */
+  .cc-toolbar,
+  .cc-toolbar__actions,
+  .cc-statusrow {
+    flex-wrap: wrap;
+  }
+
+  .cc-toolbar {
+    gap: var(--space-2);
+  }
+
   .cc-main {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr) auto;

@@ -956,6 +956,12 @@
     padding: var(--space-3);
   }
 
+  /* Clear of the collapsed tools toggle, which sits over the canvas's top-left
+     corner here and hid the family name under its chevron (UX pass). */
+  .livery-canvas__measure {
+    left: calc(2.75rem + var(--space-3));
+  }
+
   .livery-fleet-preview {
     width: min(96%, 142cqh);
     border-radius: var(--radius-md);
