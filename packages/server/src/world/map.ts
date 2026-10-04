@@ -1,9 +1,22 @@
-import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm';
+import { and, desc, eq, gte, isNotNull, isNull, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
 import { airlineMapColour } from '@tailfin/shared';
 
-import { airframe, airline, airlineHub, airport, flight, route } from '../db/schema';
+import {
+  airframe,
+  airline,
+  airlineHub,
+  airport,
+  flight,
+  flightResult,
+  route,
+  schedule,
+  scheduleLeg,
+} from '../db/schema';
+import { OPERATIONS_WINDOW_DAYS } from '../statistics/operations';
+
+import { worldGameNow } from './game-now';
 
 import type { Database } from '../db/client';
 
@@ -53,6 +66,50 @@ export interface WorldMapRoute {
   originName: string;
   destinationName: string;
 }
+
+/**
+ * One of the player's own routes, with what App. H.3 draws it by.
+ *
+ * > *Thickness — weekly frequency. Opacity — load factor, busy routes glow,
+ * > weak ones fade. Dashed — seasonal or suspended.* — §H.3
+ *
+ * M7-03 shipped the line and deferred these three, because the payload carried
+ * none of them. Schedules and settled flights have existed since; this is the
+ * read that puts them on the line. The owner's own figures only — the rivals'
+ * `traffic` rows carry none of this, and the competition panel is where a
+ * rival's frequency is shown, through its own disclosure rules.
+ */
+export interface WorldMapOwnRoute extends WorldMapRoute {
+  /** False for a paused route, which the map draws dashed. */
+  active: boolean;
+  /**
+   * Departures a week on this directed leg, from the airline's active schedules:
+   * each leg of a rotation flies once per run, and a rotation runs on each of
+   * its repeat days (seven for `daily`). A rule rather than a count of
+   * materialised flights, so it is right on a node with no worker, where no
+   * flight is ever materialised. Zero for a route nothing is scheduled on.
+   */
+  weeklyFrequency: number;
+  /**
+   * Passengers over seats on the leg's settled scheduled flights in the last
+   * {@link LOAD_FACTOR_WINDOW_DAYS} game days, or null when none settled — a
+   * new route, or any route on a node with no worker. Null is "unknown", not
+   * zero: an empty aeroplane and an unflown route are different things to fade.
+   */
+  loadFactor: number | null;
+}
+
+/**
+ * The load-factor window, in game days: the operations dashboard's.
+ *
+ * The same thirty days the network load factor on that dashboard and the route
+ * diagnosis are measured over, so a line that fades here is fading by the
+ * number the player can look up there.
+ */
+export const LOAD_FACTOR_WINDOW_DAYS = OPERATIONS_WINDOW_DAYS;
+
+const DAYS_PER_WEEK = 7;
+const MS_PER_DAY = 86_400_000;
 
 /** An active route flown by some carrier in the world — the basis of a plane icon. */
 export interface WorldMapTrafficRoute extends WorldMapRoute {
@@ -115,7 +172,7 @@ export interface WorldMapFlight {
 
 export interface WorldMap {
   hubs: WorldHub[];
-  routes: WorldMapRoute[];
+  routes: WorldMapOwnRoute[];
   traffic: WorldMapTrafficRoute[];
   flights: WorldMapFlight[];
 }
@@ -133,11 +190,14 @@ export async function readWorldMap(
   db: Database,
   airlineId: string,
   worldId: string,
+  now: Date = new Date(),
 ): Promise<WorldMap> {
   const origin = alias(airport, 'origin_airport');
   const destination = alias(airport, 'destination_airport');
+  const gameNow = await worldGameNow(db, worldId, now);
+  const loadSince = new Date(gameNow.getTime() - LOAD_FACTOR_WINDOW_DAYS * MS_PER_DAY);
 
-  const [hubRows, routeRows, trafficRows, flightRows] = await Promise.all([
+  const [hubRows, routeRows, trafficRows, flightRows, legRows, loadRows] = await Promise.all([
     db
       .select({
         icao: airport.ident,
@@ -151,6 +211,9 @@ export async function readWorldMap(
     db
       .select({
         id: route.id,
+        originCode: route.originIcao,
+        destinationCode: route.destinationIcao,
+        active: route.active,
         originIdent: origin.ident,
         destinationIdent: destination.ident,
         originName: origin.name,
@@ -232,7 +295,64 @@ export async function readWorldMap(
       )
       .orderBy(desc(flight.actualDeparture))
       .limit(AIRBORNE_LIMIT),
+    // Every leg of the airline's active rotations, with how often it runs — the
+    // weekly frequency is folded from these below, per directed airport pair.
+    db
+      .select({
+        originCode: scheduleLeg.originIcao,
+        destinationCode: scheduleLeg.destinationIcao,
+        repeatKind: schedule.repeatKind,
+        repeatDays: schedule.repeatDays,
+      })
+      .from(scheduleLeg)
+      .innerJoin(schedule, eq(schedule.id, scheduleLeg.scheduleId))
+      .where(
+        and(
+          eq(schedule.airlineId, airlineId),
+          eq(schedule.worldId, worldId),
+          eq(schedule.active, true),
+        ),
+      ),
+    /*
+     * Seats and passengers per directed pair over the window, as one grouped
+     * query. `sum` of an integer column is a bigint, which the driver returns as
+     * a string — so the type says string and the fold below converts.
+     */
+    db
+      .select({
+        originCode: flight.originIcao,
+        destinationCode: flight.destinationIcao,
+        seats: sql<string>`sum(${flightResult.seats})`,
+        passengers: sql<string>`sum(${flightResult.passengers})`,
+      })
+      .from(flightResult)
+      .innerJoin(flight, eq(flight.id, flightResult.flightId))
+      .where(
+        and(
+          eq(flightResult.airlineId, airlineId),
+          eq(flightResult.worldId, worldId),
+          eq(flightResult.kind, 'scheduled'),
+          gte(flightResult.settledAt, loadSince),
+        ),
+      )
+      .groupBy(flight.originIcao, flight.destinationIcao),
   ]);
+
+  /** Schedule legs and flights store `icao_code`, so that is the key — not `ident`. */
+  const pairKey = (from: string, to: string): string => `${from}>${to}`;
+  const weekly = new Map<string, number>();
+  for (const leg of legRows) {
+    const runs = leg.repeatKind === 'daily' ? DAYS_PER_WEEK : (leg.repeatDays?.length ?? 0);
+    const key = pairKey(leg.originCode, leg.destinationCode);
+    weekly.set(key, (weekly.get(key) ?? 0) + runs);
+  }
+  const loadFactors = new Map<string, number>();
+  for (const row of loadRows) {
+    const seats = Number(row.seats);
+    if (seats > 0) {
+      loadFactors.set(pairKey(row.originCode, row.destinationCode), Number(row.passengers) / seats);
+    }
+  }
 
   return {
     hubs: hubRows.map((row) => ({
@@ -248,6 +368,9 @@ export async function readWorldMap(
       destinationIcao: row.destinationIdent,
       originName: row.originName,
       destinationName: row.destinationName,
+      active: row.active,
+      weeklyFrequency: weekly.get(pairKey(row.originCode, row.destinationCode)) ?? 0,
+      loadFactor: loadFactors.get(pairKey(row.originCode, row.destinationCode)) ?? null,
     })),
     traffic: trafficRows.map((row) => ({
       id: row.id,

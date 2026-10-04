@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { airport, flight, route } from '../db/schema';
+import { airport, flight, flightResult, route, schedule, scheduleLeg } from '../db/schema';
 import { createAirportIdentities } from '../test-fixtures/airport-codes';
 import {
   createFoundedAirlineFixtureHarness,
@@ -10,7 +10,8 @@ import {
   type FoundedAirlineFixtureHarness,
 } from '../test-fixtures/founded-airline';
 
-import { readWorldMap } from './map';
+import { worldGameNow } from './game-now';
+import { LOAD_FACTOR_WINDOW_DAYS, readWorldMap } from './map';
 
 /**
  * The aeroplanes on the world map are flights (WORLD-10).
@@ -181,6 +182,116 @@ describeDb('the aeroplanes on the world map', () => {
     // but the query is still scoped, because the resolution is what makes that
     // safe rather than the absence of a parameter.
     expect(map.flights).toHaveLength(0);
+  });
+
+  it('says how often, how full and whether each own route flies (§H.3)', async () => {
+    /*
+     * Thickness is weekly frequency, opacity is load factor, dashed is
+     * suspended. M7-03 deferred all three because this payload carried none of
+     * them; the frequency is folded from active schedules, the load factor from
+     * settled scheduled flights over the dashboard's window.
+     */
+    const fixture = await fixtures.create();
+    const worldId = fixture.world.id;
+    const airlineId = fixture.airline.id;
+    const from = await makeAirport('Origin');
+    const to = await makeAirport('Destination');
+    const elsewhere = await makeAirport('Elsewhere');
+    const leg = { worldId, airlineId, greatCircleNm: 200 };
+    await db.db.insert(route).values([
+      { ...leg, originIcao: from.icao, destinationIcao: to.icao, active: true },
+      { ...leg, originIcao: to.icao, destinationIcao: from.icao, active: true },
+      { ...leg, originIcao: from.icao, destinationIcao: elsewhere.icao, active: false },
+    ]);
+
+    // A daily out-and-back, and a Monday-Wednesday-Friday one on the same pair:
+    // ten departures a week each way. A paused rotation on the pair must not count.
+    const rotation = async (
+      repeat: { kind: 'daily' } | { kind: 'weekdays'; days: number[] },
+      active = true,
+    ): Promise<void> => {
+      const [created] = await db.db
+        .insert(schedule)
+        .values({
+          worldId,
+          airlineId,
+          airframeId: '00000000-0000-4000-8000-000000000002',
+          repeatKind: repeat.kind,
+          repeatDays: repeat.kind === 'daily' ? null : repeat.days,
+          active,
+        })
+        .returning({ id: schedule.id });
+      if (!created) throw new Error('schedule was not created');
+      await db.db.insert(scheduleLeg).values([
+        {
+          scheduleId: created.id,
+          legIndex: 0,
+          originIcao: from.icao,
+          destinationIcao: to.icao,
+          departureMinute: 480,
+          blockMinutes: 60,
+          turnaroundMinutes: 45,
+        },
+        {
+          scheduleId: created.id,
+          legIndex: 1,
+          originIcao: to.icao,
+          destinationIcao: from.icao,
+          departureMinute: 585,
+          blockMinutes: 60,
+          turnaroundMinutes: 45,
+        },
+      ]);
+    };
+    await rotation({ kind: 'daily' });
+    await rotation({ kind: 'weekdays', days: [1, 3, 5] });
+    await rotation({ kind: 'daily' }, false);
+
+    // Two settled flights out inside the window, 80 and 60 of 100 seats: 0.7. A
+    // third, older than the window and empty, would drag that down if counted.
+    const now = new Date();
+    const gameNow = await worldGameNow(db.db, worldId, now);
+    const settle = async (daysAgo: number, passengers: number): Promise<void> => {
+      const departed = new Date(gameNow.getTime() - daysAgo * 86_400_000);
+      const arrived = new Date(departed.getTime() + 60 * 60 * 1000);
+      const id = await bookFlight(fixture, { from: from.icao, to: to.icao }, { departed, arrived });
+      await db.db.insert(flightResult).values({
+        worldId,
+        flightId: id,
+        airlineId,
+        revenueMinor: passengers * 10_000,
+        costMinor: 500_000,
+        netMinor: passengers * 10_000 - 500_000,
+        seats: 100,
+        passengers,
+        blockSeconds: 3_600,
+        breakdown: '{}',
+        settlementVersion: 'test',
+        settledAt: arrived,
+      });
+    };
+    await settle(2, 80);
+    await settle(5, 60);
+    await settle(LOAD_FACTOR_WINDOW_DAYS + 5, 0);
+
+    const map = await readWorldMap(db.db, airlineId, worldId, now);
+    const find = (a: { ident: string }, b: { ident: string }) =>
+      map.routes.find((r) => r.originIcao === a.ident && r.destinationIcao === b.ident);
+
+    const out = find(from, to);
+    expect(out?.active).toBe(true);
+    expect(out?.weeklyFrequency).toBe(10);
+    expect(out?.loadFactor).toBeCloseTo(0.7, 6);
+
+    // Flown just as often, and nothing has settled on it: unknown, not zero.
+    const back = find(to, from);
+    expect(back?.weeklyFrequency).toBe(10);
+    expect(back?.loadFactor).toBeNull();
+
+    const paused = find(from, elsewhere);
+    expect(paused?.active).toBe(false);
+    expect(paused?.weeklyFrequency).toBe(0);
+    expect(paused?.loadFactor).toBeNull();
   });
 
   it('still draws the network when nothing is flying it', async () => {
