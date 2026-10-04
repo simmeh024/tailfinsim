@@ -5,7 +5,7 @@ import {
   type Layer,
   type MapViewState,
 } from '@deck.gl/core';
-import { IconLayer, PathLayer } from '@deck.gl/layers';
+import { IconLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 import DeckGL, { type DeckGLRef } from '@deck.gl/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
@@ -499,9 +499,20 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
 
   // Any airport opens the panel now — reachable or not — so a click can offer to
   // plan a route, show why it can't, or list the routes already there.
+  /*
+   * One selection at a time, and the label goes with the click.
+   *
+   * The flight was not cleared here, so an aeroplane selected before the airport
+   * came back into the panel the moment the airport was dismissed. And the hover
+   * label stayed where it was: selecting opens the context panel, which on a
+   * phone shrinks the stage, so the label was left floating over a point the
+   * airport had moved away from.
+   */
   const onAirportClick = useCallback((airport: WorldAirport) => {
     setSelectedAirport(airport);
     setSelectedRoute(null);
+    setSelectedFlight(null);
+    setHover(null);
   }, []);
 
   /*
@@ -628,6 +639,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     (info: { object?: unknown }): boolean => {
       const plane = info.object as WorldPlane | undefined;
       if (!plane) return false;
+      setHover(null);
       const airborne = flightById.get(plane.sourceId);
       if (airborne) {
         setSelectedFlight(airborne);
@@ -759,6 +771,46 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       getPolygonOffset: () => [0, -60000],
     });
   }, [selectedRoute, palette.route, quality]);
+
+  /*
+   * Where the selection is, on the map itself.
+   *
+   * Selecting an airport or an aeroplane only ever changed the context panel —
+   * nothing on the canvas said which of four thousand dots the panel was about,
+   * and on a phone, where the panel sits below the stage, the two were not even
+   * on screen together. §H.2's *"same selection model"* across both projections
+   * is this one ring, drawn the same way on each: the route colour, a little
+   * larger than the largest dot, filled faintly so it reads over terrain, and
+   * tracking an aeroplane as it flies.
+   */
+  const selectedPosition = useMemo((): LngLat | null => {
+    if (selectedAirport !== null) return selectedAirport.position;
+    if (selectedFlight === null) return null;
+    return planes.find((plane) => plane.sourceId === selectedFlight.id)?.position ?? null;
+  }, [selectedAirport, selectedFlight, planes]);
+
+  const selectionLayer = useMemo(() => {
+    if (selectedPosition === null) return false;
+    const [r, g, b] = palette.route;
+    return new ScatterplotLayer<{ position: LngLat }>({
+      id: 'world-selection',
+      data: [{ position: selectedPosition }],
+      getPosition: (d) => d.position,
+      getRadius: 16,
+      radiusUnits: 'pixels',
+      filled: true,
+      getFillColor: [r, g, b, 56],
+      stroked: true,
+      getLineColor: [r, g, b, 255],
+      lineWidthUnits: 'pixels',
+      getLineWidth: 2.5,
+      billboard: true,
+      pickable: false,
+      // Over the airports and hubs it marks, under the aeroplanes.
+      getPolygonOffset: () => [0, -62000],
+      parameters: { cullMode: 'none' },
+    });
+  }, [selectedPosition, palette.route]);
 
   // The competition's routes as their own togglable layer — neutral, so ownership reads
   // as colour (M7-03). Below the un-bundle zoom they collapse into corridors so the
@@ -928,6 +980,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       rivalLinesLayer,
       corridorLayer,
       selectedRouteLayer,
+      selectionLayer,
       shimmerLayer,
       planeHaloLayer,
       planeLayer,
@@ -937,6 +990,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       rivalLinesLayer,
       corridorLayer,
       selectedRouteLayer,
+      selectionLayer,
       shimmerLayer,
       planeHaloLayer,
       planeLayer,
@@ -1421,6 +1475,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       if (row.airport) {
         const airport = row.airport;
         setSelectedRoute(null);
+        setSelectedFlight(null);
         setSelectedAirport(airport);
         /*
          * Fly there, but only if it is not already on screen.
