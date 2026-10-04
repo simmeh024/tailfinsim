@@ -97,16 +97,16 @@ and shipping such a change as a new economy version would force every world to
 re-pin its balance in order to stop a warning firing a week early. It is the same
 call M8-08 made for `CRITICAL_DAYS` and M8-11 for `RIVAL_SHARE_THRESHOLD`.
 
-| Kind                       | Severity           | Fires when                                                                                                     | Links to                 |
-| -------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| `route_loss_making`        | critical           | Every day the route flew in the trailing 7 game days lost money, over at least 3 flown days                    | the route, on `/network` |
-| `cash_runway`              | critical           | §13.6's projection is below 30 game days                                                                       | `/finance`               |
-| `dscr_headroom`            | critical / warning | Coverage is below §13.1's floor / within 20% of it                                                             | `/finance`               |
-| `crew_shortfall`           | critical / warning | A `(family, rank)` is short today / once the aircraft due inside 5 game days arrive                            | `/crew`                  |
-| `check_due_unbooked`       | critical / warning | A check is overdue or the airframe is grounded / the interval is 90% used — and the airframe is not in a check | `/fleet`                 |
-| `ground_contract_expiring` | critical / warning | An active contract's `term_end` is inside 7 / 30 game days                                                     | `/operations`            |
-| `competitor_entered_route` | warning            | A rival's **first settled flight** on the airport pair falls inside the last 14 game days                      | the route, on `/network` |
-| `route_spill`              | warning            | Spill exceeds 15% of offered demand over the trailing game month, across at least 5 settled flights            | the route, on `/network` |
+| Kind                       | Severity           | Fires when                                                                                                     | Links to                             |
+| -------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `route_loss_making`        | critical           | Every day the route flew in the trailing 7 game days lost money, over at least 3 flown days                    | the route, on `/network`             |
+| `cash_runway`              | critical           | §13.6's projection is below 30 game days                                                                       | `/finance`                           |
+| `dscr_headroom`            | critical / warning | Coverage is below §13.1's floor / within 20% of it                                                             | `/finance`                           |
+| `crew_shortfall`           | critical / warning | A `(family, rank)` is short today / once the aircraft due inside 5 game days arrive                            | `/crew`                              |
+| `check_due_unbooked`       | critical / warning | A check is overdue or the airframe is grounded / the interval is 90% used — and the airframe is not in a check | `/fleet?maintenance=<id>`            |
+| `ground_contract_expiring` | critical / warning | An active contract's `term_end` is inside 7 / 30 game days                                                     | `/network?view=ground&contract=<id>` |
+| `competitor_entered_route` | warning            | A rival's **first settled flight** on the airport pair falls inside the last 14 game days                      | the route, on `/network`             |
+| `route_spill`              | warning            | Spill exceeds 15% of offered demand over the trailing game month, across at least 5 settled flights            | the route, on `/network`             |
 
 There is no `info` severity. An alert nobody has to act on is a statistic, and
 §14.3's dashboards are where a statistic goes.

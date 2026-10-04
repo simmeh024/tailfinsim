@@ -264,11 +264,57 @@ client, and a cross-owner id receives the endpoint's identical 404 (ADR-0020). E
 
 ---
 
+## The page
+
+**SURFACE-05.** Ground handling is the **Network page's Ground view**, beside Slots and Gates:
+a handling contract is an arrangement made _at an airport_, like the slot and the stand a
+schedule also needs there, and the three share one airport picker. All six routes above have a
+consumer.
+
+- **Across your network** lists every arrangement from `GET /api/ground/contracts`: the station,
+  the line, who handles it, the term, the volume commitment (_"41 of 63 departures flown"_ and the
+  shortfall it would bill if the term ended now) and what leaving it would cost. This is the
+  **destination of the lapse alert**: `ground_contract_expiring` links to
+  `/network?view=ground&contract=<id>`, which opens on that contract's station with its row marked.
+- **One station** shows each service line: what is arranged, what walk-up costs instead, every
+  vendor grade with all five of §9.3's numbers, and handling it yourself.
+- **Scarcity is a market fact.** Each grade says how many of its slots are free; a full grade says
+  _"Full — all 2 slots are held by airlines in this world. One frees when a contract ends or
+  lapses"_, and its Sign button is disabled rather than refused. Capacity counts only active
+  contracts, so that sentence changes when a rival's term lapses.
+- **The term renders in world dates** with the real time it represents at the world's speed — the
+  same 30 game days read _"about 15 real days at 2×"_ and _"about 7.5 at 4×"_ — because `term_end`
+  is game time and a 4× world reaches it in half the real time a 2× world does.
+- **A null `term_end` reads _No term_**: _"Signed before contracts had terms. It does not lapse."_
+  Never _expired_ and never a date at the epoch. Self-handling reads _No term_ too — there is no
+  counterparty. Both are tested.
+- **A term past its end that is still listed** reads _Past its term_ with why: terms are lapsed by
+  the worker, and on a node without one a contract signed on opening day holds its vendor slot for
+  ever. A page that went on calling it _Active_ would make a missing process look like a frozen
+  market.
+- **Self-handling is presented as the alternative it is**: the station's required headcount, the
+  salary per head, the monthly payroll at the chosen headcount — payable whether or not anything
+  flies — against per-turn fees; and, without a hub, why it is not available.
+- Every write states its cost on the button (_"End the contract — $9,000 to break it now"_,
+  _"Sign budget — replaces the current arrangement, $9,000 to break it"_), sends the line and the
+  choice and nothing else, and replaces the station with the server's answer. A refused write
+  replaces nothing and says why. No write is retried — signing and terminating move money and take
+  no idempotency key.
+- `ground/routes-refusals.test.ts` proves at the API boundary that a refused signing (a full
+  vendor, a grade not offered, a contract the airline cannot afford to break) and a refused
+  termination leave cash, movements, ledger lines and contracts unchanged.
+- Money is formatted through the display-currency boundary (M8-02); the four states are
+  `StateBlock`'s; colour is tokens only.
+
+---
+
 ## What is not built
 
-**No web UI.** All six PRs were server and sim. The station view carries everything a page would
-need — all five vendor numbers, the self-handling offer with its reason and required headcount,
-the live penalty and shortfall — and nothing renders it yet.
+**Per-turn money on the page.** The station view carries price _indices_ — a grade against the
+standard rate, walk-up against both — and the absolute per-turn fee lives in the economy config,
+so the page states the self-handling trade as fixed payroll against per-turn fees rather than as a
+break-even number it would have to compute. Sending the per-turn figure is the server change that
+would let it.
 
 **Catering is not tiered per cabin class.** §9.3 calls it _"a first-class choice"_ that links
 into the cabin builder, and the `catering` service line exists as a contract with no priced or
