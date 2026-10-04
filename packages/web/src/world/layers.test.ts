@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { COARSE_WORLD } from './land';
 import {
   airportLevelForZoom,
+  airportScaleForZoom,
   createWorldLayers,
   planeSpriteSize,
   visibleAirportsAtLevel,
@@ -468,6 +469,78 @@ describe('projection-independent world layers', () => {
 
     const hidden = build(false).some((layer) => layer !== false && layer.id === 'world-airports');
     expect(hidden).toBe(false);
+  });
+
+  it('draws the airports smaller on the whole-world view, and full size from the continent', () => {
+    // On the far-out views the majors sat on top of each other; on a phone the map
+    // was more amber disc than map. Discrete, so the layers rebuild on a threshold.
+    expect(airportScaleForZoom(0.3)).toBeLessThan(airportScaleForZoom(1.5));
+    expect(airportScaleForZoom(1.5)).toBeLessThan(airportScaleForZoom(2.5));
+    expect(airportScaleForZoom(2.5)).toBe(1);
+    expect(airportScaleForZoom(8)).toBe(1);
+
+    const airports: WorldAirport[] = [
+      { position: [4.76, 52.31], name: 'Amsterdam', icao: 'EHAM', tier: 'flagship' },
+    ];
+    const layer = createWorldLayers({
+      palette,
+      quality: 'full',
+      routes: [],
+      airports,
+      hubs: [],
+      airportScale: airportScaleForZoom(0.3),
+      darkness: DARKNESS,
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
+      projection: 'flat',
+      visibility: {
+        graticule: false,
+        routes: false,
+        terminator: false,
+        borders: false,
+        terrain: false,
+        airports: true,
+      },
+    }).find(
+      (entry): entry is ScatterplotLayer<WorldAirport> =>
+        entry instanceof ScatterplotLayer && entry.id === 'world-airports',
+    );
+    expect(layer?.props.radiusScale).toBe(airportScaleForZoom(0.3));
+    // The findability floor comes down with it, or it would undo the scale.
+    expect(layer?.props.radiusMinPixels).toBeLessThan(5);
+    expect(layer?.props.radiusMinPixels).toBeGreaterThanOrEqual(3.5);
+  });
+
+  it('hands deck.gl the same night texture until the field or its colour changes', () => {
+    // A new image is a re-upload of 512×256 texels, and the layer list is rebuilt
+    // on every toggle and every airport-tier threshold, not only on the minute.
+    const build = (field = DARKNESS, night = palette.night) =>
+      createWorldLayers({
+        palette: { ...palette, night },
+        quality: 'full',
+        routes: [],
+        airports: [],
+        hubs: [],
+        darkness: field,
+        land: COARSE_WORLD.land,
+        borders: COARSE_WORLD.borders,
+        projection: 'flat',
+        visibility: {
+          graticule: false,
+          routes: false,
+          terminator: true,
+          borders: false,
+          terrain: false,
+          airports: false,
+        },
+      }).find((entry): entry is Layer => entry !== false && entry.id === 'world-terminator');
+    const image = (layer: Layer | undefined): unknown =>
+      (layer?.props as { image?: unknown } | undefined)?.image;
+
+    expect(image(build())).toBe(image(build()));
+    const later = createDarknessField(new Date('2026-08-22T18:00:00.000Z'), 16, 8);
+    expect(image(build(later))).not.toBe(image(build()));
+    expect(image(build(DARKNESS, [1, 2, 3, 200]))).not.toBe(image(build()));
   });
 
   it('reveals smaller airport tiers only as the zoom increases', () => {

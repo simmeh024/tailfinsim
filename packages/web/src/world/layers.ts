@@ -145,6 +145,26 @@ export function planeSpriteSize(zoom: number): number {
   return 8 + 10 * growth;
 }
 
+/**
+ * How much smaller the airport dots are drawn on the far-out views (world map pass).
+ *
+ * The dots are 4–8 px with a 5 px floor so they can be found (M7's enlargement),
+ * and on the views a player can find a continent from that is right. On the
+ * whole-world view it is not: the hundred-odd major airports drawn there sit on
+ * top of each other in Europe, the US north-east and East Asia, and on a phone the
+ * map was more amber disc than map — the network the player came to look at was
+ * underneath it. So they shrink there, the way the aeroplane sprites already do,
+ * and return to full size by the continental view.
+ *
+ * Discrete, like `airportLevelForZoom`, so the layer list is rebuilt when a
+ * threshold is crossed rather than on every scroll frame.
+ */
+export function airportScaleForZoom(zoom: number): number {
+  if (zoom < 1) return 0.7;
+  if (zoom < 2) return 0.85;
+  return 1;
+}
+
 /** The airports to draw at a zoom level: every tier at or above the level's cutoff. */
 export function visibleAirportsAtLevel(
   airports: readonly WorldAirport[],
@@ -176,6 +196,8 @@ export interface CreateWorldLayersOptions {
    * to learn what any of them was without clicking it and opening a whole panel.
    */
   onAirportHover?: (airport: WorldAirport | null, at: HoverPoint) => void;
+  /** `airportScaleForZoom` at the camera's zoom; 1 (full size) when absent. */
+  airportScale?: number;
   darkness: DarknessField;
   /**
    * The coastline outline to draw.
@@ -555,6 +577,25 @@ function ownRouteLines(
 }
 
 /**
+ * The night texture, once per field and night colour.
+ *
+ * `createWorldLayers` runs on every toggle, every theme change and every airport
+ * tier threshold the zoom crosses, and building the texture there handed deck.gl
+ * a new 512×256 image each time — which it re-uploads, because `image` changed.
+ * The field itself only changes on the in-game minute, so that is when the
+ * texture should.
+ */
+const NIGHT_TEXTURES = new WeakMap<DarknessField, { night: RgbaColor; image: ImageData }>();
+
+function memoisedNightTexture(field: DarknessField, night: RgbaColor): ImageData {
+  const cached = NIGHT_TEXTURES.get(field);
+  if (cached?.night.every((channel, index) => channel === night[index])) return cached.image;
+  const image = nightTexture(field, night);
+  NIGHT_TEXTURES.set(field, { night, image });
+  return image;
+}
+
+/**
  * One projection-agnostic layer list. MapView and GlobeView consume these exact
  * instances; projection switching never forks route, terminator, or toggle logic.
  */
@@ -571,6 +612,7 @@ export function createWorldLayers({
   reachableIcaos,
   onAirportClick,
   onAirportHover,
+  airportScale = 1,
   visibility,
 }: CreateWorldLayersOptions): (Layer | false)[] {
   const bounds = worldBounds(projection, quality);
@@ -739,7 +781,7 @@ export function createWorldLayers({
         // The whole sphere, once. `BitmapLayer` maps the image's top edge to the
         // northern bound, which is why `createDarknessField` puts +90° in row 0.
         bounds,
-        image: nightTexture(darkness, palette.night),
+        image: memoisedNightTexture(darkness, palette.night),
         textureParameters: DATA_TEXTURE_SAMPLER,
         /*
          * No `_imageCoordinateSystem`, deliberately.
@@ -818,7 +860,7 @@ export function createWorldLayers({
         radiusUnits: 'pixels',
         // A firm floor so the dots stay findable even at the whole-globe zoom, where
         // a tier-scaled radius would otherwise shrink them to nothing.
-        radiusMinPixels: 5,
+        radiusMinPixels: Math.max(3.5, 5 * airportScale),
         radiusMaxPixels: 18,
         // A plain array while nothing is highlighted (the pre-fleet map and the
         // tests); a per-airport accessor once a reachable set fades the rest back.
@@ -841,7 +883,7 @@ export function createWorldLayers({
         // Clickable so the page can open a route panel; a fatter pick radius makes
         // the small dots easy to hit without changing how they look.
         pickable: onAirportClick !== undefined || onAirportHover !== undefined,
-        radiusScale: 1,
+        radiusScale: airportScale,
         onClick: onAirportClick
           ? (info) => {
               if (info.object) onAirportClick(info.object as WorldAirport);

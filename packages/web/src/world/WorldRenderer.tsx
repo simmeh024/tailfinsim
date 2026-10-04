@@ -45,6 +45,7 @@ import { airportLabel, flightLabel, tipPlacement, type HoverLabel } from './hove
 import { COARSE_WORLD, LAND_DETAIL_ZOOM, loadDetailedWorld, type WorldGeometry } from './land';
 import {
   airportLevelForZoom,
+  airportScaleForZoom,
   createWorldLayers,
   planeSpriteSize,
   visibleAirportsAtLevel,
@@ -484,6 +485,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   // fields revealing as the camera comes in. Keyed to a discrete level so the list
   // is refiltered on a threshold crossing, not on every scroll frame.
   const airportLevel = airportLevelForZoom(viewState.zoom);
+  const airportScale = airportScaleForZoom(viewState.zoom);
   const visibleAirports = useMemo(
     () => visibleAirportsAtLevel(airports, airportLevel),
     [airports, airportLevel],
@@ -554,6 +556,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
         reachableIcaos,
         onAirportClick,
         onAirportHover,
+        airportScale,
         darkness,
         land: geometry.land,
         borders: geometry.borders,
@@ -569,6 +572,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       reachableIcaos,
       onAirportClick,
       onAirportHover,
+      airportScale,
       darkness,
       geometry,
       visibility,
