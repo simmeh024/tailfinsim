@@ -144,6 +144,16 @@ camera ends up.
 - **A link** opens the schematic on the first frame, and places the world camera on the airport
   as soon as its position is known, so leaving lands there too.
 
+**The flights in and out cannot be interrupted** (`LANDING_TRANSITION` in `camera.ts`). deck.gl's
+default is to cancel a transition, where it stands, on any view-state update that is not the
+transition's own frame. Leaving selects the airport just left, and on a phone that grows the
+context panel under the stage: the canvas resized mid-flight, deck re-applied a view state one
+frame behind the transition, and the fly-out stopped at zoom 12 — in the airport band, so the next
+scroll tick re-opened the map the player had just closed. That was measured on the running app at
+390 px wide, and it is why the doc's _"inside the terminal area"_ held only on a desktop. The same
+applies to a Places search result, which flies and selects at once. Both flights are under a
+second, so a gesture during one simply waits for it.
+
 ### Continuous, not a page change
 
 The schematic grows out of the airport's point on the stage (deck.gl's `project`, or the stage

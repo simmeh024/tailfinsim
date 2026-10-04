@@ -25,7 +25,7 @@ import {
   TERMINAL_EXIT_ZOOM,
   type HandoffAirport,
 } from './bands';
-import { clampViewState, focusViewState, MAX_ZOOM } from './camera';
+import { clampViewState, focusViewState, LANDING_TRANSITION, MAX_ZOOM } from './camera';
 import {
   flightPath,
   greatCirclePath,
@@ -1146,6 +1146,9 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
             ? {
                 transitionDuration: AIRPORT_HANDOFF_MS,
                 transitionInterpolator: new FlyToInterpolator(),
+                // The fly-out selects the airport it left, which can resize the
+                // stage mid-flight; see `LANDING_TRANSITION`.
+                ...LANDING_TRANSITION,
               }
             : {}),
         }),
@@ -1449,7 +1452,13 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
               zoom: Math.max(current.zoom, 6),
               ...(reducedMotion
                 ? {}
-                : { transitionDuration: 700, transitionInterpolator: new FlyToInterpolator() }),
+                : {
+                    transitionDuration: 700,
+                    transitionInterpolator: new FlyToInterpolator(),
+                    // Selecting the result publishes it to the context panel at the
+                    // same moment, which resizes the stage on a phone.
+                    ...LANDING_TRANSITION,
+                  }),
             }),
           );
         }

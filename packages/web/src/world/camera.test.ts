@@ -1,6 +1,7 @@
+import { TRANSITION_EVENTS } from '@deck.gl/core';
 import { describe, expect, it } from 'vitest';
 
-import { clampViewState, focusViewState } from './camera';
+import { clampViewState, focusViewState, LANDING_TRANSITION } from './camera';
 
 import type { MapViewState } from '@deck.gl/core';
 
@@ -107,6 +108,19 @@ describe('transitions', () => {
 
   it('adds no transition when the controller set none', () => {
     expect(clampViewState(FROM_DECK)).not.toHaveProperty('transitionDuration');
+    expect(clampViewState(FROM_DECK)).not.toHaveProperty('transitionInterruption');
+  });
+
+  it('keeps an application fly from being cancelled by whatever arrives mid-flight', () => {
+    // The airport-map fly-out on a phone: selecting the airport resized the stage,
+    // deck re-applied a view state a frame behind the transition, and the default
+    // BREAK left the camera at the ceiling, in the band that re-opens the map.
+    const landing = clampViewState({
+      ...FROM_DECK,
+      transitionDuration: 420,
+      ...LANDING_TRANSITION,
+    });
+    expect(landing.transitionInterruption).toBe(TRANSITION_EVENTS.IGNORE);
   });
 });
 

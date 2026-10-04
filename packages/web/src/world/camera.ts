@@ -1,4 +1,4 @@
-import type { MapViewState } from '@deck.gl/core';
+import { TRANSITION_EVENTS, type MapViewState } from '@deck.gl/core';
 
 /**
  * The camera both projections share.
@@ -48,9 +48,10 @@ function clamp(value: number, low: number, high: number): number {
  * `pitch` and `bearing` are pinned flat because neither projection offers a way
  * to change them and a tilted globe has no meaning here.
  *
- * `transitionDuration` and `transitionInterpolator` are carried through when the
- * controller sets them, which is what lets drag inertia finish: they are
- * instructions to deck.gl about the camera, not facts about the viewport.
+ * `transitionDuration`, `transitionInterpolator` and `transitionInterruption` are
+ * carried through when set, which is what lets drag inertia finish and an
+ * application fly land: they are instructions to deck.gl about the camera, not
+ * facts about the viewport.
  */
 export function clampViewState(viewState: MapViewState): MapViewState {
   const camera: MapViewState = {
@@ -68,8 +69,29 @@ export function clampViewState(viewState: MapViewState): MapViewState {
     ...camera,
     transitionDuration: viewState.transitionDuration,
     transitionInterpolator: viewState.transitionInterpolator,
+    ...(viewState.transitionInterruption === undefined
+      ? {}
+      : { transitionInterruption: viewState.transitionInterruption }),
   };
 }
+
+/**
+ * A camera move the application makes, that nothing incidental may cancel.
+ *
+ * deck.gl's default interruption is `BREAK`: during a transition, any view-state
+ * update that is not the transition's own frame cancels it **where it stands**.
+ * That is right for a user's drag and wrong for what else arrives mid-flight. The
+ * hand-off out of an airport map selects the airport it left, which on a phone
+ * grows the context panel under the stage; the canvas resizes, deck re-applies
+ * the controlled view state at the new size, that state is a frame behind the
+ * transition — and the fly-out stopped dead at the ceiling. Measured on the
+ * running app at phone width: the camera stayed at zoom 12, in the airport band,
+ * so the next scroll tick re-opened the map the player had just closed.
+ *
+ * `IGNORE` lets these flights land. They are short — the hand-off's 420 ms, a
+ * search result's 700 ms — so a gesture during one simply waits for it.
+ */
+export const LANDING_TRANSITION = { transitionInterruption: TRANSITION_EVENTS.IGNORE } as const;
 
 /**
  * Centre on a point and step one zoom level in.
