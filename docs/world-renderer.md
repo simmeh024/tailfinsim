@@ -556,15 +556,30 @@ The band is deliberately **asymmetric about the geometric terminator**, because 
 At elevation 0 — sunset — the shading is only about 16% of full night, and the _perceived_
 edge lands near -6, the end of civil twilight, which is where it actually gets dark.
 
-### The atmosphere ring is only for a whole globe
+### The atmosphere ring sits on the limb
 
-`.world-renderer__atmosphere` is a CSS ellipse inset 5% of the container, with a radial glow.
-It knows nothing about where the globe is, which is fine while the planet sits small and
-centred — that is what makes it read as a planet in space.
+`.world-renderer__atmosphere` used to be a CSS ellipse inset 5% of the container. It knew
+nothing about where the globe was, so it only lined up with a planet that happened to fill the
+stage: at the zoom the map opens at, it hung far outside a globe a third of the stage tall — a
+halo around nothing — and closer in it became a bright arc laid across the map, which is why it
+was cut off at zoom 1.
 
-Zoom in far enough that the sphere overflows the frame and the ring tracks nothing: it becomes
-a bright arc laid across the map, most obviously over a pole. So it is gated on
-`data-atmosphere`, set from the camera's zoom against `ATMOSPHERE_MAX_ZOOM`.
+It is now a circle centred where the globe's centre always projects, the middle of the stage, at
+the radius `globeRadiusPixels` derives from deck.gl's globe camera: the sphere scaled by
+`2^(zoom − log2(π·cos lat))`, an eye 1.5 stage-heights above the surface, and a sight line
+tangent to the limb. That is checked against canvas pixels on the running app — 106, 145.5 and
+197.5 px at zooms 0.5, 1 and 1.5 on an 860 px stage — and `camera.test.ts` holds those numbers,
+so a change to deck.gl's globe camera fails a test instead of shifting the ring. The renderer sets
+it as `--world-globe-radius`; `ATMOSPHERE_MAX_ZOOM` (2.5) is now only where the limb has left a
+typical stage.
+
+### The globe opens at a size that fills the stage
+
+The opening frame and Recentre fit the network with Mercator maths (`frame.ts`). For a network
+that spans the world that is a zoom under one, which on the globe is a planet a third of the
+stage tall. On the globe the frame's zoom is therefore at least `globeFillZoom` — the limb at 44%
+of the stage's shorter side — so a world-spanning network gets the whole visible hemisphere and a
+regional one still gets its own, closer fit.
 
 ### The globe's mesh resolution is the terminator's edge quality
 

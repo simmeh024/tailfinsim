@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ThemeProvider } from '../theme/ThemeProvider';
 
+import { globeFillZoom } from './camera';
 import { frameOf, networkPoints } from './frame';
 import { WORLD_PROJECTION_STORAGE_KEY } from './projection';
 import { WorldRenderer } from './WorldRenderer';
@@ -162,6 +163,37 @@ describe('opening the World page', () => {
     // 8 / 24 / 0.35 is the old constant, and what a failure here looks like.
     expect(view?.latitude).toBeGreaterThan(45);
     expect(view?.zoom).toBeGreaterThan(4);
+  });
+
+  it('opens a world-spanning network on a globe that fills the stage', async () => {
+    // The Mercator fit for a network from Los Angeles to Hong Kong is a zoom
+    // under one, which on the globe drew a planet a third of the stage tall.
+    localStorage.setItem(WORLD_PROJECTION_STORAGE_KEY, 'globe');
+    const leg = (id: string, target: [number, number]) => ({
+      id,
+      source: [-0.4614, 51.4775] as [number, number],
+      target,
+      originIcao: 'EGLL',
+      destinationIcao: id,
+      originName: 'London Heathrow',
+      destinationName: id,
+    });
+    const before = network.routes;
+    network.routes = [leg('KLAX', [-118.408, 33.942]), leg('VHHH', [113.915, 22.308])];
+    try {
+      await renderWorld();
+      const view = deckCapture.props?.viewState;
+      expect(view?.zoom).toBeGreaterThan(globeFillZoom(view?.latitude ?? 0) - 0.01);
+    } finally {
+      network.routes = before;
+    }
+  });
+
+  it('keeps a regional network’s own fit on the globe', async () => {
+    localStorage.setItem(WORLD_PROJECTION_STORAGE_KEY, 'globe');
+    await renderWorld();
+    // Frankfurt to Heathrow fits far closer in than a whole planet.
+    expect(deckCapture.props?.viewState.zoom).toBeGreaterThan(4);
   });
 
   it('leaves a player with no network looking at the whole world', async () => {

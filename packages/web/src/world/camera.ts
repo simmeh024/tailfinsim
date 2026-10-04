@@ -93,6 +93,58 @@ export function clampViewState(viewState: MapViewState): MapViewState {
  */
 export const LANDING_TRANSITION = { transitionInterruption: TRANSITION_EVENTS.IGNORE } as const;
 
+/** deck.gl's `GLOBE_RADIUS` (common units) and `GlobeViewport`'s default camera altitude. */
+const GLOBE_COMMON_RADIUS = 256;
+const GLOBE_CAMERA_ALTITUDE = 1.5;
+/** A stage height for when deck.gl has not measured the canvas yet. */
+const REFERENCE_STAGE_HEIGHT = 800;
+
+/**
+ * How big the globe is on screen: the radius of its limb, in CSS pixels.
+ *
+ * What the atmosphere ring needs, and what it did not have — it was a fixed
+ * ellipse inset 5 % from the stage, so at the zoom the map opens at it hung
+ * well clear of a planet a third of the stage tall, a halo around nothing.
+ *
+ * `_GlobeView`'s camera, from deck.gl 9.3's `GlobeViewport`: the sphere is
+ * `GLOBE_RADIUS` units scaled by `2^(zoom − log2(π·cos lat)) / height`, the eye
+ * sits `altitude` (1.5) stage-heights **above the surface**, and the vertical
+ * field of view is `2·atan(0.5 / altitude)`. The limb is where a sight line is
+ * tangent to the sphere. Checked against canvas pixels on the running app —
+ * zoom 0.5, 1 and 1.5 at the equator and zoom 1 at 45°N measured 106, 145.5,
+ * 197.5 and 198 px on an 860 px stage — and `camera.test.ts` holds those numbers.
+ * Projection-only maths: if deck.gl changes its globe camera, that test fails.
+ */
+export function globeRadiusPixels(zoom: number, latitude: number, height?: number): number {
+  const stage = height !== undefined && height > 0 ? height : REFERENCE_STAGE_HEIGHT;
+  const clampedLatitude = clamp(latitude, -MAX_LATITUDE, MAX_LATITUDE);
+  const scale = 2 ** zoom / (Math.PI * Math.cos((clampedLatitude * Math.PI) / 180));
+  const radius = (GLOBE_COMMON_RADIUS * scale) / stage;
+  const tangent = Math.asin(radius / (GLOBE_CAMERA_ALTITUDE + radius));
+  return GLOBE_CAMERA_ALTITUDE * stage * Math.tan(tangent);
+}
+
+/**
+ * The zoom at which the globe's limb fills most of the stage — its radius 44% of
+ * the stage's shorter side, so the atmosphere and a margin still show.
+ *
+ * The inverse of {@link globeRadiusPixels}, by bisection: that function rises
+ * monotonically with zoom, and this runs once per frame request, not per frame.
+ */
+export function globeFillZoom(latitude: number, size?: { width: number; height: number }): number {
+  const width = size !== undefined && size.width > 0 ? size.width : REFERENCE_STAGE_HEIGHT;
+  const height = size !== undefined && size.height > 0 ? size.height : REFERENCE_STAGE_HEIGHT;
+  const target = 0.44 * Math.min(width, height);
+  let low = MIN_ZOOM;
+  let high = 6;
+  for (let step = 0; step < 40; step += 1) {
+    const middle = (low + high) / 2;
+    if (globeRadiusPixels(middle, latitude, height) < target) low = middle;
+    else high = middle;
+  }
+  return low;
+}
+
 /**
  * Centre on a point and step one zoom level in.
  *

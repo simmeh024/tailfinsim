@@ -25,7 +25,14 @@ import {
   TERMINAL_EXIT_ZOOM,
   type HandoffAirport,
 } from './bands';
-import { clampViewState, focusViewState, LANDING_TRANSITION, MAX_ZOOM } from './camera';
+import {
+  clampViewState,
+  focusViewState,
+  globeFillZoom,
+  globeRadiusPixels,
+  LANDING_TRANSITION,
+  MAX_ZOOM,
+} from './camera';
 import {
   greatCirclePath,
   planesForFlights,
@@ -86,7 +93,7 @@ import {
 } from './view-state';
 import { WorldClockDisplay } from './WorldClockDisplay';
 
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 
 const INITIAL_VIEW_STATE: MapViewState = {
   longitude: 8,
@@ -112,18 +119,18 @@ const CONTROLLER = {
 /**
  * The zoom past which the atmosphere glow is hidden.
  *
- * `.world-renderer__atmosphere` is a CSS ellipse inset 5% of the *container*. It
- * has no idea where the globe actually is, which is fine while the planet sits
- * small and centred in the frame and is exactly what makes it read as a planet in
- * space. Zoom in far enough that the globe overflows the frame and the ring stops
- * tracking anything: it becomes a bright arc sweeping across the map, brightest
- * where it crosses the pole.
+ * `.world-renderer__atmosphere` is a ring drawn at the globe's limb — sized from
+ * the camera by `globeRadiusPixels`, centred where the globe's centre always
+ * projects, the middle of the stage. It used to be a fixed ellipse inset 5% of
+ * the *container*, which only lined up with a planet that happened to fill the
+ * stage: at the zoom the map opens at it hung far outside a globe a third of the
+ * stage tall, and closer in it became a bright arc laid across the map, which is
+ * why it was cut off at zoom 1.
  *
- * So it is shown only while the whole globe is still in view. Chosen against the
- * default camera, which is `0.35`, and the point at which the sphere starts to
- * exceed the shorter side of a typical stage.
+ * Tracking the limb, it is right at any zoom; this cap is only where the limb has
+ * left the stage on a typical screen, so there is nothing of it left to draw.
  */
-const ATMOSPHERE_MAX_ZOOM = 1;
+const ATMOSPHERE_MAX_ZOOM = 2.5;
 
 const DEFAULT_VISIBILITY: WorldLayerVisibility = {
   graticule: true,
@@ -1037,8 +1044,21 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
    * afterwards.
    */
   const networkFrame = useCallback((): MapViewState | null => {
-    return frameOf(networkPoints(map.hubs, map.routes), canvasSize());
-  }, [canvasSize, map.hubs, map.routes]);
+    const size = canvasSize();
+    const frame = frameOf(networkPoints(map.hubs, map.routes), size);
+    if (frame === null || projection !== 'globe') return frame;
+    /*
+     * On the globe, never smaller than a planet that fills the stage.
+     *
+     * The fit is Mercator maths, and for a network that spans the world it
+     * answers with the zoom that shows all of it on a flat sheet — which on the
+     * globe is a planet a third of the stage tall, in the middle of a lot of
+     * space. Half of a world-spanning network is behind the horizon whatever the
+     * zoom, so the globe's frame is the bigger of the two: a regional network
+     * still gets its fit, a global one gets the whole visible hemisphere.
+     */
+    return { ...frame, zoom: Math.max(frame.zoom, globeFillZoom(frame.latitude, size)) };
+  }, [canvasSize, map.hubs, map.routes, projection]);
 
   /*
    * Open on the player's own network.
@@ -1619,6 +1639,11 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     <section
       onKeyDown={onSectionKeyDown}
       className="world-renderer"
+      style={
+        {
+          '--world-globe-radius': `${String(Math.round(globeRadiusPixels(viewState.zoom, viewState.latitude, canvasSize()?.height)))}px`,
+        } as CSSProperties
+      }
       data-projection={projection}
       data-quality={quality}
       data-atmosphere={viewState.zoom < ATMOSPHERE_MAX_ZOOM ? 'on' : 'off'}
