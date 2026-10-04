@@ -256,6 +256,9 @@ describe('the service configurator', () => {
     expect(screen.getByLabelText(/Hot meal service/)).toBeInTheDocument();
     // Buy-on-board earns, and the page shows that as a plus rather than a cost.
     expect(screen.getByText('+$4.20')).toBeInTheDocument();
+    // Each ladder is named as App. D.2 names it, not by its enum key.
+    expect(screen.getByRole('group', { name: 'Food & beverage' })).toBeInTheDocument();
+    expect(screen.queryByText('catering')).toBeNull();
   });
 
   it('prices the package against the airline’s own routes', async () => {

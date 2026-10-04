@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   CABIN_ORDER,
   type CabinClass,
+  type ServiceCategory,
   type ServicePackageContent,
   type ServiceSelection,
   type RouteGroupsResponse,
@@ -84,6 +85,29 @@ const SEGMENT_LABEL: Record<string, string> = {
   leisure: 'Leisure',
   vfr: 'VFR',
 };
+
+/**
+ * App. D.2's own names for its seven categories (UX pass). The ladder used to
+ * print the enum key with its underscores swapped for spaces, which put
+ * "BAGGAGE SEATING" and "IFE CONNECTIVITY" on the page — words the appendix
+ * never uses. A key this map does not know still prints, the old way.
+ */
+const CATEGORY_LABEL: Record<ServiceCategory, string> = {
+  catering: 'Food & beverage',
+  baggage_seating: 'Baggage & seating',
+  ife_connectivity: 'Inflight entertainment & connectivity',
+  amenities: 'Amenities',
+  onboard_retail: 'Onboard retail',
+  ground_services: 'Ground & pre-flight',
+  atmosphere: 'Atmosphere',
+};
+
+function categoryLabel(category: string): string {
+  return (
+    (CATEGORY_LABEL as Record<string, string | undefined>)[category] ??
+    category.replaceAll('_', ' ')
+  );
+}
 
 const CABIN_LABEL: Record<CabinClass, string> = {
   economy: 'Economy',
@@ -354,7 +378,7 @@ export function ServicePage(): ReactNode {
 
             {catalogue.categories.map((category) => (
               <fieldset key={category.category} className="service-ladder">
-                <legend>{category.category.replaceAll('_', ' ')}</legend>
+                <legend>{categoryLabel(category.category)}</legend>
                 {category.tiers.map((tier) => (
                   <label key={tier.tier} className="service-ladder__rung">
                     <input
