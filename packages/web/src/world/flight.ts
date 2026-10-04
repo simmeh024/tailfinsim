@@ -1,12 +1,14 @@
 import type { LngLat } from './terminator';
 
 /**
- * Great-circle flight simulation for the world map's plane icons (M7).
+ * Flight tracks for the world map's route lines and aircraft (M7, WORLD-10).
  *
- * Not tied to real schedules yet — this is the FlightRadar-style *look*: a plane
- * moving along each route's great circle, nose pointed the way it is going. The
- * maths is spherical (via 3D unit vectors) so a plane follows the same curve the
- * route line draws rather than cutting a straight line across a Mercator map.
+ * The FlightRadar-style look: a track that follows the great circle with the
+ * odd seeded re-route, and an aeroplane on it at its flight's real progress,
+ * nose pointed the way it is going. The maths is spherical (via 3D unit vectors)
+ * so a plane follows the same curve the route line draws rather than cutting a
+ * straight line across a Mercator map — and a city pair has one track, flown
+ * both ways (see `TrackKey`).
  */
 
 const RAD = Math.PI / 180;
@@ -349,6 +351,76 @@ export function flightPath(source: LngLat, target: LngLat, seed: number, segment
 }
 
 /**
+ * Which track a leg rides: the seed of the track it shares with its return leg,
+ * and whether it is flown against that track's direction.
+ *
+ * ## A city pair is one track
+ *
+ * Tracks used to be seeded on the route id, and a route is directional — so an
+ * out-and-back, which `autoReturn` makes the normal way to open a route, was two
+ * tracks with two independent re-routes. Every pair the player flew was drawn as
+ * a braid: two lines leaving the same airport and arriving at the same airport by
+ * visibly different ways, one of them often bowed hundreds of miles off the
+ * other. Nothing a player could read distinguished the two, and the aeroplanes
+ * on them rode apart as well.
+ *
+ * So the seed is the **unordered** pair, plus an owner: the leg in canonical
+ * order (by its endpoints' coordinates) is the track, and the leg the other way
+ * is the same track reversed. The owner keeps carriers apart — the player's
+ * routes use `''`, a rival's its airline id — so a rival on the same city pair
+ * still draws a line of its own rather than hiding under the player's.
+ */
+export interface TrackKey {
+  seed: number;
+  /** True when the leg runs target-to-source along the canonical track. */
+  reversed: boolean;
+}
+
+function pointKey([lng, lat]: LngLat): string {
+  return `${lng.toFixed(4)},${lat.toFixed(4)}`;
+}
+
+/**
+ * The canonical ordering of a leg's endpoints; see {@link TrackKey}. `key` names
+ * the unordered pair, so a leg and its return share it.
+ */
+export function canonical(source: LngLat, target: LngLat): { key: string; reversed: boolean } {
+  const a = pointKey(source);
+  const b = pointKey(target);
+  return b < a ? { key: `${b}|${a}`, reversed: true } : { key: `${a}|${b}`, reversed: false };
+}
+
+/**
+ * Whose track a carrier's legs ride: `''` for the player's own — the owner the
+ * player's route lines are drawn with, since `WorldRoute` names no airline — and
+ * the airline's id for anybody else's.
+ */
+export function trackOwner(carrier: { own: boolean; airlineId: string }): string {
+  return carrier.own ? '' : carrier.airlineId;
+}
+
+export function trackKey(source: LngLat, target: LngLat, owner = ''): TrackKey {
+  const { key, reversed } = canonical(source, target);
+  return { seed: routeSeed(`${owner}|${key}`), reversed };
+}
+
+/**
+ * The leg's track as a polyline from `source` to `target`, shared with the leg
+ * the other way round; see {@link TrackKey}.
+ */
+export function trackPath(source: LngLat, target: LngLat, owner = '', segments = 64): LngLat[] {
+  const { seed, reversed } = trackKey(source, target, owner);
+  if (!reversed) return flightPath(source, target, seed, segments);
+  const path = flightPath(target, source, seed, segments).reverse();
+  // Unwrapping ran from the other end, so the start may sit a whole world away
+  // from `source`. Shifting every point by the same multiple of 360 keeps the
+  // line continuous and puts it back where its own airport is.
+  const first = path[0];
+  const shift = first === undefined ? 0 : Math.round((source[0] - first[0]) / 360) * 360;
+  return shift === 0 ? path : path.map(([lng, lat]): LngLat => [lng + shift, lat]);
+}
+
+/**
  * A path as `[lng, lat, lng, lat, …]`, the flat form `PathLayer` takes when it is
  * told the path is already normalised (`_pathType`). See the route layer in
  * `layers.ts` for why the own routes are drawn that way.
@@ -455,27 +527,37 @@ export function flightProgress(flight: AirborneLike, now: Date): number {
  * point of the issue: an aeroplane is where it actually is, on the leg it is
  * actually flying, moving at the speed the world runs.
  *
- * `seedOf` decides which track it rides. Passing the *route's* id when the map
- * knows it keeps the aeroplane on the line the map already drew for that route —
- * the line has its own seeded wander, and a plane on a clean great circle would
- * visibly float beside it. Anything else falls back to the leg itself, which is
- * stable for the same pair of airports.
+ * `ownerOf` decides which track it rides: the one {@link trackPath} draws for the
+ * same city pair and owner — `''` for the player's own, the carrier's id for a
+ * rival — so the aeroplane sits on the line rather than floating beside it, and
+ * the outbound and return legs ride the one track in opposite directions.
  */
 export function planesForFlights(
   flights: readonly AirborneLike[],
   now: Date,
-  seedOf: (flight: AirborneLike) => string,
+  ownerOf: (flight: AirborneLike) => string,
 ): WorldPlane[] {
   return flights.map((entry) => {
-    const { arc } = routeArc(seedOf(entry), entry.source, entry.target);
+    const owner = ownerOf(entry);
+    const { key, reversed } = canonical(entry.source, entry.target);
+    const [from, to] = reversed ? [entry.target, entry.source] : [entry.source, entry.target];
+    // The canonical track, cached under the same seed the line is drawn from.
+    const { arc } = routeArc(`${owner}|${key}`, from, to);
     const t = flightProgress(entry, now);
+    const along = reversed ? 1 - t : t;
+    const here = toLngLat(arcVec(arc, along));
+    // Nose along the direction of travel, which on a reversed leg is back down
+    // the canonical track.
+    const heading = reversed
+      ? bearing(here, toLngLat(arcVec(arc, Math.max(0, along - 0.01))))
+      : arcHeading(arc, along);
     return {
       routeId: entry.id,
       sourceId: entry.id,
-      position: toLngLat(arcVec(arc, t)),
+      position: here,
       // deck.gl rotates the icon counter-clockwise; a north-up plane faces a
       // clockwise bearing when rotated by its negative.
-      angle: -arcHeading(arc, t),
+      angle: -heading,
     };
   });
 }

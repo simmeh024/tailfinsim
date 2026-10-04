@@ -392,8 +392,31 @@ body {
   border-radius: 2px;
 }
 
+/* The altitude ramp, as the line draws it: ground at both ends, cruise between. */
 .world-renderer__legend-line--own {
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    var(--world-alt-ground),
+    var(--world-alt-high) 30%,
+    var(--world-route) 50%,
+    var(--world-alt-high) 70%,
+    var(--world-alt-ground)
+  );
+}
+
+/* §H.3's three encodings of the player's own lines. */
+.world-renderer__legend-line--busy {
+  border-top: 6px solid var(--world-route);
+}
+
+.world-renderer__legend-line--weak {
   border-top: 3px solid var(--world-route);
+  opacity: 0.4;
+}
+
+.world-renderer__legend-line--suspended {
+  border-top: 3px dashed var(--world-route);
 }
 
 .world-renderer__legend-line--rival {

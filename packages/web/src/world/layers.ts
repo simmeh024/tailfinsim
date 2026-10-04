@@ -1,6 +1,7 @@
 import { BitmapLayer, GeoJsonLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 
-import { altitudeProfile, flatPath, flightPath, routeSeed } from './flight';
+import { altitudeProfile } from './flight';
+import { MAX_ROUTE_WIDTH, MIN_ROUTE_WIDTH, routeLines, type RouteLine } from './route-lines';
 import { WEB_MERCATOR_MAX_LATITUDE } from './terminator';
 import { terrainImage } from './terrain';
 
@@ -28,6 +29,16 @@ export interface WorldRoute {
   id: string;
   source: LngLat;
   target: LngLat;
+  /**
+   * §H.3's thickness: departures a week on this leg, from active schedules.
+   * Absent when the overlay did not say — a test, or a client ahead of its
+   * server — which draws the line at the width it always had.
+   */
+  weeklyFrequency?: number;
+  /** §H.3's opacity: passengers over seats lately, or null when nothing has settled. */
+  loadFactor?: number | null;
+  /** §H.3's dashes: false for a suspended route. Absent means active. */
+  active?: boolean;
 }
 
 /**
@@ -495,6 +506,55 @@ function nightTexture(
 }
 
 /**
+ * The player's route lines, built once per route list, quality and palette.
+ *
+ * `createWorldLayers` runs on every in-game minute (the day/night field) and on
+ * every toggle, while the routes change once a minute at most. Keyed on the
+ * routes array itself, so a new overlay — new data — is the only thing that
+ * rebuilds the geometry, the same contract `data` identity gives deck.gl.
+ */
+const ROUTE_LINE_CACHE = new WeakMap<
+  readonly WorldRoute[],
+  { segments: number; palette: WorldPalette; lines: RouteLine[] }
+>();
+
+function ownRouteLines(
+  routes: readonly WorldRoute[],
+  segments: number,
+  palette: WorldPalette,
+): RouteLine[] {
+  const cached = ROUTE_LINE_CACHE.get(routes);
+  if (cached?.segments === segments && cached.palette === palette) {
+    return cached.lines;
+  }
+  /**
+   * The FlightRadar altitude ramp: ground, climb-out, mid, high, cruise.
+   *
+   * Five stops rather than a blend between two, and that is the point. A single pair
+   * gives one washed midtone at each end which says nothing about height — and when
+   * the low colour is near the terrain, as the amber this replaces was, it makes the
+   * end of a line dissolve into the map. A ramp puts a distinct colour at each
+   * altitude, so a leg reads as leaving the ground, climbing and levelling off, and
+   * its ends become the most saturated part of it rather than the least. Sampled
+   * once per vertex by fraction along the leg, so it is the same for every line.
+   */
+  const altitudeRamp: readonly RgbaColor[] = [
+    palette.altGround,
+    palette.altLow,
+    palette.altMid,
+    palette.altHigh,
+    palette.route,
+  ];
+  const ramp: RgbaColor[] = [];
+  for (let i = 0; i <= segments; i += 1) {
+    ramp.push(sampleRamp(altitudeRamp, altitudeProfile(i / segments)));
+  }
+  const lines = routeLines(routes, segments, ramp);
+  ROUTE_LINE_CACHE.set(routes, { segments, palette, lines });
+  return lines;
+}
+
+/**
  * One projection-agnostic layer list. MapView and GlobeView consume these exact
  * instances; projection switching never forks route, terminator, or toggle logic.
  */
@@ -527,33 +587,8 @@ export function createWorldLayers({
     reachableIcaos === undefined || reachableIcaos.has(airport.icao) ? palette.airport : dimmed;
 
   // A FlightRadar-style altitude wash for the route line: warm and low near the
-  // airports, cool and high across the cruise. Interpolated between two existing
-  // palette tokens — the amber airport colour for the ground, the route blue for
-  // altitude — so it stays theme-aware with no colour literal here. The ramp is by
-  // fraction along the leg, identical for every route, so it is built once and the
-  // path layer hands the same per-vertex array to each line.
+  // airports, cool and high across the cruise — built in `ownRouteLines` below.
   const routeSegments = quality === 'full' ? 64 : 32;
-  /**
-   * The FlightRadar altitude ramp: ground, climb-out, mid, high, cruise.
-   *
-   * Five stops rather than a blend between two, and that is the point. A single pair
-   * gives one washed midtone at each end which says nothing about height — and when
-   * the low colour is near the terrain, as the amber this replaces was, it makes the
-   * end of a line dissolve into the map. A ramp puts a distinct colour at each
-   * altitude, so a leg reads as leaving the ground, climbing and levelling off, and
-   * its ends become the most saturated part of it rather than the least.
-   */
-  const altitudeRamp: readonly RgbaColor[] = [
-    palette.altGround,
-    palette.altLow,
-    palette.altMid,
-    palette.altHigh,
-    palette.route,
-  ];
-  const routeColors: [number, number, number, number][] = [];
-  for (let i = 0; i <= routeSegments; i += 1) {
-    routeColors.push(sampleRamp(altitudeRamp, altitudeProfile(i / routeSegments)));
-  }
   return [
     new WorldBitmapLayer({
       id: 'world-ocean',
@@ -729,16 +764,17 @@ export function createWorldLayers({
         getPolygonOffset: TERMINATOR_POLYGON_OFFSET,
       }),
     visibility.routes &&
-      new PathLayer<WorldRoute>({
+      new PathLayer<RouteLine>({
         id: 'world-routes',
-        data: routes,
+        // One line per city pair, encoded for frequency, load and suspension
+        // (§H.3) — see `route-lines.ts`.
+        data: ownRouteLines(routes, routeSegments, palette),
         // A flat track on the surface, not an `ArcLayer` rainbow lifted into 3D:
         // this is the FlightRadar look — a route that bends the way a real track
         // does while staying on the ground, with its own seeded wander so no two
-        // legs are identical. The plane rides the same track, since both come from
-        // `flightPath`/`arcVec` seeded on the route id.
-        getPath: ({ id, source, target }) =>
-          flatPath(flightPath(source, target, routeSeed(id), routeSegments)),
+        // pairs are identical. The plane rides the same track, since both come from
+        // `trackPath`/`arcVec` seeded on the city pair.
+        getPath: (line) => line.path,
         positionFormat: 'XY',
         /*
          * **Already normalised, and the per-vertex colour depends on it.**
@@ -758,16 +794,16 @@ export function createWorldLayers({
          * already unwrapped across the antimeridian. Requires a flat path.
          */
         _pathType: 'open',
-        // Per-vertex colour: the altitude wash, one colour per point of the path.
-        // The array matches the path's `routeSegments + 1` points and is the same
-        // for every route, so PathLayer gradients each line without a per-route cost.
-        getColor: () => routeColors,
-        // The player's own routes, so drawn boldly — thicker than the airport rings,
-        // and with a floor so a line never thins to nothing on the globe.
-        getWidth: 3,
+        // Per-vertex colour: the altitude wash, one colour per point of the path,
+        // at the line's load-factor opacity.
+        getColor: (line) => line.colors,
+        // Weekly frequency. The player's own routes are drawn boldly — even an
+        // unscheduled pair is as thick as a rival's busiest leg — with a floor so a
+        // line never thins to nothing on the globe.
+        getWidth: (line) => line.width,
         widthUnits: 'pixels',
-        widthMinPixels: 2.5,
-        widthMaxPixels: 7,
+        widthMinPixels: MIN_ROUTE_WIDTH,
+        widthMaxPixels: MAX_ROUTE_WIDTH,
         capRounded: true,
         jointRounded: true,
         parameters: { cullMode: 'none' },

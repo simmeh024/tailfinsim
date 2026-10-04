@@ -292,18 +292,55 @@ which is why the artefact read as horizontal steps rather than as general roughn
 Routes are a `PathLayer` whose path is a flat track on the surface — `flightPath` in
 `flight.ts` takes the great circle (`greatCirclePath`/`interpolateGreatCircle`, which
 **unwrap** longitudes so an antimeridian crossing climbs past ±180 rather than snapping back)
-and adds a **seeded lateral wander**: a sum of a few sine waves whose amplitude, frequency and
-phase come from `routeSeed(route.id)`, enveloped to zero at both ends so the track still starts
-and ends exactly at the two airports. Every route gets its own shape, and it is the same shape
-each render, so the simulated plane (`planesForRoutes` → `arcVec`) rides the identical track
+and adds a **seeded re-route**: one or two waypoints whose position and offset come from the
+seed, rolled through so the track still starts and ends exactly at the two airports. It is the
+same shape each render, so a plane (`planesForFlights` → `arcVec`) rides the identical track
 rather than cutting a clean great circle through the bends. This is the FlightRadar look — a
 route that bends the way a real track does while staying on the ground — replacing the
 `ArcLayer` rainbow that lifted the route into 3D. The one implementation serves both
 projections. Reduced detail samples the line with fewer points (64→32 segments).
 
 M7's world map draws the player's own hubs and operational routes from `GET /api/world/map`,
-with a small plane animated along each route. The renderer still accepts an explicit typed
+and the aircraft actually in the air on them. The renderer still accepts an explicit typed
 `WorldRoute` list (used by tests), falling back to the server-owned overlay otherwise.
+
+### A city pair is one track, and one line
+
+The seed used to be the route id, and a route is directional — so an out-and-back, which
+`autoReturn` makes the normal way to open one, was two tracks with two independent re-routes:
+every pair the player flew was a **braid** of two lines leaving the same airport and arriving at
+the other by visibly different ways, often hundreds of miles apart, with the aeroplanes riding
+apart on them. `trackKey` now seeds the **unordered** pair plus an owner (`''` for the player,
+the airline id for a rival, so carriers on the same pair still draw apart); the leg the other way
+is the same track reversed, and `planesForFlights` flies a return leg back down it.
+
+The player's lines are then drawn **once per pair** (`route-lines.ts`), not once per route: two
+translucent lines on one track composite to a brighter one, which would have made opacity stop
+meaning load factor exactly where the network is busiest.
+
+### What a line says (App. H.3)
+
+| Encoding  | Meaning                                                                                                         | Source                                                         |
+| --------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Colour    | altitude, ground at each airport to cruise between                                                              | the ramp, below                                                |
+| Thickness | departures a week, the busier direction: 2 px unscheduled, ~4.3 daily, 7 px from about four a day (logarithmic) | active schedule legs × runs a week, server-side                |
+| Opacity   | load factor: full at 100 %, down to a 40 % floor at empty; **unknown is full strength**, not faded              | settled scheduled flights over the operations window (30 days) |
+| Dashed    | suspended (`route.active` false in both directions)                                                             | the route row                                                  |
+| Shimmer   | direction of travel, on routes something is scheduled to fly                                                    | the same                                                       |
+
+M7-03 deferred thickness, opacity and dashes because `/api/world/map` carried none of the
+numbers; it now sends `weeklyFrequency`, `loadFactor` and `active` on each of the player's own
+routes, and nothing new about anybody else's. Frequency is a rule over schedules rather than a
+count of materialised flights, so it is right on a node with no worker; load factor is not, and
+on such a node every line is simply at full strength.
+
+**Colour is the one §H.3 encoding the map does not follow.** The doc gives colour to ownership —
+_"your brand colour, alliance colour, rivals in neutral grey"_ — and M7-03 (#930) chose the
+FlightRadar altitude ramp for the player's lines instead, so the ends of a line read against the
+land. Ownership is still carried by colour, only less directly: the player's lines are the ramp,
+rivals' are neutral, and the aircraft carry each carrier's brand colour. The legend used to say
+_"your brand colour"_ for the ramp, which described the design doc rather than the map; it now
+says what is drawn. Which of the two the map should follow is a design decision, not a fix.
 
 ## Day and night
 

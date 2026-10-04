@@ -13,7 +13,8 @@ import { terrainImage } from './terrain';
 
 import type { WorldAirport, WorldRoute } from './layers';
 import type { WorldHub } from './map-api';
-import type { WorldPalette } from './palette';
+import type { RgbaColor, WorldPalette } from './palette';
+import type { RouteLine } from './route-lines';
 import type { Layer } from '@deck.gl/core';
 
 const palette: WorldPalette = {
@@ -70,27 +71,31 @@ describe('projection-independent world layers', () => {
       },
     });
     const routes = layers.find(
-      (layer): layer is PathLayer<WorldRoute> =>
+      (layer): layer is PathLayer<RouteLine> =>
         layer instanceof PathLayer && layer.id === 'world-routes',
     );
 
     expect(routes).toBeInstanceOf(PathLayer);
-    expect(routes?.props.data).toEqual([antimeridianRoute]);
+    const lines = routes?.props.data as RouteLine[];
+    expect(lines.map((line) => line.routeIds)).toEqual([[antimeridianRoute.id]]);
+    const line = lines[0]!;
 
     // The path is a single unwrapped polyline: every step stays under 180° of the
     // one before it, so there is no stray snap-back line across the whole map, and
     // the longitude genuinely climbs past ±180 rather than resetting.
-    const getPath = routes?.props.getPath as (route: WorldRoute) => Float64Array;
-    const path = pointsOf(getPath(antimeridianRoute));
+    const getPath = routes?.props.getPath as (line: RouteLine) => Float64Array;
+    const path = pointsOf(getPath(line));
     for (let i = 1; i < path.length; i += 1) {
       expect(Math.abs(path[i]![0] - path[i - 1]![0])).toBeLessThan(180);
     }
-    expect(Math.max(...path.map(([lon]) => lon))).toBeGreaterThan(180);
+    // Past ±180 in whichever direction the pair's canonical track runs: the line
+    // is drawn once for the city pair (`route-lines.ts`), from its canonical end.
+    expect(Math.max(...path.map(([lon]) => Math.abs(lon)))).toBeGreaterThan(180);
 
     // The colour is an altitude gradient: one colour per path vertex, warmer near the
     // ground at the ends and the route blue at cruise in the middle.
-    const getColor = routes?.props.getColor as () => [number, number, number, number][];
-    const colors = getColor();
+    const getColor = routes?.props.getColor as (line: RouteLine) => RgbaColor[];
+    const colors = getColor(line);
     expect(colors).toHaveLength(path.length);
     const mid = colors[Math.floor(colors.length / 2)]!;
     expect(mid.slice(0, 3)).toEqual(palette.route.slice(0, 3));
@@ -167,17 +172,18 @@ describe('projection-independent world layers', () => {
       },
     });
     const routes = layers.find(
-      (layer): layer is PathLayer<WorldRoute> =>
+      (layer): layer is PathLayer<RouteLine> =>
         layer instanceof PathLayer && layer.id === 'world-routes',
     );
     expect(routes?.props._pathType).toBe('open');
     expect(routes?.props.positionFormat).toBe('XY');
 
-    const getPath = routes?.props.getPath as (route: WorldRoute) => Float64Array;
-    const getColor = routes?.props.getColor as (route: WorldRoute) => unknown[];
-    const flat = getPath(antimeridianRoute);
+    const line = (routes?.props.data as RouteLine[])[0]!;
+    const getPath = routes?.props.getPath as (line: RouteLine) => Float64Array;
+    const getColor = routes?.props.getColor as (line: RouteLine) => unknown[];
+    const flat = getPath(line);
     expect(flat).toBeInstanceOf(Float64Array);
-    expect(getColor(antimeridianRoute)).toHaveLength(flat.length / 2);
+    expect(getColor(line)).toHaveLength(flat.length / 2);
 
     // Nothing is lost by skipping deck.gl's cut: consecutive vertices are already
     // closer together than the globe's own mesh resolution at full quality.
@@ -414,11 +420,11 @@ describe('projection-independent world layers', () => {
     });
     const pathFor = (layers: (Layer | false)[]): [number, number][] => {
       const routes = layers.find(
-        (layer): layer is PathLayer<WorldRoute> =>
+        (layer): layer is PathLayer<RouteLine> =>
           layer instanceof PathLayer && layer.id === 'world-routes',
       );
-      const getPath = routes?.props.getPath as (route: WorldRoute) => Float64Array;
-      return pointsOf(getPath(antimeridianRoute));
+      const getPath = routes?.props.getPath as (line: RouteLine) => Float64Array;
+      return pointsOf(getPath((routes?.props.data as RouteLine[])[0]!));
     };
     // Reduced mode samples the great circle with fewer points, so the polyline is
     // coarser — the segment count is what tessellation means for a flat line.

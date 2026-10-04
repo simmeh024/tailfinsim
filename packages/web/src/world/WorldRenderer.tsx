@@ -27,10 +27,10 @@ import {
 } from './bands';
 import { clampViewState, focusViewState, LANDING_TRANSITION, MAX_ZOOM } from './camera';
 import {
-  flightPath,
   greatCirclePath,
   planesForFlights,
-  routeSeed,
+  trackOwner,
+  trackPath,
   type WorldPlane,
 } from './flight';
 import { frameOf, networkPoints } from './frame';
@@ -64,6 +64,7 @@ import { PLANE_ICON_DEFINITION } from './plane-icon';
 import { persistProjection, readInitialProjection, type WorldProjection } from './projection';
 import { bundleCorridors, corridorGridForZoom, type Corridor } from './route-corridors';
 import { fleetMaxRangeNm, reachableAirportIcaos } from './route-create';
+import { routeIsFlown } from './route-lines';
 import {
   AirborneDetail,
   airborneSubtitle,
@@ -662,39 +663,22 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   );
 
   /*
-   * Which track each flight rides.
-   *
-   * The map draws a route's line with a seeded wander, so a plane on a clean
-   * great circle would visibly float beside its own line. When the flight is on
-   * a route the map knows, the plane borrows that route's seed and sits exactly
-   * on it; otherwise the airport pair is a stable fallback.
-   */
-  const routeIdByLeg = useMemo(() => {
-    const byLeg = new Map<string, string>();
-    for (const r of map.traffic) {
-      byLeg.set(`${r.airlineId}:${r.originIcao}:${r.destinationIcao}`, r.id);
-    }
-    return byLeg;
-  }, [map.traffic]);
-
-  /*
    * Positioned against the world's own clock, not a wall clock and not an
    * animation phase. `useWorldClock` re-renders once a second, which is what
    * moves them; `now` is the fallback before the first sync, and a flight list
    * that arrives before the clock does is a second of stillness rather than a
    * blank sky.
+   *
+   * Each rides the track its carrier's line is drawn on — the city pair's, owned
+   * by `''` for the player and by the airline for a rival (`trackKey` in
+   * `flight.ts`) — so it sits on the line, and a return leg flies the same line
+   * the other way.
    */
   const flightTime = inGameTime ?? now;
   const planes = useMemo(
     () =>
-      planesForFlights(visibleFlights, flightTime, (entry) => {
-        const flight = entry as WorldMapFlight;
-        return (
-          routeIdByLeg.get(`${flight.airlineId}:${flight.originIcao}:${flight.destinationIcao}`) ??
-          `${flight.originIcao}-${flight.destinationIcao}`
-        );
-      }),
-    [visibleFlights, flightTime, routeIdByLeg],
+      planesForFlights(visibleFlights, flightTime, (entry) => trackOwner(entry as WorldMapFlight)),
+    [visibleFlights, flightTime],
   );
   const spriteSize = planeSpriteSize(viewState.zoom);
 
@@ -763,7 +747,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     return new PathLayer<WorldMapTrafficRoute>({
       id: 'world-selected-route',
       data: [selectedRoute],
-      getPath: (r) => flightPath(r.source, r.target, routeSeed(r.id), quality === 'full' ? 64 : 32),
+      getPath: (r) => trackPath(r.source, r.target, trackOwner(r), quality === 'full' ? 64 : 32),
       getColor: [line[0], line[1], line[2], 255],
       getWidth: 4,
       widthUnits: 'pixels',
@@ -789,7 +773,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     return new PathLayer<WorldMapTrafficRoute>({
       id: 'world-rival-routes',
       data: rivals,
-      getPath: (r) => flightPath(r.source, r.target, routeSeed(r.id), quality === 'full' ? 64 : 32),
+      getPath: (r) => trackPath(r.source, r.target, trackOwner(r), quality === 'full' ? 64 : 32),
       getColor: [neutral[0], neutral[1], neutral[2], 175],
       getWidth: 1.5,
       widthUnits: 'pixels',
@@ -832,12 +816,16 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   // every animation frame. Computing each great-circle (trig per segment) sixty times
   // a second is what the shimmer used to do and what dropped the globe below its frame
   // budget; the phase-driven layer below just slices a window out of these.
+  //
+  // Only the routes something is scheduled to fly: the shimmer is §H.3's *"in the
+  // direction of travel"*, and a suspended or unscheduled route has none. Each runs
+  // its own way along the pair's one track, so an out-and-back shimmers both ways.
   const shimmerSegments = quality === 'full' ? 64 : 32;
   const ownPaths = useMemo(
     () =>
-      playerRoutes.map((route) => ({
+      playerRoutes.filter(routeIsFlown).map((route) => ({
         id: route.id,
-        full: flightPath(route.source, route.target, routeSeed(route.id), shimmerSegments),
+        full: trackPath(route.source, route.target, '', shimmerSegments),
       })),
     [playerRoutes, shimmerSegments],
   );
@@ -1814,10 +1802,27 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
                 ×
               </button>
             </div>
+            {/*
+             * What the player's lines say, in §H.3's terms. This said "your brand
+             * colour" for a line that has been an altitude ramp since M7-03 — the
+             * legend described the design doc rather than the map.
+             */}
             <ul className="world-renderer__legend-list">
               <li>
                 <span className="world-renderer__legend-line world-renderer__legend-line--own" />
-                Your routes — your brand colour
+                Your routes — ground colour at each airport, cruise colour in between
+              </li>
+              <li>
+                <span className="world-renderer__legend-line world-renderer__legend-line--busy" />
+                Thicker — more departures a week
+              </li>
+              <li>
+                <span className="world-renderer__legend-line world-renderer__legend-line--weak" />
+                Fainter — fewer seats filled (load factor)
+              </li>
+              <li>
+                <span className="world-renderer__legend-line world-renderer__legend-line--suspended" />
+                Dashed — suspended
               </li>
               <li>
                 <span className="world-renderer__legend-line world-renderer__legend-line--rival" />
