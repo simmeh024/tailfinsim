@@ -1,0 +1,11 @@
+-- tailfin:migration-strategy expand
+-- §7.2's lease rent (OTHER-01). One new `cash_movement_cause` value, nothing
+-- else: the rate has been on `aircraft_order.monthly_lease_rate_minor` since
+-- M4-03 and the `lease_finance` ledger category since M8-01; what was missing was
+-- anything that charged it. The previous release never names the value, so it
+-- keeps working against the result.
+--
+-- Added and **not used** here. ADR-0016 applies every pending migration in one
+-- transaction, and PostgreSQL refuses a new enum value used in the transaction
+-- that added it. The first month the worker bills names it.
+ALTER TYPE "public"."cash_movement_cause" ADD VALUE 'aircraft_lease_rental' BEFORE 'admin_adjustment';

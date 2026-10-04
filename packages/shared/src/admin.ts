@@ -580,6 +580,8 @@ export const AdminCashMovementCause = z.enum([
   'research',
   /** §10.4's doctrine upkeep (M9-06): a month of the research the airline keeps funded. */
   'research_upkeep',
+  /** §7.2's monthly lease rent (OTHER-01), prorated by the game time held. */
+  'aircraft_lease_rental',
   'admin_adjustment',
   'flight_settlement',
   'disruption_cost',

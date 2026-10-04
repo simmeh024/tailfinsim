@@ -4,6 +4,7 @@ import { gameTime, horizonFrom, type WorldClock } from '@tailfin/sim';
 
 import { completeDueAcademyBuilds, runAcademyUpkeep } from '../academy/store';
 import { deliverDueAircraftOrders } from '../aircraft/acquisition';
+import { runLeaseRentals } from '../aircraft/lease-rentals';
 import { sweepMaintenance } from '../aircraft/maintenance';
 import { refreshUsedAircraftMarket } from '../aircraft/used-market';
 import { sweepWorldAlerts } from '../alerts/evaluate';
@@ -128,6 +129,8 @@ export interface TickReport {
   academyUpkeepPaid: number;
   /** M9-06. Airlines billed for a month of research doctrine upkeep. */
   researchUpkeepPaid: number;
+  /** OTHER-01. Airlines billed for a month of aircraft lease rent. */
+  leaseRentalsBilled: number;
   /** M5-06. Ground contracts whose term ran out and were lapsed this run. */
   groundContractsExpired: number;
   /** M5-06. Of those, how many closed short of their committed departures. */
@@ -230,6 +233,8 @@ export interface SimulationEngineOptions {
   billAcademies?: typeof runAcademyUpkeep;
   /** M9-06. Bills the month's research doctrine upkeep. */
   billResearch?: typeof runResearchUpkeep;
+  /** OTHER-01. Bills the month's aircraft lease rent. */
+  billLeases?: typeof runLeaseRentals;
   /** M8-07. Charges §13.4's per-game-day interest on every active loan. */
   accrueInterest?: typeof accrueLoanInterest;
   /** M8-07. Moves §13.5's default ladder, and applies the rung it lands on. */
@@ -428,6 +433,17 @@ export interface EngineSnapshot {
   researchUpkeepMinor: number;
   researchErrors: number;
   /**
+   * OTHER-01. §7.2's lease rent billed, and sweeps that threw.
+   *
+   * Without a worker a leased aeroplane costs its deposit and then nothing — not
+   * a degraded mechanic but a dominant strategy, since leasing then beats buying
+   * at every fleet size. Zero on a world with no leased aircraft is expected;
+   * zero on one with a leased fleet past a month boundary is a stopped worker.
+   */
+  leaseRentalsBilled: number;
+  leaseRentalMinor: number;
+  leaseErrors: number;
+  /**
    * M9-03. Crew named since start, and sweeps that threw.
    *
    * Zero on a world whose crew have not yet earned it is the *expected*
@@ -621,6 +637,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     completeAcademyBuilds = completeDueAcademyBuilds,
     billAcademies = runAcademyUpkeep,
     billResearch = runResearchUpkeep,
+    billLeases = runLeaseRentals,
     nameCrew = nameEligibleCrew,
     accrueInterest = accrueLoanInterest,
     reviewDefaults = reviewWorldDefaults,
@@ -674,6 +691,9 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
   let researchUpkeepPaid = 0;
   let researchUpkeepMinor = 0;
   let researchErrors = 0;
+  let leaseRentalsBilled = 0;
+  let leaseRentalMinor = 0;
+  let leaseErrors = 0;
   let hubFeesBilled = 0;
   let hubFeesMinor = 0;
   let hubErrors = 0;
@@ -735,6 +755,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     let tickAcademyBuilds = 0;
     let tickAcademyUpkeepPaid = 0;
     let tickResearchUpkeepPaid = 0;
+    let tickLeaseRentalsBilled = 0;
     let tickHubFeesBilled = 0;
     let tickGateFeesBilled = 0;
     let tickGateLeasesWithdrawn = 0;
@@ -1147,6 +1168,27 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       }
 
       /*
+       * §7.2's lease rent (OTHER-01), on this world's game clock: the month that
+       * has just closed, billed once per airline with a ledger line per leased
+       * airframe, prorated by the game time each was held. The payroll's shape —
+       * attempted every tick, idempotent by AIR-06's reference.
+       */
+      try {
+        const leases = await billLeases(db, entry.id, gameTime(entry.clock, now()));
+        tickLeaseRentalsBilled += leases.airlinesBilled;
+        leaseRentalMinor += leases.totalMinor;
+        if (leases.airlinesBilled > 0) {
+          log?.info?.(
+            `[${entry.name}] lease rent: ${String(leases.airlinesBilled)} airline(s), ` +
+              `${String(Math.round(leases.totalMinor / 100))}`,
+          );
+        }
+      } catch (error) {
+        leaseErrors += 1;
+        log?.warn?.(`[${entry.name}] lease rental sweep failed: ${String(error)}`);
+      }
+
+      /*
        * §10.2's named crew (M9-03), on this world's game clock. A pool whose
        * crew have earned it produces a named individual, and one more per level
        * above the threshold.
@@ -1347,6 +1389,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
     academyBuildsCompleted += tickAcademyBuilds;
     academyUpkeepPaid += tickAcademyUpkeepPaid;
     researchUpkeepPaid += tickResearchUpkeepPaid;
+    leaseRentalsBilled += tickLeaseRentalsBilled;
     hubFeesBilled += tickHubFeesBilled;
     gateFeesBilled += tickGateFeesBilled;
     gateLeasesWithdrawn += tickGateLeasesWithdrawn;
@@ -1388,6 +1431,7 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
       academyBuildsCompleted: tickAcademyBuilds,
       academyUpkeepPaid: tickAcademyUpkeepPaid,
       researchUpkeepPaid: tickResearchUpkeepPaid,
+      leaseRentalsBilled: tickLeaseRentalsBilled,
       hubFeesBilled: tickHubFeesBilled,
       gateFeesBilled: tickGateFeesBilled,
       gateLeasesWithdrawn: tickGateLeasesWithdrawn,
@@ -1488,6 +1532,9 @@ export function createSimulationEngine(options: SimulationEngineOptions): Simula
         researchUpkeepPaid,
         researchUpkeepMinor,
         researchErrors,
+        leaseRentalsBilled,
+        leaseRentalMinor,
+        leaseErrors,
         crewNamed,
         crewNamingErrors,
         interestDaysCharged,

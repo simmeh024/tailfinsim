@@ -49,6 +49,7 @@ const CAUSE_LABEL: Record<AdminCashMovementCause, string> = {
   training_captain: 'Training Captain course or reversion',
   research: 'Research project',
   research_upkeep: 'Doctrine upkeep',
+  aircraft_lease_rental: 'Aircraft lease rent',
   disruption_cost: 'Disruption cost',
   admin_adjustment: 'Operator adjustment',
   flight_settlement: 'Flight settlement',

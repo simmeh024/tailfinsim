@@ -42,6 +42,8 @@ export type CommitmentKind =
   | 'ground'
   /** App. B.5's monthly hub and facility fees (M7-04). */
   | 'hub'
+  /** §7.2's monthly lease rent, prorated by the game time held (OTHER-01). */
+  | 'lease'
   /** A game day of interest on the outstanding debt (§13.4). */
   | 'interest'
   /** Interest already charged and unpaid — owed now, not later (§13.5). */

@@ -88,11 +88,30 @@ lead weeks are added to it. Those weeks are game weeks since TIME-01, which on t
 world's 2× clock is two real weeks for the base — a balance consequence, and one that belongs to
 `aircraft_type.base_delivery_lead_weeks` in a new catalogue version rather than to a second clock.
 
-M4-04 stores the lease's full monthly rate on the order from day one and charges the defined
-deposit. It does not invent a billing cadence the design has not chosen: recurring lease
-settlement needs the M8 accounting/calendar decision before it can create authoritative
-ledger periods. Until that lands, the monthly obligation is visible and durable but is not
-yet periodically debited.
+M4-04 stored the lease's full monthly rate on the order from day one and charged the defined
+deposit, and nothing charged the rate for months — so a leased aeroplane cost its deposit and
+then nothing, and leasing beat buying at every fleet size. **OTHER-01 charges it.**
+
+### Lease rent (OTHER-01)
+
+`runLeaseRentals` (`server/src/aircraft/lease-rentals.ts`) bills every leased airframe its
+`monthly_lease_rate_minor` for each game month it is held, in arrears at the first tick of the
+next month, **prorated by the game time held** — an aeroplane delivered on the 28th pays three
+days of its first month, and one repossessed (§13.5) stops paying at repossession. One
+`aircraft_lease_rental` movement per airline per month, idempotent by
+`aircraft_lease_rental:<airlineId>:<YYYY-MM>`, with a ledger line per airframe under
+`lease_finance` — the category M8-01 declared and nothing had written to — so the P&L shows rent
+as its own financing line, outside EBITDA. Owned and financed airframes are never billed.
+
+**Month to month, with no term and no return.** §24 names _"lessor counterparties, lease terms
+and return conditions"_ as a gap the design doc does not specify, and MARKET-05 (#1103) owns the
+lessor model; rolling month to month is the reading that invents nothing, and the one the
+stored data already describes (`aircraft_order` records a rate and no term).
+
+**A worker story.** Production has no worker, so there a lease is still free after its deposit —
+a dominant strategy rather than a degraded mechanic. `leaseRentalsBilled`, `leaseRentalMinor`
+and `leaseErrors` are the counters. The cash runway projects the rent through the same
+function the sweep bills with ([`cash-runway.md`](cash-runway.md)).
 
 ## Deliberate milestone boundaries
 

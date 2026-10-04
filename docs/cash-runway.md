@@ -147,12 +147,13 @@ time, and the runway shortens four times as fast.
 
 ## What M8-08 did not build
 
-- **Lease rentals.** `aircraft_order.monthly_lease_rate_minor` is recorded at
-  acquisition and **nothing ever charges it** — there is no lease payment sweep
-  anywhere in the game. Projecting it would make the runway predict outflows the
-  game never makes, which is worse than omitting it: the number would be
-  pessimistic in a way no player could reconcile against their own ledger. When a
-  rental sweep exists, its commitment belongs here.
+- ~~**Lease rentals.**~~ **Built in OTHER-01.** M8-08 left them out because no
+  sweep charged them, and projecting an outflow the game never makes would have
+  been pessimistic in a way no player could reconcile against their ledger. Now
+  `runLeaseRentals` charges them, and the runway carries a `lease` commitment at
+  each month boundary computed by the **same** `leaseRentalForMonth` the sweep
+  bills with — so a lease delivered mid-month is projected at its prorated first
+  month, and the figure projected is the figure charged.
 - **Ground contract volume shortfalls.** Charged at `term_end` by
   `expireGroundContracts`, and genuinely committed — but the amount depends on
   how much the airline flies between now and then, which is a forecast rather

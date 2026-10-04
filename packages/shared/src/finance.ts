@@ -109,7 +109,16 @@ export type FinancePnlResponse = z.infer<typeof FinancePnlResponse>;
 /* ---- §13.6's cash runway (M8-08) -------------------------------------------- */
 
 /** Which obligation a projected outflow is, so a UI can name the cause. */
-export const CommitmentKind = z.enum(['crew', 'office', 'ground', 'hub', 'interest', 'arrears']);
+export const CommitmentKind = z.enum([
+  'crew',
+  'office',
+  'ground',
+  'hub',
+  'interest',
+  'arrears',
+  // §7.2's monthly lease rent (OTHER-01).
+  'lease',
+]);
 export type CommitmentKind = z.infer<typeof CommitmentKind>;
 
 /** One dated bill the airline has already committed to. */
