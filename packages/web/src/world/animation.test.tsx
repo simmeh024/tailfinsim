@@ -171,9 +171,9 @@ describe('the route shimmer', () => {
      * time and so only visibly moves about twice a second. Measured on the
      * running app that was ~880 ms of script per second.
      */
-    let pending: FrameRequestCallback | null = null;
+    const queued: { next: FrameRequestCallback | null } = { next: null };
     frames.mockImplementation((callback: FrameRequestCallback) => {
-      pending = callback;
+      queued.next = callback;
       return 1;
     });
     await renderWorld([OWN_ROUTE]);
@@ -182,8 +182,8 @@ describe('the route shimmer', () => {
     const before = deck.renders;
     // Two seconds of frames at sixty a second.
     for (let frame = 1; frame <= 120; frame += 1) {
-      const callback: FrameRequestCallback | null = pending;
-      pending = null;
+      const callback = queued.next;
+      queued.next = null;
       act(() => callback?.(start + (frame * 1000) / 60));
     }
     const renders = deck.renders - before;
