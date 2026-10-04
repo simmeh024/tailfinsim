@@ -618,8 +618,15 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/*
+ * Wraps, like the strip it sits in. The layer group is eight buttons, and at a
+ * phone's 44 px touch targets it is wider than a 390 px screen: unwrapped, it ran
+ * off the right edge and "Legend" could not be reached at all. The HUD row grows
+ * with it, so nothing below is covered.
+ */
 .world-renderer__control-group {
   display: flex;
+  flex-wrap: wrap;
   padding: var(--space-1);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
