@@ -133,8 +133,12 @@ const DEFAULT_VISIBILITY: WorldLayerVisibility = {
   airports: true,
 };
 
-/** How fast a plane crosses its whole route: ~1/26 per second, so a full pass is ~26s. */
-const PLANE_SPEED_PER_SECOND = 0.038;
+/**
+ * How fast the route shimmer travels: ~1/26 of a leg per second, so one pass of
+ * the brightened window takes about 26 seconds whatever the route's length —
+ * §H.3's *"slow directional shimmer"*.
+ */
+const SHIMMER_SPEED_PER_SECOND = 0.038;
 
 /**
  * How long the hand-off between the world and an airport map takes, both ways
@@ -197,7 +201,19 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   // The player's overlay, refreshed while the page is open (WORLD-06).
   const map = useWorldOverlay();
   const [maxRangeNm, setMaxRangeNm] = useState(0);
-  const [phase, setPhase] = useState(0);
+  /*
+   * Where the route shimmer is, as a whole segment of the sampled track.
+   *
+   * An integer on purpose. The window the shimmer draws is sliced out of the
+   * track a segment at a time, so it only moves when this changes — about 2.4
+   * times a second at full quality. It used to be a continuous phase in state,
+   * set on every animation frame: sixty React renders and sixty full deck.gl
+   * redraws a second for a picture that changed twice. Measured on an Iris Xe at
+   * 1440×900, that was 52 commits and ~880 ms of script per second, and the flat
+   * map missed its own 60 fps budget. The continuous phase lives in a ref.
+   */
+  const [shimmerStep, setShimmerStep] = useState(0);
+  const shimmerPhase = useRef(0);
   const [selectedAirport, setSelectedAirport] = useState<WorldAirport | null>(null);
   /** What the pointer is over, and where — see `hover.ts`. */
   const [hover, setHover] = useState<{ label: HoverLabel; at: HoverPoint } | null>(null);
@@ -856,12 +872,16 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     !reducedMotion && visibility.routes && ownPaths.length > 0 && airportView === null;
 
   /*
-   * Advance the phase each frame. `requestAnimationFrame` pauses itself when the
-   * tab is hidden, and only the plane and shimmer layers depend on `phase`, so
-   * the land, sea and day/night bitmaps are not rebuilt as it ticks.
+   * Advance the shimmer each frame, and render only when it has moved.
    *
-   * Stopping leaves `phase` where it was rather than resetting it, so turning a
-   * layer back on resumes the aeroplanes rather than teleporting them home.
+   * The phase accumulates in a ref; what reaches state is the whole segment it
+   * is on, and React skips a render when a state setter is handed the value it
+   * already has — so the frames in between cost a callback and nothing else, and
+   * deck.gl redraws only when the trail actually steps. `requestAnimationFrame`
+   * pauses itself when the tab is hidden.
+   *
+   * Stopping leaves the phase where it was rather than resetting it, so turning
+   * the layer back on resumes the shimmer rather than restarting it.
    */
   useEffect(() => {
     if (!animating) return;
@@ -870,12 +890,13 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     const step = (now: number): void => {
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
-      setPhase((p) => (p + dt * PLANE_SPEED_PER_SECOND) % 1);
+      shimmerPhase.current = (shimmerPhase.current + dt * SHIMMER_SPEED_PER_SECOND) % 1;
+      setShimmerStep(Math.floor(shimmerPhase.current * shimmerSegments));
       raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [animating]);
+  }, [animating, shimmerSegments]);
 
   const shimmerLayer = useMemo(() => {
     // Off with the routes it travels along. The lines are gated on the same flag
@@ -884,7 +905,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     if (reducedMotion || !visibility.routes || ownPaths.length === 0) return false;
     const windowLen = Math.max(2, Math.round(shimmerSegments * 0.1));
     const trails = ownPaths.map(({ id, full }) => {
-      const start = Math.min(full.length - windowLen, Math.floor(phase * (full.length - 1)));
+      const start = Math.min(full.length - windowLen, shimmerStep);
       return {
         id,
         path: full.slice(Math.max(0, start), Math.max(windowLen, start + windowLen)),
@@ -910,7 +931,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       parameters: { cullMode: 'none' },
       getPolygonOffset: () => [0, -70000],
     });
-  }, [reducedMotion, visibility.routes, ownPaths, shimmerSegments, phase, palette.route]);
+  }, [reducedMotion, visibility.routes, ownPaths, shimmerSegments, shimmerStep, palette.route]);
 
   const allLayers = useMemo<(Layer | false)[]>(
     () => [

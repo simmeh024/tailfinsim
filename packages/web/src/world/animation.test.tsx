@@ -20,7 +20,15 @@ import type { WorldRoute } from './layers';
  * route ran a sixty-times-a-second state update producing nothing at all.
  */
 
-vi.mock('@deck.gl/react', () => ({ default: () => null }));
+/** How many times the map handed deck.gl a new frame of props. */
+const deck = vi.hoisted(() => ({ renders: 0 }));
+
+vi.mock('@deck.gl/react', () => ({
+  default: () => {
+    deck.renders += 1;
+    return null;
+  },
+}));
 
 vi.mock('./airports-api', () => ({ fetchWorldAirports: () => Promise.resolve([]) }));
 
@@ -151,5 +159,38 @@ describe('a reader who has asked for less motion', () => {
     await renderWorld([OWN_ROUTE]);
 
     expect(frames).not.toHaveBeenCalled();
+  });
+});
+
+describe('the route shimmer', () => {
+  it('re-renders the map when the trail moves, not on every frame', async () => {
+    /*
+     * The shimmer used to keep a continuous phase in React state and set it on
+     * every animation frame: sixty renders, and sixty full deck.gl redraws, a
+     * second — for a trail that is sliced out of the track a whole segment at a
+     * time and so only visibly moves about twice a second. Measured on the
+     * running app that was ~880 ms of script per second.
+     */
+    let pending: FrameRequestCallback | null = null;
+    frames.mockImplementation((callback: FrameRequestCallback) => {
+      pending = callback;
+      return 1;
+    });
+    await renderWorld([OWN_ROUTE]);
+
+    const start = performance.now();
+    const before = deck.renders;
+    // Two seconds of frames at sixty a second.
+    for (let frame = 1; frame <= 120; frame += 1) {
+      const callback: FrameRequestCallback | null = pending;
+      pending = null;
+      act(() => callback?.(start + (frame * 1000) / 60));
+    }
+    const renders = deck.renders - before;
+
+    // The trail steps 0.038 of a leg a second across a 64-segment track (32 at
+    // reduced quality): about five steps in two seconds, or two and a half.
+    expect(renders).toBeGreaterThan(0);
+    expect(renders).toBeLessThanOrEqual(8);
   });
 });
