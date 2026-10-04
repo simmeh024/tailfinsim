@@ -36,7 +36,14 @@ export function alertHref(alert: Pick<Alert, 'screen' | 'subjectType' | 'subject
     case 'crew':
       return '/crew';
     case 'fleet':
-      return '/fleet';
+      /*
+       * An airframe alert — a check due and unbooked — opens the Fleet page's
+       * maintenance planner on that aircraft (SURFACE-04), so booking the check
+       * the alert is about is one click from it.
+       */
+      return alert.subjectType === 'airframe'
+        ? `/fleet?maintenance=${encodeURIComponent(alert.subjectId)}`
+        : '/fleet';
     case 'ground':
       // Ground contracts are per station and the station pages hang off the
       // network map; the Operations dashboard is where the expiries are listed

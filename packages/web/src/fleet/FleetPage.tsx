@@ -20,6 +20,7 @@ import {
 import { FleetMarket } from './FleetMarket';
 import { FleetOrders } from './FleetOrders';
 import { FleetTable } from './FleetTable';
+import { MaintenancePlanner } from './MaintenancePlanner';
 
 import type { ReactNode } from 'react';
 
@@ -59,7 +60,19 @@ import type { ReactNode } from 'react';
  * has not bought anything yet is exactly who most needs the catalogue.
  */
 
+/**
+ * `?maintenance=<airframeId>` — the destination of an alert about an unbooked
+ * check (SURFACE-04): the planner opens on that aircraft. Read from the URL
+ * rather than a router hook, as the Network page reads its prefill, so a
+ * bare-rendered test needs no router around the page.
+ */
+function maintenancePreselect(): string | null {
+  const value = new URLSearchParams(globalThis.location?.search ?? '').get('maintenance');
+  return value === null || value === '' ? null : value;
+}
+
 export function FleetPage(): ReactNode {
+  const [preselect] = useState(maintenancePreselect);
   const [catalogue, setCatalogue] = useState<FleetCatalogueResponse | null>(null);
   const [catalogueFailed, setCatalogueFailed] = useState(false);
   const [fleet, setFleet] = useState<FleetAirframesResponse | null>(null);
@@ -157,6 +170,13 @@ export function FleetPage(): ReactNode {
             }}
           />
         ))}
+
+      {/*
+        Maintenance planning (SURFACE-04), under the list it extends rather than
+        on a page of its own: the list already quotes each aircraft's next check,
+        and this is where the fleet's checks are planned and booked.
+      */}
+      <MaintenancePlanner preselect={preselect} />
 
       <h2 className="fleet__section-heading">Open orders</h2>
       {ordersFailed ? (

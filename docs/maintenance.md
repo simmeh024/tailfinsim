@@ -189,7 +189,53 @@ finds nothing. Two workers racing through a handover cannot complete the same ch
 - **Retrofits** (App. C.3 rule 5) are a fleet action, not a check. M4-03 owns the option rules.
 - **Lender repossession** (§13.5) reads maintenance state but is M8's.
 - **Unscheduled AOG, incidents, insurance** — §24's own area, untouched.
-- **The maintenance readout** now has a home: M4-07's fleet table quotes the next check by the
-  limit that binds, and the aircraft detail shows all three tiers with their cost and downtime
-  ([`fleet-management.md`](fleet-management.md)). Booking a check from that page is still not
-  wired — `POST /api/fleet/maintenance/checks` works, but the fleet views are read-only.
+- **The maintenance readout** has a home: M4-07's fleet table quotes the next check by the
+  limit that binds, the aircraft detail shows all three tiers with their cost and downtime
+  ([`fleet-management.md`](fleet-management.md)), and the planner below books the work.
+- **An explicit deferral.** The model has no deferral record — putting a check off is the
+  absence of a booking. The page states the consequence beside the button instead (below);
+  making a deferral a recorded decision would be a model change, and SAFETY-09's causal
+  factor is the milestone that would want one.
+
+---
+
+## The page
+
+**SURFACE-04.** Maintenance is planned on the **Fleet page**, in a section under the list it
+extends (`#maintenance`), not on a page of its own: M4-07's list already quotes each aircraft's
+next check, and a second fleet view would be two answers to _"which aircraft needs attention"_.
+
+| What               | Where it comes from                                                        |
+| ------------------ | -------------------------------------------------------------------------- |
+| **Coming due**     | the fleet's next six checks, most used interval first, across all aircraft |
+| **Every aircraft** | status, next check by the binding limit, technical-fault risk              |
+| **Book a check**   | the three tiers with the server's cost and downtime, and the choice        |
+
+- **What is due across the fleet** is the planning view the issue asks for — _"one aeroplane's
+  next check is a detail, the fleet's next six are a schedule."_ Aircraft already in a check
+  are left out (the decision is taken), and so is a lighter tier while a heavier one on the
+  same airframe is due, because a D-check covers the C and A work.
+- **Cost and downtime are stated before committing**, on the button itself (_"Book A-check —
+  $18,000, 1 game day out of service"_), and both are the server's quote — the cost already
+  carries §10.4's maintenance-cost reduction (M9-06). The request carries an airframe and a
+  tier and nothing else (SEC-09); the return date shown afterwards is the server's answer. The
+  page never retries a booking: the endpoint takes no idempotency key, and a retry after a
+  timeout could book twice.
+- **Deferral has its consequence written beside the choice**: a due tier says the technical-
+  fault risk now and that flying far enough past the limit grounds the aircraft.
+- **A null history renders as _last completed at the hours it has now_.** The response carries
+  `historyRecorded`, and an airframe without one says so in words — _"No maintenance history
+  recorded: every check counts as last completed at the 24,000 h … it has now"_ — while every
+  figure on the row is the server's remaining interval. The page never computes a "since the
+  last check" count, so it has no way to render the null as zero. A test holds both halves.
+- **In check, grounded, and a hold this build does not know** are three different labels. A
+  status a newer server sends (SAFETY-05's regulatory hold) is drawn as _Held_ with its own
+  name rather than as nothing.
+- **A check nothing will finish** is told apart from one in progress. Checks complete on the
+  worker's tick, so once the world's clock has passed a check's completion by more than a game
+  hour the row says _"Check not completing"_ and why, rather than going on saying _"in check"_
+  — on a node with no worker that is what an aircraft booked into a check looks like for ever.
+- An alert about a check due and unbooked links to `/fleet?maintenance=<airframeId>`, which
+  opens the planner on that aircraft.
+- Money is formatted through the display-currency boundary (M8-02); the four states are
+  `StateBlock`'s; colour is tokens only.

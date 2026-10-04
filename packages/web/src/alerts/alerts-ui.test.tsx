@@ -302,6 +302,13 @@ describe('every screen an alert can name (AC3)', () => {
     );
   });
 
+  it('sends a check alert to the maintenance planner on that aircraft (SURFACE-04)', () => {
+    expect(alertHref({ screen: 'fleet', subjectType: 'airframe', subjectId: 'af-1' })).toBe(
+      '/fleet?maintenance=af-1',
+    );
+    expect(alertHref({ screen: 'fleet', subjectType: 'airline', subjectId: 'a' })).toBe('/fleet');
+  });
+
   it('keeps the alerts page in the rail, so the count links somewhere', () => {
     expect(NAV_ITEMS.map((item) => item.to)).toContain('/alerts');
   });

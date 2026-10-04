@@ -318,6 +318,7 @@ const DETAIL: AirframeDetailResponse = {
     checkCompletesAt: null,
     totalHours: 1_240.5,
     totalCycles: 610,
+    historyRecorded: true,
     technicalRisk: 0.004,
     airworthy: true,
     dueTiers: [],
@@ -391,6 +392,9 @@ function stubApi(
         return orders === null ? failure(500) : json(orders);
       }
       if (url === `/api/fleet/airframes/${AIRFRAME_ID}`) return json(DETAIL);
+      // SURFACE-04's planner, on the same page. Its own tests are in
+      // maintenance-ui.test.tsx; here it only has to load quietly.
+      if (url === '/api/fleet/maintenance') return json({ airframes: [DETAIL.maintenance] });
       // Every other airframe id is a 404, which is what a cross-owner id gets
       // (ADR-0020) as well as one that does not exist.
       if (url.startsWith('/api/fleet/airframes/')) return failure(404);

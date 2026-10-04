@@ -442,6 +442,7 @@ function maintenanceView(row: AirframeRow, context: RowContext): MaintenanceAirf
     checkCompletesAt: row.checkCompletesAt?.toISOString() ?? null,
     totalHours: row.hours,
     totalCycles: row.cycles,
+    historyRecorded: row.maintenanceState !== null,
     technicalRisk: status.technicalRisk,
     airworthy: status.airworthiness.airworthy,
     dueTiers: [...status.dueTiers],
