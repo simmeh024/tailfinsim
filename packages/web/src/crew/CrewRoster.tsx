@@ -13,6 +13,7 @@ import { Button } from '../ui/Button';
 import { StateBlock } from '../ui/StateBlock';
 
 import { CREW_RANK_LABEL } from './CrewRoleBanner';
+import { TableScroll } from './TableScroll';
 
 import type { CrewFailure } from './api';
 import type { ReactNode } from 'react';
@@ -172,57 +173,59 @@ export function CrewRoster({
         </StateBlock>
       ) : (
         <div className="crew-stack">
-          <table className="crew__table">
-            <caption className="visually-hidden">Named crew, by level</caption>
-            <thead>
-              <tr>
-                <th scope="col">Name</th>
-                <th scope="col">Rank</th>
-                <th scope="col">Base</th>
-                <th scope="col">Type</th>
-                <th scope="col" className="figure">
-                  Level
-                </th>
-                <th scope="col">Points</th>
-              </tr>
-            </thead>
-            <tbody>
-              {roster.members.map((member) => (
-                <tr key={member.id}>
-                  <th scope="row">
-                    <button
-                      type="button"
-                      className="crew__rowbutton"
-                      aria-pressed={selected?.id === member.id}
-                      onClick={() => {
-                        setSelectedId(member.id);
-                      }}
-                    >
-                      {member.name}
-                    </button>
+          <TableScroll label="Named crew">
+            <table className="crew__table">
+              <caption className="visually-hidden">Named crew, by level</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Name</th>
+                  <th scope="col">Rank</th>
+                  <th scope="col">Base</th>
+                  <th scope="col">Type</th>
+                  <th scope="col" className="figure">
+                    Level
                   </th>
-                  <td>
-                    {CREW_RANK_LABEL[member.rank]}
-                    {member.trainingCaptain.since !== null && (
-                      <span className="crew-tag">
-                        {member.rank === 'training_captain' ? 'designated' : 'Training Captain'}
-                      </span>
-                    )}
-                  </td>
-                  <td>{member.airportIcao}</td>
-                  <td>{member.family}</td>
-                  <td className="figure">{member.level}</td>
-                  <td>
-                    {member.unspentPoints > 0 ? (
-                      <span className="crew-tag">{member.unspentPoints} unspent</span>
-                    ) : (
-                      <span className="crew-tag crew-tag--muted">all spent</span>
-                    )}
-                  </td>
+                  <th scope="col">Points</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {roster.members.map((member) => (
+                  <tr key={member.id}>
+                    <th scope="row">
+                      <button
+                        type="button"
+                        className="crew__rowbutton"
+                        aria-pressed={selected?.id === member.id}
+                        onClick={() => {
+                          setSelectedId(member.id);
+                        }}
+                      >
+                        {member.name}
+                      </button>
+                    </th>
+                    <td>
+                      {CREW_RANK_LABEL[member.rank]}
+                      {member.trainingCaptain.since !== null && (
+                        <span className="crew-tag">
+                          {member.rank === 'training_captain' ? 'designated' : 'Training Captain'}
+                        </span>
+                      )}
+                    </td>
+                    <td>{member.airportIcao}</td>
+                    <td>{member.family}</td>
+                    <td className="figure">{member.level}</td>
+                    <td>
+                      {member.unspentPoints > 0 ? (
+                        <span className="crew-tag">{member.unspentPoints} unspent</span>
+                      ) : (
+                        <span className="crew-tag crew-tag--muted">all spent</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
 
           {selected !== null && (
             <PilotCard
@@ -250,35 +253,37 @@ export function CrewRoster({
           returns before the cap, so the tenth veteran is worth less than the first.
         </p>
       </div>
-      <table className="crew__table" aria-labelledby="crew-boosts-heading">
-        <thead>
-          <tr>
-            <th scope="col">Efficiency</th>
-            <th scope="col" className="figure">
-              Now
-            </th>
-            <th scope="col" className="figure">
-              Ceiling
-            </th>
-            <th scope="col">Contributors</th>
-          </tr>
-        </thead>
-        <tbody>
-          {roster.boosts.map((boost) => (
-            <tr key={boost.ceiling}>
-              <th scope="row">{CEILING_LABEL[boost.ceiling] ?? boost.ceiling}</th>
-              <td className="figure">
-                {boost.fraction > 0 ? `−${percent(boost.fraction)}` : '—'}{' '}
-                {boost.capped && <span className="crew-tag crew-tag--short">at ceiling</span>}
-              </td>
-              <td className="figure">−{percent(boost.maxFraction)}</td>
-              <td>
-                {boost.contributors === 0 ? 'nobody yet' : `${String(boost.contributors)} crew`}
-              </td>
+      <TableScroll label="What the roster is worth, by quantity">
+        <table className="crew__table" aria-labelledby="crew-boosts-heading">
+          <thead>
+            <tr>
+              <th scope="col">Efficiency</th>
+              <th scope="col" className="figure">
+                Now
+              </th>
+              <th scope="col" className="figure">
+                Ceiling
+              </th>
+              <th scope="col">Contributors</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {roster.boosts.map((boost) => (
+              <tr key={boost.ceiling}>
+                <th scope="row">{CEILING_LABEL[boost.ceiling] ?? boost.ceiling}</th>
+                <td className="figure">
+                  {boost.fraction > 0 ? `−${percent(boost.fraction)}` : '—'}{' '}
+                  {boost.capped && <span className="crew-tag crew-tag--short">at ceiling</span>}
+                </td>
+                <td className="figure">−{percent(boost.maxFraction)}</td>
+                <td>
+                  {boost.contributors === 0 ? 'nobody yet' : `${String(boost.contributors)} crew`}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </TableScroll>
     </section>
   );
 }
@@ -549,45 +554,47 @@ function TrainingCoverage({ rows }: { rows: readonly TrainingCoverageView[] }): 
           its cap.
         </p>
       </div>
-      <table className="crew__table" aria-labelledby="crew-training-heading">
-        <thead>
-          <tr>
-            <th scope="col">Base</th>
-            <th scope="col">Type</th>
-            <th scope="col" className="figure">
-              Training Captains
-            </th>
-            <th scope="col" className="figure">
-              Pilots
-            </th>
-            <th scope="col" className="figure">
-              Covered
-            </th>
-            <th scope="col" className="figure">
-              Pilot XP
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={`${row.crewBaseId}:${row.family}`}>
-              <th scope="row">{row.airportIcao}</th>
-              <td>{row.family}</td>
-              <td className="figure">{row.trainingCaptains}</td>
-              <td className="figure">{row.flightDeckHeads}</td>
-              <td className="figure">{`${String(Math.round(row.coverage * 100))}%`}</td>
-              <td className="figure">
-                {`×${row.multiplier.toFixed(2)}`}
-                {row.capped ? (
-                  <span className="crew-tag crew-tag--short">at cap</span>
-                ) : (
-                  row.coverage >= 1 && <span className="crew-tag">fully covered</span>
-                )}
-              </td>
+      <TableScroll label="Training Captains and pilot XP, by base and type">
+        <table className="crew__table" aria-labelledby="crew-training-heading">
+          <thead>
+            <tr>
+              <th scope="col">Base</th>
+              <th scope="col">Type</th>
+              <th scope="col" className="figure">
+                Training Captains
+              </th>
+              <th scope="col" className="figure">
+                Pilots
+              </th>
+              <th scope="col" className="figure">
+                Covered
+              </th>
+              <th scope="col" className="figure">
+                Pilot XP
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={`${row.crewBaseId}:${row.family}`}>
+                <th scope="row">{row.airportIcao}</th>
+                <td>{row.family}</td>
+                <td className="figure">{row.trainingCaptains}</td>
+                <td className="figure">{row.flightDeckHeads}</td>
+                <td className="figure">{`${String(Math.round(row.coverage * 100))}%`}</td>
+                <td className="figure">
+                  {`×${row.multiplier.toFixed(2)}`}
+                  {row.capped ? (
+                    <span className="crew-tag crew-tag--short">at cap</span>
+                  ) : (
+                    row.coverage >= 1 && <span className="crew-tag">fully covered</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </TableScroll>
     </>
   );
 }

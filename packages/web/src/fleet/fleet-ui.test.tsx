@@ -645,6 +645,17 @@ describe('the fleet a player owns', () => {
     expect(rows[1]?.textContent).toContain('PH-TFA');
   });
 
+  it('scrolls the table inside its own focusable box on a narrow screen', async () => {
+    // UX pass: at 390px the nine columns pushed the whole stage sideways.
+    stubApi();
+    await openFleet();
+    const table = await fleetTable();
+    const box = table.closest('.fleet__table-scroll');
+    expect(box).not.toBeNull();
+    expect(box).toHaveAttribute('tabindex', '0');
+    expect(box).toHaveAccessibleName('Your aircraft');
+  });
+
   it('says once, at the top, that something cannot fly', async () => {
     stubApi();
     await openFleet();

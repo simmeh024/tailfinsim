@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CrewBaseView, CrewResponse } from '@tailfin/shared';
@@ -763,6 +764,55 @@ describe('the KPI glyphs', () => {
       ?.querySelector('.crew-kpi__glyph')?.textContent;
 
     expect(whenShort).toBe(whenCalm);
+  });
+});
+
+describe('loading, empty and broken (UX-07)', () => {
+  it('announces a read in flight rather than sitting silent', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>(() => undefined)),
+    );
+    renderPage();
+    expect(screen.getByRole('status')).toHaveTextContent('Reading your crew…');
+  });
+
+  it('tells a failed read apart from an airline with no crew', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) } as Response),
+      ),
+    );
+    renderPage();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Could not load your crew/);
+  });
+
+  it('points a player with no airline at the founding desk', async () => {
+    respondWith(null);
+    render(
+      <MemoryRouter>
+        <CrewPage />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText(/Found an airline first/)).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Open the founding desk' })).toHaveAttribute(
+      'href',
+      '/found',
+    );
+  });
+
+  it('scrolls each wide table inside its own focusable box', async () => {
+    respondWith(MIXED);
+    renderPage();
+    const table = await screen.findByRole('table', { name: /Required is/ });
+    const box = table.closest('.crew__table-scroll');
+    expect(box).toHaveAttribute('tabindex', '0');
+    expect(box).toHaveAccessibleName('Coverage by family and rank');
+    expect(
+      screen.getByRole('table', { name: 'Crew at EHAM' }).closest('.crew__table-scroll'),
+    ).toHaveAccessibleName('Crew at EHAM');
   });
 });
 

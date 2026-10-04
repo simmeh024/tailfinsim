@@ -4576,9 +4576,29 @@ body {
   font-size: var(--text-sm);
 }
 
+.fleet__table-scroll {
+  /* Positioned, so a visually-hidden header label (absolutely positioned) is
+     contained by this box rather than widening the stage behind it. */
+  position: relative;
+  overflow-x: auto;
+  /* Room for a focused cell's outline inside the scroll box. */
+  padding-bottom: var(--space-1);
+}
+
 .fleet__table {
   width: 100%;
   border-collapse: collapse;
+}
+
+.fleet__table-note {
+  margin: 0 0 var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+/* A registration is one token; `TF-` on one line and the rest on the next is not. */
+.fleet__table td strong {
+  white-space: nowrap;
 }
 
 .fleet__table td,
@@ -5699,6 +5719,16 @@ body {
   font-size: var(--text-sm);
 }
 
+/* A crew table scrolls inside its own box on a narrow screen (UX pass). */
+.crew__table-scroll {
+  /* Positioned for the same reason as `.fleet__table-scroll`: a visually-hidden
+     caption must not widen the stage. */
+  position: relative;
+  overflow-x: auto;
+  max-width: 100%;
+  padding-bottom: var(--space-1);
+}
+
 .crew__table {
   width: 100%;
   border-collapse: collapse;
@@ -6018,6 +6048,7 @@ body {
 
 .crew__caption {
   caption-side: bottom;
+  margin: 0;
   padding-top: var(--space-2);
   font-size: var(--text-xs);
   color: var(--text-secondary);
@@ -6979,7 +7010,9 @@ body {
   /* Every card in a row is the same height, so a bottom-aligned action lines up
      across the shortlist however long the boost sentences run. */
   align-items: stretch;
-  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  /* 11.5rem lets a seat's four-candidate shortlist sit on one row beside the
+     context panel at 1440px, where 15rem broke it three and one (UX pass). */
+  grid-template-columns: repeat(auto-fill, minmax(11.5rem, 1fr));
   gap: var(--space-4);
 }
 
@@ -7312,8 +7345,11 @@ body {
 }
 
 @media (max-width: 34rem) {
+  /* Two to a row on a phone. One full-width 3:4 portrait per candidate made the
+     Headquarters page twelve thousand pixels long (UX pass, UX-09). */
   .hq-grid {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
   }
 
   .hq-page__reshuffle {
@@ -7928,10 +7964,13 @@ body {
   border-color: var(--accent);
 }
 
-/* A candidate with no free office: dimmed, with a padlock over the portrait and
-   an inert action, so "there is nowhere to put them" reads at a glance. */
-.hq-card[data-locked='true'] {
-  opacity: 0.62;
+/* A candidate with no free office: the portrait dimmed under a padlock and an
+   inert action, so "there is nowhere to put them" reads at a glance.
+   The portrait only (UX pass, UX-10): dimming the whole card took the name,
+   role, boost and salary down to about 2:1 — the facts a player compares
+   while deciding whether to open an office were the ones made unreadable. */
+.hq-card[data-locked='true'] .hq-card__portrait img {
+  opacity: 0.55;
 }
 
 .hq-card__lock {
