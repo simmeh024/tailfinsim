@@ -69,7 +69,13 @@
 
   --text-primary: #e9eef6;
   --text-secondary: #9dabc0;
-  --text-muted: #6d7c93;
+  /*
+   * The quiet ink: captions, hints, empty states. Raised from #6d7c93 in the UX
+   * pass, which measured 4.13:1 on --bg-raised — under AA on exactly the panels
+   * it captions, the pairing LANDING-02 had already refused to import. 5.06:1
+   * now; tokens.test.ts measures every text ink on every ground in both themes.
+   */
+  --text-muted: #7d8ba1;
   --text-on-accent: #04121f;
 
   /* One accent for interactive elements. */
@@ -255,7 +261,8 @@
 
   --text-primary: #16202e;
   --text-secondary: #46566d;
-  --text-muted: #6b7a90;
+  /* Darkened from #6b7a90 (3.57:1 on --bg-inset) in the UX pass; 4.63:1 at worst now. */
+  --text-muted: #5a687d;
   --text-on-accent: #ffffff;
 
   --accent: #0a63b0;

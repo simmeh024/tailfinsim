@@ -194,3 +194,59 @@ describe('token references', () => {
     expect(offences, `undefined custom properties:\n${offences.join('\n')}`).toEqual([]);
   });
 });
+
+/**
+ * Text contrast, measured rather than asserted (UX pass, UX-10).
+ *
+ * H.7 asks for *"WCAG AA contrast throughout"*, and the token every caption,
+ * hint and empty state uses — `--text-muted` — measured 4.13:1 on `--bg-raised`
+ * in the dark theme and 3.57:1 on `--bg-inset` in the light one. Nothing caught
+ * it, because nothing measured it; LANDING-02 had found the same pair and simply
+ * refused to import it. So every ink is measured here on every opaque ground, in
+ * both themes, at AA's 4.5:1 for body text.
+ */
+describe('text contrast', () => {
+  const tokens = readFileSync(TOKEN_FILE, 'utf8');
+
+  const valuesIn = (selector: string): Record<string, string> => {
+    const block = tokens.slice(tokens.indexOf(selector));
+    const body = block.slice(block.indexOf('{'), block.indexOf('}'));
+    return Object.fromEntries(
+      [...body.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;]+);/g)].map((m) => [
+        m[1]!,
+        m[2]!.trim().toLowerCase(),
+      ]),
+    );
+  };
+
+  function channel(value: number): number {
+    const c = value / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  }
+
+  function luminance(hex: string): number {
+    const h = hex.replace('#', '');
+    const [r, g, b] = [0, 2, 4].map((i) => channel(parseInt(h.slice(i, i + 2), 16)));
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  }
+
+  function contrast(fg: string, bg: string): number {
+    const [a, b] = [luminance(fg), luminance(bg)];
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  }
+
+  const INKS = ['--text-primary', '--text-secondary', '--text-muted'];
+  const GROUNDS = ['--bg-base', '--bg-raised', '--bg-inset'];
+  const cases = [':root,', "[data-theme='light']"].flatMap((theme) =>
+    INKS.flatMap((ink) => GROUNDS.map((ground) => [theme, ink, ground] as const)),
+  );
+
+  it.each(cases)('%s %s on %s clears 4.5:1', (theme, ink, ground) => {
+    const values = valuesIn(theme);
+    const fg = values[ink];
+    const bg = values[ground];
+    expect(fg, `${ink} must be an opaque hex colour`).toMatch(/^#[0-9a-f]{6}$/);
+    expect(bg, `${ground} must be an opaque hex colour`).toMatch(/^#[0-9a-f]{6}$/);
+    expect(contrast(fg!, bg!)).toBeGreaterThanOrEqual(4.5);
+  });
+});
