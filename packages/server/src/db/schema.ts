@@ -580,6 +580,12 @@ export const cashMovementCause = pgEnum('cash_movement_cause', [
    * `research_upkeep:<airlineId>:<YYYY-MM>`.
    */
   'research_upkeep',
+  /**
+   * §7.2's *"monthly drain"* (OTHER-01): a month of a leased airframe's rent,
+   * prorated by the game time held. Referenced
+   * `aircraft_lease_rental:<airlineId>:<YYYY-MM>`.
+   */
+  'aircraft_lease_rental',
   'admin_adjustment',
   'flight_settlement',
   'disruption_cost',

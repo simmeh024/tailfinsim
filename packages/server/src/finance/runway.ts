@@ -10,7 +10,8 @@ import {
   type CashCommitment,
 } from '@tailfin/sim';
 
-import { crewPayrollLines, foldCrewBills } from '../crew/payroll';
+import { leaseRentalForMonth, leaseRentalLines } from '../aircraft/lease-rentals';
+import { crewPayrollLines, foldCrewBills, previousMonth } from '../crew/payroll';
 import {
   airline,
   airlineHub,
@@ -145,7 +146,8 @@ function classifyCause(cause: CashMovementCause): CauseRole {
     // well would bill the airline's payroll and interest twice over. App. B.5's
     // monthly hub fee is here for exactly that reason: `commitmentsFor` rebuilds
     // it from the hubs the airline holds, and §10.1's academy upkeep the same
-    // way from the academies it holds.
+    // way from the academies it holds. §7.2's lease rent (OTHER-01) likewise,
+    // from the airframes held, by the very function the sweep bills with.
     case 'crew_payroll':
     case 'crew_base_overhead':
     case 'office_salary':
@@ -153,6 +155,7 @@ function classifyCause(cause: CashMovementCause): CauseRole {
     case 'loan_interest':
     case 'hub_upkeep':
     case 'academy_upkeep':
+    case 'aircraft_lease_rental':
       return 'projected';
 
     /*
@@ -239,7 +242,7 @@ async function commitmentsFor(
   const economy = await loadWorldEconomyConfig(db, own.worldId);
   const commitments: CashCommitment[] = [];
 
-  const [crewLines, officeRows, execRows, selfHandled, loans, hubRows, hubFacilityRows] =
+  const [crewLines, officeRows, execRows, selfHandled, loans, hubRows, hubFacilityRows, leases] =
     await Promise.all([
       crewPayrollLines(db, own.worldId, own.id),
       db
@@ -274,6 +277,7 @@ async function commitmentsFor(
         .from(hubFacility)
         .innerJoin(airlineHub, eq(airlineHub.id, hubFacility.hubId))
         .where(eq(airlineHub.airlineId, own.id)),
+      leaseRentalLines(db, own.worldId, own.id),
     ]);
 
   /*
@@ -343,6 +347,23 @@ async function commitmentsFor(
         amountMinor: hubMonthlyMinor,
         kind: 'hub',
         label: `Hub and facility fees (${String(hubRows.length)} hub${hubRows.length === 1 ? '' : 's'})`,
+      });
+    }
+    /*
+     * §7.2's lease rent (OTHER-01), billed at this boundary for the month that
+     * closes there — through `leaseRentalForMonth`, the function the sweep bills
+     * with, so a lease delivered mid-month is projected at the prorated figure it
+     * will actually be charged. M8-08 left leases out because no sweep charged
+     * them; the runway would have predicted an outflow that never arrived.
+     */
+    const period = previousMonth(dueAt);
+    const leaseMinor = leases.reduce((total, line) => total + leaseRentalForMonth(line, period), 0);
+    if (leaseMinor > 0) {
+      commitments.push({
+        dueAt,
+        amountMinor: leaseMinor,
+        kind: 'lease',
+        label: `Aircraft lease rent (${String(leases.length)} aircraft)`,
       });
     }
   }

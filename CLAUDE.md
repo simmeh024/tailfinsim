@@ -629,6 +629,16 @@ completion**, which is what made the migration need no backfill; and **a funding
 closed month before it writes itself**, which is what makes a closed month's bill final — the
 worker and the handler can never compute two different bills for one month.
 
+**Lease rent is a worker story whose absence is a dominant strategy (OTHER-01).** A leased
+airframe's `monthly_lease_rate_minor` is billed by `runLeaseRentals` for each game month it is
+held, in arrears and prorated by the game time held, as one `aircraft_lease_rental` movement per
+airline per month with `lease_finance` ledger lines per aeroplane; `leaseRentalsBilled`,
+`leaseRentalMinor` and `leaseErrors` are the counters. **Production has no worker**, so there a
+lease costs its deposit and then nothing — which is not a degraded mechanic but a broken trade:
+leasing beats buying at every fleet size. The cash runway projects the rent through the same
+`leaseRentalForMonth`, so on dev the projection and the charge agree to the minor unit. Leases
+roll month to month with no term or return; §24 and MARKET-05 (#1103) own the lessor model.
+
 **`FLIGHT_DEPART` has a handler as of M5-02, and that was a decision.** `handlers.ts` had said
 for two milestones that inventing a departure would be _"the accidental decision ADR-0019's
 boundary exists to prevent"_, and that remains true of an accidental one. M5-02's _"legality is

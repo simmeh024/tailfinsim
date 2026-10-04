@@ -124,6 +124,13 @@ function categoryForCause(cause: CashMovementCause): LedgerCategory {
     case 'research':
     case 'research_upkeep':
       return 'crew';
+    /*
+     * §7.2's monthly lease rent (OTHER-01). `lease_finance` has stood in the
+     * vocabulary since M8-01 with nothing ever written to it — this is what it
+     * was for, and it is a financing line, outside EBITDA (`credit.ts`).
+     */
+    case 'aircraft_lease_rental':
+      return 'lease_finance';
     case 'office_salary':
       return 'office_salary';
     /*
