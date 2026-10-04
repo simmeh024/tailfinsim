@@ -64,6 +64,7 @@ import {
   gateRequirement,
   leaseBreakevenTurnsPerMonth,
   pairStandTurns,
+  sampleDayMovements,
   standAnnualFee,
   utilisationOfAssignment,
   type StandOccupancy,
@@ -366,6 +367,7 @@ async function occupanciesAt(
   }
   interface Departure {
     minute: number;
+    at: Date;
     toIcao: string;
   }
   const arrivals = new Map<string, Arrival[]>();
@@ -381,19 +383,25 @@ async function occupanciesAt(
       ]);
     }
     if (row.originIcao === air.icao) {
+      const at = instant(row.departure);
       departures.set(row.airframeId, [
         ...(departures.get(row.airframeId) ?? []),
-        { minute: localMinute(instant(row.departure)), toIcao: row.destinationIcao },
+        { minute: localMinute(at), at, toIcao: row.destinationIcao },
       ]);
     }
   }
 
   const occupancies: MeasuredTurn[] = [];
   for (const airframeId of new Set([...arrivals.keys(), ...departures.keys()])) {
-    for (const turn of pairStandTurns(
+    // One day of movements, as the pairing expects (OTHER-02): the window is
+    // wider than a day, and folding all of it onto one clock counted a daily
+    // turn twice.
+    const day = sampleDayMovements(
       arrivals.get(airframeId) ?? [],
       departures.get(airframeId) ?? [],
-    )) {
+      from,
+    );
+    for (const turn of pairStandTurns(day.arrivals, day.departures)) {
       occupancies.push({
         on: turn.on,
         off: turn.off,

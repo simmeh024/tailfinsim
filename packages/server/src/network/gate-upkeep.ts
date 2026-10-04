@@ -55,6 +55,7 @@ import type { StandKind } from '@tailfin/shared';
 import {
   belowUtilisationFloor,
   GATE_UTILISATION_GRACE_GAME_DAYS,
+  sampleDayMovements,
   standOccupancies,
   standUtilisation,
   type StandOccupancy,
@@ -238,7 +239,7 @@ export async function withdrawIdleStands(
     const [airlineId, icao] = key.split('|');
     if (airlineId === undefined || icao === undefined || !stations.includes(icao)) continue;
 
-    const occupancies = occupanciesFor(flights, airlineId, icao, offsetOf.get(icao) ?? 0);
+    const occupancies = occupanciesFor(flights, airlineId, icao, offsetOf.get(icao) ?? 0, gameNow);
     const rows = standUtilisation(occupancies, entry.ids.length);
     /*
      * The greedy assignment concentrates work on the first stands, so the idle
@@ -275,35 +276,46 @@ function occupanciesFor(
   airlineId: string,
   icao: string,
   offsetMinutes: number,
+  /** The start of the sampled day: one day of movements, as the pairing expects (OTHER-02). */
+  from: Date,
 ): StandOccupancy[] {
-  const localMinute = (at: Date | string): number => {
-    const ms = at instanceof Date ? at.getTime() : Date.parse(String(at));
-    const minutes = Math.floor(ms / 60_000) + offsetMinutes;
+  const instant = (at: Date | string): Date => (at instanceof Date ? at : new Date(String(at)));
+  const localMinute = (at: Date): number => {
+    const minutes = Math.floor(at.getTime() / 60_000) + offsetMinutes;
     return ((minutes % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
   };
 
-  const arrivals = new Map<string, number[]>();
-  const departures = new Map<string, number[]>();
+  const arrivals = new Map<string, { at: Date }[]>();
+  const departures = new Map<string, { at: Date }[]>();
   for (const row of flights) {
     if (row.airlineId !== airlineId) continue;
     if (row.destinationIcao === icao) {
       arrivals.set(row.airframeId, [
         ...(arrivals.get(row.airframeId) ?? []),
-        localMinute(row.arrival),
+        { at: instant(row.arrival) },
       ]);
     }
     if (row.originIcao === icao) {
       departures.set(row.airframeId, [
         ...(departures.get(row.airframeId) ?? []),
-        localMinute(row.departure),
+        { at: instant(row.departure) },
       ]);
     }
   }
 
   const occupancies: StandOccupancy[] = [];
   for (const airframeId of new Set([...arrivals.keys(), ...departures.keys()])) {
+    // The same one day the gates page measures (OTHER-02).
+    const day = sampleDayMovements(
+      arrivals.get(airframeId) ?? [],
+      departures.get(airframeId) ?? [],
+      from,
+    );
     occupancies.push(
-      ...standOccupancies(arrivals.get(airframeId) ?? [], departures.get(airframeId) ?? []),
+      ...standOccupancies(
+        day.arrivals.map((arrival) => localMinute(arrival.at)),
+        day.departures.map((departure) => localMinute(departure.at)),
+      ),
     );
   }
   return occupancies;

@@ -515,6 +515,58 @@ function withinOperatingDay(it: StandOccupancy): number {
 }
 
 /**
+ * Whether a game instant falls inside the sampled day, `[from, from + 1 day)`
+ * (OTHER-02).
+ *
+ * {@link standOccupancies} reads its input as **one repeating day** — an arrival
+ * with no later departure wraps to the day's first departure. So it must be fed
+ * exactly one day of movements. The readers fetch a wider window, because a flight
+ * that left elsewhere before the day can still land here inside it, and then keep
+ * an arrival only if it **lands** in the day and a departure only if it **leaves**
+ * in it — {@link sampleDayMovements} adds the one exception, an aeroplane already
+ * on the stand. Feeding two days folded onto one counted every daily turn twice, which
+ * doubled the gate requirement and split utilisation across stands that were
+ * never needed.
+ */
+export function inSampleDay(at: Date, from: Date): boolean {
+  const ms = at.getTime() - from.getTime();
+  return ms >= 0 && ms < MINUTES_PER_DAY * 60_000;
+}
+
+/**
+ * One airframe's movements at one airport, cut to the sampled day (OTHER-02).
+ *
+ * {@link inSampleDay} on both ends, with one addition: an aeroplane **already on
+ * the stand** when the day begins. In a repeating day that stay is the wrap of the
+ * day's last arrival to its first departure, so nothing is needed when the day
+ * brings the aeroplane back. When it does not — the day holds more departures
+ * than arrivals — the departure before any arrival has nothing to pair with, and
+ * the stay it ends would vanish; so the latest arrival before the day is kept, and
+ * only then. Counting rather than looking at the first movement is the point: an
+ * overnight rotation also starts its day with a departure, and its wrap already
+ * covers the stay that adding yesterday's arrival would count a second time.
+ */
+export function sampleDayMovements<A extends { at: Date }, D extends { at: Date }>(
+  arrivals: readonly A[],
+  departures: readonly D[],
+  from: Date,
+): { arrivals: A[]; departures: D[] } {
+  const inDay = arrivals.filter((arrival) => inSampleDay(arrival.at, from));
+  const leaving = departures.filter((departure) => inSampleDay(departure.at, from));
+  if (leaving.length > inDay.length) {
+    const before = arrivals
+      .filter((arrival) => arrival.at.getTime() < from.getTime())
+      .reduce<A | undefined>(
+        (latest, arrival) =>
+          latest === undefined || arrival.at.getTime() > latest.at.getTime() ? arrival : latest,
+        undefined,
+      );
+    if (before !== undefined) inDay.push(before);
+  }
+  return { arrivals: inDay, departures: leaving };
+}
+
+/**
  * Build the day's on-stand intervals for one airport from a rotation's arrivals
  * and departures.
  *

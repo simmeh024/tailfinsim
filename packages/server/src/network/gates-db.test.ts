@@ -2,16 +2,24 @@ import { and, eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDatabase, type DatabaseHandle } from '../db/client';
-import { airport, cashMovement, gateHolding } from '../db/schema';
+import { airport, cashMovement, flight, gateHolding } from '../db/schema';
 import { createAirportIdentities } from '../test-fixtures/airport-codes';
 import {
   createFoundedAirlineFixtureHarness,
   type FoundedAirlineFixture,
   type FoundedAirlineFixtureHarness,
 } from '../test-fixtures/founded-airline';
+import { worldGameNow } from '../world/game-now';
 
 import { billGateLeases } from './gate-upkeep';
-import { leaseStand, readAirportGates, releaseStand, resolveStand, standInventory } from './gates';
+import {
+  leaseStand,
+  readAirportGates,
+  readMeasuredAirportPicture,
+  releaseStand,
+  resolveStand,
+  standInventory,
+} from './gates';
 
 import type { ResolvedPlayerAirline } from '../airline/context';
 
@@ -447,6 +455,71 @@ describeDb('airport stands', () => {
       // closed before the lease existed and there is nothing to charge.
       const billed = await billGateLeases(db.db, a.world.id, new Date('1970-02-10T00:00:00.000Z'));
       expect(billed).toEqual({ airlinesBilled: 0, totalMinor: 0 });
+    });
+  });
+
+  describe('the measured day (OTHER-02)', () => {
+    const HOUR = 60 * 60 * 1_000;
+    const DAY = 24 * HOUR;
+    const LOAD = JSON.stringify({ economy: { seats: 70, passengers: 40, revenue: 40 * 7_500 } });
+
+    /** One sector, scheduled at game instants relative to `base`. */
+    async function sector(
+      fixture: FoundedAirlineFixture,
+      airframeId: string,
+      origin: string,
+      destination: string,
+      departs: Date,
+    ): Promise<void> {
+      await db.db.insert(flight).values({
+        worldId: fixture.world.id,
+        airlineId: fixture.airline.id,
+        airframeId,
+        originIcao: origin,
+        destinationIcao: destination,
+        scheduledDeparture: departs,
+        estimatedArrival: new Date(departs.getTime() + HOUR),
+        load: LOAD,
+        cargoKg: 0,
+      });
+    }
+
+    it('counts a daily rotation once, not once for each day the window spans', async () => {
+      const a = await fixtures.create({ baseCountry: 'GB' });
+      const hub = await makeAirport('large');
+      const spoke = await makeAirport('medium');
+      const airframeId = '00000000-0000-4000-8000-0000000000aa';
+      const gameNow = await worldGameNow(db.db, a.world.id);
+
+      // The same daily rotation, flown yesterday and today: in at +2 h, out at +3 h.
+      for (const day of [-1, 0]) {
+        const base = gameNow.getTime() + day * DAY;
+        await sector(a, airframeId, spoke, hub, new Date(base + 1 * HOUR));
+        await sector(a, airframeId, hub, spoke, new Date(base + 3 * HOUR));
+      }
+
+      const picture = await readMeasuredAirportPicture(db.db, own(a), hub, gameNow);
+      if (picture === null) throw new Error('no picture');
+      // One aeroplane on one stand at once. Folding yesterday onto today made it
+      // two overlapping turns, and the requirement asked for a gate nobody needed.
+      expect(picture.gates.requirement.peakConcurrency).toBe(1);
+      expect(picture.gates.requirement.turns).toBe(1);
+    });
+
+    it('still counts an arrival whose flight left before the sampled day began', async () => {
+      const a = await fixtures.create({ baseCountry: 'GB' });
+      const hub = await makeAirport('large');
+      const spoke = await makeAirport('medium');
+      const airframeId = '00000000-0000-4000-8000-0000000000ab';
+      const gameNow = await worldGameNow(db.db, a.world.id);
+
+      // Left the spoke half an hour before the day, lands here inside it.
+      await sector(a, airframeId, spoke, hub, new Date(gameNow.getTime() - HOUR / 2));
+      await sector(a, airframeId, hub, spoke, new Date(gameNow.getTime() + 2 * HOUR));
+
+      const picture = await readMeasuredAirportPicture(db.db, own(a), hub, gameNow);
+      expect(picture?.gates.requirement.turns).toBe(1);
+      expect(picture?.gates.requirement.peakConcurrency).toBe(1);
     });
   });
 });
