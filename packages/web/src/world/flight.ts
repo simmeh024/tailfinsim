@@ -348,6 +348,20 @@ export function flightPath(source: LngLat, target: LngLat, seed: number, segment
   return path;
 }
 
+/**
+ * A path as `[lng, lat, lng, lat, …]`, the flat form `PathLayer` takes when it is
+ * told the path is already normalised (`_pathType`). See the route layer in
+ * `layers.ts` for why the own routes are drawn that way.
+ */
+export function flatPath(path: readonly LngLat[]): Float64Array {
+  const flat = new Float64Array(path.length * 2);
+  path.forEach(([lng, lat], index) => {
+    flat[index * 2] = lng;
+    flat[index * 2 + 1] = lat;
+  });
+  return flat;
+}
+
 export interface RouteLike {
   id: string;
   source: LngLat;

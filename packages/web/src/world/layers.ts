@@ -1,6 +1,6 @@
 import { BitmapLayer, GeoJsonLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 
-import { altitudeProfile, flightPath, routeSeed } from './flight';
+import { altitudeProfile, flatPath, flightPath, routeSeed } from './flight';
 import { WEB_MERCATOR_MAX_LATITUDE } from './terminator';
 import { terrainImage } from './terrain';
 
@@ -738,7 +738,26 @@ export function createWorldLayers({
         // legs are identical. The plane rides the same track, since both come from
         // `flightPath`/`arcVec` seeded on the route id.
         getPath: ({ id, source, target }) =>
-          flightPath(source, target, routeSeed(id), routeSegments),
+          flatPath(flightPath(source, target, routeSeed(id), routeSegments)),
+        positionFormat: 'XY',
+        /*
+         * **Already normalised, and the per-vertex colour depends on it.**
+         *
+         * Left to itself, `PathLayer` normalises every path, and on the globe that
+         * means `cutPolylineByGrid`: the line is split at every `resolution`-degree
+         * grid line, which inserts vertices and breaks it into sub-paths. The colour
+         * accessor below returns exactly one colour per vertex of the path *as
+         * given*, so after the cut the colours ran out partway along — every long
+         * route on the globe stopped mid-ocean in a stub of the ground colour, its
+         * far half transparent, while the flat map (no grid) drew it whole.
+         *
+         * `'open'` tells the tessellator the path is final, so vertices and colours
+         * stay one to one. Nothing is lost by skipping the cut: the track is already
+         * sampled every 64th (32nd) of the leg — under three degrees even for an
+         * antipodal route — which is what the grid was for, and the longitudes are
+         * already unwrapped across the antimeridian. Requires a flat path.
+         */
+        _pathType: 'open',
         // Per-vertex colour: the altitude wash, one colour per point of the path.
         // The array matches the path's `routeSegments + 1` points and is the same
         // for every route, so PathLayer gradients each line without a per-route cost.

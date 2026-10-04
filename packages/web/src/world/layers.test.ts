@@ -35,6 +35,13 @@ const palette: WorldPalette = {
 /** Small enough to keep the test fast; the field's own tests own its contents. */
 const DARKNESS = createDarknessField(new Date('2026-08-22T12:00:00.000Z'), 16, 8);
 
+/** A flat `[lng, lat, …]` path back into points, the form the assertions read. */
+function pointsOf(flat: ArrayLike<number>): [number, number][] {
+  const points: [number, number][] = [];
+  for (let i = 0; i < flat.length; i += 2) points.push([flat[i]!, flat[i + 1]!]);
+  return points;
+}
+
 const antimeridianRoute: WorldRoute = {
   id: 'antimeridian',
   source: [170, 35],
@@ -73,8 +80,8 @@ describe('projection-independent world layers', () => {
     // The path is a single unwrapped polyline: every step stays under 180° of the
     // one before it, so there is no stray snap-back line across the whole map, and
     // the longitude genuinely climbs past ±180 rather than resetting.
-    const getPath = routes?.props.getPath as (route: WorldRoute) => [number, number][];
-    const path = getPath(antimeridianRoute);
+    const getPath = routes?.props.getPath as (route: WorldRoute) => Float64Array;
+    const path = pointsOf(getPath(antimeridianRoute));
     for (let i = 1; i < path.length; i += 1) {
       expect(Math.abs(path[i]![0] - path[i - 1]![0])).toBeLessThan(180);
     }
@@ -129,6 +136,55 @@ describe('projection-independent world layers', () => {
       // Never descends on the way up — a wash that wandered back down the ramp would
       // be saying the aircraft lost height.
       expect(climb[i]!, `sample ${String(i)}`).toBeGreaterThanOrEqual(climb[i - 1]!);
+    }
+  });
+
+  it('keeps one colour per vertex on the globe, where the grid would otherwise cut the path', () => {
+    /*
+     * The bug: on the globe `PathLayer` cut each route at every grid line,
+     * inserting vertices, while the colour accessor returned one colour per
+     * vertex of the uncut path. The colours ran out partway along, so every long
+     * route stopped mid-ocean in a stub of the ground colour. Declaring the path
+     * already normalised keeps the two one to one.
+     */
+    const layers = createWorldLayers({
+      palette,
+      quality: 'full',
+      routes: [antimeridianRoute],
+      airports: [],
+      hubs: [],
+      darkness: DARKNESS,
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
+      projection: 'globe',
+      visibility: {
+        graticule: false,
+        routes: true,
+        terminator: false,
+        borders: false,
+        terrain: false,
+        airports: false,
+      },
+    });
+    const routes = layers.find(
+      (layer): layer is PathLayer<WorldRoute> =>
+        layer instanceof PathLayer && layer.id === 'world-routes',
+    );
+    expect(routes?.props._pathType).toBe('open');
+    expect(routes?.props.positionFormat).toBe('XY');
+
+    const getPath = routes?.props.getPath as (route: WorldRoute) => Float64Array;
+    const getColor = routes?.props.getColor as (route: WorldRoute) => unknown[];
+    const flat = getPath(antimeridianRoute);
+    expect(flat).toBeInstanceOf(Float64Array);
+    expect(getColor(antimeridianRoute)).toHaveLength(flat.length / 2);
+
+    // Nothing is lost by skipping deck.gl's cut: consecutive vertices are already
+    // closer together than the globe's own mesh resolution at full quality.
+    const points = pointsOf(flat);
+    for (let i = 1; i < points.length; i += 1) {
+      const step = Math.hypot(points[i]![0] - points[i - 1]![0], points[i]![1] - points[i - 1]![1]);
+      expect(step).toBeLessThan(3);
     }
   });
 
@@ -361,8 +417,8 @@ describe('projection-independent world layers', () => {
         (layer): layer is PathLayer<WorldRoute> =>
           layer instanceof PathLayer && layer.id === 'world-routes',
       );
-      const getPath = routes?.props.getPath as (route: WorldRoute) => [number, number][];
-      return getPath(antimeridianRoute);
+      const getPath = routes?.props.getPath as (route: WorldRoute) => Float64Array;
+      return pointsOf(getPath(antimeridianRoute));
     };
     // Reduced mode samples the great circle with fewer points, so the polyline is
     // coarser — the segment count is what tessellation means for a flat line.
