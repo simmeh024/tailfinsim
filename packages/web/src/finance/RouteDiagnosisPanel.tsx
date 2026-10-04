@@ -82,7 +82,7 @@ export function RouteDiagnosisPanel({
   if (loading) {
     return (
       <section className="panel" aria-label="Route diagnosis">
-        <h2 className="panel__title">Why</h2>
+        <h3 className="panel__title">Why</h3>
         <StateBlock kind="loading">Reading the route.</StateBlock>
       </section>
     );
@@ -91,7 +91,7 @@ export function RouteDiagnosisPanel({
   if (diagnosis === null) {
     return (
       <section className="panel" aria-label="Route diagnosis">
-        <h2 className="panel__title">Why</h2>
+        <h3 className="panel__title">Why</h3>
         <StateBlock kind="empty">
           Pick a route from the chart and this says what is wrong with it — and what to do.
         </StateBlock>
@@ -102,7 +102,7 @@ export function RouteDiagnosisPanel({
   if (diagnosis.flights === 0) {
     return (
       <section className="panel" aria-label="Route diagnosis">
-        <h2 className="panel__title">Why: {diagnosis.label}</h2>
+        <h3 className="panel__title">Why: {diagnosis.label}</h3>
         {/*
           No settled flights is not a diagnosis. Naming a cause from an empty
           window would be the invented finding §14.1 warns about.
@@ -117,7 +117,7 @@ export function RouteDiagnosisPanel({
 
   return (
     <section className="panel" aria-label="Route diagnosis">
-      <h2 className="panel__title">Why: {diagnosis.label}</h2>
+      <h3 className="panel__title">Why: {diagnosis.label}</h3>
 
       {/* The answer, before any of the working. */}
       <p className="diagnosis__cause">{CAUSE_SENTENCE[diagnosis.cause]}</p>

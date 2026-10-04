@@ -89,6 +89,7 @@ export const AIRPORT_CODE_NAMESPACES = {
   // Counting down from the top of the digits, so parallel branches adding the next
   // free digit from the bottom do not collide (OTHER-01).
   'aircraft/lease-rentals': '9',
+  'finance/surface-routes': '5',
 } as const;
 
 export type AirportCodeNamespace = keyof typeof AIRPORT_CODE_NAMESPACES;
