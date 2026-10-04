@@ -60,6 +60,7 @@ import {
   type PlaceRow,
 } from './places';
 import { PlacesPanel } from './PlacesPanel';
+import { PLANE_ICON_DEFINITION } from './plane-icon';
 import { persistProjection, readInitialProjection, type WorldProjection } from './projection';
 import { bundleCorridors, corridorGridForZoom, type Corridor } from './route-corridors';
 import { fleetMaxRangeNm, reachableAirportIcaos } from './route-create';
@@ -131,14 +132,6 @@ const DEFAULT_VISIBILITY: WorldLayerVisibility = {
   terrain: true,
   airports: true,
 };
-
-/**
- * A north-up plane silhouette, tinted at draw time (IconLayer `mask`), so the one
- * data URI serves both themes. On its own line so the colour-literal guard skips
- * it (it exempts `data:image/svg+xml`).
- */
-// prettier-ignore
-const PLANE_ICON = 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="%23000" d="M12 2c-.8 0-1.4 1.3-1.4 3v4.9L2 15v2l8.6-2.6V20l-2.2 1.4V23L12 22l3.6 1v-1.6L13.4 20v-5.6L22 17v-2l-8.6-5.1V5c0-1.7-.6-3-1.4-3z"/></svg>';
 
 /** How fast a plane crosses its whole route: ~1/26 per second, so a full pass is ~26s. */
 const PLANE_SPEED_PER_SECOND = 0.038;
@@ -703,7 +696,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       id: 'world-plane-halos',
       data: planes,
       getPosition: (p) => p.position,
-      getIcon: () => ({ url: PLANE_ICON, width: 24, height: 24, mask: true }),
+      getIcon: () => PLANE_ICON_DEFINITION,
       getSize: spriteSize + 3,
       sizeUnits: 'pixels',
       getAngle: (p) => p.angle,
@@ -725,7 +718,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       id: 'world-planes',
       data: planes,
       getPosition: (p) => p.position,
-      getIcon: () => ({ url: PLANE_ICON, width: 24, height: 24, mask: true }),
+      getIcon: () => PLANE_ICON_DEFINITION,
       getSize: spriteSize,
       sizeUnits: 'pixels',
       getAngle: (p) => p.angle,
