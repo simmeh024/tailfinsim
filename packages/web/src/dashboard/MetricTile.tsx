@@ -27,6 +27,9 @@ import type { ReactNode } from 'react';
  * survives greyscale, colour blindness and a screen reader.
  */
 
+/** The arrows `formatTrend` leads a movement with. Anything else is a sentence. */
+const TREND_GLYPHS: ReadonlySet<string> = new Set(['▲', '▼', '▬']);
+
 export interface MetricTileProps {
   label: string;
   /** One sentence for the tooltip. RASK and yield are not obviously different. */
@@ -57,6 +60,7 @@ export function MetricTile({
   const href = drillHref(drillDown.endpoint);
   const shown = text ?? formatMetric(value, unit);
   const movement = formatTrend(trend, unit);
+  const glyph = TREND_GLYPHS.has(movement.charAt(0)) ? movement.charAt(0) : null;
 
   const classes = ['tile'];
   if (featured) classes.push('tile--featured');
@@ -68,8 +72,16 @@ export function MetricTile({
       </h3>
       <p className="tile__value figure">{shown}</p>
       <p className={`tile__trend tile__trend--${tone}`}>
-        <span aria-hidden="true">{movement.slice(0, 1)}</span>
-        <span className="tile__trend-text">{movement.slice(1).trim()}</span>
+        {/*
+          The arrow is split off so it can be hidden from assistive technology —
+          but only when there is one. "no earlier period" has no arrow, and
+          slicing its first letter off read as "n o earlier period" on screen
+          and as "o earlier period" to a screen reader.
+        */}
+        {glyph !== null && <span aria-hidden="true">{glyph}</span>}
+        <span className="tile__trend-text">
+          {glyph === null ? movement : movement.slice(1).trim()}
+        </span>
       </p>
       {href === null ? (
         // §14.1 asks every figure to explain itself. Until a page consumes this
