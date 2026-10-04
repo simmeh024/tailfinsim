@@ -1,7 +1,10 @@
 import { and, count, eq, gte, isNull, sql } from 'drizzle-orm';
 
 import {
+  CREDIT_TIERS,
   CreditTier,
+  creditTierRank,
+  LOAN_INSTRUMENTS,
   LOAN_SECURITY,
   type CreditStandingResponse,
   type DrawLoanRequest,
@@ -86,6 +89,8 @@ interface TrailingTrade {
   operatingProfitMinor: number;
   ebitdaMinor: number;
   revenueMinor: number;
+  /** Interest charged in the window — what §13.4's share is taken out of (SURFACE-02). */
+  interestMinor: number;
   profitableMonths: number;
 }
 
@@ -111,6 +116,7 @@ async function trailingTrade(
   let revenueMinor = 0;
   let costMinor = 0;
   let financeMinor = 0;
+  let interestMinor = 0;
   const byMonth = new Map<string, number>();
 
   for (const row of rows) {
@@ -124,6 +130,7 @@ async function trailingTrade(
     if (isRevenue) revenueMinor += amount;
     else costMinor += amount;
     if (FINANCE_CATEGORIES.includes(row.category)) financeMinor += amount;
+    if (row.category === 'interest') interestMinor += amount;
 
     byMonth.set(row.month, (byMonth.get(row.month) ?? 0) + (isRevenue ? amount : -amount));
   }
@@ -134,6 +141,7 @@ async function trailingTrade(
     // Earnings before the finance lines — see the note above on depreciation.
     ebitdaMinor: operatingProfitMinor + financeMinor,
     revenueMinor,
+    interestMinor,
     profitableMonths: [...byMonth.values()].filter((value) => value > 0).length,
   };
 }
@@ -326,6 +334,24 @@ export async function readCreditStanding(
     economy.credit,
   );
 
+  /*
+   * §13.4's worked example, priced the way its table is (SURFACE-02): a month's
+   * interest at today's balances, as a share of a month's operating profit
+   * **before** interest. The trailing figure has the interest already taken out,
+   * so it is put back — the share is of what the trading earns, not of what is
+   * left once the bank has been paid, or a heavier loan would look like a
+   * smaller share of a shrinking remainder. Null where there is no such profit.
+   */
+  const profitBeforeInterestMinor = trade.operatingProfitMinor + trade.interestMinor;
+  const shareOf = (annualInterest: number): number | null =>
+    profitBeforeInterestMinor > 0 ? annualInterest / profitBeforeInterestMinor : null;
+  const bookAnnualInterestMinor = debt.rows.reduce(
+    (total, row) => total + annualInterestMinor(row.outstandingMinor, row.annualRateBps),
+    0,
+  );
+  const nextTier = CREDIT_TIERS[creditTierRank(next.tier) + 1];
+  const nextTerms = nextTier === undefined ? null : economy.credit.tiers[nextTier];
+
   return {
     tier: next.tier,
     earnedTier: earned,
@@ -352,6 +378,42 @@ export async function readCreditStanding(
       profitableMonths: trade.profitableMonths,
       routes: standing.routes,
       hubs: standing.hubs,
+      operatingMargin:
+        trade.revenueMinor > 0 ? trade.operatingProfitMinor / trade.revenueMinor : null,
+      interestMinor: trade.interestMinor,
+    },
+    formula: {
+      profitMultiple: economy.credit.profitMultiple,
+      assetAdvanceRate: economy.credit.assetAdvanceRate,
+    },
+    rating: {
+      goodReviews: next.goodReviews,
+      reviewsToRise: economy.credit.risesAfterGoodReviews,
+    },
+    nextTier:
+      nextTier === undefined || nextTerms === null
+        ? null
+        : {
+            tier: nextTier,
+            maxDebtMinor: nextTerms.maxDebtMinor,
+            annualRateBps: nextTerms.annualRateBps,
+            requires: {
+              profitableMonths: nextTerms.profitableMonths,
+              routes: nextTerms.routes,
+              hubs: nextTerms.hubs,
+              operatingMargin: nextTerms.operatingMargin,
+            },
+          },
+    // Priced exactly as `drawLoan` will write them, from the same function.
+    instruments: LOAN_INSTRUMENTS.map((instrument) => ({
+      instrument,
+      security: LOAN_SECURITY[instrument],
+      annualRateBps: instrumentRateBps(next.tier, instrument, economy.credit),
+      termMonths: economy.credit.tiers[next.tier].termMonths,
+    })),
+    interest: {
+      monthlyMinor: Math.round(bookAnnualInterestMinor / 12),
+      shareOfOperatingProfit: shareOf(bookAnnualInterestMinor),
     },
     standing: projectStanding(held, arrearsMinor, dailyMinor),
     loans: debt.rows.map((row) => ({
@@ -372,6 +434,10 @@ export async function readCreditStanding(
       status: 'active',
       drawnAt: row.drawnAt.toISOString(),
       securedAirframeId: row.securedAirframeId,
+      monthlyInterestMinor: Math.round(
+        annualInterestMinor(row.outstandingMinor, row.annualRateBps) / 12,
+      ),
+      shareOfOperatingProfit: shareOf(annualInterestMinor(row.outstandingMinor, row.annualRateBps)),
     })),
   };
 }

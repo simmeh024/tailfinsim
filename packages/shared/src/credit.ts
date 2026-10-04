@@ -194,9 +194,110 @@ export const LoanView = z
     drawnAt: Timestamp,
     /** The airframe a secured loan is written against, when there is one. */
     securedAirframeId: Uuid.nullable(),
+    /**
+     * What a game month of this loan costs at today's balance — §13.4's
+     * "Interest/month" column (SURFACE-02). A twelfth of the annual interest.
+     */
+    monthlyInterestMinor: MinorUnits.nonnegative(),
+    /**
+     * That month's interest as a share of a month's operating profit before
+     * interest — §13.4's "Share of your profit", the number that makes 6%
+     * comfortable and 52% ruinous. Null when there is no profit for it to be a
+     * share of: interest on a loss-making airline is not a large share of
+     * anything, it is money the trading is not earning.
+     */
+    shareOfOperatingProfit: z.number().nonnegative().nullable(),
   })
   .strict();
 export type LoanView = z.infer<typeof LoanView>;
+
+/**
+ * One instrument as it would be priced for this airline today (SURFACE-02).
+ *
+ * The server's answer, so a client draws with a price it was **told** rather
+ * than one it computed — SEC-09's rule that terms are server-decided. The rate
+ * is the tier rate moved by §13.3's spread for the instrument, exactly as
+ * `drawLoan` will write it.
+ */
+export const InstrumentQuote = z
+  .object({
+    instrument: LoanInstrument,
+    security: z.enum(['none', 'airframe', 'facility']),
+    annualRateBps: z.number().int().nonnegative(),
+    termMonths: z.number().int().positive(),
+  })
+  .strict();
+export type InstrumentQuote = z.infer<typeof InstrumentQuote>;
+
+/**
+ * §13.3's five instruments as identity: name, security and purpose, in the
+ * design doc's own words (SURFACE-02).
+ *
+ * All five, including the two that are not loans this build can write, because
+ * the table *is* player-facing guidance — and an instrument a player has heard
+ * of but cannot find reads as missing rather than as deliberate. `loan` is
+ * whether `POST /api/credit/loans` writes it; the other two say why not.
+ * Numbers are deliberately absent, even §13.3's "+3%" and "−2%": those spreads
+ * are balance (`EconomyConfig.credit.instrumentRateDeltaBps`) and a world may
+ * retune them, so the rule is stated in words here and the figure comes from
+ * the server's `InstrumentQuote`. The other two instruments have none to give.
+ */
+export interface CreditInstrumentDefinition {
+  id: LoanInstrument | 'sale_leaseback' | 'bond_issue';
+  name: string;
+  /** §13.3's "Secured on" column. */
+  securedOn: string;
+  /** §13.3's "Rate" column, as the rule rather than a number. */
+  rateRule: string;
+  /** §13.3's "Use" column. */
+  purpose: string;
+  /** Whether this build can draw it, and if not, why not. */
+  availability: 'loan' | 'not_built' | 'post_mvp';
+}
+
+export const CREDIT_INSTRUMENTS: readonly CreditInstrumentDefinition[] = [
+  {
+    id: 'working_capital',
+    name: 'Working capital line',
+    securedOn: 'Nothing',
+    rateRule: 'Above the tier rate',
+    purpose: 'Cash flow gaps. Expensive on purpose.',
+    availability: 'loan',
+  },
+  {
+    id: 'aircraft_finance',
+    name: 'Aircraft finance',
+    securedOn: 'The airframe',
+    rateRule: 'Below the tier rate',
+    purpose: 'Buying aircraft. Cheapest money available — the bank can repossess.',
+    availability: 'loan',
+  },
+  {
+    id: 'facility',
+    name: 'Facility loan',
+    securedOn: 'Hub, gates, hangar',
+    rateRule: 'The tier rate',
+    purpose: 'Hubs, academies, cargo terminals.',
+    availability: 'loan',
+  },
+  {
+    id: 'sale_leaseback',
+    name: 'Sale-leaseback',
+    securedOn: '—',
+    rateRule: 'n/a',
+    purpose:
+      'Sell an owned aircraft for immediate cash, lease it back. Raises capital instantly, permanently raises your cost base. The classic desperation move.',
+    availability: 'not_built',
+  },
+  {
+    id: 'bond_issue',
+    name: 'Bond issue',
+    securedOn: '—',
+    rateRule: 'Below tier rate',
+    purpose: 'AA only, large scale.',
+    availability: 'post_mvp',
+  },
+];
 
 /** `GET /api/credit` — what this airline may borrow, and why not more. */
 export const CreditStandingResponse = z
@@ -238,6 +339,68 @@ export const CreditStandingResponse = z
         profitableMonths: z.number().int().nonnegative(),
         routes: z.number().int().nonnegative(),
         hubs: z.number().int().nonnegative(),
+        /** Operating profit over revenue, the margin §13.2's tiers ask for. Null with no revenue. */
+        operatingMargin: z.number().nullable(),
+        /** Interest charged in the same twelve months — what it took out of the profit above. */
+        interestMinor: MinorUnits.nonnegative(),
+      })
+      .strict(),
+
+    /**
+     * §13.1's two multipliers, so the formula can be shown as a formula
+     * (SURFACE-02): *"3.0 × operating profit is zero"* is a lesson, and a limit
+     * with its factor hidden is a number a player has to take on trust.
+     */
+    formula: z
+      .object({
+        profitMultiple: z.number().nonnegative(),
+        assetAdvanceRate: z.number().min(0).max(1),
+      })
+      .strict(),
+
+    /**
+     * §13.2's asymmetry, visible as a property rather than as a surprise: how
+     * many consecutive reviews have earned better, and how many a rise needs.
+     */
+    rating: z
+      .object({
+        goodReviews: z.number().int().nonnegative(),
+        reviewsToRise: z.number().int().positive(),
+      })
+      .strict(),
+
+    /**
+     * The next rung up and what it asks for, or null at the top. What the
+     * airline has against each requirement is in `trailing`.
+     */
+    nextTier: z
+      .object({
+        tier: CreditTier,
+        maxDebtMinor: MinorUnits.nonnegative(),
+        annualRateBps: z.number().int().nonnegative(),
+        requires: z
+          .object({
+            profitableMonths: z.number().int().nonnegative(),
+            routes: z.number().int().nonnegative(),
+            hubs: z.number().int().nonnegative(),
+            operatingMargin: z.number(),
+          })
+          .strict(),
+      })
+      .strict()
+      .nullable(),
+
+    /** The drawable instruments, priced for this airline today (SEC-09). */
+    instruments: z.array(InstrumentQuote),
+
+    /**
+     * §13.4's drain across the whole book, as the worked example puts it: per
+     * game month, and as a share of a month's operating profit before interest.
+     */
+    interest: z
+      .object({
+        monthlyMinor: MinorUnits.nonnegative(),
+        shareOfOperatingProfit: z.number().nonnegative().nullable(),
       })
       .strict(),
 
