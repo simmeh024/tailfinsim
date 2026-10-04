@@ -100,6 +100,16 @@ be on.
 The requirement is read off the **next game day** of scheduled flights, not the last one — it is a
 decision about what to lease, so it has to look at the schedule you are about to fly.
 
+It is read off **exactly one** day. The pairing treats its input as one repeating day — an arrival
+with no later departure wraps to the day's first departure — so the readers fetch a wider window
+(a flight that left elsewhere before the day can still land here inside it) and then keep an
+arrival only if it **lands** in the day and a departure only if it **leaves** in it. One exception:
+an aeroplane already on the stand when the day begins, which the day does not bring back, keeps the
+arrival that put it there — otherwise its first departure has nothing to pair with. When the day
+does bring it back, the last arrival's wrap over the night already is that stay. Until OTHER-02
+(#1201) two days were folded onto one, which counted every daily turn twice: the requirement
+doubled and the utilisation that withdraws idle stands was split across stands nobody needed.
+
 ### What reproduces, and what does not
 
 App. B.6's headline finding reproduces closely:

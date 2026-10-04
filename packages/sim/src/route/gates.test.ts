@@ -6,11 +6,13 @@ import {
   contractPriority,
   deniesRivals,
   gateRequirement,
+  inSampleDay,
   OPERATING_DAY_MINUTES,
   overnightPositions,
   pairStandTurns,
   peakConcurrency,
   percentileConcurrency,
+  sampleDayMovements,
   standOccupancies,
   standUtilisation,
   turnaroundStandOf,
@@ -300,6 +302,60 @@ describe('assigning turns to stands', () => {
   it('never reports more stands than were used when fewer are held', () => {
     const rows = standUtilisation(rollingHubOccupancies(4), 1);
     expect(rows.length).toBeGreaterThanOrEqual(peakConcurrency(rollingHubOccupancies(4)));
+  });
+});
+
+describe('the sampled day (OTHER-02)', () => {
+  const from = new Date(Date.UTC(2031, 5, 1, 0, 0));
+  const at = (minutes: number) => new Date(from.getTime() + minutes * 60_000);
+
+  it('keeps exactly one day of movements, [from, from + 24 h)', () => {
+    expect(inSampleDay(at(0), from)).toBe(true);
+    expect(inSampleDay(at(24 * 60 - 1), from)).toBe(true);
+    expect(inSampleDay(at(24 * 60), from)).toBe(false);
+    expect(inSampleDay(at(-1), from)).toBe(false);
+  });
+
+  it('builds one turn from one day of a daily rotation, where two days built two', () => {
+    // In at 10:00, out at 11:00, every day. One day folded onto the clock is one
+    // stay; the same rotation's two days folded onto one clock were two
+    // overlapping stays, which is the double count OTHER-02 removes.
+    expect(standOccupancies([600], [660])).toHaveLength(1);
+    expect(standOccupancies([600, 600], [660, 660])).toHaveLength(2);
+  });
+
+  /** One airframe's movements, `[minutes from the day's start]`, through the cut. */
+  const cut = (arrivals: number[], departures: number[]) => {
+    const day = sampleDayMovements(
+      arrivals.map((minutes) => ({ at: at(minutes) })),
+      departures.map((minutes) => ({ at: at(minutes) })),
+      from,
+    );
+    const minutes = (moves: { at: Date }[]) =>
+      moves.map((move) => (move.at.getTime() - from.getTime()) / 60_000).sort((a, b) => a - b);
+    return { arrivals: minutes(day.arrivals), departures: minutes(day.departures) };
+  };
+
+  it('drops yesterday’s turn of a daily rotation', () => {
+    // In at 10:00 and out at 11:00, yesterday and today.
+    expect(cut([-840, 600], [-780, 660])).toEqual({ arrivals: [600], departures: [660] });
+  });
+
+  it('keeps an aeroplane already on the stand when the day does not bring it back', () => {
+    // Landed twenty minutes before the day, leaves forty minutes into it, gone.
+    expect(cut([-20], [40])).toEqual({ arrivals: [-20], departures: [40] });
+    // Leaves, returns for an hour, leaves again: the stay before the day still counts.
+    expect(cut([-60, 300], [60, 360])).toEqual({ arrivals: [-60, 300], departures: [60, 360] });
+  });
+
+  it('does not add yesterday’s arrival when the day’s own wraps over the night', () => {
+    // An overnight rotation, in at 22:00 and out at 06:00: today's 22:00 arrival
+    // wraps to 06:00, which is the stay yesterday's 22:00 arrival would count twice.
+    expect(cut([-120, 1_320], [360])).toEqual({ arrivals: [1_320], departures: [360] });
+  });
+
+  it('keeps only the latest arrival before the day, and nothing past its end', () => {
+    expect(cut([-900, -30, 1_500], [90])).toEqual({ arrivals: [-30], departures: [90] });
   });
 });
 
