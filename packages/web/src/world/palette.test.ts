@@ -97,6 +97,7 @@ describe('the fallback palette', () => {
     expect(fallback.grid).toEqual(tokens.grid);
     expect(fallback.night).toEqual(tokens.night);
     expect(fallback.route).toEqual(tokens.route);
+    expect(fallback.rival).toEqual(tokens.rival);
     expect(fallback.altGround).toEqual(tokens['alt-ground']);
     expect(fallback.altLow).toEqual(tokens['alt-low']);
     expect(fallback.altMid).toEqual(tokens['alt-mid']);
@@ -162,6 +163,34 @@ describe.each(['dark', 'light'] as const)('the %s world meets WCAG AA', (theme) 
   it('keeps a route visible over the sea it crosses, day and night', () => {
     expect(contrastRatio(plain('route'), plain('ocean'))).toBeGreaterThanOrEqual(3);
     expect(contrastRatio(atNight('route'), atNight('ocean'))).toBeGreaterThanOrEqual(3);
+  });
+
+  it('keeps the competition visible over the sea it crosses, day and night', () => {
+    /*
+     * §H.3 draws rivals in a neutral, so ownership reads as colour. They used to
+     * borrow `--world-border`, which is tuned to sit on land and measured about
+     * 1.2:1 against the dark theme's sea and 1.1:1 against the light theme's:
+     * the rival network all but vanished over water, which is where a long-haul
+     * line runs.
+     *
+     * Measured as drawn: the token's own alpha over the sea, and — since the
+     * route layers draw above the terminator — over the sea under the night wash.
+     */
+    const ocean = opaque('ocean');
+    const nightOcean: RgbaColor = [...atNight('ocean'), 255];
+    expect(
+      contrastRatio(compositeOver(token('rival'), ocean), plain('ocean')),
+    ).toBeGreaterThanOrEqual(3);
+    expect(
+      contrastRatio(compositeOver(token('rival'), nightOcean), atNight('ocean')),
+    ).toBeGreaterThanOrEqual(3);
+  });
+
+  it('keeps the competition neutral, so ownership still reads as colour', () => {
+    // A hue would make a rival line read as somebody's brand. The channels may
+    // differ a little — a cool neutral sits better on a navy sea — but not much.
+    const [r, g, b] = plain('rival');
+    expect(Math.max(r, g, b) - Math.min(r, g, b)).toBeLessThanOrEqual(40);
   });
 
   it('keeps every altitude stop visible over the land it is drawn on', () => {

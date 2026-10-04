@@ -21,6 +21,12 @@ export interface WorldPalette {
   night: RgbaColor;
   route: RgbaColor;
   /**
+   * The competition's routes and corridors: §H.3's neutral for rivals, so that
+   * ownership reads as colour. Its own token rather than `border`'s, which was
+   * tuned for land and all but vanished over the sea; see `tokens.css`.
+   */
+  rival: RgbaColor;
+  /**
    * The altitude ramp a route line is washed along, low to high (M7-03).
    *
    * The FlightRadar reading: the colour of the line says how high the aircraft
@@ -70,6 +76,7 @@ const FALLBACK_PALETTE: WorldPalette = {
   grid: [220, 236, 247, 80],
   night: [2, 5, 9, 120],
   route: [127, 212, 255, 230],
+  rival: [159, 176, 191, 217],
   altGround: [198, 47, 34, 255],
   altLow: [179, 83, 9, 255],
   altMid: [138, 109, 0, 255],
@@ -108,6 +115,7 @@ export function readWorldPalette(): WorldPalette {
     grid: read('--world-grid', FALLBACK_PALETTE.grid),
     night: read('--world-night', FALLBACK_PALETTE.night),
     route: read('--world-route', FALLBACK_PALETTE.route),
+    rival: read('--world-rival', FALLBACK_PALETTE.rival),
     altGround: read('--world-alt-ground', FALLBACK_PALETTE.altGround),
     altLow: read('--world-alt-low', FALLBACK_PALETTE.altLow),
     altMid: read('--world-alt-mid', FALLBACK_PALETTE.altMid),

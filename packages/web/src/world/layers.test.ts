@@ -25,6 +25,7 @@ const palette: WorldPalette = {
   grid: [10, 11, 12, 80],
   night: [13, 14, 15, 215],
   route: [16, 17, 18, 230],
+  rival: [25, 26, 27, 217],
   altGround: [200, 30, 20, 255],
   altLow: [190, 90, 20, 255],
   altMid: [170, 140, 20, 255],

@@ -427,6 +427,15 @@ The graticule is the one world layer the contrast tests do not gate. One flat ov
 cannot contrast strongly with both a dark sea and a light landmass; its colour favours the
 ocean, where most of a meridian runs, and it is toggleable.
 
+**Rivals have a neutral of their own, `--world-rival`.** Their lines and corridors used to borrow
+`--world-border`, a slate tuned to sit on land, which measured about 1.2:1 against the dark
+theme's sea and 1.1:1 against the light theme's — the competition all but vanished over water,
+where a long-haul line runs. The token is a light neutral at 85 % in the dark theme and a dark,
+opaque one in the light theme (any transparency there costs it 3:1 under the night wash), and
+`palette.test.ts` measures it composited over the sea by day and under the wash, since route
+layers draw above the terminator. Like the player's cruise colour it is not asked to clear the
+land as well: no single colour can, against both a navy sea and pale land.
+
 ### Country borders come from the same file and the same arcs as the coastline
 
 The tiers are now `countries-*.json` rather than `land-*.json`. Each holds a `countries`

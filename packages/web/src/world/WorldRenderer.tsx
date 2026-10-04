@@ -766,7 +766,8 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   // leg draws on its own. The player's own routes always stay individual.
   const rivals = useMemo(() => map.traffic.filter((r) => !r.own), [map.traffic]);
   const corridorGrid = corridorGridForZoom(viewState.zoom);
-  const neutral: RgbaColor = palette.border;
+  // §H.3's neutral, at the token's own alpha; see `--world-rival`.
+  const neutral: RgbaColor = palette.rival;
 
   const rivalLinesLayer = useMemo(() => {
     if (!showRivals || corridorGrid > 0 || rivals.length === 0) return false;
@@ -774,7 +775,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       id: 'world-rival-routes',
       data: rivals,
       getPath: (r) => trackPath(r.source, r.target, trackOwner(r), quality === 'full' ? 64 : 32),
-      getColor: [neutral[0], neutral[1], neutral[2], 175],
+      getColor: neutral,
       getWidth: 1.5,
       widthUnits: 'pixels',
       widthMinPixels: 1,
@@ -799,7 +800,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       getPath: (c) => greatCirclePath(c.source, c.target, 24),
       // Weight says how many routes run the corridor; a lone leg reads as thin as it
       // would un-bundled, a trunk corridor as a fat band.
-      getColor: [neutral[0], neutral[1], neutral[2], 205],
+      getColor: neutral,
       getWidth: (c) => 1 + 5 * (c.count / busiest),
       widthUnits: 'pixels',
       widthMinPixels: 1,

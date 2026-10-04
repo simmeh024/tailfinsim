@@ -420,11 +420,11 @@ body {
 }
 
 .world-renderer__legend-line--rival {
-  border-top: 2px solid var(--world-border);
+  border-top: 2px solid var(--world-rival);
 }
 
 .world-renderer__legend-line--corridor {
-  border-top: 6px solid var(--world-border);
+  border-top: 6px solid var(--world-rival);
 }
 
 .world-renderer__legend-dot {
