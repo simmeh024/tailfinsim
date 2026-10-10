@@ -39,6 +39,7 @@ import { flight, schedule, scheduleLeg, worldEvent } from '../db/schema';
 import { scheduleEvent } from '../sim/event-queue';
 
 import type { Database } from '../db/client';
+import type { LegSlot } from '../network/slots';
 
 /** The `world_event` idempotency key for a flight's departure. */
 export function departureKey(flightId: string): string {
@@ -74,8 +75,12 @@ export interface ScheduleInput {
  * eventual wiring look like a regression.
  */
 export interface RotationContext {
-  /** Whether a slot is held for each leg, by index. Missing entries count as held. */
-  slots?: readonly boolean[];
+  /**
+   * Whether a slot is held for each leg, by index, and the local departure it was
+   * read at (so a refusal names the band the player must claim). Missing entries
+   * count as held.
+   */
+  slots?: readonly LegSlot[];
   /**
    * Crew legality, asserted by the caller.
    *
@@ -116,14 +121,18 @@ function toRotation(
   repeat: RepeatPattern,
   context: RotationContext = {},
 ): Rotation {
-  const scheduledLegs: ScheduledLeg[] = legs.map((leg, index) => ({
-    originIcao: leg.originIcao,
-    destinationIcao: leg.destinationIcao,
-    departureMinute: leg.departureMinute,
-    blockMinutes: leg.blockMinutes,
-    turnaroundMinutes: leg.turnaroundMinutes,
-    hasSlot: context.slots?.[index] ?? true,
-  }));
+  const scheduledLegs: ScheduledLeg[] = legs.map((leg, index) => {
+    const slot = context.slots?.[index];
+    return {
+      originIcao: leg.originIcao,
+      destinationIcao: leg.destinationIcao,
+      departureMinute: leg.departureMinute,
+      blockMinutes: leg.blockMinutes,
+      turnaroundMinutes: leg.turnaroundMinutes,
+      hasSlot: slot?.held ?? true,
+      ...(slot === undefined ? {} : { originLocalMinute: slot.localDepartureMinute }),
+    };
+  });
   return { id, legs: scheduledLegs, repeat, crewLegal: context.crewLegal ?? true };
 }
 
