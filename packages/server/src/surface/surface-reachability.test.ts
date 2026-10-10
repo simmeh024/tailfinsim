@@ -78,10 +78,12 @@ describe('the guard, against a client it was written for', () => {
       'page.ts',
       [
         "import { readUsed, signIn } from './api';",
-        "import { deleteThing } from './api';",
+        "import { deleteThing, readEither, readFallback } from './api';",
         'export function Page() {',
         '  void readUsed();',
         '  void deleteThing("x");',
+        '  void readEither(30);',
+        '  void readFallback();',
         '  return signIn("google");',
         '}',
         '',
@@ -97,6 +99,12 @@ describe('the guard, against a client it was written for', () => {
         "  return fetch(`/api/things/${id}`, { method: 'DELETE' });",
         '}',
         'export function signIn(provider: string) { return `/api/auth/${provider}`; }',
+        '// Either arm of a conditional, and a fallback, are what the call sends.',
+        'function shaped(url: string) { return fetch(url); }',
+        'export function readEither(days?: number) {',
+        "  return shaped(days === undefined ? '/api/either' : `/api/either?days=${days}`);",
+        '}',
+        "export function readFallback(url?: string) { return fetch(url ?? '/api/fallback'); }",
         'export function drill(endpoint: string) {',
         '  switch (endpoint) {',
         "    case '/api/case-label': return 1;",
@@ -116,6 +124,8 @@ describe('the guard, against a client it was written for', () => {
 
   const ROUTES = [
     'GET /api/used',
+    'GET /api/either',
+    'GET /api/fallback',
     'GET /api/unused',
     'GET /api/dead',
     'GET /api/commented',
@@ -136,6 +146,8 @@ describe('the guard, against a client it was written for', () => {
     expect(consumed.sort()).toEqual([
       'DELETE /api/things/:id',
       'GET /api/auth/google',
+      'GET /api/either',
+      'GET /api/fallback',
       'GET /api/used',
     ]);
     // A fixture route with no consumer fails the check; one with a consumer passes.

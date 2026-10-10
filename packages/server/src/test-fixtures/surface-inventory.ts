@@ -282,7 +282,22 @@ function pathOf(node: ts.Node): string | null {
   return `/${normalised.join('/')}`;
 }
 
-/** Walk up through what only wraps a value — `+`, parentheses, `as`. */
+/** The binary operators whose result is one of their operands' values. */
+const VALUE_OPERATORS = new Set([
+  ts.SyntaxKind.PlusToken,
+  ts.SyntaxKind.QuestionQuestionToken,
+  ts.SyntaxKind.BarBarToken,
+]);
+
+/**
+ * Walk up through what only wraps a value — `+`, `??`, `||`, parentheses, `as`,
+ * and either branch of a conditional — to the place the value is used.
+ *
+ * The branches matter because a period-shaped read picks between two spellings
+ * of one route: `shaped(days === undefined ? '/api/finance/pnl' : `…?days=…`)`
+ * is a consumer of both arms. A conditional's **condition** is not a branch, so
+ * a literal there still stops at its comparison.
+ */
 function useSite(node: ts.Node): { site: ts.Node; child: ts.Node } {
   let child = node;
   let site = node.parent;
@@ -291,7 +306,8 @@ function useSite(node: ts.Node): { site: ts.Node; child: ts.Node } {
     (ts.isParenthesizedExpression(site) ||
       ts.isAsExpression(site) ||
       ts.isSatisfiesExpression(site) ||
-      (ts.isBinaryExpression(site) && site.operatorToken.kind === ts.SyntaxKind.PlusToken))
+      (ts.isConditionalExpression(site) && site.condition !== child) ||
+      (ts.isBinaryExpression(site) && VALUE_OPERATORS.has(site.operatorToken.kind)))
   ) {
     child = site;
     site = site.parent;
