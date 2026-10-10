@@ -223,7 +223,7 @@ export function NetworkPage(): ReactNode {
     }
     return [...codes];
   }, [routes]);
-  // Where the Gates and Slots views open: the hub, not the alphabetically first.
+  // Where the Gates, Slots and Ground views open: the hub, not the alphabetically first.
   const busiest = useMemo(() => busiestAirport(routes ?? []), [routes]);
 
   // Land on the first route once they load.
@@ -516,6 +516,7 @@ export function NetworkPage(): ReactNode {
               airports={operatedAirports}
               initialStation={link.station}
               initialContract={link.contract}
+              preferred={busiest}
             />
           ) : view === 'gates' ? (
             <AirportGatesView airports={operatedAirports} preferred={busiest} />

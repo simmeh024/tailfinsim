@@ -268,8 +268,10 @@ client, and a cross-owner id receives the endpoint's identical 404 (ADR-0020). E
 
 **SURFACE-05.** Ground handling is the **Network page's Ground view**, beside Slots and Gates:
 a handling contract is an arrangement made _at an airport_, like the slot and the stand a
-schedule also needs there, and the three share one airport picker. All six routes above have a
-consumer.
+schedule also needs there. Like those two views it picks from the airports the airline flies
+through, and opens on its hub (the airport most of its routes touch) unless a link names a
+station. All six routes above have a consumer. On a phone each table scrolls in its own labelled
+box.
 
 - **Across your network** lists every arrangement from `GET /api/ground/contracts`: the station,
   the line, who handles it, the term, the volume commitment (_"41 of 63 departures flown"_ and the

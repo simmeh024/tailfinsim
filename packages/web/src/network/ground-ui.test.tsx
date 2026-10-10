@@ -201,6 +201,18 @@ describe('the states', () => {
     ).toBeInTheDocument();
   });
 
+  it('opens on the hub it is given rather than the alphabetically first station', async () => {
+    const calls: Server['calls'] = [];
+    serve({ contracts: { contracts: [] }, station: station(), calls });
+    render(<GroundHandlingView airports={['EDDF', 'EHAM', 'LEBL']} preferred="EHAM" />);
+    expect(await screen.findByRole('region', { name: 'Ramp and baggage' })).toBeInTheDocument();
+    const stations = calls
+      .filter((call) => call.method === 'GET' && call.url !== '/api/ground/contracts')
+      .map((call) => call.url)
+      .filter((url) => url.startsWith('/api/ground/'));
+    expect(stations).toEqual(['/api/ground/EHAM']);
+  });
+
   it('asks for a route when there is no station to show', async () => {
     serve({ contracts: { contracts: [] }, station: station(), calls: [] });
     render(<GroundHandlingView airports={[]} />);

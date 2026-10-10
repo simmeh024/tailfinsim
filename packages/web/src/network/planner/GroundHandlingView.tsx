@@ -368,6 +368,11 @@ export interface GroundHandlingViewProps {
   airports: readonly string[];
   /** A station to open on — from a deep link. */
   initialStation?: string | null;
+  /**
+   * The station to open on otherwise — the hub, read off the routes, as the Gates
+   * and Slots views do (UX pass) — when the airline flies through it.
+   */
+  preferred?: string | null;
   /** A contract to highlight and open the station of — the lapse alert's subject. */
   initialContract?: string | null;
 }
@@ -376,6 +381,7 @@ export function GroundHandlingView({
   airports,
   initialStation = null,
   initialContract = null,
+  preferred = null,
 }: GroundHandlingViewProps): ReactNode {
   const [contracts, setContracts] = useState<GroundContractsResponse | 'loading' | 'error'>(
     'loading',
@@ -413,12 +419,12 @@ export function GroundHandlingView({
     if (match !== undefined) setIcao((current) => current ?? match.icao);
   }, [initialContract, contracts]);
 
-  // Otherwise the first station, once there is one.
+  // Otherwise the hub, or the first station, once there is one.
   useEffect(() => {
     if (icao === null && initialContract === null && options.length > 0) {
-      setIcao(options[0] ?? null);
+      setIcao(preferred !== null && options.includes(preferred) ? preferred : (options[0] ?? null));
     }
-  }, [icao, initialContract, options]);
+  }, [icao, initialContract, options, preferred]);
 
   useEffect(() => {
     if (icao === null) return;
