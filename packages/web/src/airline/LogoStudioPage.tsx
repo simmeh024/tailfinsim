@@ -23,6 +23,9 @@ import {
   type OwnAirlineResponse,
 } from '@tailfin/shared';
 
+import { Button } from '../ui/Button';
+import { StateBlock } from '../ui/StateBlock';
+
 import { AirlineLogoEmblem } from './AirlineLogoEmblem';
 import { fetchOwnAirline, formatMinorUnits, patchOwnAirline } from './api';
 import tailPhoto from './assets/preview-tail.jpg';
@@ -680,27 +683,39 @@ export function LogoStudioPage(): ReactNode {
   if (load.kind === 'loading') {
     return (
       <div className="logo-studio logo-studio--message">
-        <p aria-live="polite">Opening the logo studio…</p>
+        <StateBlock kind="loading">Opening the logo studio…</StateBlock>
       </div>
     );
   }
   if (load.kind === 'error') {
     return (
       <div className="logo-studio logo-studio--message">
-        <p role="alert">The airline could not be read. Reload to try again.</p>
-        <button type="button" onClick={() => void navigate('/airline')}>
-          Back to airline
-        </button>
+        <StateBlock
+          kind="broken"
+          action={
+            <Button size="sm" onClick={() => void navigate('/airline')}>
+              Back to airline
+            </Button>
+          }
+        >
+          The airline could not be read. Reload to try again.
+        </StateBlock>
       </div>
     );
   }
   if (load.kind === 'nope') {
     return (
       <div className="logo-studio logo-studio--message">
-        <p>{load.reason}</p>
-        <button type="button" onClick={() => void navigate('/airline')}>
-          Back to airline
-        </button>
+        <StateBlock
+          kind="refused"
+          action={
+            <Button size="sm" onClick={() => void navigate('/airline')}>
+              Back to airline
+            </Button>
+          }
+        >
+          {load.reason}
+        </StateBlock>
       </div>
     );
   }

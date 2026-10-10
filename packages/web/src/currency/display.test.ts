@@ -130,4 +130,15 @@ describe('compactUsdMinor', () => {
     setDisplayCurrency('EUR', RATES);
     expect(compactUsdMinor(1_200_000)).toContain('€');
   });
+
+  it('puts a loss’s sign before the symbol, as the full formatter does', () => {
+    // The network planner showed a weekly loss as `$-4.1k` (UX pass).
+    setDisplayCurrency('USD', RATES);
+    expect(compactUsdMinor(-410_000)).toBe('-$4.1k');
+    expect(compactUsdMinor(-250_000_000)).toBe('-$2.5M');
+    expect(compactUsdMinor(-1_200)).toBe('-$12');
+    expect(formatUsdMinor(-410_000)).toBe('-$4,100.00');
+    // A value that rounds to nothing is not negative.
+    expect(compactUsdMinor(-20)).toBe('$0');
+  });
 });

@@ -599,6 +599,23 @@
   vertical-align: middle;
 }
 
+/*
+ * The slot and gate tables scroll inside their own box (UX pass, UX-09). At
+ * 390px the last column — the Claim, Lease and Exclusive buttons — was cut off
+ * at the panel's edge, so neither could be used from a phone at all.
+ */
+.net-table-scroll {
+  position: relative;
+  overflow-x: auto;
+  max-width: 100%;
+  padding-bottom: var(--space-1);
+}
+
+.net-table-scroll .net-comp-table td,
+.net-table-scroll .net-comp-table th {
+  white-space: nowrap;
+}
+
 .net-comp-product {
   display: flex;
   align-items: center;

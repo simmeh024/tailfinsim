@@ -129,84 +129,98 @@ export function FleetTable({
           A grounded airframe can still be booked into the check it is due.
         </p>
       )}
-      <table className="fleet__table">
-        <caption>
-          {String(airframes.length)} aircraft, most urgent first. Utilisation is block hours a day
-          over the last game week.
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">
-              <span className="visually-hidden">Livery</span>
-            </th>
-            <th scope="col">Registration</th>
-            <th scope="col">Type</th>
-            <th scope="col">At</th>
-            <th scope="col">Status</th>
-            <th scope="col">Hours</th>
-            <th scope="col">Utilisation</th>
-            <th scope="col">Next check</th>
-            <th scope="col">
-              <span className="visually-hidden">Detail</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {airframes.map((view) => (
-            <tr
-              key={view.airframeId}
-              data-status={view.status}
-              data-selected={view.airframeId === selectedId ? 'yes' : 'no'}
-              aria-selected={view.airframeId === selectedId}
-            >
-              <td>
-                <LiveryCell view={view} />
-              </td>
-              <td>
-                <strong>{view.registration}</strong>
-              </td>
-              <td>
-                {view.typeDesignation}
-                <br />
-                <span className="node__commit">{view.manufacturer}</span>
-              </td>
-              <td>{view.locationIcao ?? '—'}</td>
-              <td>
-                {STATUS_LABEL[view.status]}
-                {view.status === 'in_check' && view.checkCompletesAt !== null && (
-                  <>
-                    <br />
-                    <span className="node__commit">
-                      {view.checkTier?.toUpperCase()} until {view.checkCompletesAt.slice(0, 10)}
-                    </span>
-                  </>
-                )}
-              </td>
-              <td className="figure">{Math.round(view.hours)}</td>
-              <td className="figure" title={utilisationTitle(view.utilisation)}>
-                {utilisationLabel(view.utilisation)}
-              </td>
-              <td>{nextCheckLabel(view)}</td>
-              <td>
-                {/* `aria-label` rather than a visually-hidden span: the
+      {/*
+        A nine-column table does not fit a phone. It scrolls inside its own box
+        rather than pushing the whole stage sideways (UX pass, UX-09), and the box
+        is focusable so a keyboard can scroll it too.
+      */}
+      {/* Said above the scroll box, so it wraps to the page rather than to the
+          table's width and is not cut off with the columns on a phone. The
+          caption stays, hidden, as the table's accessible name. */}
+      <p className="fleet__table-note" aria-hidden="true">
+        {String(airframes.length)} aircraft, most urgent first. Utilisation is block hours a day
+        over the last game week.
+      </p>
+      <div className="fleet__table-scroll" role="region" aria-label="Your aircraft" tabIndex={0}>
+        <table className="fleet__table">
+          <caption className="visually-hidden">
+            {String(airframes.length)} aircraft, most urgent first. Utilisation is block hours a day
+            over the last game week.
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">
+                <span className="visually-hidden">Livery</span>
+              </th>
+              <th scope="col">Registration</th>
+              <th scope="col">Type</th>
+              <th scope="col">At</th>
+              <th scope="col">Status</th>
+              <th scope="col">Hours</th>
+              <th scope="col">Utilisation</th>
+              <th scope="col">Next check</th>
+              <th scope="col">
+                <span className="visually-hidden">Detail</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {airframes.map((view) => (
+              <tr
+                key={view.airframeId}
+                data-status={view.status}
+                data-selected={view.airframeId === selectedId ? 'yes' : 'no'}
+                aria-selected={view.airframeId === selectedId}
+              >
+                <td>
+                  <LiveryCell view={view} />
+                </td>
+                <td>
+                  <strong>{view.registration}</strong>
+                </td>
+                <td>
+                  {view.typeDesignation}
+                  <br />
+                  <span className="node__commit">{view.manufacturer}</span>
+                </td>
+                <td>{view.locationIcao ?? '—'}</td>
+                <td>
+                  {STATUS_LABEL[view.status]}
+                  {view.status === 'in_check' && view.checkCompletesAt !== null && (
+                    <>
+                      <br />
+                      <span className="node__commit">
+                        {view.checkTier?.toUpperCase()} until {view.checkCompletesAt.slice(0, 10)}
+                      </span>
+                    </>
+                  )}
+                </td>
+                <td className="figure">{Math.round(view.hours)}</td>
+                <td className="figure" title={utilisationTitle(view.utilisation)}>
+                  {utilisationLabel(view.utilisation)}
+                </td>
+                <td>{nextCheckLabel(view)}</td>
+                <td>
+                  {/* `aria-label` rather than a visually-hidden span: the
                     accessible name is computed by trimming each text node and
                     joining them, so "Detail" plus " for PH-TFA" comes out as
                     "Detailfor PH-TFA". One attribute, one clean label. */}
-                <button
-                  type="button"
-                  className="fleet__open"
-                  aria-label={`Detail for ${view.registration}`}
-                  onClick={() => {
-                    onSelect(view.airframeId);
-                  }}
-                >
-                  Detail
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                  <button
+                    type="button"
+                    className="fleet__open"
+                    aria-label={`Detail for ${view.registration}`}
+                    onClick={() => {
+                      onSelect(view.airframeId);
+                    }}
+                  >
+                    Detail
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </>
   );
 }

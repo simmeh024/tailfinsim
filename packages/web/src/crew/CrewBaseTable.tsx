@@ -4,6 +4,7 @@ import type { CrewBaseView, CrewPoolView, CrewRank, CrewResponse } from '@tailfi
 
 import { RANK_ORDER } from './crew-presentation';
 import { CREW_RANK_LABEL } from './CrewRoleBanner';
+import { TableScroll } from './TableScroll';
 
 import type { ReactNode } from 'react';
 
@@ -176,80 +177,82 @@ export function CrewBaseTable({
               )}
             </h3>
 
-            <table className="crew__table">
-              <caption className="visually-hidden">Crew at {group.base.airportIcao}</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Rank</th>
-                  <th scope="col">On strength</th>
-                  <th scope="col">Training</th>
-                  <th scope="col">On duty</th>
-                  <th scope="col">Standby</th>
-                  <th scope="col">Available</th>
-                </tr>
-              </thead>
-              {group.families.map((family) => (
-                <tbody key={family.family}>
-                  <tr
-                    className={
-                      selectedFamily === family.family
-                        ? 'crew__group crew__group--on'
-                        : 'crew__group'
-                    }
-                  >
-                    <th scope="colgroup" colSpan={6}>
-                      <button
-                        type="button"
-                        className="crew__familybutton"
-                        aria-pressed={selectedFamily === family.family}
-                        onClick={() => {
-                          onSelectFamily(family.family);
-                        }}
-                      >
-                        <span className="figure">{family.family}</span>
-                        <span className="visually-hidden">
-                          {' '}
-                          — show what this family is crewed with
-                        </span>
-                      </button>
-                    </th>
+            <TableScroll label={`Crew at ${group.base.airportIcao}`}>
+              <table className="crew__table">
+                <caption className="visually-hidden">Crew at {group.base.airportIcao}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Rank</th>
+                    <th scope="col">On strength</th>
+                    <th scope="col">Training</th>
+                    <th scope="col">On duty</th>
+                    <th scope="col">Standby</th>
+                    <th scope="col">Available</th>
                   </tr>
-                  {family.pools.map((pool) => {
-                    const key = poolKey(group.base.id, pool.family, pool.rank);
-                    return (
-                      <tr
-                        key={pool.id}
-                        aria-selected={selectedKey === key}
-                        className={selectedKey === key ? 'crew__row crew__row--on' : 'crew__row'}
-                      >
-                        <th scope="row">
-                          <button
-                            type="button"
-                            className="crew__rowbutton"
-                            onClick={() => {
-                              onSelect({
-                                baseId: group.base.id,
-                                family: pool.family,
-                                rank: pool.rank,
-                              });
-                            }}
-                          >
-                            {CREW_RANK_LABEL[pool.rank]}
-                          </button>
-                        </th>
-                        <td className="figure">{pool.headcount}</td>
-                        <td className="figure">
-                          {pool.unavailable === 0 ? '—' : pool.unavailable}
-                        </td>
-                        <td className="figure">{pool.onDuty === 0 ? '—' : pool.onDuty}</td>
-                        <td className="figure">{pool.reserve === 0 ? '—' : pool.reserve}</td>
-                        <td className="figure">{pool.available}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              ))}
-            </table>
+                </thead>
+                {group.families.map((family) => (
+                  <tbody key={family.family}>
+                    <tr
+                      className={
+                        selectedFamily === family.family
+                          ? 'crew__group crew__group--on'
+                          : 'crew__group'
+                      }
+                    >
+                      <th scope="colgroup" colSpan={6}>
+                        <button
+                          type="button"
+                          className="crew__familybutton"
+                          aria-pressed={selectedFamily === family.family}
+                          onClick={() => {
+                            onSelectFamily(family.family);
+                          }}
+                        >
+                          <span className="figure">{family.family}</span>
+                          <span className="visually-hidden">
+                            {' '}
+                            — show what this family is crewed with
+                          </span>
+                        </button>
+                      </th>
+                    </tr>
+                    {family.pools.map((pool) => {
+                      const key = poolKey(group.base.id, pool.family, pool.rank);
+                      return (
+                        <tr
+                          key={pool.id}
+                          aria-selected={selectedKey === key}
+                          className={selectedKey === key ? 'crew__row crew__row--on' : 'crew__row'}
+                        >
+                          <th scope="row">
+                            <button
+                              type="button"
+                              className="crew__rowbutton"
+                              onClick={() => {
+                                onSelect({
+                                  baseId: group.base.id,
+                                  family: pool.family,
+                                  rank: pool.rank,
+                                });
+                              }}
+                            >
+                              {CREW_RANK_LABEL[pool.rank]}
+                            </button>
+                          </th>
+                          <td className="figure">{pool.headcount}</td>
+                          <td className="figure">
+                            {pool.unavailable === 0 ? '—' : pool.unavailable}
+                          </td>
+                          <td className="figure">{pool.onDuty === 0 ? '—' : pool.onDuty}</td>
+                          <td className="figure">{pool.reserve === 0 ? '—' : pool.reserve}</td>
+                          <td className="figure">{pool.available}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                ))}
+              </table>
+            </TableScroll>
           </div>
         ))
       )}

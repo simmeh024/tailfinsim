@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -79,5 +83,21 @@ describe('CabinConfiguratorPage', () => {
     renderAt('ATR 72');
     fireEvent.click(screen.getByRole('button', { name: 'Save config' }));
     expect(screen.getByRole('status')).toHaveTextContent(/saved/i);
+  });
+});
+
+describe('a phone-width toolbar (UX pass)', () => {
+  /*
+   * jsdom applies no stylesheet, so the rule is read. At 390px the toolbar ran
+   * off the right edge and took Save config with it: a configuration could be
+   * built on a phone and not saved from one.
+   */
+  const css = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'cabin.css'), 'utf8');
+
+  it('wraps the toolbar and its actions under 60rem', () => {
+    const narrow = css.slice(css.indexOf('@media (max-width: 60rem)'));
+    expect(narrow).toMatch(
+      /\.cc-toolbar,\s*\.cc-toolbar__actions,\s*\.cc-statusrow\s*\{\s*flex-wrap:\s*wrap/,
+    );
   });
 });

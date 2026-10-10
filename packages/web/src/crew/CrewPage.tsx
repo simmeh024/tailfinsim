@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router';
 
 import type { CrewRank, CrewResponse, CrewRosterResponse, SkillBranch } from '@tailfin/shared';
 
 import { useContextSelection } from '../shell/context-selection';
+import { StateBlock } from '../ui/StateBlock';
 import { useWorldClock } from '../world/useWorldClock';
 
 import {
@@ -280,11 +282,16 @@ export function CrewPage(): ReactNode {
 
   const title = <h1 className="crew__title">Crew</h1>;
 
+  /*
+   * The three non-content answers go through `ui/StateBlock` (UX-07), so a slow
+   * read announces itself to a screen reader and a failure is told apart from an
+   * airline with no crew. They were bare paragraphs, and "Loading…" was silent.
+   */
   if (load.state === 'loading') {
     return (
       <div className="crew">
         {title}
-        <p className="crew__note">Loading…</p>
+        <StateBlock kind="loading">Reading your crew…</StateBlock>
       </div>
     );
   }
@@ -292,9 +299,9 @@ export function CrewPage(): ReactNode {
     return (
       <div className="crew">
         {title}
-        <p className="crew__note" role="alert">
+        <StateBlock kind="broken">
           Could not load your crew. Coverage is unknown until it loads — nothing here is assumed.
-        </p>
+        </StateBlock>
       </div>
     );
   }
@@ -302,7 +309,9 @@ export function CrewPage(): ReactNode {
     return (
       <div className="crew">
         {title}
-        <p className="crew__note">Found an airline first — crew belong to one.</p>
+        <StateBlock kind="empty" action={<Link to="/found">Open the founding desk</Link>}>
+          Found an airline first — crew belong to one.
+        </StateBlock>
       </div>
     );
   }

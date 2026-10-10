@@ -380,7 +380,7 @@ export function OperationsPage(): ReactNode {
   }, [load]);
 
   return (
-    <section className="page">
+    <section className="page dash-page">
       <h1 className="page__title">Operations</h1>
 
       {loading ? (

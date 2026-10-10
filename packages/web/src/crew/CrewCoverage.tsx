@@ -3,6 +3,7 @@ import type { CrewRank, CrewResponse } from '@tailfin/shared';
 import { coverageSummary, familyCoverage, headcountSummary } from './crew-presentation';
 import { CrewReadiness } from './CrewReadiness';
 import { CREW_RANK_LABEL } from './CrewRoleBanner';
+import { TableScroll } from './TableScroll';
 
 import type { ReactNode } from 'react';
 
@@ -77,104 +78,120 @@ export function CrewCoverage({
           somebody.
         </p>
       ) : (
-        <table className="crew__table crew__table--coverage">
-          <caption className="crew__caption">
+        <>
+          <TableScroll label="Coverage by family and rank">
+            <table className="crew__table crew__table--coverage">
+              {/* The table's accessible name. Shown below the scroll box instead, so
+              it wraps to the panel rather than scrolling away with the columns. */}
+              <caption className="visually-hidden">
+                Required is one departure per aeroplane you own — a floor, not a roster. A single
+                aircraft flying a day of rotations needs several crews; duty and rest are modelled,
+                rostering is not.
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Rank</th>
+                  <th scope="col">Required</th>
+                  <th scope="col">Available</th>
+                  <th scope="col">Training</th>
+                  <th scope="col">Balance</th>
+                </tr>
+              </thead>
+              {families.map((group) => (
+                <tbody key={group.family}>
+                  <tr
+                    className={
+                      selectedFamily === group.family
+                        ? 'crew__group crew__group--on'
+                        : 'crew__group'
+                    }
+                  >
+                    {/*
+                     * A group heading inside the table rather than a table per
+                     * family: one header row, one tab stop, and a screen reader
+                     * reads "Family, A320neo" once instead of meeting a fresh table
+                     * for every aeroplane type the airline owns.
+                     *
+                     * The name is a button, so the family itself can be inspected —
+                     * the rows below it only cover ranks the *fleet asks for*, and
+                     * what the airline actually holds on a family is a different
+                     * question.
+                     */}
+                    <th scope="colgroup" colSpan={5}>
+                      <button
+                        type="button"
+                        className="crew__familybutton"
+                        aria-pressed={selectedFamily === group.family}
+                        onClick={() => {
+                          onSelectFamily(group.family);
+                        }}
+                      >
+                        <span className="figure">{group.family}</span>
+                        <span className="visually-hidden">
+                          {' '}
+                          — show what this family is crewed with
+                        </span>
+                      </button>
+                      {group.short && <span className="crew-tag crew-tag--short">short</span>}
+                    </th>
+                  </tr>
+                  {group.rows.map((row) => {
+                    const key = coverageKey(group.family, row.rank);
+                    return (
+                      <tr
+                        key={key}
+                        data-cover={row.status}
+                        aria-selected={selectedKey === key}
+                        className={selectedKey === key ? 'crew__row crew__row--on' : 'crew__row'}
+                      >
+                        <th scope="row">
+                          {/*
+                           * The whole row is the target, but the control is a real
+                           * button: a `onClick` on the `<tr>` is unreachable by
+                           * keyboard and invisible to assistive tech, and a row of
+                           * cells is not a widget.
+                           */}
+                          <button
+                            type="button"
+                            className="crew__rowbutton"
+                            onClick={() => {
+                              onSelect({ family: group.family, rank: row.rank });
+                            }}
+                          >
+                            {CREW_RANK_LABEL[row.rank]}
+                            <span className="visually-hidden">
+                              {' '}
+                              on {group.family}: {balanceWords(row.status, row.delta)}
+                            </span>
+                          </button>
+                        </th>
+                        <td className="figure">{row.required}</td>
+                        <td className="figure">{row.available}</td>
+                        <td className="figure">{row.inTraining === 0 ? '—' : row.inTraining}</td>
+                        <td>
+                          {/* Glyph and text, never colour alone (App. H.7). */}
+                          <span className="crew-delta" data-cover={row.status}>
+                            <span aria-hidden="true">{GLYPH[row.status]}</span>{' '}
+                            {row.status === 'exact'
+                              ? 'Exact'
+                              : row.delta > 0
+                                ? `+${String(row.delta)}`
+                                : String(row.delta)}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              ))}
+            </table>
+          </TableScroll>
+          <p className="crew__caption" aria-hidden="true">
             Required is <strong>one departure per aeroplane you own</strong> — a floor, not a
             roster. A single aircraft flying a day of rotations needs several crews; duty and rest
             are modelled, rostering is not.
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">Rank</th>
-              <th scope="col">Required</th>
-              <th scope="col">Available</th>
-              <th scope="col">Training</th>
-              <th scope="col">Balance</th>
-            </tr>
-          </thead>
-          {families.map((group) => (
-            <tbody key={group.family}>
-              <tr
-                className={
-                  selectedFamily === group.family ? 'crew__group crew__group--on' : 'crew__group'
-                }
-              >
-                {/*
-                 * A group heading inside the table rather than a table per
-                 * family: one header row, one tab stop, and a screen reader
-                 * reads "Family, A320neo" once instead of meeting a fresh table
-                 * for every aeroplane type the airline owns.
-                 *
-                 * The name is a button, so the family itself can be inspected —
-                 * the rows below it only cover ranks the *fleet asks for*, and
-                 * what the airline actually holds on a family is a different
-                 * question.
-                 */}
-                <th scope="colgroup" colSpan={5}>
-                  <button
-                    type="button"
-                    className="crew__familybutton"
-                    aria-pressed={selectedFamily === group.family}
-                    onClick={() => {
-                      onSelectFamily(group.family);
-                    }}
-                  >
-                    <span className="figure">{group.family}</span>
-                    <span className="visually-hidden"> — show what this family is crewed with</span>
-                  </button>
-                  {group.short && <span className="crew-tag crew-tag--short">short</span>}
-                </th>
-              </tr>
-              {group.rows.map((row) => {
-                const key = coverageKey(group.family, row.rank);
-                return (
-                  <tr
-                    key={key}
-                    data-cover={row.status}
-                    aria-selected={selectedKey === key}
-                    className={selectedKey === key ? 'crew__row crew__row--on' : 'crew__row'}
-                  >
-                    <th scope="row">
-                      {/*
-                       * The whole row is the target, but the control is a real
-                       * button: a `onClick` on the `<tr>` is unreachable by
-                       * keyboard and invisible to assistive tech, and a row of
-                       * cells is not a widget.
-                       */}
-                      <button
-                        type="button"
-                        className="crew__rowbutton"
-                        onClick={() => {
-                          onSelect({ family: group.family, rank: row.rank });
-                        }}
-                      >
-                        {CREW_RANK_LABEL[row.rank]}
-                        <span className="visually-hidden">
-                          {' '}
-                          on {group.family}: {balanceWords(row.status, row.delta)}
-                        </span>
-                      </button>
-                    </th>
-                    <td className="figure">{row.required}</td>
-                    <td className="figure">{row.available}</td>
-                    <td className="figure">{row.inTraining === 0 ? '—' : row.inTraining}</td>
-                    <td>
-                      {/* Glyph and text, never colour alone (App. H.7). */}
-                      <span className="crew-delta" data-cover={row.status}>
-                        <span aria-hidden="true">{GLYPH[row.status]}</span>{' '}
-                        {row.status === 'exact'
-                          ? 'Exact'
-                          : row.delta > 0
-                            ? `+${String(row.delta)}`
-                            : String(row.delta)}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          ))}
-        </table>
+          </p>
+        </>
       )}
     </section>
   );

@@ -21,6 +21,66 @@
  * `auto-fit` cannot do: stop a wide table from pushing the page sideways.
  */
 
+/* -------------------------------------------------------------- page ---- */
+
+/*
+ * A dashboard is a workspace, not a status note (UX pass).
+ *
+ * The shared `.page` centres its content in both axes — right for "Not found",
+ * wrong for a page of figures. Inside a centred grid the tiles shrank to one
+ * narrow column, every sentence was centred, and once the page grew taller than
+ * the stage its **top overflowed above the scroll origin**, where no scrolling
+ * can reach: the Dashboard's first three headline tiles were simply unreachable.
+ * The compound selector out-specifies `.page` whatever order the stylesheets load
+ * in, the same way `.page.net-page` does for the network planner.
+ */
+.page.dash-page {
+  position: absolute;
+  inset: 0;
+  display: block;
+  place-content: initial;
+  text-align: left;
+  padding: var(--space-4);
+  overflow-y: auto;
+}
+
+.dash-page > .page__title {
+  margin-bottom: var(--space-2);
+}
+
+/* `.page__note` is 34ch for a centred status line; in a panel it read as a
+   narrow column beside its figures. */
+.dash-page .page__note {
+  max-width: 72ch;
+}
+
+.dash-page > .page__note {
+  margin-bottom: var(--space-4);
+}
+
+/* A pair of panels keeps the gap every other panel has below it. */
+.dash-page .panel-pair {
+  margin-bottom: var(--space-6);
+}
+
+/*
+ * `.panel` is also the shell's context panel, whose rule gives it a grid area,
+ * the context panel's width, a translucent ground and its own scroll. A dashboard
+ * panel inherited all four: a page of panels each 22rem wide and blurred. The
+ * shell's name is the older one, so the dashboard's panels take those four back
+ * here rather than renaming a class four pages share.
+ */
+.dash-page .panel {
+  grid-area: auto;
+  width: auto;
+  max-width: none;
+  display: block;
+  backdrop-filter: none;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  overflow: visible;
+}
+
 /* ------------------------------------------------------------- tiles ---- */
 
 .tiles {

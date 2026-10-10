@@ -9,11 +9,12 @@ import {
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { useOutletContext } from 'react-router';
+import { Link, useOutletContext } from 'react-router';
 
 import { LiveryBlendMode, LiveryZone, type LiveryLayer } from '@tailfin/shared';
 
 import { useContextSelection } from '../shell/context-selection';
+import { Button } from '../ui/Button';
 import { StateBlock } from '../ui/StateBlock';
 import { useBuildInfo } from '../version/BuildBadge';
 
@@ -1113,22 +1114,33 @@ export function LiveryBuilderPage(): ReactNode {
     useOutletContext<OwnAirlineShellContext>();
   const build = useBuildInfo();
 
+  /*
+   * The studio's three non-content states go through `ui/StateBlock` (UX pass,
+   * UX-07), and the no-airline one now has a way forward: it was a dead end with
+   * a heading and a sentence and nothing to press.
+   */
   if (ownAirlineLoading) {
     return (
-      <section className="livery-builder-gate" aria-live="polite">
+      <section className="livery-builder-gate">
         <h1>Opening design studio</h1>
-        <p>Loading your airline identity…</p>
+        <StateBlock kind="loading">Loading your airline identity…</StateBlock>
       </section>
     );
   }
   if (ownAirlineError) {
     return (
-      <section className="livery-builder-gate" role="alert">
+      <section className="livery-builder-gate">
         <h1>Design studio unavailable</h1>
-        <p>Tailfin could not load the airline that owns this draft.</p>
-        <button type="button" onClick={() => void reloadOwnAirline()}>
-          Try again
-        </button>
+        <StateBlock
+          kind="broken"
+          action={
+            <Button size="sm" onClick={() => void reloadOwnAirline()}>
+              Try again
+            </Button>
+          }
+        >
+          Tailfin could not load the airline that owns this draft.
+        </StateBlock>
       </section>
     );
   }
@@ -1136,7 +1148,9 @@ export function LiveryBuilderPage(): ReactNode {
     return (
       <section className="livery-builder-gate">
         <h1>Found an airline first</h1>
-        <p>A livery draft belongs to an airline identity, not a player account by itself.</p>
+        <StateBlock kind="empty" action={<Link to="/found">Open the founding desk</Link>}>
+          A livery draft belongs to an airline identity, not a player account by itself.
+        </StateBlock>
       </section>
     );
   }

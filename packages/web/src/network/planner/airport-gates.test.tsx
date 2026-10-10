@@ -209,6 +209,53 @@ describe('AirportGatesView', () => {
     expect(seen.some((call) => call.method === 'POST')).toBe(true);
   });
 
+  it('releases a held stand only after a second, explicit click (UX pass)', async () => {
+    const held = airport({
+      stands: [
+        stand({
+          holders: [
+            {
+              airlineId: '11111111-1111-4111-8111-111111111111',
+              name: 'You',
+              iataCode: 'TQ',
+              contract: 'preferential',
+              isYou: true,
+            },
+          ],
+          yourContract: 'preferential',
+        }),
+      ],
+    });
+    const seen: string[] = [];
+    stub((_url, method) => {
+      seen.push(method);
+      return { status: 200, body: method === 'DELETE' ? airport() : held };
+    });
+    render(<AirportGatesView airports={['EHAM']} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Release' }));
+    expect(seen).not.toContain('DELETE');
+    // The first click only asks; Keep backs out with nothing sent.
+    fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
+    expect(screen.getByRole('button', { name: 'Release' })).toBeInTheDocument();
+    expect(seen).not.toContain('DELETE');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Release' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm release' }));
+    await waitFor(() => {
+      expect(seen).toContain('DELETE');
+    });
+  });
+
+  it('scrolls the stand table inside its own focusable box', async () => {
+    stub(() => ({ status: 200, body: airport() }));
+    render(<AirportGatesView airports={['EHAM']} />);
+    await screen.findByText('A1');
+    const box = screen.getByRole('region', { name: 'Stands' });
+    expect(box).toHaveAttribute('tabindex', '0');
+    expect(box.querySelector('table')).not.toBeNull();
+  });
+
   it('puts a refusal on screen rather than throwing it away', async () => {
     stub((_url, method) =>
       method === 'POST'

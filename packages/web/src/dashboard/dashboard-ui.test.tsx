@@ -471,6 +471,54 @@ describe('the Financial dashboard', () => {
   });
 });
 
+describe('a workspace, not a status note (UX pass)', () => {
+  /*
+   * jsdom applies no stylesheet, so the layout is asserted the way the 390px
+   * criteria below are: by reading the rule. The failure this guards was real
+   * and invisible to every other test — the shared `.page` centred the whole
+   * dashboard, pushed its first tiles above the stage's scroll origin where no
+   * scrolling could reach them, and the shell's `.panel` rule sized every
+   * dashboard panel to the context panel's width.
+   */
+  it('lays the page out top-down and left-aligned, scrolling in the stage', () => {
+    expect(CSS).toMatch(/\.page\.dash-page\s*\{[^}]*display:\s*block/);
+    expect(CSS).toMatch(/\.page\.dash-page\s*\{[^}]*text-align:\s*left/);
+    expect(CSS).toMatch(/\.page\.dash-page\s*\{[^}]*overflow-y:\s*auto/);
+  });
+
+  it('takes back the four things the shell’s .panel rule gives a dashboard panel', () => {
+    const rule = /\.dash-page \.panel\s*\{([^}]*)\}/.exec(CSS)?.[1] ?? '';
+    expect(rule).toMatch(/grid-area:\s*auto/);
+    expect(rule).toMatch(/width:\s*auto/);
+    expect(rule).toMatch(/backdrop-filter:\s*none/);
+    expect(rule).toMatch(/overflow:\s*visible/);
+  });
+
+  it.each(['/dashboard', '/operations', '/alerts'])(
+    '%s uses the workspace layout',
+    async (path) => {
+      stubFetch();
+      const { container } = await renderAt(path);
+      await screen.findByRole('heading', { level: 1 });
+      expect(container.querySelector('section.page.dash-page')).not.toBeNull();
+    },
+  );
+
+  it('says "no earlier period" whole, with no letter taken for an arrow', async () => {
+    stubFetch();
+    await renderAt('/dashboard');
+    const cash = await screen.findByLabelText('Cash');
+    const trend = cash.querySelector('.tile__trend');
+    expect(trend?.textContent?.trim()).toBe('no earlier period');
+    // Nothing hidden from a screen reader when there is no arrow to hide.
+    expect(trend?.querySelector('[aria-hidden="true"]')).toBeNull();
+
+    // And an arrow, when there is one, is still split off and hidden.
+    const loadFactor = screen.getByLabelText('Load factor').querySelector('.tile__trend');
+    expect(loadFactor?.querySelector('[aria-hidden="true"]')?.textContent).toMatch(/^[▲▼▬]$/);
+  });
+});
+
 describe('narrow screens (AC3)', () => {
   it('collapses its grids by auto-fit rather than by a breakpoint', () => {
     /*

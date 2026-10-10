@@ -185,32 +185,30 @@ export function AirportSlotsView({ airports }: { airports: readonly string[] }):
             <span className="net-panel__hint">Level {data.slotLevel} · coordinated</span>
           </div>
           {data.releases !== null && <ReleaseNotice releases={data.releases} />}
-          {notice !== null && (
-            <p className="page__note" role="alert">
-              {notice}
-            </p>
-          )}
-          <table className="admin__table net-comp-table">
-            <thead>
-              <tr>
-                <th scope="col">Band</th>
-                <th scope="col">Demand</th>
-                <th scope="col">Filled</th>
-                <th scope="col">Held by</th>
-                <th scope="col" />
-              </tr>
-            </thead>
-            <tbody>
-              {data.bands.map((band) => (
-                <BandRow
-                  key={band.band}
-                  band={band}
-                  busy={busyBand === band.band}
-                  onToggle={() => void onClaim(band.band, band.heldByYou)}
-                />
-              ))}
-            </tbody>
-          </table>
+          {notice !== null && <StateBlock kind="refused">{notice}</StateBlock>}
+          <div className="net-table-scroll" role="region" aria-label="Slot bands" tabIndex={0}>
+            <table className="admin__table net-comp-table">
+              <thead>
+                <tr>
+                  <th scope="col">Band</th>
+                  <th scope="col">Demand</th>
+                  <th scope="col">Filled</th>
+                  <th scope="col">Held by</th>
+                  <th scope="col" />
+                </tr>
+              </thead>
+              <tbody>
+                {data.bands.map((band) => (
+                  <BandRow
+                    key={band.band}
+                    band={band}
+                    busy={busyBand === band.band}
+                    onToggle={() => void onClaim(band.band, band.heldByYou)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
     </div>

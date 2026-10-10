@@ -183,7 +183,7 @@ export function AlertsPage(): ReactNode {
 
   if (loading) {
     return (
-      <section className="page">
+      <section className="page dash-page">
         <h1 className="page__title">Alerts</h1>
         <StateBlock kind="loading">Reading what changed.</StateBlock>
       </section>
@@ -192,7 +192,7 @@ export function AlertsPage(): ReactNode {
 
   if (digest === null) {
     return (
-      <section className="page">
+      <section className="page dash-page">
         <h1 className="page__title">Alerts</h1>
         <StateBlock kind="broken">
           The alerts could not be read. Nothing is wrong with your airline — this page is.
@@ -204,7 +204,7 @@ export function AlertsPage(): ReactNode {
   const news = digest.raised.length + digest.resolved.length;
 
   return (
-    <section className="page">
+    <section className="page dash-page">
       <h1 className="page__title">Alerts</h1>
       <p className="page__note">{windowSentence(digest)}</p>
 

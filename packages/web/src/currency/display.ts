@@ -173,7 +173,10 @@ export function compactUsdMinor(usdMinor: number): string {
   const value = convertUsdMinor(usdMinor, rateE6) / 100;
   const symbol = activeSymbol();
   const abs = Math.abs(value);
-  if (abs >= 1_000_000) return `${symbol}${(value / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `${symbol}${(value / 1_000).toFixed(1)}k`;
-  return `${symbol}${value.toFixed(0)}`;
+  // The sign leads the symbol — `-$4.1k`, as `formatUsdMinor` writes `-$4,100.00`.
+  // Building the string from a signed number put it after: `$-4.1k`.
+  const sign = value < 0 && abs >= 0.5 ? '-' : '';
+  if (abs >= 1_000_000) return `${sign}${symbol}${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${sign}${symbol}${(abs / 1_000).toFixed(1)}k`;
+  return `${sign}${symbol}${abs.toFixed(0)}`;
 }
