@@ -74,6 +74,18 @@ describe('AirportGatesView', () => {
     expect(screen.getByText(/Open a route first/)).toBeInTheDocument();
   });
 
+  it('opens on the preferred airport — the hub — rather than the alphabetically first (UX pass)', async () => {
+    stub((url) => ({
+      status: 200,
+      body: airport({
+        icao: url.includes('EHAM') ? 'EHAM' : 'EDDF',
+        name: url.includes('EHAM') ? 'Schiphol' : 'Frankfurt',
+      }),
+    }));
+    render(<AirportGatesView airports={['EDDF', 'EHAM']} preferred="EHAM" />);
+    expect(await screen.findByText(/Schiphol \(EHAM\)/)).toBeInTheDocument();
+  });
+
   it('shows the apron and what the schedule needs against what is held', async () => {
     stub(() => ({ status: 200, body: airport() }));
     render(<AirportGatesView airports={['EHAM']} />);

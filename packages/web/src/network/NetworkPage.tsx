@@ -8,6 +8,7 @@ import { StateBlock } from '../ui/StateBlock';
 import { useUnsavedGuard } from '../ui/unsaved';
 
 import { closeRoute, fetchRoutes, fetchSchedules, setRouteActive, type RouteSummary } from './api';
+import { busiestAirport } from './busiest-airport';
 import { AirportGatesView } from './planner/AirportGatesView';
 import { AirportSlotsView } from './planner/AirportSlotsView';
 import { liveEconomics } from './planner/analysis';
@@ -201,6 +202,8 @@ export function NetworkPage(): ReactNode {
     }
     return [...codes];
   }, [routes]);
+  // Where the Gates and Slots views open: the hub, not the alphabetically first.
+  const busiest = useMemo(() => busiestAirport(routes ?? []), [routes]);
 
   // Land on the first route once they load.
   useEffect(() => {
@@ -486,9 +489,9 @@ export function NetworkPage(): ReactNode {
 
         <div className="net-main">
           {view === 'gates' ? (
-            <AirportGatesView airports={operatedAirports} />
+            <AirportGatesView airports={operatedAirports} preferred={busiest} />
           ) : view === 'slots' ? (
-            <AirportSlotsView airports={operatedAirports} />
+            <AirportSlotsView airports={operatedAirports} preferred={busiest} />
           ) : view === 'connections' ? (
             <HubConnectionsView />
           ) : view === 'fleet' ? (

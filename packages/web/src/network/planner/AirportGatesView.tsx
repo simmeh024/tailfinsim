@@ -253,9 +253,18 @@ function StandRow({
   );
 }
 
-export function AirportGatesView({ airports }: { airports: readonly string[] }): ReactNode {
+export function AirportGatesView({
+  airports,
+  preferred = null,
+}: {
+  airports: readonly string[];
+  /** The airport to open on — the hub, read off the routes (UX pass). */
+  preferred?: string | null;
+}): ReactNode {
   const options = useMemo(() => [...new Set(airports)].sort(), [airports]);
-  const [icao, setIcao] = useState<string | null>(options[0] ?? null);
+  const opening =
+    preferred !== null && options.includes(preferred) ? preferred : (options[0] ?? null);
+  const [icao, setIcao] = useState<string | null>(opening);
   const [kind, setKind] = useState<StandKind>('contact_gate');
   const [data, setData] = useState<AirportGatesResponse | 'loading' | 'error'>('loading');
   const [busyStand, setBusyStand] = useState<string | null>(null);
@@ -263,8 +272,8 @@ export function AirportGatesView({ airports }: { airports: readonly string[] }):
 
   // Keep the selection valid as the operated airports change.
   useEffect(() => {
-    if (icao === null || !options.includes(icao)) setIcao(options[0] ?? null);
-  }, [options, icao]);
+    if (icao === null || !options.includes(icao)) setIcao(opening);
+  }, [options, icao, opening]);
 
   const load = useCallback((code: string) => {
     setData('loading');
