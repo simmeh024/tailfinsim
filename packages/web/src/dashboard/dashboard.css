@@ -79,6 +79,13 @@
   background: var(--bg-raised);
   border: 1px solid var(--border-subtle);
   overflow: visible;
+  /*
+   * And a fifth, at phone width: the shell caps the context panel at 45vh there.
+   * With the scroll taken back above, a dashboard panel taller than that drew its
+   * content past its own box and the next panel painted over it — measured on the
+   * Finance page at 390 × 844, where three panels spilled before anything opened.
+   */
+  max-height: none;
 }
 
 /* ------------------------------------------------------------- tiles ---- */
@@ -292,6 +299,13 @@
 
 .data-table__num {
   text-align: right;
+}
+
+/* A cell that holds a sentence wraps; a figure never does. Without it §13.3's
+   instruments table was 1,365px wide on a 1,440px screen. */
+.data-table .data-table__prose {
+  white-space: normal;
+  min-width: 18ch;
 }
 
 .figure--profit {

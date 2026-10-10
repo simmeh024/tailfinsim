@@ -355,7 +355,7 @@ function InstrumentsSection({ credit }: { credit: CreditStandingResponse }): Rea
                       </>
                     )}
                   </td>
-                  <td>
+                  <td className="data-table__prose">
                     {instrument.purpose}
                     {instrument.availability === 'not_built' && (
                       <span className="chip chip--calm">not built yet</span>
