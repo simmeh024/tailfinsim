@@ -90,6 +90,16 @@ export interface ScheduledLeg {
    * place and in the right order; what feeds it is the part still to be built.
    */
   hasSlot: boolean;
+  /**
+   * This departure on the origin's **local** clock, minutes from midnight, when
+   * the caller knows it.
+   *
+   * Only the slot refusal reads it. A slot is claimed for a local band (M3-04a)
+   * and `departureMinute` is absolute, so naming the absolute hour told a player
+   * at a UTC+1 airport to hold the 06:00 band when 07:00 was the one missing.
+   * Absent, the refusal names the departure as stored.
+   */
+  originLocalMinute?: number;
 }
 
 export interface Rotation {
@@ -181,6 +191,12 @@ export const ROTATION_PROBLEMS: readonly RotationProblem[] = [
   'no_slot',
   'crew_illegal',
 ];
+
+/** The start of the hour band a local minute falls in, as a slot is claimed (M7-05). */
+function localBandStart(localMinute: number): number {
+  const withinDay = ((localMinute % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
+  return Math.floor(withinDay / 60) * 60;
+}
 
 function formatMinute(minute: number): string {
   const days = Math.floor(minute / MINUTES_PER_DAY);
@@ -389,7 +405,9 @@ export function validateRotation(rotation: Rotation): RotationCheck {
         problem: 'no_slot',
         detail:
           `No slot is held at ${leg.originIcao} for leg ${String(i + 1)} ` +
-          `in the ${formatMinute(leg.departureMinute)} band.`,
+          (leg.originLocalMinute === undefined
+            ? `in the ${formatMinute(leg.departureMinute)} band.`
+            : `in the ${formatMinute(localBandStart(leg.originLocalMinute))} local band.`),
       };
     }
   }

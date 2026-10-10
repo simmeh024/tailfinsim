@@ -259,6 +259,18 @@ describe('every rejection names its own reason', () => {
     expect(result.detail).toContain('11:30');
   });
 
+  it('no_slot names the band on the origin’s local clock when it is known', () => {
+    // Stored 07:00 absolute, 08:35 on the origin's clock: the slot to claim is
+    // the local 08:00 band, the one the check read (M3-04a). The absolute 07:00
+    // is the hour that sent players to claim the wrong band.
+    const legs = [...DOUBLE_ROUND_TRIP];
+    legs[0] = { ...legs[0]!, hasSlot: false, originLocalMinute: 8 * 60 + 35 };
+    const result = reject(rotation({ legs }));
+    expect(result.problem).toBe('no_slot');
+    expect(result.detail).toContain('leg 1 in the 08:00 local band');
+    expect(result.detail).not.toContain('07:00');
+  });
+
   it('crew_illegal', () => {
     expect(reject(rotation({ crewLegal: false })).problem).toBe('crew_illegal');
   });

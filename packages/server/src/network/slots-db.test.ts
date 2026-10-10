@@ -34,6 +34,9 @@ const url = process.env.DATABASE_URL;
 if (!url) console.warn('\n  [network/slots-db.test] DATABASE_URL not set — skipping.\n');
 const describeDb = url ? describe : describe.skip;
 
+/** Just the held flags, in leg order. */
+const held = (slots: readonly { held: boolean }[]) => slots.map((slot) => slot.held);
+
 function own(fixture: FoundedAirlineFixture): ResolvedPlayerAirline {
   return { id: fixture.airline.id, worldId: fixture.world.id, status: 'active' };
 }
@@ -338,16 +341,16 @@ describeDb('airport slots', () => {
     ];
 
     // Nothing held: only the uncoordinated leg passes.
-    expect(await resolveLegSlots(db.db, own(a), legs)).toEqual([false, true, false]);
+    expect(held(await resolveLegSlots(db.db, own(a), legs))).toEqual([false, true, false]);
 
     // Hold the two coordinated origins' bands and every leg passes.
     await claimSlot(db.db, own(a), coord, 8);
     await claimSlot(db.db, own(a), dest, 10);
-    expect(await resolveLegSlots(db.db, own(a), legs)).toEqual([true, true, true]);
+    expect(held(await resolveLegSlots(db.db, own(a), legs))).toEqual([true, true, true]);
 
     // Another airline's holdings do not count for you.
     const b = await fixtures.create({ worldId: a.world.id, baseCountry: 'GB' });
-    expect(await resolveLegSlots(db.db, own(b), legs)).toEqual([false, true, false]);
+    expect(held(await resolveLegSlots(db.db, own(b), legs))).toEqual([false, true, false]);
   });
 
   it('matches a leg to its slot by the origin’s LOCAL band, not the stored absolute one', async () => {
@@ -359,10 +362,15 @@ describeDb('airport slots', () => {
     await claimSlot(db.db, own(a), icao, 8); // claim the local 08:00 band
 
     const local0800 = [{ originIcao: icao, departureMinute: 6 * 60 }]; // 06:00 UTC = 08:00 local
-    expect(await resolveLegSlots(db.db, own(a), local0800)).toEqual([true]);
+    expect(await resolveLegSlots(db.db, own(a), local0800)).toEqual([
+      // The local minute is returned too, so the refusal can name the band it read.
+      { held: true, localDepartureMinute: 8 * 60 },
+    ]);
 
     // A leg stored at 08:00 UTC is the local 10:00 band, which is not held.
     const local1000 = [{ originIcao: icao, departureMinute: 8 * 60 }];
-    expect(await resolveLegSlots(db.db, own(a), local1000)).toEqual([false]);
+    expect(await resolveLegSlots(db.db, own(a), local1000)).toEqual([
+      { held: false, localDepartureMinute: 10 * 60 },
+    ]);
   });
 });

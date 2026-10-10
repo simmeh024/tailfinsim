@@ -344,6 +344,18 @@ export interface LegOrigin {
   departureMinute: number;
 }
 
+/** One leg's slot answer, and the local departure it was read at. */
+export interface LegSlot {
+  /** Whether the leg holds the slot its departure needs. */
+  held: boolean;
+  /**
+   * The departure on the origin's local clock: the minute the band was read at,
+   * and so the one a refusal must name (M3-04a). The stored departure is
+   * absolute, and naming it sent players to claim the wrong band.
+   */
+  localDepartureMinute: number;
+}
+
 /**
  * Whether each leg holds the slot its departure needs, in leg order.
  *
@@ -357,7 +369,7 @@ export async function resolveLegSlots(
   db: Database,
   own: ResolvedPlayerAirline,
   legs: readonly LegOrigin[],
-): Promise<boolean[]> {
+): Promise<LegSlot[]> {
   if (legs.length === 0) return [];
 
   const origins = [...new Set(legs.map((l) => l.originIcao))];
@@ -386,8 +398,9 @@ export async function resolveLegSlots(
   const held = new Set(holdingRows.map((r) => `${r.icao}|${String(r.band)}`));
 
   return legs.map((leg) => {
-    if (!coordinated.has(leg.originIcao)) return true;
-    const band = bandOf(leg.departureMinute + (offsetOf.get(leg.originIcao) ?? 0));
-    return held.has(`${leg.originIcao}|${String(band)}`);
+    const localDepartureMinute = leg.departureMinute + (offsetOf.get(leg.originIcao) ?? 0);
+    if (!coordinated.has(leg.originIcao)) return { held: true, localDepartureMinute };
+    const band = bandOf(localDepartureMinute);
+    return { held: held.has(`${leg.originIcao}|${String(band)}`), localDepartureMinute };
   });
 }
