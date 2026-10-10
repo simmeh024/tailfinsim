@@ -272,6 +272,12 @@ function lineLabel(line: PnlLine): string {
   if (line.category === 'interest') return 'interest';
   // Borrowing is neither revenue nor cost; the server keeps it out of both totals.
   if (line.category === 'debt_draw') return 'borrowed (outside the totals)';
+  /*
+   * OTHER-01's monthly aircraft lease rent is the first thing ever written to
+   * `lease_finance`; its category name alone would not tell a player it is the
+   * rent on their leased aeroplanes.
+   */
+  if (line.category === 'lease_finance') return 'lease finance (aircraft rent)';
   return line.category.replace(/_/g, ' ');
 }
 
@@ -439,7 +445,13 @@ export function FinancePage(): ReactNode {
 
   return (
     <HorizonProvider value={horizon}>
-      <section className="page">
+      {/*
+        `dash-page`: the UX pass's dashboard layout (claude/ux-visual-pass). The
+        shell's bare `.page` centres a short note, which pushes a tall page's top
+        above the scroll origin, and `.panel` would otherwise inherit the context
+        panel's width and blur. Opting in, rather than a second layout here.
+      */}
+      <section className="page dash-page">
         <div className="finance-head">
           <h1 className="page__title">Finance</h1>
           <HorizonControl value={horizon} onChange={setHorizon} />

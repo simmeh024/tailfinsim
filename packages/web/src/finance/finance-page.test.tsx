@@ -164,6 +164,23 @@ describe('the P&L (§13.4)', () => {
     expect(interest.closest('tr')).toHaveAttribute('data-line', 'interest');
   });
 
+  it('names OTHER-01’s lease rent for what it is, beside the other costs', async () => {
+    stubFinance({
+      '/api/finance/pnl': pnl({
+        lines: [
+          { category: 'ticket', amountMinor: 20_000_000, entryCount: 40 },
+          { category: 'lease_finance', amountMinor: 8_500_000, entryCount: 1 },
+        ],
+      }),
+    });
+    await renderFinance();
+    const statement = screen.getByLabelText('Profit and loss');
+    const row = (
+      await within(statement).findByRole('rowheader', { name: 'lease finance (aircraft rent)' })
+    ).closest('tr') as HTMLElement;
+    expect(row.textContent).toContain('$85,000.00');
+  });
+
   it('shows the interest that was charged, on its line', async () => {
     stubFinance({
       '/api/finance/pnl': pnl({
