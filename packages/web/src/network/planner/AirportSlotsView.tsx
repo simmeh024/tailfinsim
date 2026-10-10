@@ -86,17 +86,26 @@ function Holders({ holders }: { holders: readonly SlotHolder[] }): ReactNode {
   );
 }
 
-export function AirportSlotsView({ airports }: { airports: readonly string[] }): ReactNode {
+export function AirportSlotsView({
+  airports,
+  preferred = null,
+}: {
+  airports: readonly string[];
+  /** The airport to open on — the hub, read off the routes (UX pass). */
+  preferred?: string | null;
+}): ReactNode {
   const options = useMemo(() => [...new Set(airports)].sort(), [airports]);
-  const [icao, setIcao] = useState<string | null>(options[0] ?? null);
+  const opening =
+    preferred !== null && options.includes(preferred) ? preferred : (options[0] ?? null);
+  const [icao, setIcao] = useState<string | null>(opening);
   const [data, setData] = useState<AirportSlotsResponse | 'loading' | 'error'>('loading');
   const [busyBand, setBusyBand] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   // Keep the selection valid as the operated airports change.
   useEffect(() => {
-    if (icao === null || !options.includes(icao)) setIcao(options[0] ?? null);
-  }, [options, icao]);
+    if (icao === null || !options.includes(icao)) setIcao(opening);
+  }, [options, icao, opening]);
 
   const load = useCallback((code: string) => {
     setData('loading');
