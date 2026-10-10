@@ -265,76 +265,38 @@ export function MaintenancePlanner({ preselect = null }: { preselect?: string | 
             The fleet’s next checks, the most used interval first — booking a heavier check covers
             the lighter ones.
           </p>
-          <table className="maint__table">
-            <thead>
-              <tr>
-                <th scope="col">Aircraft</th>
-                <th scope="col">Check</th>
-                <th scope="col">When</th>
-                <th scope="col">Cost</th>
-                <th scope="col">Out of service</th>
-                <th scope="col">
-                  <span className="visually-hidden">Plan</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {due.map(({ view, tier }) => (
-                <tr key={`${view.airframeId}-${tier.tier}`} data-due={tier.due ? 'yes' : 'no'}>
-                  <th scope="row">
-                    {view.registration} <span className="maint__type">{view.typeDesignation}</span>
+          {/* Wide tables scroll in their own labelled, focusable box on a phone,
+              as the fleet table above does (UX-09). */}
+          <div
+            className="maint__table-scroll"
+            role="region"
+            aria-label="Checks coming due"
+            tabIndex={0}
+          >
+            <table className="maint__table">
+              <thead>
+                <tr>
+                  <th scope="col">Aircraft</th>
+                  <th scope="col">Check</th>
+                  <th scope="col">When</th>
+                  <th scope="col">Cost</th>
+                  <th scope="col">Out of service</th>
+                  <th scope="col">
+                    <span className="visually-hidden">Plan</span>
                   </th>
-                  <td>{TIER_LABEL[tier.tier]}</td>
-                  <td className="figure">{dueInWords(tier)}</td>
-                  <td className="figure">{money(tier.costMinor)}</td>
-                  <td>{downtimeInWords(tier.downtimeDays)}</td>
-                  <td>
-                    <Button
-                      variant="secondary"
-                      onClick={() => {
-                        setBooking({ kind: 'idle' });
-                        setSelectedId(view.airframeId);
-                      }}
-                    >
-                      Plan
-                    </Button>
-                  </td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <h3 className="maint__subheading">Every aircraft</h3>
-          <table className="maint__table">
-            <thead>
-              <tr>
-                <th scope="col">Aircraft</th>
-                <th scope="col">Status</th>
-                <th scope="col">Next check</th>
-                <th scope="col">Fault risk</th>
-                <th scope="col">
-                  <span className="visually-hidden">Book</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.airframes.map((view) => {
-                const next = nextTier(view);
-                const history = historyInWords(view);
-                return (
-                  <tr key={view.airframeId} data-status={view.status}>
+              </thead>
+              <tbody>
+                {due.map(({ view, tier }) => (
+                  <tr key={`${view.airframeId}-${tier.tier}`} data-due={tier.due ? 'yes' : 'no'}>
                     <th scope="row">
                       {view.registration}{' '}
                       <span className="maint__type">{view.typeDesignation}</span>
-                      {history !== null && <span className="maint__history">{history}</span>}
                     </th>
-                    <td>
-                      <StatusCell view={view} gameNow={inGameTime} />
-                    </td>
-                    <td className="figure">
-                      {next === null ? '—' : `${TIER_LABEL[next.tier]} ${dueInWords(next)}`}
-                    </td>
-                    <td className="figure">{percent(view.technicalRisk)}</td>
+                    <td>{TIER_LABEL[tier.tier]}</td>
+                    <td className="figure">{dueInWords(tier)}</td>
+                    <td className="figure">{money(tier.costMinor)}</td>
+                    <td>{downtimeInWords(tier.downtimeDays)}</td>
                     <td>
                       <Button
                         variant="secondary"
@@ -343,14 +305,69 @@ export function MaintenancePlanner({ preselect = null }: { preselect?: string | 
                           setSelectedId(view.airframeId);
                         }}
                       >
-                        Book a check
+                        Plan
                       </Button>
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <h3 className="maint__subheading">Every aircraft</h3>
+          <div
+            className="maint__table-scroll"
+            role="region"
+            aria-label="Every aircraft’s checks"
+            tabIndex={0}
+          >
+            <table className="maint__table">
+              <thead>
+                <tr>
+                  <th scope="col">Aircraft</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Next check</th>
+                  <th scope="col">Fault risk</th>
+                  <th scope="col">
+                    <span className="visually-hidden">Book</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.airframes.map((view) => {
+                  const next = nextTier(view);
+                  const history = historyInWords(view);
+                  return (
+                    <tr key={view.airframeId} data-status={view.status}>
+                      <th scope="row">
+                        {view.registration}{' '}
+                        <span className="maint__type">{view.typeDesignation}</span>
+                        {history !== null && <span className="maint__history">{history}</span>}
+                      </th>
+                      <td>
+                        <StatusCell view={view} gameNow={inGameTime} />
+                      </td>
+                      <td className="figure">
+                        {next === null ? '—' : `${TIER_LABEL[next.tier]} ${dueInWords(next)}`}
+                      </td>
+                      <td className="figure">{percent(view.technicalRisk)}</td>
+                      <td>
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            setBooking({ kind: 'idle' });
+                            setSelectedId(view.airframeId);
+                          }}
+                        >
+                          Book a check
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
           {selected !== null && (
             <BookingPanel

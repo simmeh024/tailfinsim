@@ -248,6 +248,18 @@ describe('what is coming due across the fleet', () => {
     expect(rows[0]).toHaveTextContent(/PH-DUE.*A-check.*180 h overdue/);
     expect(rows.some((r) => r.textContent?.includes('PH-HGR'))).toBe(false);
   });
+
+  it('scrolls each table inside its own labelled, focusable box on a narrow screen', async () => {
+    // UX-09's pattern, as the fleet table above it: at 390px six columns would
+    // otherwise push the whole stage sideways.
+    serve({ maintenance: { airframes: [DUE, airframe()] }, calls: [] });
+    render(<MaintenancePlanner />);
+    for (const name of ['Checks coming due', 'Every aircraft’s checks']) {
+      const box = await screen.findByRole('region', { name });
+      expect(box).toHaveAttribute('tabindex', '0');
+      expect(within(box).getByRole('table')).toBeInTheDocument();
+    }
+  });
 });
 
 describe('status, with room for a hold the game adds later', () => {

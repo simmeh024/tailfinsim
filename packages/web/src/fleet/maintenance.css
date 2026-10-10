@@ -20,6 +20,28 @@
   color: var(--text-muted);
 }
 
+/* A wide table scrolls in its own box on a phone (UX-09), as `.fleet__table-scroll`
+   does; positioned so a visually-hidden header label cannot widen the stage. */
+.maint__table-scroll {
+  position: relative;
+  overflow-x: auto;
+  max-width: 100%;
+  padding-bottom: var(--space-1);
+}
+
+/* In the box a cell keeps its words together and the box scrolls, rather than
+   `PH-` / `GND` and `1` / `game` / `day` stacking a column at a time. The two
+   sentences a cell can carry wrap at a width of their own. */
+.maint__table-scroll .maint__table th,
+.maint__table-scroll .maint__table td {
+  white-space: nowrap;
+}
+
+.maint__table-scroll .maint__history,
+.maint__table-scroll .maint__status-detail {
+  white-space: normal;
+}
+
 .maint__table {
   width: 100%;
   border-collapse: collapse;
@@ -148,4 +170,38 @@
 
 .maint__consequence[data-due='yes'] {
   color: var(--text-primary);
+}
+
+/* On a phone a tier is two lines — the check and its cost, then when it is due
+   and how long it takes — rather than five columns that cannot fit. */
+@media (max-width: 32rem) {
+  .maint__history,
+  .maint__status-detail {
+    max-width: 15rem;
+  }
+
+  .maint__tier {
+    grid-template-columns: auto 1fr auto;
+    row-gap: 0;
+  }
+
+  .maint__tier-name {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .maint__tier-cost {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .maint__tier-due {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+
+  .maint__tier-down {
+    grid-column: 2 / -1;
+    grid-row: 3;
+  }
 }

@@ -106,66 +106,73 @@ function NetworkContracts({
     );
   }
   return (
-    <table className="admin__table net-comp-table net-ground__table">
-      <thead>
-        <tr>
-          <th scope="col">Station</th>
-          <th scope="col">Line</th>
-          <th scope="col">Handled by</th>
-          <th scope="col">Term</th>
-          <th scope="col">Commitment</th>
-          <th scope="col">To leave now</th>
-          <th scope="col">
-            <span className="visually-hidden">Open</span>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {contracts.contracts.map((row) => (
-          <tr
-            key={row.id}
-            data-contract={row.id}
-            aria-current={row.id === focus ? 'true' : undefined}
-            className={row.id === focus ? 'net-ground__focus' : undefined}
-          >
-            <th scope="row" className="figure">
-              {row.icao}
+    <div
+      className="net-table-scroll net-ground__table"
+      role="region"
+      aria-label="Your handling arrangements"
+      tabIndex={0}
+    >
+      <table className="admin__table net-comp-table">
+        <thead>
+          <tr>
+            <th scope="col">Station</th>
+            <th scope="col">Line</th>
+            <th scope="col">Handled by</th>
+            <th scope="col">Term</th>
+            <th scope="col">Commitment</th>
+            <th scope="col">To leave now</th>
+            <th scope="col">
+              <span className="visually-hidden">Open</span>
             </th>
-            <td>{SERVICE_LINE_LABEL[row.serviceLine]}</td>
-            <td>
-              {row.kind === 'self'
-                ? `Your own staff, ${String(row.headcount ?? 0)} heads`
-                : `${GRADE_LABEL[row.grade ?? 'standard']} handler`}
-            </td>
-            <td>
-              <TermCell term={termPresentation(row, gameNow, speed)} />
-            </td>
-            <td>
-              {commitmentInWords(row)}
-              {row.shortfallFeeMinor > 0 && (
-                <span className="net-ground__term-detail">
-                  {' '}
-                  — {money(row.shortfallFeeMinor)} shortfall if it ended now
-                </span>
-              )}
-            </td>
-            <td className="figure">
-              {row.kind === 'self' ? 'nothing' : money(row.earlyTerminationPenaltyMinor)}
-            </td>
-            <td>
-              <Button
-                variant="tertiary"
-                onClick={() => {
-                  onOpen(row.icao);
-                }}
-              >
-                Open {row.icao}
-              </Button>
-            </td>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {contracts.contracts.map((row) => (
+            <tr
+              key={row.id}
+              data-contract={row.id}
+              aria-current={row.id === focus ? 'true' : undefined}
+              className={row.id === focus ? 'net-ground__focus' : undefined}
+            >
+              <th scope="row" className="figure">
+                {row.icao}
+              </th>
+              <td>{SERVICE_LINE_LABEL[row.serviceLine]}</td>
+              <td>
+                {row.kind === 'self'
+                  ? `Your own staff, ${String(row.headcount ?? 0)} heads`
+                  : `${GRADE_LABEL[row.grade ?? 'standard']} handler`}
+              </td>
+              <td className="net-ground__prose net-ground__prose--wide">
+                <TermCell term={termPresentation(row, gameNow, speed)} />
+              </td>
+              <td className="net-ground__prose">
+                {commitmentInWords(row)}
+                {row.shortfallFeeMinor > 0 && (
+                  <span className="net-ground__term-detail">
+                    {' '}
+                    — {money(row.shortfallFeeMinor)} shortfall if it ended now
+                  </span>
+                )}
+              </td>
+              <td className="figure">
+                {row.kind === 'self' ? 'nothing' : money(row.earlyTerminationPenaltyMinor)}
+              </td>
+              <td>
+                <Button
+                  variant="tertiary"
+                  onClick={() => {
+                    onOpen(row.icao);
+                  }}
+                >
+                  Open {row.icao}
+                </Button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -234,72 +241,79 @@ function LineSection({
         </p>
       )}
 
-      <table className="admin__table net-comp-table">
-        <caption className="visually-hidden">
-          Handlers for {SERVICE_LINE_LABEL[line.serviceLine]} at {icao}
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">Grade</th>
-            <th scope="col">Slots</th>
-            <th scope="col">Reliability</th>
-            <th scope="col">Speed</th>
-            <th scope="col">Quality</th>
-            <th scope="col">Price</th>
-            <th scope="col">Commits you to</th>
-            <th scope="col">
-              <span className="visually-hidden">Sign</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {line.offers.map((offer) => {
-            const yours = contracted?.kind === 'vendor' && contracted.grade === offer.grade;
-            const full = freeSlots(offer) === 0 && !yours;
-            return (
-              <tr key={offer.grade} data-full={full ? 'yes' : 'no'}>
-                <th scope="row">{GRADE_LABEL[offer.grade]}</th>
-                <td>
-                  {full ? <Chip tone="warn">Full</Chip> : null}{' '}
-                  <span className="net-ground__term-detail">{scarcityInWords(offer)}</span>
-                </td>
-                <td className="figure">{percent(offer.reliability)}</td>
-                <td className="figure">{multiplier(offer.speedFactor)}</td>
-                <td className="figure">{percent(offer.quality)}</td>
-                <td className="figure">{multiplier(offer.priceIndex)}</td>
-                <td>
-                  {offer.committedDepartures === 0
-                    ? 'no volume'
-                    : `${String(offer.committedDepartures)} departures`}
-                  <span className="net-ground__term-detail">
-                    {' '}
-                    · {money(offer.fullTermPenaltyMinor)} to break a full term
-                  </span>
-                </td>
-                <td>
-                  {yours ? (
-                    <Chip tone="positive">Yours</Chip>
-                  ) : (
-                    <Button
-                      variant="secondary"
-                      disabled={busy || full}
-                      onClick={() => {
-                        onWrite(() => signGroundContract(icao, line.serviceLine, offer.grade));
-                      }}
-                    >
-                      {contracted === null
-                        ? `Sign ${GRADE_LABEL[offer.grade].toLowerCase()}`
-                        : `Sign ${GRADE_LABEL[offer.grade].toLowerCase()} — replaces the current arrangement${
-                            breakFee > 0 ? `, ${money(breakFee)} to break it` : ''
-                          }`}
-                    </Button>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <div
+        className="net-table-scroll"
+        role="region"
+        aria-label={`Handlers for ${SERVICE_LINE_LABEL[line.serviceLine]} at ${icao}`}
+        tabIndex={0}
+      >
+        <table className="admin__table net-comp-table">
+          <caption className="visually-hidden">
+            Handlers for {SERVICE_LINE_LABEL[line.serviceLine]} at {icao}
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Grade</th>
+              <th scope="col">Slots</th>
+              <th scope="col">Reliability</th>
+              <th scope="col">Speed</th>
+              <th scope="col">Quality</th>
+              <th scope="col">Price</th>
+              <th scope="col">Commits you to</th>
+              <th scope="col">
+                <span className="visually-hidden">Sign</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {line.offers.map((offer) => {
+              const yours = contracted?.kind === 'vendor' && contracted.grade === offer.grade;
+              const full = freeSlots(offer) === 0 && !yours;
+              return (
+                <tr key={offer.grade} data-full={full ? 'yes' : 'no'}>
+                  <th scope="row">{GRADE_LABEL[offer.grade]}</th>
+                  <td className="net-ground__prose">
+                    {full ? <Chip tone="warn">Full</Chip> : null}{' '}
+                    <span className="net-ground__term-detail">{scarcityInWords(offer)}</span>
+                  </td>
+                  <td className="figure">{percent(offer.reliability)}</td>
+                  <td className="figure">{multiplier(offer.speedFactor)}</td>
+                  <td className="figure">{percent(offer.quality)}</td>
+                  <td className="figure">{multiplier(offer.priceIndex)}</td>
+                  <td className="net-ground__prose">
+                    {offer.committedDepartures === 0
+                      ? 'no volume'
+                      : `${String(offer.committedDepartures)} departures`}
+                    <span className="net-ground__term-detail">
+                      {' '}
+                      · {money(offer.fullTermPenaltyMinor)} to break a full term
+                    </span>
+                  </td>
+                  <td className="net-ground__prose">
+                    {yours ? (
+                      <Chip tone="positive">Yours</Chip>
+                    ) : (
+                      <Button
+                        variant="secondary"
+                        disabled={busy || full}
+                        onClick={() => {
+                          onWrite(() => signGroundContract(icao, line.serviceLine, offer.grade));
+                        }}
+                      >
+                        {contracted === null
+                          ? `Sign ${GRADE_LABEL[offer.grade].toLowerCase()}`
+                          : `Sign ${GRADE_LABEL[offer.grade].toLowerCase()} — replaces the current arrangement${
+                              breakFee > 0 ? `, ${money(breakFee)} to break it` : ''
+                            }`}
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
 
       <div className="net-ground__self">
         <h5 className="net-ground__self-title">Handle it yourself</h5>

@@ -299,6 +299,18 @@ describe('scarcity, and self-handling as the alternative', () => {
     );
   });
 
+  it('scrolls each table inside its own labelled, focusable box on a narrow screen', async () => {
+    // UX-09's pattern, as the Slots and Gates views use it (`.net-table-scroll`).
+    serve({ contracts: { contracts: [alertRow()] }, station: station(), calls: [] });
+    render(<GroundHandlingView airports={['EHAM']} />);
+    for (const name of ['Your handling arrangements', 'Handlers for Ramp and baggage at EHAM']) {
+      const box = await screen.findByRole('region', { name });
+      expect(box).toHaveAttribute('tabindex', '0');
+      expect(box).toHaveClass('net-table-scroll');
+      expect(within(box).getByRole('table')).toBeInTheDocument();
+    }
+  });
+
   it('states the self-handling trade, and why it is not available without a hub', async () => {
     serve({
       contracts: { contracts: [] },
