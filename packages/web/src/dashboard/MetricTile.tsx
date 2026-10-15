@@ -1,6 +1,14 @@
 import { Link } from 'react-router';
 
-import type { MetricDrillDown, MetricPolarity, MetricTrend } from '@tailfin/shared';
+import type {
+  Metric,
+  MetricDrillDown,
+  MetricId,
+  MetricPolarity,
+  MetricTrend,
+} from '@tailfin/shared';
+
+import { MetricDrillDown as DrillDown } from '../statistics/MetricDrillDown';
 
 import { drillHref, formatMetric, formatTrend, trendTone, type DisplayUnit } from './format';
 
@@ -43,6 +51,17 @@ export interface MetricTileProps {
   drillDown: MetricDrillDown;
   /** Emphasised tiles lead the grid — cash, runway, net worth. */
   featured?: boolean;
+  /**
+   * The statistics metric this figure is, when it is one (SURFACE-06).
+   *
+   * Given, the drill-down is `statistics/MetricDrillDown` — the one component
+   * every drillable metric opens through — rather than a link off the page.
+   * Absent for a figure the registry does not serve (cash, runway, a rating),
+   * which keeps the plain link or statement below.
+   */
+  metricId?: MetricId;
+  /** The metric as already read, so the drill-down need not read it again. */
+  metric?: Metric | null;
 }
 
 export function MetricTile({
@@ -55,6 +74,8 @@ export function MetricTile({
   trend,
   drillDown,
   featured = false,
+  metricId,
+  metric,
 }: MetricTileProps): ReactNode {
   const tone = trendTone(trend, polarity);
   const href = drillHref(drillDown.endpoint);
@@ -83,7 +104,9 @@ export function MetricTile({
           {glyph === null ? movement : movement.slice(1).trim()}
         </span>
       </p>
-      {href === null ? (
+      {metricId !== undefined ? (
+        <DrillDown metricId={metricId} metric={metric} drillDown={drillDown} />
+      ) : href === null ? (
         // §14.1 asks every figure to explain itself. Until a page consumes this
         // endpoint, saying where the answer lives is more honest than a link
         // that goes somewhere unable to give it.

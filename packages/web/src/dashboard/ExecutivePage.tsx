@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router';
 
-import type { ExecutiveDashboardResponse, RouteMover } from '@tailfin/shared';
+import { MetricId, type ExecutiveDashboardResponse, type RouteMover } from '@tailfin/shared';
 
 import { formatUsdMinor, activeCurrency } from '../currency/display';
 import { csvMoney, csvMoneyHeader } from '../export/csv';
@@ -227,6 +227,14 @@ export function ExecutivePage(): ReactNode {
                 polarity={headline.polarity}
                 trend={headline.trend}
                 drillDown={headline.drillDown}
+                /*
+                  A headline that *is* a statistics metric — load factor and
+                  on-time today — opens through the shared drill-down
+                  (SURFACE-06). Recognised by the server's own enum, not by a
+                  list kept here: a headline the registry does not serve keeps
+                  its link.
+                */
+                metricId={MetricId.safeParse(headline.id).data}
                 featured={
                   headline.id === 'cash' ||
                   headline.id === 'cash_runway' ||

@@ -241,7 +241,8 @@ describe('§14.4’s ranked chart', () => {
     stubFetch(0);
     await renderFinance();
     const panel = screen.getByLabelText('Profit by route');
-    expect(panel.textContent).toContain('No route has settled a flight');
+    // The panel renders its own loading state first (SURFACE-03); wait for the answer.
+    await waitFor(() => expect(panel.textContent).toContain('No route has settled a flight'));
     // The production shape, named rather than left as an empty chart.
     expect(panel.textContent).toContain('Only the worker settles a flight');
   });

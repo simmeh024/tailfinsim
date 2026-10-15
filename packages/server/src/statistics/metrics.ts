@@ -55,8 +55,14 @@ import type { Database } from '../db/client';
 /** The window a headline `value` covers. One game month. */
 const PRIMARY_WINDOW_DAYS = 30;
 
-/** §14.2's trend windows, in game days. */
-const TREND_WINDOWS = [7, 30, 90] as const;
+/** §14.2's trend windows, in game days. Also the windows a breakdown may be read over. */
+export const TREND_WINDOWS = [7, 30, 90] as const;
+export type TrendWindow = (typeof TREND_WINDOWS)[number];
+
+/** Whether a number is one of §14.2's trend windows — the only periods a breakdown answers. */
+export function isTrendWindow(days: number): days is TrendWindow {
+  return (TREND_WINDOWS as readonly number[]).includes(days);
+}
 
 /** §14.2's forecast horizons, in game days. */
 const FORECAST_HORIZONS = [7, 30, 90] as const;
@@ -306,12 +312,21 @@ export async function readMetricBreakdown(
   own: ResolvedPlayerAirline,
   metricId: MetricId,
   dimension: MetricDimension,
+  /**
+   * The window the rows cover — one of §14.2's trend windows (SURFACE-06).
+   *
+   * Defaulting to the headline's own window, so a metric's `drillDown` link still
+   * answers without a query string; a page with a period control asks for the
+   * period it is showing, so the rows explain the figure beside them rather than
+   * a different month's.
+   */
+  windowDays: TrendWindow = PRIMARY_WINDOW_DAYS,
 ): Promise<MetricBreakdownResponse | null> {
   const definition = metricDefinition(metricId);
   if (definition === undefined || dimension !== 'route') return null;
 
   const gameNow = await worldGameNow(db, own.worldId);
-  const since = new Date(gameNow.getTime() - PRIMARY_WINDOW_DAYS * DAY_MS);
+  const since = new Date(gameNow.getTime() - windowDays * DAY_MS);
   const rows = await settledFlights(db, own, since);
 
   const byRoute = new Map<
@@ -366,7 +381,7 @@ export async function readMetricBreakdown(
     metric: metricId,
     by: dimension,
     gameNow: gameNow.toISOString(),
-    windowDays: PRIMARY_WINDOW_DAYS,
+    windowDays,
     total,
     rows: projected,
   };

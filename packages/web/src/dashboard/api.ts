@@ -1,5 +1,6 @@
 import {
   CreditStandingResponse,
+  type DrawLoanRequest,
   ExecutiveDashboardResponse,
   FinancePnlResponse,
   MetricBreakdownResponse,
@@ -53,20 +54,94 @@ export function fetchStatistics(): Promise<StatisticsResponse | null> {
   return shaped('/api/statistics', StatisticsResponse);
 }
 
-export function fetchProfitAndLoss(): Promise<FinancePnlResponse | null> {
-  return shaped('/api/finance/pnl', FinancePnlResponse);
+/**
+ * The P&L over the last `days` game days (SURFACE-03).
+ *
+ * `days` rather than a `from`/`to` pair the client would have to compute: the
+ * period ends at the **world's** now, which the server knows and a browser can
+ * only estimate from a clock it should not be reading.
+ */
+export function fetchProfitAndLoss(days?: number): Promise<FinancePnlResponse | null> {
+  return shaped(
+    days === undefined ? '/api/finance/pnl' : `/api/finance/pnl?days=${String(days)}`,
+    FinancePnlResponse,
+  );
 }
 
 export function fetchCreditStanding(): Promise<CreditStandingResponse | null> {
   return shaped('/api/credit', CreditStandingResponse);
 }
 
-/** One metric's contributing rows — §14.1's first drill-down rung. */
-export function fetchBreakdown(metricId: string): Promise<MetricBreakdownResponse | null> {
+/**
+ * One metric's contributing rows — §14.1's first drill-down rung — over one of
+ * §14.2's windows (SURFACE-06). Omitting `days` reads the headline's own month.
+ */
+export function fetchBreakdown(
+  metricId: string,
+  days?: number,
+): Promise<MetricBreakdownResponse | null> {
+  const window = days === undefined ? '' : `&days=${String(days)}`;
   return shaped(
-    `/api/statistics/${encodeURIComponent(metricId)}/breakdown?by=route`,
+    `/api/statistics/${encodeURIComponent(metricId)}/breakdown?by=route${window}`,
     MetricBreakdownResponse,
   );
+}
+
+/** What a draw came back with: the whole standing, or the server's reason. */
+export type DrawOutcome =
+  | { ok: true; credit: CreditStandingResponse }
+  | { ok: false; status: number; code: string; message: string };
+
+/**
+ * Draw a loan (SURFACE-02, `POST /api/credit/loans`).
+ *
+ * The request names an instrument and an amount and **nothing else** — the
+ * rate, the term and the cap are the server's (SEC-09), and its strict schema
+ * refuses a body that tries to say otherwise.
+ *
+ * **Never retried.** A draw has no idempotency key, so a timeout that was
+ * retried could be two loans; a failure here is reported once and the player
+ * decides. That is why this does not go through `shaped`, which swallows the
+ * difference between a refusal and a dead server.
+ */
+export async function drawLoan(request: DrawLoanRequest): Promise<DrawOutcome> {
+  let response: Response;
+  try {
+    response = await fetch('/api/credit/loans', {
+      method: 'POST',
+      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(request),
+    });
+  } catch {
+    return {
+      ok: false,
+      status: 0,
+      code: 'unreachable',
+      message:
+        'The bank could not be reached. Nothing was drawn as far as this page knows — check your loans before trying again.',
+    };
+  }
+  const body: unknown = await response.json().catch(() => null);
+  if (response.status === 201) {
+    const parsed = CreditStandingResponse.safeParse(body);
+    if (parsed.success) return { ok: true, credit: parsed.data };
+    // The loan exists; only its answer was unreadable. Saying "could not be
+    // drawn" here would invite a second draw of a loan already taken.
+    return {
+      ok: false,
+      status: 201,
+      code: 'unreadable',
+      message: 'The loan was drawn, but its terms could not be read. Reload to see it.',
+    };
+  }
+  const error = (body ?? {}) as { code?: unknown; message?: unknown };
+  return {
+    ok: false,
+    status: response.status,
+    code: typeof error.code === 'string' ? error.code : 'unknown',
+    message: typeof error.message === 'string' ? error.message : 'The loan could not be drawn.',
+  };
 }
 
 /**

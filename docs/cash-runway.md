@@ -112,6 +112,17 @@ with the alert that told it.
 
 ---
 
+## The page
+
+The runway has exactly one indicator: `finance/RunwayIndicator.tsx` in the status
+strip, on every page, the loudest thing there below 30 days — which is §13.6's
+_"the single most prominent number when it drops below 30"_. The Finance page
+(SURFACE-03) deliberately does **not** repeat it: a second runway would be a
+second place for the figure to disagree with itself, and a number on one page is
+less prominent than a number on every page. The page points at the strip instead.
+
+---
+
 ## Where each thing lives
 
 |                                            | Where                                          |
