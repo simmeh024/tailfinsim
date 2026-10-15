@@ -1,7 +1,7 @@
 import { count, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { RouteGroupsResponse, ServicePackagesResponse } from '@tailfin/shared';
+import { RouteGroupSummary, RouteGroupsResponse, ServicePackagesResponse } from '@tailfin/shared';
 import type { ServicePackageContent } from '@tailfin/shared';
 
 import { createDatabase, type DatabaseHandle } from '../db/client';
@@ -331,6 +331,11 @@ describeDb('the service lifecycle endpoints (SURFACE-11)', () => {
       listed.groups.find((group) => group.name === name)?.routes.map((entry) => entry.routeId);
     expect(routeIdsOf('New home')).toEqual([moving]);
     expect(routeIdsOf('Old home')).toEqual([staying]);
+    // And the 201 already said so: the created group carries its routes, exactly
+    // as the list reads them, rather than the `routes: []` it used to answer.
+    expect(RouteGroupSummary.parse(response.json()).routes).toEqual(
+      listed.groups.find((group) => group.name === 'New home')?.routes,
+    );
 
     // Deleting it drops its route back to no group — the baseline product.
     const created = listed.groups.find((group) => group.name === 'New home');

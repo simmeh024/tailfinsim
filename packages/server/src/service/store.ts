@@ -392,6 +392,23 @@ export async function createRouteGroup(
           .insert(routeGroupMember)
           .values(routeIds.map((routeId) => ({ routeGroupId: row.id, routeId })));
       }
+      /*
+       * The routes it was created with, read back in `listRouteGroups`' order.
+       * This answered `routes: []` whatever was sent, so a client trusting the 201
+       * showed a new group as empty when it held routes (found by SURFACE-11).
+       */
+      const routes =
+        routeIds.length === 0
+          ? []
+          : await tx
+              .select({
+                routeId: route.id,
+                originIcao: route.originIcao,
+                destinationIcao: route.destinationIcao,
+              })
+              .from(route)
+              .where(inArray(route.id, routeIds))
+              .orderBy(route.originIcao, route.destinationIcao);
       return {
         ok: true as const,
         value: {
@@ -399,7 +416,7 @@ export async function createRouteGroup(
           name: row.name,
           servicePackageId: null,
           servicePackageName: null,
-          routes: [],
+          routes,
           createdAt: row.createdAt.toISOString(),
           updatedAt: row.updatedAt.toISOString(),
         },
