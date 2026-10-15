@@ -381,6 +381,12 @@ describe('research points', () => {
     expect(
       within(card('Cost-index SOP')).getByText(/You have no commissioned academy/),
     ).toBeInTheDocument();
+
+    // And the way to fix it is one click away: academies are built on the Crew page (SURFACE-10).
+    expect(within(panel).getByRole('link', { name: 'Build an academy' })).toHaveAttribute(
+      'href',
+      '/crew#academies',
+    );
   });
 });
 

@@ -7,6 +7,7 @@ import { useContextSelection } from '../shell/context-selection';
 import { StateBlock } from '../ui/StateBlock';
 import { useWorldClock } from '../world/useWorldClock';
 
+import { AcademyPanel } from './AcademyPanel';
 import {
   allocateSkillPoint,
   fetchCrew,
@@ -425,6 +426,13 @@ export function CrewPage(): ReactNode {
       />
 
       <TrainingPipeline crew={crew} inGameTime={inGameTime} />
+
+      {/*
+       * The academies train this page's crew at this page's bases (SURFACE-10),
+       * so they sit under the pipeline they shorten — whether a conversion above
+       * was trained in-house or bought in is decided by what is built here.
+       */}
+      <AcademyPanel inGameTime={inGameTime} />
 
       <CrewRoster
         roster={roster}

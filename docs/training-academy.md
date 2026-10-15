@@ -309,6 +309,72 @@ client that had to refetch would show a stale purse for a frame.
 
 ---
 
+## The page
+
+**Training academies is a section of the Crew page** (`/crew#academies`, SURFACE-10), under the
+training pipeline. An academy is built at a crew base and exists to train that base's crew, and
+the Crew page already holds the bases, the conversion action and the conversions in progress;
+whether a conversion there was trained in-house or bought in is decided by what is built here.
+The Research page links to it from the line that names the highest academy, because levels are
+what research tiers and points wait on. It is recorded in `shell/reachability.ts` as a section of
+`/crew`, not a route of its own. The client is `crew/academy-api.ts`, `crew/AcademyPanel.tsx` and
+the sentences in `crew/academy-presentation.ts`.
+
+**What it shows**, every figure from `GET /api/academies`:
+
+- each academy — its base, §10.1's name for the level (or _Building site_ at level 0), the
+  ceiling (flight deck and cabin rank, research tier, slots in use of slots), the server's
+  monthly upkeep, the modules installed and being built with their world dates, the next
+  level's quote, and every module offer with what blocks it (`blockedBy`, in words);
+- the open crew bases without one, each with the founding quote;
+- the outsourced conversion rate, so _"a fraction of the cost of outsourcing"_ has its known
+  half on screen. The in-house rates are the economy's and are not on the wire, so the page
+  says _a fraction_ and computes no saving.
+
+A building site says it permits nothing and charges no upkeep yet — the page never shows level
+1's ceiling while level 1 is still going up. Build dates are **game** instants, counted down on
+the world's clock (`useWorldClock`) and shown as a date alone until it has synced. A build more
+than a game hour past its promised instant reads _Not finishing_ and says the worker has not
+run, the maintenance planner's treatment of a stalled check: on a node with no worker an
+academy is a permanent building site, and the page must not call that a slow build. The three
+modules nothing reads (`readToday: false`) carry _Not used yet_ on the offer and in the
+confirmation.
+
+**What it sends.** Found, Build level and Build module are each **two clicks**: the button
+carries the server's capital cost, and the confirmation restates capital, game weeks and upkeep,
+that nothing shortens the build and that nothing built can be sold or taken down. The request
+names only the base, the academy, or the module kind and — for the full-flight sim alone — a
+family picked from the server's `availableFamilies`; never a price. It is sent **once**: each
+write charges capital and takes no idempotency key, so a dropped answer is shown as _unknown_,
+never retried, and that write stays held until the player reloads the server's state; every
+other write control is held while one is in flight. A
+`200` replaces the page's state with the server's whole answer; a 4xx refusal replaces nothing
+and is shown through `StateBlock` beside the control, with the server's message, a hint keyed to
+the closed `AcademyRefusal` set, and the code. A 5xx is an unknown outcome, not a refusal.
+
+The page tells a refused player _"nothing was charged and nothing changed"_, and
+`academy/routes-refusals.test.ts` is the proof: every code in the set, and the schema's 400, is
+met at the API boundary and checked against the balance, the AIR-06 movements, the ledger lines
+and every academy and module row the airline holds. `insufficient_funds` matters most, because
+it is refused after `moveAirlineCash` has written the movement, by throwing inside the
+transaction.
+
+**§10.4 in the wording.** The section describes an academy as a ceiling and a discount — cheaper
+conversions, higher ranks and research tiers, levels that count toward research points — and in
+§10.4's words _cheaper to run, not more popular_. No sentence says it moves demand, fares or
+reputation, and a test reads the rendered section for those words. There is no boost figure on
+the wire for a building, so the page shows none.
+
+**What it deliberately does not do:** compute a price, a saving, a date or an eligibility (the
+next level's _description_ comes from §10.1's design table in `@tailfin/shared`, its price from
+the server); offer a way to hurry, sell or demolish anything, because none exists; show
+qualification expiries or real-time countdowns from §10.5's academy dashboard — nothing
+expires, and ADR-0026 puts construction on the world's clock; or show which courses are running
+in which academy, which `GET /api/crew` does not yet say per academy (the pipeline above shows
+the conversions, and each academy shows its slots in use).
+
+---
+
 ## What M9-01 deliberately did not build
 
 - **The research tree.** M9-05 built it ([`research.md`](research.md)), and it reads the
@@ -320,9 +386,9 @@ client that had to refetch would show a stale purse for a frame.
   Training Captains and research doctrine, and the academy reaches them only as permission.
 - **Selling sim slots to other players.** §10.1 marks it post-MVP; MARKET-01 owns the contract
   primitive it would need.
-- **A web page.** The API is complete and there is no client consumer yet. CLAUDE.md's own
-  warning applies — a closed issue is not evidence a player can reach a feature — so this is
-  named here rather than assumed. SURFACE-01 owns making that a CI gate.
+- **A web page.** M9-01 shipped the API with no client consumer, and SURFACE-01's guard
+  baselined all four routes for it. SURFACE-10 built the page — see
+  [The page](#the-page) above.
 - **Demolition or downgrade.** §10.1 gives a capital cost, a duration and an upkeep and no way
   back, the same as `hub_facility`. A `closed_at` nobody can reach would be a mechanic sitting
   in the schema looking load-bearing.
