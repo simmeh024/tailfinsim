@@ -7,6 +7,7 @@ import type { CrewBaseView, CrewResponse } from '@tailfin/shared';
 import { ContextSelectionProvider, useContextSelection } from '../shell/context-selection';
 
 import { CrewPage } from './CrewPage';
+import { academies } from './test-academies';
 
 import type { ReactNode } from 'react';
 
@@ -465,6 +466,38 @@ describe('actions', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Hire crew/ }));
     expect(screen.getByLabelText('Heads')).toBeInTheDocument();
+  });
+});
+
+describe('training academies (SURFACE-10)', () => {
+  it('sits on the Crew page, under the training pipeline it shortens', async () => {
+    const fetchMock = vi.fn((path: string) => {
+      const json = (status: number, body: unknown) =>
+        Promise.resolve({
+          ok: status < 300,
+          status,
+          json: () => Promise.resolve(body),
+        } as Response);
+      if (path.includes('/api/world/clock')) return json(404, {});
+      if (path === '/api/academies') return json(200, academies());
+      return json(200, MIXED);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderPage();
+
+    const heading = await screen.findByRole('heading', { name: 'Training academies' });
+    const section = heading.closest('section');
+    expect(section).toHaveAttribute('id', 'academies');
+    expect(
+      await screen.findByRole('heading', { name: 'EHAM · Training Centre' }),
+    ).toBeInTheDocument();
+
+    // Under the pipeline, in document order.
+    const pipeline = screen.getByRole('heading', { name: 'Training pipeline' });
+    expect(
+      pipeline.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(fetchMock.mock.calls.filter(([p]) => p === '/api/academies')).toHaveLength(1);
   });
 });
 

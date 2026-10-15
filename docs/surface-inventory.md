@@ -10,7 +10,7 @@ app’s entry point reaches imports and uses the function that builds the call. 
 `SURFACE_INVENTORY_WRITE=1 npx vitest run --project server surface-reachability`; the guard
 fails while this file is out of date.
 
-- **Player routes:** 119 — 107 consumed, 9 baselined ahead of their surface (0 with no surface issue filed yet), 3 not a surface.
+- **Player routes:** 119 — 111 consumed, 5 baselined ahead of their surface (0 with no surface issue filed yet), 3 not a surface.
 - **Admin routes:** 24 — 19 consumed, 5 baselined.
 - **Static routes:** 11, outside `/api` and not scored.
 
@@ -30,7 +30,7 @@ fails while this file is out of date.
 | `DELETE /api/schedules/:id`                       | consumed             | `network/api.ts#deleteSchedule`                                                                                                                |
 | `DELETE /api/service/packages/:id`                | consumed             | `service/api.ts#deletePackage`                                                                                                                 |
 | `DELETE /api/service/route-groups/:id`            | consumed             | `service/api.ts#deleteRouteGroup`                                                                                                              |
-| `GET /api/academies`                              | baselined (#1212)    | SURFACE-10: M9-01 shipped the training academy API with no page; the research tree reads its levels, but building one is API-only.             |
+| `GET /api/academies`                              | consumed             | `crew/academy-api.ts#fetchAcademies`                                                                                                           |
 | `GET /api/airlines/founding-airports`             | consumed             | `founding/api.ts#searchFoundingAirports`                                                                                                       |
 | `GET /api/airlines/founding-options`              | consumed             | `founding/api.ts#fetchFoundingOptions`                                                                                                         |
 | `GET /api/airlines/me`                            | consumed             | `airline/api.ts#fetchOwnAirline`                                                                                                               |
@@ -91,9 +91,9 @@ fails while this file is out of date.
 | `GET /api/world/clock`                            | consumed             | `world/clock-api.ts#fetchWorldClock`                                                                                                           |
 | `GET /api/world/map`                              | consumed             | `world/map-api.ts#fetchWorldMap`                                                                                                               |
 | `PATCH /api/airlines/me`                          | consumed             | `airline/api.ts#patchOwnAirline`                                                                                                               |
-| `POST /api/academies`                             | baselined (#1212)    | SURFACE-10: M9-01 shipped the training academy API with no page; the research tree reads its levels, but building one is API-only.             |
-| `POST /api/academies/:id/levels`                  | baselined (#1212)    | SURFACE-10: M9-01 shipped the training academy API with no page; the research tree reads its levels, but building one is API-only.             |
-| `POST /api/academies/:id/modules`                 | baselined (#1212)    | SURFACE-10: M9-01 shipped the training academy API with no page; the research tree reads its levels, but building one is API-only.             |
+| `POST /api/academies`                             | consumed             | `crew/academy-api.ts#foundAcademy`                                                                                                             |
+| `POST /api/academies/:id/levels`                  | consumed             | `crew/academy-api.ts#upgradeAcademy`                                                                                                           |
+| `POST /api/academies/:id/modules`                 | consumed             | `crew/academy-api.ts#buildAcademyModule`                                                                                                       |
 | `POST /api/airlines`                              | consumed             | `founding/api.ts#postAirline`                                                                                                                  |
 | `POST /api/airlines/code-availability`            | consumed             | `founding/api.ts#checkFoundingCodes`                                                                                                           |
 | `POST /api/airports/:icao/gates`                  | consumed             | `network/api.ts#fetchAirportGates`, `network/api.ts#leaseStand`                                                                                |

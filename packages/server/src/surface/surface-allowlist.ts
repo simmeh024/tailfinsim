@@ -69,17 +69,6 @@ export const SURFACE_BASELINE: readonly SurfaceException[] = [
       'SURFACE-06: the flight rung of the statistics drill-down (route → flight → waterfall).',
   },
   ...[
-    'GET /api/academies',
-    'POST /api/academies',
-    'POST /api/academies/:id/levels',
-    'POST /api/academies/:id/modules',
-  ].map((route): SurfaceException => ({
-    route,
-    issue: 1212,
-    reason:
-      'SURFACE-10: M9-01 shipped the training academy API with no page; the research tree reads its levels, but building one is API-only.',
-  })),
-  ...[
     'GET /api/hubs',
     'GET /api/hubs/candidates',
     'POST /api/hubs',

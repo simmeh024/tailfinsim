@@ -361,6 +361,14 @@ accent-filled primary button — rather than a second set of form styles invente
 The controls reset `font`, `letter-spacing` and `text-transform`, because otherwise they
 inherit the label's eyebrow styling and render their values in small caps.
 
+### Training academies
+
+The academies are a section of this page, under the training pipeline (`#academies`,
+SURFACE-10): build one at a base, raise its level and add modules, each quoted by the server and
+confirmed in two steps. Whether a conversion is trained in-house or bought in is decided by what
+is built there. [`training-academy.md`](training-academy.md#the-page) has what the section shows,
+what it sends and what it deliberately does not do.
+
 ### The rank banner
 
 One image per rank, and it follows the rank picker. It sits **below** the four figures: the

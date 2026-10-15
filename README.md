@@ -274,7 +274,8 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   the building grants no performance bonus of any kind; that is the research below and the
   boosts, which are not yet applied to flights. Construction takes weeks of the world's calendar
   and no amount of money shortens it, and both the commissioning and the monthly upkeep are the
-  Worker's, so both bite on dev only. See
+  Worker's, so both bite on dev only. The Crew page's Training academies section founds, levels
+  and equips one, every price quoted by the server and confirmed in two steps. See
   [`docs/training-academy.md`](docs/training-academy.md), including which modules are priced
   but inert and why the design doc names two different academies.
 - **A research tree that size alone cannot buy.** §10.3's "Operational Doctrine": six branches

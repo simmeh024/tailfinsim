@@ -547,7 +547,11 @@ function PointsPanel({ research }: { research: ResearchResponse }): ReactNode {
         <p className="research-formula__academy">
           {level === undefined
             ? 'No commissioned academy, so every tier is locked.'
-            : `Highest academy: ${level.name} (level ${String(level.level)}), which opens research tier ${String(academy.researchTier ?? level.researchTier)}.`}
+            : `Highest academy: ${level.name} (level ${String(level.level)}), which opens research tier ${String(academy.researchTier ?? level.researchTier)}.`}{' '}
+          {/* Academies are founded, levelled and equipped on the Crew page (SURFACE-10). */}
+          <Link to="/crew#academies">
+            {level === undefined ? 'Build an academy' : 'Your academies'}
+          </Link>
         </p>
       </div>
 

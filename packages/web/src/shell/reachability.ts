@@ -65,7 +65,11 @@ export const IN_SHELL_ROUTES: Readonly<Record<string, RouteReach>> = {
     reason: 'App. H.4. Slots, gates and ground handling (SURFACE-05) are views of this page.',
   },
   '/finance': { means: 'rail', reason: 'App. H.4.' },
-  '/crew': { means: 'rail', reason: 'App. H.4.' },
+  '/crew': {
+    means: 'rail',
+    reason:
+      'App. H.4. Training academies (SURFACE-10) are a section of this page, at #academies, linked from Research.',
+  },
   '/research': { means: 'rail', reason: '§10.3, beside the crews who earn it.' },
   '/headquarters': { means: 'rail', reason: 'M5-04: the office hires.' },
   '/service': { means: 'rail', reason: 'M8-05: what happens in the cabin.' },
