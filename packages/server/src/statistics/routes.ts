@@ -10,7 +10,7 @@ import {
 import { resolvedAirlineOf } from '../airline/context';
 
 import { readExecutiveDashboard } from './executive';
-import { readMetricBreakdown, readStatistics } from './metrics';
+import { isTrendWindow, readMetricBreakdown, readStatistics } from './metrics';
 import { readOperationsDashboard } from './operations';
 
 import type { DatabaseHandle } from '../db/client';
@@ -84,13 +84,28 @@ export function registerStatisticsRoutes(
       reply.code(200).send(await readOperationsDashboard(db.db, resolvedAirlineOf(request))),
   );
 
-  app.get<{ Params: { metricId: string }; Querystring: { by?: string } }>(
+  app.get<{ Params: { metricId: string }; Querystring: { by?: string; days?: string } }>(
     '/api/statistics/:metricId/breakdown',
     {
       onRequest: app.requireAirline,
       schema: { response: { 200: metricBreakdownResponseJsonSchema } },
     },
     async (request, reply) => {
+      /*
+       * `?days=` — which of §14.2's trend windows the rows cover (SURFACE-06).
+       * Only 7, 30 or 90: the metric's own trends are read over exactly those,
+       * so a breakdown over any other span would explain a figure the page
+       * cannot show beside it. A malformed one is a 400, like any malformed
+       * query; it is not a selector and conceals nothing.
+       */
+      const rawDays = request.query.days;
+      const days = rawDays === undefined ? 30 : /^\d{1,2}$/.test(rawDays) ? Number(rawDays) : NaN;
+      if (!isTrendWindow(days)) {
+        return reply
+          .code(400)
+          .send({ code: 'invalid_period', message: 'A breakdown covers 7, 30 or 90 game days' });
+      }
+
       const metric = MetricId.safeParse(request.params.metricId);
       // `route` is the only dimension this build can actually produce, and
       // defaulting to it keeps the metric's own `drillDown` link usable without
@@ -109,6 +124,7 @@ export function registerStatisticsRoutes(
         resolvedAirlineOf(request),
         metric.data,
         by.data,
+        days,
       );
       if (breakdown === null) {
         return reply

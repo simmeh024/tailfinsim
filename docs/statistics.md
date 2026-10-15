@@ -180,9 +180,10 @@ is not news if it was also the best last week.
 ### Financial, at `/finance`
 
 The P&L with its lines and its four dimensional rollups, the unit economics as
-tiles, and the debt with its DSCR and §13.4's per-game-day interest drain. A
-`null` dimension key renders as **Unattributed** rather than being dropped, so
-the columns still add up to the statement above them.
+tiles, and borrowing (SURFACE-02). A `null` dimension key renders as
+**Unattributed** rather than being dropped, so the columns still add up to the
+statement above them. The page as a whole — its regions, its period and what
+lives where — is _The Finance page_ below.
 
 ### Every headline carries its movement
 
@@ -198,7 +199,9 @@ H.7).
 endpoint to this build's page for it and returns `null` when there is none — the
 tile then shows its figure with the destination named in plain text. M8-09's
 guard proves the endpoint exists on the server; nothing proves a page consumes
-it, and a link to a page that cannot answer is how a drill-down rots.
+it, and a link to a page that cannot answer is how a drill-down rots. A figure
+that **is** a statistics metric opens in place instead, through the shared
+drill-down below (SURFACE-06).
 
 ### 390px is the layout, not a media query
 
@@ -216,6 +219,85 @@ jsdom has no layout engine, so the tests assert the two decidable facts — the
 and read `dashboard.css` to do it. A visual check belongs on dev.
 
 ---
+
+## The Finance page (SURFACE-03)
+
+A player opening Finance is asking §14.1's three questions — _am I making money,
+where, and what is it costing me?_ — and the page answers them in that order,
+in regions with stated owners:
+
+| Region                      | Answers                                     | Built by          |
+| --------------------------- | ------------------------------------------- | ----------------- |
+| **Where the money is made** | §14.4's ranked chart and its diagnosis      | M8-11             |
+| **Headline figures**        | money and unit economics, each drillable    | M8-10, SURFACE-06 |
+| **What it is costing**      | the P&L, interest its own line, 4 rollups   | M8-01, M8-10      |
+| **Borrowing**               | standing, capacity, instruments, draw, cost | SURFACE-02        |
+| **Not on this page yet**    | the honest gaps, each with its owner        | —                 |
+
+Everything else that touches finance has a home elsewhere and does **not** move
+here: cash runway is M8-08's indicator in the status strip on every page (a
+second one would be a second place to disagree, and §13.6's _"most prominent"_ is
+the strip's job); CSV export (M8-14) is the export button on each table; the
+operational dashboards (M8-12) are `/operations`; alerts and the digest (M8-13)
+are `/alerts`; the default ladder's own surface is LEGACY-11.
+
+**One period for the page.** §14.2's 7 / 30 / 90 game days is chosen once, in
+the header, and every period-bound read under it uses the same window — the P&L
+and its rollups, the ranked chart, every metric's drill-down. A selector per
+panel would make nothing on the page comparable. Borrowing is measured over
+§13.1's twelve trailing months whatever the period, and says so.
+
+**`GET /api/finance/pnl` ends at the world's now.** Its default period used to end
+at the wall clock while every ledger line is dated on the world's clock (TIME-02),
+so on any world whose clock is not the reader's — every world — the default P&L
+described a month in which nothing had happened. It now ends at the world's game
+now, and `?days=N` (1–366) asks for the last N game days, which is what the page
+sends: the browser cannot compute a game-time `from` without reading a clock it
+should not. Explicit `from`/`to` are unchanged; `days` with `from` is a 400.
+
+**Interest is always a line.** The P&L returns only categories with entries, so
+an airline with no debt would get no interest line at all — and an absent line is
+how a cost hides (§13.4). The page puts a zero line in its place and sets the
+line apart wherever it appears. Borrowed principal (`debt_draw`) is shown and
+labelled as outside the totals.
+
+**Each panel fails on its own**, in all four `StateBlock` states: a page-level
+spinner would let one slow read hide four good answers. A P&L line into its
+individual ledger entries has no player surface yet — the entries are only in the
+admin console's airline record — and no issue owns one; the page says so.
+
+**Debt against UX's components.** UX-03's metric component, UX-04's visualisation
+vocabulary, UX-06's tables and UX-07's designed states are not built, so
+`MetricTile`, `RouteProfitChart` and the `.data-table` markup stand in for them
+and are named as such in the code.
+
+## The drill-down, as one component (SURFACE-06)
+
+`packages/web/src/statistics/MetricDrillDown.tsx` is the one place a metric is
+opened — the Finance page's headline tiles and the Executive dashboard's load
+factor and on-time rate today, through `MetricTile`'s `metricId`. Six issues owe a
+player a _"why is this number what it is"_ interaction; they get this one.
+
+- **What drillable looks like**: the metric's own drill label as a button with
+  `aria-expanded`. **Activating it** widens the tile to its grid's full row and
+  moves focus to the breakdown's heading. **Getting back**: _Close_ or Escape,
+  with focus returned to the button.
+- **Identity is the server's.** A metric is named by `MetricId` and everything
+  else — label, unit, polarity, where it drills — comes from `/api/statistics`;
+  a caller without the metric (the Executive page) lets the component read it.
+- **The three horizons are the component's**: now, the trend over the page's
+  period, and the forecast band for the same distance, from the page's
+  `HorizonProvider` (30 days where a page has no control). The rows are read over
+  the same window: `/api/statistics/:metricId/breakdown` takes `?days=7|30|90`
+  and refuses any other with a 400, because a breakdown over any other span would
+  explain a figure no tile can show.
+- **A metric with no breakdown is a state.** Revenue and cost drill into the P&L
+  and render as a link to it; an endpoint no page consumes is named in words; a
+  breakdown with no rows says why rather than drawing an empty table.
+
+It is the **decomposition** half of a metric; UX-03 owns the presentation half,
+and the two are split along that line so UX-03 can replace `MetricTile` without
+touching this.
 
 ## §14.4's chart (M8-11)
 
@@ -405,6 +487,8 @@ to sit either side of.
 | The ranked chart and its drill-down panel | `packages/web/src/finance/RouteProfitChart.tsx`       |
 | §14.3's five operational sections         | `packages/server/src/statistics/operations.ts`        |
 | The operations page and its delay chart   | `packages/web/src/operations/`                        |
+| The Finance page's regions and its period | `packages/web/src/finance/FinancePage.tsx`            |
+| The drill-down every metric opens through | `packages/web/src/statistics/MetricDrillDown.tsx`     |
 
 ---
 
@@ -466,8 +550,8 @@ empty rather than as having positioned an aeroplane.
 - **A world median benchmark** for the diagnosis levers (§14.6). The comparison
   is the airline's own median today, and the panel says so rather than letting a
   player assume otherwise.
-- **§14.6's CSV export** and world-median benchmarks. §14.5's alerts have
-  since shipped (M8-13) — see [`alerts-and-digest.md`](alerts-and-digest.md),
+- **World-median benchmarks** (§14.6). CSV export has since shipped (M8-14) and
+  so have §14.5's alerts (M8-13) — see [`alerts-and-digest.md`](alerts-and-digest.md),
   which also records the two of its nine rules the game cannot answer.
 - **A booking curve against departure** (§14.3's traffic list). Bookings are not
   modelled over time, so there is no curve to draw.

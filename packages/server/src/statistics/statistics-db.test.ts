@@ -348,4 +348,30 @@ describeDb('the statistics API', () => {
     const flights = await routeFlights(db.db, own(fixture), pair.routeId);
     expect(flights?.flights).toHaveLength(1);
   });
+
+  /*
+   * SURFACE-06: a page with §14.2's period control asks the breakdown for the
+   * period it is showing, so the rows explain the trend figure beside them
+   * rather than a different month's.
+   */
+  it('reads a breakdown over the window it is asked for, and says which', async () => {
+    const fixture = await fixtures.create();
+    const pair = await openPair(fixture, 70);
+    await flew(fixture, pair, { daysAgo: 2, passengers: 180 });
+    await flew(fixture, pair, { daysAgo: 45, passengers: 18 });
+
+    const thirty = await readMetricBreakdown(db.db, own(fixture), 'load_factor', 'route');
+    expect(thirty?.windowDays).toBe(30);
+    expect(thirty?.total).toBeCloseTo(1, 6);
+
+    const ninety = await readMetricBreakdown(db.db, own(fixture), 'load_factor', 'route', 90);
+    expect(ninety?.windowDays).toBe(90);
+    // The same figure the metric's own 90-day trend reports.
+    expect(ninety?.total).toBeCloseTo(198 / 360, 6);
+    expect(ninety?.rows[0]?.value).toBeCloseTo(198 / 360, 6);
+
+    const seven = await readMetricBreakdown(db.db, own(fixture), 'load_factor', 'route', 7);
+    expect(seven?.windowDays).toBe(7);
+    expect(seven?.rows).toHaveLength(1);
+  });
 });

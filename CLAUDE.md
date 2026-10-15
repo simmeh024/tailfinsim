@@ -885,6 +885,20 @@ linked** — `drillHref` returns null and the tile prints the destination as tex
 M8-09's guard proves the endpoint exists on the server; nothing proves a page
 consumes it, and a link to a page that cannot answer is how a drill-down rots.
 
+**SURFACE-03 made `/finance` one page with one period, and found the P&L reading
+the wrong calendar.** `GET /api/finance/pnl`'s default period ended at the **wall
+clock** while every ledger line is dated on the **world's** (TIME-02), so on every
+world the default P&L described a month nothing had happened in — an empty
+statement that read as an airline doing nothing. It now ends at `worldGameNow`,
+and `?days=N` asks for the last N game days; the breakdown takes `?days=7|30|90`
+the same way, so the page's §14.2 control and SURFACE-06's drill-down never read
+a clock in the browser. Any new period-defaulted read over a game-time table must
+end at the world's now, not `new Date()`. Borrowing (SURFACE-02) renders only
+what `GET /api/credit` decides — instrument prices, §13.1's multipliers, the next
+rung, interest as a share of profit — and a draw is never retried, because it has
+no idempotency key. `docs/statistics.md` and `docs/loans-and-credit.md` have the
+pages.
+
 The 390px criterion is met by layout rather than by a media query: `auto-fit`
 grids with a floor that fits, and every table inside its own `overflow-x` box —
 because the real narrow-screen failure is the **page** scrolling sideways, which

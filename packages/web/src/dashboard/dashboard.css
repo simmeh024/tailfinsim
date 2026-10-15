@@ -79,6 +79,13 @@
   background: var(--bg-raised);
   border: 1px solid var(--border-subtle);
   overflow: visible;
+  /*
+   * And a fifth, at phone width: the shell caps the context panel at 45vh there.
+   * With the scroll taken back above, a dashboard panel taller than that drew its
+   * content past its own box and the next panel painted over it — measured on the
+   * Finance page at 390 × 844, where three panels spilled before anything opened.
+   */
+  max-height: none;
 }
 
 /* ------------------------------------------------------------- tiles ---- */
@@ -292,6 +299,13 @@
 
 .data-table__num {
   text-align: right;
+}
+
+/* A cell that holds a sentence wraps; a figure never does. Without it §13.3's
+   instruments table was 1,365px wide on a 1,440px screen. */
+.data-table .data-table__prose {
+  white-space: normal;
+  min-width: 18ch;
 }
 
 .figure--profit {
@@ -719,4 +733,173 @@
 .export-button:hover {
   border-color: var(--border-strong);
   color: var(--text-primary);
+}
+
+/* ------------------------------------------- the drill-down (SURFACE-06) ---- */
+
+/*
+ * One interaction for every drillable metric. The trigger reads as the drill
+ * link it replaces; opening it widens the tile to the whole row of its grid, so
+ * the breakdown has room without a second surface to manage.
+ */
+.drill__trigger {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.drill__trigger:hover,
+.drill__trigger:focus-visible {
+  text-decoration: underline;
+}
+
+.tile:has(.drill[data-open='true']) {
+  grid-column: 1 / -1;
+}
+
+.drill__panel {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.drill__title {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.drill__horizons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.drill__horizons dt {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.drill__horizons dd {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+/* Placement only: the button's weight and fill are `ui/Button`'s. */
+.drill__close {
+  justify-self: start;
+}
+
+/* ------------------------------------- the page's period (SURFACE-03) ---- */
+
+/* §14.2's period, chosen once for the whole page. */
+.horizon {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+}
+
+.horizon__label {
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.horizon__option {
+  min-height: 2rem;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.horizon__option[aria-pressed='true'] {
+  background: var(--accent-quiet);
+  color: var(--accent);
+}
+
+/* -------------------------------------------- drawing a loan (SURFACE-02) ---- */
+
+.draw-form {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 32rem;
+}
+
+.draw-form__field {
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.draw-form__field input,
+.draw-form__field select {
+  font: inherit;
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+  color: var(--text-primary);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.draw-form__confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The limit that binds, marked by more than its chip (H.4: never colour alone). */
+.data-table tr[data-binding='true'] th {
+  font-weight: 600;
+}
+
+/* ------------------------------------------------ the page's regions (SURFACE-03) ---- */
+
+.finance-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.finance-region {
+  margin-bottom: var(--space-6);
+}
+
+.finance-region__title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-lg);
+}
+
+.finance-region__lead {
+  margin: 0 0 var(--space-3);
+  max-width: 70ch;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* §13.4: interest is its own line, and it is set apart so it is never read past. */
+.data-table tr[data-line='interest'] th,
+.data-table tr[data-line='interest'] td {
+  font-weight: 600;
 }

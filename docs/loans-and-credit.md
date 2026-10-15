@@ -214,6 +214,62 @@ mistake M8-06's rating review made and the same kind of test caught.
 
 ---
 
+## The page (SURFACE-02)
+
+Borrowing is the fourth region of `/finance`, and it is ordered as §13's lesson
+rather than as a form: **standing** (the tier, what the airline's trading earns,
+what the next rung asks for, and §13.2's _"ratings fall faster than they rise"_
+stated as a property with the streak behind it), **capacity** (§13.1's three
+limits in the formula's own words, the binding one named from the API's
+`BorrowingConstraint`), **the instruments** (§13.3's table, all five), **drawing**
+one, and **what it is costing** — §13.4's interest per month and as a share of
+operating profit, the number that makes 6% comfortable and 52% ruinous.
+
+**A loss-making airline is told why, not shown a greyed button.** When
+`profit_multiple` binds on a trailing loss the panel says _"3.0 × your trailing
+operating profit of −$X is $0, so you cannot borrow at all"_ and renders no draw
+form at all. Any other refusal is the server's own `refusal` text.
+
+**The client decides nothing.** `GET /api/credit` gained what the panel renders and
+must not compute, so no balance number reaches the client by any other route:
+
+| Field                                                     | What it is                                                           |
+| --------------------------------------------------------- | -------------------------------------------------------------------- |
+| `instruments[]`                                           | each drawable instrument priced for this airline, as `drawLoan` will |
+| `formula`                                                 | §13.1's `profitMultiple` and `assetAdvanceRate`                      |
+| `rating`                                                  | consecutive good reviews, and how many a rise needs                  |
+| `nextTier`                                                | the next rung's cap, rate and four requirements; null at AA          |
+| `interest`                                                | the book's interest a month, and its share of profit                 |
+| `trailing.operatingMargin`, `.interestMinor`              | the margin the tiers ask for, and the interest already paid          |
+| `loans[].monthlyInterestMinor`, `.shareOfOperatingProfit` | §13.4's two columns, loan by loan                                    |
+
+**The share is of profit before interest.** The trailing operating profit has the
+interest already taken out, so it is put back before dividing: a heavier loan
+must not look like a smaller share of a shrinking remainder. It is null where
+there is no such profit — interest on a loss-making airline is not a large share
+of anything.
+
+**§13.3's identity lives in `@tailfin/shared`** (`CREDIT_INSTRUMENTS`): all five
+instruments with their security and purpose in the design doc's words, including
+sale-leaseback (not built) and bond issues (post-MVP), so a player finds them as
+deliberate gaps rather than missing ones. The rate column is words there; the
+figure comes from the quote, because the spreads are balance a world may retune.
+
+**A draw is never retried.** It has no idempotency key, so a retried timeout
+could be two loans; the panel reports the failure once and the player decides. It
+is two clicks — the first states the instrument, the amount and the server's rate,
+the second spends — and a refusal leaves the standing on screen exactly as it was.
+The server half of that is held over HTTP in
+`finance/finance-surface-routes.test.ts`: a refused draw leaves cash, the ledger
+and the loan book unchanged, and the draw's `securedAirframeId` is concealed in
+all four SEC-07 cases.
+
+**The default ladder is linked to, not built.** The panel states the stage, what
+is owed and the cure date in the server's own words; the surface that explains the
+ladder and what clears it is LEGACY-11 (#1036).
+
+---
+
 ## Where each thing lives
 
 |                                                     | Where                                        |
@@ -283,4 +339,3 @@ it was written against.
   maturity. Repayment — voluntary and scheduled — is the natural next issue.
 - **Sale-leaseback**, as above.
 - **Bond issues** — the issue puts them out of scope; post-MVP, AA only.
-- **A web surface.** The API is complete; no page consumes it yet.

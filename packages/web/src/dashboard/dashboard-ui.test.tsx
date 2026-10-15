@@ -263,7 +263,23 @@ function credit(): CreditStandingResponse {
       profitableMonths: 8,
       routes: 6,
       hubs: 1,
+      operatingMargin: 0.12,
+      interestMinor: 4_250_000,
     },
+    formula: { profitMultiple: 3, assetAdvanceRate: 0.6 },
+    rating: { goodReviews: 0, reviewsToRise: 2 },
+    nextTier: {
+      tier: 'B',
+      maxDebtMinor: 2_500_000_000,
+      annualRateBps: 800,
+      requires: { profitableMonths: 12, routes: 6, hubs: 2, operatingMargin: 0.05 },
+    },
+    instruments: [
+      { instrument: 'working_capital', security: 'none', annualRateBps: 1_300, termMonths: 36 },
+      { instrument: 'aircraft_finance', security: 'airframe', annualRateBps: 800, termMonths: 36 },
+      { instrument: 'facility', security: 'facility', annualRateBps: 1_000, termMonths: 36 },
+    ],
+    interest: { monthlyMinor: 354_167, shareOfOperatingProfit: 0.0659 },
     standing: {
       stage: 'none',
       stageEnteredAt: null,
@@ -288,6 +304,8 @@ function credit(): CreditStandingResponse {
         status: 'active',
         drawnAt: '2027-01-01T00:00:00.000Z',
         securedAirframeId: null,
+        monthlyInterestMinor: 354_167,
+        shareOfOperatingProfit: 0.0659,
       },
     ],
   };
@@ -374,9 +392,18 @@ describe('the Executive dashboard', () => {
     stubFetch();
     await renderAt('/dashboard');
     const tiles = await screen.findByLabelText('Headline figures');
+    /*
+     * A headline that is a statistics metric opens through the shared drill-down
+     * in place (SURFACE-06) rather than linking off the page: the label is the
+     * server's own, and the control says whether it is open.
+     */
     const loadFactor = within(tiles).getByLabelText('Load factor');
-    // The endpoint is the server's; the href is this build's page for it.
-    expect(loadFactor.querySelector('a')?.getAttribute('href')).toBe('/finance');
+    const drill = within(loadFactor).getByRole('button', { name: /by route/ });
+    expect(drill).toHaveAttribute('aria-expanded', 'false');
+    // A figure the registry does not serve keeps its link: the endpoint is the
+    // server's, the href this build's page for it.
+    const cash = within(tiles).getByLabelText('Cash');
+    expect(cash.querySelector('a')?.getAttribute('href')).toBe('/finance');
   });
 
   it('says a variance is inside the band rather than raising an alarm', async () => {
@@ -411,7 +438,9 @@ describe('the Financial dashboard', () => {
     await renderAt('/finance');
 
     const statement = await screen.findByLabelText('Profit and loss');
-    expect(within(statement).getByText('Operating profit')).toBeInTheDocument();
+    // Each panel loads on its own now (SURFACE-03), so wait for this one's
+    // answer rather than for the page's first render.
+    expect(await within(statement).findByText('Operating profit')).toBeInTheDocument();
     expect(statement.textContent).toContain('ticket');
     // §13.4's interest is its own line, and this is where a player sees it.
     expect(statement.textContent).toContain('interest');

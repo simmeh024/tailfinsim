@@ -6,6 +6,7 @@ import {
 } from '@tailfin/shared';
 
 import { resolvedAirlineOf } from '../airline/context';
+import { worldGameNow } from '../world/game-now';
 
 import { readProfitAndLoss, type LedgerQuery } from './ledger';
 import { readCashRunway } from './runway';
@@ -13,13 +14,32 @@ import { readCashRunway } from './runway';
 import type { DatabaseHandle } from '../db/client';
 import type { FastifyInstance } from 'fastify';
 
-const DEFAULT_PERIOD_MS = 30 * 86_400_000;
+const DAY_MS = 86_400_000;
+const DEFAULT_PERIOD_DAYS = 30;
+/** The longest period `days` may ask for: a year and a day, which every annual view fits. */
+const MAX_PERIOD_DAYS = 366;
 
 function queryDate(value: string | undefined, fallback: Date): Date | null {
   if (value === undefined) return fallback;
   if (!Timestamp.safeParse(value).success) return null;
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? date : null;
+}
+
+/**
+ * `?days=N` — a period ending at the world's now, in game days (SURFACE-03).
+ *
+ * Undefined when absent, null when present and not a whole number of days in
+ * range. It exists so a page can ask for *"the last 30 game days"* without
+ * knowing what the world's clock reads: the client cannot compute a game-time
+ * `from` honestly — it would be converting a wall clock it should never be
+ * reading — and the server already knows the answer.
+ */
+function queryDays(value: string | undefined): number | undefined | null {
+  if (value === undefined) return undefined;
+  if (!/^\d{1,3}$/.test(value)) return null;
+  const days = Number(value);
+  return days >= 1 && days <= MAX_PERIOD_DAYS ? days : null;
 }
 
 function optionalUuid(value: string | undefined): string | undefined | null {
@@ -51,6 +71,7 @@ export function registerFinanceRoutes(app: FastifyInstance, { db }: { db: Databa
     Querystring: {
       from?: string;
       to?: string;
+      days?: string;
       routeId?: string;
       aircraftId?: string;
       hubId?: string;
@@ -63,17 +84,40 @@ export function registerFinanceRoutes(app: FastifyInstance, { db }: { db: Databa
       schema: { response: { 200: financePnlResponseJsonSchema } },
     },
     async (request, reply) => {
-      const to = queryDate(request.query.to, new Date());
+      const own = resolvedAirlineOf(request);
+      /*
+       * The default period ends at the **world's** now (SURFACE-03).
+       *
+       * It used to end at `new Date()` — the wall clock — while every ledger line
+       * is dated on the world's clock (TIME-02 made `occurred_at` game time for
+       * every cause). On any world whose clock is not the reader's, which is
+       * every world, the default P&L described a month nothing in it had
+       * happened in, and a page reading it showed an airline that had done
+       * nothing. Explicit `from`/`to` are unchanged.
+       */
+      const gameNow = await worldGameNow(db.db, own.worldId);
+      const days = queryDays(request.query.days);
+      const to = queryDate(request.query.to, gameNow);
       const from = queryDate(
         request.query.from,
-        new Date((to ?? new Date()).getTime() - DEFAULT_PERIOD_MS),
+        new Date((to ?? gameNow).getTime() - (days ?? DEFAULT_PERIOD_DAYS) * DAY_MS),
       );
       const routeId = optionalUuid(request.query.routeId);
       const aircraftId = optionalUuid(request.query.aircraftId);
       const hubId = optionalUuid(request.query.hubId);
       const cabinClass = request.query.cabinClass;
 
-      if (!from || !to || to < from || routeId === null || aircraftId === null || hubId === null) {
+      if (
+        days === null ||
+        // `days` and `from` are two answers to one question; both is a contradiction.
+        (days !== undefined && request.query.from !== undefined) ||
+        !from ||
+        !to ||
+        to < from ||
+        routeId === null ||
+        aircraftId === null ||
+        hubId === null
+      ) {
         return reply
           .code(400)
           .send({ code: 'invalid_period', message: 'Invalid finance period or dimension' });
@@ -86,7 +130,7 @@ export function registerFinanceRoutes(app: FastifyInstance, { db }: { db: Databa
 
       return reply.code(200).send(
         await readProfitAndLoss(db.db, {
-          airlineId: resolvedAirlineOf(request).id,
+          airlineId: own.id,
           from,
           to,
           routeId,

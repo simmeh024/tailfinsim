@@ -3,11 +3,30 @@ import { StateBlock } from '../ui/StateBlock';
 import type { ReactNode } from 'react';
 
 /**
- * Page placeholders.
+ * The one page still waiting for its milestone (SURFACE-08).
  *
- * M0-09 puts the shell in place; actual page content is explicitly out of scope.
- * Each one names the milestone that fills it, so the shell doubles as a map of
- * what is still to come rather than a set of identical "coming soon" panes.
+ * M0-09 put the shell in place with a placeholder per page, each naming the
+ * milestone that would fill it, so the shell doubled as a map of what was still
+ * to come. That map is now one entry long: World (`world/WorldPage.tsx`), Fleet
+ * (`fleet/`, M4-02 and M4-07), Network (`network/`, M3-09 and M2-01), Crew
+ * (`crew/`, M5-01 onwards) and Finance (`finance/FinancePage.tsx`, M8-10, M8-11
+ * and SURFACE-03) are all real pages, and their placeholders are gone rather
+ * than left behind as exports naming closed issues.
+ *
+ * ## Why the generic component survives
+ *
+ * Only because `BoardPage` below still uses it. It goes when M12-02 lands —
+ * SURFACE-08 prefers deleting an unused placeholder to keeping one easy to
+ * reach for, because an unused component that is easy to reach for is how the
+ * next stale placeholder gets written. The pattern is in git history if a
+ * future page genuinely needs one.
+ *
+ * ## Each note is a claim
+ *
+ * A placeholder naming the wrong milestone is worse than a generic one, because
+ * it is confidently wrong — CLAUDE.md's point about documented commands, applied
+ * to the shell. So a note says what will actually be there and who builds it,
+ * and is kept true as those issues move.
  */
 
 export function Placeholder({ title, note }: { title: string; note: string }): ReactNode {
@@ -19,31 +38,17 @@ export function Placeholder({ title, note }: { title: string; note: string }): R
   );
 }
 
-// WorldPage is no longer a placeholder and no longer lives here — it is the
-// world renderer at full size, in `world/WorldPage.tsx`.
-
-// FleetPage is no longer a placeholder — M4-02 filled it with the era-gated
-// aircraft catalogue and M4-07 added the airframe list above it, with the
-// aircraft detail and its effective-spec decomposition.
-
-// NetworkPage is no longer a placeholder — M3-09 filled it. Schedules and the
-// seven reachability checks are still M2-01's, and land on the same page.
-
-// FinancePage is no longer a placeholder — M8-10 filled it with §14.3's
-// Financial dashboard: the P&L and its four dimensional rollups, the unit
-// economics, and the debt with its DSCR and interest drain. §14.4's ranked
-// profit-by-route chart with the breakeven line is still M8-11's.
-
-export const CrewPage = (): ReactNode => (
-  <Placeholder
-    title="Crew"
-    note="Bases, pools, ranks and type ratings, plus duty and fatigue exposure. M5-01, M5-02."
-  />
-);
-
+/**
+ * `/board` — §16's public face of the world.
+ *
+ * M12-02 (#110) owns it: public airline profiles (fleet, network, liveries,
+ * career history, named crew), the living leaderboards and the community livery
+ * board. HISTORY-08 (#1082) adds all-time boards beside the living ones, through
+ * the same engine, with ceased airlines kept and marked as former.
+ */
 export const BoardPage = (): ReactNode => (
   <Placeholder
     title="Board"
-    note="Public airline profiles, leaderboards and the community livery board. M12-02."
+    note="Public airline profiles, the living leaderboards and the community livery board are M12-02; all-time leaderboards that keep ceased airlines are HISTORY-08, on the same boards."
   />
 );
