@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 
 import type { PointerEvent as ReactPointerEvent, RefObject } from 'react';
 
@@ -102,23 +102,35 @@ function clampCenter(camera: CameraState, width: number, height: number): Camera
   };
 }
 
+/**
+ * The camera as drawn over a `width` × `height` layout.
+ *
+ * The fit, and anything wider, is the whole airport centred, so it follows the
+ * layout; a zoomed view keeps its zoom and its centre, held over the airport.
+ * The layout's size is not the airport's identity: a re-read that moves an
+ * aeroplane onto or off the overflow apron resizes the layout, and a player
+ * reading a pier must not be thrown back to the fit for it. A different
+ * airport is a different schematic — `AirportMapView` keys it by ICAO — and
+ * starts from the fit by mounting afresh.
+ */
+function settleCamera(camera: CameraState, width: number, height: number): CameraState {
+  if (camera.zoom <= 1) return { zoom: camera.zoom, cx: width / 2, cy: height / 2 };
+  return clampCenter(camera, width, height);
+}
+
 export function useApronCamera(
   svgRef: RefObject<SVGSVGElement | null>,
   width: number,
   height: number,
   onExit: () => void,
 ): ApronCamera {
-  const [camera, setCamera] = useState<CameraState>({ zoom: 1, cx: width / 2, cy: height / 2 });
+  const [stored, setCamera] = useState<CameraState>({ zoom: 1, cx: width / 2, cy: height / 2 });
+  const camera = settleCamera(stored, width, height);
   const cameraRef = useRef(camera);
   cameraRef.current = camera;
   const exited = useRef(false);
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
-
-  // A different airport, or the same one re-laid out bigger: start from the fit.
-  useEffect(() => {
-    setCamera({ zoom: 1, cx: width / 2, cy: height / 2 });
-  }, [width, height]);
 
   /** Layout units per screen pixel, for the `meet` aspect the SVG uses. */
   const unitsPerPixel = useCallback((): number => {
@@ -168,8 +180,13 @@ export function useApronCamera(
    * React registers `wheel` as a passive listener, so `preventDefault` in an
    * `onWheel` prop is ignored and the page behind the map scrolls while the map
    * zooms. A listener of our own is the only way to keep the gesture to the map.
+   *
+   * A layout effect, so the listener arrives in the commit that draws the frame.
+   * React runs a passive effect in a later scheduler task, and a wheel in
+   * between — a player's after the paint, or a test's after `findByRole` — met a
+   * frame nothing was listening to: the page scrolled and the map did not zoom.
    */
-  useEffect(() => {
+  useLayoutEffect(() => {
     const svg = svgRef.current;
     if (svg === null) return;
     const onWheel = (event: WheelEvent) => {

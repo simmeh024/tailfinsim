@@ -1276,7 +1276,10 @@ specification` (42P10) — which reads like a missing index rather than an incom
   development machine. Measure there, and take the fastest of several runs, because a
   single sample on a shared box measures the neighbours.
 - **Effects that arrive in a later React effect race a test that waits for the first
-  render.** The build badge's clock has caused this twice.
+  render.** The build badge's clock has caused this twice, and the airport map's wheel once:
+  `findBy*` resolves on the commit, and React flushes passive effects in a later scheduler
+  task, so a DOM listener attached in `useEffect` may not exist yet when the test fires the
+  event. A listener the element needs from its first frame belongs in `useLayoutEffect`.
 - **A documented command is a claim, and it has been wrong twice.** `admin grant <email>`
   was documented for a CLI that takes `--email`; and every `pnpm data:*`, `world:seed`,
   `demand:generate` and `admin` row in CONTRIBUTING's table failed from the repo root for

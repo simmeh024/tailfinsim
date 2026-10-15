@@ -9,7 +9,7 @@ import {
   type StandKind,
 } from '@tailfin/shared';
 
-import { AirportMapView } from './AirportMapView';
+import { AirportMapView, APRON_REFRESH_MS } from './AirportMapView';
 
 /**
  * The airport map (M7-07, App. B.7), driven through mocked fetch.
@@ -24,6 +24,9 @@ import { AirportMapView } from './AirportMapView';
  *   - **the heat overlay** tells your idle stands from your jammed ones;
  *   - **leasing and releasing on the map** post exactly what the gates page
  *     posts, fold the answer in, and release only after the two-step confirm;
+ *   - **the camera answers from the first frame and survives a re-read** — a
+ *     wheel the moment the schematic appears zooms it, and a re-read that
+ *     resizes the layout leaves a zoomed view where the player put it;
  *   - **zooming out past the widest view, or the back control, calls `onExit`**.
  *
  * Fixtures are parsed through `ApronResponse`, so one that drifts from the wire
@@ -533,6 +536,92 @@ describe('leasing on the map', () => {
     await waitFor(() => {
       expect(standElement('A3')).toHaveFocus();
     });
+  });
+});
+
+describe('the camera', () => {
+  /*
+   * PR #1210's red run. The wheel listener was attached in a passive effect,
+   * which React flushes in a later scheduler task than the commit that puts the
+   * schematic in the document — so `findByRole` could hand the test a frame
+   * nothing was listening to yet. A mutation observer is called straight after
+   * that commit, the earliest anything can see the schematic, and wheels it then.
+   */
+  it('zooms on a wheel that arrives the moment the schematic is drawn', async () => {
+    stubFetch({});
+    const observer = new MutationObserver(() => {
+      const svg = document.querySelector('svg.apron__svg');
+      if (svg === null) return;
+      observer.disconnect();
+      fireEvent.wheel(svg, { deltaY: -200 });
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    try {
+      renderMap();
+      const svg = await loaded();
+      await waitFor(() => {
+        expect(Number(svg.getAttribute('data-zoom'))).toBeGreaterThan(1);
+      });
+    } finally {
+      observer.disconnect();
+    }
+  });
+
+  it('keeps the player’s view when a re-read changes the layout’s size', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['setInterval', 'clearInterval'] });
+    try {
+      // The second read finds the stand-less E195 on R1: the overflow apron goes
+      // and the layout is shorter. The third puts it back.
+      const parked = apron({
+        aircraft: apron().aircraft.map((plane) =>
+          plane.key === 'flight-3' ? { ...plane, standPosition: 'R1' } : plane,
+        ),
+      });
+      let reads = 0;
+      stubFetch({
+        apron: () => {
+          reads += 1;
+          return { status: 200, body: reads === 2 ? parked : apron() };
+        },
+      });
+      renderMap();
+      const svg = await loaded();
+      const ground = () => {
+        const rect = svg.querySelector('.apron__ground');
+        return `${String(rect?.getAttribute('width'))} ${String(rect?.getAttribute('height'))}`;
+      };
+      const centre = () => {
+        const [x = 0, y = 0, w = 0, h = 0] = (svg.getAttribute('viewBox') ?? '')
+          .split(' ')
+          .map(Number);
+        return [x + w / 2, y + h / 2];
+      };
+      const full = ground();
+      const reRead = async (overflow: boolean) => {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(APRON_REFRESH_MS);
+        });
+        await waitFor(() => {
+          expect(document.querySelector('[data-area="overflow"]') !== null).toBe(overflow);
+        });
+      };
+
+      // At the fit, the fit follows the airport: the whole of the new layout.
+      await reRead(false);
+      expect(ground()).not.toBe(full);
+      expect(svg).toHaveAttribute('viewBox', `0 0 ${ground()}`);
+
+      // Zoomed in, the view stays where the player put it.
+      fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+      expect(svg).toHaveAttribute('data-zoom', '1.40');
+      const looking = centre();
+      await reRead(true);
+      expect(ground()).toBe(full);
+      expect(svg).toHaveAttribute('data-zoom', '1.40');
+      expect(centre()).toEqual(looking);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
