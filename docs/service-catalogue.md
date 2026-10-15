@@ -295,13 +295,69 @@ it to a route group is what makes it reach a flight. Three steps, kept apart on
 purpose — a player editing "Budget short-haul" to try something must not thereby
 change what every leisure route serves the moment they hit save.
 
+## The page (M8-05, SURFACE-11)
+
+`/service`, on the rail: `packages/web/src/service/ServicePage.tsx`, with the route
+groups in `RouteGroupsPanel.tsx` beside it and every call in `service/api.ts`. Every
+player route this subsystem has is consumed there.
+
+**What it shows.** The seven ladders, priced from `GET /api/service/catalogue`; the
+payback table from `POST /api/service/payback`; the **bench**, where a package is
+named, saved, re-opened and deleted; and the **route groups**, each with its routes,
+the package it flies and a delete, above a form that makes a new one.
+
+**A new group is a name and a pick of routes** — the whole of
+`CreateRouteGroupRequest`, and so the whole of M8-03's definition. The picker lists
+every route the airline flies and names the group a route is in now, because picking
+it moves it: one group per route is a database guarantee, so joining is leaving. No
+region, segment or aircraft field is offered, because a group is keyed by none of
+them, and the server's strict schema refuses one if it is sent.
+
+**Deletes are two clicks**, the house rule for destructive actions (UX-08): _Delete_,
+then _Confirm delete_ or _Keep_. A group's confirm says how many of its routes fall
+back to the baseline product.
+
+**Every refusal is the server's, shown through `StateBlock`** — `refused` for an
+answer of no, `broken` when no answer came back. The page pre-judges none of them; in
+particular a package a group still flies keeps a live _Delete_, so the refusal that
+names the groups is what the player reads.
+
+| Write                                | Refusals the page shows                                                  |
+| ------------------------------------ | ------------------------------------------------------------------------ |
+| `POST /api/service/route-groups`     | 400 `invalid_input`, 404 `unknown_routes`, 409 `duplicate_name`          |
+| `DELETE /api/service/route-groups/…` | 404 `not_found`, identical for another airline's id and an absent one    |
+| `DELETE /api/service/packages/…`     | 409 `package_in_use` naming the groups; 404 `not_found` as above         |
+| all three                            | 409 `airline_restricted` / `airline_ceased`, from `requireActiveAirline` |
+
+`service/routes.test.ts` proves each of those against PostgreSQL at the HTTP boundary:
+the status, the body the page renders, and that packages, groups, the package each
+group flies and every route's membership are unchanged afterwards — for the caller and
+for the airline whose id was named — with cash, `cash_movement` and `ledger_entry`
+untouched. The lifecycle guard is proven there with `airline_restricted`;
+`airline_ceased` is the same guard, and `airline/context.test.ts` covers it.
+
+**It re-reads after every write** rather than patching its copy. A create can move
+routes out of another group and a delete changes how many groups hold a package, so
+a client that worked either out would be recomputing the server's answer. The `201`
+from a create carries the new group without its routes, which is one more reason not
+to trust the copy on screen. A deleted group that was what the table was priced
+against drops the table back to the whole network.
+
+**What it deliberately does not do.** It computes no price, cost or eligibility —
+the client holds no balance number, and money passes through the display-currency
+boundary. It does not rename a group or change an existing group's routes: `PUT
+/api/service/route-groups/:id` takes both, and the page uses it only to assign a
+package. Deleting a package leaves its content on the bench as an unsaved draft, so
+a mistaken delete can be saved again under the same name.
+
 ## What is still not built
 
 - **Settlement.** A flight is still not _charged_ for its service. `ProductScore`
   now feeds demand, but `packageEconomics`' cost and revenue per passenger reach
   no ledger line yet.
 - **Seat comfort** (M6-09) and **crew service skill** (§10.2), as above.
-- **Settlement.** A flight is still not _charged_ for its service.
+- **Renaming a route group, or editing an existing group's routes**, on the page —
+  the API takes both; see _The page_.
 
 ---
 
