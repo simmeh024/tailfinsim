@@ -6,8 +6,11 @@ import type {
   AircraftAcquisitionResponse,
   AircraftOrderListResponse,
   AirframeDetailResponse,
+  BookCheckInput,
+  BookCheckResponse,
   FleetAirframesResponse,
   FleetCatalogueResponse,
+  MaintenanceResponse,
   UsedMarketResponse,
 } from '@tailfin/shared';
 
@@ -121,4 +124,35 @@ export async function fetchAirframeDetail(airframeId: string): Promise<AirframeD
     throw new Error('GET /api/fleet/airframes/:id did not return an effective spec');
   }
   return body as AirframeDetailResponse;
+}
+
+/**
+ * The fleet's maintenance position, most urgent first (M4-06, SURFACE-04).
+ *
+ * Every figure in it is the server's: remaining hours and cycles, the cost of
+ * each tier (with §10.4's maintenance-cost reduction already applied, M9-06) and
+ * its downtime. A null maintenance history arrives already read as *last
+ * completed at the hours it has now* — the page renders the remaining figures
+ * as sent and never derives a "since the last check" count of its own.
+ */
+export async function fetchMaintenance(): Promise<MaintenanceResponse> {
+  const body = await readJson('/api/fleet/maintenance');
+  const airframes = (body as { airframes?: unknown }).airframes;
+  if (!Array.isArray(airframes)) {
+    throw new Error('GET /api/fleet/maintenance did not return a list of aircraft');
+  }
+  return body as MaintenanceResponse;
+}
+
+/**
+ * Book a check. The tier is the only thing the client chooses (SEC-09): cost,
+ * downtime and the return date are the server's, in its answer.
+ *
+ * **Never retried.** A booking moves money, and the endpoint takes no
+ * idempotency key — a retry after a timeout could book and charge twice.
+ */
+export function bookMaintenanceCheck(
+  input: BookCheckInput,
+): Promise<FleetApiOutcome<BookCheckResponse>> {
+  return postJson('/api/fleet/maintenance/checks', input);
 }

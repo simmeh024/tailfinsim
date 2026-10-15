@@ -325,6 +325,55 @@ test in `StateBlock.test.tsx` scans the client for a hand-written note whose sen
 with _"Loading"_ or _"Could not load"_, because a third note class is otherwise always the
 path of least resistance.
 
+### Every page has a way in (SURFACE-07)
+
+A page nobody can navigate to is a page most players never see — display currency lived on
+`/settings` for a milestone with nothing pointing at it. So a new route in `App.tsx` needs an
+entry in `packages/web/src/shell/reachability.ts` saying **how a player reaches it and why**:
+a rail item, the account block at the foot of the rail, the status strip, a link on a related
+page, or the admin console's own navigation. A full-screen route outside the shell gets a
+one-line reason instead.
+
+`shell/reachability.test.tsx` reads the route table out of `App.tsx` itself, so it fails on a
+route with no entry, on an entry for a route that no longer exists, and on a declared way in
+that does not render — a rail item missing from `NAV_ITEMS`, a page link missing from the
+page. It also requires every destination to have a title in `route-identity.ts`. The rail's
+_structure_ is UX-01's (#462); this only makes sure everything is reachable.
+
+### Every player route has a consumer (SURFACE-01)
+
+The other half of the same question, asked from the server's side. Five shipped subsystems once
+had no player surface at all — the endpoints worked, their issues were closed, and nothing in the
+client called them. A closed UI issue is not evidence that a player can reach a feature; a
+consumer in the client is.
+
+`packages/server/src/surface/surface-reachability.test.ts` joins every row of
+`docs/authorization-matrix.md` to the client code that calls it, read from `packages/web/src`
+with the TypeScript parser — a call, a variable, a return or an `href`, never a comment, a `case`
+label or a comparison — and counts a call only where a module the app's entry point reaches
+imports and uses the function that builds it. It fails when:
+
+- a **player** route has no consumer and no entry in
+  `packages/server/src/surface/surface-allowlist.ts`;
+- an entry there has gone **stale** — its route has gained a consumer, so the entry comes out in
+  the same pull request that builds the surface;
+- an entry names a route the matrix does not have, or carries no issue number or no one-line
+  reason;
+- an **admin** route has no console control and no entry in the admin baseline, which is scored
+  separately from the player's;
+- [`docs/surface-inventory.md`](docs/surface-inventory.md) is out of date. It is generated —
+  regenerate it with `SURFACE_INVENTORY_WRITE=1 npx vitest run --project server
+surface-reachability` — never edited by hand.
+
+A route that deliberately has no page — a sign-in provider's callback — goes in
+`NOT_A_SURFACE` with its reason; one shipped ahead of its surface goes in `SURFACE_BASELINE` with
+the issue that will consume it. The allowlist is a code change with a reason in the same diff, the
+way an `allow-ghsas` entry is for Dependency Review.
+
+The guard runs in the ordinary server suite, in CI's `Tests` job, and needs no database. Making it
+a required check of its own is the CI Safety Net Expansion milestone's (#33) decision; the
+technique and the inventory are SURFACE-01's.
+
 ---
 
 ### The browser world renderer

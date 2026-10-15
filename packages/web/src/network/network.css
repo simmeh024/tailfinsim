@@ -65,6 +65,16 @@
   top: var(--space-3);
 }
 
+/* Once `.net-layout` stacks to one column, the rail sits above the view and must
+   scroll away with it. Left sticky it stayed pinned while the view scrolled up
+   over it, so on a phone the Ground tables were drawn straight through the "Open
+   a route" form (found checking SURFACE-05 at 390px). */
+@media (max-width: 900px) {
+  .net-rail {
+    position: static;
+  }
+}
+
 .net-rail__open {
   display: flex;
   flex-direction: column;

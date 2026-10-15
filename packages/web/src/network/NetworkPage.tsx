@@ -17,6 +17,7 @@ import { CompetitionTab } from './planner/CompetitionTab';
 import { describeSelection } from './planner/ContextBodies';
 import { useScheduleEditor } from './planner/editor';
 import { FleetScheduleView } from './planner/FleetScheduleView';
+import { GroundHandlingView } from './planner/GroundHandlingView';
 import { HubConnectionsView } from './planner/HubConnectionsView';
 import { buildRoutePlan, plannerAircraft } from './planner/mock';
 import { OpenRouteForm } from './planner/OpenRouteForm';
@@ -55,7 +56,26 @@ import './network.css';
  */
 
 type Tab = 'overview' | 'schedule' | 'pricing' | 'competition' | 'cargo' | 'performance';
-type View = 'route' | 'fleet' | 'connections' | 'slots' | 'gates';
+type View = 'route' | 'fleet' | 'connections' | 'slots' | 'gates' | 'ground';
+
+const VIEWS: readonly View[] = ['route', 'fleet', 'connections', 'slots', 'gates', 'ground'];
+
+/**
+ * `?view=ground&station=EHAM` or `?view=ground&contract=<id>` — a deep link into
+ * a workspace view (SURFACE-05). The lapse alert lands on the contract it is
+ * about, so the station that needs a decision is one click from the warning.
+ */
+function deepLink(): { view: View; station: string | null; contract: string | null } {
+  const params = new URLSearchParams(globalThis.location?.search ?? '');
+  const view = params.get('view');
+  const station = (params.get('station') ?? '').toUpperCase().slice(0, 4);
+  const contract = params.get('contract');
+  return {
+    view: VIEWS.includes(view as View) ? (view as View) : 'route',
+    station: station === '' ? null : station,
+    contract: contract === null || contract === '' ? null : contract,
+  };
+}
 type RouteSort = 'name' | 'profit' | 'load' | 'distance';
 
 const SORTS: readonly { value: RouteSort; label: string }[] = [
@@ -78,7 +98,8 @@ export function NetworkPage(): ReactNode {
   const [routes, setRoutes] = useState<RouteSummary[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [fleet, setFleet] = useState<readonly FleetAirframeView[]>([]);
-  const [view, setView] = useState<View>('route');
+  const [link] = useState(deepLink);
+  const [view, setView] = useState<View>(link.view);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('overview');
   const [selection, setSelection] = useState<NetworkSelection | null>(null);
@@ -202,7 +223,7 @@ export function NetworkPage(): ReactNode {
     }
     return [...codes];
   }, [routes]);
-  // Where the Gates and Slots views open: the hub, not the alphabetically first.
+  // Where the Gates, Slots and Ground views open: the hub, not the alphabetically first.
   const busiest = useMemo(() => busiestAirport(routes ?? []), [routes]);
 
   // Land on the first route once they load.
@@ -386,6 +407,8 @@ export function NetworkPage(): ReactNode {
             // two different scarce resources and the doc's whole point is that a
             // player who conflates them has made the classic new-player mistake.
             { value: 'gates', label: 'Gates' },
+            // §9.3's Layer C, the third arrangement made at an airport (SURFACE-05).
+            { value: 'ground', label: 'Ground' },
           ]}
         />
       </header>
@@ -488,7 +511,14 @@ export function NetworkPage(): ReactNode {
         </aside>
 
         <div className="net-main">
-          {view === 'gates' ? (
+          {view === 'ground' ? (
+            <GroundHandlingView
+              airports={operatedAirports}
+              initialStation={link.station}
+              initialContract={link.contract}
+              preferred={busiest}
+            />
+          ) : view === 'gates' ? (
             <AirportGatesView airports={operatedAirports} preferred={busiest} />
           ) : view === 'slots' ? (
             <AirportSlotsView airports={operatedAirports} preferred={busiest} />

@@ -506,6 +506,9 @@ export async function fleetMaintenance(
       checkCompletesAt: row.checkCompletesAt?.toISOString() ?? null,
       totalHours: row.hours,
       totalCycles: row.cycles,
+      // A null history is read as "last completed at the hours it has now" —
+      // the flag lets the page say that in words (SURFACE-04).
+      historyRecorded: row.maintenanceState !== null,
       technicalRisk: status.technicalRisk,
       airworthy: status.airworthiness.airworthy,
       dueTiers: [...status.dueTiers],

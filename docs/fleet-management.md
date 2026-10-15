@@ -215,6 +215,7 @@ because a non-UUID compared against a `uuid` column raises a driver error and a 
   §5.2's player-defined prefix is M6's identity work.
 - **Provenance beyond `owner_history[]`.** HIST-01 through HIST-11 own the living airframe
   history, including what a previous owner may be told about.
-- **Booking a check from this page.** The endpoint is M4-06's and works; wiring a button to
-  it is a mutation on a read-only view and belongs with the maintenance UI decision, not
-  here.
+- **Booking a check from the table itself.** The list and the detail stay read-only. Booking
+  lives in the maintenance planner directly under the list on the same page (SURFACE-04) —
+  see [`maintenance.md`](maintenance.md#the-page) — rather than as a mutation bolted onto a
+  read-only view.

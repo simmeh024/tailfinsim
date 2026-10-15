@@ -1,0 +1,83 @@
+/*
+ * Ground handling on the Network page (SURFACE-05). Tokens only — the
+ * colour-literal guard walks this file like every other.
+ */
+
+.net-ground__table {
+  margin-top: var(--space-2);
+}
+
+/* The scroll box keeps a cell on one line (`.net-table-scroll`); a cell that is a
+   sentence — a term, a commitment, a full vendor, a replacing signature — wraps
+   at a readable width instead of stretching the table across a screen and more. */
+.net-table-scroll .net-comp-table .net-ground__prose {
+  white-space: normal;
+  min-width: 11rem;
+  max-width: 18rem;
+}
+
+.net-table-scroll .net-comp-table .net-ground__prose--wide {
+  min-width: 14rem;
+  max-width: 22rem;
+}
+
+.net-ground__focus th,
+.net-ground__focus td {
+  background: var(--accent-quiet);
+}
+
+.net-ground__term {
+  display: inline;
+}
+
+.net-ground__term-detail {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.net-ground__line {
+  margin-top: var(--space-3);
+}
+
+.net-ground__arranged {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+
+.net-ground__self {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.net-ground__self-title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.net-ground__heads {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.net-ground__heads input {
+  width: 6rem;
+  padding: var(--space-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  color: var(--text-primary);
+}
+
+.net-ground tr[data-full='yes'] th,
+.net-ground tr[data-full='yes'] td {
+  color: var(--text-muted);
+}

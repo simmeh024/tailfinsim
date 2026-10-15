@@ -58,6 +58,19 @@ export const MaintenanceAirframeView = z
     totalHours: z.number().nonnegative(),
     totalCycles: z.number().int().nonnegative(),
     /**
+     * Whether `airframe.maintenance_state` holds a recorded history (SURFACE-04).
+     *
+     * **False means every tier was last completed at the hours this airframe has
+     * now** — `totalHours` and `totalCycles` above — not at hour zero. That is how
+     * the server reads a null history (`stateOf`), and the remaining figures in
+     * `tiers` are already computed that way; this flag exists so the page can say
+     * so in words rather than leave a player to wonder why a 24,000-hour airframe
+     * is nowhere near its A-check. A client that rendered a missing history as
+     * "0 hours since the last check" would tell every airframe delivered before
+     * M4-06 that it was tens of thousands of hours overdue.
+     */
+    historyRecorded: z.boolean(),
+    /**
      * The technical-fault probability this airframe carries into a flight.
      *
      * Shown rather than hidden, because §7.3's second bullet is a *consequence*

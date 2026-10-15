@@ -182,6 +182,19 @@ describeDb('maintenance', () => {
     expect(status.airworthiness.airworthy).toBe(true);
     expect(status.dueTiers).toEqual([]);
 
+    // And the readout the page draws says so, rather than leaving a client to
+    // render a missing history as zero (SURFACE-04): no history recorded, every
+    // tier counted from the 24,000 hours it has now, nothing due.
+    const view = await fleetMaintenance(db.db, own(fixture), atGameDay(fixture.world, 1));
+    const entry = view.airframes.find((a) => a.airframeId === airframeId);
+    expect(entry?.historyRecorded).toBe(false);
+    expect(entry?.totalHours).toBe(24_000);
+    expect(entry?.dueTiers).toEqual([]);
+    for (const tier of entry?.tiers ?? []) {
+      expect(tier.usedFraction, tier.tier).toBe(0);
+      expect(tier.hoursRemaining, tier.tier).toBeGreaterThan(0);
+    }
+
     // And the sweep agrees: nothing is grounded.
     const swept = await sweepMaintenance(db.db, fixture.world.id, atGameDay(fixture.world, 1));
     expect(swept.grounded).toBe(0);
@@ -550,6 +563,9 @@ describeDb('maintenance', () => {
       const view = await fleetMaintenance(db.db, own(fixture));
       expect(view.airframes[0]?.airframeId).toBe(neglected);
       expect(view.airframes.at(-1)?.airframeId).toBe(healthy);
+      // A stored history is reported as one; the never-flown lease has none yet.
+      expect(view.airframes[0]?.historyRecorded).toBe(true);
+      expect(view.airframes.at(-1)?.historyRecorded).toBe(false);
     });
 
     it('shows only this airline’s fleet', async () => {

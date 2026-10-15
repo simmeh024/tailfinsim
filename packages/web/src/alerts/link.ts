@@ -36,12 +36,24 @@ export function alertHref(alert: Pick<Alert, 'screen' | 'subjectType' | 'subject
     case 'crew':
       return '/crew';
     case 'fleet':
-      return '/fleet';
+      /*
+       * An airframe alert — a check due and unbooked — opens the Fleet page's
+       * maintenance planner on that aircraft (SURFACE-04), so booking the check
+       * the alert is about is one click from it.
+       */
+      return alert.subjectType === 'airframe'
+        ? `/fleet?maintenance=${encodeURIComponent(alert.subjectId)}`
+        : '/fleet';
     case 'ground':
-      // Ground contracts are per station and the station pages hang off the
-      // network map; the Operations dashboard is where the expiries are listed
-      // together, which is what a lapse alert wants.
-      return '/operations';
+      /*
+       * The Network page's Ground view (SURFACE-05), open on the contract the
+       * alert is about: its station, its term and what leaving it would cost,
+       * beside the vendors that could replace it. Before that view existed this
+       * went to the Operations dashboard, which lists expiries but cannot act.
+       */
+      return alert.subjectType === 'ground_contract'
+        ? `/network?view=ground&contract=${encodeURIComponent(alert.subjectId)}`
+        : '/network?view=ground';
   }
 }
 

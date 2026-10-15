@@ -302,6 +302,22 @@ describe('every screen an alert can name (AC3)', () => {
     );
   });
 
+  it('sends a check alert to the maintenance planner on that aircraft (SURFACE-04)', () => {
+    expect(alertHref({ screen: 'fleet', subjectType: 'airframe', subjectId: 'af-1' })).toBe(
+      '/fleet?maintenance=af-1',
+    );
+    expect(alertHref({ screen: 'fleet', subjectType: 'airline', subjectId: 'a' })).toBe('/fleet');
+  });
+
+  it('sends a lapse alert to that contract in the Ground view (SURFACE-05)', () => {
+    expect(alertHref({ screen: 'ground', subjectType: 'ground_contract', subjectId: 'gc-1' })).toBe(
+      '/network?view=ground&contract=gc-1',
+    );
+    expect(alertHref({ screen: 'ground', subjectType: 'airline', subjectId: 'a' })).toBe(
+      '/network?view=ground',
+    );
+  });
+
   it('keeps the alerts page in the rail, so the count links somewhere', () => {
     expect(NAV_ITEMS.map((item) => item.to)).toContain('/alerts');
   });
