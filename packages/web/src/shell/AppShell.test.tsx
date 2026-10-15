@@ -333,3 +333,80 @@ describe('the shell grid', () => {
     expect(orphans, 'grid areas named in a template that nothing claims').toEqual([]);
   });
 });
+
+describe('on a phone (UX pass)', () => {
+  const css = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'shell.css'), 'utf8');
+  /** The body of the shell's own `max-width: 48rem` block — the one that lays out the grid. */
+  const phone = (() => {
+    const start = css.indexOf('@media (max-width: 48rem) {\n  .shell {');
+    return start === -1 ? '' : css.slice(start, css.indexOf('\n}\n', start));
+  })();
+
+  it('keeps the check-in destinations in the bar and puts the rest behind More', async () => {
+    await renderAt('/dashboard');
+    const rail = screen.getByRole('navigation', { name: 'Main' });
+    // App. H.6: "one glance at cash, alerts, and aircraft airborne", and its next tap.
+    expect(NAV_ITEMS.filter((item) => item.phoneBar === true).map((item) => item.to)).toEqual([
+      '/dashboard',
+      '/alerts',
+      '/world',
+      '/fleet',
+      '/network',
+    ]);
+    // Every destination is still a link in the rail — full parity is the sheet.
+    for (const item of NAV_ITEMS) {
+      const link = within(rail).getByRole('link', { name: new RegExp(item.label) });
+      expect(link.classList.contains('rail__link--more')).toBe(item.phoneBar !== true);
+    }
+    expect(phone).toMatch(
+      /\.rail__link--more,\s*\.rail > \.account,\s*\.rail__theme\s*\{\s*display:\s*none/,
+    );
+    // More is a phone control: hidden outside the block, shown inside it.
+    expect(css).toMatch(/\.rail__more\s*\{\s*display:\s*none;\s*\}/);
+    expect(phone).toMatch(/\.rail__more\s*\{\s*display:\s*flex/);
+  });
+
+  it('opens the sheet with More, and closes it on navigation or Escape', async () => {
+    await renderAt('/dashboard');
+    // Wait for the shell to settle — the airline arriving re-renders it — and
+    // re-read the rail at every step rather than holding an element a later
+    // render may have replaced (CLAUDE.md's effect-race trap).
+    await screen.findByText('Shell Air');
+    const rail = () => screen.getByRole('navigation', { name: 'Main' });
+    expect(within(rail()).getByRole('button', { name: 'More' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+
+    fireEvent.click(within(rail()).getByRole('button', { name: 'More' }));
+    expect(await within(rail()).findByRole('button', { name: 'Close' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    expect(rail()).toHaveClass('rail--expanded');
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => {
+      expect(rail()).not.toHaveClass('rail--expanded');
+    });
+
+    fireEvent.click(within(rail()).getByRole('button', { name: 'More' }));
+    expect(rail()).toHaveClass('rail--expanded');
+    fireEvent.click(within(rail()).getByRole('link', { name: /Research/ }));
+    await waitFor(() => {
+      expect(rail()).not.toHaveClass('rail--expanded');
+    });
+  });
+
+  it('drops an idle context panel from the phone layout, but never the office plan', async () => {
+    const { unmount } = await renderAt('/dashboard');
+    // Nothing selected and no office plan: one sentence, which a bottom sheet
+    // spent ~180px on, on every page.
+    expect(screen.getByRole('complementary', { name: 'Context' })).toHaveClass('panel--idle');
+    expect(phone).toMatch(/\.panel--idle,\s*\.panel__reopen--idle\s*\{\s*display:\s*none/);
+    unmount();
+
+    await renderAt('/headquarters');
+    expect(screen.getByRole('complementary', { name: 'Context' })).not.toHaveClass('panel--idle');
+  });
+});

@@ -62,6 +62,16 @@ interface NavItem {
   label: string;
   /** A character rather than an icon font — no external requests, and it scales with text. */
   glyph: string;
+  /**
+   * In the phone's bottom bar itself, rather than behind More (UX pass).
+   *
+   * App. H.6: the check-in session — *"one glance at cash, alerts, and aircraft
+   * airborne"* — mostly happens on a phone. So the bar carries what that glance
+   * and its next tap need, and More opens every other destination. Full parity,
+   * which H.6 also asks for, is the sheet: nothing is phone-less, only one tap
+   * further away.
+   */
+  phoneBar?: true;
 }
 
 /**
@@ -77,7 +87,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
    * session is one glance at it. The world map is the thing you look at on day
    * one; this is the thing you look at on day thirty.
    */
-  { to: '/dashboard', label: 'Dashboard', glyph: '▦' },
+  { to: '/dashboard', label: 'Dashboard', glyph: '▦', phoneBar: true },
   /*
    * §14.3's five operational dashboards, next to the executive one rather than
    * beside Finance. A player asking "why was yesterday bad?" starts at the
@@ -92,10 +102,10 @@ export const NAV_ITEMS: readonly NavItem[] = [
    * to *leave* it: every row links to the screen that can act on it, so this
    * page is a junction rather than a place to work.
    */
-  { to: '/alerts', label: 'Alerts', glyph: '⚑' },
-  { to: '/world', label: 'World', glyph: '◎' },
-  { to: '/fleet', label: 'Fleet', glyph: '✈' },
-  { to: '/network', label: 'Network', glyph: '⤳' },
+  { to: '/alerts', label: 'Alerts', glyph: '⚑', phoneBar: true },
+  { to: '/world', label: 'World', glyph: '◎', phoneBar: true },
+  { to: '/fleet', label: 'Fleet', glyph: '✈', phoneBar: true },
+  { to: '/network', label: 'Network', glyph: '⤳', phoneBar: true },
   { to: '/finance', label: 'Finance', glyph: '§' },
   { to: '/crew', label: 'Crew', glyph: '☰' },
   /*
@@ -111,11 +121,36 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { to: '/board', label: 'Board', glyph: '▤' },
 ];
 
+/** The phone bar's More sheet: every destination that is not in the bar. */
+const RAIL_MORE_ID = 'rail-more';
+
 function LeftRail({ ownAirline }: { ownAirline: OwnAirlineResponse | null }): ReactNode {
   const { theme, toggleTheme } = useTheme();
+  /*
+   * The phone's More sheet (UX pass). Thirteen destinations, an account block and
+   * a theme switch scrolled sideways off a 390px bar with nothing to say they were
+   * there ("Finan…"). Below 48rem only the `phoneBar` items stay in the bar, and
+   * More expands it into a sheet of everything. It is the same links in the same
+   * order, so the desktop rail, its keyboard order and SURFACE-07's reachability
+   * record are untouched; the CSS decides what a phone shows. Navigating, or
+   * Escape, closes it.
+   */
+  const [moreOpen, setMoreOpen] = useState(false);
+  const pathname = useLocation().pathname;
+  useEffect(() => {
+    setMoreOpen(false);
+  }, [pathname]);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMoreOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [moreOpen]);
 
   return (
-    <nav className="rail" aria-label="Main">
+    <nav className={moreOpen ? 'rail rail--expanded' : 'rail'} aria-label="Main" id={RAIL_MORE_ID}>
       <div className="rail__brand">
         <span className="rail__mark" aria-hidden="true">
           ◤
@@ -124,13 +159,33 @@ function LeftRail({ ownAirline }: { ownAirline: OwnAirlineResponse | null }): Re
       </div>
 
       {NAV_ITEMS.map((item) => (
-        <NavLink key={item.to} to={item.to} className="rail__link">
+        <NavLink
+          key={item.to}
+          to={item.to}
+          className={item.phoneBar === true ? 'rail__link' : 'rail__link rail__link--more'}
+        >
           <span className="rail__glyph" aria-hidden="true">
             {item.glyph}
           </span>
           <span>{item.label}</span>
         </NavLink>
       ))}
+
+      {/* Shown only on a phone; the desktop rail has room for every destination. */}
+      <button
+        type="button"
+        className="rail__more"
+        aria-expanded={moreOpen}
+        aria-controls={RAIL_MORE_ID}
+        onClick={() => {
+          setMoreOpen((open) => !open);
+        }}
+      >
+        <span className="rail__glyph" aria-hidden="true">
+          {moreOpen ? '×' : '⋯'}
+        </span>
+        <span>{moreOpen ? 'Close' : 'More'}</span>
+      </button>
 
       <div className="rail__spacer" />
 
@@ -245,16 +300,30 @@ function ContextPanel({
   const onCSuite = pathname.startsWith('/c-suite');
   const onOfficeScreen = onHeadquarters || onCSuite;
 
+  /*
+   * Idle: nothing selected and no office plan to show, so the panel holds only
+   * the sentence saying selection detail will appear. On a desktop that is a
+   * column beside the stage and costs nothing; on a phone the panel is a bottom
+   * sheet, and an idle one took ~180px of every page for one sentence (UX pass).
+   * The class lets the phone layout drop it until there is something to show; a
+   * selection removes it, so the sheet arrives with the thing it is about.
+   */
+  const idle = selection === null && !onOfficeScreen;
+
   if (!open) {
     return (
-      <button type="button" className="panel__reopen" onClick={onToggle}>
+      <button
+        type="button"
+        className={idle ? 'panel__reopen panel__reopen--idle' : 'panel__reopen'}
+        onClick={onToggle}
+      >
         Show panel
       </button>
     );
   }
 
   return (
-    <aside className="panel" aria-label="Context">
+    <aside className={idle ? 'panel panel--idle' : 'panel'} aria-label="Context">
       <div className="panel__header">
         <div className="panel__heading">
           <h2

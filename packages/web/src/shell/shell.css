@@ -833,6 +833,14 @@ body {
   flex: 1;
 }
 
+/*
+ * The phone bar's More (UX pass). The desktop rail has room for every
+ * destination, so the control exists only below 48rem — see the mobile block.
+ */
+.rail__more {
+  display: none;
+}
+
 .rail__theme {
   display: flex;
   align-items: center;
@@ -2553,6 +2561,76 @@ body {
     max-height: 45vh;
     border-left: none;
     border-top: 1px solid var(--border-subtle);
+  }
+
+  /*
+   * An idle panel is one sentence promising detail to come, and as a bottom
+   * sheet it took ~180px of every page (UX pass). It leaves the layout until a
+   * selection gives it something to show; its grid row is `auto`, so the stage
+   * takes the space back. The office screens' floor plan is never idle.
+   */
+  .panel--idle,
+  .panel__reopen--idle {
+    display: none;
+  }
+
+  /*
+   * The bottom bar keeps the check-in destinations (`phoneBar`, App. H.6) and
+   * More; everything else — the other destinations, the account block, the theme
+   * switch — waits in the sheet More opens. The bar used to carry all of it and
+   * scroll sideways off screen with no sign there was more ("Finan…").
+   */
+  .rail__link--more,
+  .rail > .account,
+  .rail__theme {
+    display: none;
+  }
+
+  .rail__more {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1 0 auto;
+    gap: var(--space-1);
+    padding: var(--space-2);
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: var(--text-xs);
+    cursor: pointer;
+  }
+
+  .rail__more[aria-expanded='true'] {
+    background: var(--accent-quiet);
+    color: var(--accent);
+  }
+
+  /*
+   * More opens the bar into a sheet: the same links, wrapped into a grid of
+   * thumb-sized tiles, growing upward from the bar (H.6's bottom sheets) and
+   * scrolling within itself if a short screen cannot fit it.
+   */
+  .rail--expanded {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    overflow-y: auto;
+    max-height: 70vh;
+  }
+
+  .rail--expanded .rail__link,
+  .rail--expanded .rail__link--more,
+  .rail--expanded .rail__more {
+    display: flex;
+    flex: 1 0 25%;
+    min-height: 2.75rem;
+  }
+
+  .rail--expanded > .account,
+  .rail--expanded .rail__theme {
+    display: flex;
+    flex: 1 0 45%;
   }
 
   .panel__reopen {
