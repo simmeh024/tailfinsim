@@ -63,11 +63,6 @@ export const NOT_A_SURFACE: readonly SurfaceException[] = [
 /** Player routes shipped ahead of their surface, each with the issue that consumes it. */
 export const SURFACE_BASELINE: readonly SurfaceException[] = [
   {
-    route: 'POST /api/credit/loans',
-    issue: 1125,
-    reason: 'SURFACE-02: drawing a loan, on the Finance page’s borrowing panel.',
-  },
-  {
     route: 'GET /api/routes/:routeId/flights',
     issue: 1129,
     reason:
@@ -80,10 +75,9 @@ export const SURFACE_BASELINE: readonly SurfaceException[] = [
     'POST /api/academies/:id/modules',
   ].map((route): SurfaceException => ({
     route,
-    issue: 88,
+    issue: 1212,
     reason:
-      'M9-01 shipped the training academy API with no page; the research tree reads its levels, but building one is API-only.',
-    surfaceIssueFiled: false,
+      'SURFACE-10: M9-01 shipped the training academy API with no page; the research tree reads its levels, but building one is API-only.',
   })),
   ...[
     'GET /api/hubs',
@@ -92,28 +86,25 @@ export const SURFACE_BASELINE: readonly SurfaceException[] = [
     'POST /api/hubs/:hubId/facilities',
   ].map((route): SurfaceException => ({
     route,
-    issue: 69,
+    issue: 1211,
     reason:
-      'M7-04 shipped hub purchase and facilities with no page; the world map shows the hubs an airline holds, but buying one is API-only.',
-    surfaceIssueFiled: false,
+      'SURFACE-09: M7-04 shipped hub purchase and facilities with no page; the world map shows the hubs an airline holds, but buying one is API-only.',
   })),
   {
     route: 'POST /api/service/route-groups',
-    issue: 75,
-    reason: 'M8-03: the Service page assigns packages to route groups but cannot yet create one.',
-    surfaceIssueFiled: false,
+    issue: 1213,
+    reason:
+      'SURFACE-11: the Service page assigns packages to route groups but cannot yet create one.',
   },
   {
     route: 'DELETE /api/service/route-groups/:id',
-    issue: 75,
-    reason: 'M8-03: the Service page cannot yet delete a route group.',
-    surfaceIssueFiled: false,
+    issue: 1213,
+    reason: 'SURFACE-11: the Service page cannot yet delete a route group.',
   },
   {
     route: 'DELETE /api/service/packages/:id',
-    issue: 75,
-    reason: 'M8-03: the Service page creates and edits packages but cannot yet delete one.',
-    surfaceIssueFiled: false,
+    issue: 1213,
+    reason: 'SURFACE-11: the Service page creates and edits packages but cannot yet delete one.',
   },
 ];
 
