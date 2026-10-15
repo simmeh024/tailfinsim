@@ -283,7 +283,10 @@ globe and the flat map, and the world map's zoom hands off into it
 - **Leaving.** Zooming out past the fitted view — through a short overscroll so one wheel notch
   does not throw the player out — or the back control returns to the world map on this airport.
   The picture re-reads every sixty real seconds and keeps the last good one if a read fails; the
-  endpoint's `report` rate-limit budget is sixty a minute, so polling faster is not an option.
+  endpoint's `report` rate-limit budget is sixty a minute, so polling faster is not an option. A
+  re-read never moves the player's view: one that resizes the layout — an aeroplane joining or
+  leaving the overflow apron — refits the fitted view and leaves a zoomed one where it was. Only a
+  different airport starts again from the fit.
 
 ### Where each aeroplane is drawn
 

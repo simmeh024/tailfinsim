@@ -145,6 +145,9 @@ export function AirportMapView({ icao, onExit }: AirportMapViewProps): ReactNode
       )}
       {apron !== null && now !== null && (
         <ApronSchematic
+          // A different airport is a different schematic, so its camera starts from
+          // the fit and no selection carries over; a re-read of this one keeps both.
+          key={apron.icao}
           apron={apron}
           now={now}
           heat={heat}
