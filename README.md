@@ -228,8 +228,9 @@ environment variable (`WEB_SURFACE`) plus a deploy, not a different build.
   Self-handling is the alternative: it needs a hub and heads on a monthly payroll, lands just
   short of a premium contractor when fully staffed and well below budget when it is not, and
   trades a per-turn fee for a fixed cost that does not shrink when the schedule does. The term
-  and the payroll are the Worker's, so both bite on dev only — see
-  [`docs/ground-handling.md`](docs/ground-handling.md), including why there is no web UI yet.
+  and the payroll are the Worker's, so both bite on dev only. The Network page's Ground view
+  (SURFACE-05) signs, replaces and ends contracts and opens self-handling — see
+  [`docs/ground-handling.md`](docs/ground-handling.md).
 - **Crew who get better at what you actually make them fly.** Every completed flight awards
   §10.2's XP to the crew aboard: a base figure from the sector length, a type factor from the
   aeroplane's weight, and a difficulty multiplier built from how hard the fields are, the
