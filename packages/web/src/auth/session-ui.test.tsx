@@ -1,16 +1,28 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { REGISTRATION_COPY } from '@tailfin/shared';
 import type { MeResponse, VersionResponse, WorldClock } from '@tailfin/shared';
 
 import { App } from '../App';
+import { clearBuildInfoCache } from '../version/BuildBadge';
 
 import { LoginPage } from './LoginPage';
 import { SessionProvider } from './SessionProvider';
 
 import type { ReactNode } from 'react';
+
+/*
+ * The build badge caches `/api/version` in a module-level promise for the life of
+ * the page, so without this an earlier case's build 137 can still be the answer
+ * when "renders nothing at all when the version endpoint says nothing" runs.
+ * Whether it is depends on timing, which is how it failed once in CI (#1219) and
+ * never locally. `version/build-info.test.tsx` already starts each case cold.
+ */
+beforeEach(() => {
+  clearBuildInfoCache();
+});
 
 /**
  * Sign-in, the login wall, and the account control (M0-11, M0-12).
