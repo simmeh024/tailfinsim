@@ -9244,3 +9244,122 @@ body {
   color: var(--text-muted);
   font-size: var(--text-xs);
 }
+
+/*
+ * Route groups (SURFACE-11): what a package is assigned to, each group's
+ * delete, and the form that makes a new one — a name and a pick of routes,
+ * which is the whole of M8-03's definition of a group. The rows wrap rather
+ * than scroll sideways, so the delete stays within reach on a phone.
+ */
+.service-groups {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+}
+
+.service-groups__title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+}
+
+.service-groups__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.service-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-2) var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.service-group__package {
+  flex: 0 1 14rem;
+  min-width: 0;
+}
+
+.service-group__routes {
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* The second click of a destructive action, beside what it will do. */
+.service-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.service-confirm__note {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.service-groups__new {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-3);
+}
+
+/* A long network scrolls inside its own box instead of pushing the page. */
+.service-groups__routes {
+  flex: 1 1 100%;
+  min-width: 0;
+  max-height: 14rem;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.service-groups__routes legend {
+  padding: 0 var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.service-groups__route {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.service-groups__route:hover {
+  color: var(--text-primary);
+}
+
+.service-groups__current {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}

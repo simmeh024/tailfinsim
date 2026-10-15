@@ -90,22 +90,6 @@ export const SURFACE_BASELINE: readonly SurfaceException[] = [
     reason:
       'SURFACE-09: M7-04 shipped hub purchase and facilities with no page; the world map shows the hubs an airline holds, but buying one is API-only.',
   })),
-  {
-    route: 'POST /api/service/route-groups',
-    issue: 1213,
-    reason:
-      'SURFACE-11: the Service page assigns packages to route groups but cannot yet create one.',
-  },
-  {
-    route: 'DELETE /api/service/route-groups/:id',
-    issue: 1213,
-    reason: 'SURFACE-11: the Service page cannot yet delete a route group.',
-  },
-  {
-    route: 'DELETE /api/service/packages/:id',
-    issue: 1213,
-    reason: 'SURFACE-11: the Service page creates and edits packages but cannot yet delete one.',
-  },
 ];
 
 /** Admin routes with no console control, scored apart from the player's. */

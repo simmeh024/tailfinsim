@@ -17,15 +17,17 @@ import { Button } from '../ui/Button';
 import { StateBlock } from '../ui/StateBlock';
 
 import {
-  assignPackage,
   createPackage,
+  deletePackage,
   fetchCatalogue,
   fetchPackages,
   fetchPayback,
   fetchRouteGroups,
   updatePackage,
-  type ServiceWrite,
+  writeFailureKind,
+  type ServiceWriteFailure,
 } from './api';
+import { RouteGroupsPanel } from './RouteGroupsPanel';
 
 import type { ReactNode } from 'react';
 
@@ -67,6 +69,12 @@ import type { ReactNode } from 'react';
  * A saved package is not automatically in service. That is deliberate: a player
  * editing "Budget short-haul" to try something should not thereby change what
  * every leisure route serves the moment they hit save.
+ *
+ * The lifecycle runs both ways (SURFACE-11): route groups are created and
+ * deleted in {@link RouteGroupsPanel}, and a saved package is deleted from the
+ * bench. Both deletes take the house two-step confirm, and a package a group
+ * still flies is refused by the server (`package_in_use`, naming the groups)
+ * rather than pre-judged here — the page shows that refusal as it came.
  *
  * ## Money is USD minor units until it is rendered
  *
@@ -132,8 +140,10 @@ export function ServicePage(): ReactNode {
   const [editing, setEditing] = useState<string>('');
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
-  const [failure, setFailure] = useState<(ServiceWrite & { ok: false }) | null>(null);
-  const [saved, setSaved] = useState<string | null>(null);
+  const [failure, setFailure] = useState<ServiceWriteFailure | null>(null);
+  // What the last bench write did, in a sentence: "Saved …" or "Deleted …".
+  const [notice, setNotice] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -192,7 +202,8 @@ export function ServicePage(): ReactNode {
   const load = (id: string): void => {
     setEditing(id);
     setFailure(null);
-    setSaved(null);
+    setNotice(null);
+    setConfirmingDelete(false);
     const found = packages.find((entry) => entry.id === id);
     if (found === undefined) {
       setName('');
@@ -223,7 +234,8 @@ export function ServicePage(): ReactNode {
     }
     setSaving(true);
     setFailure(null);
-    setSaved(null);
+    setNotice(null);
+    setConfirmingDelete(false);
     const outcome =
       editing === ''
         ? await createPackage(trimmed, content)
@@ -237,20 +249,49 @@ export function ServicePage(): ReactNode {
     // A create comes back without an id, so the saved package is found by the
     // name it was just written under — which is unique per airline.
     setEditing(next.find((entry) => entry.name === trimmed)?.id ?? editing);
-    setSaved(trimmed);
+    setNotice(`Saved “${trimmed}”.`);
   };
 
-  const assign = async (routeGroupId: string, packageId: string): Promise<void> => {
+  /**
+   * Delete the saved package on the bench — the second click of two.
+   *
+   * Not pre-judged: a package a route group still flies is the server's to
+   * refuse, and its refusal names the groups, which is more use to the player
+   * than a disabled button would be. What is on the bench stays there after a
+   * delete, as an unsaved draft, so a deleted package can be saved again.
+   */
+  const removePackage = async (): Promise<void> => {
+    const target = packages.find((entry) => entry.id === editing);
+    setConfirmingDelete(false);
     setSaving(true);
     setFailure(null);
-    const outcome = await assignPackage(routeGroupId, packageId === '' ? null : packageId);
+    setNotice(null);
+    const outcome = await deletePackage(editing);
     setSaving(false);
     if (!outcome.ok) {
       setFailure(outcome);
+      if (outcome.code === 'unreachable') return;
+      // A 404 means it went in another tab; the bench keeps the draft as new.
+      const next = await refreshSaved();
+      if (!next.some((entry) => entry.id === editing)) setEditing('');
       return;
     }
-    setGroups(await fetchRouteGroups());
     await refreshSaved();
+    setEditing('');
+    setNotice(`Deleted “${target?.name ?? name.trim()}”.`);
+  };
+
+  /** Re-read the configuration after a route-group write: the server's state, not a patch. */
+  const refreshConfiguration = async (): Promise<void> => {
+    const [next] = await Promise.all([fetchRouteGroups(), refreshSaved()]);
+    setGroups(next);
+    // A deleted group cannot still be what the table is priced against.
+    setGroupId((current) =>
+      current !== '' && !(next?.groups ?? []).some((group) => group.id === current) ? '' : current,
+    );
+    // "Still flown by …" named the groups as they were before this re-read; it
+    // may no longer be true, and Delete is the way to ask again.
+    setFailure((current) => (current?.code === 'package_in_use' ? null : current));
   };
 
   return (
@@ -336,45 +377,42 @@ export function ServicePage(): ReactNode {
               >
                 {editing === '' ? 'Save package' : 'Save changes'}
               </Button>
-              {saved !== null && (
+              {editing !== '' &&
+                (confirmingDelete ? (
+                  <span className="service-confirm">
+                    <Button variant="danger" disabled={saving} onClick={() => void removePackage()}>
+                      Confirm delete
+                    </Button>
+                    <Button
+                      variant="tertiary"
+                      disabled={saving}
+                      onClick={() => setConfirmingDelete(false)}
+                    >
+                      Keep
+                    </Button>
+                  </span>
+                ) : (
+                  <Button disabled={saving} onClick={() => setConfirmingDelete(true)}>
+                    Delete package
+                  </Button>
+                ))}
+              {notice !== null && (
                 <p className="service-bench__saved" role="status">
-                  Saved “{saved}”.
+                  {notice}
                 </p>
               )}
               {failure !== null && (
-                <StateBlock
-                  kind={failure.status === 0 || failure.status >= 500 ? 'broken' : 'refused'}
-                  className="service-bench__failure"
-                >
+                <StateBlock kind={writeFailureKind(failure)} className="service-bench__failure">
                   {failure.message}
                 </StateBlock>
               )}
             </section>
 
-            {(groups?.groups ?? []).length > 0 && (
-              <section className="service-bench" aria-label="In service">
-                <p className="service-bench__hint">
-                  A saved package only reaches a flight once a route group flies it.
-                </p>
-                {(groups?.groups ?? []).map((group) => (
-                  <label key={group.id} className="service-page__field">
-                    <span>{group.name}</span>
-                    <select
-                      value={group.servicePackageId ?? ''}
-                      disabled={saving}
-                      onChange={(event) => void assign(group.id, event.target.value)}
-                    >
-                      <option value="">Baseline service</option>
-                      {packages.map((entry) => (
-                        <option key={entry.id} value={entry.id}>
-                          {entry.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ))}
-              </section>
-            )}
+            <RouteGroupsPanel
+              groups={groups}
+              packages={packages}
+              onChanged={refreshConfiguration}
+            />
 
             {catalogue.categories.map((category) => (
               <fieldset key={category.category} className="service-ladder">

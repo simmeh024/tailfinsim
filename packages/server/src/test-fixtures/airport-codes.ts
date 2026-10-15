@@ -92,6 +92,7 @@ export const AIRPORT_CODE_NAMESPACES = {
   // free digit from the bottom do not collide (OTHER-01).
   'aircraft/lease-rentals': '9',
   'finance/surface-routes': '5',
+  'service/routes': '7',
 } as const;
 
 export type AirportCodeNamespace = keyof typeof AIRPORT_CODE_NAMESPACES;

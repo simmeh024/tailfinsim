@@ -97,14 +97,36 @@ export async function fetchPayback(
 export type ServiceWrite =
   { ok: true } | { ok: false; status: number; code: string; message: string };
 
-async function write(path: string, method: string, body: unknown): Promise<ServiceWrite> {
+/** A write that did not land. */
+export type ServiceWriteFailure = ServiceWrite & { ok: false };
+
+/**
+ * How a failed write is shown: `refused` when the server answered no (or the
+ * page itself declined before asking), `broken` when no answer came back.
+ *
+ * Decided by the code rather than by status 0, because the page's own "give it
+ * a name first" also has no status and is a refusal, not a fault.
+ */
+export function writeFailureKind(failure: ServiceWriteFailure): 'refused' | 'broken' {
+  return failure.code === 'unreachable' || failure.status >= 500 ? 'broken' : 'refused';
+}
+
+/**
+ * Send one write. `body` is omitted for a delete: the id is in the path, the
+ * server reads no body (SEC-06), and a JSON content type with nothing after it
+ * is a malformed request rather than an empty one.
+ */
+async function write(path: string, method: string, body?: unknown): Promise<ServiceWrite> {
   let response: Response;
   try {
     response = await fetch(path, {
       method,
-      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      headers: {
+        accept: 'application/json',
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      },
       credentials: 'same-origin',
-      body: JSON.stringify(body),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
   } catch {
     // Status 0 is "never reached a server", which is a different answer from any
@@ -128,7 +150,7 @@ async function write(path: string, method: string, body: unknown): Promise<Servi
     ok: false,
     status: response.status,
     code: payload.code ?? 'unknown',
-    message: payload.message ?? `The package could not be saved (${String(response.status)}).`,
+    message: payload.message ?? `The change could not be saved (${String(response.status)}).`,
   };
 }
 
@@ -164,4 +186,41 @@ export function assignPackage(
   servicePackageId: string | null,
 ): Promise<ServiceWrite> {
   return write(`/api/service/route-groups/${routeGroupId}`, 'PUT', { servicePackageId });
+}
+
+/**
+ * Delete a saved package.
+ *
+ * The server refuses while any route group still flies it (`package_in_use`,
+ * naming the groups) rather than quietly dropping those groups to baseline
+ * service, so the page does not pre-judge it: the refusal is the answer.
+ */
+export function deletePackage(id: string): Promise<ServiceWrite> {
+  return write(`/api/service/packages/${id}`, 'DELETE');
+}
+
+/* ---- Route groups (App. D.5, M8-03's definition) ------------------------- */
+
+/**
+ * Create a route group: a name, and optionally the airline's routes to start with.
+ *
+ * That is the whole of M8-03's definition — a group is player-defined, keyed by
+ * route and by nothing else — so it is the whole of what this sends. A route
+ * already in another group **moves**: one group per route is a database
+ * guarantee, so joining this group is leaving that one.
+ *
+ * The 201 carries the new group without its routes, so the caller re-reads the
+ * configuration rather than patching its own copy.
+ */
+export function createRouteGroup(name: string, routeIds: readonly string[]): Promise<ServiceWrite> {
+  return write(
+    '/api/service/route-groups',
+    'POST',
+    routeIds.length === 0 ? { name } : { name, routeIds },
+  );
+}
+
+/** Delete a route group. Its routes fall back to the baseline product, not to another group. */
+export function deleteRouteGroup(id: string): Promise<ServiceWrite> {
+  return write(`/api/service/route-groups/${id}`, 'DELETE');
 }

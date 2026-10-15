@@ -10,7 +10,7 @@ app’s entry point reaches imports and uses the function that builds the call. 
 `SURFACE_INVENTORY_WRITE=1 npx vitest run --project server surface-reachability`; the guard
 fails while this file is out of date.
 
-- **Player routes:** 119 — 104 consumed, 12 baselined ahead of their surface (0 with no surface issue filed yet), 3 not a surface.
+- **Player routes:** 119 — 107 consumed, 9 baselined ahead of their surface (0 with no surface issue filed yet), 3 not a surface.
 - **Admin routes:** 24 — 19 consumed, 5 baselined.
 - **Static routes:** 11, outside `/api` and not scored.
 
@@ -28,8 +28,8 @@ fails while this file is out of date.
 | `DELETE /api/office/hires/:seat`                  | consumed             | `hq/api.ts#dismissOffice`                                                                                                                      |
 | `DELETE /api/routes/:routeId`                     | consumed             | `network/api.ts#closeRoute`                                                                                                                    |
 | `DELETE /api/schedules/:id`                       | consumed             | `network/api.ts#deleteSchedule`                                                                                                                |
-| `DELETE /api/service/packages/:id`                | baselined (#1213)    | SURFACE-11: the Service page creates and edits packages but cannot yet delete one.                                                             |
-| `DELETE /api/service/route-groups/:id`            | baselined (#1213)    | SURFACE-11: the Service page cannot yet delete a route group.                                                                                  |
+| `DELETE /api/service/packages/:id`                | consumed             | `service/api.ts#deletePackage`                                                                                                                 |
+| `DELETE /api/service/route-groups/:id`            | consumed             | `service/api.ts#deleteRouteGroup`                                                                                                              |
 | `GET /api/academies`                              | baselined (#1212)    | SURFACE-10: M9-01 shipped the training academy API with no page; the research tree reads its levels, but building one is API-only.             |
 | `GET /api/airlines/founding-airports`             | consumed             | `founding/api.ts#searchFoundingAirports`                                                                                                       |
 | `GET /api/airlines/founding-options`              | consumed             | `founding/api.ts#fetchFoundingOptions`                                                                                                         |
@@ -125,7 +125,7 @@ fails while this file is out of date.
 | `POST /api/schedules`                             | consumed             | `network/api.ts#fetchSchedules`, `network/api.ts#publishSchedule`                                                                              |
 | `POST /api/service/packages`                      | consumed             | `service/api.ts#createPackage`                                                                                                                 |
 | `POST /api/service/payback`                       | consumed             | `service/api.ts#fetchPayback`                                                                                                                  |
-| `POST /api/service/route-groups`                  | baselined (#1213)    | SURFACE-11: the Service page assigns packages to route groups but cannot yet create one.                                                       |
+| `POST /api/service/route-groups`                  | consumed             | `service/api.ts#createRouteGroup`                                                                                                              |
 | `PUT /api/automation/:system`                     | consumed             | `hq/automation.ts#setAutomation`                                                                                                               |
 | `PUT /api/crew/policies`                          | consumed             | `crew/api.ts#setCrewPolicies`                                                                                                                  |
 | `PUT /api/crew/reserves`                          | consumed             | `crew/api.ts#setCrewReserve`                                                                                                                   |
