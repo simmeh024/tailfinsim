@@ -250,5 +250,67 @@ Named so they are not mistaken for bugs:
   upkeep and no exit, and inventing one would decide what happens to the aircraft, crew, routes
   and slots based there.
 - **Gates and stands** — App. B.6, which is M7-06 (#71).
-- **A web surface.** M7-04 is labelled `area:server` / `area:sim`; the API is complete and
-  nothing renders it yet.
+- **A web surface.** M7-04 was `area:server` / `area:sim`. The page arrived with SURFACE-09
+  (#1211) — see below.
+
+---
+
+## The page
+
+**SURFACE-09.** Hubs are the **Network page's Hubs view**, beside Connections, Slots, Gates and
+Ground: a hub is an arrangement made _at an airport_, like the slot, the stand and the handling
+contract the other views manage there — and Ground's self-handling needs one. App. B.5 sits in
+the same appendix as those three. Headquarters was the alternative and was not chosen: it is §9.1's
+head office, the people rather than the places. `/network?view=hubs&station=EHAM` opens the view
+with that airport already priced. All four routes above have a consumer (`network/hubs-api.ts`).
+
+What it shows:
+
+- **Your hubs**, each with its tier, whether it was the founder grant or what it was bought for,
+  the game date it opened, its own annual fee and its bill with what is built there — and **all
+  five facilities**, open or not, each with its opening cost and annual fee. A built facility
+  shows its pinned fee and no build price, because the view's opening cost for an open facility
+  is today's quote rather than what was paid. Heavy check reads _Locked — needs the maintenance
+  line first_, with no button, until the server's `blockedBy` says otherwise; the page infers
+  nothing.
+- **The next hub**: `nextHub`'s four prices, so the flagship is on screen while the small one is
+  being considered — App. B.5's _"the player can see the arithmetic before committing"_. The page
+  says what the curve does in words and states no multiplier.
+- **Take another hub**: a search over `GET /api/hubs/candidates`, with each airport's price on
+  today's curve, its annual fee, its slot scarcity in words (_"Level 3 — coordinated: 4 airlines a
+  band, 7 of 24 bands full"_; an uncoordinated airport reads _"not coordinated; nothing here waits
+  for a slot"_ rather than a cap of zero), and a regional airport marked _priced as small_. An
+  airport already held reads _Your hub_ with no button.
+
+How it writes:
+
+- **Quoted first, two clicks, never retried.** _Buy — $X_ opens a confirmation stating the price,
+  the annual fee, the slot scarcity and that a hub cannot be sold; only its _Confirm_ sends. A
+  facility's _Build — $X_ becomes _Confirm — build for $X_ / _Keep_ in place. The request carries
+  the airport (or the kind) and the **figure the page showed**, unchanged, as `expectedCostMinor`.
+  Neither write takes an idempotency key, so nothing is re-sent: an answer that never arrives says
+  the write may have gone through and asks for a reload.
+- **The answer is the state.** Both writes return the whole hub list, and the page renders it in
+  place of its own — new hub, new bill, new next-hub prices — without re-reading `GET /api/hubs`.
+  After a purchase every candidate's price has moved, so the list on screen is re-read once.
+- **A refusal changes nothing on screen** and is shown through `StateBlock` with the server's
+  message and its code (`insufficient_funds`, `already_a_hub`, `airport_not_playable`,
+  `not_found`, `facility_already_open`, `requires_maintenance_line`, `airline_restricted`, …).
+  `hub_cost_changed` also re-reads the hub list and the candidates, so the new figure is the one
+  on screen; the player confirms it again.
+- `hub/routes-refusals.test.ts` proves at the API boundary that every refusal the page surfaces —
+  for a purchase and for a build — leaves the airline's hubs, facilities, cash, movements and
+  ledger lines unchanged, that a purchase charges exactly the quoted price, and that a write's
+  answer equals a fresh `GET /api/hubs`.
+
+What it deliberately does not do:
+
+- **Ask for candidates on its own.** Each answer prices up to twenty airports and measures each
+  one's slot bands — a query plan, not a lookup — so it runs on an explicit search (and once after
+  a purchase or a stale quote), never per keystroke and never on a timer. It is in the ordinary
+  `read` rate-limit class; the page does not lean on that.
+- **Compute a price.** No tier base, multiplier or fraction appears in the client; every figure is
+  the server's, converted only at the display-currency boundary.
+- **Promise what a facility does.** The page says plainly that a facility is, today, its cost and
+  its fee — the effects above are not wired.
+- **Sell or close a hub**, which the API cannot do either.
