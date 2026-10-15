@@ -1,3 +1,4 @@
+import { TRANSITION_EVENTS } from '@deck.gl/core';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -248,6 +249,10 @@ describe.each(PROJECTIONS)('zooming into an airport map, on the %s projection', 
     expect(deckCapture.props?.viewState.zoom).toBe(TERMINAL_EXIT_ZOOM);
     expect(deckCapture.props?.viewState.longitude).toBeCloseTo(HEATHROW.position[0], 4);
     expect(deckCapture.props?.viewState.latitude).toBeCloseTo(HEATHROW.position[1], 4);
+    // And it gets there. The fly-out selects the airport, which resizes the stage
+    // on a phone; under deck.gl's default interruption that cancelled the flight
+    // at the ceiling, in the band that re-opens the map on the next scroll tick.
+    expect(deckCapture.props?.viewState.transitionInterruption).toBe(TRANSITION_EVENTS.IGNORE);
     // Still saying where you are: the airport just left is the selection.
     expect(screen.getByTestId('panel-title')).toHaveTextContent('London Heathrow');
     // And the world's controls are back.

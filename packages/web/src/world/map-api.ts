@@ -26,6 +26,20 @@ export interface WorldMapRoute {
 }
 
 /**
+ * One of the player's own routes, with what §H.3 draws it by: thickness from the
+ * weekly frequency, opacity from the load factor, dashes for a suspended route.
+ *
+ * Optional, so a client ahead of its server draws the plain line it always drew
+ * rather than reading a missing number as zero. The server fills all three; see
+ * `WorldMapOwnRoute` in `server/src/world/map.ts`.
+ */
+export interface WorldMapOwnRoute extends WorldMapRoute {
+  active?: boolean;
+  weeklyFrequency?: number;
+  loadFactor?: number | null;
+}
+
+/**
  * One live route flown by some carrier in the world — the data behind a plane icon.
  * The player's own routes carry `own: true`; NPC (and any other player's) routes
  * carry `own: false`, so the map can colour and label them apart.
@@ -60,7 +74,7 @@ export interface WorldMapFlight extends WorldMapRoute {
 
 export interface WorldMapData {
   hubs: WorldHub[];
-  routes: WorldMapRoute[];
+  routes: WorldMapOwnRoute[];
   traffic: WorldMapTrafficRoute[];
   flights: WorldMapFlight[];
 }

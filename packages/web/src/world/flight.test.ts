@@ -6,8 +6,11 @@ import {
   flightPath,
   headingAt,
   interpolateGreatCircle,
+  planesForFlights,
   planesForRoutes,
   routeSeed,
+  trackKey,
+  trackPath,
 } from './flight';
 
 import type { LngLat } from './terminator';
@@ -264,5 +267,103 @@ describe('planesForRoutes', () => {
     const planes = planesForRoutes([routes[0]!], 0, 2);
     expect(planes).toHaveLength(2);
     expect(planes[0]!.position).not.toEqual(planes[1]!.position);
+  });
+});
+
+describe('a city pair is one track', () => {
+  /*
+   * Tracks were seeded on the route id, and a route is directional — so an
+   * out-and-back was two independent re-routes, drawn as a braid of two lines
+   * between the same airports, and the aeroplanes on them rode apart too.
+   */
+  const lhr: LngLat = [-0.4614, 51.4775];
+  const hkg: LngLat = [113.915, 22.308];
+  const nrt: LngLat = [140.386, 35.765];
+  const sfo: LngLat = [-122.375, 37.619];
+
+  /** Whether two polylines trace the same line, point for point, within a tolerance. */
+  const same = (a: LngLat[], b: LngLat[]): void => {
+    expect(a).toHaveLength(b.length);
+    a.forEach((point, i) => {
+      expect(point[0], `lng ${String(i)}`).toBeCloseTo(b[i]![0], 6);
+      expect(point[1], `lat ${String(i)}`).toBeCloseTo(b[i]![1], 6);
+    });
+  };
+
+  it('draws the return leg on the outbound track, the other way round', () => {
+    // Over every owner, so the property is not one lucky seed that flies direct.
+    for (const owner of ['', 'airline-a', 'airline-b', 'airline-c', 'airline-d']) {
+      same(trackPath(hkg, lhr, owner), trackPath(lhr, hkg, owner).reverse());
+    }
+  });
+
+  it('starts and ends each way exactly at its own airports', () => {
+    for (const [from, to] of [
+      [lhr, hkg],
+      [hkg, lhr],
+      [nrt, sfo],
+      [sfo, nrt],
+    ] as const) {
+      const path = trackPath(from, to, 'owner', 32);
+      expect(path[0]![0]).toBeCloseTo(from[0], 6);
+      expect(path[0]![1]).toBeCloseTo(from[1], 6);
+      // The far end may sit a whole world over, unwrapped across the antimeridian.
+      expect((((path.at(-1)![0] - to[0]) % 360) + 360) % 360).toBeCloseTo(0, 6);
+      expect(path.at(-1)![1]).toBeCloseTo(to[1], 6);
+      for (let i = 1; i < path.length; i += 1) {
+        expect(Math.abs(path[i]![0] - path[i - 1]![0])).toBeLessThan(180);
+      }
+    }
+  });
+
+  it('shares a track across the antimeridian both ways', () => {
+    // Each direction is unwrapped from its own airport, so the two may sit a whole
+    // world apart in longitude while drawing the same line on the sphere.
+    const there = trackPath(sfo, nrt, 'x');
+    const back = trackPath(nrt, sfo, 'x').reverse();
+    expect(back).toHaveLength(there.length);
+    there.forEach(([lng, lat], i) => {
+      const apart = (((back[i]![0] - lng) % 360) + 360) % 360;
+      expect(Math.min(apart, 360 - apart), `lng ${String(i)}`).toBeLessThan(1e-6);
+      expect(back[i]![1]).toBeCloseTo(lat, 6);
+    });
+  });
+
+  it('keeps carriers on the same pair apart', () => {
+    // A rival on the player's own city pair still draws a line of its own rather
+    // than hiding under the player's — unless both happen to fly it as filed.
+    const owners = ['', 'a', 'b', 'c', 'd', 'e', 'f', 'g'];
+    const seeds = new Set(owners.map((owner) => trackKey(lhr, hkg, owner).seed));
+    expect(seeds.size).toBe(owners.length);
+  });
+
+  it('flies both directions along the one track, each nose the way it is going', () => {
+    const departedAt = '2024-10-01T08:00:00.000Z';
+    const arrivesAt = '2024-10-01T20:00:00.000Z';
+    const quarterIn = new Date('2024-10-01T11:00:00.000Z');
+    const [out] = planesForFlights(
+      [{ id: 'out', source: lhr, target: hkg, departedAt, arrivesAt }],
+      quarterIn,
+      () => '',
+    );
+    const [back] = planesForFlights(
+      [{ id: 'back', source: hkg, target: lhr, departedAt, arrivesAt }],
+      new Date('2024-10-01T17:00:00.000Z'),
+      () => '',
+    );
+    // A quarter of the way out and three quarters of the way back are the same
+    // point of the one track, so the two aeroplanes coincide.
+    expect(back!.position[0]).toBeCloseTo(out!.position[0], 6);
+    expect(back!.position[1]).toBeCloseTo(out!.position[1], 6);
+    // And they face opposite ways along it.
+    const facing = (((out!.angle - back!.angle) % 360) + 360) % 360;
+    expect(Math.abs(facing - 180)).toBeLessThan(2);
+
+    // On the line the map draws for the pair, not beside it.
+    const line = trackPath(lhr, hkg, '', 400);
+    const nearest = Math.min(
+      ...line.map(([lng, lat]) => Math.hypot(lng - out!.position[0], lat - out!.position[1])),
+    );
+    expect(nearest).toBeLessThan(0.2);
   });
 });

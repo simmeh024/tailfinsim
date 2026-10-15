@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ContextPanelProbe } from '../shell/test-context-panel';
 import { ThemeProvider } from '../theme/ThemeProvider';
 
-import { flightProgress, planesForFlights } from './flight';
+import { flightProgress, planesForFlights, trackPath } from './flight';
 import { WORLD_PROJECTION_STORAGE_KEY } from './projection';
 import { departureDelay, minutesBetween } from './SelectionDetail';
 import { WorldRenderer } from './WorldRenderer';
@@ -95,14 +95,21 @@ describe('placing the aeroplanes', () => {
 
   it('rides the seeded track the map drew for that route', () => {
     // The route line has its own seeded wander. A plane on a clean great circle
-    // would visibly float beside its own line.
-    const onRoute = planesForFlights([AIRBORNE], new Date('2024-10-01T09:20:00.000Z'), () => 'r-1');
-    const onLeg = planesForFlights(
-      [AIRBORNE],
-      new Date('2024-10-01T09:20:00.000Z'),
-      () => 'EDDF-EGLL',
+    // would visibly float beside its own line — so the plane's track is chosen by
+    // the same owner the line is drawn with, and a different owner is a different
+    // track.
+    const at = new Date('2024-10-01T09:20:00.000Z');
+    const mine = planesForFlights([AIRBORNE], at, () => '')[0]!;
+    const line = trackPath(AIRBORNE.source, AIRBORNE.target, '', 400);
+    const offLine = Math.min(
+      ...line.map(([lng, lat]) => Math.hypot(lng - mine.position[0], lat - mine.position[1])),
     );
-    expect(onRoute[0]?.position).not.toEqual(onLeg[0]?.position);
+    expect(offLine).toBeLessThan(0.05);
+
+    const positions = ['a', 'b', 'c', 'd', 'e'].map(
+      (owner) => planesForFlights([AIRBORNE], at, () => owner)[0]!.position,
+    );
+    expect(new Set(positions.map((p) => p.join(','))).size).toBeGreaterThan(1);
   });
 
   it('names the flight, so a click resolves to it', () => {

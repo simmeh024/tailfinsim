@@ -5,7 +5,7 @@ import {
   type Layer,
   type MapViewState,
 } from '@deck.gl/core';
-import { IconLayer, PathLayer } from '@deck.gl/layers';
+import { IconLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 import DeckGL, { type DeckGLRef } from '@deck.gl/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
@@ -25,12 +25,19 @@ import {
   TERMINAL_EXIT_ZOOM,
   type HandoffAirport,
 } from './bands';
-import { clampViewState, focusViewState, MAX_ZOOM } from './camera';
 import {
-  flightPath,
+  clampViewState,
+  focusViewState,
+  globeFillZoom,
+  globeRadiusPixels,
+  LANDING_TRANSITION,
+  MAX_ZOOM,
+} from './camera';
+import {
   greatCirclePath,
   planesForFlights,
-  routeSeed,
+  trackOwner,
+  trackPath,
   type WorldPlane,
 } from './flight';
 import { frameOf, networkPoints } from './frame';
@@ -38,6 +45,7 @@ import { airportLabel, flightLabel, tipPlacement, type HoverLabel } from './hove
 import { COARSE_WORLD, LAND_DETAIL_ZOOM, loadDetailedWorld, type WorldGeometry } from './land';
 import {
   airportLevelForZoom,
+  airportScaleForZoom,
   createWorldLayers,
   planeSpriteSize,
   visibleAirportsAtLevel,
@@ -60,9 +68,11 @@ import {
   type PlaceRow,
 } from './places';
 import { PlacesPanel } from './PlacesPanel';
+import { PLANE_ICON_DEFINITION } from './plane-icon';
 import { persistProjection, readInitialProjection, type WorldProjection } from './projection';
 import { bundleCorridors, corridorGridForZoom, type Corridor } from './route-corridors';
 import { fleetMaxRangeNm, reachableAirportIcaos } from './route-create';
+import { routeIsFlown } from './route-lines';
 import {
   AirborneDetail,
   airborneSubtitle,
@@ -84,7 +94,7 @@ import {
 } from './view-state';
 import { WorldClockDisplay } from './WorldClockDisplay';
 
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 
 const INITIAL_VIEW_STATE: MapViewState = {
   longitude: 8,
@@ -110,18 +120,18 @@ const CONTROLLER = {
 /**
  * The zoom past which the atmosphere glow is hidden.
  *
- * `.world-renderer__atmosphere` is a CSS ellipse inset 5% of the *container*. It
- * has no idea where the globe actually is, which is fine while the planet sits
- * small and centred in the frame and is exactly what makes it read as a planet in
- * space. Zoom in far enough that the globe overflows the frame and the ring stops
- * tracking anything: it becomes a bright arc sweeping across the map, brightest
- * where it crosses the pole.
+ * `.world-renderer__atmosphere` is a ring drawn at the globe's limb — sized from
+ * the camera by `globeRadiusPixels`, centred where the globe's centre always
+ * projects, the middle of the stage. It used to be a fixed ellipse inset 5% of
+ * the *container*, which only lined up with a planet that happened to fill the
+ * stage: at the zoom the map opens at it hung far outside a globe a third of the
+ * stage tall, and closer in it became a bright arc laid across the map, which is
+ * why it was cut off at zoom 1.
  *
- * So it is shown only while the whole globe is still in view. Chosen against the
- * default camera, which is `0.35`, and the point at which the sphere starts to
- * exceed the shorter side of a typical stage.
+ * Tracking the limb, it is right at any zoom; this cap is only where the limb has
+ * left the stage on a typical screen, so there is nothing of it left to draw.
  */
-const ATMOSPHERE_MAX_ZOOM = 1;
+const ATMOSPHERE_MAX_ZOOM = 2.5;
 
 const DEFAULT_VISIBILITY: WorldLayerVisibility = {
   graticule: true,
@@ -133,15 +143,11 @@ const DEFAULT_VISIBILITY: WorldLayerVisibility = {
 };
 
 /**
- * A north-up plane silhouette, tinted at draw time (IconLayer `mask`), so the one
- * data URI serves both themes. On its own line so the colour-literal guard skips
- * it (it exempts `data:image/svg+xml`).
+ * How fast the route shimmer travels: ~1/26 of a leg per second, so one pass of
+ * the brightened window takes about 26 seconds whatever the route's length —
+ * §H.3's *"slow directional shimmer"*.
  */
-// prettier-ignore
-const PLANE_ICON = 'data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="%23000" d="M12 2c-.8 0-1.4 1.3-1.4 3v4.9L2 15v2l8.6-2.6V20l-2.2 1.4V23L12 22l3.6 1v-1.6L13.4 20v-5.6L22 17v-2l-8.6-5.1V5c0-1.7-.6-3-1.4-3z"/></svg>';
-
-/** How fast a plane crosses its whole route: ~1/26 per second, so a full pass is ~26s. */
-const PLANE_SPEED_PER_SECOND = 0.038;
+const SHIMMER_SPEED_PER_SECOND = 0.038;
 
 /**
  * How long the hand-off between the world and an airport map takes, both ways
@@ -204,7 +210,19 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   // The player's overlay, refreshed while the page is open (WORLD-06).
   const map = useWorldOverlay();
   const [maxRangeNm, setMaxRangeNm] = useState(0);
-  const [phase, setPhase] = useState(0);
+  /*
+   * Where the route shimmer is, as a whole segment of the sampled track.
+   *
+   * An integer on purpose. The window the shimmer draws is sliced out of the
+   * track a segment at a time, so it only moves when this changes — about 2.4
+   * times a second at full quality. It used to be a continuous phase in state,
+   * set on every animation frame: sixty React renders and sixty full deck.gl
+   * redraws a second for a picture that changed twice. Measured on an Iris Xe at
+   * 1440×900, that was 52 commits and ~880 ms of script per second, and the flat
+   * map missed its own 60 fps budget. The continuous phase lives in a ref.
+   */
+  const [shimmerStep, setShimmerStep] = useState(0);
+  const shimmerPhase = useRef(0);
   const [selectedAirport, setSelectedAirport] = useState<WorldAirport | null>(null);
   /** What the pointer is over, and where — see `hover.ts`. */
   const [hover, setHover] = useState<{ label: HoverLabel; at: HoverPoint } | null>(null);
@@ -467,6 +485,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   // fields revealing as the camera comes in. Keyed to a discrete level so the list
   // is refiltered on a threshold crossing, not on every scroll frame.
   const airportLevel = airportLevelForZoom(viewState.zoom);
+  const airportScale = airportScaleForZoom(viewState.zoom);
   const visibleAirports = useMemo(
     () => visibleAirportsAtLevel(airports, airportLevel),
     [airports, airportLevel],
@@ -489,9 +508,20 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
 
   // Any airport opens the panel now — reachable or not — so a click can offer to
   // plan a route, show why it can't, or list the routes already there.
+  /*
+   * One selection at a time, and the label goes with the click.
+   *
+   * The flight was not cleared here, so an aeroplane selected before the airport
+   * came back into the panel the moment the airport was dismissed. And the hover
+   * label stayed where it was: selecting opens the context panel, which on a
+   * phone shrinks the stage, so the label was left floating over a point the
+   * airport had moved away from.
+   */
   const onAirportClick = useCallback((airport: WorldAirport) => {
     setSelectedAirport(airport);
     setSelectedRoute(null);
+    setSelectedFlight(null);
+    setHover(null);
   }, []);
 
   /*
@@ -526,6 +556,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
         reachableIcaos,
         onAirportClick,
         onAirportHover,
+        airportScale,
         darkness,
         land: geometry.land,
         borders: geometry.borders,
@@ -541,6 +572,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       reachableIcaos,
       onAirportClick,
       onAirportHover,
+      airportScale,
       darkness,
       geometry,
       visibility,
@@ -618,6 +650,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     (info: { object?: unknown }): boolean => {
       const plane = info.object as WorldPlane | undefined;
       if (!plane) return false;
+      setHover(null);
       const airborne = flightById.get(plane.sourceId);
       if (airborne) {
         setSelectedFlight(airborne);
@@ -653,39 +686,22 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   );
 
   /*
-   * Which track each flight rides.
-   *
-   * The map draws a route's line with a seeded wander, so a plane on a clean
-   * great circle would visibly float beside its own line. When the flight is on
-   * a route the map knows, the plane borrows that route's seed and sits exactly
-   * on it; otherwise the airport pair is a stable fallback.
-   */
-  const routeIdByLeg = useMemo(() => {
-    const byLeg = new Map<string, string>();
-    for (const r of map.traffic) {
-      byLeg.set(`${r.airlineId}:${r.originIcao}:${r.destinationIcao}`, r.id);
-    }
-    return byLeg;
-  }, [map.traffic]);
-
-  /*
    * Positioned against the world's own clock, not a wall clock and not an
    * animation phase. `useWorldClock` re-renders once a second, which is what
    * moves them; `now` is the fallback before the first sync, and a flight list
    * that arrives before the clock does is a second of stillness rather than a
    * blank sky.
+   *
+   * Each rides the track its carrier's line is drawn on — the city pair's, owned
+   * by `''` for the player and by the airline for a rival (`trackKey` in
+   * `flight.ts`) — so it sits on the line, and a return leg flies the same line
+   * the other way.
    */
   const flightTime = inGameTime ?? now;
   const planes = useMemo(
     () =>
-      planesForFlights(visibleFlights, flightTime, (entry) => {
-        const flight = entry as WorldMapFlight;
-        return (
-          routeIdByLeg.get(`${flight.airlineId}:${flight.originIcao}:${flight.destinationIcao}`) ??
-          `${flight.originIcao}-${flight.destinationIcao}`
-        );
-      }),
-    [visibleFlights, flightTime, routeIdByLeg],
+      planesForFlights(visibleFlights, flightTime, (entry) => trackOwner(entry as WorldMapFlight)),
+    [visibleFlights, flightTime],
   );
   const spriteSize = planeSpriteSize(viewState.zoom);
 
@@ -703,7 +719,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       id: 'world-plane-halos',
       data: planes,
       getPosition: (p) => p.position,
-      getIcon: () => ({ url: PLANE_ICON, width: 24, height: 24, mask: true }),
+      getIcon: () => PLANE_ICON_DEFINITION,
       getSize: spriteSize + 3,
       sizeUnits: 'pixels',
       getAngle: (p) => p.angle,
@@ -725,7 +741,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       id: 'world-planes',
       data: planes,
       getPosition: (p) => p.position,
-      getIcon: () => ({ url: PLANE_ICON, width: 24, height: 24, mask: true }),
+      getIcon: () => PLANE_ICON_DEFINITION,
       getSize: spriteSize,
       sizeUnits: 'pixels',
       getAngle: (p) => p.angle,
@@ -754,7 +770,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     return new PathLayer<WorldMapTrafficRoute>({
       id: 'world-selected-route',
       data: [selectedRoute],
-      getPath: (r) => flightPath(r.source, r.target, routeSeed(r.id), quality === 'full' ? 64 : 32),
+      getPath: (r) => trackPath(r.source, r.target, trackOwner(r), quality === 'full' ? 64 : 32),
       getColor: [line[0], line[1], line[2], 255],
       getWidth: 4,
       widthUnits: 'pixels',
@@ -767,21 +783,62 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     });
   }, [selectedRoute, palette.route, quality]);
 
+  /*
+   * Where the selection is, on the map itself.
+   *
+   * Selecting an airport or an aeroplane only ever changed the context panel —
+   * nothing on the canvas said which of four thousand dots the panel was about,
+   * and on a phone, where the panel sits below the stage, the two were not even
+   * on screen together. §H.2's *"same selection model"* across both projections
+   * is this one ring, drawn the same way on each: the route colour, a little
+   * larger than the largest dot, filled faintly so it reads over terrain, and
+   * tracking an aeroplane as it flies.
+   */
+  const selectedPosition = useMemo((): LngLat | null => {
+    if (selectedAirport !== null) return selectedAirport.position;
+    if (selectedFlight === null) return null;
+    return planes.find((plane) => plane.sourceId === selectedFlight.id)?.position ?? null;
+  }, [selectedAirport, selectedFlight, planes]);
+
+  const selectionLayer = useMemo(() => {
+    if (selectedPosition === null) return false;
+    const [r, g, b] = palette.route;
+    return new ScatterplotLayer<{ position: LngLat }>({
+      id: 'world-selection',
+      data: [{ position: selectedPosition }],
+      getPosition: (d) => d.position,
+      getRadius: 16,
+      radiusUnits: 'pixels',
+      filled: true,
+      getFillColor: [r, g, b, 56],
+      stroked: true,
+      getLineColor: [r, g, b, 255],
+      lineWidthUnits: 'pixels',
+      getLineWidth: 2.5,
+      billboard: true,
+      pickable: false,
+      // Over the airports and hubs it marks, under the aeroplanes.
+      getPolygonOffset: () => [0, -62000],
+      parameters: { cullMode: 'none' },
+    });
+  }, [selectedPosition, palette.route]);
+
   // The competition's routes as their own togglable layer — neutral, so ownership reads
   // as colour (M7-03). Below the un-bundle zoom they collapse into corridors so the
   // whole-world "all traffic" view is legible rather than a hairball; above it, every
   // leg draws on its own. The player's own routes always stay individual.
   const rivals = useMemo(() => map.traffic.filter((r) => !r.own), [map.traffic]);
   const corridorGrid = corridorGridForZoom(viewState.zoom);
-  const neutral: RgbaColor = palette.border;
+  // §H.3's neutral, at the token's own alpha; see `--world-rival`.
+  const neutral: RgbaColor = palette.rival;
 
   const rivalLinesLayer = useMemo(() => {
     if (!showRivals || corridorGrid > 0 || rivals.length === 0) return false;
     return new PathLayer<WorldMapTrafficRoute>({
       id: 'world-rival-routes',
       data: rivals,
-      getPath: (r) => flightPath(r.source, r.target, routeSeed(r.id), quality === 'full' ? 64 : 32),
-      getColor: [neutral[0], neutral[1], neutral[2], 175],
+      getPath: (r) => trackPath(r.source, r.target, trackOwner(r), quality === 'full' ? 64 : 32),
+      getColor: neutral,
       getWidth: 1.5,
       widthUnits: 'pixels',
       widthMinPixels: 1,
@@ -806,7 +863,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       getPath: (c) => greatCirclePath(c.source, c.target, 24),
       // Weight says how many routes run the corridor; a lone leg reads as thin as it
       // would un-bundled, a trunk corridor as a fat band.
-      getColor: [neutral[0], neutral[1], neutral[2], 205],
+      getColor: neutral,
       getWidth: (c) => 1 + 5 * (c.count / busiest),
       widthUnits: 'pixels',
       widthMinPixels: 1,
@@ -823,12 +880,16 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
   // every animation frame. Computing each great-circle (trig per segment) sixty times
   // a second is what the shimmer used to do and what dropped the globe below its frame
   // budget; the phase-driven layer below just slices a window out of these.
+  //
+  // Only the routes something is scheduled to fly: the shimmer is §H.3's *"in the
+  // direction of travel"*, and a suspended or unscheduled route has none. Each runs
+  // its own way along the pair's one track, so an out-and-back shimmers both ways.
   const shimmerSegments = quality === 'full' ? 64 : 32;
   const ownPaths = useMemo(
     () =>
-      playerRoutes.map((route) => ({
+      playerRoutes.filter(routeIsFlown).map((route) => ({
         id: route.id,
-        full: flightPath(route.source, route.target, routeSeed(route.id), shimmerSegments),
+        full: trackPath(route.source, route.target, '', shimmerSegments),
       })),
     [playerRoutes, shimmerSegments],
   );
@@ -863,12 +924,16 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     !reducedMotion && visibility.routes && ownPaths.length > 0 && airportView === null;
 
   /*
-   * Advance the phase each frame. `requestAnimationFrame` pauses itself when the
-   * tab is hidden, and only the plane and shimmer layers depend on `phase`, so
-   * the land, sea and day/night bitmaps are not rebuilt as it ticks.
+   * Advance the shimmer each frame, and render only when it has moved.
    *
-   * Stopping leaves `phase` where it was rather than resetting it, so turning a
-   * layer back on resumes the aeroplanes rather than teleporting them home.
+   * The phase accumulates in a ref; what reaches state is the whole segment it
+   * is on, and React skips a render when a state setter is handed the value it
+   * already has — so the frames in between cost a callback and nothing else, and
+   * deck.gl redraws only when the trail actually steps. `requestAnimationFrame`
+   * pauses itself when the tab is hidden.
+   *
+   * Stopping leaves the phase where it was rather than resetting it, so turning
+   * the layer back on resumes the shimmer rather than restarting it.
    */
   useEffect(() => {
     if (!animating) return;
@@ -877,12 +942,13 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     const step = (now: number): void => {
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
-      setPhase((p) => (p + dt * PLANE_SPEED_PER_SECOND) % 1);
+      shimmerPhase.current = (shimmerPhase.current + dt * SHIMMER_SPEED_PER_SECOND) % 1;
+      setShimmerStep(Math.floor(shimmerPhase.current * shimmerSegments));
       raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [animating]);
+  }, [animating, shimmerSegments]);
 
   const shimmerLayer = useMemo(() => {
     // Off with the routes it travels along. The lines are gated on the same flag
@@ -891,7 +957,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     if (reducedMotion || !visibility.routes || ownPaths.length === 0) return false;
     const windowLen = Math.max(2, Math.round(shimmerSegments * 0.1));
     const trails = ownPaths.map(({ id, full }) => {
-      const start = Math.min(full.length - windowLen, Math.floor(phase * (full.length - 1)));
+      const start = Math.min(full.length - windowLen, shimmerStep);
       return {
         id,
         path: full.slice(Math.max(0, start), Math.max(windowLen, start + windowLen)),
@@ -917,7 +983,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       parameters: { cullMode: 'none' },
       getPolygonOffset: () => [0, -70000],
     });
-  }, [reducedMotion, visibility.routes, ownPaths, shimmerSegments, phase, palette.route]);
+  }, [reducedMotion, visibility.routes, ownPaths, shimmerSegments, shimmerStep, palette.route]);
 
   const allLayers = useMemo<(Layer | false)[]>(
     () => [
@@ -925,6 +991,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       rivalLinesLayer,
       corridorLayer,
       selectedRouteLayer,
+      selectionLayer,
       shimmerLayer,
       planeHaloLayer,
       planeLayer,
@@ -934,6 +1001,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       rivalLinesLayer,
       corridorLayer,
       selectedRouteLayer,
+      selectionLayer,
       shimmerLayer,
       planeHaloLayer,
       planeLayer,
@@ -980,8 +1048,21 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
    * afterwards.
    */
   const networkFrame = useCallback((): MapViewState | null => {
-    return frameOf(networkPoints(map.hubs, map.routes), canvasSize());
-  }, [canvasSize, map.hubs, map.routes]);
+    const size = canvasSize();
+    const frame = frameOf(networkPoints(map.hubs, map.routes), size);
+    if (frame === null || projection !== 'globe') return frame;
+    /*
+     * On the globe, never smaller than a planet that fills the stage.
+     *
+     * The fit is Mercator maths, and for a network that spans the world it
+     * answers with the zoom that shows all of it on a flat sheet — which on the
+     * globe is a planet a third of the stage tall, in the middle of a lot of
+     * space. Half of a world-spanning network is behind the horizon whatever the
+     * zoom, so the globe's frame is the bigger of the two: a regional network
+     * still gets its fit, a global one gets the whole visible hemisphere.
+     */
+    return { ...frame, zoom: Math.max(frame.zoom, globeFillZoom(frame.latitude, size)) };
+  }, [canvasSize, map.hubs, map.routes, projection]);
 
   /*
    * Open on the player's own network.
@@ -1132,6 +1213,9 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
             ? {
                 transitionDuration: AIRPORT_HANDOFF_MS,
                 transitionInterpolator: new FlyToInterpolator(),
+                // The fly-out selects the airport it left, which can resize the
+                // stage mid-flight; see `LANDING_TRANSITION`.
+                ...LANDING_TRANSITION,
               }
             : {}),
         }),
@@ -1415,6 +1499,7 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
       if (row.airport) {
         const airport = row.airport;
         setSelectedRoute(null);
+        setSelectedFlight(null);
         setSelectedAirport(airport);
         /*
          * Fly there, but only if it is not already on screen.
@@ -1435,7 +1520,13 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
               zoom: Math.max(current.zoom, 6),
               ...(reducedMotion
                 ? {}
-                : { transitionDuration: 700, transitionInterpolator: new FlyToInterpolator() }),
+                : {
+                    transitionDuration: 700,
+                    transitionInterpolator: new FlyToInterpolator(),
+                    // Selecting the result publishes it to the context panel at the
+                    // same moment, which resizes the stage on a phone.
+                    ...LANDING_TRANSITION,
+                  }),
             }),
           );
         }
@@ -1552,6 +1643,11 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
     <section
       onKeyDown={onSectionKeyDown}
       className="world-renderer"
+      style={
+        {
+          '--world-globe-radius': `${String(Math.round(globeRadiusPixels(viewState.zoom, viewState.latitude, canvasSize()?.height)))}px`,
+        } as CSSProperties
+      }
       data-projection={projection}
       data-quality={quality}
       data-atmosphere={viewState.zoom < ATMOSPHERE_MAX_ZOOM ? 'on' : 'off'}
@@ -1791,10 +1887,27 @@ export function WorldRenderer({ routes = [] }: WorldRendererProps): ReactNode {
                 ×
               </button>
             </div>
+            {/*
+             * What the player's lines say, in §H.3's terms. This said "your brand
+             * colour" for a line that has been an altitude ramp since M7-03 — the
+             * legend described the design doc rather than the map.
+             */}
             <ul className="world-renderer__legend-list">
               <li>
                 <span className="world-renderer__legend-line world-renderer__legend-line--own" />
-                Your routes — your brand colour
+                Your routes — ground colour at each airport, cruise colour in between
+              </li>
+              <li>
+                <span className="world-renderer__legend-line world-renderer__legend-line--busy" />
+                Thicker — more departures a week
+              </li>
+              <li>
+                <span className="world-renderer__legend-line world-renderer__legend-line--weak" />
+                Fainter — fewer seats filled (load factor)
+              </li>
+              <li>
+                <span className="world-renderer__legend-line world-renderer__legend-line--suspended" />
+                Dashed — suspended
               </li>
               <li>
                 <span className="world-renderer__legend-line world-renderer__legend-line--rival" />

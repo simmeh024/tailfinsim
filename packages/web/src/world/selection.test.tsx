@@ -301,6 +301,59 @@ describe('selecting a flight', () => {
   });
 });
 
+describe('the selection on the map', () => {
+  /*
+   * Selecting used to change the context panel and nothing else: no mark on the
+   * canvas said which of four thousand dots the panel was about — and on a
+   * phone, where the panel sits under the stage, the two were not on screen
+   * together.
+   */
+  const ring = (): Layer | undefined => drawn().find((entry) => entry.id === 'world-selection');
+
+  it('rings the selected airport, and goes when the selection does', async () => {
+    await renderWorld();
+    expect(ring()).toBeUndefined();
+
+    clickAirport(HEATHROW);
+    expect(ring()?.props.data).toEqual([{ position: HEATHROW.position }]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss panel' }));
+    expect(ring()).toBeUndefined();
+  });
+
+  it('follows a selected aeroplane', async () => {
+    await renderWorld();
+    fireEvent.click(screen.getByRole('button', { name: 'Rivals' }));
+    const planes = drawn().find((entry) => entry.id === 'world-planes');
+    const onClick = planes?.props.onClick as (info: { object: unknown }) => void;
+    act(() => {
+      onClick({ object: { sourceId: 'flight-1' } });
+    });
+
+    const plane = (planes?.props.data as { sourceId: string; position: [number, number] }[]).find(
+      (entry) => entry.sourceId === 'flight-1',
+    );
+    expect(ring()?.props.data).toEqual([{ position: plane?.position }]);
+  });
+
+  it('lets go of an aeroplane when an airport is chosen instead', async () => {
+    // It used to stay selected underneath: dismissing the airport brought the
+    // flight's panel back, for a selection the player had already replaced.
+    await renderWorld();
+    fireEvent.click(screen.getByRole('button', { name: 'Rivals' }));
+    const planes = drawn().find((entry) => entry.id === 'world-planes');
+    const onClick = planes?.props.onClick as (info: { object: unknown }) => void;
+    act(() => {
+      onClick({ object: { sourceId: 'flight-1' } });
+    });
+    clickAirport(HEATHROW);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss panel' }));
+    expect(screen.getByTestId('panel-title')).toHaveTextContent('Context');
+    expect(ring()).toBeUndefined();
+  });
+});
+
 describe('leaving the World page', () => {
   it('takes its selection with it', async () => {
     // A selection outlives the route that made it unless somebody clears it,

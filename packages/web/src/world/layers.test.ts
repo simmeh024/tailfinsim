@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { COARSE_WORLD } from './land';
 import {
   airportLevelForZoom,
+  airportScaleForZoom,
   createWorldLayers,
   planeSpriteSize,
   visibleAirportsAtLevel,
@@ -13,7 +14,8 @@ import { terrainImage } from './terrain';
 
 import type { WorldAirport, WorldRoute } from './layers';
 import type { WorldHub } from './map-api';
-import type { WorldPalette } from './palette';
+import type { RgbaColor, WorldPalette } from './palette';
+import type { RouteLine } from './route-lines';
 import type { Layer } from '@deck.gl/core';
 
 const palette: WorldPalette = {
@@ -24,6 +26,7 @@ const palette: WorldPalette = {
   grid: [10, 11, 12, 80],
   night: [13, 14, 15, 215],
   route: [16, 17, 18, 230],
+  rival: [25, 26, 27, 217],
   altGround: [200, 30, 20, 255],
   altLow: [190, 90, 20, 255],
   altMid: [170, 140, 20, 255],
@@ -34,6 +37,13 @@ const palette: WorldPalette = {
 
 /** Small enough to keep the test fast; the field's own tests own its contents. */
 const DARKNESS = createDarknessField(new Date('2026-08-22T12:00:00.000Z'), 16, 8);
+
+/** A flat `[lng, lat, …]` path back into points, the form the assertions read. */
+function pointsOf(flat: ArrayLike<number>): [number, number][] {
+  const points: [number, number][] = [];
+  for (let i = 0; i < flat.length; i += 2) points.push([flat[i]!, flat[i + 1]!]);
+  return points;
+}
 
 const antimeridianRoute: WorldRoute = {
   id: 'antimeridian',
@@ -63,27 +73,31 @@ describe('projection-independent world layers', () => {
       },
     });
     const routes = layers.find(
-      (layer): layer is PathLayer<WorldRoute> =>
+      (layer): layer is PathLayer<RouteLine> =>
         layer instanceof PathLayer && layer.id === 'world-routes',
     );
 
     expect(routes).toBeInstanceOf(PathLayer);
-    expect(routes?.props.data).toEqual([antimeridianRoute]);
+    const lines = routes?.props.data as RouteLine[];
+    expect(lines.map((line) => line.routeIds)).toEqual([[antimeridianRoute.id]]);
+    const line = lines[0]!;
 
     // The path is a single unwrapped polyline: every step stays under 180° of the
     // one before it, so there is no stray snap-back line across the whole map, and
     // the longitude genuinely climbs past ±180 rather than resetting.
-    const getPath = routes?.props.getPath as (route: WorldRoute) => [number, number][];
-    const path = getPath(antimeridianRoute);
+    const getPath = routes?.props.getPath as (line: RouteLine) => Float64Array;
+    const path = pointsOf(getPath(line));
     for (let i = 1; i < path.length; i += 1) {
       expect(Math.abs(path[i]![0] - path[i - 1]![0])).toBeLessThan(180);
     }
-    expect(Math.max(...path.map(([lon]) => lon))).toBeGreaterThan(180);
+    // Past ±180 in whichever direction the pair's canonical track runs: the line
+    // is drawn once for the city pair (`route-lines.ts`), from its canonical end.
+    expect(Math.max(...path.map(([lon]) => Math.abs(lon)))).toBeGreaterThan(180);
 
     // The colour is an altitude gradient: one colour per path vertex, warmer near the
     // ground at the ends and the route blue at cruise in the middle.
-    const getColor = routes?.props.getColor as () => [number, number, number, number][];
-    const colors = getColor();
+    const getColor = routes?.props.getColor as (line: RouteLine) => RgbaColor[];
+    const colors = getColor(line);
     expect(colors).toHaveLength(path.length);
     const mid = colors[Math.floor(colors.length / 2)]!;
     expect(mid.slice(0, 3)).toEqual(palette.route.slice(0, 3));
@@ -129,6 +143,56 @@ describe('projection-independent world layers', () => {
       // Never descends on the way up — a wash that wandered back down the ramp would
       // be saying the aircraft lost height.
       expect(climb[i]!, `sample ${String(i)}`).toBeGreaterThanOrEqual(climb[i - 1]!);
+    }
+  });
+
+  it('keeps one colour per vertex on the globe, where the grid would otherwise cut the path', () => {
+    /*
+     * The bug: on the globe `PathLayer` cut each route at every grid line,
+     * inserting vertices, while the colour accessor returned one colour per
+     * vertex of the uncut path. The colours ran out partway along, so every long
+     * route stopped mid-ocean in a stub of the ground colour. Declaring the path
+     * already normalised keeps the two one to one.
+     */
+    const layers = createWorldLayers({
+      palette,
+      quality: 'full',
+      routes: [antimeridianRoute],
+      airports: [],
+      hubs: [],
+      darkness: DARKNESS,
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
+      projection: 'globe',
+      visibility: {
+        graticule: false,
+        routes: true,
+        terminator: false,
+        borders: false,
+        terrain: false,
+        airports: false,
+      },
+    });
+    const routes = layers.find(
+      (layer): layer is PathLayer<RouteLine> =>
+        layer instanceof PathLayer && layer.id === 'world-routes',
+    );
+    expect(routes?.props._pathType).toBe('open');
+    expect(routes?.props.positionFormat).toBe('XY');
+
+    const line = (routes?.props.data as RouteLine[])[0]!;
+    const getPath = routes?.props.getPath as (line: RouteLine) => Float64Array;
+    const getColor = routes?.props.getColor as (line: RouteLine) => unknown[];
+    const flat = getPath(line);
+    expect(flat).toBeInstanceOf(Float64Array);
+    expect(getColor(line)).toHaveLength(flat.length / 2);
+
+    // Nothing is lost by skipping deck.gl's cut: consecutive vertices are already
+    // closer together than the globe's own mesh resolution at full quality.
+    const points = pointsOf(flat);
+    for (let i = 1; i < points.length; i += 1) {
+      const step = Math.hypot(points[i]![0] - points[i - 1]![0], points[i]![1] - points[i - 1]![1]);
+      expect(step).toBeLessThan(3);
     }
   });
 
@@ -358,11 +422,11 @@ describe('projection-independent world layers', () => {
     });
     const pathFor = (layers: (Layer | false)[]): [number, number][] => {
       const routes = layers.find(
-        (layer): layer is PathLayer<WorldRoute> =>
+        (layer): layer is PathLayer<RouteLine> =>
           layer instanceof PathLayer && layer.id === 'world-routes',
       );
-      const getPath = routes?.props.getPath as (route: WorldRoute) => [number, number][];
-      return getPath(antimeridianRoute);
+      const getPath = routes?.props.getPath as (line: RouteLine) => Float64Array;
+      return pointsOf(getPath((routes?.props.data as RouteLine[])[0]!));
     };
     // Reduced mode samples the great circle with fewer points, so the polyline is
     // coarser — the segment count is what tessellation means for a flat line.
@@ -405,6 +469,78 @@ describe('projection-independent world layers', () => {
 
     const hidden = build(false).some((layer) => layer !== false && layer.id === 'world-airports');
     expect(hidden).toBe(false);
+  });
+
+  it('draws the airports smaller on the whole-world view, and full size from the continent', () => {
+    // On the far-out views the majors sat on top of each other; on a phone the map
+    // was more amber disc than map. Discrete, so the layers rebuild on a threshold.
+    expect(airportScaleForZoom(0.3)).toBeLessThan(airportScaleForZoom(1.5));
+    expect(airportScaleForZoom(1.5)).toBeLessThan(airportScaleForZoom(2.5));
+    expect(airportScaleForZoom(2.5)).toBe(1);
+    expect(airportScaleForZoom(8)).toBe(1);
+
+    const airports: WorldAirport[] = [
+      { position: [4.76, 52.31], name: 'Amsterdam', icao: 'EHAM', tier: 'flagship' },
+    ];
+    const layer = createWorldLayers({
+      palette,
+      quality: 'full',
+      routes: [],
+      airports,
+      hubs: [],
+      airportScale: airportScaleForZoom(0.3),
+      darkness: DARKNESS,
+      land: COARSE_WORLD.land,
+      borders: COARSE_WORLD.borders,
+      projection: 'flat',
+      visibility: {
+        graticule: false,
+        routes: false,
+        terminator: false,
+        borders: false,
+        terrain: false,
+        airports: true,
+      },
+    }).find(
+      (entry): entry is ScatterplotLayer<WorldAirport> =>
+        entry instanceof ScatterplotLayer && entry.id === 'world-airports',
+    );
+    expect(layer?.props.radiusScale).toBe(airportScaleForZoom(0.3));
+    // The findability floor comes down with it, or it would undo the scale.
+    expect(layer?.props.radiusMinPixels).toBeLessThan(5);
+    expect(layer?.props.radiusMinPixels).toBeGreaterThanOrEqual(3.5);
+  });
+
+  it('hands deck.gl the same night texture until the field or its colour changes', () => {
+    // A new image is a re-upload of 512×256 texels, and the layer list is rebuilt
+    // on every toggle and every airport-tier threshold, not only on the minute.
+    const build = (field = DARKNESS, night = palette.night) =>
+      createWorldLayers({
+        palette: { ...palette, night },
+        quality: 'full',
+        routes: [],
+        airports: [],
+        hubs: [],
+        darkness: field,
+        land: COARSE_WORLD.land,
+        borders: COARSE_WORLD.borders,
+        projection: 'flat',
+        visibility: {
+          graticule: false,
+          routes: false,
+          terminator: true,
+          borders: false,
+          terrain: false,
+          airports: false,
+        },
+      }).find((entry): entry is Layer => entry !== false && entry.id === 'world-terminator');
+    const image = (layer: Layer | undefined): unknown =>
+      (layer?.props as { image?: unknown } | undefined)?.image;
+
+    expect(image(build())).toBe(image(build()));
+    const later = createDarknessField(new Date('2026-08-22T18:00:00.000Z'), 16, 8);
+    expect(image(build(later))).not.toBe(image(build()));
+    expect(image(build(DARKNESS, [1, 2, 3, 200]))).not.toBe(image(build()));
   });
 
   it('reveals smaller airport tiers only as the zoom increases', () => {

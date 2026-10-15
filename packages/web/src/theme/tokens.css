@@ -131,6 +131,17 @@
   --world-night: #02050978;
   --world-route: #7fd4ffe6;
   /*
+   * The competition's routes and corridors — §H.3's "rivals in neutral".
+   *
+   * They used to borrow `--world-border`, a dark slate tuned to sit on *land*,
+   * which against this navy sea measured about 1.2:1: the rival network was
+   * barely there over water, which is where a long-haul line runs. A light
+   * neutral here clears 3:1 over the sea by day and under the night wash
+   * (`palette.test.ts`), and stays subordinate to the player's own lines by width
+   * and by having no hue.
+   */
+  --world-rival: #9fb0bfd9;
+  /*
    * The altitude ramp a route line is washed along, low to high — the
    * FlightRadar reading, where the colour says how high the aircraft is.
    * `--world-route` above is the top of it, at cruise.
@@ -295,6 +306,11 @@
      it much faster, and 0x78 there costs this one its AA contrast at night. */
   --world-night: #16283c50;
   --world-route: #0a63b0e6;
+  /* Dark and opaque here: `--world-border` is nearly the colour of this sea, so
+     the rival network was all but invisible over water in this theme. Opaque
+     because the night wash compresses a light palette, and any transparency
+     costs it the 3:1 under it. */
+  --world-rival: #47535bff;
   /* The altitude ramp, inverted for this theme exactly as the terrain tint is:
      deep green land under a nearly white sea, so the stops have to be *light* to
      clear 3:1 over the ground an airport sits on. Same reading, opposite

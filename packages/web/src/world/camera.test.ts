@@ -1,6 +1,13 @@
+import { TRANSITION_EVENTS } from '@deck.gl/core';
 import { describe, expect, it } from 'vitest';
 
-import { clampViewState, focusViewState } from './camera';
+import {
+  clampViewState,
+  focusViewState,
+  globeFillZoom,
+  globeRadiusPixels,
+  LANDING_TRANSITION,
+} from './camera';
 
 import type { MapViewState } from '@deck.gl/core';
 
@@ -107,6 +114,19 @@ describe('transitions', () => {
 
   it('adds no transition when the controller set none', () => {
     expect(clampViewState(FROM_DECK)).not.toHaveProperty('transitionDuration');
+    expect(clampViewState(FROM_DECK)).not.toHaveProperty('transitionInterruption');
+  });
+
+  it('keeps an application fly from being cancelled by whatever arrives mid-flight', () => {
+    // The airport-map fly-out on a phone: selecting the airport resized the stage,
+    // deck re-applied a view state a frame behind the transition, and the default
+    // BREAK left the camera at the ceiling, in the band that re-opens the map.
+    const landing = clampViewState({
+      ...FROM_DECK,
+      transitionDuration: 420,
+      ...LANDING_TRANSITION,
+    });
+    expect(landing.transitionInterruption).toBe(TRANSITION_EVENTS.IGNORE);
   });
 });
 
@@ -128,5 +148,44 @@ describe('focus', () => {
 
   it('cannot zoom past the ceiling by double-clicking', () => {
     expect(focusViewState({ ...FROM_DECK, zoom: 11.6 }, [0, 0]).zoom).toBe(12);
+  });
+});
+
+describe('the globe on screen', () => {
+  /*
+   * Measured on the running app's canvas — the globe's extent along the stage's
+   * centre row, on an 860 px stage — rather than derived. The atmosphere ring is
+   * drawn from this, and it used to be a fixed inset ellipse that hung well clear
+   * of the planet at the zoom the map opens at.
+   */
+  it.each([
+    [0.5, 0, 106],
+    [1, 0, 145.5],
+    [1.5, 0, 197.5],
+    [1, 45, 198],
+  ])('at zoom %f, latitude %f, has a limb of about %f px', (zoom, latitude, measured) => {
+    expect(Math.abs(globeRadiusPixels(zoom, latitude, 860) - measured)).toBeLessThan(2);
+  });
+
+  it('still answers before deck.gl has measured the stage', () => {
+    expect(globeRadiusPixels(1, 0)).toBeGreaterThan(100);
+    expect(globeRadiusPixels(1, 0, 0)).toBe(globeRadiusPixels(1, 0));
+  });
+});
+
+describe('a globe that fills the stage', () => {
+  it('is the zoom at which the limb reaches most of the shorter side', () => {
+    const size = { width: 880, height: 860 };
+    const zoom = globeFillZoom(13.6, size);
+    expect(globeRadiusPixels(zoom, 13.6, size.height)).toBeCloseTo(0.44 * 860, 0);
+    // Well above the ~0.9 the flat-map fit gives a world-spanning network, which
+    // drew a planet a third of the stage tall.
+    expect(zoom).toBeGreaterThan(1.8);
+  });
+
+  it('follows the narrower side of a phone', () => {
+    const phone = globeFillZoom(0, { width: 390, height: 520 });
+    const radius = globeRadiusPixels(phone, 0, 520);
+    expect(radius).toBeCloseTo(0.44 * 390, 0);
   });
 });

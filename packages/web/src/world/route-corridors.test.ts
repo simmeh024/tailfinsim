@@ -71,4 +71,13 @@ describe('corridorGridForZoom', () => {
     expect(corridorGridForZoom(3.5)).toBe(0);
     expect(corridorGridForZoom(6)).toBe(0);
   });
+
+  it('steps rather than sliding, so a scroll-zoom does not re-bundle every frame', () => {
+    // The corridor layer is memoised on this value: a continuous grid rebuilt it on
+    // every frame of a zoom gesture.
+    const grids = new Set<number>();
+    for (let zoom = 0; zoom < 3.5; zoom += 0.01) grids.add(corridorGridForZoom(zoom));
+    expect(grids.size).toBeLessThanOrEqual(10);
+    for (const grid of grids) expect(Number.isInteger(grid)).toBe(true);
+  });
 });

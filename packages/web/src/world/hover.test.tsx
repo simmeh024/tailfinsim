@@ -189,6 +189,19 @@ describe('hovering the map', () => {
     expect(screen.queryByTestId('world-tip')).not.toBeInTheDocument();
   });
 
+  it('takes the label away when the airport is selected', () => {
+    // Selecting opens the context panel, which on a phone shrinks the stage —
+    // the label stayed where it was, over a point the airport had moved off.
+    hover('world-airports', HEATHROW);
+    const onClick = layerNamed('world-airports').props.onClick as (info: {
+      object: unknown;
+    }) => void;
+    act(() => {
+      onClick({ object: HEATHROW });
+    });
+    expect(screen.queryByTestId('world-tip')).not.toBeInTheDocument();
+  });
+
   it('names the carrier behind an aircraft', () => {
     // Rivals are off by default, so their aeroplanes are not drawn at all.
     fireEvent.click(screen.getByRole('button', { name: 'Rivals' }));
