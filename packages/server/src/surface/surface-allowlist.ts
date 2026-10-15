@@ -64,21 +64,10 @@ export const NOT_A_SURFACE: readonly SurfaceException[] = [
 export const SURFACE_BASELINE: readonly SurfaceException[] = [
   {
     route: 'GET /api/routes/:routeId/flights',
-    issue: 1129,
+    issue: 1208,
     reason:
-      'SURFACE-06: the flight rung of the statistics drill-down (route → flight → waterfall).',
+      'GAP-19: the flight rung below the statistics drill-down (route → flight → waterfall); SURFACE-06 (#1129) closed without needing it.',
   },
-  ...[
-    'GET /api/hubs',
-    'GET /api/hubs/candidates',
-    'POST /api/hubs',
-    'POST /api/hubs/:hubId/facilities',
-  ].map((route): SurfaceException => ({
-    route,
-    issue: 1211,
-    reason:
-      'SURFACE-09: M7-04 shipped hub purchase and facilities with no page; the world map shows the hubs an airline holds, but buying one is API-only.',
-  })),
 ];
 
 /** Admin routes with no console control, scored apart from the player's. */

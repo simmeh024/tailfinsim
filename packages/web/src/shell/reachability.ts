@@ -62,7 +62,8 @@ export const IN_SHELL_ROUTES: Readonly<Record<string, RouteReach>> = {
   },
   '/network': {
     means: 'rail',
-    reason: 'App. H.4. Slots, gates and ground handling (SURFACE-05) are views of this page.',
+    reason:
+      'App. H.4. Slots, gates and ground handling (SURFACE-05) are views of this page, and so are hubs (SURFACE-09): a hub is an arrangement at an airport like the other three, and App. B.5 sits beside them in Appendix B — not at Headquarters, which is §9.1’s head office.',
   },
   '/finance': { means: 'rail', reason: 'App. H.4.' },
   '/crew': {

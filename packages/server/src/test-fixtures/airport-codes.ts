@@ -94,6 +94,7 @@ export const AIRPORT_CODE_NAMESPACES = {
   'finance/surface-routes': '5',
   'service/routes': '7',
   'academy/routes-refusals': '8',
+  'hub/routes-refusals': '6',
 } as const;
 
 export type AirportCodeNamespace = keyof typeof AIRPORT_CODE_NAMESPACES;

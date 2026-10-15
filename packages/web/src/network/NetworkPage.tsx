@@ -19,6 +19,7 @@ import { useScheduleEditor } from './planner/editor';
 import { FleetScheduleView } from './planner/FleetScheduleView';
 import { GroundHandlingView } from './planner/GroundHandlingView';
 import { HubConnectionsView } from './planner/HubConnectionsView';
+import { HubsView } from './planner/HubsView';
 import { buildRoutePlan, plannerAircraft } from './planner/mock';
 import { OpenRouteForm } from './planner/OpenRouteForm';
 import { OverviewTab } from './planner/OverviewTab';
@@ -56,14 +57,24 @@ import './network.css';
  */
 
 type Tab = 'overview' | 'schedule' | 'pricing' | 'competition' | 'cargo' | 'performance';
-type View = 'route' | 'fleet' | 'connections' | 'slots' | 'gates' | 'ground';
+type View = 'route' | 'fleet' | 'hubs' | 'connections' | 'slots' | 'gates' | 'ground';
 
-const VIEWS: readonly View[] = ['route', 'fleet', 'connections', 'slots', 'gates', 'ground'];
+const VIEWS: readonly View[] = [
+  'route',
+  'fleet',
+  'hubs',
+  'connections',
+  'slots',
+  'gates',
+  'ground',
+];
 
 /**
  * `?view=ground&station=EHAM` or `?view=ground&contract=<id>` — a deep link into
  * a workspace view (SURFACE-05). The lapse alert lands on the contract it is
  * about, so the station that needs a decision is one click from the warning.
+ * `?view=hubs&station=EHAM` arrives at the Hubs view with that airport priced
+ * (SURFACE-09).
  */
 function deepLink(): { view: View; station: string | null; contract: string | null } {
   const params = new URLSearchParams(globalThis.location?.search ?? '');
@@ -401,6 +412,9 @@ export function NetworkPage(): ReactNode {
           options={[
             { value: 'route', label: 'Route planner' },
             { value: 'fleet', label: 'Fleet schedule' },
+            // App. B.5: the hubs themselves, their facilities, and taking another
+            // (SURFACE-09). Beside Connections, which is how a hub banks.
+            { value: 'hubs', label: 'Hubs' },
             { value: 'connections', label: 'Connections' },
             { value: 'slots', label: 'Slots' },
             // App. B.8's other half. Two views rather than one, because they are
@@ -522,6 +536,8 @@ export function NetworkPage(): ReactNode {
             <AirportGatesView airports={operatedAirports} preferred={busiest} />
           ) : view === 'slots' ? (
             <AirportSlotsView airports={operatedAirports} preferred={busiest} />
+          ) : view === 'hubs' ? (
+            <HubsView initialQuery={link.view === 'hubs' ? link.station : null} />
           ) : view === 'connections' ? (
             <HubConnectionsView />
           ) : view === 'fleet' ? (
