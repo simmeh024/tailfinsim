@@ -303,6 +303,17 @@ export function a320neoDevelopmentMaterialColors(
   return result;
 }
 
+const INSPECTION_VIEWS = {
+  overview: 'Overview',
+  port: 'Port side',
+  starboard: 'Starboard side',
+  nose: 'Nose',
+  rear: 'Rear',
+  top: 'Top',
+  tail: 'Tail detail',
+} as const;
+type InspectionView = keyof typeof INSPECTION_VIEWS;
+
 interface PreviewRuntime {
   applyAuthoringPaint: (layers: readonly LiveryLayer[]) => void;
   readonly camera: PerspectiveCamera;
@@ -312,7 +323,8 @@ interface PreviewRuntime {
   readonly renderer: WebGLRenderer;
   readonly scene: Scene;
   readonly resetView: () => void;
-  readonly focusTail: () => void;
+  readonly inspectView: (view: InspectionView) => void;
+  readonly zoom: (factor: number) => void;
   readonly resizeObserver: ResizeObserver | null;
 }
 
@@ -373,6 +385,7 @@ export function DevelopmentAircraftPreview({
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [lodLevel, setLodLevel] = useState<DevelopmentLod | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
+  const [inspectionView, setInspectionView] = useState<InspectionView | 'custom'>('overview');
 
   useEffect(() => {
     colorsRef.current = colors;
@@ -556,7 +569,13 @@ export function DevelopmentAircraftPreview({
         const bounds = new THREE.Box3().setFromObject(model);
         const sphere = bounds.getBoundingSphere(new THREE.Sphere());
         const radius = Math.max(sphere.radius, 1);
-        let framedView: 'overview' | 'tail' | null = 'overview';
+        let framedView: InspectionView | null = 'overview';
+        const settleControls = (): void => {
+          // Consume residual orbit/pan motion before assigning a repeatable pose.
+          controls.enableDamping = false;
+          controls.update();
+          controls.enableDamping = true;
+        };
         // Fit the actual mesh in both screen axes. The empty corners of an
         // aircraft's bounding box otherwise leave excessive space around it.
         const frameBounds = (
@@ -596,12 +615,31 @@ export function DevelopmentAircraftPreview({
           controls.target.copy(target);
           controls.update();
         };
+        const inspectView = (view: InspectionView): void => {
+          const target = view === 'tail' ? model.getObjectByName('tail_fin') : model;
+          if (target === undefined) return;
+          const directions: Record<InspectionView, readonly [number, number, number]> = {
+            overview: [1.25, 0.62, -1.5],
+            port: [-1, 0, 0],
+            starboard: [1, 0, 0],
+            nose: [0, 0, -1],
+            rear: [0, 0, 1],
+            // Keep OrbitControls' fixed Y-up convention. A tiny positive Z
+            // offset avoids the polar singularity and puts the nose at the top.
+            top: [0, 1, 0.000001],
+            tail: [14, 2.5, 5],
+          };
+          settleControls();
+          framedView = view;
+          frameBounds(target, new THREE.Vector3(...directions[view]));
+          setInspectionView(view);
+        };
         const resetView = (): void => {
-          framedView = 'overview';
           if (isModelProgress) {
-            frameBounds(model, new THREE.Vector3(1.25, 0.62, -1.5));
+            inspectView('overview');
             return;
           }
+          settleControls();
           const distance = radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) / 1.25;
           const direction = new THREE.Vector3(1.25, 0.62, isModelProgress ? -1.5 : 1.5).normalize();
           camera.position.copy(sphere.center).addScaledVector(direction, distance);
@@ -613,18 +651,26 @@ export function DevelopmentAircraftPreview({
           controls.maxDistance = radius * 5;
           controls.update();
         };
-        const focusTail = (): void => {
-          const fin = model.getObjectByName('tail_fin');
-          if (fin === undefined) return;
-          framedView = 'tail';
-          frameBounds(fin, new THREE.Vector3(14, 2.5, 5));
+        const markCustomView = (): void => {
+          framedView = null;
+          setInspectionView('custom');
+        };
+        const zoom = (factor: number): void => {
+          settleControls();
+          markCustomView();
+          const offset = camera.position.clone().sub(controls.target);
+          const distance = THREE.MathUtils.clamp(
+            offset.length() * factor,
+            controls.minDistance,
+            controls.maxDistance,
+          );
+          camera.position.copy(controls.target).add(offset.setLength(distance));
+          controls.update();
         };
 
         controls.minDistance = radius * (isModelProgress ? 0.08 : 0.75);
         controls.maxDistance = radius * 12;
-        controls.addEventListener('start', () => {
-          framedView = null;
-        });
+        controls.addEventListener('start', markCustomView);
 
         const resize = (): void => {
           const width = Math.max(1, container.clientWidth);
@@ -633,8 +679,7 @@ export function DevelopmentAircraftPreview({
           camera.aspect = width / height;
           camera.updateProjectionMatrix();
           if (isModelProgress && framedView !== null) {
-            if (framedView === 'tail') focusTail();
-            else resetView();
+            inspectView(framedView);
           }
         };
         const resizeObserver =
@@ -656,7 +701,8 @@ export function DevelopmentAircraftPreview({
           renderer,
           scene,
           resetView,
-          focusTail,
+          inspectView,
+          zoom,
           resizeObserver,
         };
         pendingControls = null;
@@ -795,6 +841,28 @@ export function DevelopmentAircraftPreview({
           </span>
         </div>
         <div className="livery-true-preview__actions" aria-label="Aircraft views">
+          {isModelProgress && (
+            <label className="livery-true-preview__view">
+              View
+              <select
+                aria-label="Inspection view"
+                value={inspectionView}
+                disabled={state !== 'ready'}
+                onChange={(event) =>
+                  runtimeRef.current?.inspectView(event.target.value as InspectionView)
+                }
+              >
+                <option value="custom" disabled>
+                  Custom view
+                </option>
+                {Object.entries(INSPECTION_VIEWS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <button
             type="button"
             className="livery-true-preview__reset"
@@ -804,14 +872,36 @@ export function DevelopmentAircraftPreview({
             Reset view
           </button>
           {isModelProgress && (
-            <button
-              type="button"
-              className="livery-true-preview__tail"
-              disabled={state !== 'ready'}
-              onClick={() => runtimeRef.current?.focusTail()}
-            >
-              Tail detail
-            </button>
+            <>
+              <button
+                type="button"
+                className="livery-true-preview__tail"
+                disabled={state !== 'ready'}
+                onClick={() => runtimeRef.current?.inspectView('tail')}
+              >
+                Tail detail
+              </button>
+              <div className="livery-true-preview__zoom" role="group" aria-label="Aircraft zoom">
+                <button
+                  type="button"
+                  aria-label="Zoom out"
+                  title="Zoom out"
+                  disabled={state !== 'ready'}
+                  onClick={() => runtimeRef.current?.zoom(1.25)}
+                >
+                  −
+                </button>
+                <button
+                  type="button"
+                  aria-label="Zoom in"
+                  title="Zoom in"
+                  disabled={state !== 'ready'}
+                  onClick={() => runtimeRef.current?.zoom(0.8)}
+                >
+                  +
+                </button>
+              </div>
+            </>
           )}
         </div>
       </div>
